@@ -809,7 +809,7 @@
   }
 
   function build() {
-    setKids(document.body);
+    document.getElementById("app")?.remove();
     const app = h("div", { id: "app" });
 
     // Mailboxes
