@@ -18,11 +18,7 @@ npx wrangler login   # first time only
 npm run deploy
 ```
 
-## Deploy via GitHub Actions
+## Automatic deploys
 
-`.github/workflows/deploy.yml` deploys on every push to `main` (or this branch),
-and can be run manually from the Actions tab. It needs two repository secrets
-(Settings → Secrets and variables → Actions):
-
-- `CLOUDFLARE_API_TOKEN` — create one from the "Edit Cloudflare Workers" template
-- `CLOUDFLARE_ACCOUNT_ID` — shown on your Cloudflare dashboard
+The repo is connected to Cloudflare Workers Builds, so every push to the
+production branch is built and deployed by Cloudflare automatically.
