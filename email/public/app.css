@@ -2036,6 +2036,18 @@ body.phone .sheet.kb .compose-accessory {
   padding: 0;
 }
 
+.login-go {
+  width: 100%;
+  height: 54px;
+  justify-content: center;
+  font-size: 17px;
+}
+
+.login-go svg {
+  width: 20px;
+  height: 20px;
+}
+
 .login-error {
   min-height: 20px;
   margin-top: 12px;

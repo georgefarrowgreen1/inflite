@@ -1,4 +1,4 @@
-import { checkPassword, createSessionCookie, clearSessionCookie, isAuthenticated } from "./auth.js";
+import { accountView, accessOf, passOn, forgetCheck } from "./auth.js";
 import {
   ensureSchema,
   FOLDERS,
@@ -18,7 +18,7 @@ export default {
       return await api(request, env, ctx, url);
     } catch (err) {
       if (!err.status || err.status >= 500) console.error(err);
-      return json({ error: err.publicMessage || err.message || "Something went wrong" }, err.status || 500);
+      return json({ error: err.publicMessage || err.message || "Something went wrong", access: err.access }, err.status || 500);
     }
   },
 
@@ -53,31 +53,45 @@ async function api(request, env, ctx, url) {
     throw new HttpError(403, "Missing request header");
   }
 
+  // Same-site pages elsewhere on inflite.ai also carry the account cookie, so the API answers only this app's own pages.
+  const site = request.headers.get("Sec-Fetch-Site");
+  if (site && site !== "same-origin" && site !== "none") throw new HttpError(403, "That request didn’t come from Mail.");
+
   if (pathname === "/api/session" && method === "GET") {
-    return json({ authenticated: await isAuthenticated(env, request), configured: !!env.APP_PASSWORD });
+    const view = await accountView(env, request);
+    return json({ access: accessOf(view), accountOrigin: env.ACCOUNT_ORIGIN, user: publicUser(view) });
   }
 
-  if (pathname === "/api/login" && method === "POST") {
-    if (!env.APP_PASSWORD) throw new HttpError(503, "Set the APP_PASSWORD secret on the Worker first.");
-    if (env.LOGIN_LIMIT) {
-      const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-      const { success } = await env.LOGIN_LIMIT.limit({ key: ip });
-      if (!success) throw new HttpError(429, "Too many attempts. Try again in a minute.");
-    }
-    const { password } = await request.json();
-    if (!(await checkPassword(env, password))) throw new HttpError(401, "Incorrect password");
-    return json({ ok: true }, 200, { "Set-Cookie": await createSessionCookie(env) });
+  // Back from the account's page: the code it handed back, swapped there for the site's sign-in.
+  if (pathname === "/api/auth/handback" && method === "POST") {
+    const { code, verifier } = await request.json();
+    const r = await passOn(env, request, "handback", { code, verifier });
+    if (r.status !== 200) throw new HttpError(r.status === 403 ? 403 : 400, r.data.error || "That sign-in didn’t work. Try again.");
+    const res = json({ access: accessOf(r.data), accountOrigin: env.ACCOUNT_ORIGIN, user: publicUser(r.data) });
+    for (const c of r.setCookies) res.headers.append("Set-Cookie", c);
+    return res;
   }
 
+  // Signing out of Mail signs out of the account everywhere it's shared, as in the other inflite apps.
   if (pathname === "/api/logout" && method === "POST") {
-    return json({ ok: true }, 200, { "Set-Cookie": clearSessionCookie() });
+    forgetCheck(request);
+    const r = await passOn(env, request, "signout", {});
+    const res = json({ ok: r.status === 200 });
+    for (const c of r.setCookies) res.headers.append("Set-Cookie", c);
+    return res;
   }
 
-  if (!(await isAuthenticated(env, request))) throw new HttpError(401, "Not signed in");
+  const view = await accountView(env, request);
+  const access = accessOf(view);
+  if (access !== "ok") {
+    const err = new HttpError(401, access === "notadmin" ? "Mail is only for the site’s admin." : "Sign in to open Mail.");
+    err.access = access;
+    throw err;
+  }
   await ensureSchema(env);
 
   let m;
-  if (pathname === "/api/me" && method === "GET") return me(env);
+  if (pathname === "/api/me" && method === "GET") return me(env, view);
   if (pathname === "/api/counts" && method === "GET") return counts(env);
   if (pathname === "/api/messages" && method === "GET") return listMessages(env, url);
   if (pathname === "/api/messages/batch" && method === "POST") return batchUpdate(env, await request.json());
@@ -89,13 +103,17 @@ async function api(request, env, ctx, url) {
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)\/raw$/)) && method === "GET") return rawMessage(env, m[1]);
   if ((m = pathname.match(/^\/api\/attachments\/([\w-]+)$/)) && method === "GET") return attachment(env, m[1], url);
   if (pathname === "/api/contacts" && method === "GET") return contacts(env, url);
-  if (pathname === "/api/send" && method === "POST") return send(env, ctx, await request.json());
-  if (pathname === "/api/drafts" && method === "POST") return saveDraft(env, await request.json());
+  if (pathname === "/api/send" && method === "POST") return send(env, ctx, await request.json(), view);
+  if (pathname === "/api/drafts" && method === "POST") return saveDraft(env, await request.json(), view);
 
   throw new HttpError(404, "Not found");
 }
 
-async function me(env) {
+const publicUser = (v) => (v?.signedIn ? { name: v.name, handle: v.handle, email: v.email, admin: !!v.admin } : null);
+
+const senderName = (env, view) => env.DISPLAY_NAME || view?.name || "";
+
+async function me(env, view) {
   const defaultFrom = (env.DEFAULT_FROM || `hello@${env.DOMAIN}`).toLowerCase();
   const { results } = await env.DB.prepare(
     `SELECT mailbox, COUNT(*) AS c FROM messages WHERE mailbox IS NOT NULL AND mailbox LIKE ?1
@@ -104,7 +122,7 @@ async function me(env) {
     .bind(`%@${env.DOMAIN}`)
     .all();
   const identities = [...new Set([defaultFrom, ...results.map((r) => r.mailbox)])];
-  return json({ displayName: env.DISPLAY_NAME || "", domain: env.DOMAIN, defaultFrom, identities });
+  return json({ displayName: senderName(env, view), domain: env.DOMAIN, defaultFrom, identities, account: publicUser(view) });
 }
 
 async function counts(env) {
@@ -302,7 +320,8 @@ function base64ToBytes(b64) {
   return bytes;
 }
 
-async function send(env, ctx, body) {
+async function send(env, ctx, body, view) {
+  const name = senderName(env, view);
   const from = checkFrom(env, body.from);
   const to = normalizeRecipients(body.to);
   const cc = normalizeRecipients(body.cc);
@@ -336,7 +355,7 @@ async function send(env, ctx, body) {
   if (references.length) headers["References"] = references.map((r) => `<${r}>`).join(" ");
 
   const message = {
-    from: env.DISPLAY_NAME ? { email: from, name: env.DISPLAY_NAME } : from,
+    from: name ? { email: from, name } : from,
     subject,
     text,
     ...(html && { html }),
@@ -392,7 +411,7 @@ async function send(env, ctx, body) {
       inReplyTo || null,
       references.join(" ") || null,
       from,
-      env.DISPLAY_NAME || "",
+      name,
       JSON.stringify(to),
       JSON.stringify(cc),
       JSON.stringify(bcc),
@@ -419,7 +438,7 @@ async function send(env, ctx, body) {
   return json({ ok: true, id });
 }
 
-async function saveDraft(env, body) {
+async function saveDraft(env, body, view) {
   const id = body.id && /^[\w-]+$/.test(body.id) ? body.id : crypto.randomUUID();
   const compose = {
     from: String(body.from || ""),
@@ -445,7 +464,7 @@ async function saveDraft(env, body) {
     .bind(
       id,
       compose.from.toLowerCase(),
-      env.DISPLAY_NAME || "",
+      senderName(env, view),
       JSON.stringify(compose.to),
       JSON.stringify(compose.cc),
       JSON.stringify(compose.bcc),

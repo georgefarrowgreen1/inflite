@@ -8,6 +8,11 @@ Cloudflare Email Sending.
   (`postal-mime`) and stores it in D1 (metadata) and R2 (bodies, attachments, original `.eml`).
 - **Sending:** the `send_email` binding (`env.EMAIL.send`), with replies threaded via
   `In-Reply-To` / `References`.
+- **Sign-in:** your inflite account (account.inflite.ai). Its cookie covers all of inflite.ai, so the
+  Worker passes it to the account site, which says whether this is the site's admin. Only the admin can
+  open Mail, with a passkey on the account, and Mail asks you to confirm it's you every 12 hours (the same
+  rule as Admin). Signing in from Mail goes to the account page and comes back, which also works for Mail
+  added to the Home Screen. The account-side code is `functions/_mailapp.js` in the georgefarrowgreen repo.
 - **App:** a static web app in `public/`, installable to the home screen. It has a navigation
   stack on iPhone (with an edge-swipe back gesture) and a split view on iPad, plus swipe actions,
   undo send, drafts, search, and keyboard shortcuts.
@@ -20,13 +25,14 @@ Try the interface without a backend by adding `?demo` to the URL.
    pick this repo, set **Root directory** to `email`, **Deploy command** to `npx wrangler deploy`,
    and **production branch** to `claude/inflite`. The first deploy creates the D1 database and
    R2 bucket and attaches `email.inflite.ai` as a custom domain.
-2. **Set the password.** In the Worker, open **Settings → Variables and Secrets** and add a
-   secret named `APP_PASSWORD`. This is the password for signing in to the app.
+2. **Deploy the accounts change** (the `claude/inflite-mail-signin` branch of the georgefarrowgreen
+   repo), so account.inflite.ai knows about Mail.
 3. **Route incoming mail.** In **Email → Email Routing** for `inflite.ai`, enable routing, then
    under **Routing rules** set the **Catch-all** action to **Send to a Worker → inflite-email**
    (or add a rule per address).
-4. **Check the sender settings** in `wrangler.jsonc` (`DEFAULT_FROM`, `DISPLAY_NAME`). You can
-   send from any `@inflite.ai` address.
+4. **Check the sender settings** in `wrangler.jsonc`: `DEFAULT_FROM` is the address mail goes out
+   from by default (you can send from any `@inflite.ai` address), and mail goes out under your account's
+   name. Set a `DISPLAY_NAME` variable to use a different name.
 
 Email Sending needs the Workers Paid plan while it is in beta.
 
@@ -42,9 +48,11 @@ Open `https://email.inflite.ai` in Safari, tap **Share → Add to Home Screen**.
 ```sh
 cd email
 npm install
-echo 'APP_PASSWORD=dev' > .dev.vars
 npm run dev
 ```
+
+Signing in needs the account site. Set `ACCOUNT_ORIGIN` to wherever it runs; both sites must share a
+domain and port, as they do in production. Without it, use `?demo` to try the interface.
 
 Simulate an incoming message:
 

@@ -263,7 +263,11 @@
         method,
         credentials: "same-origin",
         keepalive: opts.keepalive,
-        headers: { "X-Inflite": "1", ...(body !== undefined && { "Content-Type": "application/json" }) },
+        headers: {
+          "X-Inflite": "1",
+          ...(STANDALONE && { "X-Home-Screen": "1" }),
+          ...(body !== undefined && { "Content-Type": "application/json" }),
+        },
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
       let data = null;
@@ -271,7 +275,7 @@
         data = await res.json();
       } catch {}
       if (!res.ok) {
-        if (res.status === 401 && path !== "/api/login") onSignedOut();
+        if (res.status === 401 && data?.access) onSignedOut(data.access);
         throw new ApiError(res.status, data?.error || `Request failed (${res.status})`);
       }
       return data;
@@ -280,7 +284,7 @@
       new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== "" && v !== false)).toString();
     return {
       session: () => req("GET", "/api/session"),
-      login: (password) => req("POST", "/api/login", { password }),
+      handback: (code, verifier) => req("POST", "/api/auth/handback", { code, verifier }),
       logout: () => req("POST", "/api/logout", {}),
       me: () => req("GET", "/api/me"),
       counts: () => req("GET", "/api/counts"),
@@ -411,10 +415,7 @@
     const summary = ({ text, html, attachments, compose, ...m }) => m;
     return {
       async session() {
-        return { authenticated: true, configured: true };
-      },
-      async login() {
-        return { ok: true };
+        return { access: "ok", accountOrigin: "", user: { name: ME.name, handle: "george", email: ME.email, admin: true } };
       },
       async logout() {
         return { ok: true };
@@ -495,6 +496,14 @@
       rawUrl: () => "#",
     };
   }
+
+  const STANDALONE = (() => {
+    try {
+      return navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+    } catch {
+      return false;
+    }
+  })();
 
   const api = DEMO ? demoApi() : realApi();
 
@@ -954,7 +963,7 @@
       await api.logout();
     } catch {}
     if (DEMO) return toast("Demo mode — nothing to sign out of", { icon: "lock" });
-    showLogin();
+    showGate("signin");
   }
 
   // ---------------------------------------------------------------------------
@@ -2561,58 +2570,109 @@ a{color:#0a84ff}
   // Login
   // ---------------------------------------------------------------------------
 
-  function onSignedOut() {
-    if (!document.querySelector(".login")) showLogin();
+  // Signing in happens on the inflite account's page (account.inflite.ai). Mail sends you there with the hash of a word
+  // it keeps in this tab; the page sends you back with a code that's good once, and only with that word.
+  let accountOrigin = "";
+  const VERIFIER_KEY = "inflite:signin-verifier";
+
+  function onSignedOut(access) {
+    if (!document.querySelector(".login")) showGate(access);
   }
 
-  function showLogin(configured = true) {
+  const b64url = (bytes) =>
+    btoa(String.fromCharCode(...new Uint8Array(bytes)))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+  async function goToAccount() {
+    const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+    const ask = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+    try {
+      sessionStorage.setItem(VERIFIER_KEY, verifier);
+    } catch {}
+    const back = `${location.origin}/`;
+    location.assign(`${accountOrigin}/#${new URLSearchParams({ signin: "mail", ask, back })}`);
+  }
+
+  // Back from the account's page with a code: swapped for the site's sign-in. Returns the session, or null.
+  async function finishSignIn() {
+    const p = new URLSearchParams(location.hash.slice(1));
+    const code = p.get("signin");
+    if (!code) return null;
+    try {
+      history.replaceState(history.state, "", location.pathname + location.search);
+    } catch {}
+    let verifier = null;
+    try {
+      verifier = sessionStorage.getItem(VERIFIER_KEY);
+      sessionStorage.removeItem(VERIFIER_KEY);
+    } catch {}
+    if (!verifier) return null;
+    return api.handback(code, verifier);
+  }
+
+  const GATE = {
+    signin: {
+      text: "Sign in with your inflite account.",
+      button: "Sign In",
+    },
+    reauth: {
+      text: "Mail asks you to confirm it’s you every 12 hours.",
+      button: "Confirm It’s You",
+    },
+    notadmin: {
+      text: "Mail is only for the site’s admin.",
+      button: "Use Another Account",
+    },
+    passkey: {
+      text: "Add a passkey to your account to use Mail, as Admin needs.",
+      button: "Open Your Account",
+    },
+  };
+
+  function showGate(access = "signin", { user, error } = {}) {
     clearInterval(pollTimer);
-    const input = h("input", {
-      type: "password",
-      placeholder: "Password",
-      autocomplete: "current-password",
-      enterkeyhint: "go",
-      "aria-label": "Password",
-      autofocus: true,
-    });
-    const err = h("div.login-error", configured ? "" : "Set the APP_PASSWORD secret on the Worker to sign in.");
-    const go = h("button.gbtn.glass.tinted", { type: "submit", "aria-label": "Sign In" }, icon("arrowRight"));
-    const card = h(
-      "form.login-card.glass",
+    const g = GATE[access] || GATE.signin;
+    const who = user && access !== "signin" ? `Signed in as @${user.handle}` : "";
+    const go = h(
+      "button.gbtn.glass.tinted.text.login-go",
       {
-        onsubmit: async (e) => {
-          e.preventDefault();
-          if (!input.value) return input.focus();
+        type: "button",
+        onclick: () => {
           go.disabled = true;
-          try {
-            await api.login(input.value);
-            login.style.transition = "opacity .5s var(--ease), transform .6s var(--ease)";
-            login.style.opacity = "0";
-            login.style.transform = "scale(1.06)";
-            await boot();
-            setTimeout(() => login.remove(), 500);
-          } catch (ex) {
-            err.textContent = ex.message;
-            card.classList.remove("shake");
-            card.offsetWidth;
-            card.classList.add("shake");
-            input.select();
-          } finally {
-            go.disabled = false;
-          }
+          if (access === "passkey") location.assign(`${accountOrigin}/`);
+          else goToAccount();
         },
       },
-      h("div.app-icon", icon("envelope")),
-      h("h1", "inflite Mail"),
-      h("p", "Sign in to your inbox"),
-      h("div.login-field", input, go),
-      err,
-      !configured && h("a.login-demo", { href: "?demo" }, "Explore the demo instead")
+      g.button,
+      icon("arrowRight")
+    );
+    const card = h(
+      "div.login-card.glass",
+      { role: "dialog", "aria-labelledby": "login-title" },
+      h("div.app-icon", icon(access === "signin" ? "envelope" : "lock")),
+      h("h1", { id: "login-title" }, "inflite Mail"),
+      h("p", g.text),
+      go,
+      h("div.login-error", { role: "alert" }, error || who)
     );
     const login = h("div.login", h("div.blob.b1"), h("div.blob.b2"), h("div.blob.b3"), card);
     document.querySelector(".login")?.remove();
     document.body.append(login);
-    setTimeout(() => input.focus(), 400);
+    if (error) card.classList.add("shake");
+    setTimeout(() => go.focus({ preventScroll: true }), 300);
+  }
+
+  async function enter() {
+    const login = document.querySelector(".login");
+    await boot();
+    if (login) {
+      login.style.transition = "opacity .5s var(--ease), transform .6s var(--ease)";
+      login.style.opacity = "0";
+      login.style.transform = "scale(1.06)";
+      setTimeout(() => login.remove(), 500);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -2663,13 +2723,21 @@ a{color:#0a84ff}
   });
 
   async function start() {
+    let s;
     try {
-      const s = await api.session();
-      if (!s.authenticated) return showLogin(s.configured);
-      await boot();
+      let error = null;
+      try {
+        s = await finishSignIn();
+      } catch (err) {
+        error = err.message;
+      }
+      s ||= await api.session();
+      accountOrigin = s.accountOrigin || accountOrigin;
+      if (s.access !== "ok") return showGate(s.access, { user: s.user, error });
+      await enter();
     } catch (err) {
-      showLogin();
-      toast(err.message || "Can't reach the server", { error: true });
+      if (!s) showGate("signin", { error: err.message || "Can’t reach Mail right now." });
+      else toast(err.message || "Can’t reach Mail right now.", { error: true });
     }
   }
 

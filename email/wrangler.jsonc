@@ -21,15 +21,11 @@
   // Cloudflare Email Service (Email Sending).
   "send_email": [{ "name": "EMAIL" }],
 
-  // Login brute-force protection: 10 attempts per minute per IP.
-  "ratelimits": [
-    { "name": "LOGIN_LIMIT", "namespace_id": "4001", "simple": { "limit": 10, "period": 60 } }
-  ],
-
+  // Signing in is the inflite account's; sent mail goes out under the account's name.
   "vars": {
     "DOMAIN": "inflite.ai",
     "DEFAULT_FROM": "hello@inflite.ai",
-    "DISPLAY_NAME": "George Farrow-Green"
+    "ACCOUNT_ORIGIN": "https://account.inflite.ai"
   },
 
   "observability": { "enabled": true }
