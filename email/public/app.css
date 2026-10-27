@@ -621,8 +621,15 @@ body.sheet-open.phone #app {
   min-width: 0;
 }
 
-.account-card .who b {
+.account-card .who b,
+.account-card .who span {
   display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-card .who b {
   font-weight: 600;
 }
 
@@ -1048,6 +1055,146 @@ body.sheet-open.phone #app {
   border-radius: 20px;
   overflow: hidden;
   background: #fff;
+}
+
+.mail-frame-wrap.plain {
+  margin: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.mail-frame-wrap.plain .mail-frame {
+  background: transparent;
+  color-scheme: light dark;
+}
+
+.quote-row {
+  padding: 0 20px 16px;
+}
+
+.quote-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border-radius: 15px;
+  background: var(--bg-fill);
+  color: var(--label-2);
+  font-size: 13px;
+  font-weight: 500;
+  transition: transform 0.4s var(--spring-bouncy), background 0.2s;
+}
+
+.quote-toggle:active {
+  transform: scale(0.95);
+  background: var(--bg-fill-2);
+}
+
+.quote-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.mail-body.quoted {
+  padding-top: 0;
+  color: var(--label-2);
+  animation: content-in 0.35s var(--ease) both;
+}
+
+.reader-date {
+  padding: 0 20px 20px;
+  font-size: 13px;
+}
+
+.thread {
+  margin: 4px 16px 24px;
+  display: grid;
+  gap: 8px;
+}
+
+.thread-title {
+  padding: 0 4px 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label-2);
+}
+
+.thread-card {
+  border-radius: 20px;
+  background: var(--bg-fill);
+  overflow: hidden;
+}
+
+.thread-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.thread-head .avatar {
+  width: 34px;
+  height: 34px;
+  font-size: 13px;
+}
+
+.thread-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.thread-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.thread-top b {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thread-top span {
+  font-size: 13px;
+  color: var(--label-2);
+}
+
+.thread-snippet {
+  font-size: 14px;
+  color: var(--label-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thread-card.open .thread-snippet {
+  display: none;
+}
+
+.thread-body {
+  display: none;
+}
+
+.thread-card.open .thread-body {
+  display: block;
+  border-top: 0.5px solid var(--sep);
+  animation: content-in 0.35s var(--ease) both;
+}
+
+.thread-body .mail-body {
+  font-size: 16px;
+}
+
+.thread-body .mail-frame-wrap {
+  margin: 10px;
 }
 
 .mail-frame {

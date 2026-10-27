@@ -196,8 +196,19 @@ async function getMessage(env, id) {
     attachments.push({ id: a.id, filename: a.filename, type: a.type, size: a.size, url: href });
   }
 
+  // The rest of its conversation (not drafts or trash), for the reader to show under it.
+  const { results: thread } = row.thread_id
+    ? await env.DB.prepare(
+        `SELECT * FROM messages WHERE thread_id = ?1 AND id != ?2 AND folder NOT IN ('trash', 'drafts')
+         ORDER BY date DESC LIMIT 20`
+      )
+        .bind(row.thread_id, id)
+        .all()
+    : { results: [] };
+
   return json({
     ...rowToMessage(row),
+    thread: thread.map(rowToSummary),
     text: body.text || "",
     html,
     compose: body.compose || null,

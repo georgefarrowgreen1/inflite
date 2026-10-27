@@ -100,7 +100,10 @@ export function snippet(text, html) {
   let s = text || "";
   if (!s && html) {
     s = html
+      // (stop where the quoted reply starts)
+      .split(/<blockquote|<div[^>]*class="?gmail_quote|<div[^>]*id="?divRplyFwdMsg/i)[0]
       .replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<(br|\/p|\/div)[^>]*>/gi, "\n")
       .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ")
       .replace(/&amp;/g, "&")
@@ -109,10 +112,12 @@ export function snippet(text, html) {
       .replace(/&#39;|&apos;/g, "'")
       .replace(/&quot;/g, '"');
   }
-  // Drop quoted replies so the preview shows what's new.
-  s = s
-    .split("\n")
-    .filter((l) => !l.trim().startsWith(">"))
-    .join(" ");
-  return s.replace(/\s+/g, " ").trim().slice(0, 240);
+  // Drop quoted replies (and the "On … wrote:" line before them) so the preview shows what's new.
+  const lines = s.split("\n");
+  const cut = lines.findIndex((l) => /^\s*>/.test(l) || /^\s*(on\b.+\bwrote:|-{2,}\s*original message\s*-{2,})\s*$/i.test(l));
+  return (cut > 0 ? lines.slice(0, cut) : lines.filter((l) => !/^\s*>/.test(l)))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
 }

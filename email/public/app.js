@@ -338,7 +338,7 @@
       cc: extra.cc || [],
       bcc: [],
       subject,
-      snippet: (text || htmlToText(extra.html || "")).replace(/\s+/g, " ").slice(0, 200),
+      snippet: (text || htmlToText((extra.html || "").split(/<blockquote/i)[0])).replace(/\s+/g, " ").slice(0, 200),
       text,
       html: extra.html || "",
       date: now - ago,
@@ -371,7 +371,11 @@
           "Open dashboard"
         ),
       }),
-      mk("inbox", P.leo, "Dinner Friday?", "Hey! A few of us are going to that new place on Columbia Road on Friday around 8. Fancy it? I can book for six.\n\nLeo", 2 * hr, { unread: true }),
+      mk("inbox", P.leo, "Re: Dinner Friday?", "", 2 * hr, {
+        unread: true,
+        html: '<div dir="ltr">Brilliant, booked for six at 8. See you there!</div><div dir="ltr"><br></div><div dir="ltr">Leo</div><div dir="ltr"><br><blockquote type="cite">On 27 Oct 2026, at 18:02, George Farrow-Green &lt;hello@inflite.ai&gt; wrote:<br><br></blockquote></div><blockquote type="cite"><div dir="ltr">Count me in! Can you book for six?</div><div dir="ltr"><br><blockquote type="cite">On 27 Oct 2026, at 17:40, Leo Martins wrote:<br><br>A few of us are going to that new place on Columbia Road on Friday around 8. Fancy it?</blockquote></div></blockquote>',
+      }),
+      mk("sent", ME, "Re: Dinner Friday?", "Count me in! Can you book for six?", 3 * hr, { to: [P.leo] }),
       mk("inbox", P.priya, "Re: Investor update draft", "This reads really well. Two small notes:\n\n1. Lead with the activation numbers — they're the headline.\n2. The roadmap slide can go in the appendix.\n\nHappy to jump on a call tomorrow if useful.\n\nPriya\n\n> On Monday, George wrote:\n> Here's the first draft of the October update…", 5 * hr, { starred: true }),
       mk("inbox", P.alex, "Photos from the weekend", "Here are a few favourites from Saturday. Full gallery link to follow once I've finished the edit!", 22 * hr, {
         attachments: [
@@ -410,6 +414,11 @@
       mk("archive", P.jo, "Brand guidelines v3", "Final guidelines attached — thanks for all the feedback!", 9 * dayMs),
       mk("trash", P.parcel, "Rate your delivery", "How did we do? Tap a star to rate your delivery.", 6 * dayMs),
     ];
+    // (Priya's reply and the message it answers are one conversation)
+    const priya = msgs.find((x) => x.subject === "Re: Investor update draft"), sentDraft = msgs.find((x) => x.subject === "Investor update draft");
+    if (priya && sentDraft) priya.threadId = sentDraft.threadId;
+    const leoIn = msgs.find((x) => x.folder === "inbox" && x.subject === "Re: Dinner Friday?"), leoOut = msgs.find((x) => x.folder === "sent" && x.subject === "Re: Dinner Friday?");
+    if (leoIn && leoOut) leoIn.threadId = leoOut.threadId;
     const contacts = Object.values(P);
     const delay = () => wait(140 + Math.random() * 160);
     const summary = ({ text, html, attachments, compose, ...m }) => m;
@@ -452,7 +461,8 @@
         await delay();
         const m = msgs.find((x) => x.id === id);
         if (!m) throw new ApiError(404, "Message not found");
-        return { ...m };
+        const thread = msgs.filter((x) => x.threadId === m.threadId && x.id !== m.id && !["trash", "drafts"].includes(x.folder)).map(summary);
+        return { ...m, thread };
       },
       async patch(id, p) {
         const m = msgs.find((x) => x.id === id);
@@ -945,6 +955,7 @@
       )
     );
     const unread = S.counts.inbox?.unread || 0;
+    if (S.layout === "pad") return setKids(els.mailboxesToolbar);
     setKids(els.mailboxesToolbar, 
       h("div.side", { style: { width: "48px" } }),
       h("div.status", h("b", fmtUpdated(S.updatedAt) || " "), unread ? `${unread} Unread` : ""),
@@ -1688,7 +1699,6 @@
       setKids(els.detailScroll);
       return;
     }
-    const isOutgoing = m.folder === "sent" || m.folder === "drafts";
     const people = [
       m.to.length && `To: ${m.to.map(displayName).join(", ")}`,
       m.cc?.length && `Cc: ${m.cc.map(displayName).join(", ")}`,
@@ -1699,7 +1709,7 @@
       { class: keepScroll ? null : "content-in" },
       h(
         "div.reader-head",
-        avatar(isOutgoing ? m.from : m.from, "lg"),
+        avatar(m.from, "lg"),
         h(
           "div.who",
           h("div.name", displayName(m.from)),
@@ -1712,7 +1722,8 @@
       h("div.reader-divider"),
       m.loading ? h("div.load-more", h("div.spinner")) : messageBody(m),
       !m.loading && m.attachments?.length ? attachmentsEl(m.attachments) : null,
-      !m.loading ? h("div.subtitle", { style: { padding: "0 20px 20px", fontSize: "13px" } }, fmtLongDate(m.date)) : null
+      !m.loading ? h("div.subtitle.reader-date", fmtLongDate(m.date)) : null,
+      !m.loading && m.thread?.length ? threadEl(m.thread) : null
     );
     setKids(els.detailScroll, content);
     if (keepScroll) els.detailScroll.scrollTop = top;
@@ -1720,34 +1731,138 @@
     els.detail.classList.toggle("scrolled", els.detailScroll.scrollTop > 28);
   }
 
+  // The rest of the conversation, newest first, each opening in place.
+  function threadEl(list) {
+    const items = list.slice().sort((a, b) => b.date - a.date);
+    return h(
+      "section.thread",
+      { "aria-label": "Conversation" },
+      h("div.thread-title", `${items.length} More in This Conversation`),
+      items.map((t) => {
+        const body = h("div.thread-body");
+        const card = h(
+          "div.thread-card",
+          h(
+            "button.thread-head",
+            {
+              type: "button",
+              "aria-expanded": "false",
+              onclick: async (e) => {
+                const btn = e.currentTarget;
+                const open = !card.classList.contains("open");
+                card.classList.toggle("open", open);
+                btn.setAttribute("aria-expanded", String(open));
+                if (!open || body.childElementCount) return;
+                setKids(body, h("div.load-more", h("div.spinner")));
+                try {
+                  const msg = await api.message(t.id);
+                  setKids(body, messageBody(msg), msg.attachments?.length ? attachmentsEl(msg.attachments) : null);
+                } catch (err) {
+                  setKids(body, h("div.mail-body", err.message));
+                }
+              },
+            },
+            avatar(t.from),
+            h(
+              "div.thread-meta",
+              h("div.thread-top", h("b", t.folder === "sent" ? "You" : displayName(t.from)), h("span", fmtListDate(t.date))),
+              h("div.thread-snippet", t.snippet || " ")
+            )
+          ),
+          body
+        );
+        return card;
+      })
+    );
+  }
+
+  // Quoted replies ("On … wrote:" and what follows) are folded away behind a button, as in Mail.
+  function quoteToggle(onToggle) {
+    let shown = false;
+    const btn = h(
+      "button.quote-toggle",
+      {
+        type: "button",
+        "aria-expanded": "false",
+        onclick: () => {
+          shown = !shown;
+          btn.setAttribute("aria-expanded", String(shown));
+          btn.lastChild.textContent = shown ? "Hide Quoted Text" : "Show Quoted Text";
+          onToggle(shown);
+        },
+      },
+      icon("more"),
+      h("span", "Show Quoted Text")
+    );
+    return btn;
+  }
+
+  const ATTRIBUTION = /^(on\b.+\bwrote:|-{2,}\s*original message\s*-{2,}|le .+ a écrit\s*:|am .+ schrieb .+:)\s*$/i;
+
   function messageBody(m) {
     if (m.html && m.html.trim()) return htmlFrame(m);
-    const lines = escapeHtml(m.text || "").split("\n");
-    const html = lines
-      .map((l) => (/^\s*&gt;/.test(l) ? `<span class="quote">${linkify(l.replace(/^\s*(&gt;\s?)+/, ""))}</span>` : linkify(l)))
-      .join("\n")
-      .replace(/<\/span>\n<span class="quote">/g, "\n");
-    return h("div.mail-body", { html: html || '<span style="color:var(--label-2)">This message has no content.</span>' });
+    const lines = (m.text || "").replace(/\r\n/g, "\n").split("\n");
+    let cut = lines.findIndex((l, i) => /^\s*>/.test(l) || (ATTRIBUTION.test(l.trim()) && lines.slice(i + 1).some((x) => /^\s*>/.test(x))));
+    if (cut > 0 && !lines.slice(0, cut).join("").trim()) cut = -1;
+    const render = (ls) =>
+      ls
+        .map((l) => {
+          const e = linkify(escapeHtml(l));
+          return /^\s*&gt;/.test(e) ? `<span class="quote">${e.replace(/^\s*(&gt;\s?)+/, "")}</span>` : e;
+        })
+        .join("\n")
+        .replace(/<\/span>\n<span class="quote">/g, "\n");
+    if (cut < 0) {
+      const html = render(lines).trim();
+      return h("div.mail-body", { html: html || '<span style="color:var(--label-2)">This message has no content.</span>' });
+    }
+    const quoted = h("div.mail-body.quoted", { html: render(lines.slice(cut)).trim(), hidden: true });
+    return [
+      h("div.mail-body", { html: render(lines.slice(0, cut)).trimEnd() }),
+      h("div.quote-row", quoteToggle((show) => (quoted.hidden = !show))),
+      quoted,
+    ];
   }
+
+  // Designed emails (their own backgrounds) keep a white card; plain ones take the app's own colours, dark mode too.
+  const DESIGNED = /\bbgcolor\s*=|background(-color|-image)?\s*:|<(table|td|body)[^>]*\sbackground\s*=/i;
 
   function htmlFrame(m) {
     const remotePattern = /(src|background)\s*=\s*["']?\s*https?:|url\(\s*["']?https?:/i;
     const hasRemote = remotePattern.test(m.html);
     const allowRemote = S.remoteImages || m._loadRemote;
+    const designed = DESIGNED.test(m.html);
     const csp = allowRemote
       ? "default-src 'none'; img-src 'self' data: https: http:; style-src 'unsafe-inline' https:; font-src data: https:; media-src https:"
       : "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; font-src data:";
+    const look = designed
+      ? `:root{color-scheme:light}
+html,body{margin:0;padding:0;background:#fff}
+body{padding:16px;font:15px/1.5 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#1c1c1e}
+blockquote{margin:8px 0;padding-left:12px;border-left:2px solid #c7c7cc;color:#555}
+a{color:#0a84ff}`
+      : `:root{color-scheme:light dark}
+html,body{margin:0;padding:0;background:transparent}
+body{padding:14px 20px 8px;font:17px/1.45 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#1c1c1e}
+blockquote{margin:8px 0;padding-left:12px;border-left:2px solid rgba(60,60,67,.3);color:rgba(60,60,67,.65)}
+a{color:#0a84ff}
+@media (prefers-color-scheme:dark){
+body{color:#f5f5f7}
+body *{color:inherit!important;background-color:transparent!important}
+blockquote{border-left-color:rgba(235,235,245,.3)!important;color:rgba(235,235,245,.62)!important}
+a,a *{color:#409cff!important}
+}`;
     const doc = `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <base target="_blank">
 <style>
-html,body{margin:0;padding:0;background:#fff}
-body{padding:16px;font:15px/1.5 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#1c1c1e;overflow-wrap:anywhere;-webkit-text-size-adjust:100%}
+${look}
+body{overflow-wrap:anywhere;-webkit-text-size-adjust:100%}
 img{max-width:100%;height:auto}
 pre{white-space:pre-wrap}
-blockquote{margin:8px 0;padding-left:12px;border-left:2px solid #c7c7cc;color:#555}
-a{color:#0a84ff}
+.inflite-q{display:none!important}
+.inflite-showq .inflite-q{display:revert!important}
 </style></head><body>${m.html.replace(/<script[\s\S]*?<\/script>/gi, "")}</body></html>`;
 
     const frame = h("iframe.mail-frame", {
@@ -1766,9 +1881,22 @@ a{color:#0a84ff}
       const sw = d.documentElement.scrollWidth;
       // Shrink wide newsletters to fit, like Mail does.
       if (sw > avail + 2) d.body.style.zoom = String(Math.max(0.4, avail / sw));
-      frame.style.height = `${Math.ceil(d.documentElement.scrollHeight * 1)}px`;
+      frame.style.height = "0px";
+      frame.style.height = `${Math.ceil(d.documentElement.scrollHeight)}px`;
     };
+
+    const toggleRow = h("div.quote-row", { hidden: true });
     frame.addEventListener("load", () => {
+      if (foldQuotes(frame.contentDocument)) {
+        setKids(
+          toggleRow,
+          quoteToggle((show) => {
+            frame.contentDocument?.documentElement.classList.toggle("inflite-showq", show);
+            fit();
+          })
+        );
+        toggleRow.hidden = false;
+      }
       fit();
       let n = 0;
       clearInterval(fitTimer);
@@ -1798,8 +1926,35 @@ a{color:#0a84ff}
         )
       );
     }
-    parts.push(h("div.mail-frame-wrap", frame));
+    parts.push(h(`div.mail-frame-wrap${designed ? "" : ".plain"}`, frame), toggleRow);
     return parts;
+  }
+
+  // Marks the quoted part of an HTML reply (Apple Mail, Gmail, Outlook) so it can be folded. → whether there was one
+  function foldQuotes(d) {
+    if (!d?.body) return false;
+    const marked = [];
+    const mark = (el) => {
+      el.classList.add("inflite-q");
+      marked.push(el);
+    };
+    const candidates = [...d.querySelectorAll('blockquote[type="cite"], .gmail_quote, blockquote')];
+    for (const el of candidates) if (!el.parentElement?.closest('blockquote, .gmail_quote, .inflite-q')) mark(el);
+    // Outlook: everything from its reply header on
+    const ol = d.querySelector('#divRplyFwdMsg, [id^="divRplyFwdMsg"], #appendonsend');
+    if (ol) for (let el = ol; el; el = el.nextElementSibling) mark(el);
+    // An "On … wrote:" line just before a quote
+    for (const el of marked.slice()) {
+      const prev = el.previousElementSibling;
+      if (prev && !prev.classList.contains("inflite-q") && ATTRIBUTION.test((prev.textContent || "").trim())) mark(prev);
+    }
+    if (!marked.length) return false;
+    // Never fold away the whole message (a forward, say).
+    if (!(d.body.innerText || "").trim()) {
+      marked.forEach((el) => el.classList.remove("inflite-q"));
+      return false;
+    }
+    return true;
   }
 
   function attachmentsEl(list) {
