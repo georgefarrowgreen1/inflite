@@ -22,3 +22,8 @@ npm run deploy
 
 The repo is connected to Cloudflare Workers Builds, so every push to the
 production branch is built and deployed by Cloudflare automatically.
+
+## Email client
+
+The `email/` folder contains inflite Mail, the mail client for `email.inflite.ai`.
+See [email/README.md](email/README.md) for setup.
