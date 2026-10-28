@@ -73,8 +73,8 @@ async function store(message, env, ctx, id, raw) {
     env.DB.prepare(
       `INSERT INTO messages (id, folder, thread_id, message_id, in_reply_to, refs, mailbox,
         from_name, from_email, to_json, cc_json, reply_to, subject, snippet, date, unread,
-        has_attachments, size, category)
-       VALUES (?1, 'inbox', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 1, ?15, ?16, ?17)`
+        has_attachments, size, category, unsub, unsub_post)
+       VALUES (?1, 'inbox', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 1, ?15, ?16, ?17, ?18, ?19)`
     ).bind(
       id,
       threadId,
@@ -92,7 +92,9 @@ async function store(message, env, ctx, id, raw) {
       date,
       visibleAttachments.length ? 1 : 0,
       message.rawSize || raw.byteLength,
-      category
+      category,
+      unsubOf(email),
+      /one-click/i.test(headerOf(email, "list-unsubscribe-post")) ? 1 : 0
     ),
     // (a new message brings its conversation back into the stream, snoozed or not)
     env.DB.prepare(`UPDATE messages SET snooze_until = NULL WHERE thread_id = ?1 AND snooze_until IS NOT NULL`).bind(threadId),
@@ -129,6 +131,14 @@ async function store(message, env, ctx, id, raw) {
 // People or Updates: a rule set for the sender wins; then a reply in a conversation you're part of is People; then the
 // signs bulk mail carries (an unsubscribe link, a list, "bulk" precedence, an automated sender) make it Updates.
 const BULK_SENDER = /^(no-?reply|do-?not-?reply|notifications?|newsletters?|news|updates?|alerts?|receipts?|billing|invoices?|mailer(-daemon)?|bounces?|marketing|digest)([+._-]|@)/i;
+
+const headerOf = (email, k) => (email.headers || []).find((h) => h.key === k)?.value || "";
+
+// (the ways to stop it the sender gives, kept as they were given, for Unsubscribe)
+function unsubOf(email) {
+  const v = headerOf(email, "list-unsubscribe").replace(/\s+/g, " ").trim();
+  return /<(https:|mailto:)/i.test(v) ? v.slice(0, 2000) : null;
+}
 
 async function classify(env, email, fromEmail, inConversation) {
   const rule = await env.DB.prepare(`SELECT category FROM sender_rules WHERE email = ?1`)

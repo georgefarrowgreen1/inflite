@@ -147,6 +147,8 @@ async function threadsFrom(env, groups, where, now) {
       trashed: latest?.folder === "trash",
       snoozeUntil: g.snooze > now ? g.snooze : null,
       mailbox: incoming?.mailbox || null,
+      // (the sender says how to stop: Unsubscribe can be offered)
+      canUnsub: !!msgs.find((m) => m.folder !== "sent" && m.unsub),
       date: g.latest ?? g.last,
       sort: g.last,
     };
@@ -366,4 +368,27 @@ export async function wakeSnoozed(env) {
   }
   await bumpVersion(env);
   return woken;
+}
+
+// Unsubscribe: how often you open a sender's mail, and how they say to stop
+export async function unsubInfo(env, threadId) {
+  const m = await env.DB.prepare(
+    `SELECT from_email, from_name, unsub, unsub_post, mailbox FROM messages WHERE thread_id = ?1 AND unsub IS NOT NULL ORDER BY date DESC LIMIT 1`
+  )
+    .bind(threadId)
+    .first();
+  if (!m) return null;
+  const { results } = await env.DB.prepare(`SELECT unread FROM messages WHERE from_email = ?1 AND folder != 'drafts' ORDER BY date DESC LIMIT 12`)
+    .bind(m.from_email)
+    .all();
+  const links = [...m.unsub.matchAll(/<([^>]+)>/g)].map((x) => x[1].trim());
+  return {
+    sender: { name: m.from_name || "", email: m.from_email },
+    opened: results.filter((r) => !r.unread).length,
+    of: results.length,
+    https: links.find((l) => /^https:\/\//i.test(l)) || null,
+    mailto: links.find((l) => /^mailto:/i.test(l)) || null,
+    oneClick: !!m.unsub_post,
+    mailbox: m.mailbox,
+  };
 }

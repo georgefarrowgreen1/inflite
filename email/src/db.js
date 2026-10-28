@@ -55,6 +55,9 @@ const MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS idx_messages_snooze ON messages(snooze_until)`,
   `CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)`,
+  // (how a sender says to stop: its List-Unsubscribe header, and whether it takes a one-click POST, RFC 8058)
+  `ALTER TABLE messages ADD COLUMN unsub TEXT`,
+  `ALTER TABLE messages ADD COLUMN unsub_post INTEGER`,
   // (mail from before categories: sorted by its sender's address alone)
   `UPDATE messages SET category = CASE
      WHEN folder IN ('sent', 'drafts') THEN 'people'
@@ -67,7 +70,7 @@ const MIGRATIONS = [
 ];
 
 // Bumped whenever SCHEMA or MIGRATIONS change, so a new isolate checks one row rather than running them all again.
-const SCHEMA_VERSION = "4";
+const SCHEMA_VERSION = "5";
 
 let ready;
 

@@ -11,7 +11,7 @@ import {
   cleanMessageId,
 } from "./db.js";
 import { receiveEmail, snippet } from "./receive.js";
-import { listThreads, getThread, threadAction, counts, wakeSnoozed } from "./threads.js";
+import { listThreads, getThread, threadAction, counts, wakeSnoozed, unsubInfo } from "./threads.js";
 import { vapid, pushAll, pushEndpointOk, peopleUnread } from "./push.js";
 
 export default {
@@ -125,6 +125,14 @@ async function route(request, env, ctx, url, view) {
   if (pathname === "/api/version" && method === "GET") return json({ v: await mailVersion(env) });
   if (pathname === "/api/me" && method === "GET") return me(env, view);
   if (pathname === "/api/photo" && method === "GET") return photo(env, request, url);
+  if ((m = pathname.match(/^\/api\/unsubscribe\/([\w-]+)$/))) {
+    if (method === "GET") {
+      const info = await unsubInfo(env, m[1]);
+      if (!info) throw new HttpError(404, "This sender doesn't say how to unsubscribe.");
+      return json({ sender: info.sender, opened: info.opened, of: info.of, how: info.oneClick && info.https ? "oneclick" : info.mailto ? "mail" : info.https ? "page" : null });
+    }
+    if (method === "POST") return unsubscribe(env, m[1]);
+  }
   if (pathname === "/api/counts" && method === "GET") return json(await counts(env));
   if (pathname === "/api/threads" && method === "GET") return json(await listThreads(env, url));
   if (pathname === "/api/threads/batch" && method === "POST") return threadBatch(env, await request.json());
@@ -164,6 +172,53 @@ async function route(request, env, ctx, url, view) {
   if (pathname === "/api/drafts" && method === "POST") return saveDraft(env, await request.json(), view);
 
   throw new HttpError(404, "Not found");
+}
+
+// Unsubscribe: by the sender's one-click address (RFC 8058) if it has one, else by the email it gives; failing both, the
+// page it gives, for Mail to open. Then everything from it that's waiting goes to Done.
+async function unsubscribe(env, threadId) {
+  const info = await unsubInfo(env, threadId);
+  if (!info) throw new HttpError(404, "This sender doesn't say how to unsubscribe.");
+  let done = false;
+  if (info.oneClick && info.https) {
+    try {
+      const u = new URL(info.https);
+      if (u.protocol === "https:" && !u.port && !u.username) {
+        const r = await fetch(u, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "List-Unsubscribe=One-Click",
+          redirect: "manual",
+          signal: AbortSignal.timeout(8000),
+        });
+        done = r.status < 400;
+      }
+    } catch (err) {
+      console.error("one-click unsubscribe", err?.message);
+    }
+  }
+  if (!done && info.mailto) {
+    const u = new URL(info.mailto);
+    const to = decodeURIComponent(u.pathname);
+    if (EMAIL_RE.test(to)) {
+      let from;
+      try {
+        from = checkFrom(env, info.mailbox);
+      } catch {
+        from = checkFrom(env, null);
+      }
+      await env.EMAIL.send({ from, to, subject: u.searchParams.get("subject") || "unsubscribe", text: u.searchParams.get("body") || "unsubscribe" });
+      done = true;
+    }
+  }
+  if (!done) {
+    if (info.https) return json({ ok: false, open: info.https });
+    throw new HttpError(502, "Couldn't unsubscribe. Try the link in one of their emails.");
+  }
+  await env.DB.prepare(`UPDATE messages SET folder = 'archive', snooze_until = NULL WHERE from_email = ?1 AND folder = 'inbox'`)
+    .bind(info.sender.email)
+    .run();
+  return json({ ok: true });
 }
 
 // A phone or browser turning notifications on (its subscription from PushManager.subscribe)

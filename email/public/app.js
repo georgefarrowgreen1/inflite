@@ -318,6 +318,8 @@
       threadBatch: (body) => req("POST", "/api/threads/batch", body),
       emptyTrash: () => req("POST", "/api/trash/empty", {}),
       pushKey: () => req("GET", "/api/push/key"),
+      unsubInfo: (id) => req("GET", `/api/unsubscribe/${id}`),
+      unsubscribe: (id) => req("POST", `/api/unsubscribe/${id}`, {}),
       pushSubscribe: (sub) => req("POST", "/api/push/subscribe", sub),
       pushUnsubscribe: (endpoint) => req("POST", "/api/push/unsubscribe", { endpoint }),
       message: (id) => req("GET", `/api/messages/${id}`),
@@ -484,6 +486,7 @@
         trashed: latest.folder === "trash",
         snoozeUntil: snooze > now ? snooze : null,
         mailbox: incoming.mailbox,
+        canUnsub: incoming.category === "updates" && /byte|github|stripe|parcel|cloudflare/i.test(incoming.from.email || ""),
         date: latest.date,
         messages: ms.map(summary),
       };
@@ -521,6 +524,17 @@
       },
       async version() {
         return { v: String(Date.now()) };
+      },
+      async unsubInfo(id) {
+        const t = threadOf(id, threadMsgs(id));
+        const all = msgs.filter((m) => m.from.email === t.from.email);
+        return { sender: t.from, opened: all.filter((m) => !m.unread).length, of: all.length, how: "oneclick" };
+      },
+      async unsubscribe(id) {
+        await delay();
+        const from = threadOf(id, threadMsgs(id)).from.email;
+        for (const m of msgs) if (m.from.email === from && m.folder === "inbox") m.folder = "archive";
+        return { ok: true };
       },
       async counts() {
         const out = { people: { threads: 0, unread: 0 }, updates: { threads: 0, unread: 0 }, flagged: 0, snoozed: 0, done: 0 };
@@ -1763,7 +1777,15 @@
             ? h("span.date.later", icon("clock"), fmtWhen(t.snoozeUntil))
             : h("span.date", fmtListDate(t.date), icon("chevronRight"))
         ),
-        h("div.subject", t.hasAttachments ? icon("clip") : null, t.subject),
+        h(
+          "div.subject",
+          t.hasAttachments ? icon("clip") : null,
+          h("span.subj-t", t.subject),
+          // (in Updates, a sender that says how to stop)
+          t.canUnsub && t.category === "updates" && !t.done && !t.trashed && !S.query
+            ? h("button.unsub-btn", { type: "button", "aria-label": `Unsubscribe from ${displayName(t.from)}`, onclick: (e) => (e.stopPropagation(), unsubSheet(t)) }, "Unsubscribe")
+            : null
+        ),
         h("div.preview", t.latest?.folder === "sent" ? h("span.you", "You: ") : null, t.latest?.snippet || " ")
       )
     );
@@ -2164,6 +2186,59 @@
   function rowMoreMenu(anchor, t) {
     showMenu(anchor, rowItems(t, anchor));
     closeOpenSwipe();
+  }
+
+  // Unsubscribe, asked first, with how often you actually open them
+  async function unsubSheet(t) {
+    closeMenu(true);
+    let info;
+    try {
+      info = await api.unsubInfo(t.id);
+    } catch (err) {
+      return toast(err.message, { error: true });
+    }
+    const who = displayName(info.sender) || info.sender.email;
+    const layer = h("div.menu-layer.center.unsub-layer");
+    const close = () => closeMenu();
+    const go = h("button.pbtn.danger-btn", { type: "button" }, "Unsubscribe");
+    go.addEventListener("click", async () => {
+      go.disabled = true;
+      go.textContent = "Unsubscribing…";
+      try {
+        const r = await api.unsubscribe(t.id);
+        close();
+        if (r.open) {
+          window.open(r.open, "_blank", "noopener");
+          return toast(`Finish on ${who}'s page`, { icon: "news" });
+        }
+        toast(`Unsubscribed from ${who}`, { icon: "check" });
+        refreshCounts();
+        loadList({ quiet: true });
+      } catch (err) {
+        go.disabled = false;
+        go.textContent = "Unsubscribe";
+        toast(err.message, { error: true });
+      }
+    });
+    const card = h(
+      "div.menu.unsub-card",
+      { role: "dialog", "aria-label": `Unsubscribe from ${who}` },
+      avatar(info.sender, "unsub-av"),
+      h("h3", `Unsubscribe from ${who}?`),
+      h(
+        "p",
+        info.of > 1 ? `You've opened ${info.opened} of their last ${info.of} emails. ` : "",
+        info.how === "page" ? "Mail will open their page to finish." : "Mail will ask them to stop, and move what's here to Done."
+      ),
+      go,
+      h("button.pbtn.quiet-btn", { type: "button", onclick: close }, "Cancel")
+    );
+    layer.addEventListener("pointerdown", (e) => e.target === layer && close());
+    layer.append(card);
+    document.body.append(layer);
+    menuState = { layer, menu: card, opener: document.activeElement };
+    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add("open")));
+    go.focus({ preventScroll: true });
   }
 
   // Pressed and held: the row lifts out of the list, the rest dims, and its menu opens under it
