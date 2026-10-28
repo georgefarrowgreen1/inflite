@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.25";
+  const BUILD = "1.26";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1605,7 +1605,9 @@ const IFL = (() => {
       else close();
     };
 
-    const backBtn = (label) => h("button.set-link.set-back", { type: "button", onclick: pop }, icon("chevronLeft"), label);
+    // (InFlite's Settings sheet, the same in every app: a round ‹ back on a page inside, a round ✕ to close on every one)
+    const backBtn = (label) => h("button.ifs-btn", { type: "button", "aria-label": `Back to ${label}`, onclick: pop }, icon("chevronLeft"));
+    const closeBtn = () => h("button.ifs-btn", { type: "button", "aria-label": "Close", onclick: close }, icon("x"));
     const group = (...rows) => h("div.set-group", rows);
     const k = (text) => h("div.set-k", text);
     const hint = (text) => h("p.set-hint", text);
@@ -1672,7 +1674,7 @@ const IFL = (() => {
 
     // The first page: the addresses, other addresses, the signature
     function mainView() {
-      const done = h("button.set-link.strong", { type: "button", onclick: close }, "Done");
+      const done = closeBtn();
       if (!data)
         return {
           title: "Settings",
@@ -1697,7 +1699,7 @@ const IFL = (() => {
           ),
       });
       return {
-        title: "",
+        title: "Settings",
         right: done,
         body: [
           h("div.set-head", h("img", { src: "/icon-180.png", alt: "", width: 64, height: 64 }), h("b", "Mail"), h("span", "Your addresses and how mail arrives")),
@@ -1764,7 +1766,7 @@ const IFL = (() => {
     // An address's own page
     function addressView(email) {
       const a = data?.addresses.find((x) => x.email === email);
-      if (!a) return { title: "", left: backBtn("Settings"), body: hint("That address has gone.") };
+      if (!a) return { title: "", left: backBtn("Settings"), right: closeBtn(), body: hint("That address has gone.") };
       const nameInput = h("input.set-input", {
         type: "text",
         value: a.name,
@@ -1779,6 +1781,7 @@ const IFL = (() => {
       return {
         title: `${email.split("@")[0]}@`,
         left: backBtn("Settings"),
+        right: closeBtn(),
         body: [
           h(
             "div.set-head",
@@ -1968,7 +1971,7 @@ const IFL = (() => {
           toast(err.message, { error: true });
         }
       };
-      return { title: "Signature", left: backBtn("Settings"), body: [group(area), hint("Added under new messages and replies, from every address that hasn’t one of its own.")] };
+      return { title: "Signature", left: backBtn("Settings"), right: closeBtn(), body: [group(area), hint("Added under new messages and replies, from every address that hasn’t one of its own.")] };
     }
 
     function close() {

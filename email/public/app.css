@@ -10,7 +10,7 @@
     --text: #f5f6fb; --text-2: rgba(235, 238, 250, 0.72); --text-3: rgba(235, 238, 250, 0.56);
     --glass: rgba(34, 40, 66, 0.5); --glass-strong: rgba(28, 33, 56, 0.86); --glass-ctl: rgba(255, 255, 255, 0.1); --sheet: rgba(24, 28, 50, 0.94);
     --line: rgba(255, 255, 255, 0.1); --press: rgba(255, 255, 255, 0.07); --field: rgba(0, 0, 0, 0.24);
-    --tint: #5aa9ff; --tint-deep: #2a6ae6; --tint-text: #8cc2ff; --danger: #ff6a5f; --good: #4fdc8e; --warn: #ffbd4a; --flag: #ffa53a;
+    --ift-tint: #3fd2b8; --tint: #5aa9ff; --tint-deep: #2a6ae6; --tint-text: #8cc2ff; --danger: #ff6a5f; --good: #4fdc8e; --warn: #ffbd4a; --flag: #ffa53a;
     --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.42), inset 0 -1px 0.5px rgba(255, 255, 255, 0.08), inset 0 0 22px rgba(255, 255, 255, 0.03);
     --lift: 0 0 0 0.5px rgba(0, 0, 0, 0.4), 0 22px 44px -18px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.16);
     --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 46%);
@@ -67,7 +67,7 @@
     --text: #0d1020; --text-2: rgba(20, 24, 44, 0.66); --text-3: rgba(20, 24, 44, 0.62);
     --glass: rgba(255, 255, 255, 0.58); --glass-strong: rgba(250, 251, 255, 0.9); --glass-ctl: rgba(20, 30, 60, 0.06); --sheet: rgba(246, 247, 252, 0.95);
     --line: rgba(20, 24, 44, 0.09); --press: rgba(20, 24, 44, 0.05); --field: rgba(20, 30, 60, 0.06);
-    --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
+    --ift-tint: #0f8f7b; --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
     --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.95), inset 0 -1px 0.5px rgba(255, 255, 255, 0.4), inset 0 0 22px rgba(255, 255, 255, 0.3);
     --lift: 0 0 0 0.5px rgba(20, 30, 60, 0.08), 0 22px 44px -20px rgba(40, 50, 100, 0.28), 0 2px 6px rgba(40, 50, 100, 0.06);
     --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%);
@@ -83,7 +83,7 @@
     --text: #0d1020; --text-2: rgba(20, 24, 44, 0.66); --text-3: rgba(20, 24, 44, 0.62);
     --glass: rgba(255, 255, 255, 0.58); --glass-strong: rgba(250, 251, 255, 0.9); --glass-ctl: rgba(20, 30, 60, 0.06); --sheet: rgba(246, 247, 252, 0.95);
     --line: rgba(20, 24, 44, 0.09); --press: rgba(20, 24, 44, 0.05); --field: rgba(20, 30, 60, 0.06);
-    --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
+    --ift-tint: #0f8f7b; --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
     --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.95), inset 0 -1px 0.5px rgba(255, 255, 255, 0.4), inset 0 0 22px rgba(255, 255, 255, 0.3);
     --lift: 0 0 0 0.5px rgba(20, 30, 60, 0.08), 0 22px 44px -20px rgba(40, 50, 100, 0.28), 0 2px 6px rgba(40, 50, 100, 0.06);
     --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%);
@@ -4029,15 +4029,16 @@ textarea:focus-visible {
 }
 
 
-/* ---------- The tab bar, and search beside it ---------- */
+/* ---------- The tab bar, and search beside it (InFlite's tab bar: its sizes, --ift-*, from the shared copy at the
+   foot; the tab you're on and its counts in Mail's teal) ---------- */
 
 .toolbar .tabs {
   position: relative;
   flex: 1 1 auto;
-  max-width: 420px;
-  height: 62px;
-  padding: 4px;
-  border-radius: 31px;
+  max-width: var(--ift-max);
+  height: var(--ift-h);
+  padding: var(--ift-pad);
+  border-radius: calc(var(--ift-h) / 2);
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   overflow: hidden;
@@ -4047,13 +4048,12 @@ textarea:focus-visible {
 
 .tab-pill {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  width: calc((100% - 8px) / 4);
-  border-radius: 27px;
-  background: var(--press);
-  box-shadow: inset 0 0 0 0.5px var(--line), inset 0 1px 0.5px rgba(255, 255, 255, 0.18);
+  top: var(--ift-pad);
+  bottom: var(--ift-pad);
+  left: var(--ift-pad);
+  width: calc((100% - 2 * var(--ift-pad)) / 4);
+  border-radius: calc(var(--ift-h) / 2 - var(--ift-pad));
+  background: color-mix(in srgb, var(--ift-tint) var(--ift-pill), transparent);
   transition: transform 0.5s var(--spring), opacity 0.2s;
 }
 
@@ -4063,9 +4063,9 @@ textarea:focus-visible {
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 1px;
+  gap: 3px;
   color: var(--label-2);
-  font-size: 10.5px;
+  font-size: var(--ift-label);
   font-weight: 600;
   letter-spacing: 0.01em;
   transition: color 0.2s, transform 0.4s var(--spring);
@@ -4081,35 +4081,32 @@ textarea:focus-visible {
 }
 
 .tab.on {
-  color: var(--tint-text);
+  color: var(--ift-tint);
 }
 
 .tab-n {
   position: absolute;
   top: 5px;
   left: calc(50% + 6px);
-  min-width: 17px;
-  height: 17px;
+  min-width: 18px;
+  height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: var(--tint);
+  background: var(--ift-tint);
+  box-shadow: 0 0 0 2px var(--sheet);
   color: #fff;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
-  line-height: 17px;
+  line-height: 18px;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
-.tab[data-k="later"] .tab-n {
-  background: var(--purple);
-}
-
 /* search: a round button that opens into a field */
 .toolbar .search {
-  flex: 0 0 62px;
-  height: 62px;
-  border-radius: 31px;
+  flex: 0 0 var(--ift-h);
+  height: var(--ift-h);
+  border-radius: calc(var(--ift-h) / 2);
   padding: 0 20px;
   overflow: hidden;
   cursor: text;
@@ -4140,8 +4137,8 @@ textarea:focus-visible {
 }
 
 .toolbar.searching .tabs {
-  flex: 0 0 62px;
-  max-width: 62px;
+  flex: 0 0 var(--ift-h);
+  max-width: var(--ift-h);
   grid-template-columns: 1fr;
 }
 
@@ -5938,4 +5935,21 @@ button.set-row:active {
 .ifh-act svg { width: 22px; height: 22px; stroke-width: 2; }
 .ifh-act[disabled] { opacity: 0.4; }
 @media (prefers-reduced-motion: reduce) { .ifh-me, .ifh-act { transition: none; } }
+
+/* InFlite's tab bar, the same in every app with tabs (Chat, Mail, Fitness): each app's bar (its capsule, the pill that
+   slides to the tab you're on, its tabs and their counts, and at most one round button beside it, Search) takes its
+   sizes from these, and its colour from --ift-tint, set by the app: the tab you're on in a soft pill of it, and its counts */
+:root { --ift-h: 64px; --ift-pad: 5px; --ift-gap: 10px; --ift-max: 440px; --ift-label: 11px; --ift-icon: 24px; --ift-pill: 15%; }
+
+/* InFlite's Settings sheet, the same in every app: a round ‹ to go back on a page inside, a round ✕ to close on every one
+   (.ifs-btn), and the first page opening on the app (.ifs-hero: its icon, its name, a line about it) */
+.ifs-btn { flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  color: inherit; background: rgba(120, 120, 128, 0.2); -webkit-tap-highlight-color: transparent; transition: transform 0.2s; }
+.ifs-btn svg { width: 18px; height: 18px; stroke-width: 2.4; }
+.ifs-btn:active { transform: scale(0.9); }
+.ifs-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.ifs-hero { display: grid; justify-items: center; gap: 4px; padding: 4px 0 16px; text-align: center; }
+.ifs-hero img { width: 64px; height: 64px; border-radius: 15px; margin-bottom: 6px; box-shadow: 0 10px 22px -10px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.15); }
+.ifs-hero b { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.ifs-hero span { font-size: 14px; opacity: 0.62; }
 /* ==== end of InFlite's menu ==== */
