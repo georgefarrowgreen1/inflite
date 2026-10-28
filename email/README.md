@@ -15,9 +15,10 @@ Cloudflare Email Sending.
   added to the Home Screen. The account-side code is `functions/_mailapp.js` in the georgefarrowgreen repo.
 - **One stream, not folders:** every conversation lands in one stream, split into **People** and
   **Updates** as it arrives (by a sender rule you set, or by the signs bulk mail carries: an
-  unsubscribe link, a mailing list, no-reply senders). One row of lenses (People, Updates, Later,
-  Flagged, Done) sits under the title, which is the lens you're in; a button by your avatar shows
-  only unread mail, and the More menu narrows to one @inflite.ai address. Conversations are grouped
+  unsubscribe link, a mailing list, no-reply senders). A floating tab bar at the foot of the screen
+  holds People, Updates, Later and Done, with search beside it (it opens into a field); the title is
+  the tab you're on, and tapping it shows only Unread, Flagged or With Attachments, narrows to one
+  @inflite.ai address, or opens the Trash. Conversations are grouped
   by day, Updates read as a one-line digest, and clearing People shows what's still around
   elsewhere. Swipe right for **Done**; a new reply brings a conversation back. Search takes
   `from:`, `to:`, `has:attachment`, `is:unread`, `is:flagged`, `is:done`, `before:` and `after:`.

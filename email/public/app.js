@@ -688,7 +688,7 @@
     counts: {},
     // (where you are: a lens, and whether only unread mail shows; the view and category the server is asked for follow)
     lens: "people",
-    unreadOnly: false,
+    filter: "all",
     view: "all",
     pushOn: false,
     category: "people",
@@ -1031,7 +1031,6 @@
     els.listNavTitle = h("div.nav-title");
     els.listTitle = h("div.large-title");
     els.listSubtitle = h("div.subtitle");
-    els.rail = h("div.rail", { role: "tablist", "aria-label": "Lenses" });
     els.searchHelp = h("div.search-help", { hidden: true });
     els.rows = h("div.rows", { role: "list" });
     els.listFooter = h("div");
@@ -1040,7 +1039,6 @@
       h("div.ptr", h("div.spinner")),
       els.listTitle,
       els.listSubtitle,
-      els.rail,
       els.searchHelp,
       els.rows,
       els.listFooter
@@ -1093,12 +1091,7 @@
         avatar({ name: me.displayName, email: me.defaultFrom, me: true }, "sm")
       ),
       h("div.spacer"),
-      gbtn("filter", "Show Only Unread", toggleUnread, {
-        class: S.unreadOnly ? "on" : null,
-        "aria-pressed": String(S.unreadOnly),
-        hidden: !(S.lens === "people" || S.lens === "updates") || !!S.query,
-      }),
-      gbtn("more", "More", (e) => listMenu(e.currentTarget))
+      gbtn("compose", "New Message", () => openCompose())
     );
     renderDetailChrome();
   }
@@ -1211,8 +1204,12 @@
     showGate("signin");
   }
 
+  // From the title: what shows (in People and Updates), then everything else the list can do
   function listMenu(anchor) {
     const items = [];
+    if (S.lens === "people" || S.lens === "updates")
+      items.push(...FILTERS.map((f) => ({ label: f.label, checked: S.filter === f.k, action: () => setFilter(f.k) })), "-");
+    if (S.lens === "flagged" || S.lens === "trash") items.push({ label: "Back to People", icon: "person", action: () => setLens("people") }, "-");
     if (S.view !== "trash")
       items.push({ label: "Mark All as Read", icon: "envelopeOpen", disabled: !S.threads.some((t) => t.unread), action: markAllRead });
     // (each address mail has come to, once there's more than one: only its mail)
@@ -1228,8 +1225,7 @@
         }))
       );
     if (S.view === "trash") {
-      items.push({ label: "Back to Inbox", icon: "inbox", action: () => setLens("people") });
-      items.push("-", { label: "Empty Trash", icon: "trash", destructive: true, disabled: !S.threads.length, action: () => emptyTrash(anchor) });
+      items.push({ label: "Empty Trash", icon: "trash", destructive: true, disabled: !S.threads.length, action: () => emptyTrash(anchor) });
     } else {
       items.push("-", { label: S.counts.trash ? `Trash (${S.counts.trash})` : "Trash", icon: "trash", action: () => setView("trash") });
     }
@@ -1246,19 +1242,37 @@
     { k: "people", label: "People", icon: "person" },
     { k: "updates", label: "Updates", icon: "news" },
     { k: "later", label: "Later", icon: "clock" },
-    { k: "flagged", label: "Flagged", icon: "flag" },
     { k: "done", label: "Done", icon: "check" },
+  ];
+  // (in People and Updates, from the title: only these)
+  const FILTERS = [
+    { k: "all", label: "All Mail" },
+    { k: "unread", label: "Unread", icon: "envelopeBadge" },
+    { k: "flagged", label: "Flagged", icon: "flag" },
+    { k: "attachments", label: "With Attachments", icon: "clip" },
   ];
   const lensCount = (k) =>
     k === "people" || k === "updates" ? S.counts[k]?.unread || 0 : k === "later" ? S.counts.snoozed || 0 : k === "flagged" ? S.counts.flagged || 0 : 0;
 
-  const listTitle = () => (S.query ? "Search" : S.lens === "trash" ? "Trash" : LENSES.find((l) => l.k === S.lens).label);
+  const listTitle = () =>
+    S.query ? "Search" : S.lens === "trash" ? "Trash" : S.lens === "flagged" ? "Flagged" : LENSES.find((l) => l.k === S.lens).label;
 
   function renderListChrome() {
     if (!els.listTitle) return;
     const title = listTitle();
     const n = !S.query && (S.lens === "people" || S.lens === "updates") ? lensCount(S.lens) : 0;
-    setKids(els.listTitle, h("span", title), n ? h("span.title-n", n) : null);
+    setKids(
+      els.listTitle,
+      S.query
+        ? h("span", title)
+        : h(
+            "button.title-btn",
+            { type: "button", "aria-haspopup": "menu", "aria-label": `${title}, filters and more`, onclick: (e) => listMenu(e.currentTarget) },
+            h("span", title),
+            icon("chevronDown", "title-chev")
+          ),
+      n ? h("span.title-n", n) : null
+    );
     const about = {
       people: [n && `${n} unread`, fmtUpdated(S.updatedAt)],
       updates: ["Newsletters, receipts and notifications"],
@@ -1270,43 +1284,17 @@
     const bits = S.query ? [`${S.threads.length} conversation${S.threads.length === 1 ? "" : "s"}`] : about;
     setKids(
       els.listSubtitle,
-      S.unreadOnly && !S.query ? h("button.sub-tag", { type: "button", onclick: toggleUnread, "aria-label": "Show all, not only unread" }, "Unread only", icon("x")) : null,
+      S.filter !== "all" && !S.query
+        ? h("button.sub-tag", { type: "button", onclick: () => setFilter("all"), "aria-label": "Show all mail" }, FILTERS.find((f) => f.k === S.filter).label, icon("x"))
+        : null,
       S.address && !S.query
         ? h("button.sub-tag", { type: "button", onclick: () => setAddress(null), "aria-label": `Show mail to every address, not only ${S.address}` }, `to ${S.address.split("@")[0]}@`, icon("x"))
         : null,
       h("span", bits.filter(Boolean).join(" · ") || " ")
     );
     setKids(els.listNavTitle, title, n ? h("small", `${n} unread`) : null);
-    renderRail();
+    renderTabs();
     renderSearchHelp();
-  }
-
-  function renderRail() {
-    els.rail.hidden = !!S.query;
-    if (S.query) return;
-    setKids(
-      els.rail,
-      LENSES.map((l) => {
-        const n = lensCount(l.k);
-        const on = S.lens === l.k;
-        return h(
-          "button.lens",
-          {
-            type: "button",
-            role: "tab",
-            "data-k": l.k,
-            class: on ? "on" : null,
-            "aria-selected": String(on),
-            "aria-label": `${l.label}${n ? `, ${n}` : ""}`,
-            title: l.label,
-            onclick: () => setLens(l.k),
-          },
-          icon(l.icon),
-          h("span.lbl", l.label),
-          n ? h("span.ct", n > 99 ? "99+" : n) : null
-        );
-      })
-    );
   }
 
   const OPERATORS = ["from:", "to:", "has:attachment", "is:unread", "is:flagged", "is:done", "before:", "after:"];
@@ -1351,10 +1339,12 @@
     runSearch(els.searchInput.value);
   }
 
+  // The foot of the list: the tabs (People, Updates, Later, Done), and search beside them, which opens into a field
+  // while the tabs fold down to the one you're on (as iOS 26 apps have it)
   function buildListToolbar() {
     els.searchInput = h("input", {
       type: "search",
-      placeholder: "Search",
+      placeholder: "Search mail",
       enterkeyhint: "search",
       autocomplete: "off",
       autocorrect: "off",
@@ -1364,13 +1354,55 @@
         renderSearchHelp();
         searchSoon(els.searchInput.value);
       },
-      onfocus: () => setSearching(true),
+      onfocus: () => S.searching || setSearching(true),
       onkeydown: (e) => e.key === "Escape" && cancelSearch(),
     });
-    els.searchCap = h("label.search.glass", icon("search"), els.searchInput);
-    els.cancelSearchBtn = gbtn("x", "Cancel Search", cancelSearch, { class: "side show-on-search" });
-    els.composeBtn = gbtn("compose", "New Message", () => openCompose(), { class: "side hide-on-search" });
-    setKids(els.listToolbar, els.searchCap, els.composeBtn, els.cancelSearchBtn);
+    els.tabs = h("div.tabs.glass", { role: "tablist", "aria-label": "Mail" });
+    els.searchCap = h(
+      "div.search.glass",
+      {
+        onclick: (e) => {
+          if (e.target.closest(".search-x")) return;
+          // (opened and focused within the tap, so the keyboard comes up on iPhone)
+          if (!S.searching) setSearching(true);
+          els.searchInput.focus();
+        },
+      },
+      icon("search"),
+      els.searchInput,
+      h("button.search-x", { type: "button", "aria-label": "Cancel Search", onclick: cancelSearch }, icon("x"))
+    );
+    setKids(els.listToolbar, els.tabs, els.searchCap);
+    renderTabs();
+  }
+
+  function renderTabs() {
+    if (!els.tabs) return;
+    const i = LENSES.findIndex((l) => l.k === S.lens);
+    setKids(
+      els.tabs,
+      h("span.tab-pill", { "aria-hidden": "true", style: { transform: `translateX(${Math.max(0, i) * 100}%)`, opacity: i < 0 ? "0" : "" } }),
+      LENSES.map((l) => {
+        const n = lensCount(l.k);
+        const on = S.lens === l.k;
+        return h(
+          "button.tab",
+          {
+            type: "button",
+            role: "tab",
+            "data-k": l.k,
+            class: on ? "on" : null,
+            "aria-selected": String(on),
+            "aria-label": `${l.label}${n ? `, ${n}` : ""}`,
+            // (the one you're on: back to the top)
+            onclick: () => (on && !S.query ? els.listScroll.scrollTo({ top: 0, behavior: "smooth" }) : setLens(l.k)),
+          },
+          icon(l.icon),
+          h("span.tab-l", l.label),
+          n ? h("span.tab-n", n > 99 ? "99+" : n) : null
+        );
+      })
+    );
   }
 
   function setSearching(on) {
@@ -1413,7 +1445,7 @@
   // (what the server is asked for, from where you are)
   function applyLens() {
     const stream = S.lens === "people" || S.lens === "updates";
-    S.view = stream ? (S.unreadOnly ? "unread" : "all") : S.lens;
+    S.view = stream ? S.filter : S.lens;
     S.category = stream ? S.lens : null;
   }
 
@@ -1421,14 +1453,16 @@
     if (S.query) cancelSearch();
     if (k === S.lens && !S.query) return;
     S.lens = k;
-    if (k !== "trash") store.set("lens", k);
+    S.filter = "all";
+    if (k !== "trash" && k !== "flagged") store.set("lens", k);
     applyLens();
     renderNavButtons();
     resetList();
   }
 
-  function toggleUnread() {
-    S.unreadOnly = !S.unreadOnly;
+  function setFilter(f) {
+    if (f === S.filter) return;
+    S.filter = f;
     applyLens();
     renderNavButtons();
     resetList();
@@ -1568,9 +1602,9 @@
 
   function emptyEl() {
     if (S.query) return h("div.empty.content-in", icon("search"), h("b", "No Results"), `Nothing matches “${S.query}”.`);
-    if (S.lens === "people" && !S.unreadOnly && !S.address) return caughtUpEl();
-    const [ic, said, more] = S.unreadOnly
-      ? ["envelopeOpen", "No unread mail here"]
+    if (S.lens === "people" && S.filter === "all" && !S.address) return caughtUpEl();
+    const [ic, said, more] = S.filter !== "all" && (S.lens === "people" || S.lens === "updates")
+      ? ["envelopeOpen", `Nothing ${S.filter === "unread" ? "unread" : S.filter === "flagged" ? "flagged" : "with attachments"} here`]
       : S.address
         ? ["inbox", `Nothing waiting for ${S.address}`]
         : {
@@ -2307,11 +2341,8 @@
             gbtn("trash", t.trashed ? "Delete Forever" : "Move to Trash", (e) => (t.trashed ? confirmDelete(e.currentTarget, t.id) : act(t.id, "trash"))),
             h("div.spacer"),
             gbtn("reply", "Reply", (e) => replyMenu(e.currentTarget), { disabled: !!t.loading }),
-            gbtn("compose", "New Message", () => openCompose()),
           ]
-        : S.layout === "pad"
-          ? [h("div.spacer"), gbtn("compose", "New Message", () => openCompose())]
-          : [])
+        : [])
     );
   }
 
@@ -3664,7 +3695,7 @@ pre{white-space:pre-wrap}
     if (!S.query) await loadList({ quiet: true });
     const after = S.counts.people?.unread || 0;
     // (new conversations in People, while looking elsewhere)
-    if (after > before && (S.lens !== "people" || S.unreadOnly)) toast(`${after - before} New in People`, { icon: "person" });
+    if (after > before && (S.lens !== "people" || S.filter !== "all")) toast(`${after - before} New in People`, { icon: "person" });
   }
 
   document.addEventListener("visibilitychange", () => {
