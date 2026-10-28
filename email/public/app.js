@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.11";
+  const BUILD = "1.12";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -1270,7 +1270,7 @@
     });
     const card = h(
       "button.p-card",
-      { type: "button", "aria-label": `${name || "Your account"}: your inflite account`, onclick: () => accountOrigin && location.assign(`${accountOrigin}/`) },
+      { type: "button", "aria-label": `${name || "Your account"}: your InFlite account`, onclick: () => accountOrigin && location.assign(`${accountOrigin}/`) },
       avatar({ name, email: me.defaultFrom, me: true }, "p-photo"),
       h(
         "span.p-who",
