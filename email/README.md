@@ -24,6 +24,10 @@ Cloudflare Email Sending.
   `from:`, `to:`, `file:`, `has:attachment`, `has:image`, `has:pdf`, `is:unread`, `is:flagged`,
   `is:done`, `before:` and `after:`; plain words match file names too. Before you type it shows
   your recent searches, and as you type a name it suggests the people you write to.
+- **Your photo** opens InFlite's menu, the same one every InFlite app has (its copy is between the marks in
+  `public/app.js` and `public/app.css`, from the georgefarrowgreen repo's `.tools/inflite/menu.js` and `menu.css`, by
+  `node .tools/iflmenu.mjs ../inflite/email/public`; change it there): you (to your account), your apps, Mail's
+  Notifications, Remote Images and Settings, and Mail's version with Sign Out. After an update, it says so once.
 - **Settings** (in the profile menu, or the settings button on Mail's card on the account page, which opens
   `email.inflite.ai/#settings`): your addresses on the domain, each with the name it's sent under, a colour, where its
   mail goes (Auto, People or Updates) and whether it notifies; a new one is just a name, as Email Routing's catch-all
