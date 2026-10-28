@@ -14,7 +14,7 @@ const cleanSubject = (s) => (s || "").replace(/^((re|fwd?|aw|sv)\s*:\s*)+/i, "")
 // anything else matched against the subject, preview and people.
 export function searchCondition(q, bind) {
   const conds = [];
-  const tokens = q.match(/[\w]+:("[^"]*"|\S+)|"[^"]*"|\S+/g) || [];
+  const tokens = (q.match(/[\w]+:("[^"]*"|\S+)|"[^"]*"|\S+/g) || []).slice(0, 10);
   const like = (v) => bind(`%${v.replace(/^"|"$/g, "").replace(/[%_]/g, "").toLowerCase()}%`);
   for (const t of tokens) {
     const m = t.match(/^(from|to|has|is|before|after):(.+)$/i);
@@ -65,7 +65,7 @@ export async function listThreads(env, url) {
   const address = (url.searchParams.get("address") || "").trim().toLowerCase() || null;
   const q = (url.searchParams.get("q") || "").trim();
   const before = Number(url.searchParams.get("before")) || null;
-  const limit = Math.min(Number(url.searchParams.get("limit")) || 40, 100);
+  const limit = Math.max(1, Math.min(Math.floor(Number(url.searchParams.get("limit"))) || 40, 100));
   const now = Date.now();
   await wakeSnoozed(env);
 

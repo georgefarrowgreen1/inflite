@@ -4,7 +4,7 @@
 // (The account side is functions/_mailapp.js in the georgefarrowgreen repo.)
 
 const COOKIE_RE = /(?:^|;\s*)((?:__Secure-)?account=[A-Za-z0-9_-]{20,100})(?=;|$)/g;
-const CHECK_TTL = 60 * 1000;
+const CHECK_TTL = 30 * 1000;
 
 // Only the account's cookie is passed on, never anything else the browser sent.
 export function accountCookie(request) {
@@ -22,7 +22,7 @@ function forwardHeaders(request, cookie) {
   return h;
 }
 
-// Answers are kept a minute per sign-in, so each mail request doesn't ask the account's address again.
+// Answers that let someone in are kept half a minute per sign-in, so each mail request doesn't ask the account's address again.
 const checked = new Map();
 
 export function forgetCheck(request) {
@@ -39,7 +39,7 @@ export async function accountView(env, request) {
   if (!res.ok) throw Object.assign(new Error("Couldn’t reach your inflite account. Try again in a moment."), { status: 502 });
   const view = await res.json();
   if (checked.size > 200) checked.clear();
-  checked.set(cookie, { at: Date.now(), view });
+  if (accessOf(view) === "ok") checked.set(cookie, { at: Date.now(), view });
   return view;
 }
 

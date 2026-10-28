@@ -142,9 +142,9 @@ export async function upsertContacts(env, people) {
 
 // Finds the thread a message belongs to from its In-Reply-To / References.
 export async function findThread(env, inReplyTo, references) {
-  const ids = [inReplyTo, ...(references || "").split(/\s+/)]
-    .map(cleanMessageId)
-    .filter(Boolean);
+  // (the newest few dozen are plenty, and D1 takes at most 100 bound values)
+  const refs = (references || "").split(/\s+/).map(cleanMessageId).filter(Boolean).slice(-50);
+  const ids = [...new Set([cleanMessageId(inReplyTo), ...refs].filter(Boolean))];
   if (!ids.length) return null;
   const placeholders = ids.map((_, i) => `?${i + 1}`).join(",");
   const row = await env.DB.prepare(

@@ -2221,6 +2221,7 @@ a,a *{color:${v("--mail-link")}!important}` : ""}`;
     const doc = `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="x-dns-prefetch-control" content="off">
 <base target="_blank">
 <style>
 ${look}
@@ -2229,7 +2230,7 @@ img{max-width:100%;height:auto}
 pre{white-space:pre-wrap}
 .inflite-q{display:none!important}
 .inflite-showq .inflite-q{display:revert!important}
-</style></head><body>${m.html.replace(/<script[\s\S]*?<\/script>/gi, "")}</body></html>`;
+</style></head><body>${m.html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<(link|meta|base)\b[^>]*>/gi, "")}</body></html>`;
 
     const frame = h("iframe.mail-frame", {
       style: { colorScheme: designed ? "light" : dark ? "dark" : "light" },

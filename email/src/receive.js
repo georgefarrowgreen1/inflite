@@ -2,26 +2,56 @@ import PostalMime from "postal-mime";
 import { ensureSchema, findThread, cleanMessageId, upsertContacts } from "./db.js";
 import { pushAll, peopleUnread } from "./push.js";
 
-// Handles mail delivered by Cloudflare Email Routing.
+// Handles mail delivered by Cloudflare Email Routing. Nothing that arrives is lost: the original is kept first, and if
+// reading it fails it still shows in the stream (with the original to download), and goes to FORWARD_TO if that's set.
 export async function receiveEmail(message, env, ctx) {
-  await ensureSchema(env);
-
-  const raw = await new Response(message.raw).arrayBuffer();
-  const email = await PostalMime.parse(raw);
-
   const id = crypto.randomUUID();
-  const from = mailbox(email.from) || { name: "", email: message.from };
+  const raw = await new Response(message.raw).arrayBuffer();
+  await env.MAIL.put(`raw/${id}.eml`, raw, { httpMetadata: { contentType: "message/rfc822" } });
+  try {
+    await ensureSchema(env);
+    await store(message, env, ctx, id, raw);
+  } catch (err) {
+    console.error("couldn't read an incoming message", id, err);
+    if (env.FORWARD_TO) ctx.waitUntil(message.forward(env.FORWARD_TO).catch((e) => console.error("forward", e)));
+    await env.DB.prepare(
+      `INSERT INTO messages (id, folder, thread_id, mailbox, from_name, from_email, to_json, cc_json, subject, snippet, date,
+         unread, has_attachments, size, category)
+       VALUES (?1, 'inbox', ?1, ?2, '', ?3, '[]', '[]', ?4, ?5, ?6, 1, 0, ?7, 'people')`
+    )
+      .bind(id, (message.to || "").toLowerCase(), (message.from || "").toLowerCase(), "(A message Mail couldn’t read)",
+        "Download the original from the menu to see it.", Date.now(), raw.byteLength)
+      .run()
+      .catch((e) => console.error("couldn't keep it either; the original is at", `raw/${id}.eml`, e));
+  }
+}
+
+async function store(message, env, ctx, id, raw) {
+  const email = await PostalMime.parse(raw);
+  const from = mailbox(email.from) || { name: "", email: message.from || "" };
+  from.email ||= message.from || "";
   const to = addresses(email.to);
   const cc = addresses(email.cc);
   const replyTo = addresses(email.replyTo)[0]?.email || null;
   const messageId = cleanMessageId(email.messageId) || `${id}@${env.DOMAIN}`;
+  // (the same message delivered again: kept once)
+  if (email.messageId) {
+    const dup = await env.DB.prepare(`SELECT id FROM messages WHERE message_id = ?1 AND mailbox = ?2 LIMIT 1`)
+      .bind(messageId, (message.to || "").toLowerCase())
+      .first();
+    if (dup) {
+      await env.MAIL.delete(`raw/${id}.eml`);
+      return;
+    }
+  }
   const inReplyTo = cleanMessageId(email.inReplyTo);
   const existingThread = await findThread(env, inReplyTo, email.references);
   const threadId = existingThread || id;
   const category = await classify(env, email, from.email, !!existingThread);
   const date = parseDate(email.date);
 
-  const attachments = (email.attachments || []).map((a) => ({
+  // (at most 30 parts kept apart; any more stay in the original)
+  const attachments = (email.attachments || []).slice(0, 30).map((a) => ({
     id: crypto.randomUUID(),
     filename: a.filename || "attachment",
     type: a.mimeType || "application/octet-stream",
@@ -33,7 +63,6 @@ export async function receiveEmail(message, env, ctx) {
   const visibleAttachments = attachments.filter((a) => !(a.disposition === "inline" && a.contentId));
 
   await Promise.all([
-    env.MAIL.put(`raw/${id}.eml`, raw, { httpMetadata: { contentType: "message/rfc822" } }),
     env.MAIL.put(`body/${id}.json`, JSON.stringify({ text: email.text || "", html: email.html || "" }), {
       httpMetadata: { contentType: "application/json" },
     }),
@@ -52,7 +81,7 @@ export async function receiveEmail(message, env, ctx) {
       messageId,
       inReplyTo || null,
       email.references || null,
-      message.to.toLowerCase(),
+      (message.to || "").toLowerCase(),
       from.name,
       from.email.toLowerCase(),
       JSON.stringify(to),

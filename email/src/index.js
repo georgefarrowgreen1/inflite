@@ -20,13 +20,16 @@ export default {
       return await api(request, env, ctx, url);
     } catch (err) {
       if (!err.status || err.status >= 500) console.error(err);
-      return json({ error: err.publicMessage || err.message || "Something went wrong", access: err.access }, err.status || 500);
+      // (the words of errors Mail raised itself; never a database's)
+      const said = err.publicMessage || (err.status && err.status < 500 ? err.message : null);
+      return json({ error: said || "Something went wrong. Try again.", access: err.access }, err.status || 500);
     }
   },
 
   async email(message, env, ctx) {
     await receiveEmail(message, env, ctx);
   },
+
 
   // Every few minutes: conversations whose Later time has come go back in the stream, with a notice.
   async scheduled(event, env, ctx) {
@@ -50,10 +53,12 @@ class HttpError extends Error {
   }
 }
 
+const SAFE = { "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'" };
+
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...SAFE, ...headers },
   });
 
 const EMAIL_RE = /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/;
@@ -139,7 +144,10 @@ async function api(request, env, ctx, url) {
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)\/raw$/)) && method === "GET") return rawMessage(env, m[1]);
   if ((m = pathname.match(/^\/api\/attachments\/([\w-]+)$/)) && method === "GET") return attachment(env, m[1], url);
   if (pathname === "/api/contacts" && method === "GET") return contacts(env, url);
-  if (pathname === "/api/send" && method === "POST") return send(env, ctx, await request.json(), view);
+  if (pathname === "/api/send" && method === "POST") {
+    if (Number(request.headers.get("Content-Length")) > 36 * 1024 * 1024) throw new HttpError(413, "That message is too big to send.");
+    return send(env, ctx, await request.json(), view);
+  }
   if (pathname === "/api/drafts" && method === "POST") return saveDraft(env, await request.json(), view);
 
   throw new HttpError(404, "Not found");
@@ -182,7 +190,7 @@ async function me(env, view) {
 // The same action on several conversations (Mark All as Read, say)
 async function threadBatch(env, { ids, ...body }) {
   if (!Array.isArray(ids) || !ids.length) throw new HttpError(400, "No conversations");
-  if (ids.length > 200) throw new HttpError(400, "Too many conversations");
+  if (ids.length > (body.action === "delete" ? 25 : 200)) throw new HttpError(400, "Too many conversations at once");
   for (const id of ids) if (/^[\w-]+$/.test(id)) await threadAction(env, id, body, deleteMessages);
   return json({ ok: true });
 }
@@ -197,7 +205,7 @@ async function listMessages(env, url) {
   const folder = url.searchParams.get("folder") || "inbox";
   const q = (url.searchParams.get("q") || "").trim();
   const before = Number(url.searchParams.get("before")) || null;
-  const limit = Math.min(Number(url.searchParams.get("limit")) || 50, 100);
+  const limit = Math.max(1, Math.min(Math.floor(Number(url.searchParams.get("limit"))) || 50, 100));
 
   const where = [];
   const params = [];
@@ -302,14 +310,26 @@ async function batchUpdate(env, { ids, delete: del, ...patch }) {
   if (ids.length > 500) throw new HttpError(400, "Too many messages");
   if (del) return deleteMessages(env, ids);
   const { sets, values } = patchClause(env, patch);
-  const placeholders = ids.map((_, i) => `?${values.length + i + 1}`).join(",");
-  await env.DB.prepare(`UPDATE messages SET ${sets.join(", ")} WHERE id IN (${placeholders})`)
-    .bind(...values, ...ids)
-    .run();
+  await env.DB.batch(
+    chunks(ids.map(String), 80).map((part) =>
+      env.DB.prepare(`UPDATE messages SET ${sets.join(", ")} WHERE id IN (${part.map((_, i) => `?${values.length + i + 1}`).join(",")})`).bind(
+        ...values,
+        ...part
+      )
+    )
+  );
   return json({ ok: true });
 }
 
+const chunks = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
+
+// (in parts: D1 takes at most 100 bound values a statement)
 async function deleteMessages(env, ids) {
+  for (const part of chunks(ids, 90)) await deleteSome(env, part);
+  return json({ ok: true });
+}
+
+async function deleteSome(env, ids) {
   const placeholders = ids.map((_, i) => `?${i + 1}`).join(",");
   const { results: atts } = await env.DB.prepare(
     `SELECT id FROM attachments WHERE message_id IN (${placeholders})`
@@ -324,14 +344,13 @@ async function deleteMessages(env, ids) {
     env.DB.prepare(`DELETE FROM attachments WHERE message_id IN (${placeholders})`).bind(...ids),
     env.DB.prepare(`DELETE FROM messages WHERE id IN (${placeholders})`).bind(...ids),
   ]);
-  return json({ ok: true });
 }
 
 async function rawMessage(env, id) {
   const obj = await env.MAIL.get(`raw/${id}.eml`);
   if (!obj) throw new HttpError(404, "Original message not available");
   return new Response(obj.body, {
-    headers: { "Content-Type": "message/rfc822", "Content-Disposition": `attachment; filename="${id}.eml"` },
+    headers: { "Content-Type": "message/rfc822", "Content-Disposition": `attachment; filename="${id}.eml"`, ...SAFE },
   });
 }
 
@@ -387,6 +406,8 @@ function base64ToBytes(b64) {
 }
 
 async function send(env, ctx, body, view) {
+  const size = (Array.isArray(body.attachments) ? body.attachments : []).reduce((n, a) => n + String(a?.content || "").length * 0.75, 0);
+  if (size > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
   const name = senderName(env, view);
   const from = checkFrom(env, body.from);
   const to = normalizeRecipients(body.to);
@@ -407,6 +428,8 @@ async function send(env, ctx, body, view) {
     .map(cleanMessageId)
     .filter(Boolean);
   if (inReplyTo && !references.includes(inReplyTo)) references.push(inReplyTo);
+  // (a long thread's chain is trimmed, as mail clients do: the first message and the most recent)
+  if (references.length > 20) references.splice(1, references.length - 20);
 
   const attachments = (Array.isArray(body.attachments) ? body.attachments : []).map((a) => ({
     id: crypto.randomUUID(),
@@ -453,7 +476,17 @@ async function send(env, ctx, body, view) {
     throw new HttpError(502, hint || "Couldn't send the message.");
   }
 
+  // Sent: whatever happens to the copy kept here, the answer is that it went (so it's never sent twice).
   const id = crypto.randomUUID();
+  try {
+    await keepSent(env, ctx, { id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId: body.draftId });
+  } catch (err) {
+    console.error("sent, but the copy wasn't kept", err);
+  }
+  return json({ ok: true, id });
+}
+
+async function keepSent(env, ctx, { id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId }) {
   const messageId = cleanMessageId(result?.messageId) || `${id}@${env.DOMAIN}`;
   const threadId = (await findThread(env, inReplyTo, references.join(" "))) || id;
 
@@ -498,14 +531,21 @@ async function send(env, ctx, body, view) {
   if (threadId !== id) stmts.push(env.DB.prepare(`UPDATE messages SET unread = 0 WHERE thread_id = ?1`).bind(threadId));
   await env.DB.batch(stmts);
 
-  if (body.draftId) ctx.waitUntil(deleteMessages(env, [String(body.draftId)]).catch(() => {}));
+  if (draftId) ctx.waitUntil(deleteDraft(env, String(draftId)).catch(() => {}));
   ctx.waitUntil(upsertContacts(env, all));
+}
 
-  return json({ ok: true, id });
+// (only ever a draft: never a message that came in or went out)
+async function deleteDraft(env, id) {
+  const row = await env.DB.prepare(`SELECT id FROM messages WHERE id = ?1 AND folder = 'drafts'`).bind(id).first();
+  if (row) await deleteMessages(env, [row.id]);
 }
 
 async function saveDraft(env, body, view) {
-  const id = body.id && /^[\w-]+$/.test(body.id) ? body.id : crypto.randomUUID();
+  let id = body.id && /^[\w-]+$/.test(body.id) ? body.id : crypto.randomUUID();
+  // (a draft's id can't be used to write over anything else)
+  const existing = await env.DB.prepare(`SELECT folder FROM messages WHERE id = ?1`).bind(id).first();
+  if (existing && existing.folder !== "drafts") id = crypto.randomUUID();
   const compose = {
     from: String(body.from || ""),
     to: normalizeRecipients(body.to),
