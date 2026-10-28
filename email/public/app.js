@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.13";
+  const BUILD = "1.14";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -5043,7 +5043,7 @@ pre{white-space:pre-wrap}
         "div.w-cta",
         error || who ? h("p.said", { role: error ? "alert" : "status" }, error || who) : null,
         // (InFlite, whose one account signs you in to every app: its mark and name, over Sign in)
-        h("p.wbrand", h("img", { src: "/inflite.svg", alt: "", width: 22, height: 22 }), "One InFlite account for every app"),
+        h("p.wbrand", h("img", { src: "/inflite.svg", alt: "", width: 22, height: 22 }), "Powered by InFlite"),
         go
       )
     );
