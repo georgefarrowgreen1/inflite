@@ -2538,8 +2538,17 @@ textarea:focus-visible {
   font-weight: 600;
 }
 
+/* (long labels wrap inside the menu, never past it; the times beside Later's choices stay on one line) */
 .menu-item .lbl {
-  white-space: nowrap;
+  min-width: 0;
+  padding: 11px 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.menu-item .hint,
+.menu-item svg {
+  flex: none;
 }
 
 /* (the search operators in one row that scrolls sideways, rather than several pushing the results down) */
