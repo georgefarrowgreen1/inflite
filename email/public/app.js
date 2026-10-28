@@ -523,7 +523,7 @@
         return { displayName: ME.name, domain: "inflite.ai", defaultFrom: ME.email, identities: [ME.email, "support@inflite.ai"] };
       },
       async version() {
-        return { v: String(Date.now()) };
+        return { v: String(Date.now()), build: null };
       },
       async unsubInfo(id) {
         const t = threadOf(id, threadMsgs(id));
@@ -3482,6 +3482,7 @@ pre{white-space:pre-wrap}
       if (appEl) appEl.inert = false;
       if (sheetOpener?.isConnected && S.layout !== "phone") sheetOpener.focus({ preventScroll: true });
       sheetOpener = null;
+      setTimeout(updateWhenSafe, 800);
       document.body.classList.remove("sheet-open");
       scrim.classList.remove("open");
       if (mode === "sending") sheet.classList.add("sending");
@@ -3938,6 +3939,7 @@ pre{white-space:pre-wrap}
     S.prefetch.res.catch(() => {});
     const [me, counts, v] = await Promise.all([api.me(), api.counts(), api.version().catch(() => null)]);
     S.version = v?.v;
+    S.build = v?.build || null;
     S.me = me;
     if (me.account?.appearance) lookOf(me.account.appearance);
     S.counts = counts;
@@ -3960,8 +3962,31 @@ pre{white-space:pre-wrap}
       } catch {}
       openFromUrl(url);
     }
+    try {
+      if (sessionStorage.getItem("mail:updated")) {
+        sessionStorage.removeItem("mail:updated");
+        toast("Mail updated", { icon: "check" });
+      }
+    } catch {}
     clearInterval(pollTimer);
     pollTimer = setInterval(poll, 30000);
+  }
+
+  // A new version of Mail is deployed: it's loaded at the first moment nothing would be lost (not while writing,
+  // sending, swiping, or with a menu open), back where you were
+  function updateWhenSafe() {
+    if (!S.newBuild) return;
+    const typing = !!els.detailToolbar?.querySelector(".qr-field")?.value.trim();
+    if (sheetState || pendingSends.size || menuState || S.swiping || openSwipe || typing || S.searching) return;
+    try {
+      sessionStorage.setItem("mail:updated", "1");
+    } catch {}
+    const at = S.thread && !S.thread.loading ? `#thread=${encodeURIComponent(S.thread.id)}` : "";
+    swReg?.update().catch(() => {});
+    try {
+      history.replaceState(null, "", location.pathname + location.search + at);
+    } catch {}
+    location.reload();
   }
 
   async function poll() {
@@ -3970,8 +3995,11 @@ pre{white-space:pre-wrap}
     if (S.swiping || openSwipe || S.loading) return;
     // (nothing has changed since last time: nothing more to ask)
     try {
-      const { v } = await api.version();
+      const { v, build } = await api.version();
       if (S.offline) ((S.offline = false), renderListChrome());
+      if (build && S.build && build !== S.build) S.newBuild = build;
+      S.build ||= build;
+      if (S.newBuild) updateWhenSafe();
       if (v && v === S.version) {
         S.updatedAt = Date.now();
         return renderListChrome();
@@ -3991,6 +4019,8 @@ pre{white-space:pre-wrap}
 
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && S.me) poll();
+    // (put away with an update waiting: it's loaded while you're not looking)
+    else if (document.hidden) updateWhenSafe();
   });
 
   window.addEventListener("resize", () => {

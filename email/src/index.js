@@ -122,7 +122,8 @@ async function route(request, env, ctx, url, view) {
   const { pathname } = url;
   const method = request.method;
   let m;
-  if (pathname === "/api/version" && method === "GET") return json({ v: await mailVersion(env) });
+  // (the mailbox's version, and the app's: an open Mail updates itself when a new one is deployed)
+  if (pathname === "/api/version" && method === "GET") return json({ v: await mailVersion(env), build: buildOf(env) });
   if (pathname === "/api/me" && method === "GET") return me(env, view);
   if (pathname === "/api/photo" && method === "GET") return photo(env, request, url);
   if ((m = pathname.match(/^\/api\/unsubscribe\/([\w-]+)$/))) {
@@ -237,6 +238,9 @@ async function pushSubscribe(env, body) {
   await env.DB.prepare(`DELETE FROM push_subs WHERE endpoint NOT IN (SELECT endpoint FROM push_subs ORDER BY created_at DESC LIMIT 10)`).run();
   return json({ ok: true });
 }
+
+// Which deploy of Mail this is: Cloudflare's version of the Worker (BUILD_ID stands in for it in local tests)
+const buildOf = (env) => env.BUILD_ID || env.CF_VERSION_METADATA?.id || null;
 
 const publicUser = (v) =>
   v?.signedIn
