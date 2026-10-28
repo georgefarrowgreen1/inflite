@@ -3794,10 +3794,10 @@ textarea:focus-visible {
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--tint-text);
-  background: color-mix(in srgb, var(--tint) 12%, transparent);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--label-2);
+  background: var(--field);
 }
 
 .p-chev {

@@ -273,6 +273,9 @@
   // API (real backend or in-memory demo)
   // ---------------------------------------------------------------------------
 
+  // Mail's build, shown in the profile menu (raised with each release)
+  const BUILD = "1.01";
+
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
   class ApiError extends Error {
@@ -1205,7 +1208,7 @@
       h(
         "span.p-who",
         h("b", name || "Your account"),
-        h("span.p-line", h("span.p-mail", me.defaultFrom || ""), acct.admin ? h("span.p-role", "Admin") : null)
+        h("span.p-line", h("span.p-mail", me.defaultFrom || ""), h("span.p-role", { "aria-label": `Version ${BUILD}` }, `V${BUILD}`))
       ),
       icon("chevronRight", "p-chev")
     );
