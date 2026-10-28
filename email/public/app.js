@@ -1241,10 +1241,13 @@
   }
 
   // A notification tapped: its conversation
-  function openFromUrl(url) {
-    const id = new URLSearchParams(new URL(url, location.href).hash.slice(1)).get("thread");
+  async function openFromUrl(url) {
+    const p = new URLSearchParams(new URL(url, location.href).hash.slice(1));
+    const id = p.get("thread");
     if (!id) return;
-    openThread(id);
+    await openThread(id);
+    // (Reply, from the notice: straight into the reply at the foot)
+    if (p.get("reply")) setTimeout(() => els.detailToolbar?.querySelector(".qr-field")?.focus(), 300);
   }
   if ("serviceWorker" in navigator)
     navigator.serviceWorker.addEventListener("message", (e) => {
@@ -2563,7 +2566,16 @@
 
   // A reply written in the bar at the foot of a conversation: to whoever wrote last, sent (with Undo) as the compose
   // sheet sends; the button beside it opens Reply All, Forward and the full sheet
+  let qrKeep = null;
   function quickReply(t) {
+    // (the same field while the same conversation is open, so redrawing the bar keeps what's typed, and the focus)
+    if (qrKeep && qrKeep.id === t.id && qrKeep.ready === !!t.messages) return qrKeep.el;
+    const el = buildQuickReply(t);
+    qrKeep = { id: t.id, ready: !!t.messages, el };
+    return el;
+  }
+
+  function buildQuickReply(t) {
     const last = t.messages?.find((m) => m.folder !== "sent");
     const who = last ? (displayName(last.from) || "").split(/\s+/)[0] : "";
     const field = h("textarea.qr-field", { rows: 1, placeholder: who ? `Reply to ${who}…` : "Reply…", "aria-label": who ? `Reply to ${who}` : "Reply", enterkeyhint: "send" });

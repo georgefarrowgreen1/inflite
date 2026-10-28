@@ -14,35 +14,72 @@ self.addEventListener("push", (e) => {
     typeof d.badge === "number" && self.navigator.setAppBadge
       ? (d.badge ? self.navigator.setAppBadge(d.badge) : self.navigator.clearAppBadge()).catch(() => {})
       : null;
+  const thread = new URLSearchParams((d.url || "").split("#")[1] || "").get("thread");
   e.waitUntil(
     Promise.all([
-      self.registration.showNotification(d.title || "inflite Mail", {
+      self.registration.showNotification(d.title || "Mail", {
         body: d.body || "",
         tag: d.tag || undefined,
         renotify: !!d.tag,
         icon: "/icon-192.png",
         badge: "/icon-192.png",
-        data: { url: d.url || "/" },
+        data: { url: d.url || "/", thread },
+        // (where the system offers buttons on a notice: deal with it from there)
+        actions: thread
+          ? [
+              { action: "reply", title: "Reply" },
+              { action: "done", title: "Done" },
+              { action: "later", title: "Later Today" },
+            ]
+          : [],
       }),
       badge,
     ])
   );
 });
 
+// A button on a notice: Done or Later, done here, with Mail left closed; Reply opens Mail at the reply
+async function act(thread, body) {
+  const r = await fetch(`/api/threads/${encodeURIComponent(thread)}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "X-Inflite": "1" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`${r.status}`);
+  const c = await fetch("/api/counts", { credentials: "same-origin" }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+  const n = c?.inbox?.unread;
+  if (typeof n === "number" && self.navigator.setAppBadge) await (n ? self.navigator.setAppBadge(n) : self.navigator.clearAppBadge()).catch(() => {});
+}
+
+// (Later Today: three hours on, on the half hour)
+const laterToday = () => Math.ceil((Date.now() + 3 * 3600000) / 1800000) * 1800000;
+
 // A notification tapped: Mail, open on its conversation (the open window if there is one)
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
-  const url = new URL(e.notification.data?.url || "/", self.location.origin).href;
-  e.waitUntil(
-    (async () => {
-      const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      const win = wins.find((w) => new URL(w.url).origin === self.location.origin);
-      if (win) {
-        await win.focus();
-        win.postMessage({ open: url });
-        return;
-      }
-      await self.clients.openWindow(url);
-    })()
-  );
+  const { thread } = e.notification.data || {};
+  if (thread && (e.action === "done" || e.action === "later")) {
+    e.waitUntil(
+      act(thread, e.action === "done" ? { action: "done" } : { action: "snooze", until: laterToday() }).catch(() =>
+        // (couldn't, say signed out: open Mail on it instead)
+        openMail(new URL(e.notification.data.url, self.location.origin).href)
+      )
+    );
+    return;
+  }
+  let url = new URL(e.notification.data?.url || "/", self.location.origin).href;
+  if (e.action === "reply") url += "&reply=1";
+  e.waitUntil(openMail(url));
 });
+
+async function openMail(url) {
+  const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const win = wins.find((w) => new URL(w.url).origin === self.location.origin);
+  if (win) {
+    await win.focus();
+    win.postMessage({ open: url });
+    return;
+  }
+  await self.clients.openWindow(url);
+}
