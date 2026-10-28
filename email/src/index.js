@@ -124,6 +124,7 @@ async function route(request, env, ctx, url, view) {
   let m;
   if (pathname === "/api/version" && method === "GET") return json({ v: await mailVersion(env) });
   if (pathname === "/api/me" && method === "GET") return me(env, view);
+  if (pathname === "/api/photo" && method === "GET") return photo(env, request, url);
   if (pathname === "/api/counts" && method === "GET") return json(await counts(env));
   if (pathname === "/api/threads" && method === "GET") return json(await listThreads(env, url));
   if (pathname === "/api/threads/batch" && method === "POST") return threadBatch(env, await request.json());
@@ -183,7 +184,20 @@ async function pushSubscribe(env, body) {
 }
 
 const publicUser = (v) =>
-  v?.signedIn ? { name: v.name, handle: v.handle, email: v.email, admin: !!v.admin, appearance: v.appearance || "auto" } : null;
+  v?.signedIn
+    ? { name: v.name, handle: v.handle, email: v.email, admin: !!v.admin, appearance: v.appearance || "auto", photoAt: v.photoAt || null }
+    : null;
+
+// Your account's photo, from the account's address with your sign-in (it serves it to the site's own pages only), kept
+// for good by the browser under its ?v= (when it last changed), as there
+async function photo(env, request, url) {
+  const r = await fetch(`${env.ACCOUNT_ORIGIN}/api/me/photo?v=${encodeURIComponent(url.searchParams.get("v") || "")}`, {
+    headers: { Cookie: request.headers.get("Cookie") || "", Accept: "image/*" },
+  });
+  const type = r.headers.get("Content-Type") || "";
+  if (!r.ok || !type.startsWith("image/")) throw new HttpError(404, "No photo.");
+  return new Response(r.body, { headers: { "Content-Type": type, "Cache-Control": "private, max-age=31536000, immutable", ...SAFE } });
+}
 
 const senderName = (env, view) => env.DISPLAY_NAME || view?.name || "";
 

@@ -121,11 +121,21 @@
     return s.toUpperCase();
   }
 
+  // (your own: your account's photo, when it has one, over your initials, which show if it can't be had)
   function avatar(person, cls = "") {
     const el = h(`div.avatar${cls ? "." + cls : ""}`, { "aria-hidden": "true" }, initials(person.name, person.email));
     el.style.setProperty("--h", hue(person.email || person.name));
+    const src = (person.me || isMine(person.email)) && myPhoto();
+    if (src) {
+      const img = h("img", { src, alt: "", decoding: "async" });
+      img.addEventListener("error", () => img.remove());
+      el.append(img);
+    }
     return el;
   }
+
+  const myPhoto = () => (S.me?.account?.photoAt && !DEMO ? `/api/photo?v=${S.me.account.photoAt}` : null);
+  const isMine = (email) => !!email && (S.me?.identities || []).includes(String(email).toLowerCase());
 
   const displayName = (p) => (p ? p.name || p.email || "" : "");
 
@@ -1073,7 +1083,7 @@
       h(
         "button.gbtn.glass.profile",
         { "aria-label": "Account", title: "Account", onclick: (e) => profileMenu(e.currentTarget) },
-        avatar({ name: me.displayName, email: me.defaultFrom }, "sm")
+        avatar({ name: me.displayName, email: me.defaultFrom, me: true }, "sm")
       ),
       h("div.spacer"),
       gbtn("more", "More", (e) => listMenu(e.currentTarget))

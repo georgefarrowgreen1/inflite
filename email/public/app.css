@@ -907,6 +907,16 @@ body.sheet-open.phone #app::after {
   flex: none;
   -webkit-user-select: none;
   user-select: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .avatar.lg {
