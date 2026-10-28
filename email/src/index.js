@@ -9,6 +9,7 @@ import {
   cleanMessageId,
 } from "./db.js";
 import { receiveEmail, snippet } from "./receive.js";
+import { listThreads, getThread, threadAction, counts } from "./threads.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -92,7 +93,21 @@ async function api(request, env, ctx, url) {
 
   let m;
   if (pathname === "/api/me" && method === "GET") return me(env, view);
-  if (pathname === "/api/counts" && method === "GET") return counts(env);
+  if (pathname === "/api/counts" && method === "GET") return json(await counts(env));
+  if (pathname === "/api/threads" && method === "GET") return json(await listThreads(env, url));
+  if (pathname === "/api/threads/batch" && method === "POST") return threadBatch(env, await request.json());
+  if ((m = pathname.match(/^\/api\/threads\/([\w-]+)$/))) {
+    if (method === "GET") {
+      const t = await getThread(env, m[1]);
+      if (!t) throw new HttpError(404, "Conversation not found");
+      return json(t);
+    }
+    if (method === "POST") {
+      await threadAction(env, m[1], await request.json(), deleteMessages);
+      return json({ ok: true });
+    }
+  }
+  if (pathname === "/api/trash/empty" && method === "POST") return emptyTrash(env);
   if (pathname === "/api/messages" && method === "GET") return listMessages(env, url);
   if (pathname === "/api/messages/batch" && method === "POST") return batchUpdate(env, await request.json());
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)$/))) {
@@ -126,17 +141,18 @@ async function me(env, view) {
   return json({ displayName: senderName(env, view), domain: env.DOMAIN, defaultFrom, identities, account: publicUser(view) });
 }
 
-async function counts(env) {
-  const { results } = await env.DB.prepare(
-    `SELECT folder, COUNT(*) AS total, SUM(unread) AS unread FROM messages GROUP BY folder`
-  ).all();
-  const flagged = await env.DB.prepare(
-    `SELECT COUNT(*) AS total FROM messages WHERE starred = 1 AND folder != 'trash'`
-  ).first();
-  const out = Object.fromEntries(FOLDERS.map((f) => [f, { total: 0, unread: 0 }]));
-  for (const r of results) out[r.folder] = { total: r.total, unread: r.unread || 0 };
-  out.flagged = { total: flagged?.total || 0, unread: 0 };
-  return json(out);
+// The same action on several conversations (Mark All as Read, say)
+async function threadBatch(env, { ids, ...body }) {
+  if (!Array.isArray(ids) || !ids.length) throw new HttpError(400, "No conversations");
+  if (ids.length > 200) throw new HttpError(400, "Too many conversations");
+  for (const id of ids) if (/^[\w-]+$/.test(id)) await threadAction(env, id, body, deleteMessages);
+  return json({ ok: true });
+}
+
+async function emptyTrash(env) {
+  const { results } = await env.DB.prepare(`SELECT id FROM messages WHERE folder = 'trash'`).all();
+  for (let i = 0; i < results.length; i += 100) await deleteMessages(env, results.slice(i, i + 100).map((r) => r.id));
+  return json({ ok: true });
 }
 
 async function listMessages(env, url) {
@@ -414,8 +430,8 @@ async function send(env, ctx, body, view) {
     env.DB.prepare(
       `INSERT INTO messages (id, folder, thread_id, message_id, in_reply_to, refs, mailbox,
         from_name, from_email, to_json, cc_json, bcc_json, subject, snippet, date, unread,
-        has_attachments, size)
-       VALUES (?1, 'sent', ?2, ?3, ?4, ?5, ?6, ?7, ?6, ?8, ?9, ?10, ?11, ?12, ?13, 0, ?14, ?15)`
+        has_attachments, size, category)
+       VALUES (?1, 'sent', ?2, ?3, ?4, ?5, ?6, ?7, ?6, ?8, ?9, ?10, ?11, ?12, ?13, 0, ?14, ?15, 'people')`
     ).bind(
       id,
       threadId,
@@ -440,8 +456,8 @@ async function send(env, ctx, body, view) {
       ).bind(a.id, id, a.filename, a.type, a.bytes.byteLength)
     ),
   ];
-  // Replying to a message means it has been read.
-  if (inReplyTo) stmts.push(env.DB.prepare(`UPDATE messages SET unread = 0 WHERE message_id = ?1`).bind(inReplyTo));
+  // Replying in a conversation means it has been read.
+  if (threadId !== id) stmts.push(env.DB.prepare(`UPDATE messages SET unread = 0 WHERE thread_id = ?1`).bind(threadId));
   await env.DB.batch(stmts);
 
   if (body.draftId) ctx.waitUntil(deleteMessages(env, [String(body.draftId)]).catch(() => {}));

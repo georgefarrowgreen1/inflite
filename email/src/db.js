@@ -43,10 +43,37 @@ const SCHEMA = [
   )`,
 ];
 
+// Columns and tables added since the first version: each run on its own, as ALTER TABLE fails once a column exists.
+const MIGRATIONS = [
+  `ALTER TABLE messages ADD COLUMN category TEXT`,
+  `ALTER TABLE messages ADD COLUMN snooze_until INTEGER`,
+  `ALTER TABLE messages ADD COLUMN prev_folder TEXT`,
+  `CREATE TABLE IF NOT EXISTS sender_rules (email TEXT PRIMARY KEY, category TEXT NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_thread_folder ON messages(thread_id, folder)`,
+  // (mail from before categories: sorted by its sender's address alone)
+  `UPDATE messages SET category = CASE
+     WHEN folder IN ('sent', 'drafts') THEN 'people'
+     WHEN lower(from_email) GLOB '*no-reply*' OR lower(from_email) GLOB '*noreply*' OR lower(from_email) GLOB '*donotreply*'
+       OR lower(from_email) GLOB '*do-not-reply*' OR lower(from_email) GLOB 'notification*' OR lower(from_email) GLOB 'newsletter*'
+       OR lower(from_email) GLOB 'news@*' OR lower(from_email) GLOB 'updates@*' OR lower(from_email) GLOB 'alerts@*'
+       OR lower(from_email) GLOB 'receipts@*' OR lower(from_email) GLOB 'billing@*' OR lower(from_email) GLOB 'mailer*' THEN 'updates'
+     ELSE 'people' END
+   WHERE category IS NULL`,
+];
+
 let ready;
 
 export function ensureSchema(env) {
-  ready ??= env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql))).catch((err) => {
+  ready ??= (async () => {
+    await env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql)));
+    for (const sql of MIGRATIONS) {
+      try {
+        await env.DB.prepare(sql).run();
+      } catch (err) {
+        if (!/duplicate column/i.test(err.message)) throw err;
+      }
+    }
+  })().catch((err) => {
     ready = undefined;
     throw err;
   });
@@ -70,6 +97,7 @@ export function rowToSummary(r) {
     unread: !!r.unread,
     starred: !!r.starred,
     hasAttachments: !!r.has_attachments,
+    category: r.category || "people",
   };
 }
 

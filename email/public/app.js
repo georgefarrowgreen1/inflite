@@ -51,6 +51,11 @@
     check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
     download: '<path d="M12 4v11.5M7 11l5 5 5-5"/><path d="M5 20h14"/>',
     lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5v-3a4 4 0 0 1 8 0v3"/>',
+    person: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.8-3.8 3.8-6 7.5-6s6.7 2.2 7.5 6"/>',
+    news: '<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M7 9h10M7 12.5h10M7 16h6"/>',
+    pin: '<path d="M9 4h6l-1 5 3 3v1.5H7V12l3-3z"/><path d="M12 13.5V20"/>',
+    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
     alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.5" r=".9" fill="currentColor" stroke="none"/>',
   };
 
@@ -288,11 +293,12 @@
       logout: () => req("POST", "/api/logout", {}),
       me: () => req("GET", "/api/me"),
       counts: () => req("GET", "/api/counts"),
-      list: ({ folder, q, unread, before }) =>
-        req("GET", `/api/messages?${qs({ folder, q, unread: unread ? 1 : "", before })}`),
+      threads: ({ view, category, address, q, before }) => req("GET", `/api/threads?${qs({ view, category, address, q, before })}`),
+      thread: (id) => req("GET", `/api/threads/${id}`),
+      threadAction: (id, body) => req("POST", `/api/threads/${id}`, body),
+      threadBatch: (body) => req("POST", "/api/threads/batch", body),
+      emptyTrash: () => req("POST", "/api/trash/empty", {}),
       message: (id) => req("GET", `/api/messages/${id}`),
-      patch: (id, patch) => req("PATCH", `/api/messages/${id}`, patch),
-      batch: (body) => req("POST", "/api/messages/batch", body),
       remove: (id) => req("DELETE", `/api/messages/${id}`),
       contacts: (q) => req("GET", `/api/contacts?${qs({ q })}`),
       send: (payload, opts) => req("POST", "/api/send", payload, opts),
@@ -332,7 +338,9 @@
       id: `demo-${++seq}`,
       folder,
       threadId: `t-${seq}`,
-      mailbox: ME.email,
+      mailbox: extra.mailbox || ME.email,
+      category: extra.category || "people",
+      snoozeUntil: null,
       from,
       to: extra.to || [ME],
       cc: extra.cc || [],
@@ -365,6 +373,7 @@
       }),
       mk("inbox", P.cf, "inflite.ai is ready for Email Sending", "", 38 * min, {
         unread: true,
+        category: "updates",
         html: card(
           "Your domain is verified",
           "<p>Good news — <b>inflite.ai</b> passed DNS verification and can now send email through Cloudflare Email Service.</p><p>Bind <code>send_email</code> in your Worker to start sending. Your daily quota is <b>1,000 messages</b> while the service is in beta.</p>",
@@ -385,6 +394,7 @@
         ],
       }),
       mk("inbox", P.nw, "Your trip to Lisbon is confirmed", "", 26 * hr, {
+        category: "updates",
         html: `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px 16px">
           <div style="font-size:13px;letter-spacing:.08em;color:#0a84ff;font-weight:700">BOOKING CONFIRMED</div>
           <h1 style="font-size:26px;margin:6px 0 18px">London → Lisbon</h1>
@@ -396,32 +406,87 @@
           </table>
           <p style="color:#666;font-size:13px;margin-top:22px">Check-in opens 24 hours before departure.</p></div>`,
       }),
-      mk("inbox", P.sam, "Quick question about the API", "Hey George — is the /messages endpoint paginated by cursor or offset? Want to make sure the sync job doesn't double-count.\n\nCheers,\nSam", 2 * dayMs + 3 * hr),
+      mk("inbox", P.sam, "Quick question about the API", "Hey George — is the /messages endpoint paginated by cursor or offset? Want to make sure the sync job doesn't double-count.\n\nCheers,\nSam", 2 * dayMs + 3 * hr, { mailbox: "support@inflite.ai", unread: true }),
       mk("inbox", P.byte, "Issue #142: The quiet return of the web app", "", 3 * dayMs, {
+        category: "updates",
+        unread: true,
         html: `<div style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:24px 18px;color:#222">
           <div style="font-family:-apple-system,Helvetica,sans-serif;font-size:12px;letter-spacing:.12em;color:#888">THE WEEKLY BYTE · ISSUE 142</div>
           <h1 style="font-size:30px;line-height:1.15;margin:10px 0 14px">The quiet return of the web app</h1>
           <p style="font-size:17px;line-height:1.6">Home-screen web apps have grown up. With edge runtimes doing the heavy lifting, a single HTML file can feel as native as anything in the App Store…</p>
           <p style="font-size:17px;line-height:1.6">This week: why the best new tools ship as URLs first, and what that means for the rest of us.</p></div>`,
       }),
-      mk("inbox", P.parcel, "Your parcel is out for delivery", "Good news! Your parcel is with our driver and will arrive today between 13:00 and 15:00.", 4 * dayMs),
-      mk("sent", ME, "Re: Quick question about the API", "Cursor-based — pass the date of the last message as `before`. Shout if anything looks off.\n\nG", 2 * dayMs, { to: [P.sam] }),
+      mk("inbox", P.parcel, "Your parcel is out for delivery", "Good news! Your parcel is with our driver and will arrive today between 13:00 and 15:00.", 4 * dayMs, { category: "updates" }),
+      mk("sent", { name: ME.name, email: "support@inflite.ai" }, "Re: Quick question about the API", "Cursor-based — pass the date of the last message as `before`. Shout if anything looks off.\n\nG", 2 * dayMs, { to: [P.sam], mailbox: "support@inflite.ai" }),
       mk("sent", ME, "Investor update draft", "Hi Priya,\n\nHere's the first draft of the October update. Would love your eyes on it before it goes out.\n\nThanks,\nGeorge", 3 * dayMs, { to: [P.priya] }),
       mk("drafts", ME, "Thursday review agenda", "1. Toolbar glass\n2. iPad sidebar\n3. Compose sheet motion", 1 * hr, {
         to: [P.maya],
         compose: { from: ME.email, to: [P.maya], cc: [], bcc: [], subject: "Thursday review agenda", text: "1. Toolbar glass\n2. iPad sidebar\n3. Compose sheet motion" },
       }),
       mk("archive", P.jo, "Brand guidelines v3", "Final guidelines attached — thanks for all the feedback!", 9 * dayMs),
-      mk("trash", P.parcel, "Rate your delivery", "How did we do? Tap a star to rate your delivery.", 6 * dayMs),
+      mk("trash", P.parcel, "Rate your delivery", "How did we do? Tap a star to rate your delivery.", 6 * dayMs, { category: "updates" }),
     ];
     // (Priya's reply and the message it answers are one conversation)
     const priya = msgs.find((x) => x.subject === "Re: Investor update draft"), sentDraft = msgs.find((x) => x.subject === "Investor update draft");
     if (priya && sentDraft) priya.threadId = sentDraft.threadId;
     const leoIn = msgs.find((x) => x.folder === "inbox" && x.subject === "Re: Dinner Friday?"), leoOut = msgs.find((x) => x.folder === "sent" && x.subject === "Re: Dinner Friday?");
     if (leoIn && leoOut) leoIn.threadId = leoOut.threadId;
+    const samIn = msgs.find((x) => x.subject === "Quick question about the API"), samOut = msgs.find((x) => x.subject === "Re: Quick question about the API");
+    if (samIn && samOut) samOut.threadId = samIn.threadId;
     const contacts = Object.values(P);
     const delay = () => wait(140 + Math.random() * 160);
     const summary = ({ text, html, attachments, compose, ...m }) => m;
+
+    // The server's conversations (src/threads.js), worked out here from the messages above
+    const cleanSubject = (s) => (s || "").replace(/^((re|fwd?)\s*:\s*)+/i, "").trim();
+    function threadOf(tid, ms) {
+      ms = ms.slice().sort((a, b) => b.date - a.date);
+      const latest = ms[0], incoming = ms.find((m) => m.folder !== "sent") || latest, people = [];
+      for (const m of ms) {
+        const who = m.folder === "sent" ? { name: "You", email: m.from.email, me: true } : m.from;
+        if (!people.some((p) => p.email === who.email && !!p.me === !!who.me)) people.push(who);
+      }
+      const now = Date.now(), snooze = Math.max(0, ...ms.map((m) => m.snoozeUntil || 0));
+      return {
+        id: tid,
+        subject: cleanSubject(latest.subject) || "(No Subject)",
+        latest: summary(latest),
+        from: incoming.from,
+        people,
+        count: ms.length,
+        unread: ms.filter((m) => m.folder === "inbox" && m.unread).length,
+        starred: ms.some((m) => m.starred),
+        hasAttachments: ms.some((m) => m.hasAttachments),
+        category: ms.some((m) => m.category === "people") ? "people" : "updates",
+        done: !ms.some((m) => m.folder === "inbox"),
+        trashed: latest.folder === "trash",
+        snoozeUntil: snooze > now ? snooze : null,
+        mailbox: incoming.mailbox,
+        date: latest.date,
+        messages: ms.map(summary),
+      };
+    }
+    function allThreads(trash) {
+      const map = new Map();
+      for (const m of msgs) {
+        if (m.folder === "drafts" || (trash ? m.folder !== "trash" : m.folder === "trash")) continue;
+        if (!map.has(m.threadId)) map.set(m.threadId, []);
+        map.get(m.threadId).push(m);
+      }
+      return [...map].map(([tid, ms]) => threadOf(tid, ms)).sort((a, b) => b.date - a.date);
+    }
+    function matches(m, q) {
+      return q.split(/\s+/).filter(Boolean).every((t) => {
+        const [op, ...rest] = t.split(":"), v = rest.join(":").toLowerCase();
+        if (!rest.length) return [m.subject, m.snippet, m.from.name, m.from.email, ...m.to.map((x) => x.email)].join(" ").toLowerCase().includes(t.toLowerCase());
+        if (op === "from") return (m.from.name + m.from.email).toLowerCase().includes(v);
+        if (op === "to") return [m.mailbox, ...m.to.map((x) => x.email + x.name)].join(" ").toLowerCase().includes(v);
+        if (op === "has") return m.hasAttachments;
+        if (op === "is") return v === "unread" ? m.unread : v === "flagged" ? m.starred : v === "done" ? m.folder === "archive" : true;
+        return true;
+      });
+    }
+    const threadMsgs = (id) => msgs.filter((m) => m.threadId === id && m.folder !== "drafts");
     return {
       async session() {
         return { access: "ok", accountOrigin: "", user: { name: ME.name, handle: "george", email: ME.email, admin: true } };
@@ -430,53 +495,80 @@
         return { ok: true };
       },
       async me() {
-        return { displayName: ME.name, domain: "inflite.ai", defaultFrom: ME.email, identities: [ME.email, "george@inflite.ai"] };
+        return { displayName: ME.name, domain: "inflite.ai", defaultFrom: ME.email, identities: [ME.email, "support@inflite.ai"] };
       },
       async counts() {
-        const out = {};
-        for (const f of ["inbox", "drafts", "sent", "archive", "trash"]) {
-          const inF = msgs.filter((m) => m.folder === f);
-          out[f] = { total: inF.length, unread: inF.filter((m) => m.unread).length };
+        const out = { people: { threads: 0, unread: 0 }, updates: { threads: 0, unread: 0 }, flagged: 0, snoozed: 0, done: 0 };
+        for (const t of allThreads()) {
+          if (!t.done && t.snoozeUntil) out.snoozed++;
+          else if (!t.done) {
+            out[t.category].threads++;
+            if (t.unread) out[t.category].unread++;
+          } else out.done++;
+          if (t.starred) out.flagged++;
         }
-        out.flagged = { total: msgs.filter((m) => m.starred && m.folder !== "trash").length, unread: 0 };
+        out.trash = allThreads(true).length;
+        out.drafts = msgs.filter((m) => m.folder === "drafts").length;
+        const addr = new Map();
+        for (const m of msgs) if (["inbox", "archive"].includes(m.folder)) addr.set(m.mailbox, (addr.get(m.mailbox) || 0) + (m.folder === "inbox" && m.unread ? 1 : 0));
+        out.addresses = [...addr].map(([address, unread]) => ({ address, unread }));
+        out.inbox = { unread: out.people.unread };
         return out;
       },
-      async list({ folder, q, unread }) {
+      async threads({ view, category, address, q }) {
         await delay();
-        let list = msgs.slice();
-        if (q) {
-          const s = q.toLowerCase();
-          list = list.filter(
-            (m) =>
-              m.folder !== "trash" &&
-              [m.subject, m.snippet, m.from.name, m.from.email, ...m.to.map((t) => t.email)].join(" ").toLowerCase().includes(s)
+        let list;
+        if (q) list = allThreads().filter((t) => threadMsgs(t.id).some((m) => matches(m, q)));
+        else if (view === "trash") list = allThreads(true);
+        else {
+          list = allThreads().filter((t) =>
+            view === "unread" ? t.unread : view === "flagged" ? t.starred : view === "attachments" ? t.hasAttachments : view === "done" ? t.done : !t.done && !t.snoozeUntil
           );
-        } else if (folder === "flagged") list = list.filter((m) => m.starred && m.folder !== "trash");
-        else list = list.filter((m) => m.folder === folder);
-        if (unread) list = list.filter((m) => m.unread);
-        list.sort((a, b) => b.date - a.date);
-        return { messages: list.map(summary), hasMore: false };
+          if (category) list = list.filter((t) => t.category === category);
+        }
+        if (address) list = list.filter((t) => threadMsgs(t.id).some((m) => m.mailbox === address));
+        const drafts = view === "all" && !q && !address ? msgs.filter((m) => m.folder === "drafts").map(summary) : [];
+        return { threads: list.map(({ messages, ...t }) => t), drafts, hasMore: false };
+      },
+      async thread(id) {
+        await delay();
+        const ms = threadMsgs(id);
+        const live = ms.filter((m) => m.folder !== "trash");
+        if (!ms.length) throw new ApiError(404, "Conversation not found");
+        return threadOf(id, live.length ? live : ms);
+      },
+      async threadAction(id, { action, category, sender, until }) {
+        const ms = threadMsgs(id), latestIn = ms.filter((m) => ["inbox", "archive"].includes(m.folder)).sort((a, b) => b.date - a.date)[0];
+        for (const m of ms) {
+          if (action === "done" && m.folder === "inbox") Object.assign(m, { folder: "archive", snoozeUntil: null });
+          if (action === "inbox" && m.folder === "archive") m.folder = "inbox";
+          if (action === "read") m.unread = false;
+          if (action === "unflag") m.starred = false;
+          if (action === "trash" && m.folder !== "trash") Object.assign(m, { prevFolder: m.folder, folder: "trash", snoozeUntil: null });
+          if (action === "restore" && m.folder === "trash") Object.assign(m, { folder: m.prevFolder || "inbox", prevFolder: null });
+          if (action === "category") m.category = category;
+          if (action === "snooze") m.snoozeUntil = m.folder === "inbox" ? until : m.snoozeUntil;
+          if (action === "unsnooze") m.snoozeUntil = null;
+        }
+        if (action === "unread" && latestIn) latestIn.unread = true;
+        if (action === "flag") ms.sort((a, b) => b.date - a.date)[0].starred = true;
+        if (action === "category" && sender && latestIn) for (const m of msgs) if (m.from.email === latestIn.from.email) m.category = category;
+        if (action === "delete") for (const m of ms) msgs.splice(msgs.indexOf(m), 1);
+        return { ok: true };
+      },
+      async threadBatch({ ids, ...body }) {
+        for (const id of ids) await this.threadAction(id, body);
+        return { ok: true };
+      },
+      async emptyTrash() {
+        for (const m of msgs.filter((x) => x.folder === "trash")) msgs.splice(msgs.indexOf(m), 1);
+        return { ok: true };
       },
       async message(id) {
         await delay();
         const m = msgs.find((x) => x.id === id);
         if (!m) throw new ApiError(404, "Message not found");
-        const thread = msgs.filter((x) => x.threadId === m.threadId && x.id !== m.id && !["trash", "drafts"].includes(x.folder)).map(summary);
-        return { ...m, thread };
-      },
-      async patch(id, p) {
-        const m = msgs.find((x) => x.id === id);
-        if (m) Object.assign(m, p);
-        return { ok: true };
-      },
-      async batch({ ids, delete: del, ...p }) {
-        for (const id of ids) {
-          const i = msgs.findIndex((x) => x.id === id);
-          if (i < 0) continue;
-          if (del) msgs.splice(i, 1);
-          else Object.assign(msgs[i], p);
-        }
-        return { ok: true };
+        return { ...m };
       },
       async remove(id) {
         const i = msgs.findIndex((x) => x.id === id);
@@ -489,7 +581,12 @@
       },
       async send(p) {
         await wait(600);
-        const m = mk("sent", ME, p.subject, p.text, 0, { to: p.to, cc: p.cc, html: p.html });
+        const parent = p.inReplyTo && msgs.find((x) => x.messageId === p.inReplyTo);
+        const m = mk("sent", { name: ME.name, email: p.from }, p.subject, p.text, 0, { to: p.to, cc: p.cc, html: p.html });
+        if (parent) {
+          m.threadId = parent.threadId;
+          for (const x of msgs) if (x.threadId === parent.threadId) x.unread = false;
+        }
         msgs.unshift(m);
         if (p.draftId) await this.remove(p.draftId);
         return { ok: true, id: m.id };
@@ -532,48 +629,50 @@
     for (const m of document.querySelectorAll('meta[name="theme-color"]'))
       m.setAttribute("content", v === "auto" ? THEME_COLOR[m.media.includes("dark") ? "dark" : "light"] : THEME_COLOR[v]);
     // (email bodies are drawn for one look or the other)
-    if (S.message) renderDetail({ keepScroll: true });
+    if (S.thread) renderDetail({ keepScroll: true });
   }
   const isDark = () => {
     const t = document.documentElement.dataset.theme;
     return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   };
   matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
-    if (!document.documentElement.dataset.theme && S.message) renderDetail({ keepScroll: true });
+    if (!document.documentElement.dataset.theme && S.thread) renderDetail({ keepScroll: true });
   });
 
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
 
-  const FOLDER_INFO = {
-    inbox: { title: "Inbox", icon: "inbox", tile: "blue" },
-    flagged: { title: "Flagged", icon: "flag", tile: "amber" },
-    drafts: { title: "Drafts", icon: "drafts", tile: "grey" },
-    sent: { title: "Sent", icon: "sent", tile: "teal" },
-    archive: { title: "Archive", icon: "archive", tile: "indigo" },
-    trash: { title: "Trash", icon: "trash", tile: "red" },
+  // One stream of conversations, narrowed by views (the chips) rather than kept in folders
+  const VIEWS = {
+    all: { chip: "All", title: "Inbox" },
+    unread: { chip: "Unread", title: "Unread" },
+    flagged: { chip: "Flagged", title: "Flagged" },
+    attachments: { chip: "Attachments", title: "Attachments" },
+    done: { chip: "Done", title: "Done" },
+    trash: { chip: "Trash", title: "Trash" },
   };
 
   const S = {
     me: null,
     counts: {},
-    folder: "inbox",
-    messages: [],
+    view: "all",
+    category: store.get("category", "people"),
+    address: null,
+    query: "",
+    threads: [],
+    drafts: [],
     hasMore: false,
     loading: false,
     loadingMore: false,
-    query: "",
     searching: false,
-    unreadOnly: false,
     selectedId: null,
-    message: null,
-    depth: 1,
+    thread: null,
+    bodies: new Map(),
+    expanded: new Set(),
+    depth: 0,
     updatedAt: 0,
     layout: "phone",
-    wide: false,
-    sidebarOpen: false,
-    sidebarCollapsed: store.get("sidebarCollapsed", false),
     remoteImages: store.get("remoteImages", false),
     listToken: 0,
     detailToken: 0,
@@ -716,7 +815,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Layout
+  // Layout: on iPhone the stream, and a conversation pushed over it; on iPad and Mac, the two side by side
   // ---------------------------------------------------------------------------
 
   function updateLayout() {
@@ -726,35 +825,28 @@
     S.layout = phone ? "phone" : "pad";
     body.classList.toggle("phone", phone);
     body.classList.toggle("pad", !phone);
-    if (!phone) {
-      S.wide = w >= 1100;
-      const visible = S.wide ? !S.sidebarCollapsed : S.sidebarOpen;
-      body.classList.toggle("sidebar-hidden", !visible);
-      body.classList.toggle("sidebar-overlay", !S.wide);
-      const listLeft = S.wide && visible ? 320 : 0;
-      const listW = Math.round(Math.min(410, Math.max(320, w * (S.wide ? 0.28 : 0.42))));
-      body.style.setProperty("--list-left", `${listLeft}px`);
-      body.style.setProperty("--list-w", `${listW}px`);
-    }
+    body.style.setProperty("--list-left", "0px");
+    if (!phone) body.style.setProperty("--list-w", `${Math.round(Math.min(440, Math.max(340, w * 0.36)))}px`);
     setPositions();
     renderNavButtons();
   }
 
   function setPositions() {
-    const panes = [els.mailboxes, els.list, els.detail];
-    panes.forEach((p, i) => {
-      if (S.layout !== "phone") return p.removeAttribute("data-pos");
+    [els.list, els.detail].forEach((p, i) => {
+      if (S.layout !== "phone") {
+        p.removeAttribute("data-pos");
+        p.inert = false;
+        return;
+      }
       p.dataset.pos = i < S.depth ? "behind" : i === S.depth ? "current" : "ahead";
       p.inert = i !== S.depth;
     });
-    if (S.layout !== "phone") panes.forEach((p) => (p.inert = false));
-    if (S.layout === "pad") els.mailboxes.inert = document.body.classList.contains("sidebar-hidden");
   }
 
   function pushDepth(depth) {
     if (S.layout !== "phone") return;
     S.depth = depth;
-    hist("pushState", { depth }, "");
+    hist("pushState", { depth });
     setPositions();
   }
 
@@ -770,22 +862,12 @@
   window.addEventListener("popstate", (e) => {
     if (sheetState) {
       // Back gesture while composing closes the sheet instead.
-      hist("pushState", { depth: S.depth }, "");
+      hist("pushState", { depth: S.depth });
       return requestCloseCompose();
     }
     S.depth = e.state?.depth ?? 0;
     setPositions();
   });
-
-  function toggleSidebar(force) {
-    if (S.wide) {
-      S.sidebarCollapsed = force !== undefined ? !force : !S.sidebarCollapsed;
-      store.set("sidebarCollapsed", S.sidebarCollapsed);
-    } else {
-      S.sidebarOpen = force !== undefined ? force : !S.sidebarOpen;
-    }
-    updateLayout();
-  }
 
   // Interactive edge swipe to go back on iPhone.
   function setupEdgeSwipe() {
@@ -797,7 +879,7 @@
         if (S.layout !== "phone" || S.depth === 0 || sheetState || menuState) return;
         const t = e.touches[0];
         if (t.clientX > 24) return;
-        g = { x0: t.clientX, y0: t.clientY, dx: 0, active: false, t0: performance.now(), lastX: t.clientX, lastT: performance.now(), v: 0 };
+        g = { x0: t.clientX, y0: t.clientY, dx: 0, active: false, lastX: t.clientX, lastT: performance.now(), v: 0 };
       },
       { passive: true }
     );
@@ -820,12 +902,10 @@
         g.lastX = t.clientX;
         g.lastT = now;
         g.dx = Math.max(0, dx);
-        const cur = [els.mailboxes, els.list, els.detail][S.depth];
-        const prev = [els.mailboxes, els.list, els.detail][S.depth - 1];
         const p = g.dx / W();
-        cur.style.transform = `translateX(${g.dx}px)`;
-        prev.style.transform = `translateX(${-28 * (1 - p)}%)`;
-        prev.style.opacity = String(Math.min(1, p * 1.4));
+        els.detail.style.transform = `translateX(${g.dx}px)`;
+        els.list.style.transform = `translateX(${-28 * (1 - p)}%)`;
+        els.list.style.opacity = String(Math.min(1, p * 1.4));
       },
       { passive: false }
     );
@@ -835,11 +915,9 @@
       g = null;
       if (!was.active) return;
       document.body.classList.remove("dragging");
-      const cur = [els.mailboxes, els.list, els.detail][S.depth];
-      const prev = [els.mailboxes, els.list, els.detail][S.depth - 1];
-      cur.style.transform = "";
-      prev.style.transform = "";
-      prev.style.opacity = "";
+      els.detail.style.transform = "";
+      els.list.style.transform = "";
+      els.list.style.opacity = "";
       if (was.dx > W() * 0.33 || was.v > 0.45) goBack();
     };
     document.addEventListener("touchend", end, { passive: true });
@@ -865,24 +943,14 @@
     document.getElementById("app")?.remove();
     const app = h("div", { id: "app" });
 
-    // Mailboxes
-    els.mailboxesScroll = h("div.scroll");
-    els.mailboxesNav = h("div.navbar");
-    els.mailboxesToolbar = h("div.toolbar");
-    els.mailboxes = h(
-      "section.pane.mailboxes",
-      { "aria-label": "Mailboxes" },
-      els.mailboxesNav,
-      h("div.nav-title", "Mailboxes"),
-      els.mailboxesScroll,
-      els.mailboxesToolbar
-    );
-
-    // Message list
+    // The stream
     els.listNav = h("div.navbar");
     els.listNavTitle = h("div.nav-title");
     els.listTitle = h("div.large-title");
     els.listSubtitle = h("div.subtitle");
+    els.seg = h("div.seg.glass", { role: "tablist", "aria-label": "People or Updates" });
+    els.chips = h("div.chips", { role: "toolbar", "aria-label": "Views" });
+    els.searchHelp = h("div.search-help", { hidden: true });
     els.rows = h("div.rows", { role: "list" });
     els.listFooter = h("div");
     els.listScroll = h(
@@ -890,21 +958,24 @@
       h("div.ptr", h("div.spinner")),
       els.listTitle,
       els.listSubtitle,
+      els.seg,
+      els.chips,
+      els.searchHelp,
       els.rows,
       els.listFooter
     );
     els.listToolbar = h("div.toolbar");
-    els.list = h("section.pane.list", { "aria-label": "Messages" }, els.listNav, els.listNavTitle, els.listScroll, els.listToolbar);
+    els.list = h("section.pane.list", { "aria-label": "Conversations" }, els.listNav, els.listNavTitle, els.listScroll, els.listToolbar);
 
-    // Detail
+    // A conversation
     els.detailNav = h("div.navbar");
     els.detailNavTitle = h("div.nav-title");
     els.detailScroll = h("div.scroll");
     els.detailToolbar = h("div.toolbar");
-    els.detailEmpty = h("div.detail-empty", icon("envelope"), h("b", "No Message Selected"));
+    els.detailEmpty = h("div.detail-empty", icon("envelope"), h("b", "No Conversation Selected"));
     els.detail = h(
       "section.pane.detail",
-      { "aria-label": "Message" },
+      { "aria-label": "Conversation" },
       els.detailEmpty,
       els.detailNav,
       els.detailNavTitle,
@@ -912,12 +983,10 @@
       els.detailToolbar
     );
 
-    els.scrim = h("div.sidebar-scrim", { onclick: () => toggleSidebar(false) });
-
-    app.append(els.list, els.detail, els.scrim, els.mailboxes);
+    app.append(els.list, els.detail);
     document.body.append(app);
 
-    for (const pane of [els.mailboxes, els.list, els.detail]) {
+    for (const pane of [els.list, els.detail]) {
       const scroll = pane.querySelector(".scroll");
       scroll.addEventListener("scroll", () => pane.classList.toggle("scrolled", scroll.scrollTop > 28), { passive: true });
     }
@@ -927,7 +996,6 @@
     setupEdgeSwipe();
 
     buildListToolbar();
-    renderMailboxes();
     renderListChrome();
     renderDetail();
     updateLayout();
@@ -935,75 +1003,39 @@
 
   function renderNavButtons() {
     if (!els.listNav) return;
-    // List
-    setKids(els.listNav, 
-      S.layout === "phone"
-        ? gbtn("chevronLeft", "Mailboxes", goBack)
-        : !S.wide || S.sidebarCollapsed
-          ? gbtn("sidebar", "Show Sidebar", () => toggleSidebar(true))
-          : null,
+    const me = S.me || {};
+    setKids(
+      els.listNav,
+      h(
+        "button.gbtn.glass.profile",
+        { "aria-label": "Account", title: "Account", onclick: (e) => profileMenu(e.currentTarget) },
+        avatar({ name: me.displayName, email: me.defaultFrom }, "sm")
+      ),
       h("div.spacer"),
       gbtn("more", "More", (e) => listMenu(e.currentTarget))
-    );
-    // Mailboxes
-    setKids(els.mailboxesNav, 
-      h("div.spacer"),
-      S.layout === "pad" ? gbtn("sidebar", "Hide Sidebar", () => toggleSidebar(false)) : null
     );
     renderDetailChrome();
   }
 
-  // ---------------------------------------------------------------------------
-  // Mailboxes
-  // ---------------------------------------------------------------------------
-
-  function mailboxCell(folder) {
-    const info = FOLDER_INFO[folder];
-    const c = S.counts[folder] || {};
-    const n = folder === "inbox" ? c.unread : folder === "drafts" || folder === "flagged" ? c.total : c.unread;
-    return h(
-      "button.cell",
-      {
-        class: S.folder === folder && !S.query ? "current" : null,
-        onclick: () => openFolder(folder),
-      },
-      h(`span.ic.${info.tile}`, icon(info.icon)),
-      h("span.lbl", info.title),
-      n ? h("span.count", n) : null,
-      icon("chevronRight", "chev")
-    );
-  }
-
-  function renderMailboxes() {
+  // Your account: its page, remote images, and signing out
+  function profileMenu(anchor) {
     const me = S.me || {};
-    setKids(els.mailboxesScroll, 
-      h("div.large-title", "Mailboxes"),
-      h("div.group", mailboxCell("inbox"), mailboxCell("flagged")),
-      h("div.group-title", me.domain || "inflite.ai"),
-      h("div.group", ["drafts", "sent", "archive", "trash"].map(mailboxCell)),
-      // (your account: a tap from here, its page; and signing out, as at its foot)
-      h(
-        accountOrigin ? "a.account-card" : "div.account-card",
-        { href: accountOrigin ? `${accountOrigin}/` : null, "aria-label": "Your account" },
-        avatar({ name: me.displayName, email: me.defaultFrom }),
-        h("div.who", h("b", me.displayName || "Account"), h("span", me.defaultFrom || "")),
-        accountOrigin ? icon("chevronRight", "chev") : null
-      ),
-      h("button.signout.glass", { type: "button", onclick: (e) => signOutMenu(e.currentTarget) }, "Sign Out")
-    );
-    const unread = S.counts.inbox?.unread || 0;
-    if (S.layout === "pad") return setKids(els.mailboxesToolbar);
-    setKids(els.mailboxesToolbar, 
-      h("div.side", { style: { width: "48px" } }),
-      h("div.status", h("b", fmtUpdated(S.updatedAt) || " "), unread ? `${unread} Unread` : ""),
-      gbtn("compose", "New Message", () => openCompose(), { class: "side" })
+    showMenu(
+      anchor,
+      [
+        accountOrigin && { label: "Your Account", icon: "person", action: () => location.assign(`${accountOrigin}/`) },
+        { label: "Load Remote Images", checked: S.remoteImages, action: toggleRemoteImages },
+        "-",
+        { label: "Sign Out", icon: "signout", destructive: true, action: signOut },
+      ],
+      { title: [me.displayName, me.defaultFrom].filter(Boolean).join(" · ") }
     );
   }
 
-  function signOutMenu(anchor) {
-    showMenu(anchor, [
-      { label: "Sign Out", icon: "signout", destructive: true, action: signOut },
-    ]);
+  function toggleRemoteImages() {
+    S.remoteImages = !S.remoteImages;
+    store.set("remoteImages", S.remoteImages);
+    if (S.thread) renderDetail({ keepScroll: true });
   }
 
   async function signOut() {
@@ -1014,99 +1046,195 @@
     showGate("signin");
   }
 
-  // ---------------------------------------------------------------------------
-  // Message list
-  // ---------------------------------------------------------------------------
-
-  function folderTitle() {
-    if (S.query) return "Search";
-    return FOLDER_INFO[S.folder]?.title || "Inbox";
+  function listMenu(anchor) {
+    const items = [];
+    if (S.view !== "trash")
+      items.push({ label: "Mark All as Read", icon: "envelopeOpen", disabled: !S.threads.some((t) => t.unread), action: markAllRead });
+    if (S.view === "trash") {
+      items.push({ label: "Back to Inbox", icon: "inbox", action: () => setView("all") });
+      items.push("-", { label: "Empty Trash", icon: "trash", destructive: true, disabled: !S.threads.length, action: emptyTrash });
+    } else {
+      items.push("-", { label: S.counts.trash ? `Trash (${S.counts.trash})` : "Trash", icon: "trash", action: () => setView("trash") });
+    }
+    showMenu(anchor, items);
   }
 
+  // ---------------------------------------------------------------------------
+  // The stream: its title, People or Updates, the views, search
+  // ---------------------------------------------------------------------------
+
+  const listTitle = () => (S.query ? "Search" : VIEWS[S.view].title);
+
   function renderListChrome() {
-    const title = folderTitle();
+    if (!els.listTitle) return;
+    const title = listTitle();
     els.listTitle.textContent = title;
-    const unread = S.folder === "inbox" ? S.counts.inbox?.unread || 0 : 0;
-    const bits = [];
-    if (S.unreadOnly) bits.push("Filtered by: Unread");
-    else if (S.query) bits.push(`${S.messages.length} result${S.messages.length === 1 ? "" : "s"}`);
-    else {
-      bits.push(fmtUpdated(S.updatedAt));
-      if (unread) bits.push(`${unread} Unread`);
-    }
+    const c = S.counts[S.category] || {};
+    const bits = S.query
+      ? [`${S.threads.length} conversation${S.threads.length === 1 ? "" : "s"}`]
+      : [fmtUpdated(S.updatedAt), S.address && `to ${S.address}`, S.view === "all" && c.unread && `${c.unread} unread`];
     els.listSubtitle.textContent = bits.filter(Boolean).join(" · ") || " ";
-    setKids(els.listNavTitle, title, unread && !S.query ? h("small", `${unread} Unread`) : null);
-    els.filterBtn?.classList.toggle("tinted", S.unreadOnly);
-    els.filterBtn?.setAttribute("aria-pressed", String(S.unreadOnly));
+    setKids(els.listNavTitle, title, S.view === "all" && !S.query && c.unread ? h("small", `${c.unread} unread`) : null);
+    renderSeg();
+    renderChips();
+    renderSearchHelp();
+  }
+
+  function renderSeg() {
+    const hide = !!S.query || S.view === "trash";
+    els.seg.hidden = hide;
+    if (hide) return;
+    const btn = (key, label) => {
+      const n = S.counts[key]?.unread;
+      return h(
+        "button.seg-btn",
+        { type: "button", role: "tab", "aria-selected": String(S.category === key), class: S.category === key ? "on" : null, onclick: () => setCategory(key) },
+        label,
+        n ? h("span.seg-n", n) : null
+      );
+    };
+    els.seg.dataset.sel = S.category;
+    setKids(els.seg, h("span.seg-thumb", { "aria-hidden": "true" }), btn("people", "People"), btn("updates", "Updates"));
+  }
+
+  function renderChips() {
+    els.chips.hidden = !!S.query;
+    if (S.query) return;
+    const chip = (label, on, onclick, n) =>
+      h("button.chip", { type: "button", class: on ? "on" : null, "aria-pressed": String(on), onclick }, label, n ? h("span.chip-n", n) : null);
+    const views = ["all", "unread", "flagged", "attachments", "done"].map((v) =>
+      chip(VIEWS[v].chip, S.view === v, () => setView(v), v === "flagged" ? S.counts.flagged : null)
+    );
+    // (each address mail has come to: a lens on just that address, once there's more than one)
+    const addrs = S.counts.addresses || [];
+    const lenses =
+      addrs.length > 1
+        ? addrs.map((a) =>
+            chip(h("span", h("span.at", "@"), a.address.split("@")[0]), S.address === a.address, () => setAddress(S.address === a.address ? null : a.address), a.unread)
+          )
+        : [];
+    setKids(els.chips, views, lenses.length ? h("span.chip-sep", { "aria-hidden": "true" }) : null, lenses);
+    els.chips.querySelector(".chip.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
+  const OPERATORS = ["from:", "to:", "has:attachment", "is:unread", "is:flagged", "is:done", "before:", "after:"];
+  const OP_TOKEN = /\b(from|to|has|is|before|after):("[^"]*"|\S+)/gi;
+
+  // While searching: what the search understood, as tokens, and the operators a tap away
+  function renderSearchHelp() {
+    els.searchHelp.hidden = !S.searching;
+    if (!S.searching) return;
+    const q = els.searchInput.value;
+    const tokens = q.match(OP_TOKEN) || [];
+    setKids(
+      els.searchHelp,
+      tokens.length
+        ? h(
+            "div.tokens-row",
+            tokens.map((t) => {
+              const i = t.indexOf(":");
+              return h(
+                "button.qtoken",
+                { type: "button", "aria-label": `Remove ${t}`, onpointerdown: (e) => e.preventDefault(), onclick: () => editQuery(q.replace(t, "")) },
+                h("b", t.slice(0, i + 1)),
+                t.slice(i + 1),
+                icon("x")
+              );
+            })
+          )
+        : null,
+      h(
+        "div.ops-row",
+        OPERATORS.filter((o) => !q.toLowerCase().includes(o)).map((o) =>
+          h("button.chip.op", { type: "button", onpointerdown: (e) => e.preventDefault(), onclick: () => editQuery(`${q.trimEnd()} ${o}${o.endsWith(":") ? "" : " "}`) }, o)
+        )
+      )
+    );
+  }
+
+  function editQuery(v) {
+    els.searchInput.value = v.replace(/\s{2,}/g, " ").replace(/^\s+/, "");
+    els.searchInput.focus();
+    renderSearchHelp();
+    runSearch(els.searchInput.value);
   }
 
   function buildListToolbar() {
-    els.filterBtn = gbtn("filter", "Filter: Unread", toggleUnreadFilter, { class: "side hide-on-search" });
     els.searchInput = h("input", {
       type: "search",
       placeholder: "Search",
       enterkeyhint: "search",
       autocomplete: "off",
       autocorrect: "off",
+      autocapitalize: "off",
       "aria-label": "Search mail",
-      oninput: debounce(() => runSearch(els.searchInput.value), 260),
+      oninput: () => {
+        renderSearchHelp();
+        searchSoon(els.searchInput.value);
+      },
       onfocus: () => setSearching(true),
       onkeydown: (e) => e.key === "Escape" && cancelSearch(),
     });
     els.searchCap = h("label.search.glass", icon("search"), els.searchInput);
     els.cancelSearchBtn = gbtn("x", "Cancel Search", cancelSearch, { class: "side show-on-search" });
     els.composeBtn = gbtn("compose", "New Message", () => openCompose(), { class: "side hide-on-search" });
-    setKids(els.listToolbar, els.filterBtn, els.searchCap, els.composeBtn, els.cancelSearchBtn);
+    setKids(els.listToolbar, els.searchCap, els.composeBtn, els.cancelSearchBtn);
   }
 
   function setSearching(on) {
     S.searching = on;
     els.listToolbar.classList.toggle("searching", on);
+    renderListChrome();
   }
 
-  const runSearch = (q) => {
+  function runSearch(q) {
     q = q.trim();
     if (q === S.query) return;
     S.query = q;
-    S.selectedId = S.layout === "pad" ? S.selectedId : null;
+    S.threads = [];
     loadList();
-    renderMailboxes();
-  };
+  }
+  const searchSoon = debounce(runSearch, 260);
 
   function cancelSearch() {
     els.searchInput.value = "";
     els.searchInput.blur();
-    setSearching(false);
+    S.searching = false;
+    els.listToolbar.classList.remove("searching");
     if (S.query) {
       S.query = "";
+      S.threads = [];
       loadList();
-      renderMailboxes();
     }
+    renderListChrome();
   }
 
-  function toggleUnreadFilter() {
-    S.unreadOnly = !S.unreadOnly;
+  function resetList() {
+    S.threads = [];
+    S.drafts = [];
+    S.hasMore = false;
+    els.listScroll.scrollTop = 0;
     loadList();
+    renderListChrome();
   }
 
-  function openFolder(folder) {
-    const changed = folder !== S.folder || S.query;
-    if (S.query) {
-      els.searchInput.value = "";
-      setSearching(false);
-      S.query = "";
-    }
-    S.folder = folder;
-    S.unreadOnly = false;
-    if (changed) {
-      S.messages = [];
-      S.hasMore = false;
-      els.listScroll.scrollTop = 0;
-      loadList();
-    }
-    renderMailboxes();
-    if (S.layout === "phone") pushDepth(1);
-    else if (!S.wide) toggleSidebar(false);
+  function setView(view) {
+    if (S.query) cancelSearch();
+    if (view === S.view) return;
+    S.view = view;
+    resetList();
+  }
+
+  function setCategory(category) {
+    if (category === S.category) return;
+    S.category = category;
+    store.set("category", category);
+    resetList();
+  }
+
+  function setAddress(address) {
+    S.address = address;
+    resetList();
   }
 
   async function loadList({ more = false, quiet = false } = {}) {
@@ -1116,30 +1244,32 @@
       S.loadingMore = true;
     } else if (!quiet) {
       S.loading = true;
-      renderListChrome();
-      if (!S.messages.length) renderRows();
+      if (!S.threads.length) renderRows();
     }
     renderFooter();
     try {
-      const last = S.messages[S.messages.length - 1];
-      const res = await api.list({
-        folder: S.folder,
+      const last = S.threads[S.threads.length - 1];
+      const res = await api.threads({
+        view: S.view,
+        category: S.query || S.view === "trash" ? null : S.category,
+        address: S.address,
         q: S.query,
-        unread: S.unreadOnly,
         before: more && last ? last.date : undefined,
       });
       if (token !== S.listToken) return;
-      if (more) S.messages = S.messages.concat(res.messages);
-      else {
-        const known = new Set(S.messages.map((m) => m.id));
-        S.newIds = quiet && S.messages.length ? new Set(res.messages.filter((m) => !known.has(m.id)).map((m) => m.id)) : new Set();
-        // Keep older pages that were already loaded.
-        const oldest = res.messages[res.messages.length - 1];
-        const older = quiet && oldest && res.hasMore ? S.messages.filter((m) => m.date < oldest.date) : [];
-        S.messages = res.messages.concat(older);
+      if (more) {
+        S.threads = S.threads.concat(res.threads);
+        S.hasMore = res.hasMore;
+      } else {
+        const known = new Set(S.threads.map((t) => `${t.id}:${t.date}`));
+        S.newIds = quiet && S.threads.length ? new Set(res.threads.filter((t) => !known.has(`${t.id}:${t.date}`)).map((t) => t.id)) : new Set();
+        // (older pages already loaded are kept)
+        const oldest = res.threads[res.threads.length - 1];
+        const older = quiet && oldest && res.hasMore ? S.threads.filter((t) => t.date < oldest.date) : [];
+        S.threads = res.threads.concat(older);
+        S.drafts = res.drafts || [];
         if (!older.length) S.hasMore = res.hasMore;
       }
-      if (more) S.hasMore = res.hasMore;
       S.updatedAt = Date.now();
     } catch (err) {
       if (token === S.listToken && err.status !== 401) toast(err.message, { error: true });
@@ -1149,95 +1279,127 @@
         S.loadingMore = false;
         renderRows();
         renderListChrome();
-        renderMailboxes();
       }
     }
   }
 
   function renderFooter() {
-    setKids(els.listFooter, 
-      S.loadingMore || (S.loading && S.messages.length === 0) ? h("div.load-more", h("div.spinner")) : null
-    );
+    setKids(els.listFooter, S.loadingMore || (S.loading && !S.threads.length) ? h("div.load-more", h("div.spinner")) : null);
   }
 
   function renderRows() {
     closeOpenSwipe(true);
-    if (!S.messages.length && !S.loading) {
-      const info = FOLDER_INFO[S.folder] || FOLDER_INFO.inbox;
-      setKids(els.rows, 
-        h(
-          "div.empty.content-in",
-          icon(S.query ? "search" : info.icon),
-          h("b", S.query ? "No Results" : S.unreadOnly ? "No Unread Mail" : "No Mail"),
-          S.query ? `Nothing matches “${S.query}”.` : ""
-        )
-      );
-    } else {
-      setKids(els.rows, ...S.messages.map(rowEl));
-    }
+    const rows = [...S.drafts.map(draftRowEl), ...S.threads.map(threadRowEl)];
+    if (!rows.length && !S.loading) setKids(els.rows, emptyEl());
+    else setKids(els.rows, ...rows);
     renderFooter();
     S.newIds = new Set();
   }
 
-  function rowEl(m) {
-    const fromOrTo =
-      m.folder === "sent" || m.folder === "drafts"
-        ? m.to.length
-          ? `To: ${m.to.map(displayName).join(", ")}`
-          : "No Recipients"
-        : displayName(m.from) || "Unknown Sender";
-    const person = m.folder === "sent" || m.folder === "drafts" ? m.to[0] || m.from : m.from;
+  function emptyEl() {
+    if (S.query) return h("div.empty.content-in", icon("search"), h("b", "No Results"), `Nothing matches “${S.query}”.`);
+    if (S.view === "all")
+      return h(
+        "div.empty.caught-up.content-in",
+        h("div.done-badge", icon("check")),
+        h("b", "All caught up"),
+        S.address ? `Nothing waiting for ${S.address}.` : S.category === "people" ? "No conversations waiting for you." : "No updates waiting."
+      );
+    const [ic, said] = {
+      unread: ["envelopeOpen", "No unread mail"],
+      flagged: ["flag", "Nothing flagged"],
+      attachments: ["clip", "No attachments"],
+      done: ["check", "Nothing done yet"],
+      trash: ["trash", "Trash is empty"],
+    }[S.view];
+    return h("div.empty.content-in", icon(ic), h("b", said));
+  }
+
+  // Who's in a conversation, newest first: one person by full name, several by first names
+  function peopleLine(t) {
+    const ps = t.people || [];
+    if (ps.length === 1) return ps[0].me ? "You" : displayName(ps[0]) || "Unknown Sender";
+    return ps
+      .slice(0, 3)
+      .map((p) => (p.me ? "You" : (p.name || p.email || "").split(/[\s@]/)[0]))
+      .join(", ") + (ps.length > 3 ? ` +${ps.length - 3}` : "");
+  }
+
+  // What swiping right does here: Done, or back to the Inbox from Done, or out of the Trash
+  function leadAction(t) {
+    if (t.trashed) return { act: "restore", cls: "a-inbox", ic: "inbox", label: "Restore" };
+    if (t.done) return { act: "inbox", cls: "a-inbox", ic: "inbox", label: "Inbox" };
+    return { act: "done", cls: "a-done", ic: "check", label: "Done" };
+  }
+
+  function threadRowEl(t) {
     const row = h(
       "div.row",
       {
         role: "button",
         tabindex: "0",
-        "data-id": m.id,
-        class: [m.unread && "unread", m.starred && "starred", m.id === S.selectedId && S.layout === "pad" && "selected"]
-          .filter(Boolean)
-          .join(" ") || null,
-        "aria-label": `${m.unread ? "Unread. " : ""}${fromOrTo}. ${m.subject}`,
+        "data-id": t.id,
+        class:
+          [t.unread && "unread", t.starred && "starred", t.id === S.selectedId && S.layout === "pad" && "selected"].filter(Boolean).join(" ") || null,
+        "aria-label": `${t.unread ? "Unread. " : ""}${peopleLine(t)}. ${t.subject}`,
       },
       h("span.dot"),
       h("span.flag"),
-      avatar(person || { name: "?" }),
+      avatar(t.from || t.people?.[0] || { name: "?" }),
       h(
         "div.body",
-        h("div.top", h("span.from", m.folder === "drafts" ? h("span", { style: { color: "var(--red)" } }, "Draft ") : null, fromOrTo), h("span.date", fmtListDate(m.date), icon("chevronRight"))),
-        h("div.subject", m.hasAttachments ? icon("clip") : null, m.subject || "(No Subject)"),
-        h("div.preview", m.snippet || " ")
+        h(
+          "div.top",
+          h("span.from", peopleLine(t)),
+          t.count > 1 ? h("span.count-badge", t.count) : null,
+          h("span.date", fmtListDate(t.date), icon("chevronRight"))
+        ),
+        h("div.subject", t.hasAttachments ? icon("clip") : null, t.subject),
+        h("div.preview", t.latest?.folder === "sent" ? h("span.you", "You: ") : null, t.latest?.snippet || " ")
       )
     );
-    const isTrash = m.folder === "trash";
+    const lead = leadAction(t);
     const actions = h(
       "div.swipe-actions",
-      h(
-        "div.side.left",
-        h("button.a-read.lead", { "data-act": "read", tabindex: "-1" }, icon(m.unread ? "envelopeOpen" : "envelopeBadge"), m.unread ? "Read" : "Unread")
-      ),
+      h("div.side.left", h(`button.${lead.cls}.lead`, { "data-act": lead.act, tabindex: "-1" }, icon(lead.ic), lead.label)),
       h(
         "div.side.right",
         h("button.a-more", { "data-act": "more", tabindex: "-1" }, icon("more"), "More"),
-        h("button.a-flag", { "data-act": "flag", tabindex: "-1" }, icon(m.starred ? "flag" : "flagFill"), m.starred ? "Unflag" : "Flag"),
-        h("button.a-trash.lead", { "data-act": "trash", tabindex: "-1" }, icon("trash"), isTrash ? "Delete" : "Trash")
+        h("button.a-read", { "data-act": t.unread ? "read" : "unread", tabindex: "-1" }, icon(t.unread ? "envelopeOpen" : "envelopeBadge"), t.unread ? "Read" : "Unread"),
+        h("button.a-flag.lead", { "data-act": t.starred ? "unflag" : "flag", tabindex: "-1" }, icon(t.starred ? "flag" : "flagFill"), t.starred ? "Unflag" : "Flag")
       )
     );
-    const wrap = h("div.row-wrap", { role: "listitem", "data-id": m.id }, actions, row);
-    if (S.newIds.has(m.id)) wrap.classList.add("content-in");
+    const wrap = h("div.row-wrap", { role: "listitem", "data-id": t.id }, actions, row);
+    if (S.newIds.has(t.id)) wrap.classList.add("content-in");
     return wrap;
   }
 
+  function draftRowEl(d) {
+    const row = h(
+      "div.row.draft",
+      { role: "button", tabindex: "0", "data-draft": d.id, "aria-label": `Draft. ${d.subject}` },
+      h("span.dot"),
+      h("span.flag"),
+      avatar(d.to[0] || d.from),
+      h(
+        "div.body",
+        h("div.top", h("span.from", h("span.draft-tag", "Draft"), d.to.length ? d.to.map(displayName).join(", ") : "No Recipients"), h("span.date", fmtListDate(d.date))),
+        h("div.subject", d.subject || "(No Subject)"),
+        h("div.preview", d.snippet || " ")
+      )
+    );
+    return h("div.row-wrap", { role: "listitem", "data-draft": d.id }, h("div.swipe-actions", h("div.side.left"), h("div.side.right")), row);
+  }
+
   function updateRow(id) {
-    const m = S.messages.find((x) => x.id === id);
+    const t = S.threads.find((x) => x.id === id);
     const old = els.rows.querySelector(`.row-wrap[data-id="${CSS.escape(id)}"]`);
-    if (m && old) old.replaceWith(rowEl(m));
+    if (t && old) old.replaceWith(threadRowEl(t));
   }
 
   function markSelectedRow() {
     els.rows.querySelectorAll(".row.selected").forEach((r) => r.classList.remove("selected"));
-    if (S.layout === "pad" && S.selectedId) {
-      els.rows.querySelector(`.row[data-id="${CSS.escape(S.selectedId)}"]`)?.classList.add("selected");
-    }
+    if (S.layout === "pad" && S.selectedId) els.rows.querySelector(`.row[data-id="${CSS.escape(S.selectedId)}"]`)?.classList.add("selected");
   }
 
   async function removeRow(id) {
@@ -1250,8 +1412,8 @@
       await wait(380);
       wrap.remove();
     }
-    S.messages = S.messages.filter((m) => m.id !== id);
-    if (!S.messages.length) renderRows();
+    S.threads = S.threads.filter((t) => t.id !== id);
+    if (!S.threads.length && !S.drafts.length) renderRows();
   }
 
   // Pull to refresh & infinite scroll
@@ -1259,9 +1421,7 @@
   function onListScroll() {
     const s = els.listScroll;
     if (s.scrollTop < -70) pullArmed = true;
-    if (s.scrollHeight - s.scrollTop - s.clientHeight < 400 && S.hasMore && !S.loadingMore && !S.loading) {
-      loadList({ more: true });
-    }
+    if (s.scrollHeight - s.scrollTop - s.clientHeight < 400 && S.hasMore && !S.loadingMore && !S.loading) loadList({ more: true });
   }
 
   async function onListTouchEnd() {
@@ -1276,7 +1436,7 @@
   // Swipe actions on rows
   // ---------------------------------------------------------------------------
 
-  const LEFT_W = 84;
+  const LEFT_W = 88;
   const RIGHT_W = 3 * 78;
   let openSwipe = null;
 
@@ -1309,23 +1469,10 @@
 
     container.addEventListener("pointerdown", (e) => {
       const row = e.target.closest(".row");
-      if (!row || e.button > 0 || e.target.closest(".swipe-actions")) return;
+      if (!row || row.dataset.draft || e.button > 0 || e.target.closest(".swipe-actions")) return;
       const wrap = row.parentElement;
       if (openSwipe && openSwipe !== wrap) closeOpenSwipe();
-      g = {
-        wrap,
-        row,
-        id: e.pointerId,
-        x0: e.clientX,
-        y0: e.clientY,
-        base: Number(wrap.dataset.offset || 0),
-        dir: null,
-        lastX: e.clientX,
-        lastT: performance.now(),
-        v: 0,
-        x: 0,
-        full: null,
-      };
+      g = { wrap, row, id: e.pointerId, x0: e.clientX, y0: e.clientY, base: Number(wrap.dataset.offset || 0), dir: null, lastX: e.clientX, lastT: performance.now(), v: 0, x: 0, full: null };
     });
 
     container.addEventListener("pointermove", (e) => {
@@ -1350,9 +1497,9 @@
       g.lastT = now;
       const width = g.wrap.offsetWidth;
       let x = g.base + dx;
-      const fullAt = width * 0.58;
+      const fullAt = width * 0.5;
       const prevFull = g.full;
-      g.full = x > fullAt ? "left" : x < -fullAt ? "right" : null;
+      g.full = x > fullAt ? "left" : x < -width * 0.6 ? "right" : null;
       if (g.full !== prevFull && navigator.vibrate) navigator.vibrate(8);
       x = Math.max(-width, Math.min(width, x));
       g.x = x;
@@ -1369,20 +1516,20 @@
       setTimeout(() => delete st.row.dataset.swiped, 80);
       const id = st.wrap.dataset.id;
       const width = st.wrap.offsetWidth;
-      if (st.full === "left") {
+      const t = S.threads.find((x) => x.id === id);
+      if (st.full === "left" && t) {
         setRowOffset(st.wrap, width, { animate: true, full: "left" });
-        setTimeout(() => {
-          setRowOffset(st.wrap, 0, { animate: true });
-          const m = S.messages.find((x) => x.id === id);
-          if (m) setUnread(id, !m.unread);
-        }, 260);
         openSwipe = null;
+        setTimeout(() => act(id, leadAction(t).act), 200);
         return;
       }
-      if (st.full === "right") {
-        setRowOffset(st.wrap, -width, { animate: true, full: "right" });
+      if (st.full === "right" && t) {
         openSwipe = null;
-        setTimeout(() => trashMessage(id, { fromSwipe: true }), 220);
+        setRowOffset(st.wrap, -width, { animate: true, full: "right" });
+        setTimeout(() => {
+          setRowOffset(st.wrap, 0, { animate: true });
+          rightLead(t);
+        }, 240);
         return;
       }
       let target = 0;
@@ -1399,187 +1546,179 @@
     });
 
     container.addEventListener("click", (e) => {
-      const act = e.target.closest(".swipe-actions button");
-      if (act) {
-        const wrap = act.closest(".row-wrap");
-        const id = wrap.dataset.id;
-        const m = S.messages.find((x) => x.id === id);
-        const kind = act.dataset.act;
-        if (kind === "more") return rowMoreMenu(act, m);
+      const btn = e.target.closest(".swipe-actions button");
+      if (btn) {
+        const id = btn.closest(".row-wrap").dataset.id;
+        const t = S.threads.find((x) => x.id === id);
+        if (!t) return;
+        if (btn.dataset.act === "more") return rowMoreMenu(btn, t);
         closeOpenSwipe();
-        if (kind === "read") setUnread(id, !m.unread);
-        if (kind === "flag") setStarred(id, !m.starred);
-        if (kind === "trash") trashMessage(id, { fromSwipe: true });
+        act(id, btn.dataset.act);
         return;
       }
       const row = e.target.closest(".row");
       if (!row || row.dataset.swiped) return;
       if (openSwipe) return closeOpenSwipe();
-      openMessage(row.dataset.id);
+      if (row.dataset.draft) return openDraft(row.dataset.draft);
+      openThread(row.dataset.id);
     });
 
     container.addEventListener("keydown", (e) => {
       const row = e.target.closest(".row");
       if (row && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
-        openMessage(row.dataset.id);
+        if (row.dataset.draft) openDraft(row.dataset.draft);
+        else openThread(row.dataset.id);
       }
     });
   }
 
-  function rowMoreMenu(anchor, m) {
+  // (a full swipe to the left: flag or unflag)
+  function rightLead(t) {
+    act(t.id, t.starred ? "unflag" : "flag");
+  }
+
+  function rowMoreMenu(anchor, t) {
     showMenu(anchor, [
-      { label: "Reply", icon: "reply", action: () => withMessage(m.id, (msg) => openCompose(replyDraft(msg, "reply"))) },
-      { label: "Reply All", icon: "replyAll", action: () => withMessage(m.id, (msg) => openCompose(replyDraft(msg, "replyAll"))) },
-      { label: "Forward", icon: "forward", action: () => withMessage(m.id, (msg) => openCompose(replyDraft(msg, "forward"))) },
+      { label: "Reply", icon: "reply", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "reply"))) },
+      { label: "Reply All", icon: "replyAll", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "replyAll"))) },
+      { label: "Forward", icon: "forward", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "forward"))) },
       "-",
-      { label: m.unread ? "Mark as Read" : "Mark as Unread", icon: m.unread ? "envelopeOpen" : "envelopeBadge", action: () => setUnread(m.id, !m.unread) },
-      { label: m.starred ? "Unflag" : "Flag", icon: "flag", action: () => setStarred(m.id, !m.starred) },
+      ...categoryItems(t),
       "-",
-      ...moveItems(m),
+      t.trashed
+        ? { label: "Delete Forever", icon: "trash", destructive: true, action: () => deleteThread(t.id) }
+        : { label: "Move to Trash", icon: "trash", destructive: true, action: () => act(t.id, "trash") },
     ]);
     closeOpenSwipe();
   }
 
-  async function withMessage(id, fn) {
-    try {
-      const msg = S.message?.id === id ? S.message : await api.message(id);
-      fn(msg);
-    } catch (err) {
-      toast(err.message, { error: true });
-    }
-  }
-
-  function moveItems(m) {
-    return ["inbox", "archive", "trash"]
-      .filter((f) => f !== m.folder)
-      .map((f) => ({
-        label: f === "inbox" ? "Move to Inbox" : f === "archive" ? "Archive" : "Move to Trash",
-        icon: FOLDER_INFO[f].icon,
-        destructive: f === "trash",
-        action: () => moveMessage(m.id, f),
-      }));
+  // People or Updates, for this conversation, or for everything from its sender
+  function categoryItems(t) {
+    const other = t.category === "updates" ? "people" : "updates";
+    const label = other === "people" ? "People" : "Updates";
+    const sender = t.from && !t.people?.every((p) => p.me) ? displayName(t.from) : null;
+    return [
+      { label: `Move to ${label}`, icon: other === "people" ? "person" : "news", action: () => act(t.id, "category", { category: other }) },
+      sender && { label: `Always Show ${sender} in ${label}`, icon: "pin", action: () => act(t.id, "category", { category: other, sender: true }) },
+    ];
   }
 
   // ---------------------------------------------------------------------------
-  // Message actions (optimistic)
+  // Acting on a conversation (at once on screen, then on the server)
   // ---------------------------------------------------------------------------
 
-  function patchLocal(id, patch) {
-    const m = S.messages.find((x) => x.id === id);
-    if (m) Object.assign(m, patch);
-    if (S.message?.id === id) Object.assign(S.message, patch);
-    return m;
+  const PATCH = {
+    done: { done: true, snoozeUntil: null },
+    inbox: { done: false },
+    read: { unread: 0 },
+    unread: { unread: 1 },
+    flag: { starred: true },
+    unflag: { starred: false },
+    trash: { trashed: true, snoozeUntil: null },
+    restore: { trashed: false },
+  };
+
+  // Whether a conversation still belongs in the list being shown
+  function inView(t) {
+    if (S.query) return !t.trashed;
+    if (S.view === "trash") return t.trashed;
+    if (t.trashed) return false;
+    if (t.category !== S.category) return false;
+    switch (S.view) {
+      case "all":
+        return !t.done && !t.snoozeUntil;
+      case "unread":
+        return t.unread > 0;
+      case "flagged":
+        return t.starred;
+      case "attachments":
+        return t.hasAttachments;
+      case "done":
+        return t.done;
+    }
+    return true;
   }
 
-  async function setUnread(id, unread, { silent } = {}) {
-    const m = patchLocal(id, { unread });
-    if (m && m.folder === "inbox" && S.counts.inbox) {
-      S.counts.inbox.unread = Math.max(0, (S.counts.inbox.unread || 0) + (unread ? 1 : -1));
-    }
-    updateRow(id);
+  async function act(id, action, extra = {}, { quiet } = {}) {
+    const t = S.threads.find((x) => x.id === id);
+    const patch = action === "category" ? { category: extra.category } : action === "snooze" ? { snoozeUntil: extra.until } : PATCH[action] || {};
+    if (t) Object.assign(t, patch);
+    if (S.thread?.id === id) Object.assign(S.thread, patch);
+    const leaving = !!t && !inView(t);
+    if (leaving && S.selectedId === id) await leaveThread(id);
+    if (leaving) removeRow(id);
+    else updateRow(id);
     markSelectedRow();
-    renderListChrome();
-    renderMailboxes();
-    if (!silent) renderDetailChrome();
+    if (S.thread?.id === id) renderDetailChrome();
+    if (!quiet) actionToast(id, action, extra, t);
     try {
-      await api.patch(id, { unread });
-    } catch (err) {
-      toast(err.message, { error: true });
-    }
-  }
-
-  async function setStarred(id, starred) {
-    patchLocal(id, { starred });
-    if (S.counts.flagged) S.counts.flagged.total += starred ? 1 : -1;
-    updateRow(id);
-    markSelectedRow();
-    renderMailboxes();
-    if (S.message?.id === id) renderDetail({ keepScroll: true });
-    try {
-      await api.patch(id, { starred });
-    } catch (err) {
-      toast(err.message, { error: true });
-    }
-    if (S.folder === "flagged" && !starred && !S.query) removeRow(id);
-  }
-
-  function trashMessage(id, opts) {
-    const m = S.messages.find((x) => x.id === id) || (S.message?.id === id ? S.message : null);
-    if (m?.folder === "trash") return deleteForever(id);
-    return moveMessage(id, "trash", opts);
-  }
-
-  async function deleteForever(id) {
-    await leaveMessage(id);
-    removeRow(id);
-    try {
-      await api.remove(id);
-      toast("Message Deleted", { icon: "trash" });
-      refreshCounts();
+      await api.threadAction(id, { action, ...extra });
     } catch (err) {
       toast(err.message, { error: true });
       loadList({ quiet: true });
     }
+    refreshCounts();
+    // (back where it was, after an undo: in the list again)
+    if (!t && ["inbox", "restore", "unsnooze"].includes(action)) loadList({ quiet: true });
   }
 
-  // If the message being acted on is open, move away from it first.
-  async function leaveMessage(id) {
+  function actionToast(id, action, extra, t) {
+    const undo = (back) => ({ actionLabel: "Undo", duration: 4000, action: () => act(id, back) });
+    if (action === "done") toast("Done", { icon: "check", ...undo("inbox") });
+    else if (action === "inbox") toast("Back in Inbox", { icon: "inbox" });
+    else if (action === "trash") toast("Moved to Trash", { icon: "trash", ...undo("restore") });
+    else if (action === "restore") toast("Restored", { icon: "inbox" });
+    else if (action === "category") {
+      const where = extra.category === "people" ? "People" : "Updates";
+      toast(extra.sender && t?.from ? `${displayName(t.from)} will always show in ${where}` : `Moved to ${where}`, { icon: extra.category === "people" ? "person" : "news" });
+    }
+  }
+
+  async function deleteThread(id) {
+    await leaveThread(id);
+    removeRow(id);
+    try {
+      await api.threadAction(id, { action: "delete" });
+      toast("Deleted", { icon: "trash" });
+    } catch (err) {
+      toast(err.message, { error: true });
+      loadList({ quiet: true });
+    }
+    refreshCounts();
+  }
+
+  // If the conversation being acted on is open, move away from it first.
+  async function leaveThread(id) {
     if (S.selectedId !== id) return;
     if (S.layout === "phone") {
-      if (S.depth === 2) {
+      if (S.depth === 1) {
         goBack();
         await wait(420);
       }
       S.selectedId = null;
       return;
     }
-    const i = S.messages.findIndex((m) => m.id === id);
-    const next = S.messages[i + 1] || S.messages[i - 1];
-    if (next) openMessage(next.id);
+    const i = S.threads.findIndex((t) => t.id === id);
+    const next = S.threads[i + 1] || S.threads[i - 1];
+    if (next && next.id !== id) openThread(next.id);
     else {
       S.selectedId = null;
-      S.message = null;
+      S.thread = null;
       renderDetail();
     }
   }
 
-  async function moveMessage(id, folder, { fromSwipe } = {}) {
-    const m = S.messages.find((x) => x.id === id) || (S.message?.id === id ? S.message : null);
-    if (!m) return;
-    const from = m.folder;
-    const removeFromView = !S.query && S.folder !== "flagged";
-    await leaveMessage(id);
-    patchLocal(id, { folder });
-    if (removeFromView) removeRow(id);
-    else updateRow(id);
-    const label = folder === "trash" ? "Moved to Trash" : folder === "archive" ? "Archived" : `Moved to ${FOLDER_INFO[folder].title}`;
-    toast(label, {
-      icon: FOLDER_INFO[folder].icon,
-      actionLabel: "Undo",
-      duration: 4000,
-      action: async () => {
-        await api.patch(id, { folder: from });
-        loadList({ quiet: true });
-        refreshCounts();
-      },
-    });
-    try {
-      await api.patch(id, { folder });
-      refreshCounts();
-    } catch (err) {
-      toast(err.message, { error: true });
-      loadList({ quiet: true });
-    }
-  }
-
   async function markAllRead() {
-    const ids = S.messages.filter((m) => m.unread).map((m) => m.id);
+    const ids = S.threads.filter((t) => t.unread).map((t) => t.id);
     if (!ids.length) return;
-    ids.forEach((id) => patchLocal(id, { unread: false }));
+    for (const id of ids) Object.assign(S.threads.find((t) => t.id === id), PATCH.read);
+    if (S.view === "unread") {
+      S.threads = [];
+    }
     renderRows();
     try {
-      await api.batch({ ids, unread: false });
+      await api.threadBatch({ ids, action: "read" });
     } catch (err) {
       toast(err.message, { error: true });
     }
@@ -1587,49 +1726,25 @@
   }
 
   async function emptyTrash() {
-    const ids = S.messages.map((m) => m.id);
-    if (!ids.length) return;
-    S.messages = [];
+    S.threads = [];
     renderRows();
-    if (S.message && ids.includes(S.message.id)) {
-      S.message = null;
+    if (S.thread?.trashed) {
+      S.thread = null;
       S.selectedId = null;
       renderDetail();
     }
     try {
-      await api.batch({ ids, delete: true });
+      await api.emptyTrash();
       toast("Trash Emptied", { icon: "trash" });
     } catch (err) {
       toast(err.message, { error: true });
     }
     refreshCounts();
-    loadList({ quiet: true });
-  }
-
-  function listMenu(anchor) {
-    const items = [
-      { label: "Mark All as Read", icon: "envelopeOpen", disabled: !S.messages.some((m) => m.unread), action: markAllRead },
-      {
-        label: "Load Remote Images",
-        checked: S.remoteImages,
-        action: () => {
-          S.remoteImages = !S.remoteImages;
-          store.set("remoteImages", S.remoteImages);
-          if (S.message) renderDetail({ keepScroll: true });
-        },
-      },
-    ];
-    if (S.folder === "trash" && !S.query) {
-      items.push("-", { label: "Empty Trash", icon: "trash", destructive: true, disabled: !S.messages.length, action: emptyTrash });
-    }
-    items.push("-", { label: "Sign Out", icon: "signout", destructive: true, action: signOut });
-    showMenu(anchor, items);
   }
 
   async function refreshCounts() {
     try {
       S.counts = await api.counts();
-      renderMailboxes();
       renderListChrome();
       updateBadge();
     } catch {}
@@ -1644,58 +1759,88 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Reader
+  // A conversation: every message in it, newest first; the newest (and any unread) open
   // ---------------------------------------------------------------------------
 
-  async function openMessage(id, { fromNav } = {}) {
-    const summary = S.messages.find((m) => m.id === id);
-    if (summary?.folder === "drafts") return openDraft(id);
+  async function loadBody(id) {
+    if (S.bodies.has(id)) return S.bodies.get(id);
+    const m = await api.message(id);
+    if (S.bodies.size > 120) S.bodies.clear();
+    S.bodies.set(id, m);
+    return m;
+  }
+
+  // Replies go to the newest message someone else sent (or the newest, if it's all yours)
+  async function withReplyTarget(threadId, fn) {
+    try {
+      const t = S.thread?.id === threadId && S.thread.messages ? S.thread : await api.thread(threadId);
+      const target = t.messages.find((m) => m.folder !== "sent") || t.messages[0];
+      fn(await loadBody(target.id));
+    } catch (err) {
+      toast(err.message, { error: true });
+    }
+  }
+
+  async function openThread(id, { fromNav } = {}) {
     S.selectedId = id;
     markSelectedRow();
-    S.message = summary ? { ...summary, loading: true } : null;
+    const t = S.threads.find((x) => x.id === id);
+    S.thread = { ...(t || { id, people: [], subject: "" }), messages: null, loading: true };
     renderDetail();
-    if (S.layout === "phone" && !fromNav) pushDepth(2);
+    if (S.layout === "phone" && !fromNav) pushDepth(1);
     const token = ++S.detailToken;
     try {
-      const msg = await api.message(id);
+      const full = await api.thread(id);
       if (token !== S.detailToken) return;
-      S.message = msg;
+      S.expanded = new Set([full.messages[0]?.id, ...full.messages.filter((m) => m.unread && m.folder === "inbox").map((m) => m.id)].filter(Boolean));
+      await Promise.all([...S.expanded].map((mid) => loadBody(mid).catch(() => null)));
+      if (token !== S.detailToken) return;
+      S.thread = full;
       renderDetail({ keepScroll: true });
-      if (msg.unread) setUnread(id, false, { silent: true });
+      if (full.unread) act(id, "read", {}, { quiet: true });
     } catch (err) {
       if (token === S.detailToken) toast(err.message, { error: true });
     }
   }
 
-  function stepMessage(dir) {
-    const i = S.messages.findIndex((m) => m.id === S.selectedId);
-    const next = S.messages[i + dir];
-    if (next) openMessage(next.id, { fromNav: true });
+  function stepThread(dir) {
+    const i = S.threads.findIndex((t) => t.id === S.selectedId);
+    const next = S.threads[i + dir];
+    if (next) openThread(next.id, { fromNav: true });
   }
 
   function renderDetailChrome() {
-    const m = S.message;
-    const i = m ? S.messages.findIndex((x) => x.id === m.id) : -1;
-    setKids(els.detailNav, 
-      S.layout === "phone" ? gbtn("chevronLeft", folderTitle(), goBack) : null,
+    if (!els.detailNav) return;
+    const t = S.thread;
+    const i = t ? S.threads.findIndex((x) => x.id === t.id) : -1;
+    setKids(
+      els.detailNav,
+      S.layout === "phone" ? gbtn("chevronLeft", listTitle(), goBack) : null,
       h("div.spacer"),
-      m
+      t
         ? h(
             "div.gcap.glass",
-            h("button", { "aria-label": "Previous Message", disabled: i <= 0, onclick: () => stepMessage(-1) }, icon("chevronUp")),
-            h("button", { "aria-label": "Next Message", disabled: i < 0 || i >= S.messages.length - 1, onclick: () => stepMessage(1) }, icon("chevronDown"))
+            h("button", { "aria-label": "Previous Conversation", disabled: i <= 0, onclick: () => stepThread(-1) }, icon("chevronUp")),
+            h("button", { "aria-label": "Next Conversation", disabled: i < 0 || i >= S.threads.length - 1, onclick: () => stepThread(1) }, icon("chevronDown"))
           )
         : null,
-      m ? gbtn("more", "More", (e) => detailMenu(e.currentTarget)) : null
+      t ? gbtn("more", "More", (e) => detailMenu(e.currentTarget)) : null
     );
-    els.detailNavTitle.textContent = m?.subject || "";
-    setKids(els.detailToolbar, 
-      ...(m
+    els.detailNavTitle.textContent = t?.subject || "";
+    const lead = t && leadAction(t);
+    setKids(
+      els.detailToolbar,
+      ...(t
         ? [
-            gbtn("trash", m.folder === "trash" ? "Delete" : "Trash", () => trashMessage(m.id)),
-            gbtn("folder", "Move", (e) => showMenu(e.currentTarget, moveItems(m), { title: "Move Message" })),
+            h(
+              `button.gbtn.glass.text${lead.act === "done" ? ".tinted" : ""}`,
+              { "aria-label": lead.label, onclick: () => act(t.id, lead.act) },
+              icon(lead.ic),
+              lead.act === "done" ? "Done" : lead.label
+            ),
+            gbtn("trash", t.trashed ? "Delete Forever" : "Move to Trash", () => (t.trashed ? deleteThread(t.id) : act(t.id, "trash"))),
             h("div.spacer"),
-            gbtn("reply", "Reply", (e) => replyMenu(e.currentTarget), { disabled: !!m.loading }),
+            gbtn("reply", "Reply", (e) => replyMenu(e.currentTarget), { disabled: !!t.loading }),
             gbtn("compose", "New Message", () => openCompose()),
           ]
         : S.layout === "pad"
@@ -1705,112 +1850,101 @@
   }
 
   function replyMenu(anchor) {
-    const m = S.message;
-    if (!m) return;
+    const t = S.thread;
+    if (!t) return;
     showMenu(anchor, [
-      { label: "Reply", icon: "reply", action: () => openCompose(replyDraft(m, "reply")) },
-      { label: "Reply All", icon: "replyAll", action: () => openCompose(replyDraft(m, "replyAll")) },
-      { label: "Forward", icon: "forward", action: () => openCompose(replyDraft(m, "forward")) },
+      { label: "Reply", icon: "reply", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "reply"))) },
+      { label: "Reply All", icon: "replyAll", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "replyAll"))) },
+      { label: "Forward", icon: "forward", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "forward"))) },
     ]);
   }
 
   function detailMenu(anchor) {
-    const m = S.message;
-    if (!m) return;
+    const t = S.thread;
+    if (!t) return;
+    const newest = t.messages?.find((m) => m.folder !== "sent");
     showMenu(anchor, [
-      { label: m.starred ? "Unflag" : "Flag", icon: "flag", action: () => setStarred(m.id, !m.starred) },
-      { label: m.unread ? "Mark as Read" : "Mark as Unread", icon: "envelopeBadge", action: () => setUnread(m.id, !m.unread) },
+      { label: t.starred ? "Unflag" : "Flag", icon: "flag", action: () => act(t.id, t.starred ? "unflag" : "flag") },
+      { label: "Mark as Unread", icon: "envelopeBadge", action: () => act(t.id, "unread") },
       "-",
-      ...moveItems(m),
+      ...categoryItems(t),
       "-",
-      !DEMO && m.folder !== "sent" && { label: "Download Original", icon: "download", action: () => window.open(api.rawUrl(m.id), "_blank") },
+      !DEMO && newest && { label: "Download Original", icon: "download", action: () => window.open(api.rawUrl(newest.id), "_blank") },
+      t.trashed && { label: "Delete Forever", icon: "trash", destructive: true, action: () => deleteThread(t.id) },
     ]);
   }
 
   function renderDetail({ keepScroll } = {}) {
-    const m = S.message;
+    if (!els.detail) return;
+    const t = S.thread;
     renderDetailChrome();
-    els.detailEmpty.style.display = m ? "none" : "";
+    els.detailEmpty.style.display = t ? "none" : "";
     const top = els.detailScroll.scrollTop;
-    if (!m) {
+    if (!t) {
       setKids(els.detailScroll);
       return;
     }
-    const people = [
-      m.to.length && `To: ${m.to.map(displayName).join(", ")}`,
-      m.cc?.length && `Cc: ${m.cc.map(displayName).join(", ")}`,
+    const meta = [
+      t.count > 1 && `${t.count} messages`,
+      t.category === "updates" ? "Updates" : "People",
+      t.mailbox && `to ${t.mailbox}`,
+      t.trashed ? "In Trash" : t.done && "Done",
     ].filter(Boolean);
-
     const content = h(
       "div",
       { class: keepScroll ? null : "content-in" },
       h(
-        "div.reader-head",
-        avatar(m.from, "lg"),
-        h(
-          "div.who",
-          h("div.name", displayName(m.from)),
-          h("div.addr", m.from.name ? m.from.email : ""),
-          people.map((p) => h("div.addr", p))
-        ),
-        h("div.when", fmtListDate(m.date))
+        "header.conv-head",
+        h("div.reader-subject", t.starred ? icon("flagFill", "flag-ic") : null, h("span", t.subject || "(No Subject)")),
+        h("div.conv-meta", meta.join(" · "))
       ),
-      h("div.reader-subject", m.starred ? icon("flagFill", "flag-ic") : null, h("span", m.subject || "(No Subject)")),
-      h("div.reader-divider"),
-      m.loading ? h("div.load-more", h("div.spinner")) : messageBody(m),
-      !m.loading && m.attachments?.length ? attachmentsEl(m.attachments) : null,
-      !m.loading ? h("div.subtitle.reader-date", fmtLongDate(m.date)) : null,
-      !m.loading && m.thread?.length ? threadEl(m.thread) : null
+      t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", t.messages.map(messageCard))
     );
     setKids(els.detailScroll, content);
-    if (keepScroll) els.detailScroll.scrollTop = top;
-    else els.detailScroll.scrollTop = 0;
+    els.detailScroll.scrollTop = keepScroll ? top : 0;
     els.detail.classList.toggle("scrolled", els.detailScroll.scrollTop > 28);
   }
 
-  // The rest of the conversation, newest first, each opening in place.
-  function threadEl(list) {
-    const items = list.slice().sort((a, b) => b.date - a.date);
+  function messageCard(m) {
+    const open = S.expanded.has(m.id);
+    const full = S.bodies.get(m.id);
+    const me = m.folder === "sent";
+    const toLine = [m.to?.length && `to ${m.to.map((p) => (me ? displayName(p) : p.email === m.mailbox ? "you" : displayName(p))).join(", ")}`, m.cc?.length && `cc ${m.cc.map(displayName).join(", ")}`]
+      .filter(Boolean)
+      .join(" · ");
     return h(
-      "section.thread",
-      { "aria-label": "Conversation" },
-      h("div.thread-title", `${items.length} More in This Conversation`),
-      items.map((t) => {
-        const body = h("div.thread-body");
-        const card = h(
-          "div.thread-card",
-          h(
-            "button.thread-head",
-            {
-              type: "button",
-              "aria-expanded": "false",
-              onclick: async (e) => {
-                const btn = e.currentTarget;
-                const open = !card.classList.contains("open");
-                card.classList.toggle("open", open);
-                btn.setAttribute("aria-expanded", String(open));
-                if (!open || body.childElementCount) return;
-                setKids(body, h("div.load-more", h("div.spinner")));
-                try {
-                  const msg = await api.message(t.id);
-                  setKids(body, messageBody(msg), msg.attachments?.length ? attachmentsEl(msg.attachments) : null);
-                } catch (err) {
-                  setKids(body, h("div.mail-body", err.message));
-                }
-              },
-            },
-            avatar(t.from),
-            h(
-              "div.thread-meta",
-              h("div.thread-top", h("b", t.folder === "sent" ? "You" : displayName(t.from)), h("span", fmtListDate(t.date))),
-              h("div.thread-snippet", t.snippet || " ")
-            )
-          ),
-          body
-        );
-        return card;
-      })
+      "article.mcard",
+      { class: [open && "open", m.unread && m.folder === "inbox" && "unread"].filter(Boolean).join(" ") || null },
+      h(
+        "button.msg-head",
+        { type: "button", "aria-expanded": String(open), onclick: () => toggleMessage(m.id) },
+        avatar(m.from),
+        h(
+          "div.msg-meta",
+          h("div.msg-top", h("b", me ? "You" : displayName(m.from)), h("span", fmtListDate(m.date))),
+          h("div.msg-sub", open ? toLine || m.from.email : m.snippet || " ")
+        )
+      ),
+      open
+        ? full
+          ? [messageBody(full), full.attachments?.length ? attachmentsEl(full.attachments) : null, h("div.msg-foot", fmtLongDate(m.date))]
+          : h("div.load-more", h("div.spinner"))
+        : null
     );
+  }
+
+  async function toggleMessage(id) {
+    if (S.expanded.has(id)) S.expanded.delete(id);
+    else {
+      S.expanded.add(id);
+      renderDetail({ keepScroll: true });
+      try {
+        await loadBody(id);
+      } catch (err) {
+        toast(err.message, { error: true });
+      }
+    }
+    renderDetail({ keepScroll: true });
   }
 
   // Quoted replies ("On … wrote:" and what follows) are folded away behind a button, as in Mail.
@@ -2565,7 +2699,7 @@ pre{white-space:pre-wrap}
           });
           toast("Draft Saved", { icon: "drafts" });
           refreshCounts();
-          if (S.folder === "drafts") loadList({ quiet: true });
+          loadList({ quiet: true });
         } catch (err) {
           toast(err.message, { error: true });
         }
@@ -2576,7 +2710,7 @@ pre{white-space:pre-wrap}
           try {
             await api.remove(c.draftId);
             refreshCounts();
-            if (S.folder === "drafts") removeRow(c.draftId);
+            loadList({ quiet: true });
           } catch {}
         }
       },
@@ -2695,7 +2829,9 @@ pre{white-space:pre-wrap}
       await api.send(payload, { keepalive });
       toast("Message Sent", { icon: "check" });
       refreshCounts();
-      if (["sent", "drafts"].includes(S.folder) && !S.query) loadList({ quiet: true });
+      loadList({ quiet: true });
+      // (a reply shows in its conversation)
+      if (S.thread && job.c.inReplyTo) openThread(S.thread.id, { fromNav: true });
     } catch (err) {
       toast(err.message || "Couldn't send", {
         error: true,
@@ -2734,29 +2870,31 @@ pre{white-space:pre-wrap}
     if (e.key === "Escape") {
       if (menuState) return closeMenu();
       if (sheetState) return requestCloseCompose();
-      if (S.layout === "phone" && S.depth > 1) return goBack();
+      if (S.layout === "phone" && S.depth > 0) return goBack();
     }
     const typing = e.target.closest?.("input,textarea,[contenteditable]");
     if (typing || sheetState || menuState || e.metaKey || e.ctrlKey || e.altKey || !els.list) return;
-    const m = S.message && !S.message.loading ? S.message : null;
+    const t = S.thread && !S.thread.loading ? S.thread : null;
     const k = e.key;
     if (k === "c" || k === "n") return e.preventDefault(), openCompose();
     if (k === "/") return e.preventDefault(), els.searchInput.focus();
+    if (k === "1") return setCategory("people");
+    if (k === "2") return setCategory("updates");
     if (k === "j" || k === "ArrowDown") {
       e.preventDefault();
-      if (S.selectedId) stepMessage(1);
-      else if (S.messages[0]) openMessage(S.messages[0].id);
+      if (S.selectedId) stepThread(1);
+      else if (S.threads[0]) openThread(S.threads[0].id);
       return;
     }
-    if (k === "k" || k === "ArrowUp") return e.preventDefault(), stepMessage(-1);
-    if (!m) return;
-    if (k === "r") return openCompose(replyDraft(m, "reply"));
-    if (k === "a") return openCompose(replyDraft(m, "replyAll"));
-    if (k === "f") return openCompose(replyDraft(m, "forward"));
-    if (k === "e") return moveMessage(m.id, "archive");
-    if (k === "#" || k === "Delete" || k === "Backspace") return trashMessage(m.id);
-    if (k === "u") return setUnread(m.id, !m.unread);
-    if (k === "l") return setStarred(m.id, !m.starred);
+    if (k === "k" || k === "ArrowUp") return e.preventDefault(), stepThread(-1);
+    if (!t) return;
+    if (k === "r") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "reply")));
+    if (k === "a") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "replyAll")));
+    if (k === "f") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "forward")));
+    if (k === "e") return act(t.id, leadAction(t).act);
+    if (k === "#" || k === "Delete" || k === "Backspace") return t.trashed ? deleteThread(t.id) : act(t.id, "trash");
+    if (k === "u") return act(t.id, t.unread ? "read" : "unread");
+    if (k === "l") return act(t.id, t.starred ? "unflag" : "flag");
   });
 
   // ---------------------------------------------------------------------------
@@ -2882,15 +3020,12 @@ pre{white-space:pre-wrap}
     S.counts = counts;
     if (!els.list || !els.list.isConnected) build();
     else {
-      renderMailboxes();
+      renderNavButtons();
       renderListChrome();
     }
-    hist("replaceState", { depth: 0 }, "");
-    if (S.layout === "phone") {
-      hist("pushState", { depth: 1 }, "");
-      S.depth = 1;
-      setPositions();
-    }
+    hist("replaceState", { depth: 0 });
+    S.depth = 0;
+    setPositions();
     updateBadge();
     await loadList();
     clearInterval(pollTimer);
@@ -2900,13 +3035,13 @@ pre{white-space:pre-wrap}
   async function poll() {
     if (document.hidden) return;
     renderListChrome();
-    renderMailboxes();
     if (S.swiping || openSwipe || S.loading) return;
-    const before = S.counts.inbox?.unread || 0;
+    const before = S.counts.people?.unread || 0;
     await refreshCounts();
     if (!S.query) await loadList({ quiet: true });
-    const after = S.counts.inbox?.unread || 0;
-    if (after > before && S.folder !== "inbox") toast(`${after - before} New Message${after - before === 1 ? "" : "s"}`, { icon: "inbox" });
+    const after = S.counts.people?.unread || 0;
+    // (new conversations in People, while looking elsewhere)
+    if (after > before && (S.category !== "people" || S.view !== "all")) toast(`${after - before} New in People`, { icon: "person" });
   }
 
   document.addEventListener("visibilitychange", () => {

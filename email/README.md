@@ -13,9 +13,15 @@ Cloudflare Email Sending.
   open Mail, with a passkey on the account, and Mail asks you to confirm it's you every 12 hours (the same
   rule as Admin). Signing in from Mail goes to the account page and comes back, which also works for Mail
   added to the Home Screen. The account-side code is `functions/_mailapp.js` in the georgefarrowgreen repo.
-- **App:** a static web app in `public/`, installable to the home screen. It has a navigation
-  stack on iPhone (with an edge-swipe back gesture) and a split view on iPad, plus swipe actions,
-  undo send, drafts, search, and keyboard shortcuts.
+- **One stream, not folders:** every conversation lands in one stream, split into **People** and
+  **Updates** as it arrives (by a sender rule you set, or by the signs bulk mail carries: an
+  unsubscribe link, a mailing list, no-reply senders). Chips narrow it (All, Unread, Flagged,
+  Attachments, Done) and each @inflite.ai address that has had mail becomes a lens. Swipe right for
+  **Done**; a new reply brings a conversation back. Search takes `from:`, `to:`, `has:attachment`,
+  `is:unread`, `is:flagged`, `is:done`, `before:` and `after:`.
+- **App:** a static web app in `public/`, installable to the home screen, in the look of the other
+  inflite apps: the stream on iPhone with conversations pushed over it (and an edge-swipe back), the
+  two side by side on iPad and Mac, swipe actions, undo send, drafts and keyboard shortcuts.
 
 Try the interface without a backend by adding `?demo` to the URL.
 

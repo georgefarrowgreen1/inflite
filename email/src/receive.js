@@ -15,7 +15,9 @@ export async function receiveEmail(message, env, ctx) {
   const replyTo = addresses(email.replyTo)[0]?.email || null;
   const messageId = cleanMessageId(email.messageId) || `${id}@${env.DOMAIN}`;
   const inReplyTo = cleanMessageId(email.inReplyTo);
-  const threadId = (await findThread(env, inReplyTo, email.references)) || id;
+  const existingThread = await findThread(env, inReplyTo, email.references);
+  const threadId = existingThread || id;
+  const category = await classify(env, email, from.email, !!existingThread);
   const date = parseDate(email.date);
 
   const attachments = (email.attachments || []).map((a) => ({
@@ -41,8 +43,8 @@ export async function receiveEmail(message, env, ctx) {
     env.DB.prepare(
       `INSERT INTO messages (id, folder, thread_id, message_id, in_reply_to, refs, mailbox,
         from_name, from_email, to_json, cc_json, reply_to, subject, snippet, date, unread,
-        has_attachments, size)
-       VALUES (?1, 'inbox', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 1, ?15, ?16)`
+        has_attachments, size, category)
+       VALUES (?1, 'inbox', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 1, ?15, ?16, ?17)`
     ).bind(
       id,
       threadId,
@@ -59,8 +61,11 @@ export async function receiveEmail(message, env, ctx) {
       snippet(email.text, email.html),
       date,
       visibleAttachments.length ? 1 : 0,
-      message.rawSize || raw.byteLength
+      message.rawSize || raw.byteLength,
+      category
     ),
+    // (a new message brings its conversation back into the stream, snoozed or not)
+    env.DB.prepare(`UPDATE messages SET snooze_until = NULL WHERE thread_id = ?1 AND snooze_until IS NOT NULL`).bind(threadId),
     ...attachments.map((a) =>
       env.DB.prepare(
         `INSERT INTO attachments (id, message_id, filename, type, size, content_id, disposition)
@@ -73,6 +78,30 @@ export async function receiveEmail(message, env, ctx) {
 
   // Optional safety net: also forward to a verified address.
   if (env.FORWARD_TO) ctx.waitUntil(message.forward(env.FORWARD_TO));
+}
+
+// People or Updates: a rule set for the sender wins; then a reply in a conversation you're part of is People; then the
+// signs bulk mail carries (an unsubscribe link, a list, "bulk" precedence, an automated sender) make it Updates.
+const BULK_SENDER = /^(no-?reply|do-?not-?reply|notifications?|newsletters?|news|updates?|alerts?|receipts?|billing|invoices?|mailer(-daemon)?|bounces?|marketing|digest)([+._-]|@)/i;
+
+async function classify(env, email, fromEmail, inConversation) {
+  const rule = await env.DB.prepare(`SELECT category FROM sender_rules WHERE email = ?1`)
+    .bind((fromEmail || "").toLowerCase())
+    .first();
+  if (rule) return rule.category;
+  if (inConversation) return "people";
+  const header = (k) => (email.headers || []).find((h) => h.key === k)?.value || "";
+  const auto = header("auto-submitted");
+  if (
+    header("list-unsubscribe") ||
+    header("list-id") ||
+    /^(bulk|list|junk)$/i.test(header("precedence").trim()) ||
+    (auto && !/^no$/i.test(auto.trim())) ||
+    header("feedback-id") ||
+    BULK_SENDER.test(fromEmail || "")
+  )
+    return "updates";
+  return "people";
 }
 
 function mailbox(a) {
