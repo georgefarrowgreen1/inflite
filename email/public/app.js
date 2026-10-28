@@ -952,6 +952,9 @@
 
   // Interactive edge swipe to go back on iPhone.
   function setupEdgeSwipe() {
+    // (once: it listens on the document, which outlives the app built again after signing back in)
+    if (setupEdgeSwipe.done) return;
+    setupEdgeSwipe.done = true;
     let g = null;
     const W = () => window.innerWidth;
     document.addEventListener(
@@ -3512,6 +3515,7 @@ pre{white-space:pre-wrap}
   // a paper plane flying its dotted route. again: shown before in this visit (after signing out): no slow start.
   function showGate(access = "signin", { user, error } = {}) {
     clearInterval(pollTimer);
+    forgetMail();
     const g = GATE[access] || GATE.signin;
     const who = user && access !== "signin" ? `Signed in as @${user.handle}` : "";
     const go = h(
@@ -3548,6 +3552,23 @@ pre{white-space:pre-wrap}
     document.querySelector(".login")?.remove();
     document.body.append(login);
     document.title = "Mail";
+  }
+
+  // Signed out: nothing of the mailbox stays on screen or in memory (the app, any open sheet or menu, what was loaded)
+  function forgetMail() {
+    closeMenu(true);
+    document.querySelectorAll(".sheet, .sheet-scrim, .toast").forEach((el) => el.remove());
+    document.body.classList.remove("sheet-open", "dragging", "moving");
+    sheetState = null;
+    toastEl = null;
+    document.getElementById("app")?.remove();
+    for (const k of Object.keys(els)) delete els[k];
+    Object.assign(S, { me: null, counts: {}, threads: [], drafts: [], thread: null, selectedId: null, query: "", address: null, version: null, prefetch: null, depth: 0 });
+    S.bodies.clear();
+    S.expanded.clear();
+    try {
+      navigator.clearAppBadge?.();
+    } catch {}
   }
 
   // The scene at the foot of the welcome: three bands of cloud, far to near, and a dotted route over them with a paper
