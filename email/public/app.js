@@ -266,7 +266,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.07";
+  const BUILD = "1.08";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -4497,7 +4497,7 @@ pre{white-space:pre-wrap}
 
   const GATE = {
     signin: {
-      text: "Every inflite address, in one calm stream",
+      text: "",
       button: "Sign in",
     },
     reauth: {
@@ -4545,7 +4545,7 @@ pre{white-space:pre-wrap}
         "div.w-top",
         h("div.wlogo", h("img.mark", { src: "/icon.svg", alt: "", width: 96, height: 96 })),
         h("h1.wtitle", { id: "login-title", "aria-label": "Mail" }, [..."Mail"].map((c) => h("span", { "aria-hidden": "true" }, c))),
-        h("p.tagline", g.text)
+        g.text ? h("p.tagline", g.text) : null
       ),
       h(
         "div.w-cta",
