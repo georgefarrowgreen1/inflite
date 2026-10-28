@@ -32,6 +32,7 @@ function rowOut(r) {
     category: r.category === "people" || r.category === "updates" ? r.category : null,
     notify: !!r.notify,
     isDefault: !!r.is_default,
+    signature: r.signature || "",
     count: r.c || 0,
   };
 }
@@ -107,6 +108,7 @@ function clean(body, partial) {
     out.category = body.category;
   }
   if (body.notify !== undefined) out.notify = body.notify ? 1 : 0;
+  if (body.signature !== undefined) out.signature = String(body.signature || "").slice(0, 1000);
   if (!partial) out.name ??= "";
   return out;
 }
@@ -131,9 +133,9 @@ export async function createAddress(env, body) {
   const count = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM addresses`).first())?.n || 0;
   if (count >= 100) throw new AddressError("That’s as many addresses as Mail keeps.");
   await env.DB.prepare(
-    `INSERT INTO addresses (email, name, color, category, notify, is_default, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)`
+    `INSERT INTO addresses (email, name, color, category, notify, is_default, created_at, signature) VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7)`
   )
-    .bind(email, c.name, c.color || COLORS[count % COLORS.length], c.category ?? null, c.notify ?? 1, Date.now())
+    .bind(email, c.name, c.color || COLORS[count % COLORS.length], c.category ?? null, c.notify ?? 1, Date.now(), c.signature || null)
     .run();
   return addressOf(env, email);
 }

@@ -70,10 +70,12 @@ const MIGRATIONS = [
   // (Mail's own addresses, as Settings has them: see addresses.js)
   `CREATE TABLE IF NOT EXISTS addresses (email TEXT PRIMARY KEY, name TEXT, color TEXT, category TEXT, notify INTEGER NOT NULL DEFAULT 1,
      is_default INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
+  // (an address's own signature, over the one for every address)
+  `ALTER TABLE addresses ADD COLUMN signature TEXT`,
 ];
 
 // Bumped whenever SCHEMA or MIGRATIONS change, so a new isolate checks one row rather than running them all again.
-const SCHEMA_VERSION = "6";
+const SCHEMA_VERSION = "7";
 
 let ready;
 

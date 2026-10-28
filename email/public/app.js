@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.16";
+  const BUILD = "1.17";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -563,8 +563,8 @@
       signature: "",
       colors: ["blue", "green", "orange", "pink", "purple", "teal", "grey"],
       addresses: [
-        { email: "hello@inflite.ai", name: ME.name, color: "blue", category: null, notify: true, isDefault: true, count: 214 },
-        { email: "support@inflite.ai", name: "inflite Support", color: "green", category: "updates", notify: false, isDefault: false, count: 38 },
+        { email: "hello@inflite.ai", name: ME.name, color: "blue", category: null, notify: true, isDefault: true, count: 214, signature: "" },
+        { email: "support@inflite.ai", name: "inflite Support", color: "green", category: "updates", notify: false, isDefault: false, count: 38, signature: "The InFlite team\nsupport@inflite.ai" },
       ],
     };
     return {
@@ -1316,6 +1316,8 @@
   // ---------------------------------------------------------------------------
 
   const ADDR_COLORS = { blue: "#2f6cf0", green: "#1fa75a", orange: "#f08a1c", pink: "#e8457f", purple: "#8a5cf0", teal: "#1b9e9a", grey: "#6b7389" };
+  // (the signature for mail from an address: its own, else the one for every address)
+  const sigFor = (email) => (S.me?.addresses || []).find((a) => a.email === String(email || "").toLowerCase())?.signature || S.me?.signature || "";
   const addrColor = (email) => ADDR_COLORS[(S.me?.addresses || []).find((a) => a.email === String(email || "").toLowerCase())?.color] || null;
 
   let setState = null;
@@ -1512,7 +1514,7 @@
               ic: "pen",
               tint: "amber",
               title: "Signature",
-              sub: data.signature ? data.signature.split("\n")[0] : "None",
+              sub: data.signature ? data.signature.split("\n")[0] : "None, for every address",
               onclick: () => push(signatureView),
             })
           ),
@@ -1579,6 +1581,18 @@
           ),
           group(h("label.set-field", h("span.set-fl", "Name"), nameInput)),
           hint("The name people see on mail from this address."),
+          k("Signature"),
+          group(
+            h("textarea.set-sig", {
+              rows: 4,
+              placeholder: data.signature ? `As every address’s: ${data.signature.split("\n")[0]}` : "None",
+              "data-k": "asig",
+              "aria-label": `Signature for ${email}`,
+              onchange: (e) => saveAddress(email, { signature: e.currentTarget.value }),
+              value: a.signature || "",
+            })
+          ),
+          hint("Under new messages and replies from this address. Left empty, it has the signature for every address."),
           k("Arrives in"),
           group(
             row({ ic: "inbox", tint: "blue", title: "Sort into", end: segOf(a.category, (v) => saveAddress(email, { category: v })) }),
@@ -1747,7 +1761,7 @@
           toast(err.message, { error: true });
         }
       };
-      return { title: "Signature", left: backBtn("Settings"), body: [group(area), hint("Added under new messages and replies, from every address.")] };
+      return { title: "Signature", left: backBtn("Settings"), body: [group(area), hint("Added under new messages and replies, from every address that hasn’t one of its own.")] };
     }
 
     function close() {
@@ -3310,7 +3324,10 @@
   function buildQuickReply(t) {
     const last = t.messages?.find((m) => m.folder !== "sent");
     const who = last ? (displayName(last.from) || "").split(/\s+/)[0] : "";
-    const field = h("textarea.qr-field", { rows: 1, placeholder: who ? `Reply to ${who}…` : "Reply…", "aria-label": who ? `Reply to ${who}` : "Reply", enterkeyhint: "send" });
+    // (said, when the reply goes from an address other than the default: the one the mail came to)
+    const via = last?.mailbox && last.mailbox !== S.me?.defaultFrom && mine(last.mailbox) ? ` from ${last.mailbox.split("@")[0]}@` : "";
+    const said = who ? `Reply to ${who}${via}` : `Reply${via}`;
+    const field = h("textarea.qr-field", { rows: 1, placeholder: `${said}…`, "aria-label": said, enterkeyhint: "send" });
     const send = h("button.qr-send", { type: "button", "aria-label": "Send", disabled: true }, icon("arrowUp"));
     const grow = () => {
       field.style.height = "auto";
@@ -3326,7 +3343,8 @@
       field.blur();
       withReplyTarget(t.id, (m) => {
         const c = replyDraft(m, "reply");
-        c.text = text;
+        const sig = sigFor(c.from);
+        c.text = sig ? `${text}\n\n${sig}` : text;
         queueSend(c);
       });
     };
@@ -4219,8 +4237,10 @@ pre{white-space:pre-wrap}
       draftId: init.draftId || null,
       showCc: !!((init.cc && init.cc.length) || (init.bcc && init.bcc.length)),
     };
-    // (your signature, under a new message or reply, as Settings has it)
-    if (!init.draftId && !c.text && S.me?.signature) c.text = `\n\n${S.me.signature}`;
+    // (the signature for the address it's from, under a new message or reply, as Settings has it; kept as c.sig, so a
+    // change of address changes it too, while it's as it was put in)
+    c.sig = !init.draftId && !c.text ? sigFor(c.from) : "";
+    if (c.sig) c.text = `\n\n${c.sig}`;
     const snapshot = JSON.stringify([c.to, c.cc, c.bcc, c.subject, c.text, c.attachments.length]);
 
     const scrim = h("div.sheet-scrim");
@@ -4443,6 +4463,7 @@ pre{white-space:pre-wrap}
             checked: addr === c.from,
             dot: addrColor(addr),
             action: () => {
+              swapSig(addr);
               c.from = addr;
               drawFrom();
               update();
@@ -4451,6 +4472,18 @@ pre{white-space:pre-wrap}
           { title: "Send From", dropdown: true }
         ),
     });
+    // (another address: its signature in place of the last one's, if that's still there as it was put in)
+    function swapSig(addr) {
+      const next = sigFor(addr);
+      if (next === c.sig) return;
+      const was = c.sig ? `\n\n${c.sig}` : "";
+      if (was && !c.text.endsWith(was)) return;
+      c.text = (was ? c.text.slice(0, -was.length) : c.text.trimEnd()) + (next ? `\n\n${next}` : "");
+      c.sig = next;
+      textArea.value = c.text;
+      autoGrow();
+    }
+
     function drawFrom() {
       fromBtn.setAttribute("aria-label", `From ${c.from}`);
       fromBtn.title = `From ${c.from}`;

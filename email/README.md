@@ -28,7 +28,8 @@ Cloudflare Email Sending.
   `email.inflite.ai/#settings`): your addresses on the domain, each with the name it's sent under, a colour, where its
   mail goes (Auto, People or Updates) and whether it notifies; a new one is just a name, as Email Routing's catch-all
   already brings every address here. Also the default address, what happens to mail to any address that isn't listed
-  (Keep, or Turn Away: refused, so its sender hears), and a signature added under new messages and replies.
+  (Keep, or Turn Away: refused, so its sender hears), and a signature added under new messages and replies (each
+  address can have its own). A reply goes from the address the mail came to, with that address's signature.
 - **Attachments:** pictures show as a gallery in the message; pictures, PDFs and videos open in a
   full-screen viewer (swipe through, pinch or double-tap to zoom, swipe down to close, Share or Save).
 - **Later:** swipe left (or the clock in a conversation) to put it away until a time: later today,
