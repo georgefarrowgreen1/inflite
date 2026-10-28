@@ -5413,3 +5413,156 @@ button.set-row:active {
   font-size: 15px;
 }
 /* ==== end of InFlite's way in ==== */
+
+/* Search's filters: From, Date, Files, Unread (the ones on first, blue, named, with an ×); From and Date open their
+   choices just under them */
+.sf-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sf {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  background: var(--glass-ctl);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  color: var(--label);
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s, transform 0.4s var(--spring);
+}
+
+.sf:active {
+  transform: scale(0.95);
+  transition-duration: 0.1s;
+}
+
+.sf.open {
+  background: color-mix(in srgb, var(--tint) 12%, var(--glass-ctl));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 45%, transparent);
+}
+
+.sf.on {
+  padding-right: 6px;
+  background: var(--sheen), linear-gradient(180deg, color-mix(in srgb, var(--tint) 92%, white), var(--tint-deep));
+  box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--tint-deep) 80%, transparent);
+  color: #fff;
+}
+
+.sf svg.sf-dd {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.4;
+  color: var(--label-3);
+  transition: transform 0.35s var(--spring);
+}
+
+.sf.open svg.sf-dd {
+  transform: rotate(180deg);
+}
+
+.sf-x {
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.sf-x svg.i {
+  width: 10px;
+  height: 10px;
+  stroke-width: 3;
+}
+
+.sf-strip {
+  border-radius: 20px;
+  background: var(--glass-ctl);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  animation: sf-open 0.3s var(--ease-out) both;
+}
+
+@keyframes sf-open {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.sf-strip.people {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 12px 8px;
+}
+
+.sf-person {
+  width: 62px;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--label-2);
+  transition: transform 0.35s var(--spring);
+}
+
+.sf-person:active {
+  transform: scale(0.92);
+}
+
+.sf-person span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avatar.sf-av {
+  width: 44px;
+  height: 44px;
+  font-size: 15px;
+}
+
+.sf-none {
+  margin: 0;
+  padding: 2px 8px;
+  font-size: 14px;
+  color: var(--label-2);
+}
+
+.sf-strip.dates {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 16px;
+}
+
+.sf-strip.dates button {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 11px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--label);
+}
+
+.sf-strip.dates button:active,
+.sf-strip.dates button[aria-checked="true"] {
+  background: var(--glass-strong);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-strip {
+    animation: none;
+  }
+}

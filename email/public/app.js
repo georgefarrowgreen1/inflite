@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.18";
+  const BUILD = "1.19";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -553,6 +553,10 @@
               ? (m.attachments || []).some((a) => a.type === "application/pdf")
               : m.hasAttachments;
         if (op === "is") return v === "unread" ? m.unread : v === "flagged" ? m.starred : v === "done" ? m.folder === "archive" : true;
+        if (op === "after" || op === "before") {
+          const t = Date.parse(v);
+          return !Number.isFinite(t) || (op === "after" ? m.date >= t : m.date < t);
+        }
         return true;
       });
     }
@@ -2034,8 +2038,91 @@
     renderSearchHelp();
   }
 
-  const OPERATORS = ["from:", "to:", "file:", "has:attachment", "has:image", "has:pdf", "is:unread", "is:flagged", "is:done", "before:", "after:"];
-  const OP_TOKEN = /\b(from|to|file|has|is|before|after):("[^"]*"|\S+)/gi;
+  // Search's filters, beside what's typed: who it's from, when, with files, unread. Each kept here and put into the
+  // search as the operators it understands (from:, after:/before:, has:attachment, is:unread); the field holds only
+  // what's typed (where those operators still work, typed by hand)
+  const SF = { from: null, date: null, files: false, unread: false, open: null };
+  const DATES = [
+    ["today", "Today"],
+    ["week", "This week"],
+    ["month", "This month"],
+    ["older", "Older"],
+  ];
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  function dateOp(k) {
+    const d = new Date();
+    if (k === "today") return `after:${ymd(d)}`;
+    if (k === "week") return `after:${ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() - 6))}`;
+    const first = ymd(new Date(d.getFullYear(), d.getMonth(), 1));
+    return k === "month" ? `after:${first}` : k === "older" ? `before:${first}` : "";
+  }
+  const filtersQuery = () =>
+    [SF.from && `from:${SF.from.email}`, SF.date && dateOp(SF.date), SF.files && "has:attachment", SF.unread && "is:unread"].filter(Boolean).join(" ");
+  const fullQuery = () => [els.searchInput?.value.trim(), filtersQuery()].filter(Boolean).join(" ");
+  const sfAny = () => !!(SF.from || SF.date || SF.files || SF.unread);
+  function clearFilters() {
+    Object.assign(SF, { from: null, date: null, files: false, unread: false, open: null });
+  }
+  // (a recent search, said in words: its filters by their names, then what was typed)
+  function sayQuery(q) {
+    const words = [];
+    const rest = q.replace(/\b(from|has|is|before|after):("[^"]*"|\S+)/gi, (t, op, v) => {
+      op = op.toLowerCase();
+      if (op === "from") words.push(nameOf(v));
+      else if (op === "has" && /^attach/i.test(v)) words.push("Files");
+      else if (op === "is" && /^unread$/i.test(v)) words.push("Unread");
+      else if (op === "after" || op === "before") {
+        // (one of Date's answers, by its name, while it's still the same day, week or month; else the day it's from)
+        const k = DATES.find(([d]) => dateOp(d) === t)?.[0];
+        words.push(k ? DATES.find(([d]) => d === k)[1] : `${op === "before" ? "Before" : "Since"} ${new Date(v).toLocaleDateString(locale, { day: "numeric", month: "short" })}`);
+      }
+      else return t;
+      return "";
+    });
+    return [...words, rest.trim()].filter(Boolean).join(" · ");
+  }
+  // (someone's first name, if they're among the people you hear from, else their address before the @)
+  function nameOf(email) {
+    const p = sfPeople.find((x) => x.email === email);
+    return p?.name ? p.name.split(/\s+/)[0] : String(email).split("@")[0];
+  }
+  // (a recent search put back: its filters as filters, the rest typed)
+  function restoreQuery(q) {
+    clearFilters();
+    const today = dateOp("today"), week = dateOp("week"), month = dateOp("month"), older = dateOp("older");
+    const rest = q.replace(/\b(from|has|is|before|after):("[^"]*"|\S+)/gi, (t, op, v) => {
+      op = op.toLowerCase();
+      if (op === "from") SF.from = { email: v, name: sfPeople.find((x) => x.email === v)?.name || "" };
+      else if (op === "has" && /^attach/i.test(v)) SF.files = true;
+      else if (op === "is" && /^unread$/i.test(v)) SF.unread = true;
+      else if (t === today) SF.date = "today";
+      else if (t === week) SF.date = "week";
+      else if (t === month) SF.date = "month";
+      else if (t === older) SF.date = "older";
+      else return t;
+      return "";
+    });
+    return rest.replace(/\s{2,}/g, " ").trim();
+  }
+  // The people you hear from most, for From (asked for once, as search first opens)
+  let sfPeople = [];
+  let sfAsked = false;
+  function askPeople() {
+    if (sfAsked) return;
+    sfAsked = true;
+    api
+      .contacts("")
+      .then(({ contacts }) => {
+        sfPeople = (contacts || []).filter((p) => p.email && !mine(p.email)).slice(0, 5);
+        renderSearchHelp();
+      })
+      .catch(() => (sfAsked = false));
+  }
+  // A filter changed: the search again, at once
+  function filtersChanged() {
+    renderSearchHelp();
+    runSearch(fullQuery());
+  }
 
   // Recent searches, kept in this browser (a convenience: nothing is lost without them)
   const RECENT_KEY = "mail:recent-searches";
@@ -2090,19 +2177,93 @@
     return `${q.slice(0, q.length - tok.word.length)}${by} `;
   }
 
-  // While searching: recent searches (before anything's typed), people and files for what's being typed, what the
-  // search understood as tokens, and the operators a tap away
+  // While searching: the filters (From and Date opening their choices just under them), then recent searches (before
+  // anything's chosen or typed), or people and files for what's being typed
   function renderSearchHelp() {
     els.searchHelp.hidden = !S.searching;
     if (!S.searching) return;
+    askPeople();
     const q = els.searchInput.value;
-    const tokens = q.match(OP_TOKEN) || [];
     const tok = typingToken(q);
-    const recent = q.trim() ? [] : recentSearches();
+    const recent = q.trim() || sfAny() ? [] : recentSearches();
     const people = tok && suggest.q === q ? suggest.people : [];
     const keep = (e) => e.preventDefault();
+    const toggleOpen = (k) => {
+      SF.open = SF.open === k ? null : k;
+      renderSearchHelp();
+    };
+    // the filters: the ones on first, blue, named, with an × to take them off
+    const chip = (k, on, label, onclick, menu) =>
+      h(
+        "button.sf",
+        {
+          type: "button",
+          class: [on && "on", SF.open === k && "open"].filter(Boolean).join(" ") || null,
+          "aria-pressed": menu ? null : String(!!on),
+          "aria-expanded": menu ? String(SF.open === k) : null,
+          onpointerdown: keep,
+          onclick,
+        },
+        h("span", label),
+        on ? h("span.sf-x", { "aria-hidden": "true" }, icon("x")) : menu ? icon("chevronDown", "sf-dd") : null
+      );
+    const chips = [
+      [!!SF.from, chip("from", !!SF.from, SF.from ? nameOf(SF.from.email) : "From", () => (SF.from ? ((SF.from = null), (SF.open = null), filtersChanged()) : toggleOpen("from")), true)],
+      [!!SF.date, chip("date", !!SF.date, SF.date ? DATES.find(([k]) => k === SF.date)[1] : "Date", () => (SF.date ? ((SF.date = null), (SF.open = null), filtersChanged()) : toggleOpen("date")), true)],
+      [SF.files, chip("files", SF.files, "Files", () => ((SF.files = !SF.files), filtersChanged()))],
+      [SF.unread, chip("unread", SF.unread, "Unread", () => ((SF.unread = !SF.unread), filtersChanged()))],
+    ];
+    chips.sort((x, y) => Number(y[0]) - Number(x[0]));
     setKids(
       els.searchHelp,
+      h("div.sf-row", { role: "group", "aria-label": "Filters" }, chips.map((c) => c[1])),
+      SF.open === "from"
+        ? h(
+            "div.sf-strip.people",
+            sfPeople.length
+              ? sfPeople.map((p) =>
+                  h(
+                    "button.sf-person",
+                    {
+                      type: "button",
+                      "aria-label": `From ${p.name || p.email}`,
+                      onpointerdown: keep,
+                      onclick: () => {
+                        SF.from = { email: p.email, name: p.name || "" };
+                        SF.open = null;
+                        filtersChanged();
+                      },
+                    },
+                    avatar(p, "sf-av"),
+                    h("span", (p.name || p.email.split("@")[0]).split(/\s+/)[0])
+                  )
+                )
+              : h("p.sf-none", "Type a name in Search to find who it’s from.")
+          )
+        : null,
+      SF.open === "date"
+        ? h(
+            "div.sf-strip.dates",
+            { role: "radiogroup", "aria-label": "Date" },
+            DATES.map(([k, label]) =>
+              h(
+                "button",
+                {
+                  type: "button",
+                  role: "radio",
+                  "aria-checked": String(SF.date === k),
+                  onpointerdown: keep,
+                  onclick: () => {
+                    SF.date = k;
+                    SF.open = null;
+                    filtersChanged();
+                  },
+                },
+                label
+              )
+            )
+          )
+        : null,
       recent.length
         ? h(
             "div.s-section",
@@ -2112,10 +2273,23 @@
               recent.map((r) =>
                 h(
                   "div.s-item",
-                  h("button.s-main", { type: "button", onpointerdown: keep, onclick: () => editQuery(`${r} `) }, icon("clock"), h("span.s-text", r)),
+                  h(
+                    "button.s-main",
+                    {
+                      type: "button",
+                      onpointerdown: keep,
+                      onclick: () => {
+                        els.searchInput.value = restoreQuery(r);
+                        els.searchInput.focus();
+                        filtersChanged();
+                      },
+                    },
+                    icon("clock"),
+                    h("span.s-text", sayQuery(r))
+                  ),
                   h(
                     "button.s-x",
-                    { type: "button", "aria-label": `Remove ${r}`, onpointerdown: keep, onclick: () => (keepRecent(recentSearches().filter((x) => x !== r)), renderSearchHelp()) },
+                    { type: "button", "aria-label": `Remove ${sayQuery(r)}`, onpointerdown: keep, onclick: () => (keepRecent(recentSearches().filter((x) => x !== r)), renderSearchHelp()) },
                     icon("x")
                   )
                 )
@@ -2134,7 +2308,15 @@
                   "div.s-item",
                   h(
                     "button.s-main",
-                    { type: "button", onpointerdown: keep, onclick: () => editQuery(replaceTyping(q, tok, `${op}:${p.email}`)) },
+                    {
+                      type: "button",
+                      onpointerdown: keep,
+                      onclick: () =>
+                        // (From someone: the filter; To someone: typed, as to: has no filter of its own)
+                        op === "from"
+                          ? ((els.searchInput.value = q.slice(0, q.length - tok.word.length).trimEnd()), (SF.from = { email: p.email, name: p.name || "" }), els.searchInput.focus(), filtersChanged())
+                          : editQuery(replaceTyping(q, tok, `to:${p.email}`)),
+                    },
                     avatar({ name: p.name, email: p.email }, "s-av"),
                     h("span.s-text", h("b", p.name || p.email), p.name ? h("span.s-sub", p.email) : null),
                     h("span.s-op", op === "to" ? "To" : "From")
@@ -2154,28 +2336,7 @@
                 : null
             )
           )
-        : null,
-      tokens.length
-        ? h(
-            "div.tokens-row",
-            tokens.map((t) => {
-              const i = t.indexOf(":");
-              return h(
-                "button.qtoken",
-                { type: "button", "aria-label": `Remove ${t}`, onpointerdown: keep, onclick: () => editQuery(q.replace(t, "")) },
-                h("b", t.slice(0, i + 1)),
-                t.slice(i + 1),
-                icon("x")
-              );
-            })
-          )
-        : null,
-      h(
-        "div.ops-row",
-        OPERATORS.filter((o) => !q.toLowerCase().includes(o)).map((o) =>
-          h("button.chip.op", { type: "button", onpointerdown: keep, onclick: () => editQuery(`${q.trimEnd()} ${o}${o.endsWith(":") ? "" : " "}`) }, o)
-        )
-      )
+        : null
     );
   }
 
@@ -2183,7 +2344,7 @@
     els.searchInput.value = v.replace(/\s{2,}/g, " ").replace(/^\s+/, "");
     els.searchInput.focus();
     renderSearchHelp();
-    runSearch(els.searchInput.value);
+    runSearch(fullQuery());
   }
 
   // The foot of the list: the tabs (People, Updates, Later, Done), and search beside them, which opens into a field
@@ -2199,7 +2360,7 @@
       "aria-label": "Search mail",
       oninput: () => {
         renderSearchHelp();
-        searchSoon(els.searchInput.value);
+        searchSoon(fullQuery());
         suggestSoon(els.searchInput.value);
       },
       onfocus: () => S.searching || setSearching(true),
@@ -2207,8 +2368,8 @@
         if (e.key === "Escape") cancelSearch();
         else if (e.key === "Enter") {
           // (searched for: now, and kept among the recent ones)
-          runSearch(els.searchInput.value);
-          rememberSearch(els.searchInput.value);
+          runSearch(fullQuery());
+          rememberSearch(fullQuery());
           els.searchInput.blur();
         }
       },
@@ -2278,6 +2439,7 @@
 
   function cancelSearch() {
     els.searchInput.value = "";
+    clearFilters();
     els.searchInput.blur();
     S.searching = false;
     els.listToolbar.classList.remove("searching");
