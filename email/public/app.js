@@ -1037,7 +1037,6 @@
     els.listScroll = h(
       "div.scroll",
       h("div.ptr", h("div.spinner")),
-      els.listTitle,
       els.listSubtitle,
       els.searchHelp,
       els.rows,
@@ -1090,6 +1089,8 @@
         { "aria-label": "Account", title: "Account", onclick: (e) => profileMenu(e.currentTarget) },
         avatar({ name: me.displayName, email: me.defaultFrom, me: true }, "sm")
       ),
+      // (the title beside your photo, in the bar: it stays as the list scrolls)
+      els.listTitle,
       h("div.spacer"),
       gbtn("compose", "New Message", () => openCompose())
     );

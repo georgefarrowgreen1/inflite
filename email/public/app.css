@@ -479,6 +479,25 @@ body.sheet-open.phone #app::after {
   gap: 10px;
 }
 
+/* (in the list's bar, beside your photo, so no small title is needed when it scrolls) */
+.pane.list .navbar .large-title {
+  min-width: 0;
+  padding: 0 0 0 4px;
+  font-size: 28px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.pane.list .navbar .title-chev {
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+}
+
+.pane.list .nav-title {
+  display: none;
+}
+
 .title-n {
   font-size: 17px;
   font-weight: 600;
