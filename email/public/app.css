@@ -3256,9 +3256,17 @@ textarea:focus-visible {
 .ops-row {
   flex-wrap: nowrap;
   overflow-x: auto;
+  /* (sideways only: the chips' larger tap areas mustn't make it scroll up and down too) */
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-x;
   scrollbar-width: none;
   margin: 0 -16px;
-  padding: 2px 16px;
+  padding: 6px 16px;
+}
+
+.ops-row .chip::before {
+  inset: -6px -3px;
 }
 
 .ops-row::-webkit-scrollbar {
