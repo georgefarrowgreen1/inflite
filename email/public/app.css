@@ -130,6 +130,18 @@ body {
   touch-action: pan-x pan-y;
 }
 
+/* (on the Home Screen, where iOS lays the page out shorter than the screen: the screen's own height; see app.js) */
+html.fullscreen-fix,
+html.fullscreen-fix body {
+  height: var(--screen-h);
+}
+
+html.fullscreen-fix .sky,
+html.fullscreen-fix #app {
+  bottom: auto;
+  height: var(--screen-h);
+}
+
 input,
 textarea {
   font: inherit;

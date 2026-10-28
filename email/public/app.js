@@ -655,6 +655,24 @@
     }
   })();
 
+  // On the Home Screen, iOS can lay the page out shorter than the screen (the height a Safari toolbar would take), so
+  // the tab bar sits high with a band under it: there, filling the window, size Mail to the screen itself
+  if (STANDALONE && screen.width && screen.height) {
+    const fit = () => {
+      const portrait = window.innerHeight >= window.innerWidth;
+      const w = portrait ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+      const h = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+      // (only when the window is the whole screen, not an iPad window beside another app)
+      const short = Math.abs(window.innerWidth - w) < 2 && h - window.innerHeight > 1 && h - window.innerHeight < 200;
+      const root = document.documentElement;
+      root.classList.toggle("fullscreen-fix", short);
+      if (short) root.style.setProperty("--screen-h", `${h}px`);
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", () => setTimeout(fit, 300));
+  }
+
   const api = DEMO ? demoApi() : realApi();
 
   // The look, as the account has it (its page's Appearance, for every app on the site): Automatic, Light or Dark, kept
