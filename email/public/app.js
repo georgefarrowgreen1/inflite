@@ -266,7 +266,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.09";
+  const BUILD = "1.10";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -3793,7 +3793,6 @@ pre{white-space:pre-wrap}
         }
       });
       input.addEventListener("input", () => {
-        drawRecent();
         if (/[,;]/.test(input.value)) {
           commit();
           clearSuggest();
@@ -3879,48 +3878,6 @@ pre{white-space:pre-wrap}
     function marked(text, q) {
       const i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
       return i < 0 ? text : [text.slice(0, i), h("mark", text.slice(i, i + q.length)), text.slice(i + q.length)];
-    }
-
-    // While To is empty: the people written to most, a tap away
-    const recentEl = h("div.c-recent", { hidden: true });
-    let recentPeople = [];
-    if (c.mode === "new" && !c.to.length)
-      api
-        .contacts("")
-        .then(({ contacts }) => {
-          recentPeople = (contacts || []).filter((p) => p.email && !mine(p.email)).slice(0, 5);
-          drawRecent();
-        })
-        .catch(() => {});
-    function drawRecent() {
-      const show = recentPeople.length && !c.to.length && !c.cc.length && !c.bcc.length && !fields.to?.input.value;
-      recentEl.hidden = !show;
-      if (!show || recentEl.childElementCount) return;
-      setKids(
-        recentEl,
-        h("div.c-recent-l", "Recent"),
-        h(
-          "div.c-recent-row",
-          recentPeople.map((p) =>
-            h(
-              "button.c-person",
-              {
-                type: "button",
-                "aria-label": `To ${p.name || p.email}`,
-                onpointerdown: (e) => e.preventDefault(),
-                onclick: () => {
-                  c.to.push({ name: p.name || "", email: p.email });
-                  fields.to.draw();
-                  update();
-                  subjectInput.focus();
-                },
-              },
-              avatar(p, "c-person-av"),
-              h("span", (p.name || p.email.split("@")[0]).split(/\s+/)[0])
-            )
-          )
-        )
-      );
     }
 
     function focusNext(key) {
@@ -4077,7 +4034,6 @@ pre{white-space:pre-wrap}
       "div.sheet-body",
       tokenField("to", "To", fromBtn),
       ccRow,
-      recentEl,
       subjectInput,
       textArea,
       attsEl,
@@ -4133,7 +4089,6 @@ pre{white-space:pre-wrap}
       sendBtn.disabled = !all.length || all.some((p) => !EMAIL_RE.test(p.email));
       const size = c.attachments.reduce((n, a) => n + (a.size || 0), 0);
       hint.textContent = size ? fmtSize(size) : "";
-      drawRecent();
     }
 
     async function doSend() {
