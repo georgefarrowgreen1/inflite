@@ -705,6 +705,10 @@
   // ---------------------------------------------------------------------------
 
   // (its box measured once per touch, and moved at most once a frame)
+  // No pinch zoom in Safari (which goes by its own gesture events rather than the viewport or touch-action)
+  const noZoom = (e) => e.preventDefault();
+  for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, noZoom, { passive: false });
+
   let litEl = null, litRect = null, litPos = null, litFrame = 0;
   function light(e) {
     litPos = [e.clientX - litRect.left, e.clientY - litRect.top];
@@ -2381,6 +2385,7 @@ a,a *{color:${v("--mail-link")}!important}` : ""}`;
 <base target="_blank">
 <style>
 ${look}
+html,body{touch-action:pan-x pan-y}
 body{overflow-wrap:anywhere;-webkit-text-size-adjust:100%}
 img{max-width:100%;height:auto}
 pre{white-space:pre-wrap}
@@ -2440,6 +2445,7 @@ pre{white-space:pre-wrap}
       const rw = new ResizeObserver(() => (frame.isConnected ? fitWidth() : rw.disconnect()));
       rw.observe(frame);
       d.addEventListener("load", fit, true);
+      for (const ev of ["gesturestart", "gesturechange", "gestureend"]) d.addEventListener(ev, noZoom, { passive: false });
     });
 
     const parts = [];
