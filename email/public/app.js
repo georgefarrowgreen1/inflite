@@ -266,7 +266,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.08";
+  const BUILD = "1.09";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -4625,6 +4625,7 @@ pre{white-space:pre-wrap}
     const [me, counts, v] = await Promise.all([api.me(), api.counts(), api.version().catch(() => null)]);
     S.version = v?.v;
     S.build = v?.build || null;
+    if (v?.app && v.app !== BUILD) S.newBuild = v.app;
     S.me = me;
     if (me.account?.appearance) lookOf(me.account.appearance);
     S.counts = counts;
@@ -4655,6 +4656,7 @@ pre{white-space:pre-wrap}
     } catch {}
     clearInterval(pollTimer);
     pollTimer = setInterval(poll, 30000);
+    if (S.newBuild) setTimeout(updateWhenSafe, 1500);
   }
 
   // A new version of Mail is deployed: it's loaded at the first moment nothing would be lost (not while writing,
@@ -4666,12 +4668,20 @@ pre{white-space:pre-wrap}
     try {
       sessionStorage.setItem("mail:updated", "1");
     } catch {}
+    // (once for each new build: if the copy that loads is still the old one, say while it's being deployed, it's
+    // left until the next build rather than loaded over and over)
+    try {
+      if (sessionStorage.getItem("mail:reloadedFor") === S.newBuild) return;
+      sessionStorage.setItem("mail:reloadedFor", S.newBuild);
+    } catch {}
     const at = S.thread && !S.thread.loading ? `#thread=${encodeURIComponent(S.thread.id)}` : "";
     swReg?.update().catch(() => {});
     try {
       history.replaceState(null, "", location.pathname + location.search + at);
     } catch {}
-    location.reload();
+    // (the new files fetched afresh first, past any copy the phone has kept, then the page loaded with them)
+    const fresh = ["/", "/app.js", "/app.css", "/theme.js"].map((u) => fetch(u, { cache: "reload", credentials: "same-origin" }).catch(() => null));
+    Promise.race([Promise.all(fresh), new Promise((r) => setTimeout(r, 4000))]).then(() => location.reload());
   }
 
   async function poll() {
@@ -4680,9 +4690,10 @@ pre{white-space:pre-wrap}
     if (S.swiping || openSwipe || S.loading) return;
     // (nothing has changed since last time: nothing more to ask)
     try {
-      const { v, build } = await api.version();
+      const { v, build, app } = await api.version();
       if (S.offline) ((S.offline = false), renderListChrome());
-      if (build && S.build && build !== S.build) S.newBuild = build;
+      // (behind: the Mail deployed has another build number from the one running here)
+      if (app ? app !== BUILD : build && S.build && build !== S.build) S.newBuild = app || build;
       S.build ||= build;
       if (S.newBuild) updateWhenSafe();
       if (v && v === S.version) {

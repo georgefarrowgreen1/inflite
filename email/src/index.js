@@ -123,7 +123,7 @@ async function route(request, env, ctx, url, view) {
   const method = request.method;
   let m;
   // (the mailbox's version, and the app's: an open Mail updates itself when a new one is deployed)
-  if (pathname === "/api/version" && method === "GET") return json({ v: await mailVersion(env), build: buildOf(env) });
+  if (pathname === "/api/version" && method === "GET") return json({ v: await mailVersion(env), build: buildOf(env), app: await appBuild(env, request) });
   if (pathname === "/api/me" && method === "GET") return me(env, view);
   if (pathname === "/api/photo" && method === "GET") return photo(env, request, url);
   if ((m = pathname.match(/^\/api\/unsubscribe\/([\w-]+)$/))) {
@@ -241,6 +241,22 @@ async function pushSubscribe(env, body) {
 
 // Which deploy of Mail this is: Cloudflare's version of the Worker (BUILD_ID stands in for it in local tests)
 const buildOf = (env) => env.BUILD_ID || env.CF_VERSION_METADATA?.id || null;
+
+// The build number in the Mail that's deployed (BUILD in app.js), read once per deployment, so a page running older
+// code (an old copy kept by the phone, say) can tell it's behind
+let appBuildCache = null;
+async function appBuild(env, request) {
+  const key = buildOf(env) || "dev";
+  if (appBuildCache?.key === key) return appBuildCache.build;
+  try {
+    const r = await env.ASSETS.fetch(new Request(new URL("/app.js", request.url)));
+    const m = r.ok && /const BUILD = "([\d.]+)"/.exec(await r.text());
+    appBuildCache = { key, build: m ? m[1] : null };
+    return appBuildCache.build;
+  } catch {
+    return null;
+  }
+}
 
 const publicUser = (v) =>
   v?.signedIn
