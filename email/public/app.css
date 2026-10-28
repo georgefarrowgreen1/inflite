@@ -5295,3 +5295,29 @@ button.set-row:active {
   padding-top: 8px;
   padding-bottom: 8px;
 }
+
+/* InFlite, over Sign in: its mark and its one account */
+.login .wbrand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 4px;
+  width: max-content;
+  padding: 5px 13px 5px 5px;
+  border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: 0 0 0 0.5px var(--line), 0 6px 18px -10px rgba(0, 0, 0, 0.3);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--label-2);
+}
+
+.login .wbrand img {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
