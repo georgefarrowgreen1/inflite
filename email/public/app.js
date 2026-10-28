@@ -547,12 +547,12 @@
   // ---------------------------------------------------------------------------
 
   const FOLDER_INFO = {
-    inbox: { title: "Inbox", icon: "inbox" },
-    flagged: { title: "Flagged", icon: "flag", cls: "orange" },
-    drafts: { title: "Drafts", icon: "drafts" },
-    sent: { title: "Sent", icon: "sent" },
-    archive: { title: "Archive", icon: "archive" },
-    trash: { title: "Trash", icon: "trash" },
+    inbox: { title: "Inbox", icon: "inbox", tile: "blue" },
+    flagged: { title: "Flagged", icon: "flag", tile: "amber" },
+    drafts: { title: "Drafts", icon: "drafts", tile: "grey" },
+    sent: { title: "Sent", icon: "sent", tile: "teal" },
+    archive: { title: "Archive", icon: "archive", tile: "indigo" },
+    trash: { title: "Trash", icon: "trash", tile: "red" },
   };
 
   const S = {
@@ -967,7 +967,7 @@
         class: S.folder === folder && !S.query ? "current" : null,
         onclick: () => openFolder(folder),
       },
-      h(`span.ic${info.cls ? "." + info.cls : ""}`, icon(info.icon)),
+      h(`span.ic.${info.tile}`, icon(info.icon)),
       h("span.lbl", info.title),
       n ? h("span.count", n) : null,
       icon("chevronRight", "chev")
@@ -981,12 +981,15 @@
       h("div.group", mailboxCell("inbox"), mailboxCell("flagged")),
       h("div.group-title", me.domain || "inflite.ai"),
       h("div.group", ["drafts", "sent", "archive", "trash"].map(mailboxCell)),
+      // (your account: a tap from here, its page; and signing out, as at its foot)
       h(
-        "div.account-card",
+        accountOrigin ? "a.account-card" : "div.account-card",
+        { href: accountOrigin ? `${accountOrigin}/` : null, "aria-label": "Your account" },
         avatar({ name: me.displayName, email: me.defaultFrom }),
         h("div.who", h("b", me.displayName || "Account"), h("span", me.defaultFrom || "")),
-        gbtn("signout", "Sign Out", (e) => signOutMenu(e.currentTarget), { class: "gbtn" })
-      )
+        accountOrigin ? icon("chevronRight", "chev") : null
+      ),
+      h("button.signout.glass", { type: "button", onclick: (e) => signOutMenu(e.currentTarget) }, "Sign Out")
     );
     const unread = S.counts.inbox?.unread || 0;
     if (S.layout === "pad") return setKids(els.mailboxesToolbar);
