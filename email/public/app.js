@@ -155,6 +155,13 @@
     return `${d.toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" })} at ${d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}`;
   }
 
+  // A file's name cut in the middle when it's long, as in Mail, so its end (and type) still shows
+  function attName(name) {
+    const n = String(name || "");
+    const tail = n.length > 10 ? n.slice(-8) : "";
+    return h("div.att-name", { title: n }, h("span.att-a", tail ? n.slice(0, -8) : n), tail ? h("span.att-b", tail) : null);
+  }
+
   function fmtSize(n) {
     if (!n) return "";
     if (n < 1024) return `${n} B`;
@@ -781,14 +788,28 @@
     Object.assign(menu.style, { top: `${top}px`, left: `${left}px` });
     menu.style.transformOrigin = `${r.left + r.width / 2 - left}px ${r.top + r.height / 2 - top}px`;
     requestAnimationFrame(() => requestAnimationFrame(() => menu.classList.add("open")));
-    menu.querySelector("button:not(:disabled)")?.focus({ preventScroll: true });
-    menuState = { layer, menu };
+    // (never a destructive choice first, so Return can't delete anything by accident)
+    const choices = () => [...menu.querySelectorAll("button:not(:disabled)")];
+    (choices().find((b) => !b.classList.contains("destructive")) || choices()[0])?.focus({ preventScroll: true });
+    menu.addEventListener("keydown", (e) => {
+      const list = choices();
+      const i = list.indexOf(document.activeElement);
+      const go = (j) => (e.preventDefault(), list[(j + list.length) % list.length]?.focus({ preventScroll: true }));
+      if (e.key === "ArrowDown") go(i + 1);
+      else if (e.key === "ArrowUp") go(i - 1);
+      else if (e.key === "Home") go(0);
+      else if (e.key === "End") go(list.length - 1);
+      else if (e.key === "Tab") (e.preventDefault(), closeMenu());
+    });
+    menuState = { layer, menu, opener: anchor };
   }
 
   function closeMenu(immediate) {
     if (!menuState) return;
-    const { layer, menu } = menuState;
+    const { layer, menu, opener } = menuState;
     menuState = null;
+    // (back to what opened it, as a menu does)
+    if (opener?.isConnected && (menu.contains(document.activeElement) || document.activeElement === document.body)) opener.focus?.({ preventScroll: true });
     if (immediate) return layer.remove();
     menu.classList.remove("open");
     menu.classList.add("closing");
@@ -840,16 +861,30 @@
     const w = window.innerWidth;
     const phone = w < 700;
     const body = document.body;
+    const was = S.layout;
     S.layout = phone ? "phone" : "pad";
+    // (an iPad window made narrow with a conversation open: still open, now pushed over the list)
+    if (phone && was === "pad" && S.thread && S.depth === 0) {
+      S.depth = 1;
+      hist("pushState", { depth: 1 });
+    }
     body.classList.toggle("phone", phone);
     body.classList.toggle("pad", !phone);
     body.style.setProperty("--list-left", "0px");
     if (!phone) body.style.setProperty("--list-w", `${Math.round(Math.min(440, Math.max(340, w * 0.36)))}px`);
     setPositions();
     renderNavButtons();
+    if (was && was !== S.layout) markSelectedRow();
   }
 
+  let movingTimer;
   function setPositions() {
+    // (panes made solid while they slide, so one doesn't show through the other)
+    if (S.layout === "phone" && els.list?.dataset.pos && els.detail.dataset.pos !== (S.depth ? "current" : "ahead")) {
+      document.body.classList.add("moving");
+      clearTimeout(movingTimer);
+      movingTimer = setTimeout(() => document.body.classList.remove("moving"), 560);
+    }
     [els.list, els.detail].forEach((p, i) => {
       if (S.layout !== "phone") {
         p.removeAttribute("data-pos");
@@ -874,6 +909,7 @@
     else {
       S.depth = Math.max(0, S.depth - 1);
       setPositions();
+      if (S.depth === 0) focusRow(S.selectedId);
     }
   }
 
@@ -885,7 +921,14 @@
     }
     S.depth = e.state?.depth ?? 0;
     setPositions();
+    if (S.depth === 0) focusRow(S.selectedId);
   });
+
+  // (back in the list: on the row that was open, for keyboards and VoiceOver)
+  function focusRow(id) {
+    if (!id) return;
+    setTimeout(() => els.rows?.querySelector(`.row[data-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true }), 60);
+  }
 
   // Interactive edge swipe to go back on iPhone.
   function setupEdgeSwipe() {
@@ -1148,7 +1191,7 @@
       items.push({ label: "Mark All as Read", icon: "envelopeOpen", disabled: !S.threads.some((t) => t.unread), action: markAllRead });
     if (S.view === "trash") {
       items.push({ label: "Back to Inbox", icon: "inbox", action: () => setView("all") });
-      items.push("-", { label: "Empty Trash", icon: "trash", destructive: true, disabled: !S.threads.length, action: emptyTrash });
+      items.push("-", { label: "Empty Trash", icon: "trash", destructive: true, disabled: !S.threads.length, action: () => emptyTrash(anchor) });
     } else {
       items.push("-", { label: S.counts.trash ? `Trash (${S.counts.trash})` : "Trash", icon: "trash", action: () => setView("trash") });
     }
@@ -1198,9 +1241,13 @@
     if (S.query) return;
     const chip = (label, on, onclick, n) =>
       h("button.chip", { type: "button", class: on ? "on" : null, "aria-pressed": String(on), onclick }, label, n ? h("span.chip-n", n) : null);
-    const views = ["all", "unread", "flagged", "later", "attachments", "done"]
-      .filter((v) => v !== "later" || S.counts.snoozed || S.view === "later")
-      .map((v) => chip(VIEWS[v].chip, S.view === v, () => setView(v), v === "flagged" ? S.counts.flagged : v === "later" ? S.counts.snoozed : null));
+    // (in the Trash: the way back, first)
+    const views =
+      S.view === "trash"
+        ? [chip(h("span.chip-back", icon("chevronLeft"), "Inbox"), false, () => setView("all")), chip("Trash", true, () => {})]
+        : ["all", "unread", "flagged", "later", "attachments", "done"].map((v) =>
+            chip(VIEWS[v].chip, S.view === v, () => setView(v), v === "flagged" ? S.counts.flagged : v === "later" ? S.counts.snoozed : null)
+          );
     // (each address mail has come to: a lens on just that address, once there's more than one)
     const addrs = S.counts.addresses || [];
     const lenses =
@@ -1467,7 +1514,16 @@
         "data-id": t.id,
         class:
           [t.unread && "unread", t.starred && "starred", t.id === S.selectedId && S.layout === "pad" && "selected"].filter(Boolean).join(" ") || null,
-        "aria-label": `${t.unread ? "Unread. " : ""}${peopleLine(t)}. ${t.subject}`,
+        "aria-label": [
+          t.unread && "Unread",
+          t.starred && "Flagged",
+          peopleLine(t),
+          t.subject,
+          t.hasAttachments && "Has attachments",
+          t.snoozeUntil ? `Comes back ${fmtWhen(t.snoozeUntil)}` : fmtListDate(t.date),
+        ]
+          .filter(Boolean)
+          .join(". "),
       },
       h("span.dot"),
       h("span.flag"),
@@ -1605,7 +1661,12 @@
       const row = e.target.closest(".row");
       if (!row || row.dataset.draft || e.button > 0 || e.target.closest(".swipe-actions")) return;
       const wrap = row.parentElement;
-      if (openSwipe && openSwipe !== wrap) closeOpenSwipe();
+      if (openSwipe && openSwipe !== wrap) {
+        closeOpenSwipe();
+        // (as in Mail: the tap that closes an open swipe opens nothing)
+        row.dataset.swiped = "1";
+        setTimeout(() => delete row.dataset.swiped, 400);
+      }
       g = { width: 0, wrap, row, id: e.pointerId, x0: e.clientX, y0: e.clientY, base: Number(wrap.dataset.offset || 0), dir: null, lastX: e.clientX, lastT: performance.now(), v: 0, x: 0, full: null };
     });
 
@@ -1785,11 +1846,7 @@
     };
     const input = h("input.when", { type: "datetime-local", value: local(at(1, 8)), min: local(Date.now() + 60000) });
     const layer = h("div.menu-layer.center");
-    const close = () => {
-      card.classList.remove("open");
-      card.classList.add("closing");
-      setTimeout(() => layer.remove(), 240);
-    };
+    const close = () => closeMenu();
     const set = () => {
       const until = new Date(input.value).getTime();
       if (!Number.isFinite(until) || until <= Date.now()) return toast("Choose a time in the future", { icon: "clock", error: true });
@@ -1805,8 +1862,16 @@
     );
     layer.addEventListener("pointerdown", (e) => e.target === layer && close());
     input.addEventListener("keydown", (e) => e.key === "Enter" && set());
+    card.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      const f = [...card.querySelectorAll("input,button")];
+      if (e.shiftKey && document.activeElement === f[0]) (e.preventDefault(), f[f.length - 1].focus());
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) (e.preventDefault(), f[0].focus());
+    });
     layer.append(card);
     document.body.append(layer);
+    // (a menu as far as Esc and the focus are concerned)
+    menuState = { layer, menu: card, opener: document.activeElement };
     requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add("open")));
     input.focus({ preventScroll: true });
   }
@@ -1966,7 +2031,20 @@
     refreshCounts();
   }
 
-  async function emptyTrash() {
+  // (forever: asked first)
+  async function confirmDelete(anchor, id) {
+    if (await confirmMenu(anchor, "This conversation will be deleted. This can’t be undone.", "Delete Forever", { destructive: true })) deleteThread(id);
+  }
+
+  async function emptyTrash(anchor) {
+    const n = S.counts.trash || S.threads.length;
+    const sure = await confirmMenu(
+      anchor || els.listNavTitle,
+      `${n === 1 ? "1 conversation" : `${n || "All"} conversations`} will be deleted. This can’t be undone.`,
+      "Empty Trash",
+      { destructive: true }
+    );
+    if (!sure) return;
     S.threads = [];
     renderRows();
     if (S.thread?.trashed) {
@@ -2030,6 +2108,8 @@
     S.thread = { ...(t || { id, people: [], subject: "" }), messages: null, loading: true };
     renderDetail();
     if (S.layout === "phone" && !fromNav) pushDepth(1);
+    // (the conversation's heading takes the focus, so VoiceOver reads it and the keyboard carries on from there)
+    if (S.layout === "phone" || document.activeElement?.closest?.(".row")) els.detailScroll.querySelector(".conv-head")?.focus({ preventScroll: true });
     const token = ++S.detailToken;
     try {
       const full = await api.thread(id);
@@ -2081,7 +2161,7 @@
               lead.act === "done" ? "Done" : lead.label
             ),
             t.trashed ? null : gbtn("clock", "Later", (e) => laterMenu(e.currentTarget, t)),
-            gbtn("trash", t.trashed ? "Delete Forever" : "Move to Trash", () => (t.trashed ? deleteThread(t.id) : act(t.id, "trash"))),
+            gbtn("trash", t.trashed ? "Delete Forever" : "Move to Trash", (e) => (t.trashed ? confirmDelete(e.currentTarget, t.id) : act(t.id, "trash"))),
             h("div.spacer"),
             gbtn("reply", "Reply", (e) => replyMenu(e.currentTarget), { disabled: !!t.loading }),
             gbtn("compose", "New Message", () => openCompose()),
@@ -2162,6 +2242,7 @@
     ].filter(Boolean);
     return h(
       "header.conv-head",
+      { tabindex: "-1" },
       h("div.reader-subject", t.starred ? icon("flagFill", "flag-ic") : null, h("span", t.subject || "(No Subject)")),
       h("div.conv-meta", meta.join(" · ")),
       t.snoozeUntil
@@ -2421,7 +2502,7 @@ pre{white-space:pre-wrap}
           "a.att",
           { href: a.url, target: "_blank", rel: "noopener", download: isImg ? null : a.filename },
           h("span.att-ic", isImg ? h("img", { src: a.url, alt: "", loading: "lazy" }) : icon("doc")),
-          h("div", h("div.att-name", a.filename), h("div.att-size", fmtSize(a.size)))
+          h("div", attName(a.filename), h("div.att-size", fmtSize(a.size)))
         );
       })
     );
@@ -2432,6 +2513,7 @@ pre{white-space:pre-wrap}
   // ---------------------------------------------------------------------------
 
   let sheetState = null;
+  let sheetOpener = null;
 
   function mine(email) {
     const e = (email || "").toLowerCase();
@@ -2491,10 +2573,25 @@ pre{white-space:pre-wrap}
     };
   }
 
+  // A draft's attachments kept with it (as data, since the files picked won't be there next time)
+  async function draftAttachments(list) {
+    const out = [];
+    for (const a of list || []) {
+      try {
+        const blob = a.file || (a.url ? await (await fetch(a.url, { credentials: "same-origin" })).blob() : null);
+        if (blob) out.push({ filename: a.filename, type: a.type || blob.type, size: blob.size, content: await fileToBase64(blob) });
+      } catch {}
+    }
+    return out;
+  }
+
   async function openDraft(id) {
     try {
       const msg = await api.message(id);
       const c = msg.compose || { to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.text };
+      c.attachments = (c.attachments || []).map((a) =>
+        a.content ? { filename: a.filename, type: a.type, size: a.size, url: `data:${a.type || "application/octet-stream"};base64,${a.content}` } : a
+      );
       openCompose({ ...c, draftId: id });
     } catch (err) {
       toast(err.message, { error: true });
@@ -2801,7 +2898,7 @@ pre{white-space:pre-wrap}
           h(
             "div.att",
             h("span.att-ic", /^image\//.test(a.type) && (a.preview || a.url) ? h("img", { src: a.preview || a.url, alt: "" }) : icon("doc")),
-            h("div", h("div.att-name", a.filename), h("div.att-size", fmtSize(a.size))),
+            h("div", attName(a.filename), h("div.att-size", fmtSize(a.size))),
             h(
               "button",
               {
@@ -2924,6 +3021,10 @@ pre{white-space:pre-wrap}
       if (!st) return;
       sheetState = null;
       document.activeElement?.blur?.();
+      const appEl = document.getElementById("app");
+      if (appEl) appEl.inert = false;
+      if (sheetOpener?.isConnected && S.layout !== "phone") sheetOpener.focus({ preventScroll: true });
+      sheetOpener = null;
       document.body.classList.remove("sheet-open");
       scrim.classList.remove("open");
       if (mode === "sending") sheet.classList.add("sending");
@@ -2979,6 +3080,7 @@ pre{white-space:pre-wrap}
             inReplyTo: c.inReplyTo,
             references: c.references,
             quote: c.quote,
+            attachments: await draftAttachments(c.attachments),
           });
           toast("Draft Saved", { icon: "drafts" });
           refreshCounts();
@@ -3000,6 +3102,18 @@ pre{white-space:pre-wrap}
     };
 
     update();
+    // (the sheet holds the focus while it's up: what's behind it can't be reached, and it goes back where it was after)
+    const opener = document.activeElement;
+    const appEl = document.getElementById("app");
+    if (appEl) appEl.inert = true;
+    sheet.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      const f = [...sheet.querySelectorAll("button:not(:disabled),input,textarea,[tabindex]:not([tabindex='-1'])")].filter((x) => x.offsetParent);
+      if (!f.length) return;
+      if (e.shiftKey && document.activeElement === f[0]) (e.preventDefault(), f[f.length - 1].focus());
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) (e.preventDefault(), f[0].focus());
+    });
+    sheetOpener = opener;
     document.body.append(scrim, sheet);
     scrim.addEventListener("click", () => S.layout === "pad" && requestCloseCompose());
     sheet.offsetHeight;
@@ -3021,13 +3135,14 @@ pre{white-space:pre-wrap}
     }
   }
 
-  function confirmMenu(anchor, title, label) {
+  function confirmMenu(anchor, title, label, { destructive } = {}) {
     return new Promise((resolve) => {
       let done = false;
       showMenu(anchor, [
         {
           label,
-          icon: "arrowUp",
+          destructive,
+          icon: destructive ? "trash" : "arrowUp",
           action: () => {
             done = true;
             resolve(true);
@@ -3175,11 +3290,12 @@ pre{white-space:pre-wrap}
     }
     if (k === "k" || k === "ArrowUp") return e.preventDefault(), stepThread(-1);
     if (!t) return;
+    if (["r", "a", "f"].includes(k)) e.preventDefault();
     if (k === "r") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "reply")));
     if (k === "a") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "replyAll")));
     if (k === "f") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "forward")));
     if (k === "e") return act(t.id, leadAction(t).act);
-    if (k === "#" || k === "Delete" || k === "Backspace") return t.trashed ? deleteThread(t.id) : act(t.id, "trash");
+    if (k === "#" || k === "Delete") return t.trashed ? confirmDelete(els.detailToolbar, t.id) : act(t.id, "trash");
     if (k === "u") return act(t.id, t.unread ? "read" : "unread");
     if (k === "l") return act(t.id, t.starred ? "unflag" : "flag");
   });

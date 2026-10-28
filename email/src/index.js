@@ -552,6 +552,20 @@ async function deleteDraft(env, id) {
   if (row) await deleteMessages(env, [row.id]);
 }
 
+// (a draft's attachments, kept in its stored copy: 25 MB at most, like sending)
+function draftFiles(list) {
+  const out = [];
+  let total = 0;
+  for (const a of Array.isArray(list) ? list.slice(0, 20) : []) {
+    const content = String(a?.content || "");
+    if (!/^[A-Za-z0-9+/=]*$/.test(content)) continue;
+    total += content.length * 0.75;
+    if (total > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
+    out.push({ filename: String(a.filename || "attachment").slice(0, 200), type: String(a.type || "application/octet-stream").slice(0, 100), size: Number(a.size) || 0, content });
+  }
+  return out;
+}
+
 async function saveDraft(env, body, view) {
   let id = body.id && /^[\w-]+$/.test(body.id) ? body.id : crypto.randomUUID();
   // (a draft's id can't be used to write over anything else)
@@ -567,6 +581,7 @@ async function saveDraft(env, body, view) {
     inReplyTo: body.inReplyTo || null,
     references: body.references || null,
     quote: body.quote || null,
+    attachments: draftFiles(body.attachments),
   };
   await env.MAIL.put(`body/${id}.json`, JSON.stringify({ text: compose.text, html: "", compose }), {
     httpMetadata: { contentType: "application/json" },

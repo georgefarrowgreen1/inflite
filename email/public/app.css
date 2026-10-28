@@ -396,23 +396,36 @@ body.sheet-open.phone #app::after {
   pointer-events: auto;
 }
 
-.navbar::before {
+.navbar::before,
+.navbar::after {
   content: "";
   position: absolute;
   z-index: -1;
-  inset: 0 0 -28px 0;
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--sky-b) 80%, transparent) 20%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  -webkit-mask: linear-gradient(to bottom, #000 45%, transparent);
-  mask: linear-gradient(to bottom, #000 45%, transparent);
+  left: 0;
+  right: 0;
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;
 }
 
-.pane.scrolled .navbar::before {
-  opacity: 0.92;
+/* (the bar itself, blurred; then a soft fade under it, unblurred, so the blur has no hard edge) */
+.navbar::before {
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--sky-b) 94%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+}
+
+.navbar::after {
+  top: 100%;
+  height: 22px;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--sky-b) 94%, transparent), transparent);
+}
+
+.pane.scrolled .navbar::before,
+.pane.scrolled .navbar::after {
+  opacity: 1;
 }
 
 .nav-title {
@@ -663,7 +676,7 @@ body.sheet-open.phone #app::after {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 16px 12px;
+  padding: 5px 16px 9px;
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 22px), transparent);
@@ -1566,11 +1579,20 @@ body.sheet-open.phone #app::after {
 }
 
 .att .att-name {
+  display: flex;
+  min-width: 0;
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.att .att-a {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.att .att-b {
+  flex: none;
 }
 
 .att .att-size {
@@ -1652,6 +1674,31 @@ body.phone .pane.list {
 
 body.phone .pane.detail {
   z-index: 3;
+  transition: transform 0.52s var(--ease), opacity 0.4s var(--ease), box-shadow 0.52s var(--ease);
+}
+
+/* While a conversation slides over the list (or is swiped back): solid, with an edge shadow, so the list doesn't show
+   through it; the sky shows again once it has settled. */
+body.phone .pane.detail::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(120% 80% at 50% -10%, var(--sky-a), var(--sky-b) 52%, var(--sky-c)) var(--sky-top);
+  opacity: 0;
+  transition: opacity 0.35s var(--ease);
+  pointer-events: none;
+}
+
+body.phone.moving .pane.detail::before,
+body.phone.dragging .pane.detail::before {
+  opacity: 1;
+  transition: none;
+}
+
+body.phone.moving .pane.detail,
+body.phone.dragging .pane.detail {
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.18);
 }
 
 body.phone .detail-empty {
@@ -1802,9 +1849,39 @@ body.pad .pane.detail .msgs {
   opacity: 0;
 }
 
+/* On iPhone: above the bottom bar, where it covers nothing you'd tap next, and long messages wrap */
+body.phone .toast {
+  top: auto;
+  bottom: calc(var(--sab) + 78px);
+  transform: translate(-50%, 160%) scale(0.8);
+  height: auto;
+  min-height: 50px;
+  width: max-content;
+  padding: 7px 8px 7px 18px;
+  border-radius: 25px;
+  white-space: normal;
+}
+
+body.phone .toast.show {
+  transform: translate(-50%, 0);
+}
+
+body.phone .toast .msg {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.3;
+}
+
 .toast.show {
   transform: translate(-50%, 0);
   opacity: 1;
+  pointer-events: auto;
+}
+
+/* (gone means gone: an invisible toast never catches a tap meant for what's under it) */
+.toast:not(.show) {
+  pointer-events: none;
 }
 
 .toast .msg {
@@ -2332,6 +2409,41 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* (the capsule shows where typing goes, as its field has no ring of its own) */
+.search:has(input:focus-visible) {
+  box-shadow: var(--edge), 0 0 0 2px var(--tint);
+}
+
+/* Tap targets at least 44pt, as iOS has them, without making the controls look bigger */
+.chip,
+.seg-btn {
+  position: relative;
+}
+
+.chip::before,
+.seg-btn::before {
+  content: "";
+  position: absolute;
+  inset: -5px -3px;
+}
+
+/* (scrolled sideways by focus or script, never: it only clips) */
+#app {
+  overflow: clip;
+}
+
+.chip-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: -6px;
+}
+
+.chip-back svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* Later: when a conversation comes back */
 .menu-item .hint {
   font-size: 15px;
@@ -2428,4 +2540,25 @@ textarea:focus-visible {
 
 .menu-item .lbl {
   white-space: nowrap;
+}
+
+/* (the search operators in one row that scrolls sideways, rather than several pushing the results down) */
+.ops-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -16px;
+  padding: 2px 16px;
+}
+
+.ops-row::-webkit-scrollbar {
+  display: none;
+}
+
+.ops-row > * {
+  flex: none;
+}
+
+.conv-head:focus {
+  outline: none;
 }
