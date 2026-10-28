@@ -136,6 +136,11 @@ html.fullscreen-fix body {
   height: var(--screen-h);
 }
 
+/* (and everything laid over Mail, menus, sheets, the toast, measured against that page rather than iOS's short one) */
+html.fullscreen-fix body {
+  transform: translateZ(0);
+}
+
 html.fullscreen-fix .sky,
 html.fullscreen-fix #app {
   bottom: auto;

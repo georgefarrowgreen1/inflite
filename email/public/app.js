@@ -657,6 +657,7 @@
 
   // On the Home Screen, iOS can lay the page out shorter than the screen (the height a Safari toolbar would take), so
   // the tab bar sits high with a band under it: there, filling the window, size Mail to the screen itself
+  let viewH = () => window.innerHeight;
   if (STANDALONE && screen.width && screen.height) {
     const fit = () => {
       const portrait = window.innerHeight >= window.innerWidth;
@@ -669,7 +670,12 @@
       if (short) root.style.setProperty("--screen-h", `${h}px`);
     };
     fit();
+    viewH = () => (document.documentElement.classList.contains("fullscreen-fix") ? document.body.clientHeight : window.innerHeight);
     window.addEventListener("resize", fit);
+    // (the page now taller than iOS's window, it could be scrolled, by focus or script: kept where it belongs)
+    window.addEventListener("scroll", () => {
+      if (window.scrollY && document.documentElement.classList.contains("fullscreen-fix")) window.scrollTo(0, 0);
+    });
     window.addEventListener("orientationchange", () => setTimeout(fit, 300));
   }
 
@@ -833,7 +839,7 @@
     const mw = menu.offsetWidth;
     const mh = menu.offsetHeight;
     const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const vh = viewH();
     const below = r.bottom + 8 + mh < vh - 12 || r.top < vh / 2;
     let top = below ? r.bottom + 8 : r.top - 8 - mh;
     top = Math.max(12, Math.min(top, vh - mh - 12));
@@ -3735,7 +3741,7 @@ pre{white-space:pre-wrap}
     const vv = window.visualViewport;
     let lastKb = -1;
     const onVV = () => {
-      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      const kb = Math.max(0, viewH() - vv.height - vv.offsetTop);
       const v = kb > 60 ? Math.round(kb) : 0;
       if (v === lastKb) return;
       lastKb = v;
