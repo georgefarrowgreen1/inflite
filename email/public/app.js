@@ -2491,6 +2491,7 @@
       if (token !== S.detailToken) return;
       S.thread = full;
       renderDetail({ keepScroll: true });
+      scrollToNewest();
       if (full.unread) act(id, "read", {}, { quiet: true });
     } catch (err) {
       if (token === S.detailToken) toast(err.message, { error: true });
@@ -2534,22 +2535,66 @@
     );
     els.detailNavTitle.textContent = t?.subject || "";
     const lead = t && leadAction(t);
+    // (what to do with it, as pills; and a reply written right here, without the compose sheet)
     setKids(
       els.detailToolbar,
       ...(t
         ? [
             h(
-              `button.gbtn.glass.text${lead.act === "done" ? ".tinted" : ""}`,
-              { "aria-label": lead.label, onclick: () => act(t.id, lead.act) },
-              icon(lead.ic),
-              lead.act === "done" ? "Done" : lead.label
+              "div.d-acts",
+              h(
+                `button.d-pill.glass${lead.act === "done" ? ".done-pill" : ""}`,
+                { type: "button", onclick: () => act(t.id, lead.act) },
+                icon(lead.ic),
+                lead.act === "done" ? "Done" : lead.label
+              ),
+              t.trashed ? null : h("button.d-pill.glass", { type: "button", onclick: (e) => laterMenu(e.currentTarget, t) }, icon("clock"), "Later"),
+              h(
+                "button.d-pill.glass.icon-only",
+                { type: "button", "aria-label": t.trashed ? "Delete Forever" : "Move to Trash", onclick: (e) => (t.trashed ? confirmDelete(e.currentTarget, t.id) : act(t.id, "trash")) },
+                icon("trash")
+              )
             ),
-            t.trashed ? null : gbtn("clock", "Later", (e) => laterMenu(e.currentTarget, t)),
-            gbtn("trash", t.trashed ? "Delete Forever" : "Move to Trash", (e) => (t.trashed ? confirmDelete(e.currentTarget, t.id) : act(t.id, "trash"))),
-            h("div.spacer"),
-            gbtn("reply", "Reply", (e) => replyMenu(e.currentTarget), { disabled: !!t.loading }),
+            quickReply(t),
           ]
         : [])
+    );
+  }
+
+  // A reply written in the bar at the foot of a conversation: to whoever wrote last, sent (with Undo) as the compose
+  // sheet sends; the button beside it opens Reply All, Forward and the full sheet
+  function quickReply(t) {
+    const last = t.messages?.find((m) => m.folder !== "sent");
+    const who = last ? (displayName(last.from) || "").split(/\s+/)[0] : "";
+    const field = h("textarea.qr-field", { rows: 1, placeholder: who ? `Reply to ${who}…` : "Reply…", "aria-label": who ? `Reply to ${who}` : "Reply", enterkeyhint: "send" });
+    const send = h("button.qr-send", { type: "button", "aria-label": "Send", disabled: true }, icon("arrowUp"));
+    const grow = () => {
+      field.style.height = "auto";
+      field.style.height = `${Math.min(field.scrollHeight, 120)}px`;
+      send.disabled = !field.value.trim();
+    };
+    field.addEventListener("input", grow);
+    const go = () => {
+      const text = field.value.trim();
+      if (!text) return;
+      field.value = "";
+      grow();
+      field.blur();
+      withReplyTarget(t.id, (m) => {
+        const c = replyDraft(m, "reply");
+        c.text = text;
+        queueSend(c);
+      });
+    };
+    send.addEventListener("click", go);
+    field.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.preventDefault(), go());
+    });
+    return h(
+      "div.qr.glass",
+      h("button.qr-more", { type: "button", "aria-label": "Reply All, Forward and more", disabled: !!t.loading, onclick: (e) => replyMenu(e.currentTarget) }, icon("reply")),
+      field,
+      send
     );
   }
 
@@ -2592,10 +2637,21 @@
       "div",
       { class: keepScroll ? null : "content-in" },
       convHead(t),
-      t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", t.messages.map(messageCard))
+      // (oldest first, as a conversation reads; the newest at the foot, by the reply)
+      t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", [...t.messages].reverse().map(messageCard))
     );
     setKids(els.detailScroll, content);
     els.detailScroll.scrollTop = keepScroll ? top : 0;
+    els.detail.classList.toggle("scrolled", els.detailScroll.scrollTop > 28);
+  }
+
+  // (opened: at the newest message, with the earlier ones above it)
+  function scrollToNewest() {
+    const cards = els.detailScroll.querySelectorAll(".mcard");
+    if (cards.length < 2) return;
+    const card = [...cards].find((c) => c.classList.contains("unread") && c.classList.contains("open")) || cards[cards.length - 1];
+    const top = card.getBoundingClientRect().top - els.detailScroll.getBoundingClientRect().top + els.detailScroll.scrollTop;
+    els.detailScroll.scrollTop = Math.max(0, top - 120);
     els.detail.classList.toggle("scrolled", els.detailScroll.scrollTop > 28);
   }
 
@@ -2615,16 +2671,19 @@
   }
 
   function convHead(t) {
-    const meta = [
-      t.count > 1 && `${t.count} messages`,
-      t.category === "updates" ? "Updates" : "People",
-      t.mailbox && `to ${t.mailbox}`,
-      t.trashed ? "In Trash" : t.done && "Done",
-    ].filter(Boolean);
+    // (who's in it, their faces stacked, and how many messages; where it is, only when it's put away)
+    const ps = (t.people || []).slice(0, 4);
+    const names = ps.map((p) => (p.me ? "you" : (p.name || p.email || "").split(/[\s@]/)[0]));
+    const who = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0] || "";
+    const meta = h(
+      "div.conv-meta",
+      ps.length > 1 ? h("span.conv-faces", ps.map((p) => avatar(p.me ? { name: S.me?.displayName, email: p.email, me: true } : p, "face"))) : null,
+      h("span", [who && who[0].toUpperCase() + who.slice(1), t.count > 1 && `${t.count} messages`, t.trashed ? "In Trash" : t.done && "Done"].filter(Boolean).join(" · "))
+    );
     return h(
       "header.conv-head",
       { tabindex: "-1" },
-      h("div.conv-meta", meta.join(" · ")),
+      meta,
       t.snoozeUntil
         ? h(
             "div.later-note",
@@ -2646,16 +2705,20 @@
     return h(
       "article.mcard",
       { "data-mid": m.id, class: [open && "open", m.unread && m.folder === "inbox" && "unread"].filter(Boolean).join(" ") || null },
-      h(
-        "button.msg-head",
-        { type: "button", "aria-expanded": String(open), onclick: () => toggleMessage(m.id) },
-        avatar(m.from),
-        h(
-          "div.msg-meta",
-          h("div.msg-top", h("b", me ? "You" : displayName(m.from)), h("span", fmtListDate(m.date))),
-          h("div.msg-sub", open ? toLine || m.from.email : m.snippet || " ")
-        )
-      ),
+      open
+        ? h(
+            "button.msg-head",
+            { type: "button", "aria-expanded": "true", onclick: () => toggleMessage(m.id) },
+            avatar(m.from),
+            h("div.msg-meta", h("div.msg-top", h("b", me ? "You" : displayName(m.from)), h("span", fmtListDate(m.date))), h("div.msg-sub", toLine || m.from.email))
+          )
+        : // (folded: one line, who and what they said)
+          h(
+            "button.msg-head.folded",
+            { type: "button", "aria-expanded": "false", onclick: () => toggleMessage(m.id) },
+            avatar(m.from, "fold-av"),
+            h("div.msg-line", h("b", me ? "You" : (displayName(m.from) || "").split(/\s+/)[0]), h("span", ` · ${m.snippet || ""}`))
+          ),
       open
         ? full
           ? [messageBody(full), full.attachments?.length ? attachmentsEl(full.attachments) : null, h("div.msg-foot", fmtLongDate(m.date))]

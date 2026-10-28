@@ -3816,3 +3816,178 @@ textarea:focus-visible {
   color: var(--tint-text);
   font-weight: 600;
 }
+
+/* ---------- A conversation: who's in it, earlier messages folded, the newest open, a reply at the foot ---------- */
+
+.conv-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--label-2);
+}
+
+.conv-faces {
+  display: flex;
+  padding-left: 6px;
+}
+
+.avatar.face {
+  width: 26px;
+  height: 26px;
+  margin-left: -6px;
+  font-size: 10px;
+  box-shadow: 0 0 0 2px var(--sky-b);
+}
+
+/* folded: a slim card, one line */
+.mcard:not(.open) {
+  border-radius: 18px;
+}
+
+.msg-head.folded {
+  padding: 10px 14px;
+  gap: 10px;
+}
+
+.avatar.fold-av {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+
+.msg-line {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  color: var(--label-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.msg-line b {
+  color: var(--label);
+  font-weight: 600;
+}
+
+.mcard.unread:not(.open) .msg-line b::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--tint);
+  vertical-align: 1px;
+}
+
+/* the foot: actions as pills, and the reply */
+.pane.detail .toolbar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.pane.detail .scroll {
+  padding-bottom: calc(var(--sab) + 150px);
+}
+
+.d-acts {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.d-pill {
+  height: 38px;
+  padding: 0 16px 0 13px;
+  border-radius: 19px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: transform 0.4s var(--spring);
+}
+
+.d-pill:active {
+  transform: scale(0.94);
+}
+
+.d-pill svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.2;
+}
+
+.d-pill.icon-only {
+  width: 38px;
+  padding: 0;
+  justify-content: center;
+}
+
+.d-pill.done-pill {
+  color: #fff;
+  background: linear-gradient(160deg, #4fdc8e, #1fa75a);
+  box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.45), 0 8px 18px -8px #1fa75a;
+}
+
+.qr {
+  min-height: 52px;
+  padding: 6px;
+  border-radius: 26px;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.qr-more,
+.qr-send {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
+.qr-more {
+  color: var(--label-2);
+}
+
+.qr-more svg,
+.qr-send svg {
+  width: 20px;
+  height: 20px;
+}
+
+.qr-send {
+  color: #fff;
+  background: var(--tint);
+  transition: opacity 0.2s, transform 0.4s var(--spring);
+}
+
+.qr-send:disabled {
+  opacity: 0.35;
+}
+
+.qr-field {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  max-height: 120px;
+  padding: 9px 4px;
+  border: 0;
+  background: none;
+  resize: none;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--label);
+}
+
+.qr-field::placeholder {
+  color: var(--label-3);
+}
