@@ -182,15 +182,6 @@
     return `${(n / 1024 / 1024).toFixed(1)} MB`;
   }
 
-  function fmtUpdated(ts) {
-    if (!ts) return "";
-    const s = (Date.now() - ts) / 1000;
-    if (s < 60) return "Updated Just Now";
-    const m = Math.round(s / 60);
-    if (m < 60) return `Updated ${m} minute${m === 1 ? "" : "s"} ago`;
-    return `Updated ${new Date(ts).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}`;
-  }
-
   const debounce = (fn, ms) => {
     let t;
     return (...a) => {
@@ -275,7 +266,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.06";
+  const BUILD = "1.07";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -1471,7 +1462,7 @@
       S.query ? null : statusDot()
     );
     const about = {
-      people: [n && `${n} unread`, fmtUpdated(S.updatedAt)],
+      people: [n && `${n} unread`],
       updates: [n && `${n} unread`],
       later: [],
       flagged: [S.counts.flagged && `${S.counts.flagged} flagged`],
