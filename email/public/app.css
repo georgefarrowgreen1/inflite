@@ -655,10 +655,8 @@ body.sheet-open.phone #app::after {
 }
 
 /* The stream by day */
+/* (scrolls with the list, as Mail's do: pinned, it would sit over the rows going under it) */
 .day {
-  position: sticky;
-  top: calc(var(--sat) + var(--nav-h));
-  z-index: 3;
   padding: 14px 20px 6px;
   font-size: 13px;
   font-weight: 600;
