@@ -275,7 +275,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.04";
+  const BUILD = "1.05";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -847,12 +847,24 @@
 
   let menuState = null;
 
-  function showMenu(anchor, items, { title } = {}) {
+  // A tap outside a menu closes it; on what opened it, it closes it too, rather than closing and opening it again
+  function closeFromLayer(e) {
+    const opener = menuState?.opener;
+    const r = opener?.isConnected && opener.getBoundingClientRect();
+    if (r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      const swallow = (ev) => (ev.preventDefault(), ev.stopImmediatePropagation());
+      opener.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => opener.removeEventListener("click", swallow, { capture: true }), 600);
+    }
+    closeMenu();
+  }
+
+  function showMenu(anchor, items, { title, dropdown } = {}) {
     closeMenu(true);
     const layer = h("div.menu-layer");
     const menu = h(
       "div.menu",
-      { role: "menu" },
+      { role: "menu", class: dropdown ? "dropdown" : null },
       title && h("div.menu-title", title),
       items.filter(Boolean).map((it) =>
         it === "-"
@@ -876,7 +888,7 @@
       )
     );
     layer.addEventListener("pointerdown", (e) => {
-      if (e.target === layer) closeMenu();
+      if (e.target === layer) closeFromLayer(e);
     });
     layer.append(menu);
     document.body.append(layer);
@@ -892,7 +904,10 @@
     let left = r.left + r.width / 2 < vw / 2 ? r.left : r.right - mw;
     left = Math.max(12, Math.min(left, vw - mw - 12));
     Object.assign(menu.style, { top: `${top}px`, left: `${left}px` });
-    menu.style.transformOrigin = `${r.left + r.width / 2 - left}px ${r.top + r.height / 2 - top}px`;
+    // (a drop-down unfolds from the edge nearest what opened it; other menus grow from it)
+    menu.style.transformOrigin = dropdown ? `${r.left + r.width / 2 - left}px ${below ? "0" : "100%"}` : `${r.left + r.width / 2 - left}px ${r.top + r.height / 2 - top}px`;
+    anchor.classList.add("menu-open");
+    anchor.setAttribute("aria-expanded", "true");
     requestAnimationFrame(() => requestAnimationFrame(() => menu.classList.add("open")));
     // (never a destructive choice first, so Return can't delete anything by accident)
     const choices = () => [...menu.querySelectorAll("button:not(:disabled)")];
@@ -915,6 +930,8 @@
     const { layer, menu, opener, onClose } = menuState;
     menuState = null;
     onClose?.();
+    opener?.classList.remove("menu-open");
+    if (opener?.hasAttribute("aria-expanded")) opener.setAttribute("aria-expanded", "false");
     layer.classList.remove("open");
     // (back to what opened it, as a menu does)
     if (opener?.isConnected && (menu.contains(document.activeElement) || document.activeElement === document.body)) opener.focus?.({ preventScroll: true });
@@ -1224,7 +1241,7 @@
       h("div.p-grp", h("button.p-row.p-out", { type: "button", onclick: () => (closeMenu(), signOut()) }, h("span.p-ic.out", icon("signout")), h("span.p-l", "Sign Out")))
     );
     const layer = h("div.menu-layer.profile-layer");
-    layer.addEventListener("pointerdown", (e) => e.target === layer && closeMenu());
+    layer.addEventListener("pointerdown", (e) => e.target === layer && closeFromLayer(e));
     pop.addEventListener("keydown", (e) => {
       if (e.key !== "Tab") return;
       const f = [...pop.querySelectorAll("button")];
@@ -3931,8 +3948,12 @@ pre{white-space:pre-wrap}
     // Who it's from: a small chip at the end of the To line, the addresses behind it
     const fromBtn = h("button.from-chip", {
       type: "button",
+      "aria-haspopup": "menu",
+      "aria-expanded": "false",
       onclick: () =>
-        showMenu(
+        menuState?.opener === fromBtn
+          ? closeMenu()
+          : showMenu(
           fromBtn,
           (S.me?.identities || [c.from]).map((addr) => ({
             label: addr,
@@ -3943,7 +3964,7 @@ pre{white-space:pre-wrap}
               update();
             },
           })),
-          { title: "Send From" }
+          { title: "Send From", dropdown: true }
         ),
     });
     function drawFrom() {

@@ -2556,6 +2556,49 @@ body.pad .pane.detail .msgs {
   transition: transform 0.25s var(--ease-out), opacity 0.2s;
 }
 
+/* a drop-down: unfolds from its edge, its choices following one after another */
+.menu.dropdown {
+  transform: translateY(-6px) scaleY(0.4) scaleX(0.92);
+  transition: transform 0.45s var(--spring), opacity 0.18s;
+}
+
+.menu.dropdown.open {
+  transform: none;
+}
+
+.menu.dropdown.closing {
+  transform: translateY(-4px) scaleY(0.6) scaleX(0.95);
+  transition: transform 0.22s var(--ease-out), opacity 0.18s;
+}
+
+.menu.dropdown.open > * {
+  animation: drop-in 0.4s var(--ease-out) both;
+}
+
+.menu.dropdown.open > :nth-child(2) { animation-delay: 30ms; }
+.menu.dropdown.open > :nth-child(3) { animation-delay: 60ms; }
+.menu.dropdown.open > :nth-child(4) { animation-delay: 90ms; }
+.menu.dropdown.open > :nth-child(5) { animation-delay: 120ms; }
+.menu.dropdown.open > :nth-child(n + 6) { animation-delay: 150ms; }
+
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu.dropdown,
+  .menu.dropdown.closing {
+    transform: none;
+  }
+
+  .menu.dropdown.open > * {
+    animation: none;
+  }
+}
+
 .menu-item {
   width: 100%;
   min-height: 44px;
@@ -2944,7 +2987,7 @@ body.pad .sheet-grabber {
   color: var(--label-2);
   font-size: 13px;
   white-space: nowrap;
-  transition: transform 0.4s var(--spring);
+  transition: transform 0.4s var(--spring), background 0.25s, color 0.25s;
 }
 
 .from-chip:active {
@@ -2968,6 +3011,17 @@ body.pad .sheet-grabber {
   height: 12px;
   flex: none;
   stroke-width: 2.4;
+  transition: transform 0.4s var(--spring);
+}
+
+/* (open: its arrow turned up, the chip lit) */
+.from-chip.menu-open {
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  color: var(--tint-text);
+}
+
+.from-chip.menu-open svg {
+  transform: rotate(180deg);
 }
 
 /* while To is empty: the people written to most */
