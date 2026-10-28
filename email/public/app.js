@@ -1320,10 +1320,10 @@
     );
     const about = {
       people: [n && `${n} unread`, fmtUpdated(S.updatedAt)],
-      updates: ["Newsletters, receipts and notifications"],
-      later: ["Back at the top, unread, when it's time"],
-      flagged: [S.counts.flagged ? `${S.counts.flagged} to follow up` : "To follow up"],
-      done: ["Dealt with. A reply brings it back"],
+      updates: [n && `${n} unread`],
+      later: [],
+      flagged: [S.counts.flagged && `${S.counts.flagged} flagged`],
+      done: [],
       trash: [S.counts.trash ? `${S.counts.trash} conversation${S.counts.trash === 1 ? "" : "s"}` : "Empty"],
     }[S.lens];
     const bits = S.query ? [`${S.threads.length} conversation${S.threads.length === 1 ? "" : "s"}`] : about;
@@ -1335,8 +1335,10 @@
       S.address && !S.query
         ? h("button.sub-tag", { type: "button", onclick: () => setAddress(null), "aria-label": `Show mail to every address, not only ${S.address}` }, `to ${S.address.split("@")[0]}@`, icon("x"))
         : null,
-      h("span", bits.filter(Boolean).join(" · ") || " ")
+      h("span", bits.filter(Boolean).join(" · "))
     );
+    // (nothing to say: no line at all)
+    els.listSubtitle.hidden = !els.listSubtitle.textContent.trim();
     setKids(els.listNavTitle, title, n ? h("small", `${n} unread`) : null);
     renderTabs();
     renderSearchHelp();
