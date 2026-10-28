@@ -1,5 +1,6 @@
 import PostalMime from "postal-mime";
 import { ensureSchema, findThread, cleanMessageId, upsertContacts } from "./db.js";
+import { pushAll, peopleUnread } from "./push.js";
 
 // Handles mail delivered by Cloudflare Email Routing.
 export async function receiveEmail(message, env, ctx) {
@@ -75,6 +76,21 @@ export async function receiveEmail(message, env, ctx) {
   ]);
 
   ctx.waitUntil(upsertContacts(env, [from]));
+
+  // A notice for mail from people (not for updates: newsletters, receipts and the like wait in the stream)
+  if (category === "people") {
+    ctx.waitUntil(
+      peopleUnread(env).then((badge) =>
+        pushAll(env, {
+          title: from.name || from.email,
+          body: [email.subject || "(No Subject)", snippet(email.text, email.html)].filter(Boolean).join("\n").slice(0, 240),
+          tag: threadId,
+          url: `/#thread=${threadId}`,
+          badge,
+        })
+      )
+    );
+  }
 
   // Optional safety net: also forward to a verified address.
   if (env.FORWARD_TO) ctx.waitUntil(message.forward(env.FORWARD_TO));

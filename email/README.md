@@ -19,6 +19,12 @@ Cloudflare Email Sending.
   Attachments, Done) and each @inflite.ai address that has had mail becomes a lens. Swipe right for
   **Done**; a new reply brings a conversation back. Search takes `from:`, `to:`, `has:attachment`,
   `is:unread`, `is:flagged`, `is:done`, `before:` and `after:`.
+- **Later:** swipe left (or the clock in a conversation) to put it away until a time: later today,
+  this evening, tomorrow, the weekend, next week or a time of your own. A scheduled run every five
+  minutes (the `triggers.crons` in `wrangler.jsonc`) brings it back to the top of the stream, unread.
+- **Notifications:** turn on **Notifications** in the profile menu to get a notice for new mail in
+  People (not Updates) and for conversations back from Later, with the unread count on the app icon.
+  Web Push with a VAPID key Mail makes for itself and keeps in D1; nothing to configure.
 - **App:** a static web app in `public/`, installable to the home screen, in the look of the other
   inflite apps: the stream on iPhone with conversations pushed over it (and an edge-swipe back), the
   two side by side on iPad and Mac, swipe actions, undo send, drafts and keyboard shortcuts.
@@ -47,7 +53,9 @@ copy of every incoming message there.
 
 ## Install on iPhone or iPad
 
-Open `https://email.inflite.ai` in Safari, tap **Share → Add to Home Screen**.
+Open `https://email.inflite.ai` in Safari, tap **Share → Add to Home Screen**. Notifications on
+iPhone and iPad only work in Mail opened from the Home Screen icon (iOS 16.4 or later); if it was
+added before notifications existed, remove it and add it again.
 
 ## Local development
 

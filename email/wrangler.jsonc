@@ -28,5 +28,6 @@
     "ACCOUNT_ORIGIN": "https://account.inflite.ai"
   },
 
+  "triggers": { "crons": ["*/5 * * * *"] },
   "observability": { "enabled": true }
 }

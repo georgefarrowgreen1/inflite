@@ -1,11 +1,12 @@
 import { rowToSummary } from "./db.js";
 
-// One stream of conversations rather than folders. A conversation is in the stream while any of its messages is in the
+// One stream of conversations rather than folders. Later hides a conversation until a time; when it comes it's back at the
+// top of the stream, unread (wakeSnoozed: asked as the stream is read, and every few minutes by the scheduler). A conversation is in the stream while any of its messages is in the
 // inbox; Done moves those to the archive; a new message brings it back. Views narrow the stream (Unread, Flagged,
 // Attachments) or show what's been dealt with (Done); People and Updates split it by what sort of mail it is; an
 // address lens shows only mail to one @domain address.
 
-export const VIEWS = ["all", "unread", "flagged", "attachments", "done", "trash"];
+export const VIEWS = ["all", "unread", "flagged", "attachments", "later", "done", "trash"];
 
 const cleanSubject = (s) => (s || "").replace(/^((re|fwd?|aw|sv)\s*:\s*)+/i, "").trim();
 
@@ -54,7 +55,7 @@ export function searchCondition(q, bind) {
   return conds.length ? conds.join(" AND ") : "1";
 }
 
-const AGG = `thread_id, MAX(date) AS last, COUNT(*) AS n,
+const AGG = `thread_id, MAX(MAX(date), MAX(COALESCE(bumped_at, 0))) AS last, MAX(date) AS latest, COUNT(*) AS n,
   SUM(folder = 'inbox' AND unread = 1) AS unread, MAX(starred) AS starred, MAX(has_attachments) AS atts,
   SUM(folder = 'inbox') AS inbox, MIN(COALESCE(category, 'people')) AS category, MAX(COALESCE(snooze_until, 0)) AS snooze`;
 
@@ -66,6 +67,7 @@ export async function listThreads(env, url) {
   const before = Number(url.searchParams.get("before")) || null;
   const limit = Math.min(Number(url.searchParams.get("limit")) || 40, 100);
   const now = Date.now();
+  await wakeSnoozed(env);
 
   const params = [];
   const bind = (v) => {
@@ -80,14 +82,15 @@ export async function listThreads(env, url) {
   else if (view === "unread") having.push(`SUM(folder = 'inbox' AND unread = 1) > 0`);
   else if (view === "flagged") having.push(`MAX(starred) = 1`);
   else if (view === "attachments") having.push(`MAX(has_attachments) = 1`);
+  else if (view === "later") having.push(`SUM(folder = 'inbox') > 0`, `MAX(COALESCE(snooze_until, 0)) > ${bind(now)}`);
   else if (view === "done") having.push(`SUM(folder = 'inbox') = 0`);
   if (category && !q && !inTrash) having.push(`MIN(COALESCE(category, 'people')) = ${bind(category)}`);
   if (address) having.push(`SUM(lower(mailbox) = ${bind(address)}) > 0`);
-  if (before) having.push(`MAX(date) < ${bind(before)}`);
+  if (before) having.push(`MAX(MAX(date), MAX(COALESCE(bumped_at, 0))) < ${bind(before)}`);
 
   const { results: groups } = await env.DB.prepare(
     `SELECT ${AGG} FROM messages WHERE ${where} AND thread_id IS NOT NULL GROUP BY thread_id
-     ${having.length ? `HAVING ${having.join(" AND ")}` : ""} ORDER BY last DESC LIMIT ${bind(limit + 1)}`
+     ${having.length ? `HAVING ${having.join(" AND ")}` : ""} ORDER BY ${view === "later" && !q ? "snooze ASC" : "last DESC"} LIMIT ${bind(limit + 1)}`
   )
     .bind(...params)
     .all();
@@ -143,7 +146,8 @@ async function threadsFrom(env, groups, where, now) {
       trashed: latest?.folder === "trash",
       snoozeUntil: g.snooze > now ? g.snooze : null,
       mailbox: incoming?.mailbox || null,
-      date: g.last,
+      date: g.latest ?? g.last,
+      sort: g.last,
     };
   });
 }
@@ -167,6 +171,7 @@ export async function getThread(env, id) {
       {
         thread_id: id,
         last: results[0].date,
+        latest: results[0].date,
         n: results.length,
         unread: results.filter((r) => r.folder === "inbox" && r.unread).length,
         starred: results.some((r) => r.starred) ? 1 : 0,
@@ -211,6 +216,22 @@ export async function threadAction(env, id, body, deleteMessages) {
       if (m) await D.prepare(`UPDATE messages SET starred = 1 WHERE id = ?1`).bind(m.id).run();
       break;
     }
+    // Later: out of the stream until a time (from Done too: it comes back then)
+    case "snooze": {
+      const until = Number(body.until);
+      if (!Number.isFinite(until) || until <= Date.now()) {
+        const err = new Error("Choose a time in the future.");
+        err.status = 400;
+        throw err;
+      }
+      const inbox = await D.prepare(`SELECT COUNT(*) AS n FROM messages WHERE thread_id = ?1 AND folder = 'inbox'`).bind(id).first();
+      if (!inbox?.n) await D.prepare(`UPDATE messages SET folder = 'inbox' WHERE thread_id = ?1 AND folder = 'archive'`).bind(id).run();
+      await D.prepare(`UPDATE messages SET snooze_until = ?2 WHERE thread_id = ?1 AND folder = 'inbox'`).bind(id, until).run();
+      break;
+    }
+    case "unsnooze":
+      await D.prepare(`UPDATE messages SET snooze_until = NULL WHERE thread_id = ?1`).bind(id).run();
+      break;
     case "unflag":
       await D.prepare(`UPDATE messages SET starred = 0 WHERE thread_id = ?1`).bind(id).run();
       break;
@@ -262,6 +283,7 @@ export async function threadAction(env, id, body, deleteMessages) {
 // has had mail, with its unread.
 export async function counts(env) {
   const now = Date.now();
+  await wakeSnoozed(env);
   const { results } = await env.DB.prepare(
     `SELECT ${AGG} FROM messages WHERE folder NOT IN ('trash', 'drafts') AND thread_id IS NOT NULL GROUP BY thread_id`
   ).all();
@@ -295,4 +317,29 @@ export async function counts(env) {
   // (the Home Screen badge and the title: unread conversations in People)
   out.inbox = { unread: out.people.unread };
   return out;
+}
+
+// Conversations whose Later time has come: back at the top, unread. → their ids and subjects (for a notice)
+export async function wakeSnoozed(env) {
+  const now = Date.now();
+  const { results } = await env.DB.prepare(
+    `SELECT thread_id, MAX(snooze_until) AS at FROM messages WHERE snooze_until IS NOT NULL AND snooze_until <= ?1 GROUP BY thread_id`
+  )
+    .bind(now)
+    .all();
+  if (!results.length) return [];
+  const woken = [];
+  for (const r of results) {
+    const latest = await env.DB.prepare(
+      `SELECT id, subject, from_name, from_email FROM messages WHERE thread_id = ?1 AND folder = 'inbox' ORDER BY date DESC LIMIT 1`
+    )
+      .bind(r.thread_id)
+      .first();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE messages SET snooze_until = NULL, bumped_at = ?2 WHERE thread_id = ?1 AND snooze_until IS NOT NULL`).bind(r.thread_id, r.at),
+      ...(latest ? [env.DB.prepare(`UPDATE messages SET unread = 1 WHERE id = ?1`).bind(latest.id)] : []),
+    ]);
+    if (latest) woken.push({ threadId: r.thread_id, subject: cleanSubject(latest.subject) || "(No Subject)", from: latest.from_name || latest.from_email });
+  }
+  return woken;
 }

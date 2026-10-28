@@ -54,6 +54,7 @@
     person: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.8-3.8 3.8-6 7.5-6s6.7 2.2 7.5 6"/>',
     news: '<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M7 9h10M7 12.5h10M7 16h6"/>',
     pin: '<path d="M9 4h6l-1 5 3 3v1.5H7V12l3-3z"/><path d="M12 13.5V20"/>',
+    calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
     bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
     alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.5" r=".9" fill="currentColor" stroke="none"/>',
@@ -298,6 +299,9 @@
       threadAction: (id, body) => req("POST", `/api/threads/${id}`, body),
       threadBatch: (body) => req("POST", "/api/threads/batch", body),
       emptyTrash: () => req("POST", "/api/trash/empty", {}),
+      pushKey: () => req("GET", "/api/push/key"),
+      pushSubscribe: (sub) => req("POST", "/api/push/subscribe", sub),
+      pushUnsubscribe: (endpoint) => req("POST", "/api/push/unsubscribe", { endpoint }),
       message: (id) => req("GET", `/api/messages/${id}`),
       remove: (id) => req("DELETE", `/api/messages/${id}`),
       contacts: (q) => req("GET", `/api/contacts?${qs({ q })}`),
@@ -522,7 +526,7 @@
         else if (view === "trash") list = allThreads(true);
         else {
           list = allThreads().filter((t) =>
-            view === "unread" ? t.unread : view === "flagged" ? t.starred : view === "attachments" ? t.hasAttachments : view === "done" ? t.done : !t.done && !t.snoozeUntil
+            view === "unread" ? t.unread : view === "flagged" ? t.starred : view === "attachments" ? t.hasAttachments : view === "done" ? t.done : view === "later" ? !t.done && t.snoozeUntil : !t.done && !t.snoozeUntil
           );
           if (category) list = list.filter((t) => t.category === category);
         }
@@ -539,6 +543,7 @@
       },
       async threadAction(id, { action, category, sender, until }) {
         const ms = threadMsgs(id), latestIn = ms.filter((m) => ["inbox", "archive"].includes(m.folder)).sort((a, b) => b.date - a.date)[0];
+        if (action === "snooze" && !ms.some((m) => m.folder === "inbox")) for (const m of ms) if (m.folder === "archive") m.folder = "inbox";
         for (const m of ms) {
           if (action === "done" && m.folder === "inbox") Object.assign(m, { folder: "archive", snoozeUntil: null });
           if (action === "inbox" && m.folder === "archive") m.folder = "inbox";
@@ -649,6 +654,7 @@
     unread: { chip: "Unread", title: "Unread" },
     flagged: { chip: "Flagged", title: "Flagged" },
     attachments: { chip: "Attachments", title: "Attachments" },
+    later: { chip: "Later", title: "Later" },
     done: { chip: "Done", title: "Done" },
     trash: { chip: "Trash", title: "Trash" },
   };
@@ -657,6 +663,7 @@
     me: null,
     counts: {},
     view: "all",
+    pushOn: false,
     category: store.get("category", "people"),
     address: null,
     query: "",
@@ -740,6 +747,7 @@
               },
               it.checked !== undefined && icon("check", "check"),
               h("span.lbl", it.label),
+              it.hint && h("span.hint", it.hint),
               it.icon && icon(it.icon)
             )
       )
@@ -1024,13 +1032,92 @@
       anchor,
       [
         accountOrigin && { label: "Your Account", icon: "person", action: () => location.assign(`${accountOrigin}/`) },
-        { label: "Load Remote Images", checked: S.remoteImages, action: toggleRemoteImages },
+        { label: "Notifications", checked: S.pushOn, icon: "bell", action: togglePush },
+        { label: "Load Remote Images", checked: S.remoteImages, icon: "photo", action: toggleRemoteImages },
         "-",
         { label: "Sign Out", icon: "signout", destructive: true, action: signOut },
       ],
       { title: [me.displayName, me.defaultFrom].filter(Boolean).join(" · ") }
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Notifications: new mail from people (and conversations back from Later), on this phone or browser.
+  // On iPhone and iPad, only Mail opened from the Home Screen can have them.
+  // ---------------------------------------------------------------------------
+
+  const PUSH_OK = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  let swReg = null;
+
+  async function setupPush() {
+    if (DEMO || !PUSH_OK) return;
+    try {
+      swReg = await navigator.serviceWorker.register("/sw.js");
+      const sub = await swReg.pushManager.getSubscription();
+      S.pushOn = !!sub && Notification.permission === "granted";
+      // (keep the server's copy current: subscriptions can change under us)
+      if (S.pushOn) api.pushSubscribe(sub.toJSON()).catch(() => {});
+    } catch {}
+  }
+
+  const keyBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+
+  async function togglePush() {
+    if (DEMO) return toast("Demo mode — notifications need the real Mail", { icon: "bell" });
+    if (!PUSH_OK) {
+      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      return toast(ios && !STANDALONE ? "Add Mail to your Home Screen to get notifications" : "This browser can’t show notifications", { icon: "bell", duration: 4200 });
+    }
+    if (S.pushOn) {
+      S.pushOn = false;
+      try {
+        const sub = await (swReg || (await navigator.serviceWorker.ready)).pushManager.getSubscription();
+        if (sub) {
+          await api.pushUnsubscribe(sub.endpoint).catch(() => {});
+          await sub.unsubscribe();
+        }
+      } catch {}
+      return toast("Notifications Off", { icon: "bell" });
+    }
+    // (asked first, while the tap still counts as one)
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted")
+      return toast(perm === "denied" ? "Notifications are blocked for Mail in Settings" : "Notifications stay off", { icon: "bell", duration: 4200 });
+    try {
+      const reg = swReg || (await navigator.serviceWorker.register("/sw.js"));
+      swReg = reg;
+      await navigator.serviceWorker.ready;
+      const { key } = await api.pushKey();
+      let sub = await reg.pushManager.getSubscription();
+      if (sub && keyOf(sub) !== key) {
+        await sub.unsubscribe();
+        sub = null;
+      }
+      sub ||= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+      await api.pushSubscribe(sub.toJSON());
+      S.pushOn = true;
+      toast("Notifications On: new mail from people", { icon: "bell" });
+    } catch (err) {
+      toast(err.message || "Couldn’t turn notifications on", { error: true });
+    }
+  }
+
+  function keyOf(sub) {
+    const k = sub.options?.applicationServerKey;
+    if (!k) return null;
+    return btoa(String.fromCharCode(...new Uint8Array(k))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  // A notification tapped: its conversation
+  function openFromUrl(url) {
+    const id = new URLSearchParams(new URL(url, location.href).hash.slice(1)).get("thread");
+    if (!id) return;
+    openThread(id);
+  }
+  if ("serviceWorker" in navigator)
+    navigator.serviceWorker.addEventListener("message", (e) => {
+      if (e.data?.open && S.me) openFromUrl(e.data.open);
+    });
 
   function toggleRemoteImages() {
     S.remoteImages = !S.remoteImages;
@@ -1102,9 +1189,9 @@
     if (S.query) return;
     const chip = (label, on, onclick, n) =>
       h("button.chip", { type: "button", class: on ? "on" : null, "aria-pressed": String(on), onclick }, label, n ? h("span.chip-n", n) : null);
-    const views = ["all", "unread", "flagged", "attachments", "done"].map((v) =>
-      chip(VIEWS[v].chip, S.view === v, () => setView(v), v === "flagged" ? S.counts.flagged : null)
-    );
+    const views = ["all", "unread", "flagged", "later", "attachments", "done"]
+      .filter((v) => v !== "later" || S.counts.snoozed || S.view === "later")
+      .map((v) => chip(VIEWS[v].chip, S.view === v, () => setView(v), v === "flagged" ? S.counts.flagged : v === "later" ? S.counts.snoozed : null));
     // (each address mail has come to: a lens on just that address, once there's more than one)
     const addrs = S.counts.addresses || [];
     const lenses =
@@ -1254,7 +1341,7 @@
         category: S.query || S.view === "trash" ? null : S.category,
         address: S.address,
         q: S.query,
-        before: more && last ? last.date : undefined,
+        before: more && last ? last.sort ?? last.date : undefined,
       });
       if (token !== S.listToken) return;
       if (more) {
@@ -1265,7 +1352,7 @@
         S.newIds = quiet && S.threads.length ? new Set(res.threads.filter((t) => !known.has(`${t.id}:${t.date}`)).map((t) => t.id)) : new Set();
         // (older pages already loaded are kept)
         const oldest = res.threads[res.threads.length - 1];
-        const older = quiet && oldest && res.hasMore ? S.threads.filter((t) => t.date < oldest.date) : [];
+        const older = quiet && oldest && res.hasMore ? S.threads.filter((t) => (t.sort ?? t.date) < (oldest.sort ?? oldest.date)) : [];
         S.threads = res.threads.concat(older);
         S.drafts = res.drafts || [];
         if (!older.length) S.hasMore = res.hasMore;
@@ -1310,6 +1397,7 @@
       flagged: ["flag", "Nothing flagged"],
       attachments: ["clip", "No attachments"],
       done: ["check", "Nothing done yet"],
+      later: ["clock", "Nothing for later"],
       trash: ["trash", "Trash is empty"],
     }[S.view];
     return h("div.empty.content-in", icon(ic), h("b", said));
@@ -1352,7 +1440,9 @@
           "div.top",
           h("span.from", peopleLine(t)),
           t.count > 1 ? h("span.count-badge", t.count) : null,
-          h("span.date", fmtListDate(t.date), icon("chevronRight"))
+          t.snoozeUntil
+            ? h("span.date.later", icon("clock"), fmtWhen(t.snoozeUntil))
+            : h("span.date", fmtListDate(t.date), icon("chevronRight"))
         ),
         h("div.subject", t.hasAttachments ? icon("clip") : null, t.subject),
         h("div.preview", t.latest?.folder === "sent" ? h("span.you", "You: ") : null, t.latest?.snippet || " ")
@@ -1366,7 +1456,8 @@
         "div.side.right",
         h("button.a-more", { "data-act": "more", tabindex: "-1" }, icon("more"), "More"),
         h("button.a-read", { "data-act": t.unread ? "read" : "unread", tabindex: "-1" }, icon(t.unread ? "envelopeOpen" : "envelopeBadge"), t.unread ? "Read" : "Unread"),
-        h("button.a-flag.lead", { "data-act": t.starred ? "unflag" : "flag", tabindex: "-1" }, icon(t.starred ? "flag" : "flagFill"), t.starred ? "Unflag" : "Flag")
+        h("button.a-flag", { "data-act": t.starred ? "unflag" : "flag", tabindex: "-1" }, icon(t.starred ? "flag" : "flagFill"), t.starred ? "Unflag" : "Flag"),
+        t.trashed ? null : h("button.a-later.lead", { "data-act": "later", tabindex: "-1" }, icon("clock"), "Later")
       )
     );
     const wrap = h("div.row-wrap", { role: "listitem", "data-id": t.id }, actions, row);
@@ -1437,7 +1528,7 @@
   // ---------------------------------------------------------------------------
 
   const LEFT_W = 88;
-  const RIGHT_W = 3 * 78;
+  const RIGHT_W = 4 * 72;
   let openSwipe = null;
 
   function setRowOffset(wrap, x, { animate = false, full = null } = {}) {
@@ -1552,6 +1643,7 @@
         const t = S.threads.find((x) => x.id === id);
         if (!t) return;
         if (btn.dataset.act === "more") return rowMoreMenu(btn, t);
+        if (btn.dataset.act === "later") return laterMenu(btn, t);
         closeOpenSwipe();
         act(id, btn.dataset.act);
         return;
@@ -1573,9 +1665,98 @@
     });
   }
 
-  // (a full swipe to the left: flag or unflag)
+  // (a full swipe to the left: Later, or flag in the Trash)
   function rightLead(t) {
-    act(t.id, t.starred ? "unflag" : "flag");
+    if (t.trashed) return act(t.id, t.starred ? "unflag" : "flag");
+    const row = els.rows.querySelector(`.row[data-id="${CSS.escape(t.id)}"]`);
+    laterMenu(row || els.rows, t);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Later: out of the stream until a time, then back at the top, unread
+  // ---------------------------------------------------------------------------
+
+  function at(days, hour, minute = 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(hour, minute, 0, 0);
+    return d.getTime();
+  }
+
+  function laterChoices() {
+    const now = new Date();
+    const hr = now.getHours(), dow = now.getDay();
+    const out = [];
+    if (hr >= 6 && hr < 17) {
+      const half = 1800000;
+      out.push({ label: "Later Today", until: Math.ceil((Date.now() + 3 * 3600000) / half) * half });
+    }
+    if (hr < 18) out.push({ label: "This Evening", until: at(0, 18) });
+    out.push({ label: "Tomorrow Morning", until: at(1, 8), timeOnly: true });
+    if (dow >= 1 && dow <= 4) out.push({ label: "This Weekend", until: at(6 - dow, 9) });
+    out.push({ label: "Next Week", until: at(((8 - dow) % 7) || 7, 8) });
+    return out;
+  }
+
+  // When something comes back, said briefly: "6:00 pm", "Tomorrow 8:00 am", "Sat 9:00 am", "12 Nov"
+  function fmtWhen(ts) {
+    const d = new Date(ts);
+    const time = d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+    const today = startOfDay(Date.now());
+    if (ts < today + dayMs) return time;
+    if (ts < today + 2 * dayMs) return `Tomorrow ${time}`;
+    if (ts < today + 7 * dayMs) return `${d.toLocaleDateString(locale, { weekday: "short" })} ${time}`;
+    return d.toLocaleDateString(locale, { day: "numeric", month: "short" });
+  }
+
+  function laterMenu(anchor, t) {
+    showMenu(
+      anchor,
+      [
+        ...laterChoices().map((c) => ({ label: c.label, hint: c.timeOnly ? new Date(c.until).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" }) : fmtWhen(c.until), action: () => act(t.id, "snooze", { until: c.until }) })),
+        "-",
+        { label: "Choose a Time…", icon: "calendar", action: () => pickTime(t) },
+        t.snoozeUntil && { label: "Back to Inbox Now", icon: "inbox", action: () => act(t.id, "unsnooze") },
+      ],
+      { title: t.snoozeUntil ? `Comes back ${fmtWhen(t.snoozeUntil)}` : "Bring it back…" }
+    );
+    closeOpenSwipe();
+  }
+
+  // A date and time of one's own, in a small glass card
+  function pickTime(t) {
+    closeMenu(true);
+    const pad = (n) => String(n).padStart(2, "0");
+    const local = (ms) => {
+      const d = new Date(ms);
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    const input = h("input.when", { type: "datetime-local", value: local(at(1, 8)), min: local(Date.now() + 60000) });
+    const layer = h("div.menu-layer.center");
+    const close = () => {
+      card.classList.remove("open");
+      card.classList.add("closing");
+      setTimeout(() => layer.remove(), 240);
+    };
+    const set = () => {
+      const until = new Date(input.value).getTime();
+      if (!Number.isFinite(until) || until <= Date.now()) return toast("Choose a time in the future", { icon: "clock", error: true });
+      close();
+      act(t.id, "snooze", { until });
+    };
+    const card = h(
+      "div.menu.picker",
+      { role: "dialog", "aria-label": "Choose a Time" },
+      h("div.menu-title", "Bring it back on…"),
+      input,
+      h("div.picker-btns", h("button.pbtn", { type: "button", onclick: close }, "Cancel"), h("button.pbtn.primary", { type: "button", onclick: set }, "Later"))
+    );
+    layer.addEventListener("pointerdown", (e) => e.target === layer && close());
+    input.addEventListener("keydown", (e) => e.key === "Enter" && set());
+    layer.append(card);
+    document.body.append(layer);
+    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add("open")));
+    input.focus({ preventScroll: true });
   }
 
   function rowMoreMenu(anchor, t) {
@@ -1617,6 +1798,7 @@
     unflag: { starred: false },
     trash: { trashed: true, snoozeUntil: null },
     restore: { trashed: false },
+    unsnooze: { snoozeUntil: null },
   };
 
   // Whether a conversation still belongs in the list being shown
@@ -1636,13 +1818,15 @@
         return t.hasAttachments;
       case "done":
         return t.done;
+      case "later":
+        return !!t.snoozeUntil;
     }
     return true;
   }
 
   async function act(id, action, extra = {}, { quiet } = {}) {
     const t = S.threads.find((x) => x.id === id);
-    const patch = action === "category" ? { category: extra.category } : action === "snooze" ? { snoozeUntil: extra.until } : PATCH[action] || {};
+    const patch = action === "category" ? { category: extra.category } : action === "snooze" ? { snoozeUntil: extra.until, done: false } : PATCH[action] || {};
     if (t) Object.assign(t, patch);
     if (S.thread?.id === id) Object.assign(S.thread, patch);
     const leaving = !!t && !inView(t);
@@ -1650,7 +1834,7 @@
     if (leaving) removeRow(id);
     else updateRow(id);
     markSelectedRow();
-    if (S.thread?.id === id) renderDetailChrome();
+    if (S.thread?.id === id) ["snooze", "unsnooze", "category", "flag", "unflag"].includes(action) ? renderDetail({ keepScroll: true }) : renderDetailChrome();
     if (!quiet) actionToast(id, action, extra, t);
     try {
       await api.threadAction(id, { action, ...extra });
@@ -1669,6 +1853,8 @@
     else if (action === "inbox") toast("Back in Inbox", { icon: "inbox" });
     else if (action === "trash") toast("Moved to Trash", { icon: "trash", ...undo("restore") });
     else if (action === "restore") toast("Restored", { icon: "inbox" });
+    else if (action === "snooze") toast(`Later: ${fmtWhen(extra.until)}`, { icon: "clock", ...undo(t?.done ? "inbox" : "unsnooze") });
+    else if (action === "unsnooze") toast("Back in Inbox", { icon: "inbox" });
     else if (action === "category") {
       const where = extra.category === "people" ? "People" : "Updates";
       toast(extra.sender && t?.from ? `${displayName(t.from)} will always show in ${where}` : `Moved to ${where}`, { icon: extra.category === "people" ? "person" : "news" });
@@ -1838,6 +2024,7 @@
               icon(lead.ic),
               lead.act === "done" ? "Done" : lead.label
             ),
+            t.trashed ? null : gbtn("clock", "Later", (e) => laterMenu(e.currentTarget, t)),
             gbtn("trash", t.trashed ? "Delete Forever" : "Move to Trash", () => (t.trashed ? deleteThread(t.id) : act(t.id, "trash"))),
             h("div.spacer"),
             gbtn("reply", "Reply", (e) => replyMenu(e.currentTarget), { disabled: !!t.loading }),
@@ -1896,7 +2083,15 @@
       h(
         "header.conv-head",
         h("div.reader-subject", t.starred ? icon("flagFill", "flag-ic") : null, h("span", t.subject || "(No Subject)")),
-        h("div.conv-meta", meta.join(" · "))
+        h("div.conv-meta", meta.join(" · ")),
+        t.snoozeUntil
+          ? h(
+              "div.later-note",
+              icon("clock"),
+              h("span", `Comes back ${fmtWhen(t.snoozeUntil)}`),
+              h("button", { type: "button", onclick: () => act(t.id, "unsnooze") }, "Bring Back Now")
+            )
+          : null
       ),
       t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", t.messages.map(messageCard))
     );
@@ -3028,6 +3223,15 @@ pre{white-space:pre-wrap}
     setPositions();
     updateBadge();
     await loadList();
+    setupPush();
+    // (opened from a notification)
+    if (/thread=/.test(location.hash)) {
+      const url = location.href;
+      try {
+        history.replaceState(history.state, "", location.pathname + location.search);
+      } catch {}
+      openFromUrl(url);
+    }
     clearInterval(pollTimer);
     pollTimer = setInterval(poll, 30000);
   }

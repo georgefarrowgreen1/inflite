@@ -50,6 +50,10 @@ const MIGRATIONS = [
   `ALTER TABLE messages ADD COLUMN prev_folder TEXT`,
   `CREATE TABLE IF NOT EXISTS sender_rules (email TEXT PRIMARY KEY, category TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS idx_messages_thread_folder ON messages(thread_id, folder)`,
+  `ALTER TABLE messages ADD COLUMN bumped_at INTEGER`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_snooze ON messages(snooze_until)`,
+  `CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)`,
   // (mail from before categories: sorted by its sender's address alone)
   `UPDATE messages SET category = CASE
      WHEN folder IN ('sent', 'drafts') THEN 'people'

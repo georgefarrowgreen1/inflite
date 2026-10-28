@@ -9,7 +9,8 @@ import {
   cleanMessageId,
 } from "./db.js";
 import { receiveEmail, snippet } from "./receive.js";
-import { listThreads, getThread, threadAction, counts } from "./threads.js";
+import { listThreads, getThread, threadAction, counts, wakeSnoozed } from "./threads.js";
+import { vapid, pushAll, pushEndpointOk, peopleUnread } from "./push.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -25,6 +26,19 @@ export default {
 
   async email(message, env, ctx) {
     await receiveEmail(message, env, ctx);
+  },
+
+  // Every few minutes: conversations whose Later time has come go back in the stream, with a notice.
+  async scheduled(event, env, ctx) {
+    await ensureSchema(env);
+    const woken = await wakeSnoozed(env);
+    if (!woken.length) return;
+    const badge = await peopleUnread(env);
+    await Promise.all(
+      woken.map((w) =>
+        pushAll(env, { title: w.from || "Mail", body: `Back from Later: ${w.subject}`, tag: w.threadId, url: `/#thread=${w.threadId}`, badge })
+      )
+    );
   },
 };
 
@@ -108,6 +122,13 @@ async function api(request, env, ctx, url) {
     }
   }
   if (pathname === "/api/trash/empty" && method === "POST") return emptyTrash(env);
+  if (pathname === "/api/push/key" && method === "GET") return json({ key: (await vapid(env)).pub });
+  if (pathname === "/api/push/subscribe" && method === "POST") return pushSubscribe(env, await request.json());
+  if (pathname === "/api/push/unsubscribe" && method === "POST") {
+    const { endpoint } = await request.json();
+    await env.DB.prepare(`DELETE FROM push_subs WHERE endpoint = ?1`).bind(String(endpoint || "")).run();
+    return json({ ok: true });
+  }
   if (pathname === "/api/messages" && method === "GET") return listMessages(env, url);
   if (pathname === "/api/messages/batch" && method === "POST") return batchUpdate(env, await request.json());
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)$/))) {
@@ -122,6 +143,23 @@ async function api(request, env, ctx, url) {
   if (pathname === "/api/drafts" && method === "POST") return saveDraft(env, await request.json(), view);
 
   throw new HttpError(404, "Not found");
+}
+
+// A phone or browser turning notifications on (its subscription from PushManager.subscribe)
+async function pushSubscribe(env, body) {
+  const { endpoint, keys } = body || {};
+  if (!pushEndpointOk(endpoint)) throw new HttpError(400, "That device can’t get notifications from Mail.");
+  const ok = (s) => typeof s === "string" && /^[\w-]{8,200}$/.test(s);
+  if (!ok(keys?.p256dh) || !ok(keys?.auth)) throw new HttpError(400, "That subscription is missing its keys.");
+  await env.DB.prepare(
+    `INSERT INTO push_subs (endpoint, p256dh, auth, created_at) VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth`
+  )
+    .bind(endpoint, keys.p256dh, keys.auth, Date.now())
+    .run();
+  // (no more than a handful of devices: the oldest go)
+  await env.DB.prepare(`DELETE FROM push_subs WHERE endpoint NOT IN (SELECT endpoint FROM push_subs ORDER BY created_at DESC LIMIT 10)`).run();
+  return json({ ok: true });
 }
 
 const publicUser = (v) =>

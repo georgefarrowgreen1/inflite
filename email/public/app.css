@@ -2306,3 +2306,101 @@ input:focus-visible,
 textarea:focus-visible {
   outline: none;
 }
+
+/* Later: when a conversation comes back */
+.menu-item .hint {
+  font-size: 15px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.row .date.later {
+  color: var(--purple);
+}
+
+.row .date.later svg {
+  opacity: 1;
+}
+
+.later-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--purple) 14%, transparent);
+  color: var(--purple);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.later-note svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+
+.later-note span {
+  flex: 1;
+}
+
+.later-note button {
+  padding: 5px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--purple) 16%, transparent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.menu-layer.center {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.menu.picker {
+  position: relative;
+  width: min(320px, 100%);
+  padding: 8px 12px 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.picker .when {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--bg-fill-2);
+  color: inherit;
+  font: inherit;
+  font-size: 17px;
+  color-scheme: light dark;
+}
+
+.picker-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.pbtn {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 22px;
+  background: var(--bg-fill-2);
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.pbtn.primary {
+  background: var(--tint);
+  color: #fff;
+  font-weight: 600;
+}
+
+.menu-item .lbl {
+  white-space: nowrap;
+}
