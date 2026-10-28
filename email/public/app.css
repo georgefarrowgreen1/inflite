@@ -1790,6 +1790,191 @@ body.sheet-open.phone #app::after {
   font-weight: 600;
 }
 
+/* A search that finds nothing: whose it was, then the searches beside it that do find something, and Clear filters */
+.empty.e-search {
+  padding: 40px 16px 120px;
+}
+
+.e-who {
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.avatar.e-av {
+  width: 64px;
+  height: 64px;
+  font-size: 23px;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.4), 0 10px 24px -10px rgba(10, 14, 40, 0.55);
+}
+
+.e-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--label);
+  background: var(--sheet);
+  box-shadow: 0 0 0 2.5px var(--sky-b), 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.empty .e-badge svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.6;
+  opacity: 1;
+}
+
+.e-alts {
+  justify-self: stretch;
+  display: grid;
+  margin-top: 14px;
+  text-align: left;
+}
+
+.e-alts:empty {
+  display: none;
+}
+
+.e-k {
+  margin: 8px 14px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+
+.e-grp {
+  border-radius: 22px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--glass-strong) 80%, transparent);
+  box-shadow: 0 0 0 0.5px var(--line);
+}
+
+.e-alt {
+  position: relative;
+  width: 100%;
+  min-height: 58px;
+  padding: 8px 14px 8px 12px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto 16px;
+  column-gap: 12px;
+  align-items: center;
+  text-align: left;
+  color: var(--label);
+}
+
+.e-alt:active {
+  background: var(--press);
+}
+
+.e-alt + .e-alt::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 54px;
+  right: 0;
+  height: 0.5px;
+  background: var(--line);
+}
+
+.e-ic {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+
+.empty .e-ic svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.1;
+  opacity: 1;
+}
+
+.e-ic.blue {
+  background: linear-gradient(160deg, #5aa9ff, #2a6ae6);
+}
+
+.e-ic.purple {
+  background: linear-gradient(160deg, #9a8bff, #5b46e0);
+}
+
+.e-ic.red {
+  background: linear-gradient(160deg, #ff6b5e, #e5342a);
+}
+
+.e-l {
+  min-width: 0;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.e-l small {
+  display: block;
+  margin-top: 1px;
+  font-size: 13px;
+  color: var(--label-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.e-n {
+  font-size: 15px;
+  color: var(--label-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty .e-chev {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.6;
+  opacity: 0.5;
+}
+
+.e-clear {
+  justify-self: center;
+  margin-top: 18px;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 20px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tint-text);
+  background: color-mix(in srgb, var(--tint) 15%, transparent);
+}
+
+.e-clear:active {
+  transform: scale(0.96);
+}
+
+/* whose mail a search is of, in the field beside what's typed */
+.sq-tag {
+  flex: none;
+  max-width: 40%;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--tint-text);
+  background: color-mix(in srgb, var(--tint) 18%, transparent);
+}
+
+.sq-tag[hidden] {
+  display: none;
+}
+
 .load-more {
   display: grid;
   place-items: center;

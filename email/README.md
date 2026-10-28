@@ -23,7 +23,9 @@ Cloudflare Email Sending.
   elsewhere. Swipe right for **Done**; a new reply brings a conversation back. Search takes
   `from:`, `to:`, `file:`, `has:attachment`, `has:image`, `has:pdf`, `is:unread`, `is:flagged`,
   `is:done`, `before:` and `after:`; plain words match file names too. Before you type it shows
-  your recent searches, and as you type a name it suggests the people you write to.
+  your recent searches, and as you type a name it suggests the people you write to. A search that finds nothing says
+  so in words, offers the searches beside it that do find something (sent to them, mentioning them, in Trash),
+  each with how many it finds, and Clear filters. `in:trash` searches the Trash, which is otherwise left out.
 - **Your photo** opens InFlite's menu, the same one every InFlite app has (its copy is between the marks in
   `public/app.js` and `public/app.css`, from the georgefarrowgreen repo's `.tools/inflite/menu.js` and `menu.css`, by
   `node .tools/iflmenu.mjs ../inflite/email/public`; change it there): you (to your account), Mail's

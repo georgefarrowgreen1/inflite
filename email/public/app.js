@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.23";
+  const BUILD = "1.24";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -505,6 +505,8 @@ const IFL = (() => {
       version: () => req("GET", "/api/version"),
       counts: () => req("GET", "/api/counts"),
       threads: ({ view, category, address, q, before }) => req("GET", `/api/threads?${qs({ view, category, address, q, before })}`),
+      // (how many conversations a search finds: { count })
+      count: (q) => req("GET", `/api/threads?${qs({ view: "all", q, count: 1 })}`),
       thread: (id) => req("GET", `/api/threads/${id}`),
       threadAction: (id, body) => req("POST", `/api/threads/${id}`, body),
       threadBatch: (body) => req("POST", "/api/threads/batch", body),
@@ -839,10 +841,17 @@ const IFL = (() => {
         out.updatesFrom = allThreads().filter((t) => !t.done && !t.snoozeUntil && t.category === "updates").slice(0, 4).map((t) => t.from);
         return out;
       },
+      async count(q) {
+        return { count: (await this.threads({ view: "all", q })).threads.length };
+      },
       async threads({ view, category, address, q }) {
         await delay();
         let list;
-        if (q) list = allThreads().filter((t) => threadMsgs(t.id).some((m) => matches(m, q)));
+        // (in:trash: the search made in the Trash)
+        const inTrash = /(^|\s)in:trash(?=\s|$)/i.test(q || "");
+        q = (q || "").replace(/(^|\s)in:\S+/gi, " ").trim();
+        if (inTrash) list = allThreads(true).filter((t) => !q || threadMsgs(t.id).some((m) => matches(m, q)));
+        else if (q) list = allThreads().filter((t) => threadMsgs(t.id).some((m) => matches(m, q)));
         else if (view === "trash") list = allThreads(true);
         else {
           list = allThreads().filter((t) =>
@@ -2172,7 +2181,9 @@ const IFL = (() => {
       done: [],
       trash: [S.counts.trash ? `${S.counts.trash} conversation${S.counts.trash === 1 ? "" : "s"}` : "Empty"],
     }[S.lens];
-    const bits = S.query ? [`${S.threads.length} conversation${S.threads.length === 1 ? "" : "s"}`] : about;
+    // (a search: what it is, in words, and how many it found, when it found any)
+    const found = S.threads.length;
+    const bits = S.query ? [sayQuery(S.query), found && `${found}${S.hasMore ? "+" : ""} conversation${found === 1 && !S.hasMore ? "" : "s"}`] : about;
     setKids(
       els.listSubtitle,
       S.filter !== "all" && !S.query
@@ -2193,7 +2204,7 @@ const IFL = (() => {
   // Search's filters, beside what's typed: who it's from, when, with files, unread. Each kept here and put into the
   // search as the operators it understands (from:, after:/before:, has:attachment, is:unread); the field holds only
   // what's typed (where those operators still work, typed by hand)
-  const SF = { from: null, date: null, files: false, unread: false, open: null };
+  const SF = { from: null, to: null, date: null, files: false, unread: false, trash: false, open: null };
   const DATES = [
     ["today", "Today"],
     ["week", "This week"],
@@ -2209,18 +2220,22 @@ const IFL = (() => {
     return k === "month" ? `after:${first}` : k === "older" ? `before:${first}` : "";
   }
   const filtersQuery = () =>
-    [SF.from && `from:${SF.from.email}`, SF.date && dateOp(SF.date), SF.files && "has:attachment", SF.unread && "is:unread"].filter(Boolean).join(" ");
+    [SF.from && `from:${SF.from.email}`, SF.to && `to:${SF.to.email}`, SF.date && dateOp(SF.date), SF.files && "has:attachment", SF.unread && "is:unread", SF.trash && "in:trash"]
+      .filter(Boolean)
+      .join(" ");
   const fullQuery = () => [els.searchInput?.value.trim(), filtersQuery()].filter(Boolean).join(" ");
-  const sfAny = () => !!(SF.from || SF.date || SF.files || SF.unread);
+  const sfAny = () => !!(SF.from || SF.to || SF.date || SF.files || SF.unread || SF.trash);
   function clearFilters() {
-    Object.assign(SF, { from: null, date: null, files: false, unread: false, open: null });
+    Object.assign(SF, { from: null, to: null, date: null, files: false, unread: false, trash: false, open: null });
   }
   // (a recent search, said in words: its filters by their names, then what was typed)
   function sayQuery(q) {
     const words = [];
-    const rest = q.replace(/\b(from|has|is|before|after):("[^"]*"|\S+)/gi, (t, op, v) => {
+    const rest = q.replace(/\b(from|to|has|is|in|before|after):("[^"]*"|\S+)/gi, (t, op, v) => {
       op = op.toLowerCase();
-      if (op === "from") words.push(nameOf(v));
+      if (op === "from") words.push(`From ${nameOf(v)}`);
+      else if (op === "to") words.push(`To ${nameOf(v)}`);
+      else if (op === "in" && /^trash$/i.test(v)) words.push("In Trash");
       else if (op === "has" && /^attach/i.test(v)) words.push("Files");
       else if (op === "is" && /^unread$/i.test(v)) words.push("Unread");
       else if (op === "after" || op === "before") {
@@ -2242,9 +2257,11 @@ const IFL = (() => {
   function restoreQuery(q) {
     clearFilters();
     const today = dateOp("today"), week = dateOp("week"), month = dateOp("month"), older = dateOp("older");
-    const rest = q.replace(/\b(from|has|is|before|after):("[^"]*"|\S+)/gi, (t, op, v) => {
+    const rest = q.replace(/\b(from|to|has|is|in|before|after):("[^"]*"|\S+)/gi, (t, op, v) => {
       op = op.toLowerCase();
       if (op === "from") SF.from = { email: v, name: sfPeople.find((x) => x.email === v)?.name || "" };
+      else if (op === "to") SF.to = { email: v, name: sfPeople.find((x) => x.email === v)?.name || "" };
+      else if (op === "in" && /^trash$/i.test(v)) SF.trash = true;
       else if (op === "has" && /^attach/i.test(v)) SF.files = true;
       else if (op === "is" && /^unread$/i.test(v)) SF.unread = true;
       else if (t === today) SF.date = "today";
@@ -2332,6 +2349,12 @@ const IFL = (() => {
   // While searching: the filters (From and Date opening their choices just under them), then recent searches (before
   // anything's chosen or typed), or people and files for what's being typed
   function renderSearchHelp() {
+    const who = SF.from ? nameOf(SF.from.email) : SF.to ? `To ${nameOf(SF.to.email)}` : "";
+    if (els.searchTag) {
+      els.searchTag.textContent = who;
+      els.searchTag.hidden = !who;
+      els.searchInput.placeholder = who ? "Search" : "Search mail";
+    }
     els.searchHelp.hidden = !S.searching;
     if (!S.searching) return;
     askPeople();
@@ -2364,7 +2387,10 @@ const IFL = (() => {
       [!!SF.date, chip("date", !!SF.date, SF.date ? DATES.find(([k]) => k === SF.date)[1] : "Date", () => (SF.date ? ((SF.date = null), (SF.open = null), filtersChanged()) : toggleOpen("date")), true)],
       [SF.files, chip("files", SF.files, "Files", () => ((SF.files = !SF.files), filtersChanged()))],
       [SF.unread, chip("unread", SF.unread, "Unread", () => ((SF.unread = !SF.unread), filtersChanged()))],
-    ];
+      // (To and In Trash: shown only while they're on, as the searches offered beside one that finds nothing put them on)
+      SF.to && [true, chip("to", true, `To ${nameOf(SF.to.email)}`, () => ((SF.to = null), filtersChanged()))],
+      SF.trash && [true, chip("trash", true, "In Trash", () => ((SF.trash = false), filtersChanged()))],
+    ].filter(Boolean);
     chips.sort((x, y) => Number(y[0]) - Number(x[0]));
     setKids(
       els.searchHelp,
@@ -2538,6 +2564,8 @@ const IFL = (() => {
         },
       },
       icon("search"),
+      // (whose mail it's searching, beside what's typed: renderSearchHelp)
+      (els.searchTag = h("span.sq-tag", { hidden: true, "aria-hidden": "true" })),
       els.searchInput,
       h("button.search-x", { type: "button", "aria-label": "Cancel Search", onclick: cancelSearch }, icon("x"))
     );
@@ -2770,8 +2798,87 @@ const IFL = (() => {
     el?.parentElement?.removeChild(el);
   }
 
+  // A search that finds nothing: said in words (whose, when it's someone's), the searches beside it that do find
+  // something, each with how many (asked for together, once for each search, only those that find any shown), and
+  // Clear filters
+  const alts = { q: null, list: [], box: null };
+  function searchAlts() {
+    const typed = els.searchInput?.value.trim() || "";
+    const out = [];
+    if (SF.from) {
+      const first = nameOf(SF.from.email);
+      if (typed || SF.to || SF.date || SF.files || SF.unread) out.push({ icon: "person", color: "blue", label: `Everything from ${first}`, sub: "Without the other filters", patch: { to: null, date: null, files: false, unread: false }, typed: "" });
+      out.push({ icon: "sent", color: "blue", label: `Sent to ${first}`, sub: "From you, to this address", patch: { from: null, to: SF.from } });
+      if (SF.from.name) out.push({ icon: "search", color: "purple", label: `Mentioning “${first}”`, sub: "Anywhere in the mail", patch: { from: null }, typed: [typed, first].filter(Boolean).join(" ") });
+      if (!SF.trash) out.push({ icon: "trash", color: "red", label: `From ${first}, in Trash`, patch: { trash: true } });
+    } else {
+      if (!SF.trash) out.push({ icon: "trash", color: "red", label: "In Trash", sub: "Deleted mail isn’t searched otherwise", patch: { trash: true } });
+      if (typed && sfAny()) out.push({ icon: "search", color: "purple", label: `Just “${typed}”`, sub: "Without the filters", patch: { to: null, date: null, files: false, unread: false, trash: false } });
+    }
+    if (SF.trash) out.push({ icon: "inbox", color: "blue", label: "Not in Trash", sub: "Everywhere else", patch: { trash: false } });
+    // (each one's search, as it would be with it applied)
+    for (const a of out) {
+      const keep = { ...SF };
+      Object.assign(SF, a.patch);
+      a.q = [a.typed ?? typed, filtersQuery()].filter(Boolean).join(" ");
+      Object.assign(SF, keep);
+    }
+    return out;
+  }
+  function useAlt(a) {
+    Object.assign(SF, a.patch, { open: null });
+    if (a.typed != null) els.searchInput.value = a.typed;
+    filtersChanged();
+  }
+  function drawAlts() {
+    if (!alts.box?.isConnected) return;
+    const found = alts.list.filter((a) => a.n > 0);
+    setKids(
+      alts.box,
+      found.length ? h("div.e-k", "Try instead") : null,
+      found.length
+        ? h(
+            "div.e-grp",
+            found.map((a) =>
+              h(
+                "button.e-alt",
+                { type: "button", "aria-label": `${a.label}: ${a.n} conversation${a.n === 1 ? "" : "s"}`, onclick: () => useAlt(a) },
+                h(`span.e-ic.${a.color}`, icon(a.icon)),
+                h("span.e-l", a.label, a.sub ? h("small", a.sub) : null),
+                h("span.e-n", a.n > 998 ? "999+" : String(a.n)),
+                icon("chevronRight", "e-chev")
+              )
+            )
+          )
+        : null,
+      sfAny() ? h("button.e-clear", { type: "button", onclick: () => (clearFilters(), filtersChanged()) }, "Clear filters") : null
+    );
+  }
+  function emptySearch() {
+    const typed = els.searchInput?.value.trim() || "";
+    const onlyWho = SF.from && !typed && !SF.to && !SF.date && !SF.files && !SF.unread && !SF.trash;
+    const head = SF.from
+      ? h("div.e-who", avatar({ name: SF.from.name, email: SF.from.email }, "e-av"), h("span.e-badge", icon("search")))
+      : icon("search");
+    alts.box = h("div.e-alts");
+    if (alts.q !== S.query) {
+      const q = (alts.q = S.query);
+      alts.list = searchAlts();
+      Promise.all(alts.list.map((a) => api.count(a.q).then((r) => (a.n = r.count), () => (a.n = 0)))).then(() => alts.q === q && drawAlts());
+    }
+    const el = h(
+      "div.empty.content-in.e-search",
+      head,
+      h("b", onlyWho ? `Nothing from ${nameOf(SF.from.email)}` : "No Results"),
+      onlyWho ? `No mail from ${SF.from.email}.` : `Nothing matches “${sayQuery(S.query)}”.`,
+      alts.box
+    );
+    queueMicrotask(drawAlts);
+    return el;
+  }
+
   function emptyEl() {
-    if (S.query) return h("div.empty.content-in", icon("search"), h("b", "No Results"), `Nothing matches “${S.query}”.`);
+    if (S.query) return emptySearch();
     // (People clear: nothing here at all; the dot beside the title says so)
     if (S.lens === "people" && S.filter === "all" && !S.address) return h("div.empty.quiet-empty", { "aria-label": "Caught up" });
     const [ic, said, more] = S.filter !== "all" && (S.lens === "people" || S.lens === "updates")

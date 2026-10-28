@@ -12,8 +12,8 @@ export const VIEWS = ["all", "unread", "flagged", "attachments", "later", "done"
 const cleanSubject = (s) => (s || "").replace(/^((re|fwd?|aw|sv)\s*:\s*)+/i, "").trim();
 
 // Search with operators: from:, to:, file: (a file's name), has:attachment (or has:image, has:pdf), is:unread,
-// is:flagged, is:done, before:/after: (YYYY-MM-DD), anything else matched against the subject, preview, people and
-// the names of the files.
+// is:flagged, is:done, before:/after: (YYYY-MM-DD), in:trash (what's in the Trash, which a search otherwise leaves
+// out: listThreads), anything else matched against the subject, preview, people and the names of the files.
 // (one of a message's own files, not a picture set in its text)
 const fileOf = (cond) =>
   `EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = messages.id AND NOT (COALESCE(a.disposition, '') = 'inline' AND a.content_id IS NOT NULL) AND ${cond})`;
@@ -78,7 +78,12 @@ export async function listThreads(env, url) {
   const view = VIEWS.includes(url.searchParams.get("view")) ? url.searchParams.get("view") : "all";
   const category = ["people", "updates"].includes(url.searchParams.get("category")) ? url.searchParams.get("category") : null;
   const address = (url.searchParams.get("address") || "").trim().toLowerCase() || null;
-  const q = (url.searchParams.get("q") || "").trim();
+  // (in:trash: the search made in the Trash, in place of everywhere else)
+  const raw = (url.searchParams.get("q") || "").trim();
+  const trashSearch = /(^|\s)in:trash(?=\s|$)/i.test(raw);
+  const q = raw.replace(/(^|\s)in:\S+/gi, " ").replace(/\s+/g, " ").trim();
+  // (count=1: how many conversations it finds, for the searches offered beside one that finds none; up to 999)
+  const counting = url.searchParams.get("count") === "1";
   const before = Number(url.searchParams.get("before")) || null;
   const limit = Math.max(1, Math.min(Math.floor(Number(url.searchParams.get("limit"))) || 40, 100));
   const now = Date.now();
@@ -88,20 +93,30 @@ export async function listThreads(env, url) {
     params.push(v);
     return `?${params.length}`;
   };
-  const inTrash = view === "trash" && !q;
+  const inTrash = trashSearch || (view === "trash" && !q);
   const where = inTrash ? `folder = 'trash'` : `folder NOT IN ('trash', 'drafts')`;
   const having = [];
-  if (q) having.push(`SUM(CASE WHEN ${searchCondition(q, bind)} THEN 1 ELSE 0 END) > 0`);
+  if (trashSearch && !q) having.push("1");
+  else if (q) having.push(`SUM(CASE WHEN ${searchCondition(q, bind)} THEN 1 ELSE 0 END) > 0`);
   else if (view === "all") having.push(`SUM(folder = 'inbox') > 0`, `MAX(COALESCE(snooze_until, 0)) <= ${bind(now)}`);
   else if (view === "unread") having.push(`SUM(folder = 'inbox' AND unread = 1) > 0`, `MAX(COALESCE(snooze_until, 0)) <= ${bind(now)}`);
   else if (view === "flagged") having.push(`MAX(starred) = 1`);
   else if (view === "attachments") having.push(`MAX(has_attachments) = 1`);
   else if (view === "later") having.push(`SUM(folder = 'inbox') > 0`, `MAX(COALESCE(snooze_until, 0)) > ${bind(now)}`);
   else if (view === "done") having.push(`SUM(folder = 'inbox') = 0`);
-  if (category && !q && !inTrash) having.push(`MIN(COALESCE(category, 'people')) = ${bind(category)}`);
+  if (category && !q && !inTrash && !trashSearch) having.push(`MIN(COALESCE(category, 'people')) = ${bind(category)}`);
   if (address) having.push(`SUM(lower(mailbox) = ${bind(address)}) > 0`);
   if (before) having.push(`MAX(MAX(date), MAX(COALESCE(bumped_at, 0))) < ${bind(before)}`);
 
+  if (counting) {
+    const row = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM (SELECT thread_id FROM messages WHERE ${where} AND thread_id IS NOT NULL GROUP BY thread_id
+       ${having.length ? `HAVING ${having.join(" AND ")}` : ""} LIMIT 999)`
+    )
+      .bind(...params)
+      .first();
+    return { count: row?.n || 0 };
+  }
   const { results: groups } = await env.DB.prepare(
     `SELECT ${AGG} FROM messages WHERE ${where} AND thread_id IS NOT NULL GROUP BY thread_id
      ${having.length ? `HAVING ${having.join(" AND ")}` : ""} ORDER BY ${view === "later" && !q ? "snooze ASC" : "last DESC"} LIMIT ${bind(limit + 1)}`
@@ -115,7 +130,7 @@ export async function listThreads(env, url) {
   // Drafts sit at the top of the stream.
   let drafts = [];
   // (drafts sit at the top of People)
-  if (view === "all" && category !== "updates" && !q && !address && !before) {
+  if (view === "all" && category !== "updates" && !q && !trashSearch && !address && !before) {
     const { results } = await env.DB.prepare(`SELECT * FROM messages WHERE folder = 'drafts' ORDER BY date DESC LIMIT 20`).all();
     drafts = results.map(rowToSummary);
   }
