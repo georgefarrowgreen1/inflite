@@ -274,7 +274,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.01";
+  const BUILD = "1.02";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -697,28 +697,31 @@
     }
   })();
 
-  // On the Home Screen, iOS can lay the page out shorter than the screen (the height a Safari toolbar would take), so
-  // the tab bar sits high with a band under it: there, filling the window, size Mail to the screen itself
+  // On the Home Screen, iOS can lay the page out shorter than the screen (the height a Safari toolbar would take), and
+  // can change its mind on its own (after a while away, or the keyboard), so the tab bar sits high with a band under
+  // it: there (an iPhone or iPad, filling the screen), Mail is always sized to the screen itself
   let viewH = () => window.innerHeight;
-  if (STANDALONE && screen.width && screen.height) {
+  if (navigator.standalone === true && screen.width && screen.height) {
+    const root = document.documentElement;
     const fit = () => {
-      const portrait = window.innerHeight >= window.innerWidth;
+      const portrait = matchMedia("(orientation: portrait)").matches;
       const w = portrait ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
       const h = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
       // (only when the window is the whole screen, not an iPad window beside another app)
-      const short = Math.abs(window.innerWidth - w) < 2 && h - window.innerHeight > 1 && h - window.innerHeight < 200;
-      const root = document.documentElement;
-      root.classList.toggle("fullscreen-fix", short);
-      if (short) root.style.setProperty("--screen-h", `${h}px`);
+      const whole = Math.abs(window.innerWidth - w) < 2;
+      root.classList.toggle("fullscreen-fix", whole);
+      if (whole) root.style.setProperty("--screen-h", `${h}px`);
+      if (window.scrollY) window.scrollTo(0, 0);
     };
     fit();
-    viewH = () => (document.documentElement.classList.contains("fullscreen-fix") ? document.body.clientHeight : window.innerHeight);
-    window.addEventListener("resize", fit);
+    viewH = () => (root.classList.contains("fullscreen-fix") ? document.body.clientHeight : window.innerHeight);
+    for (const ev of ["resize", "pageshow", "focus"]) window.addEventListener(ev, fit);
+    document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && fit());
+    window.addEventListener("orientationchange", () => setTimeout(fit, 300));
     // (the page now taller than iOS's window, it could be scrolled, by focus or script: kept where it belongs)
     window.addEventListener("scroll", () => {
-      if (window.scrollY && document.documentElement.classList.contains("fullscreen-fix")) window.scrollTo(0, 0);
+      if (window.scrollY && root.classList.contains("fullscreen-fix")) window.scrollTo(0, 0);
     });
-    window.addEventListener("orientationchange", () => setTimeout(fit, 300));
   }
 
   const api = DEMO ? demoApi() : realApi();
