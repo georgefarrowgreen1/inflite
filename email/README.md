@@ -21,7 +21,11 @@ Cloudflare Email Sending.
   @inflite.ai address, or opens the Trash. Conversations are grouped
   by day, Updates read as a one-line digest, and clearing People shows what's still around
   elsewhere. Swipe right for **Done**; a new reply brings a conversation back. Search takes
-  `from:`, `to:`, `has:attachment`, `is:unread`, `is:flagged`, `is:done`, `before:` and `after:`.
+  `from:`, `to:`, `file:`, `has:attachment`, `has:image`, `has:pdf`, `is:unread`, `is:flagged`,
+  `is:done`, `before:` and `after:`; plain words match file names too. Before you type it shows
+  your recent searches, and as you type a name it suggests the people you write to.
+- **Attachments:** pictures show as a gallery in the message; pictures, PDFs and videos open in a
+  full-screen viewer (swipe through, pinch or double-tap to zoom, swipe down to close, Share or Save).
 - **Later:** swipe left (or the clock in a conversation) to put it away until a time: later today,
   this evening, tomorrow, the weekend, next week or a time of your own. A scheduled run every five
   minutes (the `triggers.crons` in `wrangler.jsonc`) brings it back to the top of the stream, unread.
