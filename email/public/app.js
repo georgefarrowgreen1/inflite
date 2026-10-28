@@ -275,7 +275,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.05";
+  const BUILD = "1.06";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -1928,9 +1928,9 @@
         ? ["inbox", `Nothing waiting for ${S.address}`]
         : {
             updates: ["news", "No updates waiting"],
-            later: ["clock", "Nothing put off", "Swipe left on a conversation to bring it back later."],
+            later: ["clock", "Nothing put off"],
             flagged: ["flag", "Nothing flagged"],
-            done: ["check", "Nothing done yet", "Swipe right on a conversation when you've dealt with it."],
+            done: ["check", "Nothing done yet"],
             trash: ["trash", "Trash is empty"],
           }[S.lens];
     return h("div.empty.content-in", icon(ic), h("b", said), more || null);
