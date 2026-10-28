@@ -164,7 +164,7 @@ async function route(request, env, ctx, url, view) {
     if (method === "DELETE") return deleteMessages(env, [m[1]]);
   }
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)\/raw$/)) && method === "GET") return rawMessage(env, m[1]);
-  if ((m = pathname.match(/^\/api\/attachments\/([\w-]+)$/)) && method === "GET") return attachment(env, m[1], url);
+  if ((m = pathname.match(/^\/api\/attachments\/([\w-]+)$/)) && method === "GET") return attachment(env, m[1], url, request);
   if (pathname === "/api/contacts" && method === "GET") return contacts(env, url);
   if (pathname === "/api/send" && method === "POST") {
     if (Number(request.headers.get("Content-Length")) > 36 * 1024 * 1024) throw new HttpError(413, "That message is too big to send.");
@@ -438,22 +438,36 @@ async function rawMessage(env, id) {
   });
 }
 
-async function attachment(env, id, url) {
+async function attachment(env, id, url, request) {
   const row = await env.DB.prepare(`SELECT * FROM attachments WHERE id = ?1`).bind(id).first();
-  const obj = row && (await env.MAIL.get(`att/${id}`));
+  // (a part asked for, as a video player does, and iPhone insists on before it plays one)
+  const range = request?.headers.get("Range");
+  const obj = row && (await env.MAIL.get(`att/${id}`, range ? { range: request.headers } : undefined));
   if (!obj) throw new HttpError(404, "Attachment not found");
   const name = (row.filename || "attachment").replace(/["\\\r\n]/g, "_");
   const download = url.searchParams.has("download");
-  return new Response(obj.body, {
-    headers: {
-      "Content-Type": row.type || "application/octet-stream",
-      "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${name}"; filename*=UTF-8''${encodeURIComponent(row.filename || "attachment")}`,
-      "Cache-Control": "private, max-age=86400",
-      // Never let an attachment run script on our origin.
-      "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+  const type = row.type || "application/octet-stream";
+  const headers = {
+    "Content-Type": type,
+    "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${name}"; filename*=UTF-8''${encodeURIComponent(row.filename || "attachment")}`,
+    "Cache-Control": "private, max-age=86400",
+    "Accept-Ranges": "bytes",
+    // Never let an attachment run script on our origin. (A PDF, which browsers refuse to show in a sandbox, is shown
+    // by their own viewer, which runs nothing of ours; and only ever inside Mail.)
+    "Content-Security-Policy": /^application\/pdf$/i.test(type)
+      ? "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'"
+      : "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
+    "X-Content-Type-Options": "nosniff",
+  };
+  const r = obj.range;
+  if (range && r && obj.size) {
+    const start = "suffix" in r ? Math.max(0, obj.size - r.suffix) : r.offset || 0;
+    const len = "suffix" in r ? obj.size - start : r.length ?? obj.size - start;
+    headers["Content-Range"] = `bytes ${start}-${start + len - 1}/${obj.size}`;
+    headers["Content-Length"] = String(len);
+    return new Response(obj.body, { status: 206, headers });
+  }
+  return new Response(obj.body, { headers });
 }
 
 async function contacts(env, url) {

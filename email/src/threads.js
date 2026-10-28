@@ -11,17 +11,25 @@ export const VIEWS = ["all", "unread", "flagged", "attachments", "later", "done"
 
 const cleanSubject = (s) => (s || "").replace(/^((re|fwd?|aw|sv)\s*:\s*)+/i, "").trim();
 
-// Search with operators: from:, to:, has:attachment, is:unread, is:flagged, is:done, before:/after: (YYYY-MM-DD),
-// anything else matched against the subject, preview and people.
+// Search with operators: from:, to:, file: (a file's name), has:attachment (or has:image, has:pdf), is:unread,
+// is:flagged, is:done, before:/after: (YYYY-MM-DD), anything else matched against the subject, preview, people and
+// the names of the files.
+// (one of a message's own files, not a picture set in its text)
+const fileOf = (cond) =>
+  `EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = messages.id AND NOT (COALESCE(a.disposition, '') = 'inline' AND a.content_id IS NOT NULL) AND ${cond})`;
+const fileLike = (p) => fileOf(`lower(a.filename) LIKE ${p}`);
+
 export function searchCondition(q, bind) {
   const conds = [];
   const tokens = (q.match(/[\w]+:("[^"]*"|\S+)|"[^"]*"|\S+/g) || []).slice(0, 10);
   const like = (v) => bind(`%${v.replace(/^"|"$/g, "").replace(/[%_]/g, "").toLowerCase()}%`);
   for (const t of tokens) {
-    const m = t.match(/^(from|to|has|is|before|after):(.+)$/i);
+    const m = t.match(/^(from|to|file|has|is|before|after):(.+)$/i);
     if (!m) {
       const p = like(t);
-      conds.push(`(lower(subject) LIKE ${p} OR lower(snippet) LIKE ${p} OR lower(from_name) LIKE ${p} OR lower(from_email) LIKE ${p} OR lower(to_json) LIKE ${p})`);
+      conds.push(
+        `(lower(subject) LIKE ${p} OR lower(snippet) LIKE ${p} OR lower(from_name) LIKE ${p} OR lower(from_email) LIKE ${p} OR lower(to_json) LIKE ${p} OR (has_attachments = 1 AND ${fileLike(p)}))`
+      );
       continue;
     }
     const [, op, raw] = m;
@@ -37,8 +45,14 @@ export function searchCondition(q, bind) {
         conds.push(`(lower(to_json) LIKE ${p} OR lower(cc_json) LIKE ${p} OR lower(mailbox) LIKE ${p})`);
         break;
       }
+      case "file":
+        conds.push(fileLike(like(v)));
+        break;
       case "has":
-        if (/^attach/i.test(v)) conds.push(`has_attachments = 1`);
+        if (/^(attach|file)/i.test(v)) conds.push(`has_attachments = 1`);
+        else if (/^(image|photo|picture)s?$/i.test(v)) conds.push(fileOf(`lower(a.type) LIKE 'image/%'`));
+        else if (/^pdfs?$/i.test(v)) conds.push(fileOf(`(lower(a.type) = 'application/pdf' OR lower(a.filename) LIKE '%.pdf')`));
+        else if (/^videos?$/i.test(v)) conds.push(fileOf(`lower(a.type) LIKE 'video/%'`));
         break;
       case "is":
         if (/^unread$/i.test(v)) conds.push(`unread = 1`);

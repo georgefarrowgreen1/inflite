@@ -50,6 +50,8 @@
     doc: '<path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h4.5"/>',
     check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
     download: '<path d="M12 4v11.5M7 11l5 5 5-5"/><path d="M5 20h14"/>',
+    play: '<path d="M8 5.5v13l10.5-6.5z"/>',
+    share: '<path d="M12 15V3.5M7.5 8 12 3.5 16.5 8"/><path d="M8.5 10.5H7a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6.5a2 2 0 0 0-2-2h-1.5"/>',
     lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5v-3a4 4 0 0 1 8 0v3"/>',
     person: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.8-3.8 3.8-6 7.5-6s6.7 2.2 7.5 6"/>',
     news: '<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M7 9h10M7 12.5h10M7 16h6"/>',
@@ -386,6 +388,31 @@
     const swatch = (c1, c2) =>
       `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="400" height="300" fill="url(#g)"/></svg>`)}`;
 
+    // (a small PDF, made here, so the demo's viewer has one to show)
+    const demoPdf = (() => {
+      try {
+        const text = "BT /F1 28 Tf 60 720 Td (October investor update) Tj /F1 14 Tf 0 -40 Td (Activation up 41% month on month.) Tj ET";
+        const objs = [
+          "<< /Type /Catalog /Pages 2 0 R >>",
+          "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+          "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+          `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
+          "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        ];
+        let pdf = "%PDF-1.4\n";
+        const at = objs.map((o, i) => {
+          const n = pdf.length;
+          pdf += `${i + 1} 0 obj\n${o}\nendobj\n`;
+          return n;
+        });
+        const x = pdf.length;
+        pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${at.map((n) => `${String(n).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${x}\n%%EOF`;
+        return URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
+      } catch {
+        return "#";
+      }
+    })();
+
     const msgs = [
       mk("inbox", P.maya, "Liquid Glass explorations — round 2", "Hi George,\n\nAttached are the updated explorations for the mail client. I pushed the glass a little further on the toolbar and softened the rim highlight so it reads better over photos.\n\nThe sidebar on iPad now floats with a 10pt inset, which feels much closer to the system apps. Let me know what you think before Thursday's review.\n\nMaya", 6 * min, {
         unread: true,
@@ -409,7 +436,13 @@
         html: '<div dir="ltr">Brilliant, booked for six at 8. See you there!</div><div dir="ltr"><br></div><div dir="ltr">Leo</div><div dir="ltr"><br><blockquote type="cite">On 27 Oct 2026, at 18:02, George Farrow-Green &lt;hello@inflite.ai&gt; wrote:<br><br></blockquote></div><blockquote type="cite"><div dir="ltr">Count me in! Can you book for six?</div><div dir="ltr"><br><blockquote type="cite">On 27 Oct 2026, at 17:40, Leo Martins wrote:<br><br>A few of us are going to that new place on Columbia Road on Friday around 8. Fancy it?</blockquote></div></blockquote>',
       }),
       mk("sent", ME, "Re: Dinner Friday?", "Count me in! Can you book for six?", 3 * hr, { to: [P.leo] }),
-      mk("inbox", P.priya, "Re: Investor update draft", "This reads really well. Two small notes:\n\n1. Lead with the activation numbers — they're the headline.\n2. The roadmap slide can go in the appendix.\n\nHappy to jump on a call tomorrow if useful.\n\nPriya\n\n> On Monday, George wrote:\n> Here's the first draft of the October update…", 5 * hr, { starred: true }),
+      mk("inbox", P.priya, "Re: Investor update draft", "This reads really well. Two small notes:\n\n1. Lead with the activation numbers — they're the headline.\n2. The roadmap slide can go in the appendix.\n\nHappy to jump on a call tomorrow if useful.\n\nPriya\n\n> On Monday, George wrote:\n> Here's the first draft of the October update…", 5 * hr, {
+        starred: true,
+        attachments: [
+          { id: "a6", filename: "October-update-notes.pdf", type: "application/pdf", size: 184320, url: demoPdf },
+          { id: "a7", filename: "Roadmap-appendix.docx", type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 48211, url: "#" },
+        ],
+      }),
       mk("inbox", P.alex, "Photos from the weekend", "Here are a few favourites from Saturday. Full gallery link to follow once I've finished the edit!", 22 * hr, {
         attachments: [
           { id: "a3", filename: "IMG_2041.jpg", type: "image/jpeg", size: 3204112, url: swatch("#ff9a8b", "#ff6a88") },
@@ -503,10 +536,16 @@
     function matches(m, q) {
       return q.split(/\s+/).filter(Boolean).every((t) => {
         const [op, ...rest] = t.split(":"), v = rest.join(":").toLowerCase();
-        if (!rest.length) return [m.subject, m.snippet, m.from.name, m.from.email, ...m.to.map((x) => x.email)].join(" ").toLowerCase().includes(t.toLowerCase());
+        if (!rest.length) return [m.subject, m.snippet, m.from.name, m.from.email, ...m.to.map((x) => x.email), ...(m.attachments || []).map((a) => a.filename)].join(" ").toLowerCase().includes(t.toLowerCase());
         if (op === "from") return (m.from.name + m.from.email).toLowerCase().includes(v);
         if (op === "to") return [m.mailbox, ...m.to.map((x) => x.email + x.name)].join(" ").toLowerCase().includes(v);
-        if (op === "has") return m.hasAttachments;
+        if (op === "file") return (m.attachments || []).some((a) => a.filename.toLowerCase().includes(v));
+        if (op === "has")
+          return /^(image|photo)/.test(v)
+            ? (m.attachments || []).some((a) => /^image\//.test(a.type))
+            : /^pdf/.test(v)
+              ? (m.attachments || []).some((a) => a.type === "application/pdf")
+              : m.hasAttachments;
         if (op === "is") return v === "unread" ? m.unread : v === "flagged" ? m.starred : v === "done" ? m.folder === "archive" : true;
         return true;
       });
@@ -1433,17 +1472,127 @@
     renderSearchHelp();
   }
 
-  const OPERATORS = ["from:", "to:", "has:attachment", "is:unread", "is:flagged", "is:done", "before:", "after:"];
-  const OP_TOKEN = /\b(from|to|has|is|before|after):("[^"]*"|\S+)/gi;
+  const OPERATORS = ["from:", "to:", "file:", "has:attachment", "has:image", "has:pdf", "is:unread", "is:flagged", "is:done", "before:", "after:"];
+  const OP_TOKEN = /\b(from|to|file|has|is|before|after):("[^"]*"|\S+)/gi;
 
-  // While searching: what the search understood, as tokens, and the operators a tap away
+  // Recent searches, kept in this browser (a convenience: nothing is lost without them)
+  const RECENT_KEY = "mail:recent-searches";
+  function recentSearches() {
+    try {
+      const v = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+      return Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, 8) : [];
+    } catch {
+      return [];
+    }
+  }
+  function keepRecent(list) {
+    try {
+      if (list.length) localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 8)));
+      else localStorage.removeItem(RECENT_KEY);
+    } catch {}
+  }
+  function rememberSearch(q) {
+    q = (q || "").trim().replace(/\s+/g, " ");
+    if (q.length < 2) return;
+    keepRecent([q, ...recentSearches().filter((x) => x.toLowerCase() !== q.toLowerCase())]);
+  }
+
+  // What's being typed now: the last word, and the operator it's for (from: or to:), if any
+  function typingToken(q) {
+    if (!q || /\s$/.test(q)) return null;
+    const word = q.split(/\s+/).pop();
+    const m = /^(from|to):(.*)$/i.exec(word);
+    if (m) return { word, op: m[1].toLowerCase(), value: m[2].replace(/^"/, "") };
+    if (word.includes(":")) return null;
+    return { word, op: null, value: word.replace(/^"/, "") };
+  }
+
+  // People suggested as you type a name (from those you've written to or heard from)
+  const suggest = { q: null, people: [] };
+  const suggestSoon = debounce(async (q) => {
+    const tok = typingToken(q);
+    if (!tok || tok.value.length < (tok.op ? 1 : 2)) {
+      if (suggest.people.length) (suggest.people = []), renderSearchHelp();
+      return;
+    }
+    try {
+      const { contacts } = await api.contacts(tok.value);
+      if (els.searchInput.value !== q) return;
+      suggest.q = q;
+      suggest.people = (contacts || []).slice(0, 4);
+      renderSearchHelp();
+    } catch {}
+  }, 140);
+
+  function replaceTyping(q, tok, by) {
+    return `${q.slice(0, q.length - tok.word.length)}${by} `;
+  }
+
+  // While searching: recent searches (before anything's typed), people and files for what's being typed, what the
+  // search understood as tokens, and the operators a tap away
   function renderSearchHelp() {
     els.searchHelp.hidden = !S.searching;
     if (!S.searching) return;
     const q = els.searchInput.value;
     const tokens = q.match(OP_TOKEN) || [];
+    const tok = typingToken(q);
+    const recent = q.trim() ? [] : recentSearches();
+    const people = tok && suggest.q === q ? suggest.people : [];
+    const keep = (e) => e.preventDefault();
     setKids(
       els.searchHelp,
+      recent.length
+        ? h(
+            "div.s-section",
+            h("div.s-head", h("span", "Recent"), h("button.s-clear", { type: "button", onpointerdown: keep, onclick: () => (keepRecent([]), renderSearchHelp()) }, "Clear")),
+            h(
+              "div.s-list",
+              recent.map((r) =>
+                h(
+                  "div.s-item",
+                  h("button.s-main", { type: "button", onpointerdown: keep, onclick: () => editQuery(`${r} `) }, icon("clock"), h("span.s-text", r)),
+                  h(
+                    "button.s-x",
+                    { type: "button", "aria-label": `Remove ${r}`, onpointerdown: keep, onclick: () => (keepRecent(recentSearches().filter((x) => x !== r)), renderSearchHelp()) },
+                    icon("x")
+                  )
+                )
+              )
+            )
+          )
+        : null,
+      people.length || (tok && !tok.op && tok.value.length >= 2)
+        ? h(
+            "div.s-section",
+            h(
+              "div.s-list",
+              people.map((p) => {
+                const op = tok.op || "from";
+                return h(
+                  "div.s-item",
+                  h(
+                    "button.s-main",
+                    { type: "button", onpointerdown: keep, onclick: () => editQuery(replaceTyping(q, tok, `${op}:${p.email}`)) },
+                    avatar({ name: p.name, email: p.email }, "s-av"),
+                    h("span.s-text", h("b", p.name || p.email), p.name ? h("span.s-sub", p.email) : null),
+                    h("span.s-op", op === "to" ? "To" : "From")
+                  )
+                );
+              }),
+              tok && !tok.op && tok.value.length >= 2
+                ? h(
+                    "div.s-item",
+                    h(
+                      "button.s-main",
+                      { type: "button", onpointerdown: keep, onclick: () => editQuery(replaceTyping(q, tok, `file:${tok.value}`)) },
+                      h("span.s-ic", icon("clip")),
+                      h("span.s-text", h("b", `Files named “${tok.value}”`))
+                    )
+                  )
+                : null
+            )
+          )
+        : null,
       tokens.length
         ? h(
             "div.tokens-row",
@@ -1451,7 +1600,7 @@
               const i = t.indexOf(":");
               return h(
                 "button.qtoken",
-                { type: "button", "aria-label": `Remove ${t}`, onpointerdown: (e) => e.preventDefault(), onclick: () => editQuery(q.replace(t, "")) },
+                { type: "button", "aria-label": `Remove ${t}`, onpointerdown: keep, onclick: () => editQuery(q.replace(t, "")) },
                 h("b", t.slice(0, i + 1)),
                 t.slice(i + 1),
                 icon("x")
@@ -1462,7 +1611,7 @@
       h(
         "div.ops-row",
         OPERATORS.filter((o) => !q.toLowerCase().includes(o)).map((o) =>
-          h("button.chip.op", { type: "button", onpointerdown: (e) => e.preventDefault(), onclick: () => editQuery(`${q.trimEnd()} ${o}${o.endsWith(":") ? "" : " "}`) }, o)
+          h("button.chip.op", { type: "button", onpointerdown: keep, onclick: () => editQuery(`${q.trimEnd()} ${o}${o.endsWith(":") ? "" : " "}`) }, o)
         )
       )
     );
@@ -1489,9 +1638,18 @@
       oninput: () => {
         renderSearchHelp();
         searchSoon(els.searchInput.value);
+        suggestSoon(els.searchInput.value);
       },
       onfocus: () => S.searching || setSearching(true),
-      onkeydown: (e) => e.key === "Escape" && cancelSearch(),
+      onkeydown: (e) => {
+        if (e.key === "Escape") cancelSearch();
+        else if (e.key === "Enter") {
+          // (searched for: now, and kept among the recent ones)
+          runSearch(els.searchInput.value);
+          rememberSearch(els.searchInput.value);
+          els.searchInput.blur();
+        }
+      },
     });
     els.tabs = h("div.tabs.glass", { role: "tablist", "aria-label": "Mail" });
     els.searchCap = h(
@@ -2501,6 +2659,8 @@
   }
 
   async function openThread(id, { fromNav } = {}) {
+    // (a search that found what you opened: kept among the recent ones)
+    if (S.query) rememberSearch(S.query);
     S.selectedId = id;
     markSelectedRow();
     const t = S.threads.find((x) => x.id === id);
@@ -2974,19 +3134,433 @@ pre{white-space:pre-wrap}
     return true;
   }
 
+  // A message's files: its pictures as a gallery, the rest as cards; a picture, PDF or video opens in the viewer
+  const kindOf = (a) =>
+    /^image\/(png|jpe?g|gif|webp|avif|heic|heif|bmp|svg\+xml)$/i.test(a.type || "")
+      ? "image"
+      : /^application\/pdf$/i.test(a.type || "") || /\.pdf$/i.test(a.filename || "")
+        ? "pdf"
+        : /^video\/(mp4|quicktime|webm|x-m4v)$/i.test(a.type || "")
+          ? "video"
+          : null;
+  const downloadUrl = (url) => (url.startsWith("/api/") && !url.includes("?") ? `${url}?download` : url);
+  const extOf = (name) => (/\.([a-z0-9]{1,5})$/i.exec(name || "")?.[1] || "").toUpperCase();
+
   function attachmentsEl(list) {
+    const pics = list.filter((a) => kindOf(a) === "image");
+    const files = list.filter((a) => kindOf(a) !== "image");
+    const shown = pics.slice(0, 6);
     return h(
       "div.attachments",
-      list.map((a) => {
-        const isImg = /^image\//.test(a.type);
-        return h(
-          "a.att",
-          { href: a.url, target: "_blank", rel: "noopener", download: isImg ? null : a.filename },
-          h("span.att-ic", isImg ? h("img", { src: a.url, alt: "", loading: "lazy" }) : icon("doc")),
-          h("div", attName(a.filename), h("div.att-size", fmtSize(a.size)))
-        );
-      })
+      pics.length
+        ? h(
+            "div.gallery",
+            { class: `n${Math.min(shown.length, 3)}`, role: "list" },
+            shown.map((a, i) =>
+              h(
+                "button.g-tile",
+                { type: "button", role: "listitem", "aria-label": `${a.filename}, ${fmtSize(a.size)}`, onclick: (e) => openViewer(a, e.currentTarget) },
+                h("img", { src: a.url, alt: "", loading: "lazy", decoding: "async" }),
+                i === shown.length - 1 && pics.length > shown.length ? h("span.g-more", `+${pics.length - shown.length}`) : null
+              )
+            )
+          )
+        : null,
+      files.length
+        ? h(
+            "div.files",
+            files.map((a) => {
+              const kind = kindOf(a);
+              const ext = extOf(a.filename);
+              const inner = [
+                h("span.att-ic", { class: kind ? `k-${kind}` : null, "data-ext": ext.slice(0, 4) || null }, ext && ext.length <= 4 ? h("b", ext) : icon("doc")),
+                h("div", attName(a.filename), h("div.att-size", [kind === "pdf" ? "PDF Document" : kind === "video" ? "Video" : null, fmtSize(a.size)].filter(Boolean).join(" · "))),
+                icon(kind ? "chevronRight" : "download", "att-go"),
+              ];
+              return kind
+                ? h("button.att", { type: "button", onclick: (e) => openViewer(a, e.currentTarget) }, inner)
+                : h("a.att", { href: downloadUrl(a.url), download: a.filename, rel: "noopener" }, inner);
+            })
+          )
+        : null
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // The viewer: a conversation's pictures, PDFs and videos, full screen, swiped through, pinched to zoom
+  // ---------------------------------------------------------------------------
+
+  let viewer = null;
+
+  // (everything in the conversation that opens here, oldest first, as it reads)
+  function conversationMedia() {
+    const out = [];
+    for (const m of [...(S.thread?.messages || [])].reverse()) for (const a of S.bodies.get(m.id)?.attachments || []) if (kindOf(a)) out.push(a);
+    return out;
+  }
+
+  function openViewer(a, from) {
+    if (viewer) return;
+    let items = conversationMedia();
+    if (!items.some((x) => x.id === a.id)) items = [a];
+    let index = items.findIndex((x) => x.id === a.id);
+    const appEl = document.getElementById("app");
+    const opener = from || document.activeElement;
+
+    const titleEl = h("div.v-name");
+    const countEl = h("div.v-count");
+    const track = h("div.v-track");
+    const slides = items.map((x) => h("div.v-slide", { class: `k-${kindOf(x)}`, "data-id": x.id }));
+    track.append(...slides);
+    const thumbs =
+      items.length > 1
+        ? h(
+            "div.v-thumbs",
+            { role: "tablist", "aria-label": "Files" },
+            items.map((x, i) =>
+              h(
+                "button.v-thumb",
+                { type: "button", role: "tab", "aria-label": x.filename, onclick: () => go(i) },
+                kindOf(x) === "image" ? h("img", { src: x.url, alt: "", loading: "lazy" }) : h("span", kindOf(x) === "pdf" ? "PDF" : icon("play"))
+              )
+            )
+          )
+        : null;
+    const prev = items.length > 1 ? h("button.v-arrow.prev.glass", { type: "button", "aria-label": "Previous", onclick: () => go(index - 1) }, icon("chevronLeft")) : null;
+    const next = items.length > 1 ? h("button.v-arrow.next.glass", { type: "button", "aria-label": "Next", onclick: () => go(index + 1) }, icon("chevronRight")) : null;
+    const closeBtn = h("button.gbtn.glass.v-close", { type: "button", "aria-label": "Close", onclick: () => close() }, icon("x"));
+    const shareBtn = h("button.gbtn.glass", { type: "button", "aria-label": "Share or Save", onclick: () => share(items[index]) }, icon("share"));
+    const bg = h("div.v-bg");
+    const stage = h("div.v-stage", track, prev, next);
+    const el = h(
+      "div.viewer",
+      { role: "dialog", "aria-modal": "true", "aria-label": "Attachments" },
+      bg,
+      stage,
+      h("div.v-bar", closeBtn, h("div.v-title", titleEl, countEl), shareBtn),
+      thumbs
+    );
+    document.body.append(el);
+    if (appEl) appEl.inert = true;
+
+    // each slide's content, made when it's near (so a long gallery doesn't load every file at once)
+    const zoom = items.map(() => ({ s: 1, x: 0, y: 0 }));
+    function fill(i) {
+      const slide = slides[i];
+      if (!slide || slide.firstChild) return;
+      const x = items[i];
+      const kind = kindOf(x);
+      if (kind === "image") slide.append(h("img.v-img", { src: x.url, alt: x.filename, draggable: "false", decoding: "async" }));
+      else if (kind === "video") slide.append(h("video.v-video", { src: x.url, controls: true, playsinline: true, preload: "metadata" }));
+      else
+        slide.append(
+          h("iframe.v-pdf", { src: x.url, title: x.filename }),
+          h("a.v-open.glass", { href: x.url, target: "_blank", rel: "noopener" }, "Open in Browser", icon("arrowRight"))
+        );
+    }
+
+    function apply(i, animate) {
+      const img = slides[i]?.querySelector(".v-img");
+      if (!img) return;
+      const z = zoom[i];
+      img.style.transition = animate ? "transform 0.35s var(--ease)" : "none";
+      img.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.s})`;
+      slides[i].classList.toggle("zoomed", z.s > 1.01);
+    }
+
+    function place(animate, dx = 0) {
+      track.style.transition = animate ? "transform 0.42s var(--ease)" : "none";
+      track.style.transform = `translateX(calc(${-index * 100}% + ${dx}px))`;
+    }
+
+    function go(i, { animate = true } = {}) {
+      i = Math.max(0, Math.min(items.length - 1, i));
+      if (i !== index) {
+        // (left as it was: unzoomed, a video paused)
+        zoom[index] = { s: 1, x: 0, y: 0 };
+        apply(index, false);
+        slides[index].querySelector("video")?.pause();
+      }
+      index = i;
+      [i - 1, i, i + 1].forEach(fill);
+      place(animate);
+      const x = items[i];
+      titleEl.textContent = x.filename;
+      countEl.textContent = items.length > 1 ? `${i + 1} of ${items.length}` : fmtSize(x.size);
+      slides.forEach((sl, j) => sl.setAttribute("aria-hidden", String(j !== i)));
+      thumbs?.querySelectorAll(".v-thumb").forEach((t, j) => {
+        t.classList.toggle("on", j === i);
+        t.setAttribute("aria-selected", String(j === i));
+      });
+      thumbs?.children[i]?.scrollIntoView({ inline: "center", block: "nearest", behavior: animate ? "smooth" : "auto" });
+      if (prev) prev.disabled = i === 0;
+      if (next) next.disabled = i === items.length - 1;
+      // (an arrow gone at the end: the focus not lost with it)
+      if (document.activeElement?.disabled) (i === 0 ? next : prev)?.focus({ preventScroll: true });
+    }
+
+    // Opening: from the picture tapped, growing into place
+    go(index, { animate: false });
+    el.classList.add("opening");
+    const firstImg = slides[index].querySelector(".v-img");
+    const fromImg = from?.querySelector?.("img");
+    const grow = () => {
+      el.classList.remove("opening");
+      el.classList.add("open");
+      if (!firstImg || !fromImg || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const a = fromImg.getBoundingClientRect();
+      const b = contained(firstImg);
+      if (!b || !a.width) return;
+      firstImg.animate(
+        [
+          { transform: `translate(${a.left + a.width / 2 - (b.left + b.width / 2)}px, ${a.top + a.height / 2 - (b.top + b.height / 2)}px) scale(${Math.max(a.width / b.width, a.height / b.height)})`, clipPath: clipFor(a, b) },
+          { transform: "none", clipPath: "inset(0 round 0)" },
+        ],
+        { duration: 420, easing: "cubic-bezier(0.32, 0.72, 0, 1)" }
+      );
+    };
+    if (firstImg && !firstImg.complete) firstImg.decode().then(grow, grow);
+    else requestAnimationFrame(grow);
+    closeBtn.focus({ preventScroll: true });
+
+    // the picture's box as shown (contained in its slide), for growing from and shrinking back to the thumbnail
+    function contained(img) {
+      const r = img.getBoundingClientRect();
+      if (!img.naturalWidth || !r.width) return null;
+      const k = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight);
+      const w = img.naturalWidth * k;
+      const hh = img.naturalHeight * k;
+      return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - hh) / 2, width: w, height: hh };
+    }
+    // (cropped to the thumbnail's square while it grows, as Photos does)
+    function clipFor(a, b) {
+      const s = Math.max(a.width / b.width, a.height / b.height);
+      const cw = (b.width * s - a.width) / 2 / s;
+      const ch = (b.height * s - a.height) / 2 / s;
+      return `inset(${ch}px ${cw}px round ${12 / s}px)`;
+    }
+
+    function close() {
+      if (!viewer) return;
+      viewer = null;
+      document.removeEventListener("keydown", onKey, true);
+      slides.forEach((sl) => sl.querySelector("video")?.pause());
+      el.classList.remove("open");
+      el.classList.add("closing");
+      if (appEl) appEl.inert = false;
+      // (back into its thumbnail, when the one open is the one tapped and it's still on screen)
+      const img = slides[index].querySelector(".v-img");
+      const thumb = items[index].id === a.id ? fromImg : null;
+      const tr = thumb?.isConnected && thumb.getBoundingClientRect();
+      const b = img && contained(img);
+      if (tr && tr.width && b && zoom[index].s <= 1.01) {
+        const z = zoom[index];
+        img.style.transition = "none";
+        img.animate(
+          [
+            { transform: `translate(${z.x}px, ${z.y}px) scale(${z.s})` },
+            { transform: `translate(${tr.left + tr.width / 2 - (b.left + b.width / 2)}px, ${tr.top + tr.height / 2 - (b.top + b.height / 2)}px) scale(${Math.max(tr.width / b.width, tr.height / b.height)})`, clipPath: clipFor(tr, b) },
+          ],
+          { duration: 360, easing: "cubic-bezier(0.32, 0.72, 0, 1)", fill: "forwards" }
+        );
+      }
+      setTimeout(() => el.remove(), 380);
+      if (opener?.isConnected) opener.focus?.({ preventScroll: true });
+    }
+
+    async function share(x) {
+      try {
+        if (navigator.canShare && navigator.share) {
+          const blob = await fetch(x.url, { credentials: "same-origin" }).then((r) => (r.ok ? r.blob() : Promise.reject(new Error("Couldn't get that file."))));
+          const file = new File([blob], x.filename || "attachment", { type: x.type || blob.type });
+          if (navigator.canShare({ files: [file] })) return await navigator.share({ files: [file] });
+        }
+        const link = h("a", { href: downloadUrl(x.url), download: x.filename || "" });
+        document.body.append(link);
+        link.click();
+        link.remove();
+      } catch (err) {
+        if (err?.name !== "AbortError") toast(err.message || "Couldn't share that file.", { error: true });
+      }
+    }
+
+    function onKey(e) {
+      if (e.key === "Escape") close();
+      else if (e.key === "ArrowLeft") go(index - 1);
+      else if (e.key === "ArrowRight") go(index + 1);
+      else if (e.key === "Tab") {
+        // (kept within the viewer)
+        const f = [...el.querySelectorAll("button:not(:disabled), a[href], video, iframe")].filter((n) => n.offsetParent);
+        const i = f.indexOf(document.activeElement);
+        e.preventDefault();
+        f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length]?.focus();
+      } else {
+        // (and nothing behind it answers a key while it's open)
+        e.stopPropagation();
+        return;
+      }
+      e.stopPropagation();
+      if (e.key !== "Tab") e.preventDefault();
+    }
+    document.addEventListener("keydown", onKey, true);
+
+    // Gestures: swipe across for the next, down to close; pinch or double-tap a picture to zoom, then drag it about
+    const pts = new Map();
+    let g = null;
+    let lastTap = 0;
+    const W = () => stage.clientWidth;
+    function clampZoom(i) {
+      const img = slides[i].querySelector(".v-img");
+      const b = img && contained(img);
+      const z = zoom[i];
+      if (!b) return;
+      const mx = Math.max(0, (b.width * z.s - W()) / 2);
+      const my = Math.max(0, (b.height * z.s - stage.clientHeight) / 2);
+      z.x = Math.max(-mx, Math.min(mx, z.x));
+      z.y = Math.max(-my, Math.min(my, z.y));
+    }
+    stage.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button, a, video, iframe")) return;
+      stage.setPointerCapture(e.pointerId);
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const z = zoom[index];
+      if (pts.size === 2 && kindOf(items[index]) === "image") {
+        const [p, q] = [...pts.values()];
+        g = { mode: "pinch", d: Math.hypot(p.x - q.x, p.y - q.y), s: z.s, x: z.x, y: z.y, cx: (p.x + q.x) / 2, cy: (p.y + q.y) / 2 };
+        place(true);
+        return;
+      }
+      if (pts.size === 1) g = { mode: null, x0: e.clientX, y0: e.clientY, t0: performance.now(), zx: z.x, zy: z.y };
+    });
+    stage.addEventListener("pointermove", (e) => {
+      if (!pts.has(e.pointerId) || !g) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const z = zoom[index];
+      if (g.mode === "pinch") {
+        if (pts.size < 2) return;
+        const [p, q] = [...pts.values()];
+        const s = Math.max(1, Math.min(5, (g.s * Math.hypot(p.x - q.x, p.y - q.y)) / g.d));
+        // (about the point between the fingers)
+        const r = stage.getBoundingClientRect();
+        const ox = g.cx - r.left - r.width / 2;
+        const oy = g.cy - r.top - r.height / 2;
+        const mx = (p.x + q.x) / 2 - g.cx;
+        const my = (p.y + q.y) / 2 - g.cy;
+        z.s = s;
+        z.x = ox - ((ox - g.x) * s) / g.s + mx;
+        z.y = oy - ((oy - g.y) * s) / g.s + my;
+        apply(index, false);
+        return;
+      }
+      const dx = e.clientX - g.x0;
+      const dy = e.clientY - g.y0;
+      if (!g.mode) {
+        if (Math.hypot(dx, dy) < 8) return;
+        g.mode = z.s > 1.01 ? "pan" : Math.abs(dx) > Math.abs(dy) ? "swipe" : dy > 0 ? "dismiss" : "none";
+      }
+      if (g.mode === "pan") {
+        z.x = g.zx + dx;
+        z.y = g.zy + dy;
+        clampZoom(index);
+        apply(index, false);
+      } else if (g.mode === "swipe") {
+        // (resisting past the ends)
+        const edge = (index === 0 && dx > 0) || (index === items.length - 1 && dx < 0);
+        place(false, edge ? dx / 3 : dx);
+      } else if (g.mode === "dismiss") {
+        const k = Math.min(1, dy / 400);
+        slides[index].style.transition = "none";
+        slides[index].style.transform = `translate(${dx * 0.5}px, ${dy}px) scale(${1 - k * 0.25})`;
+        bg.style.opacity = String(1 - k);
+        el.classList.add("dragging");
+      }
+    });
+    const end = (e) => {
+      if (!pts.has(e.pointerId)) return;
+      pts.delete(e.pointerId);
+      if (!g) return;
+      const z = zoom[index];
+      if (g.mode === "pinch") {
+        if (pts.size) {
+          // (one finger left on: carry on as a drag from here)
+          const [p] = [...pts.values()];
+          g = { mode: z.s > 1.01 ? "pan" : "none", x0: p.x, y0: p.y, t0: performance.now(), zx: z.x, zy: z.y };
+          return;
+        }
+        if (z.s < 1.05) zoom[index] = { s: 1, x: 0, y: 0 };
+        else clampZoom(index);
+        apply(index, true);
+        g = null;
+        return;
+      }
+      const dx = e.clientX - g.x0;
+      const dy = e.clientY - g.y0;
+      const dt = Math.max(1, performance.now() - g.t0);
+      if (!g.mode) {
+        // a tap: twice, quickly, zooms a picture in (to where it was tapped) or back out; once shows or hides the bars
+        const now = performance.now();
+        if (now - lastTap < 300 && kindOf(items[index]) === "image") {
+          lastTap = 0;
+          clearTimeout(viewer?.tapTimer);
+          if (z.s > 1.01) zoom[index] = { s: 1, x: 0, y: 0 };
+          else {
+            const r = stage.getBoundingClientRect();
+            const s = 2.5;
+            zoom[index] = { s, x: -(e.clientX - r.left - r.width / 2) * (s - 1), y: -(e.clientY - r.top - r.height / 2) * (s - 1) };
+            clampZoom(index);
+          }
+          apply(index, true);
+        } else {
+          lastTap = now;
+          if (viewer) viewer.tapTimer = setTimeout(() => el.classList.toggle("bare"), 280);
+        }
+      } else if (g.mode === "swipe") {
+        const fast = Math.abs(dx) / dt > 0.5;
+        if (Math.abs(dx) > W() * 0.2 || fast) go(index + (dx < 0 ? 1 : -1));
+        else place(true);
+      } else if (g.mode === "dismiss") {
+        el.classList.remove("dragging");
+        if (dy > 120 || dy / dt > 0.6) {
+          slides[index].style.transition = "transform 0.3s var(--ease), opacity 0.3s";
+          slides[index].style.transform = `translate(${dx * 0.5}px, ${dy + 200}px) scale(0.7)`;
+          slides[index].style.opacity = "0";
+          bg.style.transition = "opacity 0.3s";
+          bg.style.opacity = "0";
+          close();
+        } else {
+          slides[index].style.transition = "transform 0.4s var(--ease)";
+          slides[index].style.transform = "";
+          bg.style.transition = "opacity 0.4s";
+          bg.style.opacity = "";
+        }
+      }
+      g = null;
+    };
+    stage.addEventListener("pointerup", end);
+    stage.addEventListener("pointercancel", end);
+    // (a mouse or trackpad: scrolled sideways, the next; with ctrl (a pinch on a trackpad), zoomed)
+    stage.addEventListener(
+      "wheel",
+      (e) => {
+        if (kindOf(items[index]) !== "image") return;
+        e.preventDefault();
+        if (e.ctrlKey) {
+          const z = zoom[index];
+          z.s = Math.max(1, Math.min(5, z.s * Math.exp(-e.deltaY / 100)));
+          if (z.s <= 1.01) zoom[index] = { s: 1, x: 0, y: 0 };
+          else clampZoom(index);
+          apply(index, false);
+        } else if (zoom[index].s > 1.01) {
+          zoom[index].x -= e.deltaX;
+          zoom[index].y -= e.deltaY;
+          clampZoom(index);
+          apply(index, false);
+        }
+      },
+      { passive: false }
+    );
+
+    viewer = { close, el };
   }
 
   // ---------------------------------------------------------------------------
