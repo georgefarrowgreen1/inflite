@@ -2708,108 +2708,299 @@ body.phone .sheet.kb .compose-accessory {
   padding-right: 6px;
 }
 
-/* ---------- Login ---------- */
+/* ---------- Signed out: the welcome, as the site's other apps have it ---------- */
 
+/* (the mark high on the page, Sign in at its foot; Mail's scene along the bottom) */
 .login {
   position: fixed;
   inset: 0;
   z-index: 150;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  place-items: center;
   overflow: hidden;
-  padding: 24px;
+  isolation: isolate;
 }
 
-.login-card {
-  position: relative;
-  width: min(380px, 100%);
-  padding: 34px 26px 26px;
-  border-radius: 34px;
+.welcome {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
   text-align: center;
+  padding: var(--sat) calc(24px + var(--sar)) calc(55px + var(--sab)) calc(24px + var(--sal));
   color: var(--text);
-  background: var(--sheen), var(--glass);
-  animation: card-in 0.8s var(--ease) both;
 }
 
-@keyframes card-in {
-  from {
-    opacity: 0;
-    transform: translateY(24px) scale(0.96);
-  }
+.welcome > :not(.flight) {
+  position: relative;
+  z-index: 1;
 }
 
-.login-card.shake {
-  animation: shake 0.5s var(--ease-out);
+.w-top {
+  margin-top: calc(max(16vh, 80px) + 12px);
+  display: grid;
+  justify-items: center;
+  gap: 12px;
 }
 
-@keyframes shake {
-  20%,
-  60% {
-    transform: translateX(-10px);
-  }
-  40%,
-  80% {
-    transform: translateX(10px);
-  }
+.w-cta {
+  width: 100%;
+  max-width: 420px;
+  display: grid;
+  justify-items: center;
+  gap: 12px;
 }
 
-.app-icon {
-  width: 84px;
-  height: 84px;
-  margin: 0 auto 18px;
-  border-radius: 22px;
+/* the mark, out of the haze in a cool glow; the name a letter at a time; the line; then Sign in */
+.wlogo {
+  position: relative;
   display: grid;
   place-items: center;
-  background: linear-gradient(160deg, #6fb1ff 0%, #2f6bff 45%, #6a3bff 100%);
-  box-shadow: 0 14px 30px rgba(40, 90, 255, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.6);
-  position: relative;
-  overflow: hidden;
+  width: 150px;
+  height: 150px;
+  margin-bottom: -18px;
 }
 
-.app-icon::after {
+.wlogo::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(170deg, rgba(255, 255, 255, 0.45), transparent 45%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(90, 140, 255, 0.4), rgba(150, 110, 255, 0.14) 55%, rgba(150, 110, 255, 0));
+  animation: w-fade 2s ease 0.5s backwards;
 }
 
-.app-icon svg {
-  width: 46px;
-  height: 46px;
-  color: #fff;
-  stroke-width: 1.7;
+.wlogo .mark {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  border-radius: 22px;
+  box-shadow: 0 18px 40px -16px rgba(47, 107, 255, 0.75), 0 0 0 0.5px rgba(255, 255, 255, 0.2);
+  animation: w-logo 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.25s backwards;
 }
 
-.login-card h1 {
-  margin: 0 0 4px;
-  font-size: 28px;
-  font-weight: 700;
+@keyframes w-logo {
+  from {
+    opacity: 0;
+    filter: blur(14px);
+    transform: scale(0.86);
+  }
+  80% {
+    filter: blur(0);
+  }
 }
 
-.login-card p {
-  margin: 0 0 26px;
+.wtitle {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 750;
+  line-height: 1.05;
+  letter-spacing: -0.4px;
+}
+
+.wtitle span {
+  display: inline-block;
+  animation: w-letter 0.9s var(--ease-out) backwards;
+}
+
+.wtitle span:nth-child(1) {
+  animation-delay: 0.55s;
+}
+
+.wtitle span:nth-child(2) {
+  animation-delay: 0.61s;
+}
+
+.wtitle span:nth-child(3) {
+  animation-delay: 0.67s;
+}
+
+.wtitle span:nth-child(4) {
+  animation-delay: 0.73s;
+}
+
+@keyframes w-letter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+}
+
+.tagline {
+  margin: 4px 0 0;
+  max-width: 30ch;
+  font-size: 16px;
   color: var(--text-2);
-  font-size: 15px;
+  text-wrap: balance;
+  animation: w-fade 1.2s ease 1.3s backwards;
 }
 
-.login-go {
+.w-cta {
+  animation: w-cta 0.9s var(--ease-out) 1.8s backwards;
+}
+
+@keyframes w-cta {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes w-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.said {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+
+/* Sign in: Mail's blue, pulsing gently (two beats, a rest) */
+.w-go {
   width: 100%;
-  height: 54px;
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
   justify-content: center;
   font-size: 17px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #6fb1ff, #2f6bff 55%, #7a4bff);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 10px 28px -10px rgba(47, 107, 255, 0.75);
+  transition: transform 0.45s var(--spring), filter 0.2s;
+  animation: w-beat 2.4s ease-in-out 2.6s infinite;
 }
 
-.login-go svg {
-  width: 20px;
-  height: 20px;
+.w-go:active {
+  transform: scale(0.97);
 }
 
-.login-error {
-  min-height: 20px;
-  margin-top: 12px;
-  font-size: 14px;
-  color: var(--text-2);
+.w-go:disabled {
+  opacity: 0.6;
+  animation: none;
+}
+
+@keyframes w-beat {
+  0%,
+  40%,
+  100% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 10px 28px -10px rgba(47, 107, 255, 0.75);
+  }
+  8% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 10px 34px -6px rgba(47, 107, 255, 0.95), 0 0 0 4px rgba(111, 160, 255, 0.25);
+  }
+  18% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 10px 28px -10px rgba(47, 107, 255, 0.75);
+  }
+  26% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 10px 34px -8px rgba(47, 107, 255, 0.85), 0 0 0 3px rgba(111, 160, 255, 0.18);
+  }
+}
+
+/* Mail's scene: clouds rising out of the haze, the route drawn over them, then the plane */
+:root {
+  --f-far: rgba(110, 150, 255, 0.14);
+  --f-mid: rgba(160, 120, 255, 0.14);
+  --f-near: rgba(90, 190, 240, 0.12);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --f-far: rgba(90, 130, 240, 0.12);
+    --f-mid: rgba(170, 130, 240, 0.12);
+    --f-near: rgba(80, 180, 230, 0.12);
+  }
+}
+
+:root[data-theme="light"] {
+  --f-far: rgba(90, 130, 240, 0.12);
+  --f-mid: rgba(170, 130, 240, 0.12);
+  --f-near: rgba(80, 180, 230, 0.12);
+}
+
+.flight {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 46svh;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.flight .f-far {
+  fill: var(--f-far);
+}
+
+.flight .f-mid {
+  fill: var(--f-mid);
+}
+
+.flight .f-near {
+  fill: var(--f-near);
+}
+
+.flight .f-route {
+  fill: none;
+  stroke: url(#f-route);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 2 12;
+  opacity: 0.8;
+  animation: w-fade 1.4s ease 0.9s backwards;
+}
+
+.flight .f-paper {
+  fill: #fff;
+}
+
+.flight .f-fold {
+  fill: none;
+  stroke: rgba(80, 110, 220, 0.45);
+  stroke-width: 1.5;
+}
+
+.flight .f-plane {
+  animation: w-fade 0.8s ease 2.2s backwards;
+}
+
+.flight :is(.f-far, .f-mid, .f-near) {
+  animation: f-rise 1.6s var(--ease-out) backwards;
+}
+
+.flight .f-mid {
+  animation-delay: 0.12s;
+}
+
+.flight .f-near {
+  animation-delay: 0.24s;
+}
+
+@keyframes f-rise {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+}
+
+/* (shown again, after signing out: no slow start) */
+.welcome.again :is(.wlogo .mark, .wlogo::before, .wtitle span, .tagline, .flight *) {
+  animation-delay: 0s !important;
+  animation-duration: 0.5s;
+}
+
+.welcome.again .w-cta {
+  animation: w-fade 0.5s ease;
+}
+
+.welcome.again .w-go {
+  animation: w-beat 2.4s ease-in-out 1s infinite;
 }
 
 /* ---------- Accessibility ---------- */
@@ -2824,7 +3015,8 @@ body.phone .sheet.kb .compose-accessory {
 
   /* (still: shortened, an endless drift or breath would flicker) */
   .aura,
-  .orb .ring {
+  .orb .ring,
+  .w-go {
     animation: none !important;
   }
 }

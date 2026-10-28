@@ -1,4 +1,4 @@
-/* inflite Mail: a Liquid Glass mail client for iPhone and iPad. */
+/* Mail: inflite's Liquid Glass mail client for iPhone and iPad. */
 (() => {
   "use strict";
 
@@ -2211,7 +2211,7 @@
 
   function updateBadge() {
     const n = S.counts.inbox?.unread || 0;
-    document.title = n ? `Inbox (${n}) · inflite Mail` : "inflite Mail";
+    document.title = n ? `Mail (${n})` : "Mail";
     try {
       if (navigator.setAppBadge) n ? navigator.setAppBadge(n) : navigator.clearAppBadge();
     } catch {}
@@ -3490,29 +3490,32 @@ pre{white-space:pre-wrap}
 
   const GATE = {
     signin: {
-      text: "Sign in with your inflite account.",
-      button: "Sign In",
+      text: "Every inflite address, in one calm stream",
+      button: "Sign in",
     },
     reauth: {
       text: "Mail asks you to confirm it’s you every 12 hours.",
-      button: "Confirm It’s You",
+      button: "Confirm it’s you",
     },
     notadmin: {
       text: "Mail is only for the site’s admin.",
-      button: "Use Another Account",
+      button: "Use another account",
     },
     passkey: {
       text: "Add a passkey to your account to use Mail, as Admin needs.",
-      button: "Open Your Account",
+      button: "Open your account",
     },
   };
 
+  // Signed out (or not let in): as the site's other apps have it, the mark high on the page, out of a glow; the name a
+  // letter at a time; a line; and Sign in at the foot, pulsing gently. Mail's own scene along the bottom: soft clouds and
+  // a paper plane flying its dotted route. again: shown before in this visit (after signing out): no slow start.
   function showGate(access = "signin", { user, error } = {}) {
     clearInterval(pollTimer);
     const g = GATE[access] || GATE.signin;
     const who = user && access !== "signin" ? `Signed in as @${user.handle}` : "";
     const go = h(
-      "button.gbtn.glass.tinted.text.login-go",
+      "button.w-go",
       {
         type: "button",
         onclick: () => {
@@ -3521,24 +3524,53 @@ pre{white-space:pre-wrap}
           else goToAccount();
         },
       },
-      g.button,
-      icon("arrowRight")
+      g.button
     );
-    const card = h(
-      "div.login-card.glass",
-      { role: "dialog", "aria-labelledby": "login-title" },
-      h("div.app-icon", icon(access === "signin" ? "envelope" : "lock")),
-      h("h1", { id: "login-title" }, "inflite Mail"),
-      h("p", g.text),
-      go,
-      h("div.login-error", { role: "alert" }, error || who)
-    );
+    const again = !!showGate.shown;
+    showGate.shown = true;
     ensureSky();
-    const login = h("div.login", card);
+    const login = h(
+      `div.login.welcome${again ? ".again" : ""}`,
+      { role: "main", "aria-labelledby": "login-title" },
+      flightScene(),
+      h(
+        "div.w-top",
+        h("div.wlogo", h("img.mark", { src: "/icon.svg", alt: "", width: 96, height: 96 })),
+        h("h1.wtitle", { id: "login-title", "aria-label": "Mail" }, [..."Mail"].map((c) => h("span", { "aria-hidden": "true" }, c))),
+        h("p.tagline", g.text)
+      ),
+      h(
+        "div.w-cta",
+        error || who ? h("p.said", { role: error ? "alert" : "status" }, error || who) : null,
+        go
+      )
+    );
     document.querySelector(".login")?.remove();
     document.body.append(login);
-    if (error) card.classList.add("shake");
-    setTimeout(() => go.focus({ preventScroll: true }), 300);
+    document.title = "Mail";
+  }
+
+  // The scene at the foot of the welcome: three bands of cloud, far to near, and a dotted route over them with a paper
+  // plane flying along it, round and round (at rest a third of the way along, for anyone who asks for less motion)
+  function flightScene() {
+    const W = 1200, H = 460;
+    const band = (base, amps, seed) => (x) => base - amps.reduce((y, a, i) => y + a * Math.sin(x / [210, 83, 37][i] + seed * (i + 1)), 0);
+    const line = (f) => Array.from({ length: 61 }, (_, i) => `${i ? "L" : "M"}${((i / 60) * W).toFixed(1)} ${f((i / 60) * W).toFixed(1)}`).join("");
+    const fill = (f, cls) => `<path class="${cls}" d="${line(f)}L${W} ${H}L0 ${H}Z"/>`;
+    const route = "M-60 300C150 210 330 330 560 250S930 150 1260 230";
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const wrap = document.createElement("div");
+    wrap.innerHTML = `<svg class="flight" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <defs><linearGradient id="f-route" x1="0" x2="1"><stop offset="0" stop-color="#6fb1ff"/><stop offset=".55" stop-color="#8f7bff"/><stop offset="1" stop-color="#c58bff"/></linearGradient>
+      <radialGradient id="f-glow"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset=".4" stop-color="#8fb8ff" stop-opacity=".45"/><stop offset="1" stop-color="#6a7bff" stop-opacity="0"/></radialGradient></defs>
+      ${fill(band(300, [40, 16, 7], 0.4), "f-far")}${fill(band(352, [44, 18, 8], 1.9), "f-mid")}${fill(band(404, [46, 20, 9], 3.7), "f-near")}
+      <path class="f-route" id="f-path" d="${route}"/>
+      <g class="f-plane"${still ? ' transform="translate(420 268) rotate(-12)"' : ""}>
+        <circle r="30" fill="url(#f-glow)"/>
+        <path class="f-paper" d="M16 0-14-11-8 0-14 11Z"/><path class="f-fold" d="M16 0-8 0"/>
+        ${still ? "" : '<animateMotion dur="11s" begin="2.2s" repeatCount="indefinite" rotate="auto" fill="freeze"><mpath href="#f-path"/></animateMotion>'}
+      </g></svg>`;
+    return wrap.firstElementChild;
   }
 
   async function enter() {

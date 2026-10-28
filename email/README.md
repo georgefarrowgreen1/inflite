@@ -1,4 +1,4 @@
-# inflite Mail
+# Mail
 
 A mail client for `email.inflite.ai`, built as a Cloudflare Worker with a Liquid Glass web app
 for iPhone and iPad. Mail comes in through Cloudflare Email Routing and goes out through
