@@ -50,6 +50,7 @@
     doc: '<path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h4.5"/>',
     check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
     download: '<path d="M12 4v11.5M7 11l5 5 5-5"/><path d="M5 20h14"/>',
+    camera: '<path d="M4 8.5h3l1.5-2h7L17 8.5h3v10H4z"/><circle cx="12" cy="13" r="3.2"/>',
     play: '<path d="M8 5.5v13l10.5-6.5z"/>',
     share: '<path d="M12 15V3.5M7.5 8 12 3.5 16.5 8"/><path d="M8.5 10.5H7a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6.5a2 2 0 0 0-2-2h-1.5"/>',
     lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5v-3a4 4 0 0 1 8 0v3"/>',
@@ -274,7 +275,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.02";
+  const BUILD = "1.03";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -3699,7 +3700,7 @@ pre{white-space:pre-wrap}
     const fields = {};
     const suggestBox = h("div");
 
-    function tokenField(key, label) {
+    function tokenField(key, label, extra = null) {
       const tokens = h("div.tokens");
       const input = h("input", {
         type: "email",
@@ -3711,7 +3712,7 @@ pre{white-space:pre-wrap}
         enterkeyhint: "next",
         "aria-label": label,
       });
-      const field = h("div.field", h("label", `${label}:`), tokens);
+      const field = h("div.field", { "data-k": key }, h("label", `${label}:`), tokens, extra);
       field.addEventListener("click", (e) => {
         if (e.target === field || e.target === tokens) input.focus();
       });
@@ -3742,7 +3743,8 @@ pre{white-space:pre-wrap}
                   ]);
                 },
               },
-              p.name || p.email
+              avatar(p, "tok-av"),
+              h("span.tok-n", p.name || p.email)
             )
           ),
           input
@@ -3783,6 +3785,7 @@ pre{white-space:pre-wrap}
         }
       });
       input.addEventListener("input", () => {
+        drawRecent();
         if (/[,;]/.test(input.value)) {
           commit();
           clearSuggest();
@@ -3857,7 +3860,55 @@ pre{white-space:pre-wrap}
                 onclick: () => pickSuggestion(p),
               },
               avatar(p),
-              h("div", h("b", p.name || p.email), p.name ? h("span", p.email) : null)
+              h("div", h("b", marked(p.name || p.email, suggestState.input?.value.trim())), p.name ? h("span", marked(p.email, suggestState.input?.value.trim())) : null)
+            )
+          )
+        )
+      );
+    }
+
+    // (the letters typed, picked out in what they matched)
+    function marked(text, q) {
+      const i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
+      return i < 0 ? text : [text.slice(0, i), h("mark", text.slice(i, i + q.length)), text.slice(i + q.length)];
+    }
+
+    // While To is empty: the people written to most, a tap away
+    const recentEl = h("div.c-recent", { hidden: true });
+    let recentPeople = [];
+    if (c.mode === "new" && !c.to.length)
+      api
+        .contacts("")
+        .then(({ contacts }) => {
+          recentPeople = (contacts || []).filter((p) => p.email && !mine(p.email)).slice(0, 5);
+          drawRecent();
+        })
+        .catch(() => {});
+    function drawRecent() {
+      const show = recentPeople.length && !c.to.length && !c.cc.length && !c.bcc.length && !fields.to?.input.value;
+      recentEl.hidden = !show;
+      if (!show || recentEl.childElementCount) return;
+      setKids(
+        recentEl,
+        h("div.c-recent-l", "Recent"),
+        h(
+          "div.c-recent-row",
+          recentPeople.map((p) =>
+            h(
+              "button.c-person",
+              {
+                type: "button",
+                "aria-label": `To ${p.name || p.email}`,
+                onpointerdown: (e) => e.preventDefault(),
+                onclick: () => {
+                  c.to.push({ name: p.name || "", email: p.email });
+                  fields.to.draw();
+                  update();
+                  subjectInput.focus();
+                },
+              },
+              avatar(p, "c-person-av"),
+              h("span", (p.name || p.email.split("@")[0]).split(/\s+/)[0])
             )
           )
         )
@@ -3872,56 +3923,40 @@ pre{white-space:pre-wrap}
 
     const ccRow = h("div");
     function drawCcRow() {
-      if (c.showCc) {
-        setKids(ccRow, tokenField("cc", "Cc"), tokenField("bcc", "Bcc"), fromField());
-      } else {
-        setKids(ccRow, 
-          h(
-            "button.field",
-            {
-              type: "button",
-              style: { width: "100%", textAlign: "left", color: "var(--label-2)" },
-              onclick: () => {
-                c.showCc = true;
-                drawCcRow();
-                fields.cc.input.focus();
-              },
+      setKids(ccRow, c.showCc ? [tokenField("cc", "Cc"), tokenField("bcc", "Bcc")] : null);
+      ccBtn.classList.toggle("on", c.showCc);
+      ccBtn.setAttribute("aria-pressed", String(c.showCc));
+    }
+
+    // Who it's from: a small chip at the end of the To line, the addresses behind it
+    const fromBtn = h("button.from-chip", {
+      type: "button",
+      onclick: () =>
+        showMenu(
+          fromBtn,
+          (S.me?.identities || [c.from]).map((addr) => ({
+            label: addr,
+            checked: addr === c.from,
+            action: () => {
+              c.from = addr;
+              drawFrom();
+              update();
             },
-            h("span.flabel", `Cc/Bcc, From: ${c.from}`)
-          )
-        );
-      }
+          })),
+          { title: "Send From" }
+        ),
+    });
+    function drawFrom() {
+      fromBtn.setAttribute("aria-label", `From ${c.from}`);
+      fromBtn.title = `From ${c.from}`;
+      setKids(fromBtn, avatar({ name: S.me?.displayName, email: c.from, me: true }, "from-av"), h("span", `${c.from.split("@")[0]}@`), icon("chevronDown"));
     }
+    drawFrom();
 
-    function fromField() {
-      const btn = h(
-        "button.from-btn",
-        {
-          type: "button",
-          onclick: () =>
-            showMenu(
-              btn,
-              (S.me?.identities || [c.from]).map((addr) => ({
-                label: addr,
-                checked: addr === c.from,
-                action: () => {
-                  c.from = addr;
-                  drawCcRow();
-                  update();
-                },
-              })),
-              { title: "Send From" }
-            ),
-        },
-        c.from,
-        icon("chevronDown")
-      );
-      return h("div.field", h("span.flabel", "From:"), btn);
-    }
-
-    const subjectInput = h("input", {
+    const subjectInput = h("input.c-subject", {
       type: "text",
       value: c.subject,
+      placeholder: "Subject",
       autocomplete: "off",
       enterkeyhint: "next",
       "aria-label": "Subject",
@@ -3939,7 +3974,7 @@ pre{white-space:pre-wrap}
 
     const textArea = h("textarea.compose-text", {
       "aria-label": "Message",
-      placeholder: "",
+      placeholder: "Message",
       oninput: () => {
         c.text = textArea.value;
         autoGrow();
@@ -3949,19 +3984,22 @@ pre{white-space:pre-wrap}
     textArea.value = c.text;
     const autoGrow = () => {
       textArea.style.height = "auto";
-      textArea.style.height = `${Math.max(220, textArea.scrollHeight)}px`;
+      textArea.style.height = `${Math.max(c.attachments.length ? 120 : 220, textArea.scrollHeight)}px`;
     };
 
     const attsEl = h("div.compose-atts");
     function drawAtts() {
-      setKids(attsEl, 
-        ...c.attachments.map((a, i) =>
-          h(
-            "div.att",
-            h("span.att-ic", /^image\//.test(a.type) && (a.preview || a.url) ? h("img", { src: a.preview || a.url, alt: "" }) : icon("doc")),
-            h("div", attName(a.filename), h("div.att-size", fmtSize(a.size))),
+      setKids(
+        attsEl,
+        ...c.attachments.map((a, i) => {
+          const img = /^image\//.test(a.type) && (a.preview || a.url);
+          const ext = extOf(a.filename);
+          return h(
+            "div.c-att",
+            { title: `${a.filename}, ${fmtSize(a.size)}`, class: img ? "pic" : null },
+            img ? h("img", { src: a.preview || a.url, alt: "" }) : [h("b", ext && ext.length <= 4 ? ext : icon("doc")), h("span.c-att-n", a.filename)],
             h(
-              "button",
+              "button.c-att-x",
               {
                 type: "button",
                 "aria-label": `Remove ${a.filename}`,
@@ -3974,8 +4012,8 @@ pre{white-space:pre-wrap}
               },
               icon("x")
             )
-          )
-        )
+          );
+        })
       );
     }
 
@@ -3998,6 +4036,7 @@ pre{white-space:pre-wrap}
       fileInput.value = "";
       drawAtts();
       update();
+      autoGrow();
     }
 
     const quoteEl = c.quote
@@ -4009,11 +4048,25 @@ pre{white-space:pre-wrap}
       : null;
 
     const hint = h("span.hint");
+    const ccBtn = h(
+      "button.c-tool.c-cc",
+      {
+        type: "button",
+        onpointerdown: (e) => e.preventDefault(),
+        onclick: () => {
+          c.showCc = !c.showCc;
+          drawCcRow();
+          if (c.showCc) fields.cc.input.focus();
+        },
+      },
+      "Cc/Bcc"
+    );
     const body = h(
       "div.sheet-body",
-      tokenField("to", "To"),
+      tokenField("to", "To", fromBtn),
       ccRow,
-      h("div.field", h("label", "Subject:"), subjectInput),
+      recentEl,
+      subjectInput,
       textArea,
       attsEl,
       quoteEl
@@ -4021,11 +4074,25 @@ pre{white-space:pre-wrap}
     drawCcRow();
     drawAtts();
 
+    // The toolbar on the keyboard: Cc/Bcc, Photos, Camera, Files; the size of what's attached; the keyboard away
+    const photoInput = h("input", { type: "file", multiple: true, accept: "image/*,video/*", style: { display: "none" }, onchange: () => (addFiles(photoInput.files), (photoInput.value = "")) });
+    const cameraInput = h("input", { type: "file", accept: "image/*", capture: "environment", style: { display: "none" }, onchange: () => (addFiles(cameraInput.files), (cameraInput.value = "")) });
+    const tool = (name, label, onclick, cls = "") => h(`button.c-tool${cls}`, { type: "button", "aria-label": label, title: label, onpointerdown: (e) => e.preventDefault(), onclick }, icon(name));
     const accessory = h(
       "div.compose-accessory",
-      h("button.gbtn", { type: "button", "aria-label": "Add Attachment", title: "Add Attachment", onclick: () => fileInput.click() }, icon("clip")),
-      hint,
-      fileInput
+      h(
+        "div.c-bar.glass",
+        ccBtn,
+        h("span.c-sep"),
+        tool("photo", "Photos", () => photoInput.click()),
+        S.layout === "phone" ? tool("camera", "Camera", () => cameraInput.click()) : null,
+        tool("clip", "Files", () => fileInput.click()),
+        hint,
+        tool("chevronDown", "Hide Keyboard", () => document.activeElement?.blur?.(), ".c-kb")
+      ),
+      fileInput,
+      photoInput,
+      cameraInput
     );
 
     const sheet = h(
@@ -4052,7 +4119,9 @@ pre{white-space:pre-wrap}
       titleEl.textContent = c.subject.trim() || (c.mode === "forward" ? "Forward" : c.mode.startsWith("reply") ? "Reply" : "New Message");
       const all = [...c.to, ...c.cc, ...c.bcc];
       sendBtn.disabled = !all.length || all.some((p) => !EMAIL_RE.test(p.email));
-      hint.textContent = `From ${c.from}`;
+      const size = c.attachments.reduce((n, a) => n + (a.size || 0), 0);
+      hint.textContent = size ? fmtSize(size) : "";
+      drawRecent();
     }
 
     async function doSend() {
