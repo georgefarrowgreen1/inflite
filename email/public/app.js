@@ -689,6 +689,8 @@
     // (where you are: a lens, and whether only unread mail shows; the view and category the server is asked for follow)
     lens: "people",
     filter: "all",
+    failedSends: [],
+    offline: false,
     view: "all",
     pushOn: false,
     category: "people",
@@ -1302,6 +1304,53 @@
   const listTitle = () =>
     S.query ? "Search" : S.lens === "trash" ? "Trash" : S.lens === "flagged" ? "Flagged" : LENSES.find((l) => l.k === S.lens).label;
 
+  // The dot beside the title, on every tab: one light for how the mailbox stands, the most pressing first. Tapped, it
+  // says why (and a message that didn't send is sent again).
+  const DOT = {
+    failed: { cls: "red", say: () => `${S.failedSends.length === 1 ? "A message" : `${S.failedSends.length} messages`} didn't send. Tap to try again.` },
+    offline: { cls: "grey", say: () => "Offline. Showing what was last loaded." },
+    fresh: { cls: "blue", say: () => `${lensCount("people")} unread from people` },
+    soon: { cls: "purple", say: () => `${displayName(S.counts.nextLater.from) || "A conversation"} comes back ${fmtWhen(S.counts.nextLater.at)}` },
+    flagged: { cls: "orange", say: () => `${S.counts.flagged} flagged to follow up` },
+    clear: { cls: "green", say: () => "Caught up. Nothing from people is waiting." },
+  };
+
+  function dotState() {
+    if (S.offline || !navigator.onLine) return "offline";
+    if (S.failedSends.length) return "failed";
+    if (lensCount("people")) return "fresh";
+    if (S.counts.nextLater && S.counts.nextLater.at - Date.now() < 3600000) return "soon";
+    if (S.counts.flagged) return "flagged";
+    return "clear";
+  }
+
+  function statusDot() {
+    const k = dotState();
+    const d = DOT[k];
+    return h(`button.status-dot.${d.cls}`, {
+      type: "button",
+      "aria-label": d.say(),
+      title: d.say(),
+      onclick: (e) => {
+        e.stopPropagation();
+        if (k === "failed") return retryFailed();
+        toast(d.say(), { icon: k === "clear" ? "check" : k === "soon" ? "clock" : k === "flagged" ? "flag" : k === "offline" ? "x" : "envelopeBadge" });
+      },
+    });
+  }
+
+  function retryFailed() {
+    const jobs = S.failedSends.splice(0);
+    renderListChrome();
+    for (const job of jobs) {
+      job.started = false;
+      runSend(job);
+    }
+  }
+
+  addEventListener("online", () => ((S.offline = false), renderListChrome()));
+  addEventListener("offline", () => renderListChrome());
+
   function renderListChrome() {
     if (!els.listTitle) return;
     const title = listTitle();
@@ -1313,10 +1362,9 @@
         : h(
             "button.title-btn",
             { type: "button", "aria-haspopup": "menu", "aria-label": `${title}, filters and more`, onclick: (e) => listMenu(e.currentTarget) },
-            h("span", title),
-            icon("chevronDown", "title-chev")
+            h("span", title)
           ),
-      n ? h("span.title-n", n) : null
+      S.query ? null : statusDot()
     );
     const about = {
       people: [n && `${n} unread`, fmtUpdated(S.updatedAt)],
@@ -1649,7 +1697,8 @@
 
   function emptyEl() {
     if (S.query) return h("div.empty.content-in", icon("search"), h("b", "No Results"), `Nothing matches “${S.query}”.`);
-    if (S.lens === "people" && S.filter === "all" && !S.address) return caughtUpEl();
+    // (People clear: nothing here at all; the dot beside the title says so)
+    if (S.lens === "people" && S.filter === "all" && !S.address) return h("div.empty.quiet-empty", { "aria-label": "Caught up" });
     const [ic, said, more] = S.filter !== "all" && (S.lens === "people" || S.lens === "updates")
       ? ["envelopeOpen", `Nothing ${S.filter === "unread" ? "unread" : S.filter === "flagged" ? "flagged" : "with attachments"} here`]
       : S.address
@@ -1662,49 +1711,6 @@
             trash: ["trash", "Trash is empty"],
           }[S.lens];
     return h("div.empty.content-in", icon(ic), h("b", said), more || null);
-  }
-
-  // All clear in People: when, and what's still around elsewhere, each a tap away
-  function caughtUpEl() {
-    const c = S.counts;
-    const card = (cls, ic, title, sub, go) =>
-      h("button.next-card.glass", { type: "button", onclick: go }, h(`span.next-ic.${cls}`, icon(ic)), h("span.next-txt", h("b", title), sub), icon("chevronRight", "next-chev"));
-    const cards = [];
-    const ups = c.updates?.threads || 0;
-    if (ups)
-      cards.push(
-        card(
-          "updates",
-          "news",
-          c.updates.unread ? `${c.updates.unread} new in Updates` : `${ups} in Updates`,
-          (c.updatesFrom || []).length ? h("span.next-faces", c.updatesFrom.map((p) => avatar(p, "xs"))) : h("small", "Newsletters, receipts and notifications"),
-          () => setLens("updates")
-        )
-      );
-    if (c.nextLater)
-      cards.push(
-        card(
-          "later",
-          "clock",
-          `${displayName(c.nextLater.from) || "A conversation"} comes back ${fmtWhen(c.nextLater.at)}`,
-          h("small", c.nextLater.subject),
-          () => setLens("later")
-        )
-      );
-    if (c.flagged) cards.push(card("flagged", "flag", `${c.flagged} flagged to follow up`, h("small", "Flagged conversations, done or not"), () => setLens("flagged")));
-    const at = new Date().toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
-    return h(
-      "div.caught.content-in",
-      h("div.orb", { "aria-hidden": "true" }, h("span.ring"), h("span.ring"), h("span.ring"), h("span.core", icon("check"))),
-      h("h3", "You're all caught up"),
-      h("p", `Nothing from people is waiting. Cleared at ${at}.`),
-      cards.length ? h("div.next", h("div.next-cap", "Still Around"), cards) : null,
-      S.pushOn
-        ? h("div.quiet", icon("bell"), "You'll get a notification when someone writes.")
-        : !DEMO && PUSH_OK
-          ? h("button.quiet.link", { type: "button", onclick: togglePush }, icon("bell"), "Get a notification when someone writes")
-          : null
-    );
   }
 
   // Who's in a conversation, newest first: one person by full name, several by first names
@@ -2368,7 +2374,9 @@
             "div.bar-title",
             { role: "heading", "aria-level": "1", title: t.subject || "(No Subject)" },
             t.starred ? icon("flagFill", "flag-ic") : null,
-            h("span", t.subject || "(No Subject)")
+            h("span", t.subject || "(No Subject)"),
+            // (on iPhone, where the list's title is out of sight, the dot comes with you)
+            S.layout === "phone" ? statusDot() : null
           )
         : null,
       h("div.spacer"),
@@ -3458,11 +3466,17 @@ pre{white-space:pre-wrap}
       const payload = await buildPayload(job.c);
       await api.send(payload, { keepalive });
       toast("Message Sent", { icon: "check" });
+      S.failedSends = S.failedSends.filter((j) => j !== job);
       refreshCounts();
       loadList({ quiet: true });
       // (a reply shows in its conversation)
       if (S.thread && job.c.inReplyTo) openThread(S.thread.id, { fromNav: true });
     } catch (err) {
+      // (kept for the dot to offer again, unless it's the message itself that's wrong)
+      if (!(err.status >= 400 && err.status < 500)) {
+        S.failedSends.push(job);
+        renderListChrome();
+      }
       toast(err.message || "Couldn't send", {
         error: true,
         actionLabel: "Edit",
@@ -3740,12 +3754,16 @@ pre{white-space:pre-wrap}
     // (nothing has changed since last time: nothing more to ask)
     try {
       const { v } = await api.version();
+      if (S.offline) ((S.offline = false), renderListChrome());
       if (v && v === S.version) {
         S.updatedAt = Date.now();
         return renderListChrome();
       }
       S.version = v;
-    } catch {}
+    } catch (err) {
+      // (no answer at all, rather than an error from Mail: offline)
+      if (!err.status) ((S.offline = true), renderListChrome());
+    }
     const before = S.counts.people?.unread || 0;
     await refreshCounts();
     if (!S.query) await loadList({ quiet: true });
