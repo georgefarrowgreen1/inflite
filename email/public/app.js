@@ -275,7 +275,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.03";
+  const BUILD = "1.04";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -3949,7 +3949,7 @@ pre{white-space:pre-wrap}
     function drawFrom() {
       fromBtn.setAttribute("aria-label", `From ${c.from}`);
       fromBtn.title = `From ${c.from}`;
-      setKids(fromBtn, avatar({ name: S.me?.displayName, email: c.from, me: true }, "from-av"), h("span", `${c.from.split("@")[0]}@`), icon("chevronDown"));
+      setKids(fromBtn, avatar({ name: S.me?.displayName, email: c.from, me: true }, "from-av"), icon("chevronDown"));
     }
     drawFrom();
 

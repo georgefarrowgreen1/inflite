@@ -2780,7 +2780,7 @@ body.pad .sheet-grabber {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 18px 14px 8px;
+  padding: 18px 16px 8px;
   touch-action: none;
 }
 
@@ -2810,7 +2810,7 @@ body.pad .sheet-grabber {
 .sheet-head .glass.tinted {
   background: var(--sheen), linear-gradient(180deg, color-mix(in srgb, var(--tint) 88%, white), var(--tint-deep));
   color: #fff;
-  box-shadow: 0 8px 18px -6px color-mix(in srgb, var(--tint-deep) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.08);
   transition: background 0.25s, box-shadow 0.25s, transform 0.45s var(--spring);
 }
 
@@ -2834,7 +2834,7 @@ body.pad .sheet-grabber {
   align-items: flex-start;
   gap: 8px;
   min-height: 52px;
-  margin: 0 20px;
+  margin: 0 16px;
   border-bottom: 0.5px solid var(--sep);
 }
 
@@ -2937,9 +2937,10 @@ body.pad .sheet-grabber {
   gap: 5px;
   height: 30px;
   margin-left: 4px;
-  padding: 0 9px 0 3px;
+  padding: 0 8px 0 3px;
   border-radius: 15px;
   background: var(--bg-fill);
+  box-shadow: inset 0 0 0 0.5px var(--sep);
   color: var(--label-2);
   font-size: 13px;
   white-space: nowrap;
@@ -2971,7 +2972,7 @@ body.pad .sheet-grabber {
 
 /* while To is empty: the people written to most */
 .c-recent {
-  margin: 0 20px;
+  margin: 0 16px;
   padding: 14px 0 14px;
   border-bottom: 0.5px solid var(--sep);
 }
@@ -3033,7 +3034,7 @@ body.pad .sheet-grabber {
 .c-subject {
   display: block;
   width: 100%;
-  padding: 16px 20px 0;
+  padding: 16px 16px 0;
   border: 0;
   outline: 0;
   background: none;
@@ -3122,7 +3123,7 @@ body.pad .sheet-grabber {
   display: block;
   width: 100%;
   min-height: 120px;
-  padding: 8px 20px 14px;
+  padding: 8px 16px 14px;
   border: 0;
   outline: 0;
   resize: none;
@@ -3132,7 +3133,7 @@ body.pad .sheet-grabber {
 }
 
 .compose-quote {
-  margin: 0 20px 20px;
+  margin: 0 16px 20px;
   padding: 2px 0 2px 12px;
   border-left: 2px solid var(--label-3);
   color: var(--label-2);
@@ -3156,7 +3157,7 @@ body.pad .sheet-grabber {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 4px 20px 16px;
+  padding: 4px 16px 16px;
 }
 
 .compose-atts:empty {
