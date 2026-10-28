@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.14";
+  const BUILD = "1.15";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -5015,7 +5015,7 @@ pre{white-space:pre-wrap}
     const g = GATE[access] || GATE.signin;
     const who = user && access !== "signin" ? `Signed in as @${user.handle}` : "";
     const go = h(
-      "button.w-go",
+      "button.w-go.ifl-go",
       {
         type: "button",
         onclick: () => {
@@ -5030,20 +5030,22 @@ pre{white-space:pre-wrap}
     showGate.shown = true;
     ensureSky();
     const login = h(
-      `div.login.welcome${again ? ".again" : ""}`,
+      `div.login.welcome.ifl-in${again ? ".again" : ""}`,
       { role: "main", "aria-labelledby": "login-title" },
       flightScene(),
+      // (where each part sits is InFlite's way in, shared by every app: copied into app.css from the georgefarrowgreen
+      // repository's .tools/inflite/signin.css by its .tools/signin.mjs)
       h(
-        "div.w-top",
-        h("div.wlogo", h("img.mark", { src: "/icon.svg", alt: "", width: 96, height: 96 })),
-        h("h1.wtitle", { id: "login-title", "aria-label": "Mail" }, [..."Mail"].map((c) => h("span", { "aria-hidden": "true" }, c))),
-        g.text ? h("p.tagline", g.text) : null
+        "div.w-top.ifl-top",
+        h("div.wlogo.ifl-logo", h("img.mark", { src: "/icon.svg", alt: "", width: 96, height: 96 })),
+        h("h1.wtitle.ifl-title", { id: "login-title", "aria-label": "Mail" }, [..."Mail"].map((c) => h("span", { "aria-hidden": "true" }, c))),
+        g.text ? h("p.tagline.ifl-tagline", g.text) : null
       ),
       h(
-        "div.w-cta",
+        "div.w-cta.ifl-cta",
         error || who ? h("p.said", { role: error ? "alert" : "status" }, error || who) : null,
         // (InFlite, whose one account signs you in to every app: its mark and name, over Sign in)
-        h("p.wbrand", h("img", { src: "/inflite.svg", alt: "", width: 22, height: 22 }), "Powered by InFlite"),
+        h("p.wbrand.ifl-brand", h("img", { src: "/inflite.svg", alt: "", width: 22, height: 22 }), "Powered by InFlite"),
         go
       )
     );
