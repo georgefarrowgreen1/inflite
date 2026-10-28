@@ -1,5 +1,6 @@
 // D1 schema, created lazily on first use so no migration step is needed.
 const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)`,
   `CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     folder TEXT NOT NULL,
@@ -65,10 +66,15 @@ const MIGRATIONS = [
    WHERE category IS NULL`,
 ];
 
+// Bumped whenever SCHEMA or MIGRATIONS change, so a new isolate checks one row rather than running them all again.
+const SCHEMA_VERSION = "4";
+
 let ready;
 
 export function ensureSchema(env) {
   ready ??= (async () => {
+    const at = await env.DB.prepare(`SELECT v FROM meta WHERE k = 'schema'`).first().catch(() => null);
+    if (at?.v === SCHEMA_VERSION) return;
     await env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql)));
     for (const sql of MIGRATIONS) {
       try {
@@ -77,11 +83,24 @@ export function ensureSchema(env) {
         if (!/duplicate column/i.test(err.message)) throw err;
       }
     }
+    await env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('schema', ?1) ON CONFLICT(k) DO UPDATE SET v = excluded.v`).bind(SCHEMA_VERSION).run();
   })().catch((err) => {
     ready = undefined;
     throw err;
   });
   return ready;
+}
+
+// The mailbox's version: changes with anything that changes what the stream shows, so an open Mail can ask whether
+// anything's new with one row read rather than reading the stream again.
+export function bumpVersion(env) {
+  return env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('v', ?1) ON CONFLICT(k) DO UPDATE SET v = excluded.v`)
+    .bind(String(Date.now()) + Math.random().toString(36).slice(2, 6))
+    .run();
+}
+
+export async function mailVersion(env) {
+  return (await env.DB.prepare(`SELECT v FROM meta WHERE k = 'v'`).first())?.v || "0";
 }
 
 export const FOLDERS = ["inbox", "drafts", "sent", "archive", "trash"];

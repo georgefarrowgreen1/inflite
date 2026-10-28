@@ -1,5 +1,5 @@
 import PostalMime from "postal-mime";
-import { ensureSchema, findThread, cleanMessageId, upsertContacts } from "./db.js";
+import { ensureSchema, findThread, cleanMessageId, upsertContacts, bumpVersion } from "./db.js";
 import { pushAll, peopleUnread } from "./push.js";
 
 // Handles mail delivered by Cloudflare Email Routing. Nothing that arrives is lost: the original is kept first, and if
@@ -105,6 +105,7 @@ async function store(message, env, ctx, id, raw) {
   ]);
 
   ctx.waitUntil(upsertContacts(env, [from]));
+  await bumpVersion(env);
 
   // A notice for mail from people (not for updates: newsletters, receipts and the like wait in the stream)
   if (category === "people") {

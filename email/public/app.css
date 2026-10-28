@@ -218,21 +218,21 @@ svg.i {
   top: -32vmax;
   left: -22vmax;
   background: radial-gradient(circle closest-side, color-mix(in srgb, var(--aura-1) 73%, transparent), color-mix(in srgb, var(--aura-1) 49%, transparent) 40%, color-mix(in srgb, var(--aura-1) 12%, transparent) 80%, transparent);
-  animation: drift1 38s steps(76) infinite alternate, aura-in 0.9s ease-out backwards;
+  animation: drift1 38s steps(38) infinite alternate, aura-in 0.9s ease-out backwards;
 }
 
 .a2 {
   top: 10vmax;
   right: -34vmax;
   background: radial-gradient(circle closest-side, color-mix(in srgb, var(--aura-2) 73%, transparent), color-mix(in srgb, var(--aura-2) 49%, transparent) 40%, color-mix(in srgb, var(--aura-2) 12%, transparent) 80%, transparent);
-  animation: drift2 46s steps(92) infinite alternate, aura-in 0.9s ease-out backwards;
+  animation: drift2 46s steps(46) infinite alternate, aura-in 0.9s ease-out backwards;
 }
 
 .a3 {
   bottom: -40vmax;
   left: 4vmax;
   background: radial-gradient(circle closest-side, color-mix(in srgb, var(--aura-3) 73%, transparent), color-mix(in srgb, var(--aura-3) 49%, transparent) 40%, color-mix(in srgb, var(--aura-3) 12%, transparent) 80%, transparent);
-  animation: drift3 54s steps(108) infinite alternate, aura-in 0.9s ease-out backwards;
+  animation: drift3 54s steps(54) infinite alternate, aura-in 0.9s ease-out backwards;
 }
 
 body.sheet-open .aura {
@@ -328,14 +328,30 @@ body.sheet-open .aura {
   z-index: 1;
   overflow: hidden;
   background: transparent;
-  transition: transform 0.5s var(--ease), border-radius 0.5s var(--ease), filter 0.5s var(--ease);
+  transition: transform 0.5s var(--ease), border-radius 0.5s var(--ease);
   transform-origin: 50% 100%;
+}
+
+/* (dimmed behind the sheet by a veil rather than a filter, which would make all the glass in it redraw) */
+#app::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  border-radius: inherit;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s var(--ease);
 }
 
 body.sheet-open.phone #app {
   transform: translateY(calc(var(--sat) * 0.5)) scale(0.93);
   border-radius: 40px;
-  filter: brightness(0.85);
+}
+
+body.sheet-open.phone #app::after {
+  opacity: 0.15;
 }
 
 .pane {
@@ -782,6 +798,10 @@ body.sheet-open.phone #app {
   text-align: left;
   background: transparent;
   touch-action: pan-y;
+}
+
+/* (a layer of its own only while being swiped: one per row costs an iPhone a lot of memory) */
+.row-wrap.swiping .row {
   will-change: transform;
 }
 
@@ -2283,6 +2303,11 @@ body.phone .sheet.kb .compose-accessory {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* (still: shortened, an endless drift would flicker) */
+  .aura {
+    animation: none !important;
   }
 }
 

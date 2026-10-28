@@ -1,5 +1,7 @@
 import { accountView, accessOf, passOn, forgetCheck } from "./auth.js";
 import {
+  bumpVersion,
+  mailVersion,
   ensureSchema,
   FOLDERS,
   rowToSummary,
@@ -110,7 +112,17 @@ async function api(request, env, ctx, url) {
   }
   await ensureSchema(env);
 
+  const res = await route(request, env, ctx, url, view);
+  // (anything that changed the mailbox moves its version on)
+  if (method !== "GET" && res.ok) ctx.waitUntil(bumpVersion(env).catch(() => {}));
+  return res;
+}
+
+async function route(request, env, ctx, url, view) {
+  const { pathname } = url;
+  const method = request.method;
   let m;
+  if (pathname === "/api/version" && method === "GET") return json({ v: await mailVersion(env) });
   if (pathname === "/api/me" && method === "GET") return me(env, view);
   if (pathname === "/api/counts" && method === "GET") return json(await counts(env));
   if (pathname === "/api/threads" && method === "GET") return json(await listThreads(env, url));
@@ -191,7 +203,17 @@ async function me(env, view) {
 async function threadBatch(env, { ids, ...body }) {
   if (!Array.isArray(ids) || !ids.length) throw new HttpError(400, "No conversations");
   if (ids.length > (body.action === "delete" ? 25 : 200)) throw new HttpError(400, "Too many conversations at once");
-  for (const id of ids) if (/^[\w-]+$/.test(id)) await threadAction(env, id, body, deleteMessages);
+  const good = ids.map(String).filter((id) => /^[\w-]+$/.test(id));
+  // (Mark All as Read: a statement per part, rather than one conversation at a time)
+  if (body.action === "read") {
+    await env.DB.batch(
+      chunks(good, 90).map((part) =>
+        env.DB.prepare(`UPDATE messages SET unread = 0 WHERE thread_id IN (${part.map((_, i) => `?${i + 1}`).join(",")})`).bind(...part)
+      )
+    );
+    return json({ ok: true });
+  }
+  for (const id of good) await threadAction(env, id, body, deleteMessages);
   return json({ ok: true });
 }
 
@@ -259,19 +281,8 @@ async function getMessage(env, id) {
     attachments.push({ id: a.id, filename: a.filename, type: a.type, size: a.size, url: href });
   }
 
-  // The rest of its conversation (not drafts or trash), for the reader to show under it.
-  const { results: thread } = row.thread_id
-    ? await env.DB.prepare(
-        `SELECT * FROM messages WHERE thread_id = ?1 AND id != ?2 AND folder NOT IN ('trash', 'drafts')
-         ORDER BY date DESC LIMIT 20`
-      )
-        .bind(row.thread_id, id)
-        .all()
-    : { results: [] };
-
   return json({
     ...rowToMessage(row),
-    thread: thread.map(rowToSummary),
     text: body.text || "",
     html,
     compose: body.compose || null,

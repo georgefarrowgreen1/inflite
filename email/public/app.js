@@ -293,6 +293,7 @@
       handback: (code, verifier) => req("POST", "/api/auth/handback", { code, verifier }),
       logout: () => req("POST", "/api/logout", {}),
       me: () => req("GET", "/api/me"),
+      version: () => req("GET", "/api/version"),
       counts: () => req("GET", "/api/counts"),
       threads: ({ view, category, address, q, before }) => req("GET", `/api/threads?${qs({ view, category, address, q, before })}`),
       thread: (id) => req("GET", `/api/threads/${id}`),
@@ -501,6 +502,9 @@
       async me() {
         return { displayName: ME.name, domain: "inflite.ai", defaultFrom: ME.email, identities: [ME.email, "support@inflite.ai"] };
       },
+      async version() {
+        return { v: String(Date.now()) };
+      },
       async counts() {
         const out = { people: { threads: 0, unread: 0 }, updates: { threads: 0, unread: 0 }, flagged: 0, snoozed: 0, done: 0 };
         for (const t of allThreads()) {
@@ -693,11 +697,16 @@
   // Glass interaction: a specular highlight follows the finger.
   // ---------------------------------------------------------------------------
 
-  let litEl = null;
+  // (its box measured once per touch, and moved at most once a frame)
+  let litEl = null, litRect = null, litPos = null, litFrame = 0;
   function light(e) {
-    const r = litEl.getBoundingClientRect();
-    litEl.style.setProperty("--px", `${e.clientX - r.left}px`);
-    litEl.style.setProperty("--py", `${e.clientY - r.top}px`);
+    litPos = [e.clientX - litRect.left, e.clientY - litRect.top];
+    litFrame ||= requestAnimationFrame(() => {
+      litFrame = 0;
+      if (!litEl || !litPos) return;
+      litEl.style.setProperty("--px", `${litPos[0]}px`);
+      litEl.style.setProperty("--py", `${litPos[1]}px`);
+    });
   }
   document.addEventListener(
     "pointerdown",
@@ -705,6 +714,7 @@
       const g = e.target.closest?.(".glass");
       if (!g) return;
       litEl = g;
+      litRect = g.getBoundingClientRect();
       light(e);
       g.classList.add("lit");
     },
@@ -888,12 +898,12 @@
         const t = e.touches[0];
         if (t.clientX > 24) return;
         g = { x0: t.clientX, y0: t.clientY, dx: 0, active: false, lastX: t.clientX, lastT: performance.now(), v: 0 };
+        // (held only while a touch starts at the edge, so ordinary scrolling never waits on script)
+        document.addEventListener("touchmove", move, { passive: false });
       },
       { passive: true }
     );
-    document.addEventListener(
-      "touchmove",
-      (e) => {
+    const move = (e) => {
         if (!g) return;
         const t = e.touches[0];
         const dx = t.clientX - g.x0;
@@ -914,10 +924,9 @@
         els.detail.style.transform = `translateX(${g.dx}px)`;
         els.list.style.transform = `translateX(${-28 * (1 - p)}%)`;
         els.list.style.opacity = String(Math.min(1, p * 1.4));
-      },
-      { passive: false }
-    );
+    };
     const end = () => {
+      document.removeEventListener("touchmove", move, { passive: false });
       if (!g) return;
       const was = g;
       g = null;
@@ -1336,13 +1345,17 @@
     renderFooter();
     try {
       const last = S.threads[S.threads.length - 1];
-      const res = await api.threads({
+      const params = {
         view: S.view,
         category: S.query || S.view === "trash" ? null : S.category,
         address: S.address,
         q: S.query,
         before: more && last ? last.sort ?? last.date : undefined,
-      });
+      };
+      // (the first page, asked for on opening alongside everything else)
+      const early = S.prefetch && JSON.stringify(S.prefetch.params) === JSON.stringify(params) ? S.prefetch.res : null;
+      S.prefetch = null;
+      const res = await (early || api.threads(params));
       if (token !== S.listToken) return;
       if (more) {
         S.threads = S.threads.concat(res.threads);
@@ -1374,11 +1387,36 @@
     setKids(els.listFooter, S.loadingMore || (S.loading && !S.threads.length) ? h("div.load-more", h("div.spinner")) : null);
   }
 
+  // What a row shows, so a row whose conversation hasn't changed is kept as it is (with its press state, and any tap
+  // under way) rather than built again on every refresh
+  const threadSig = (t) =>
+    JSON.stringify([t.date, t.unread, t.starred, t.count, t.snoozeUntil, t.done, t.trashed, t.category, t.subject, t.hasAttachments, t.latest?.snippet, t.people]);
+  const draftSig = (d) => JSON.stringify([d.date, d.subject, d.snippet, d.to]);
+
   function renderRows() {
     closeOpenSwipe(true);
-    const rows = [...S.drafts.map(draftRowEl), ...S.threads.map(threadRowEl)];
-    if (!rows.length && !S.loading) setKids(els.rows, emptyEl());
-    else setKids(els.rows, ...rows);
+    if (!S.drafts.length && !S.threads.length) {
+      if (S.loading) setKids(els.rows);
+      else setKids(els.rows, emptyEl());
+    } else {
+      const old = new Map();
+      for (const el of [...els.rows.children]) el.dataset.key ? old.set(el.dataset.key, el) : el.remove();
+      const want = [
+        ...S.drafts.map((d) => [`d:${d.id}`, draftSig(d), () => draftRowEl(d)]),
+        ...S.threads.map((t) => [`t:${t.id}`, threadSig(t), () => threadRowEl(t)]),
+      ];
+      let prev = null;
+      for (const [key, sig, make] of want) {
+        let el = old.get(key);
+        if (el && el.dataset.sig === sig) old.delete(key);
+        else el = make();
+        const next = prev ? prev.nextSibling : els.rows.firstChild;
+        if (el !== next) els.rows.insertBefore(el, next);
+        prev = el;
+      }
+      for (const el of old.values()) el.remove();
+      markSelectedRow();
+    }
     renderFooter();
     S.newIds = new Set();
   }
@@ -1460,7 +1498,7 @@
         t.trashed ? null : h("button.a-later.lead", { "data-act": "later", tabindex: "-1" }, icon("clock"), "Later")
       )
     );
-    const wrap = h("div.row-wrap", { role: "listitem", "data-id": t.id }, actions, row);
+    const wrap = h("div.row-wrap", { role: "listitem", "data-id": t.id, "data-key": `t:${t.id}`, "data-sig": threadSig(t) }, actions, row);
     if (S.newIds.has(t.id)) wrap.classList.add("content-in");
     return wrap;
   }
@@ -1479,7 +1517,12 @@
         h("div.preview", d.snippet || " ")
       )
     );
-    return h("div.row-wrap", { role: "listitem", "data-draft": d.id }, h("div.swipe-actions", h("div.side.left"), h("div.side.right")), row);
+    return h(
+      "div.row-wrap",
+      { role: "listitem", "data-draft": d.id, "data-key": `d:${d.id}`, "data-sig": draftSig(d) },
+      h("div.swipe-actions", h("div.side.left"), h("div.side.right")),
+      row
+    );
   }
 
   function updateRow(id) {
@@ -1563,7 +1606,7 @@
       if (!row || row.dataset.draft || e.button > 0 || e.target.closest(".swipe-actions")) return;
       const wrap = row.parentElement;
       if (openSwipe && openSwipe !== wrap) closeOpenSwipe();
-      g = { wrap, row, id: e.pointerId, x0: e.clientX, y0: e.clientY, base: Number(wrap.dataset.offset || 0), dir: null, lastX: e.clientX, lastT: performance.now(), v: 0, x: 0, full: null };
+      g = { width: 0, wrap, row, id: e.pointerId, x0: e.clientX, y0: e.clientY, base: Number(wrap.dataset.offset || 0), dir: null, lastX: e.clientX, lastT: performance.now(), v: 0, x: 0, full: null };
     });
 
     container.addEventListener("pointermove", (e) => {
@@ -1573,6 +1616,8 @@
       if (!g.dir) {
         if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
           g.dir = "h";
+          g.width = g.wrap.offsetWidth;
+          g.wrap.classList.add("swiping");
           S.swiping = true;
           try {
             g.row.setPointerCapture(e.pointerId);
@@ -1586,7 +1631,7 @@
       g.v = (e.clientX - g.lastX) / Math.max(1, now - g.lastT);
       g.lastX = e.clientX;
       g.lastT = now;
-      const width = g.wrap.offsetWidth;
+      const width = g.width;
       let x = g.base + dx;
       const fullAt = width * 0.5;
       const prevFull = g.full;
@@ -1594,7 +1639,11 @@
       if (g.full !== prevFull && navigator.vibrate) navigator.vibrate(8);
       x = Math.max(-width, Math.min(width, x));
       g.x = x;
-      setRowOffset(g.wrap, x, { full: g.full });
+      const st = g;
+      g.frame ||= requestAnimationFrame(() => {
+        st.frame = 0;
+        if (st.dir) setRowOffset(st.wrap, st.x, { full: st.full });
+      });
     });
 
     const finish = (e) => {
@@ -1602,6 +1651,9 @@
       const st = g;
       g = null;
       if (st.dir !== "h") return;
+      cancelAnimationFrame(st.frame);
+      st.dir = "done";
+      setTimeout(() => st.wrap.classList.remove("swiping"), 500);
       setTimeout(() => (S.swiping = false), 50);
       st.row.dataset.swiped = "1";
       setTimeout(() => delete st.row.dataset.swiped, 80);
@@ -1834,7 +1886,10 @@
     if (leaving) removeRow(id);
     else updateRow(id);
     markSelectedRow();
-    if (S.thread?.id === id) ["snooze", "unsnooze", "category", "flag", "unflag"].includes(action) ? renderDetail({ keepScroll: true }) : renderDetailChrome();
+    if (S.thread?.id === id) {
+      renderDetailChrome();
+      if (["snooze", "unsnooze", "category", "flag", "unflag"].includes(action)) renderConvHead();
+    }
     if (!quiet) actionToast(id, action, extra, t);
     try {
       await api.threadAction(id, { action, ...extra });
@@ -1951,7 +2006,8 @@
   async function loadBody(id) {
     if (S.bodies.has(id)) return S.bodies.get(id);
     const m = await api.message(id);
-    if (S.bodies.size > 120) S.bodies.clear();
+    // (the most recent few dozen kept: newsletters can be large)
+    if (S.bodies.size >= 30) S.bodies.delete(S.bodies.keys().next().value);
     S.bodies.set(id, m);
     return m;
   }
@@ -2071,33 +2127,52 @@
       setKids(els.detailScroll);
       return;
     }
+    const content = h(
+      "div",
+      { class: keepScroll ? null : "content-in" },
+      convHead(t),
+      t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", t.messages.map(messageCard))
+    );
+    setKids(els.detailScroll, content);
+    els.detailScroll.scrollTop = keepScroll ? top : 0;
+    els.detail.classList.toggle("scrolled", els.detailScroll.scrollTop > 28);
+  }
+
+  // Only the conversation's heading again (flagged, Later, People or Updates), leaving its messages as they are
+  function renderConvHead() {
+    const old = els.detailScroll?.querySelector(".conv-head");
+    if (!old || !S.thread) return renderDetail({ keepScroll: true });
+    old.replaceWith(convHead(S.thread));
+  }
+
+  // Only one message again (opened or closed, remote images loaded); the others' frames keep their place
+  function renderCard(id) {
+    const m = S.thread?.messages?.find((x) => x.id === id);
+    const old = els.detailScroll?.querySelector(`.mcard[data-mid="${CSS.escape(id)}"]`);
+    if (!m || !old) return renderDetail({ keepScroll: true });
+    old.replaceWith(messageCard(m));
+  }
+
+  function convHead(t) {
     const meta = [
       t.count > 1 && `${t.count} messages`,
       t.category === "updates" ? "Updates" : "People",
       t.mailbox && `to ${t.mailbox}`,
       t.trashed ? "In Trash" : t.done && "Done",
     ].filter(Boolean);
-    const content = h(
-      "div",
-      { class: keepScroll ? null : "content-in" },
-      h(
-        "header.conv-head",
-        h("div.reader-subject", t.starred ? icon("flagFill", "flag-ic") : null, h("span", t.subject || "(No Subject)")),
-        h("div.conv-meta", meta.join(" · ")),
-        t.snoozeUntil
-          ? h(
-              "div.later-note",
-              icon("clock"),
-              h("span", `Comes back ${fmtWhen(t.snoozeUntil)}`),
-              h("button", { type: "button", onclick: () => act(t.id, "unsnooze") }, "Bring Back Now")
-            )
-          : null
-      ),
-      t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", t.messages.map(messageCard))
+    return h(
+      "header.conv-head",
+      h("div.reader-subject", t.starred ? icon("flagFill", "flag-ic") : null, h("span", t.subject || "(No Subject)")),
+      h("div.conv-meta", meta.join(" · ")),
+      t.snoozeUntil
+        ? h(
+            "div.later-note",
+            icon("clock"),
+            h("span", `Comes back ${fmtWhen(t.snoozeUntil)}`),
+            h("button", { type: "button", onclick: () => act(t.id, "unsnooze") }, "Bring Back Now")
+          )
+        : null
     );
-    setKids(els.detailScroll, content);
-    els.detailScroll.scrollTop = keepScroll ? top : 0;
-    els.detail.classList.toggle("scrolled", els.detailScroll.scrollTop > 28);
   }
 
   function messageCard(m) {
@@ -2109,7 +2184,7 @@
       .join(" · ");
     return h(
       "article.mcard",
-      { class: [open && "open", m.unread && m.folder === "inbox" && "unread"].filter(Boolean).join(" ") || null },
+      { "data-mid": m.id, class: [open && "open", m.unread && m.folder === "inbox" && "unread"].filter(Boolean).join(" ") || null },
       h(
         "button.msg-head",
         { type: "button", "aria-expanded": String(open), onclick: () => toggleMessage(m.id) },
@@ -2132,14 +2207,14 @@
     if (S.expanded.has(id)) S.expanded.delete(id);
     else {
       S.expanded.add(id);
-      renderDetail({ keepScroll: true });
+      renderCard(id);
       try {
         await loadBody(id);
       } catch (err) {
         toast(err.message, { error: true });
       }
     }
-    renderDetail({ keepScroll: true });
+    renderCard(id);
   }
 
   // Quoted replies ("On … wrote:" and what follows) are folded away behind a button, as in Mail.
@@ -2240,22 +2315,32 @@ pre{white-space:pre-wrap}
       srcdoc: doc,
     });
 
-    let fitTimer;
+    // Sized to its content, without ever collapsing it first (which would throw the reader's scroll back to the top):
+    // wide newsletters are shrunk to fit, as in Mail; the height follows the body as images arrive.
     const fit = () => {
       const d = frame.contentDocument;
       if (!d?.body) return;
-      d.body.style.zoom = "";
+      const b = d.body.getBoundingClientRect();
+      const px = Math.ceil(b.bottom + (parseFloat(d.defaultView.getComputedStyle(d.body).marginBottom) || 0));
+      if (Math.abs(px - frame.offsetHeight) > 1) frame.style.height = `${px}px`;
+    };
+    let lastWidth = 0;
+    const fitWidth = () => {
+      const d = frame.contentDocument;
+      if (!d?.body) return;
       const avail = frame.clientWidth;
+      if (!avail || avail === lastWidth) return fit();
+      lastWidth = avail;
+      d.body.style.zoom = "";
       const sw = d.documentElement.scrollWidth;
-      // Shrink wide newsletters to fit, like Mail does.
       if (sw > avail + 2) d.body.style.zoom = String(Math.max(0.4, avail / sw));
-      frame.style.height = "0px";
-      frame.style.height = `${Math.ceil(d.documentElement.scrollHeight)}px`;
+      fit();
     };
 
     const toggleRow = h("div.quote-row", { hidden: true });
     frame.addEventListener("load", () => {
-      if (foldQuotes(frame.contentDocument)) {
+      const d = frame.contentDocument;
+      if (foldQuotes(d)) {
         setKids(
           toggleRow,
           quoteToggle((show) => {
@@ -2265,13 +2350,15 @@ pre{white-space:pre-wrap}
         );
         toggleRow.hidden = false;
       }
-      fit();
-      let n = 0;
-      clearInterval(fitTimer);
-      fitTimer = setInterval(() => {
-        if (!frame.isConnected || ++n > 20) return clearInterval(fitTimer);
-        fit();
-      }, 300);
+      lastWidth = 0;
+      fitWidth();
+      if (!d?.body) return;
+      // (images arriving, fonts, quotes shown: whatever changes the body's size)
+      const ro = new ResizeObserver(() => (frame.isConnected ? fit() : ro.disconnect()));
+      ro.observe(d.body);
+      const rw = new ResizeObserver(() => (frame.isConnected ? fitWidth() : rw.disconnect()));
+      rw.observe(frame);
+      d.addEventListener("load", fit, true);
     });
 
     const parts = [];
@@ -2286,7 +2373,7 @@ pre{white-space:pre-wrap}
             {
               onclick: () => {
                 m._loadRemote = true;
-                renderDetail({ keepScroll: true });
+                renderCard(m.id);
               },
             },
             "Load"
@@ -3049,10 +3136,14 @@ pre{white-space:pre-wrap}
   // Keep the compose sheet above the on-screen keyboard.
   if (window.visualViewport) {
     const vv = window.visualViewport;
+    let lastKb = -1;
     const onVV = () => {
       const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      document.documentElement.style.setProperty("--kb", `${kb > 60 ? kb : 0}px`);
-      document.querySelector(".sheet")?.classList.toggle("kb", kb > 60);
+      const v = kb > 60 ? Math.round(kb) : 0;
+      if (v === lastKb) return;
+      lastKb = v;
+      document.documentElement.style.setProperty("--kb", `${v}px`);
+      document.querySelector(".sheet")?.classList.toggle("kb", v > 0);
     };
     vv.addEventListener("resize", onVV);
     vv.addEventListener("scroll", onVV);
@@ -3210,7 +3301,11 @@ pre{white-space:pre-wrap}
   let pollTimer = null;
 
   async function boot() {
-    const [me, counts] = await Promise.all([api.me(), api.counts()]);
+    const params = { view: S.view, category: S.query || S.view === "trash" ? null : S.category, address: S.address, q: S.query, before: undefined };
+    S.prefetch = { params, res: api.threads(params) };
+    S.prefetch.res.catch(() => {});
+    const [me, counts, v] = await Promise.all([api.me(), api.counts(), api.version().catch(() => null)]);
+    S.version = v?.v;
     S.me = me;
     if (me.account?.appearance) lookOf(me.account.appearance);
     S.counts = counts;
@@ -3241,6 +3336,15 @@ pre{white-space:pre-wrap}
     if (document.hidden) return;
     renderListChrome();
     if (S.swiping || openSwipe || S.loading) return;
+    // (nothing has changed since last time: nothing more to ask)
+    try {
+      const { v } = await api.version();
+      if (v && v === S.version) {
+        S.updatedAt = Date.now();
+        return renderListChrome();
+      }
+      S.version = v;
+    } catch {}
     const before = S.counts.people?.unread || 0;
     await refreshCounts();
     if (!S.query) await loadList({ quiet: true });

@@ -1,7 +1,8 @@
-import { rowToSummary } from "./db.js";
+import { rowToSummary, bumpVersion } from "./db.js";
 
 // One stream of conversations rather than folders. Later hides a conversation until a time; when it comes it's back at the
-// top of the stream, unread (wakeSnoozed: asked as the stream is read, and every few minutes by the scheduler). A conversation is in the stream while any of its messages is in the
+// top of the stream, unread (wakeSnoozed, every few minutes by the scheduler, with a notice; until then a conversation
+// whose time has passed already shows, as reads treat it as awake). A conversation is in the stream while any of its messages is in the
 // inbox; Done moves those to the archive; a new message brings it back. Views narrow the stream (Unread, Flagged,
 // Attachments) or show what's been dealt with (Done); People and Updates split it by what sort of mail it is; an
 // address lens shows only mail to one @domain address.
@@ -67,7 +68,6 @@ export async function listThreads(env, url) {
   const before = Number(url.searchParams.get("before")) || null;
   const limit = Math.max(1, Math.min(Math.floor(Number(url.searchParams.get("limit"))) || 40, 100));
   const now = Date.now();
-  await wakeSnoozed(env);
 
   const params = [];
   const bind = (v) => {
@@ -283,7 +283,6 @@ export async function threadAction(env, id, body, deleteMessages) {
 // has had mail, with its unread.
 export async function counts(env) {
   const now = Date.now();
-  await wakeSnoozed(env);
   const { results } = await env.DB.prepare(
     `SELECT ${AGG} FROM messages WHERE folder NOT IN ('trash', 'drafts') AND thread_id IS NOT NULL GROUP BY thread_id`
   ).all();
@@ -341,5 +340,6 @@ export async function wakeSnoozed(env) {
     ]);
     if (latest) woken.push({ threadId: r.thread_id, subject: cleanSubject(latest.subject) || "(No Subject)", from: latest.from_name || latest.from_email });
   }
+  await bumpVersion(env);
   return woken;
 }
