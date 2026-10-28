@@ -826,8 +826,10 @@
 
   function closeMenu(immediate) {
     if (!menuState) return;
-    const { layer, menu, opener } = menuState;
+    const { layer, menu, opener, onClose } = menuState;
     menuState = null;
+    onClose?.();
+    layer.classList.remove("open");
     // (back to what opened it, as a menu does)
     if (opener?.isConnected && (menu.contains(document.activeElement) || document.activeElement === document.body)) opener.focus?.({ preventScroll: true });
     if (immediate) return layer.remove();
@@ -1098,19 +1100,61 @@
   }
 
   // Your account: its page, remote images, and signing out
+  // You: your card (the way to your account), Notifications and Remote Images as switches, and Sign Out on its own
   function profileMenu(anchor) {
+    closeMenu(true);
     const me = S.me || {};
-    showMenu(
-      anchor,
-      [
-        accountOrigin && { label: "Your Account", icon: "person", action: () => location.assign(`${accountOrigin}/`) },
-        { label: "Notifications", checked: S.pushOn, icon: "bell", action: togglePush },
-        { label: "Load Remote Images", checked: S.remoteImages, icon: "photo", action: toggleRemoteImages },
-        "-",
-        { label: "Sign Out", icon: "signout", destructive: true, action: signOut },
-      ],
-      { title: [me.displayName, me.defaultFrom].filter(Boolean).join(" · ") }
+    const acct = me.account || {};
+    const name = acct.name || me.displayName || "";
+    const sw = (on, label, onclick) => {
+      const b = h("button.switch", { type: "button", role: "switch", "aria-checked": String(!!on), "aria-label": label, onclick });
+      return b;
+    };
+    const row = (cls, ic, label, end) => h("div.p-row", h(`span.p-ic.${cls}`, icon(ic)), h("span.p-l", label), end);
+    const notif = sw(S.pushOn, "Notifications", async () => {
+      await togglePush();
+      notif.setAttribute("aria-checked", String(!!S.pushOn));
+    });
+    const images = sw(S.remoteImages, "Remote Images", () => {
+      toggleRemoteImages();
+      images.setAttribute("aria-checked", String(!!S.remoteImages));
+    });
+    const card = h(
+      "button.p-card",
+      { type: "button", "aria-label": `${name || "Your account"}: your inflite account`, onclick: () => accountOrigin && location.assign(`${accountOrigin}/`) },
+      avatar({ name, email: me.defaultFrom, me: true }, "p-photo"),
+      h(
+        "span.p-who",
+        h("b", name || "Your account"),
+        h("span.p-line", h("span.p-mail", me.defaultFrom || ""), acct.admin ? h("span.p-role", "Admin") : null)
+      ),
+      icon("chevronRight", "p-chev")
     );
+    const pop = h(
+      "div.menu.profile-pop",
+      { role: "dialog", "aria-label": "You" },
+      card,
+      h("div.p-grp", row("bell", "bell", "Notifications", notif), row("img", "photo", "Remote Images", images)),
+      h("div.p-grp", h("button.p-row.p-out", { type: "button", onclick: () => (closeMenu(), signOut()) }, h("span.p-ic.out", icon("signout")), h("span.p-l", "Sign Out")))
+    );
+    const layer = h("div.menu-layer.profile-layer");
+    layer.addEventListener("pointerdown", (e) => e.target === layer && closeMenu());
+    pop.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      const f = [...pop.querySelectorAll("button")];
+      if (e.shiftKey && document.activeElement === f[0]) (e.preventDefault(), f[f.length - 1].focus());
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) (e.preventDefault(), f[0].focus());
+    });
+    layer.append(pop);
+    document.body.append(layer);
+    // (just under your photo, from where it grows)
+    const r = anchor.getBoundingClientRect();
+    const left = Math.max(12, Math.min(r.left - 2, window.innerWidth - pop.offsetWidth - 12));
+    Object.assign(pop.style, { top: `${r.bottom + 10}px`, left: `${left}px`, transformOrigin: `${r.left + r.width / 2 - left}px -10px` });
+    anchor.classList.add("lit");
+    requestAnimationFrame(() => requestAnimationFrame(() => (pop.classList.add("open"), layer.classList.add("open"))));
+    card.focus({ preventScroll: true });
+    menuState = { layer, menu: pop, opener: anchor, onClose: () => anchor.classList.remove("lit") };
   }
 
   // ---------------------------------------------------------------------------
