@@ -2836,7 +2836,7 @@ body.phone .sheet.kb .compose-accessory {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(90, 140, 255, 0.4), rgba(150, 110, 255, 0.14) 55%, rgba(150, 110, 255, 0));
+  background: radial-gradient(closest-side, rgba(63, 208, 198, 0.42), rgba(255, 210, 90, 0.14) 55%, rgba(255, 210, 90, 0));
   animation: w-fade 2s ease 0.5s backwards;
 }
 
@@ -2845,7 +2845,7 @@ body.phone .sheet.kb .compose-accessory {
   width: 96px;
   height: 96px;
   border-radius: 22px;
-  box-shadow: 0 18px 40px -16px rgba(47, 107, 255, 0.75), 0 0 0 0.5px rgba(255, 255, 255, 0.2);
+  box-shadow: 0 18px 40px -16px rgba(17, 154, 149, 0.75), 0 0 0 0.5px rgba(255, 255, 255, 0.2);
   animation: w-logo 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.25s backwards;
 }
 
