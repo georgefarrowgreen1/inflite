@@ -188,10 +188,10 @@ const publicUser = (v) =>
     ? { name: v.name, handle: v.handle, email: v.email, admin: !!v.admin, appearance: v.appearance || "auto", photoAt: v.photoAt || null }
     : null;
 
-// Your account's photo, from the account's address with your sign-in (it serves it to the site's own pages only), kept
-// for good by the browser under its ?v= (when it last changed), as there
+// Your account's photo, from the account's address with your sign-in (where its page has it: the account's address only
+// answers /api/account/), kept for good by the browser under its ?v= (when it last changed)
 async function photo(env, request, url) {
-  const r = await fetch(`${env.ACCOUNT_ORIGIN}/api/me/photo?v=${encodeURIComponent(url.searchParams.get("v") || "")}`, {
+  const r = await fetch(`${env.ACCOUNT_ORIGIN}/api/account/me/photo?v=${encodeURIComponent(url.searchParams.get("v") || "")}`, {
     headers: { Cookie: request.headers.get("Cookie") || "", Accept: "image/*" },
   });
   const type = r.headers.get("Content-Type") || "";
