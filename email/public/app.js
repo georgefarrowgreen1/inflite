@@ -2315,9 +2315,19 @@
     const i = t ? S.threads.findIndex((x) => x.id === t.id) : -1;
     setKids(
       els.detailNav,
-      S.layout === "phone" ? gbtn("chevronLeft", listTitle(), goBack) : null,
-      h("div.spacer"),
+      S.layout === "phone" ? gbtn("chevronLeft", `Back to ${listTitle()}`, goBack) : null,
+      // (the conversation's subject beside the way back, in the bar, as the list has its title beside your photo)
       t
+        ? h(
+            "div.bar-title",
+            { role: "heading", "aria-level": "1", title: t.subject || "(No Subject)" },
+            t.starred ? icon("flagFill", "flag-ic") : null,
+            h("span", t.subject || "(No Subject)")
+          )
+        : null,
+      h("div.spacer"),
+      // (on iPhone the subject has the room; going to the next conversation is back and another tap)
+      t && S.layout !== "phone"
         ? h(
             "div.gcap.glass",
             h("button", { "aria-label": "Previous Conversation", disabled: i <= 0, onclick: () => stepThread(-1) }, icon("chevronUp")),
@@ -2418,7 +2428,6 @@
     return h(
       "header.conv-head",
       { tabindex: "-1" },
-      h("div.reader-subject", t.starred ? icon("flagFill", "flag-ic") : null, h("span", t.subject || "(No Subject)")),
       h("div.conv-meta", meta.join(" · ")),
       t.snoozeUntil
         ? h(
