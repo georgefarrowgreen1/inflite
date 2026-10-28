@@ -1051,9 +1051,26 @@ body.sheet-open.phone #app::after {
   font-size: 13px;
 }
 
+/* your photo, the whole button: no glass ring around it */
 .gbtn.profile {
   padding: 0;
   width: 44px;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.gbtn.profile::before,
+.gbtn.profile::after {
+  display: none;
+}
+
+.gbtn.profile .avatar {
+  width: 44px;
+  height: 44px;
+  font-size: 16px;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 4px 12px -4px rgba(20, 30, 60, 0.35);
 }
 
 /* People | Updates: a glass switch, its thumb sliding on the soft spring */
