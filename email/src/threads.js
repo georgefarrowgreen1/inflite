@@ -79,7 +79,7 @@ export async function listThreads(env, url) {
   const having = [];
   if (q) having.push(`SUM(CASE WHEN ${searchCondition(q, bind)} THEN 1 ELSE 0 END) > 0`);
   else if (view === "all") having.push(`SUM(folder = 'inbox') > 0`, `MAX(COALESCE(snooze_until, 0)) <= ${bind(now)}`);
-  else if (view === "unread") having.push(`SUM(folder = 'inbox' AND unread = 1) > 0`);
+  else if (view === "unread") having.push(`SUM(folder = 'inbox' AND unread = 1) > 0`, `MAX(COALESCE(snooze_until, 0)) <= ${bind(now)}`);
   else if (view === "flagged") having.push(`MAX(starred) = 1`);
   else if (view === "attachments") having.push(`MAX(has_attachments) = 1`);
   else if (view === "later") having.push(`SUM(folder = 'inbox') > 0`, `MAX(COALESCE(snooze_until, 0)) > ${bind(now)}`);
@@ -100,7 +100,8 @@ export async function listThreads(env, url) {
 
   // Drafts sit at the top of the stream.
   let drafts = [];
-  if (view === "all" && !q && !address && !before) {
+  // (drafts sit at the top of People)
+  if (view === "all" && category !== "updates" && !q && !address && !before) {
     const { results } = await env.DB.prepare(`SELECT * FROM messages WHERE folder = 'drafts' ORDER BY date DESC LIMIT 20`).all();
     drafts = results.map(rowToSummary);
   }
@@ -313,6 +314,29 @@ export async function counts(env) {
   out.trash = trash.results[0]?.n || 0;
   out.drafts = drafts.results[0]?.n || 0;
   out.addresses = addresses.results.map((a) => ({ address: a.address, unread: a.unread || 0 }));
+
+  // For the caught-up screen: the next conversation back from Later, and who the newest Updates are from
+  const later = results.filter((r) => r.inbox > 0 && r.snooze > now).sort((a, b) => a.snooze - b.snooze)[0];
+  const ups = results
+    .filter((r) => r.inbox > 0 && r.snooze <= now && r.category === "updates")
+    .sort((a, b) => b.last - a.last)
+    .slice(0, 4);
+  const ids = [...(later ? [later.thread_id] : []), ...ups.map((r) => r.thread_id)];
+  if (ids.length) {
+    const { results: latest } = await env.DB.prepare(
+      `SELECT thread_id, from_name, from_email, subject, date FROM messages WHERE thread_id IN (${ids.map((_, i) => `?${i + 1}`).join(",")})
+       AND folder = 'inbox' ORDER BY date DESC`
+    )
+      .bind(...ids)
+      .all();
+    const first = (id) => latest.find((m) => m.thread_id === id);
+    const who = (m) => (m ? { name: m.from_name || "", email: m.from_email } : null);
+    if (later) {
+      const m = first(later.thread_id);
+      out.nextLater = { id: later.thread_id, at: later.snooze, from: who(m), subject: cleanSubject(m?.subject) || "(No Subject)" };
+    }
+    out.updatesFrom = ups.map((r) => who(first(r.thread_id))).filter(Boolean);
+  }
   // (the Home Screen badge and the title: unread conversations in People)
   out.inbox = { unread: out.people.unread };
   return out;

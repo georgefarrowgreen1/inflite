@@ -538,6 +538,9 @@
         for (const m of msgs) if (["inbox", "archive"].includes(m.folder)) addr.set(m.mailbox, (addr.get(m.mailbox) || 0) + (m.folder === "inbox" && m.unread ? 1 : 0));
         out.addresses = [...addr].map(([address, unread]) => ({ address, unread }));
         out.inbox = { unread: out.people.unread };
+        const later = allThreads().filter((t) => !t.done && t.snoozeUntil).sort((a, b) => a.snoozeUntil - b.snoozeUntil)[0];
+        if (later) out.nextLater = { id: later.id, at: later.snoozeUntil, from: later.from, subject: later.subject };
+        out.updatesFrom = allThreads().filter((t) => !t.done && !t.snoozeUntil && t.category === "updates").slice(0, 4).map((t) => t.from);
         return out;
       },
       async threads({ view, category, address, q }) {
@@ -547,12 +550,12 @@
         else if (view === "trash") list = allThreads(true);
         else {
           list = allThreads().filter((t) =>
-            view === "unread" ? t.unread : view === "flagged" ? t.starred : view === "attachments" ? t.hasAttachments : view === "done" ? t.done : view === "later" ? !t.done && t.snoozeUntil : !t.done && !t.snoozeUntil
+            view === "unread" ? t.unread && !t.done && !t.snoozeUntil : view === "flagged" ? t.starred : view === "attachments" ? t.hasAttachments : view === "done" ? t.done : view === "later" ? !t.done && t.snoozeUntil : !t.done && !t.snoozeUntil
           );
           if (category) list = list.filter((t) => t.category === category);
         }
         if (address) list = list.filter((t) => threadMsgs(t.id).some((m) => m.mailbox === address));
-        const drafts = view === "all" && !q && !address ? msgs.filter((m) => m.folder === "drafts").map(summary) : [];
+        const drafts = view === "all" && category !== "updates" && !q && !address ? msgs.filter((m) => m.folder === "drafts").map(summary) : [];
         return { threads: list.map(({ messages, ...t }) => t), drafts, hasMore: false };
       },
       async thread(id) {
@@ -683,9 +686,12 @@
   const S = {
     me: null,
     counts: {},
+    // (where you are: a lens, and whether only unread mail shows; the view and category the server is asked for follow)
+    lens: "people",
+    unreadOnly: false,
     view: "all",
     pushOn: false,
-    category: store.get("category", "people"),
+    category: "people",
     address: null,
     query: "",
     threads: [],
@@ -1022,8 +1028,7 @@
     els.listNavTitle = h("div.nav-title");
     els.listTitle = h("div.large-title");
     els.listSubtitle = h("div.subtitle");
-    els.seg = h("div.seg.glass", { role: "tablist", "aria-label": "People or Updates" });
-    els.chips = h("div.chips", { role: "toolbar", "aria-label": "Views" });
+    els.rail = h("div.rail", { role: "tablist", "aria-label": "Lenses" });
     els.searchHelp = h("div.search-help", { hidden: true });
     els.rows = h("div.rows", { role: "list" });
     els.listFooter = h("div");
@@ -1032,8 +1037,7 @@
       h("div.ptr", h("div.spinner")),
       els.listTitle,
       els.listSubtitle,
-      els.seg,
-      els.chips,
+      els.rail,
       els.searchHelp,
       els.rows,
       els.listFooter
@@ -1086,6 +1090,11 @@
         avatar({ name: me.displayName, email: me.defaultFrom, me: true }, "sm")
       ),
       h("div.spacer"),
+      gbtn("filter", "Show Only Unread", toggleUnread, {
+        class: S.unreadOnly ? "on" : null,
+        "aria-pressed": String(S.unreadOnly),
+        hidden: !(S.lens === "people" || S.lens === "updates") || !!S.query,
+      }),
       gbtn("more", "More", (e) => listMenu(e.currentTarget))
     );
     renderDetailChrome();
@@ -1203,8 +1212,20 @@
     const items = [];
     if (S.view !== "trash")
       items.push({ label: "Mark All as Read", icon: "envelopeOpen", disabled: !S.threads.some((t) => t.unread), action: markAllRead });
+    // (each address mail has come to, once there's more than one: only its mail)
+    const addrs = S.counts.addresses || [];
+    if (S.view !== "trash" && addrs.length > 1)
+      items.push(
+        "-",
+        ...addrs.map((a) => ({
+          label: `Only Mail to ${a.address.split("@")[0]}@`,
+          hint: a.unread ? String(a.unread) : "",
+          checked: S.address === a.address,
+          action: () => setAddress(S.address === a.address ? null : a.address),
+        }))
+      );
     if (S.view === "trash") {
-      items.push({ label: "Back to Inbox", icon: "inbox", action: () => setView("all") });
+      items.push({ label: "Back to Inbox", icon: "inbox", action: () => setLens("people") });
       items.push("-", { label: "Empty Trash", icon: "trash", destructive: true, disabled: !S.threads.length, action: () => emptyTrash(anchor) });
     } else {
       items.push("-", { label: S.counts.trash ? `Trash (${S.counts.trash})` : "Trash", icon: "trash", action: () => setView("trash") });
@@ -1216,62 +1237,73 @@
   // The stream: its title, People or Updates, the views, search
   // ---------------------------------------------------------------------------
 
-  const listTitle = () => (S.query ? "Search" : VIEWS[S.view].title);
+  // The lenses on the one stream: the one you're in is the title, and says its name in the row; the rest are icons
+  // with a count of what's waiting there
+  const LENSES = [
+    { k: "people", label: "People", icon: "person" },
+    { k: "updates", label: "Updates", icon: "news" },
+    { k: "later", label: "Later", icon: "clock" },
+    { k: "flagged", label: "Flagged", icon: "flag" },
+    { k: "done", label: "Done", icon: "check" },
+  ];
+  const lensCount = (k) =>
+    k === "people" || k === "updates" ? S.counts[k]?.unread || 0 : k === "later" ? S.counts.snoozed || 0 : k === "flagged" ? S.counts.flagged || 0 : 0;
+
+  const listTitle = () => (S.query ? "Search" : S.lens === "trash" ? "Trash" : LENSES.find((l) => l.k === S.lens).label);
 
   function renderListChrome() {
     if (!els.listTitle) return;
     const title = listTitle();
-    els.listTitle.textContent = title;
-    const c = S.counts[S.category] || {};
-    const bits = S.query
-      ? [`${S.threads.length} conversation${S.threads.length === 1 ? "" : "s"}`]
-      : [fmtUpdated(S.updatedAt), S.address && `to ${S.address}`, S.view === "all" && c.unread && `${c.unread} unread`];
-    els.listSubtitle.textContent = bits.filter(Boolean).join(" · ") || " ";
-    setKids(els.listNavTitle, title, S.view === "all" && !S.query && c.unread ? h("small", `${c.unread} unread`) : null);
-    renderSeg();
-    renderChips();
+    const n = !S.query && (S.lens === "people" || S.lens === "updates") ? lensCount(S.lens) : 0;
+    setKids(els.listTitle, h("span", title), n ? h("span.title-n", n) : null);
+    const about = {
+      people: [n && `${n} unread`, fmtUpdated(S.updatedAt)],
+      updates: ["Newsletters, receipts and notifications"],
+      later: ["Back at the top, unread, when it's time"],
+      flagged: [S.counts.flagged ? `${S.counts.flagged} to follow up` : "To follow up"],
+      done: ["Dealt with. A reply brings it back"],
+      trash: [S.counts.trash ? `${S.counts.trash} conversation${S.counts.trash === 1 ? "" : "s"}` : "Empty"],
+    }[S.lens];
+    const bits = S.query ? [`${S.threads.length} conversation${S.threads.length === 1 ? "" : "s"}`] : about;
+    setKids(
+      els.listSubtitle,
+      S.unreadOnly && !S.query ? h("button.sub-tag", { type: "button", onclick: toggleUnread, "aria-label": "Show all, not only unread" }, "Unread only", icon("x")) : null,
+      S.address && !S.query
+        ? h("button.sub-tag", { type: "button", onclick: () => setAddress(null), "aria-label": `Show mail to every address, not only ${S.address}` }, `to ${S.address.split("@")[0]}@`, icon("x"))
+        : null,
+      h("span", bits.filter(Boolean).join(" · ") || " ")
+    );
+    setKids(els.listNavTitle, title, n ? h("small", `${n} unread`) : null);
+    renderRail();
     renderSearchHelp();
   }
 
-  function renderSeg() {
-    const hide = !!S.query || S.view === "trash";
-    els.seg.hidden = hide;
-    if (hide) return;
-    const btn = (key, label) => {
-      const n = S.counts[key]?.unread;
-      return h(
-        "button.seg-btn",
-        { type: "button", role: "tab", "aria-selected": String(S.category === key), class: S.category === key ? "on" : null, onclick: () => setCategory(key) },
-        label,
-        n ? h("span.seg-n", n) : null
-      );
-    };
-    els.seg.dataset.sel = S.category;
-    setKids(els.seg, h("span.seg-thumb", { "aria-hidden": "true" }), btn("people", "People"), btn("updates", "Updates"));
-  }
-
-  function renderChips() {
-    els.chips.hidden = !!S.query;
+  function renderRail() {
+    els.rail.hidden = !!S.query;
     if (S.query) return;
-    const chip = (label, on, onclick, n) =>
-      h("button.chip", { type: "button", class: on ? "on" : null, "aria-pressed": String(on), onclick }, label, n ? h("span.chip-n", n) : null);
-    // (in the Trash: the way back, first)
-    const views =
-      S.view === "trash"
-        ? [chip(h("span.chip-back", icon("chevronLeft"), "Inbox"), false, () => setView("all")), chip("Trash", true, () => {})]
-        : ["all", "unread", "flagged", "later", "attachments", "done"].map((v) =>
-            chip(VIEWS[v].chip, S.view === v, () => setView(v), v === "flagged" ? S.counts.flagged : v === "later" ? S.counts.snoozed : null)
-          );
-    // (each address mail has come to: a lens on just that address, once there's more than one)
-    const addrs = S.counts.addresses || [];
-    const lenses =
-      addrs.length > 1
-        ? addrs.map((a) =>
-            chip(h("span", h("span.at", "@"), a.address.split("@")[0]), S.address === a.address, () => setAddress(S.address === a.address ? null : a.address), a.unread)
-          )
-        : [];
-    setKids(els.chips, views, lenses.length ? h("span.chip-sep", { "aria-hidden": "true" }) : null, lenses);
-    els.chips.querySelector(".chip.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    setKids(
+      els.rail,
+      LENSES.map((l) => {
+        const n = lensCount(l.k);
+        const on = S.lens === l.k;
+        return h(
+          "button.lens",
+          {
+            type: "button",
+            role: "tab",
+            "data-k": l.k,
+            class: on ? "on" : null,
+            "aria-selected": String(on),
+            "aria-label": `${l.label}${n ? `, ${n}` : ""}`,
+            title: l.label,
+            onclick: () => setLens(l.k),
+          },
+          icon(l.icon),
+          h("span.lbl", l.label),
+          n ? h("span.ct", n > 99 ? "99+" : n) : null
+        );
+      })
+    );
   }
 
   const OPERATORS = ["from:", "to:", "has:attachment", "is:unread", "is:flagged", "is:done", "before:", "after:"];
@@ -1375,19 +1407,33 @@
     renderListChrome();
   }
 
-  function setView(view) {
+  // (what the server is asked for, from where you are)
+  function applyLens() {
+    const stream = S.lens === "people" || S.lens === "updates";
+    S.view = stream ? (S.unreadOnly ? "unread" : "all") : S.lens;
+    S.category = stream ? S.lens : null;
+  }
+
+  function setLens(k) {
     if (S.query) cancelSearch();
-    if (view === S.view) return;
-    S.view = view;
+    if (k === S.lens && !S.query) return;
+    S.lens = k;
+    if (k !== "trash") store.set("lens", k);
+    applyLens();
+    renderNavButtons();
     resetList();
   }
 
-  function setCategory(category) {
-    if (category === S.category) return;
-    S.category = category;
-    store.set("category", category);
+  function toggleUnread() {
+    S.unreadOnly = !S.unreadOnly;
+    applyLens();
+    renderNavButtons();
     resetList();
   }
+
+  // (the older names, from the keyboard and menus)
+  const setView = (v) => setLens(v === "all" ? "people" : v);
+  const setCategory = (c) => setLens(c);
 
   function setAddress(address) {
     S.address = address;
@@ -1451,7 +1497,7 @@
   // What a row shows, so a row whose conversation hasn't changed is kept as it is (with its press state, and any tap
   // under way) rather than built again on every refresh
   const threadSig = (t) =>
-    JSON.stringify([t.date, t.unread, t.starred, t.count, t.snoozeUntil, t.done, t.trashed, t.category, t.subject, t.hasAttachments, t.latest?.snippet, t.people]);
+    JSON.stringify([S.lens === "updates", t.date, t.unread, t.starred, t.count, t.snoozeUntil, t.done, t.trashed, t.category, t.subject, t.hasAttachments, t.latest?.snippet, t.people]);
   const draftSig = (d) => JSON.stringify([d.date, d.subject, d.snippet, d.to]);
 
   function renderRows() {
@@ -1462,10 +1508,16 @@
     } else {
       const old = new Map();
       for (const el of [...els.rows.children]) el.dataset.key ? old.set(el.dataset.key, el) : el.remove();
-      const want = [
-        ...S.drafts.map((d) => [`d:${d.id}`, draftSig(d), () => draftRowEl(d)]),
-        ...S.threads.map((t) => [`t:${t.id}`, threadSig(t), () => threadRowEl(t)]),
-      ];
+      const want = S.drafts.map((d) => [`d:${d.id}`, draftSig(d), () => draftRowEl(d)]);
+      if (S.lens === "people" && !S.query && S.threads.length && !store.get("swipeHint", false)) want.push(["hint", "", swipeHintEl]);
+      // (by day, newest first; Later by when each comes back, so no days there)
+      let day = null;
+      for (const t of S.threads) {
+        const d = S.lens === "later" && !S.query ? null : dayLabel(t.sort ?? t.date);
+        if (d && d !== day) want.push([`h:${d}`, d, () => h("div.day", { role: "presentation" }, d)]);
+        day = d;
+        want.push([`t:${t.id}`, threadSig(t), () => threadRowEl(t)]);
+      }
       let prev = null;
       for (const [key, sig, make] of want) {
         let el = old.get(key);
@@ -1476,30 +1528,99 @@
         prev = el;
       }
       for (const el of old.values()) el.remove();
+      // (drafts but no conversations: the drafts, then what an empty list says)
+      if (!S.threads.length && !S.loading) els.rows.append(emptyEl());
       markSelectedRow();
     }
     renderFooter();
     S.newIds = new Set();
   }
 
+  // Today, Yesterday, This Week, then months
+  function dayLabel(ts) {
+    const today = startOfDay(Date.now());
+    if (ts >= today) return "Today";
+    if (ts >= today - dayMs) return "Yesterday";
+    if (ts >= today - 6 * dayMs) return "This Week";
+    const d = new Date(ts);
+    return d.toLocaleDateString(locale, d.getFullYear() === new Date().getFullYear() ? { month: "long" } : { month: "long", year: "numeric" });
+  }
+
+  function swipeHintEl() {
+    const el = h(
+      "div.swipe-hint",
+      icon("check"),
+      h("span", "Swipe right when you've dealt with something, left to bring it back later."),
+      h("button", { type: "button", "aria-label": "Got It", onclick: () => dismissSwipeHint() }, icon("x"))
+    );
+    return el;
+  }
+
+  function dismissSwipeHint() {
+    if (store.get("swipeHint", false)) return;
+    store.set("swipeHint", true);
+    const el = els.rows?.querySelector(".swipe-hint");
+    el?.parentElement?.removeChild(el);
+  }
+
   function emptyEl() {
     if (S.query) return h("div.empty.content-in", icon("search"), h("b", "No Results"), `Nothing matches “${S.query}”.`);
-    if (S.view === "all")
-      return h(
-        "div.empty.caught-up.content-in",
-        h("div.done-badge", icon("check")),
-        h("b", "All caught up"),
-        S.address ? `Nothing waiting for ${S.address}.` : S.category === "people" ? "No conversations waiting for you." : "No updates waiting."
+    if (S.lens === "people" && !S.unreadOnly && !S.address) return caughtUpEl();
+    const [ic, said, more] = S.unreadOnly
+      ? ["envelopeOpen", "No unread mail here"]
+      : S.address
+        ? ["inbox", `Nothing waiting for ${S.address}`]
+        : {
+            updates: ["news", "No updates waiting"],
+            later: ["clock", "Nothing put off", "Swipe left on a conversation to bring it back later."],
+            flagged: ["flag", "Nothing flagged"],
+            done: ["check", "Nothing done yet", "Swipe right on a conversation when you've dealt with it."],
+            trash: ["trash", "Trash is empty"],
+          }[S.lens];
+    return h("div.empty.content-in", icon(ic), h("b", said), more || null);
+  }
+
+  // All clear in People: when, and what's still around elsewhere, each a tap away
+  function caughtUpEl() {
+    const c = S.counts;
+    const card = (cls, ic, title, sub, go) =>
+      h("button.next-card.glass", { type: "button", onclick: go }, h(`span.next-ic.${cls}`, icon(ic)), h("span.next-txt", h("b", title), sub), icon("chevronRight", "next-chev"));
+    const cards = [];
+    const ups = c.updates?.threads || 0;
+    if (ups)
+      cards.push(
+        card(
+          "updates",
+          "news",
+          c.updates.unread ? `${c.updates.unread} new in Updates` : `${ups} in Updates`,
+          (c.updatesFrom || []).length ? h("span.next-faces", c.updatesFrom.map((p) => avatar(p, "xs"))) : h("small", "Newsletters, receipts and notifications"),
+          () => setLens("updates")
+        )
       );
-    const [ic, said] = {
-      unread: ["envelopeOpen", "No unread mail"],
-      flagged: ["flag", "Nothing flagged"],
-      attachments: ["clip", "No attachments"],
-      done: ["check", "Nothing done yet"],
-      later: ["clock", "Nothing for later"],
-      trash: ["trash", "Trash is empty"],
-    }[S.view];
-    return h("div.empty.content-in", icon(ic), h("b", said));
+    if (c.nextLater)
+      cards.push(
+        card(
+          "later",
+          "clock",
+          `${displayName(c.nextLater.from) || "A conversation"} comes back ${fmtWhen(c.nextLater.at)}`,
+          h("small", c.nextLater.subject),
+          () => setLens("later")
+        )
+      );
+    if (c.flagged) cards.push(card("flagged", "flag", `${c.flagged} flagged to follow up`, h("small", "Flagged conversations, done or not"), () => setLens("flagged")));
+    const at = new Date().toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+    return h(
+      "div.caught.content-in",
+      h("div.orb", { "aria-hidden": "true" }, h("span.ring"), h("span.ring"), h("span.ring"), h("span.core", icon("check"))),
+      h("h3", "You're all caught up"),
+      h("p", `Nothing from people is waiting. Cleared at ${at}.`),
+      cards.length ? h("div.next", h("div.next-cap", "Still Around"), cards) : null,
+      S.pushOn
+        ? h("div.quiet", icon("bell"), "You'll get a notification when someone writes.")
+        : !DEMO && PUSH_OK
+          ? h("button.quiet.link", { type: "button", onclick: togglePush }, icon("bell"), "Get a notification when someone writes")
+          : null
+    );
   }
 
   // Who's in a conversation, newest first: one person by full name, several by first names
@@ -1570,6 +1691,7 @@
     );
     const wrap = h("div.row-wrap", { role: "listitem", "data-id": t.id, "data-key": `t:${t.id}`, "data-sig": threadSig(t) }, actions, row);
     if (S.newIds.has(t.id)) wrap.classList.add("content-in");
+    if (S.lens === "updates" && !S.query) row.classList.add("digest");
     return wrap;
   }
 
@@ -1617,7 +1739,8 @@
       wrap.remove();
     }
     S.threads = S.threads.filter((t) => t.id !== id);
-    if (!S.threads.length && !S.drafts.length) renderRows();
+    // (again, so a day left with nothing in it loses its heading, and an empty list says so)
+    renderRows();
   }
 
   // Pull to refresh & infinite scroll
@@ -1937,12 +2060,12 @@
     if (S.query) return !t.trashed;
     if (S.view === "trash") return t.trashed;
     if (t.trashed) return false;
-    if (t.category !== S.category) return false;
+    if (S.category && t.category !== S.category) return false;
     switch (S.view) {
       case "all":
         return !t.done && !t.snoozeUntil;
       case "unread":
-        return t.unread > 0;
+        return t.unread > 0 && !t.done && !t.snoozeUntil;
       case "flagged":
         return t.starred;
       case "attachments":
@@ -1956,6 +2079,7 @@
   }
 
   async function act(id, action, extra = {}, { quiet } = {}) {
+    if (action === "done" || action === "snooze") dismissSwipeHint();
     const t = S.threads.find((x) => x.id === id);
     const patch = action === "category" ? { category: extra.category } : action === "snooze" ? { snoozeUntil: extra.until, done: false } : PATCH[action] || {};
     if (t) Object.assign(t, patch);
@@ -2080,6 +2204,8 @@
       S.counts = await api.counts();
       renderListChrome();
       updateBadge();
+      // (the caught-up screen shows these figures too)
+      if (!S.threads.length && !S.drafts.length && !S.loading) renderRows();
     } catch {}
   }
 
@@ -3433,6 +3559,9 @@ pre{white-space:pre-wrap}
   let pollTimer = null;
 
   async function boot() {
+    const last = store.get("lens", "people");
+    if (["people", "updates", "later", "flagged", "done"].includes(last)) S.lens = last;
+    applyLens();
     const params = { view: S.view, category: S.query || S.view === "trash" ? null : S.category, address: S.address, q: S.query, before: undefined };
     S.prefetch = { params, res: api.threads(params) };
     S.prefetch.res.catch(() => {});
@@ -3482,7 +3611,7 @@ pre{white-space:pre-wrap}
     if (!S.query) await loadList({ quiet: true });
     const after = S.counts.people?.unread || 0;
     // (new conversations in People, while looking elsewhere)
-    if (after > before && (S.category !== "people" || S.view !== "all")) toast(`${after - before} New in People`, { icon: "person" });
+    if (after > before && (S.lens !== "people" || S.unreadOnly)) toast(`${after - before} New in People`, { icon: "person" });
   }
 
   document.addEventListener("visibilitychange", () => {

@@ -467,20 +467,444 @@ body.sheet-open.phone #app::after {
   flex: 1;
 }
 
+/* The title is the lens you're in, with what's unread there beside it */
 .large-title {
-  padding: 2px calc(20px) 6px;
+  padding: 2px 20px 2px;
   font-size: 34px;
   font-weight: 700;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.015em;
   line-height: 1.15;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.title-n {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--tint-text);
+  font-variant-numeric: tabular-nums;
 }
 
 .subtitle {
-  padding: 0 20px 10px;
+  padding: 0 20px 4px;
+  color: var(--label-2);
+  font-size: 14px;
+  min-height: 1.3em;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.3s;
+}
+
+.sub-tag {
+  height: 24px;
+  padding: 0 6px 0 10px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: color-mix(in srgb, var(--tint) 16%, transparent);
+  color: var(--tint-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sub-tag svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.4;
+}
+
+.gbtn.on {
+  background: var(--tint);
+  color: #fff;
+  box-shadow: none;
+}
+
+/* One row of lenses: the one you're in grows to say its name; the rest are icons with a count */
+.rail {
+  display: flex;
+  gap: 6px;
+  padding: 12px 16px 8px;
+}
+
+.lens {
+  position: relative;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  border-radius: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  flex: 0 0 44px;
+  background: var(--glass-ctl);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  color: var(--label-2);
+  transition: background 0.3s, color 0.3s, padding 0.45s var(--spring), flex-grow 0.45s var(--spring), transform 0.4s var(--spring);
+}
+
+.lens:active {
+  transform: scale(0.94);
+}
+
+.lens > * {
+  flex-shrink: 0;
+}
+
+.lens svg {
+  width: 21px;
+  height: 21px;
+}
+
+.lens .lbl {
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 15px;
+  opacity: 0;
+  transition: max-width 0.45s var(--spring), opacity 0.3s;
+}
+
+.lens .ct {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--tint);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.lens[data-k="people"] {
+  --lc: var(--tint-deep);
+}
+
+.lens[data-k="updates"] {
+  --lc: #0f8c7d;
+}
+
+.lens[data-k="later"] {
+  --lc: #7a52e8;
+}
+
+.lens[data-k="flagged"] {
+  --lc: #c96a00;
+}
+
+.lens[data-k="done"] {
+  --lc: #1f9d55;
+}
+
+.lens[data-k="later"] .ct {
+  background: var(--purple);
+}
+
+.lens[data-k="flagged"] .ct {
+  background: var(--flag);
+}
+
+.lens.on {
+  flex: 1 1 auto;
+  gap: 7px;
+  padding: 0 14px;
+  color: #fff;
+  background: var(--lc);
+  box-shadow: 0 6px 18px -8px var(--lc), inset 0 1px 0.5px rgba(255, 255, 255, 0.3);
+}
+
+.lens.on .lbl {
+  max-width: 120px;
+  opacity: 1;
+}
+
+.lens.on .ct {
+  position: static;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* The stream by day */
+.day {
+  position: sticky;
+  top: calc(var(--sat) + var(--nav-h));
+  z-index: 3;
+  padding: 14px 20px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+
+.swipe-hint {
+  margin: 6px 16px 2px;
+  padding: 8px 6px 8px 12px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--press);
+  color: var(--label-2);
+  font-size: 13.5px;
+  line-height: 1.3;
+}
+
+.swipe-hint > svg {
+  width: 17px;
+  height: 17px;
+  color: var(--good);
+  stroke-width: 2.4;
+}
+
+.swipe-hint span {
+  flex: 1;
+}
+
+.swipe-hint button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--label-3);
+}
+
+.swipe-hint button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Updates read as a digest: one line each */
+.row.digest {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.row.digest .avatar {
+  width: 34px;
+  height: 34px;
+  font-size: 12px;
+  border-radius: 10px;
+  margin: 0 5px;
+}
+
+.row.digest .subject {
+  color: var(--label-2);
+  font-size: 14.5px;
+}
+
+.row.digest .preview {
+  -webkit-line-clamp: 1;
+  font-size: 14px;
+}
+
+/* Caught up: when, and what's still around elsewhere */
+.caught {
+  padding: 40px 20px 24px;
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.orb {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 22px;
+}
+
+.orb .ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  animation: breathe 5s ease-in-out infinite;
+}
+
+.orb .ring:nth-child(2) {
+  inset: 16px;
+  animation-delay: -1.6s;
+}
+
+.orb .ring:nth-child(3) {
+  inset: 32px;
+  animation-delay: -3.2s;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
+.orb .core {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: radial-gradient(circle at 35% 30%, #7ff0b0, #1f9d55);
+  box-shadow: 0 14px 34px -10px #1f9d55, inset 0 1px 1px rgba(255, 255, 255, 0.6);
+}
+
+.orb .core svg {
+  width: 30px;
+  height: 30px;
+  stroke-width: 2.6;
+  stroke-dasharray: 30;
+  stroke-dashoffset: 30;
+  animation: draw-check 0.6s 0.25s var(--ease) forwards;
+}
+
+@keyframes draw-check {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.caught h3 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.caught > p {
+  margin: 6px 0 26px;
   color: var(--label-2);
   font-size: 15px;
-  min-height: 1.3em;
-  transition: opacity 0.3s;
+}
+
+.next {
+  width: 100%;
+  max-width: 440px;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+
+.next-cap {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+
+.next-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 22px;
+  text-align: left;
+  transition: transform 0.4s var(--spring);
+}
+
+.next-card:active {
+  transform: scale(0.97);
+}
+
+.next-ic {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+
+.next-ic.updates {
+  background: linear-gradient(160deg, #2ec4b0, #0f8c7d);
+}
+
+.next-ic.later {
+  background: linear-gradient(160deg, #b18cff, #7a52e8);
+}
+
+.next-ic.flagged {
+  background: linear-gradient(160deg, #ffb54a, #d97706);
+}
+
+.next-txt {
+  min-width: 0;
+}
+
+.next-txt b {
+  display: block;
+  font-weight: 600;
+  font-size: 15.5px;
+}
+
+.next-txt small {
+  display: block;
+  color: var(--label-2);
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.next-chev {
+  width: 18px;
+  height: 18px;
+  color: var(--label-3);
+}
+
+.next-faces {
+  display: flex;
+  padding: 4px 0 0 6px;
+}
+
+.avatar.xs {
+  width: 24px;
+  height: 24px;
+  font-size: 9px;
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--sky-b);
+}
+
+.quiet {
+  margin-top: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--label-3);
+}
+
+.quiet.link {
+  color: var(--tint-text);
+  font-weight: 600;
+}
+
+.quiet svg {
+  width: 15px;
+  height: 15px;
 }
 
 /* ---------- Floating toolbar ---------- */
@@ -2398,8 +2822,9 @@ body.phone .sheet.kb .compose-accessory {
     transition-duration: 0.01ms !important;
   }
 
-  /* (still: shortened, an endless drift would flicker) */
-  .aura {
+  /* (still: shortened, an endless drift or breath would flicker) */
+  .aura,
+  .orb .ring {
     animation: none !important;
   }
 }
