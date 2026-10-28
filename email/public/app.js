@@ -1995,8 +1995,47 @@
       openThread(row.dataset.id);
     });
 
+    // (press and hold on a phone; right-click, or the menu key, anywhere)
+    let hold = null;
+    container.addEventListener("pointerdown", (e) => {
+      const row = e.target.closest(".row[data-id]");
+      if (!row || e.pointerType !== "touch" || e.target.closest(".swipe-actions")) return;
+      const x0 = e.clientX, y0 = e.clientY;
+      clearTimeout(hold?.timer);
+      hold = {
+        x0,
+        y0,
+        timer: setTimeout(() => {
+          const t = S.threads.find((x) => x.id === row.dataset.id);
+          if (!t || S.swiping) return;
+          row.dataset.swiped = "1";
+          setTimeout(() => delete row.dataset.swiped, 600);
+          rowActions(row, t);
+        }, 480),
+      };
+    });
+    container.addEventListener("pointermove", (e) => {
+      if (hold && Math.hypot(e.clientX - hold.x0, e.clientY - hold.y0) > 8) (clearTimeout(hold.timer), (hold = null));
+    });
+    const letGo = () => hold && (clearTimeout(hold.timer), (hold = null));
+    container.addEventListener("pointerup", letGo);
+    container.addEventListener("pointercancel", letGo);
+    container.addEventListener("contextmenu", (e) => {
+      const row = e.target.closest(".row[data-id]");
+      if (!row) return;
+      e.preventDefault();
+      const t = S.threads.find((x) => x.id === row.dataset.id);
+      if (t && !menuState) rowActions(row, t);
+    });
+
     container.addEventListener("keydown", (e) => {
       const row = e.target.closest(".row");
+      if (row?.dataset.id && (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey))) {
+        e.preventDefault();
+        const t = S.threads.find((x) => x.id === row.dataset.id);
+        if (t) rowActions(row, t);
+        return;
+      }
       if (row && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
         if (row.dataset.draft) openDraft(row.dataset.draft);
@@ -2103,19 +2142,47 @@
     input.focus({ preventScroll: true });
   }
 
-  function rowMoreMenu(anchor, t) {
-    showMenu(anchor, [
+  // Everything a conversation can do, for the More swipe button and for pressing and holding (or right-clicking) a row
+  function rowItems(t, anchor) {
+    const lead = leadAction(t);
+    return [
       { label: "Reply", icon: "reply", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "reply"))) },
-      { label: "Reply All", icon: "replyAll", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "replyAll"))) },
       { label: "Forward", icon: "forward", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "forward"))) },
       "-",
+      { label: lead.act === "done" ? "Done" : lead.label, icon: lead.ic, action: () => act(t.id, lead.act) },
+      !t.trashed && { label: "Later…", icon: "clock", action: () => laterMenu(anchor, t) },
+      { label: t.starred ? "Unflag" : "Flag", icon: "flag", action: () => act(t.id, t.starred ? "unflag" : "flag") },
+      { label: t.unread ? "Mark as Read" : "Mark as Unread", icon: t.unread ? "envelopeOpen" : "envelopeBadge", action: () => act(t.id, t.unread ? "read" : "unread") },
       ...categoryItems(t),
       "-",
       t.trashed
-        ? { label: "Delete Forever", icon: "trash", destructive: true, action: () => deleteThread(t.id) }
+        ? { label: "Delete Forever", icon: "trash", destructive: true, action: () => confirmDelete(anchor, t.id) }
         : { label: "Move to Trash", icon: "trash", destructive: true, action: () => act(t.id, "trash") },
-    ]);
+    ];
+  }
+
+  function rowMoreMenu(anchor, t) {
+    showMenu(anchor, rowItems(t, anchor));
     closeOpenSwipe();
+  }
+
+  // Pressed and held: the row lifts out of the list, the rest dims, and its menu opens under it
+  function rowActions(row, t) {
+    closeOpenSwipe(true);
+    if (navigator.vibrate) navigator.vibrate(10);
+    showMenu(row, rowItems(t, row));
+    if (!menuState) return;
+    const { layer } = menuState;
+    layer.classList.add("lift-layer");
+    const r = row.getBoundingClientRect();
+    const lifted = row.cloneNode(true);
+    lifted.classList.add("lifted-row");
+    lifted.removeAttribute("tabindex");
+    lifted.setAttribute("aria-hidden", "true");
+    Object.assign(lifted.style, { top: `${r.top}px`, left: `${r.left + 8}px`, width: `${r.width - 16}px`, height: `${r.height}px` });
+    lifted.addEventListener("click", () => closeMenu());
+    layer.prepend(lifted);
+    requestAnimationFrame(() => layer.classList.add("open"));
   }
 
   // People or Updates, for this conversation, or for everything from its sender
