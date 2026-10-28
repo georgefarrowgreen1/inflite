@@ -100,7 +100,9 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: var(--sky-top);
+  /* (behind everything, as far as the screen goes, past the sky too: its colours, top to bottom, ending as it does, so
+     no band of another colour shows at an edge the sky doesn't reach, under a toolbar or the Home indicator) */
+  background: var(--sky-c) linear-gradient(to bottom, var(--sky-a), var(--sky-b) 52%, var(--sky-c)) no-repeat;
   color: var(--label);
   font: 17px/1.29 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   letter-spacing: -0.012em;
@@ -202,7 +204,12 @@ svg.i {
 
 .sky {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* (the whole screen, the tallest it gets, not only what a toolbar leaves of it) */
+  min-height: 100lvh;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
