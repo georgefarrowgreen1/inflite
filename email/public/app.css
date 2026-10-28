@@ -1,30 +1,41 @@
-/* inflite Mail: Liquid Glass design system */
+/* inflite Mail. In keeping with the site's other apps (the account page, InFlight, Weather, Fitness): the account
+   page's sky (night in dark mode, dawn in light) with its three slow lights, iOS 27's Liquid Glass over it (clear panes on
+   the sky, the stronger blurred glass for what floats), the site's blue, and its motion. Light or Dark follows the
+   account's Appearance (data-theme, set by theme.js and app.js), or the device when it's Automatic. */
 
 :root {
-  --tint: #0a84ff;
-  --red: #ff3b30;
-  --orange: #ff9500;
-  --green: #34c759;
-  --purple: #af52de;
-  --indigo: #5856d6;
+    color-scheme: dark;
+    --sky-a: #121a3c; --sky-b: #0a0f26; --sky-c: #05060e; --sky-top: #1b2860;
+    --aura-1: rgba(80, 120, 255, 0.55); --aura-2: rgba(160, 90, 255, 0.4); --aura-3: rgba(40, 190, 230, 0.32);
+    --text: #f5f6fb; --text-2: rgba(235, 238, 250, 0.72); --text-3: rgba(235, 238, 250, 0.56);
+    --glass: rgba(34, 40, 66, 0.5); --glass-strong: rgba(28, 33, 56, 0.86); --glass-ctl: rgba(255, 255, 255, 0.1); --sheet: rgba(24, 28, 50, 0.94);
+    --line: rgba(255, 255, 255, 0.1); --press: rgba(255, 255, 255, 0.07); --field: rgba(0, 0, 0, 0.24);
+    --tint: #5aa9ff; --tint-deep: #2a6ae6; --tint-text: #8cc2ff; --danger: #ff6a5f; --good: #4fdc8e; --warn: #ffbd4a; --flag: #ffa53a;
+    --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.42), inset 0 -1px 0.5px rgba(255, 255, 255, 0.08), inset 0 0 22px rgba(255, 255, 255, 0.03);
+    --lift: 0 0 0 0.5px rgba(0, 0, 0, 0.4), 0 22px 44px -18px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.16);
+    --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 46%);
+    --dim: rgba(0, 0, 0, 0.5);
+    --mail-text: #f5f6fb; --mail-link: #8cc2ff; --mail-quote: rgba(235, 238, 250, 0.62); --mail-rule: rgba(235, 238, 250, 0.28);
+  --blur: blur(28px) saturate(180%);
 
-  --bg: #f2f2f7;
-  --bg-elev: #ffffff;
-  --bg-fill: rgba(118, 118, 128, 0.12);
-  --bg-fill-2: rgba(118, 118, 128, 0.2);
-  --label: #000000;
-  --label-2: rgba(60, 60, 67, 0.62);
-  --label-3: rgba(60, 60, 67, 0.32);
-  --sep: rgba(60, 60, 67, 0.16);
-
-  --glass-bg: rgba(255, 255, 255, 0.58);
-  --glass-bg-strong: rgba(255, 255, 255, 0.78);
-  --glass-rim: rgba(255, 255, 255, 0.95);
-  --glass-rim-2: rgba(255, 255, 255, 0.25);
-  --glass-shadow: 0 10px 34px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
-  --glass-inner: inset 0 1px 1px rgba(255, 255, 255, 0.85), inset 0 -1px 1px rgba(255, 255, 255, 0.35);
-  --glass-blur: blur(14px) saturate(1.9) brightness(1.06);
-  --menu-bg: rgba(250, 250, 252, 0.72);
+  /* Mail's own names for them */
+  --red: var(--danger);
+  --orange: var(--flag);
+  --green: var(--good);
+  --purple: #9b7bff;
+  --bg: var(--sky-c);
+  --bg-fill: var(--glass-ctl);
+  --bg-fill-2: color-mix(in srgb, var(--glass-ctl), var(--text) 8%);
+  --label: var(--text);
+  --label-2: var(--text-2);
+  --label-3: var(--text-3);
+  --sep: var(--line);
+  --glass-bg: var(--glass-strong);
+  --glass-bg-strong: var(--glass-strong);
+  --glass-shadow: var(--lift);
+  --glass-inner: var(--edge);
+  --glass-blur: var(--blur);
+  --menu-bg: var(--sheet);
 
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
@@ -33,70 +44,51 @@
   --kb: 0px;
   --nav-h: 54px;
 
+  /* the motion every app on the site shares: glide (things put in place, and sheets), out (settling in), and a soft
+     spring (about 2% past, for a press let go) */
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
-  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --spring: linear(0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849 31.5%, 0.937 38.1%, 0.968 41.8%, 0.991 45.7%, 1.006 50.1%, 1.015 55%, 1.017 63.9%, 1.001 85.9%, 1);
-  --spring-bouncy: linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1.004 83.8%, 1);
-
-  color-scheme: light dark;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --spring: linear(0, 0.019, 0.067, 0.135, 0.214, 0.3, 0.388, 0.473, 0.553, 0.628, 0.695, 0.755, 0.807, 0.852, 0.89, 0.921, 0.947, 0.968, 0.984, 0.996, 1.005, 1.012, 1.016, 1.018, 1.02, 1.02, 1.019, 1.018, 1.017, 1.015, 1.013, 1.012, 1.01, 1.008, 1.007, 1.006, 1.005, 1.004, 1.003, 1);
+  --spring-bouncy: var(--spring);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --tint: #0a84ff;
-    --red: #ff453a;
-    --orange: #ff9f0a;
-    --green: #30d158;
-    --bg: #000000;
-    --bg-elev: #000000;
-    --bg-fill: rgba(118, 118, 128, 0.24);
-    --bg-fill-2: rgba(118, 118, 128, 0.36);
-    --label: #ffffff;
-    --label-2: rgba(235, 235, 245, 0.62);
-    --label-3: rgba(235, 235, 245, 0.3);
-    --sep: rgba(84, 84, 88, 0.55);
-    --glass-bg: rgba(44, 44, 48, 0.5);
-    --glass-bg-strong: rgba(36, 36, 40, 0.78);
-    --glass-rim: rgba(255, 255, 255, 0.38);
-    --glass-rim-2: rgba(255, 255, 255, 0.06);
-    --glass-shadow: 0 10px 34px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
-    --glass-inner: inset 0 1px 1px rgba(255, 255, 255, 0.18), inset 0 -1px 1px rgba(255, 255, 255, 0.06);
-    --glass-blur: blur(14px) saturate(1.7) brightness(0.92);
-    --menu-bg: rgba(40, 40, 44, 0.7);
-    color-scheme: dark;
-  }
-  :root:not([data-theme="light"]) .group,
-  :root:not([data-theme="light"]) .sheet {
-    --bg-elev: #1c1c1e;
+@supports not (transition-timing-function: linear(0, 1)) {
+  :root {
+    --spring: cubic-bezier(0.2, 1.1, 0.4, 1);
   }
 }
 
-:root[data-theme="dark"] {
-  --tint: #0a84ff;
-  --red: #ff453a;
-  --orange: #ff9f0a;
-  --green: #30d158;
-  --bg: #000000;
-  --bg-elev: #000000;
-  --bg-fill: rgba(118, 118, 128, 0.24);
-  --bg-fill-2: rgba(118, 118, 128, 0.36);
-  --label: #ffffff;
-  --label-2: rgba(235, 235, 245, 0.62);
-  --label-3: rgba(235, 235, 245, 0.3);
-  --sep: rgba(84, 84, 88, 0.55);
-  --glass-bg: rgba(44, 44, 48, 0.5);
-  --glass-bg-strong: rgba(36, 36, 40, 0.78);
-  --glass-rim: rgba(255, 255, 255, 0.38);
-  --glass-rim-2: rgba(255, 255, 255, 0.06);
-  --glass-shadow: 0 10px 34px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
-  --glass-inner: inset 0 1px 1px rgba(255, 255, 255, 0.18), inset 0 -1px 1px rgba(255, 255, 255, 0.06);
-  --glass-blur: blur(14px) saturate(1.7) brightness(0.92);
-  --menu-bg: rgba(40, 40, 44, 0.7);
-  color-scheme: dark;
+/* light: by the device's setting (Automatic), or chosen for the account (data-theme) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --sky-a: #e9eefc; --sky-b: #f3f0fb; --sky-c: #f7f8fc; --sky-top: #dde3fb;
+    --aura-1: rgba(110, 150, 255, 0.42); --aura-2: rgba(200, 150, 255, 0.36); --aura-3: rgba(90, 210, 240, 0.3);
+    --text: #0d1020; --text-2: rgba(20, 24, 44, 0.66); --text-3: rgba(20, 24, 44, 0.62);
+    --glass: rgba(255, 255, 255, 0.58); --glass-strong: rgba(250, 251, 255, 0.9); --glass-ctl: rgba(20, 30, 60, 0.06); --sheet: rgba(246, 247, 252, 0.95);
+    --line: rgba(20, 24, 44, 0.09); --press: rgba(20, 24, 44, 0.05); --field: rgba(20, 30, 60, 0.06);
+    --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
+    --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.95), inset 0 -1px 0.5px rgba(255, 255, 255, 0.4), inset 0 0 22px rgba(255, 255, 255, 0.3);
+    --lift: 0 0 0 0.5px rgba(20, 30, 60, 0.08), 0 22px 44px -20px rgba(40, 50, 100, 0.28), 0 2px 6px rgba(40, 50, 100, 0.06);
+    --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%);
+    --dim: rgba(10, 14, 30, 0.32);
+    --mail-text: #0d1020; --mail-link: #1f63d6; --mail-quote: rgba(20, 24, 44, 0.62); --mail-rule: rgba(20, 24, 44, 0.22);
+  }
 }
-:root[data-theme="dark"] .group,
-:root[data-theme="dark"] .sheet {
-  --bg-elev: #1c1c1e;
+
+:root[data-theme="light"] {
+    color-scheme: light;
+    --sky-a: #e9eefc; --sky-b: #f3f0fb; --sky-c: #f7f8fc; --sky-top: #dde3fb;
+    --aura-1: rgba(110, 150, 255, 0.42); --aura-2: rgba(200, 150, 255, 0.36); --aura-3: rgba(90, 210, 240, 0.3);
+    --text: #0d1020; --text-2: rgba(20, 24, 44, 0.66); --text-3: rgba(20, 24, 44, 0.62);
+    --glass: rgba(255, 255, 255, 0.58); --glass-strong: rgba(250, 251, 255, 0.9); --glass-ctl: rgba(20, 30, 60, 0.06); --sheet: rgba(246, 247, 252, 0.95);
+    --line: rgba(20, 24, 44, 0.09); --press: rgba(20, 24, 44, 0.05); --field: rgba(20, 30, 60, 0.06);
+    --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
+    --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.95), inset 0 -1px 0.5px rgba(255, 255, 255, 0.4), inset 0 0 22px rgba(255, 255, 255, 0.3);
+    --lift: 0 0 0 0.5px rgba(20, 30, 60, 0.08), 0 22px 44px -20px rgba(40, 50, 100, 0.28), 0 2px 6px rgba(40, 50, 100, 0.06);
+    --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%);
+    --dim: rgba(10, 14, 30, 0.32);
+    --mail-text: #0d1020; --mail-link: #1f63d6; --mail-quote: rgba(20, 24, 44, 0.62); --mail-rule: rgba(20, 24, 44, 0.22);
 }
 
 * {
@@ -108,7 +100,7 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--sky-c);
   color: var(--label);
   font: 17px/1.29 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   letter-spacing: -0.012em;
@@ -161,33 +153,11 @@ svg.i {
 .glass {
   position: relative;
   isolation: isolate;
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  box-shadow: var(--glass-shadow), var(--glass-inner);
+  background: var(--sheen), var(--glass-bg);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--edge), var(--lift);
   border-radius: 999px;
-}
-
-/* Bright refractive rim, brightest where light hits the top-left edge. */
-.glass::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    135deg,
-    var(--glass-rim) 0%,
-    var(--glass-rim-2) 32%,
-    transparent 50%,
-    var(--glass-rim-2) 70%,
-    var(--glass-rim) 100%
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  pointer-events: none;
-  z-index: 1;
 }
 
 /* Specular highlight that follows the finger. */
@@ -214,13 +184,83 @@ svg.i {
 }
 
 .glass.tinted {
-  background: color-mix(in srgb, var(--tint) 88%, transparent);
+  background: var(--sheen), linear-gradient(180deg, color-mix(in srgb, var(--tint) 92%, white), var(--tint-deep));
   color: #fff;
-  --glass-rim: rgba(255, 255, 255, 0.7);
 }
 
 .glass.strong {
-  background: var(--glass-bg-strong);
+  background: var(--sheen), var(--glass-strong);
+}
+
+/* ---------- The sky: the account page's, with its three slow lights (night in dark mode, dawn in light) ---------- */
+
+.sky {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: radial-gradient(120% 80% at 50% -10%, var(--sky-a), var(--sky-b) 52%, var(--sky-c)) var(--sky-top);
+}
+
+/* (each light soft at its edge by its own gradient rather than a blur, and moved on in small steps, as the site's are,
+   so the glass over them isn't redrawn every frame) */
+.aura {
+  position: absolute;
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 50%;
+  opacity: 0.9;
+  will-change: transform;
+}
+
+.a1 {
+  top: -32vmax;
+  left: -22vmax;
+  background: radial-gradient(circle closest-side, color-mix(in srgb, var(--aura-1) 73%, transparent), color-mix(in srgb, var(--aura-1) 49%, transparent) 40%, color-mix(in srgb, var(--aura-1) 12%, transparent) 80%, transparent);
+  animation: drift1 38s steps(76) infinite alternate, aura-in 0.9s ease-out backwards;
+}
+
+.a2 {
+  top: 10vmax;
+  right: -34vmax;
+  background: radial-gradient(circle closest-side, color-mix(in srgb, var(--aura-2) 73%, transparent), color-mix(in srgb, var(--aura-2) 49%, transparent) 40%, color-mix(in srgb, var(--aura-2) 12%, transparent) 80%, transparent);
+  animation: drift2 46s steps(92) infinite alternate, aura-in 0.9s ease-out backwards;
+}
+
+.a3 {
+  bottom: -40vmax;
+  left: 4vmax;
+  background: radial-gradient(circle closest-side, color-mix(in srgb, var(--aura-3) 73%, transparent), color-mix(in srgb, var(--aura-3) 49%, transparent) 40%, color-mix(in srgb, var(--aura-3) 12%, transparent) 80%, transparent);
+  animation: drift3 54s steps(108) infinite alternate, aura-in 0.9s ease-out backwards;
+}
+
+body.sheet-open .aura {
+  animation-play-state: paused;
+}
+
+@keyframes aura-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes drift1 {
+  to {
+    transform: translate(14vmax, 10vmax) scale(1.12);
+  }
+}
+
+@keyframes drift2 {
+  to {
+    transform: translate(-16vmax, 8vmax) scale(0.9);
+  }
+}
+
+@keyframes drift3 {
+  to {
+    transform: translate(10vmax, -12vmax) scale(1.08);
+  }
 }
 
 /* Glass buttons swell and brighten under the finger, then settle on a spring. */
@@ -285,8 +325,9 @@ svg.i {
 #app {
   position: fixed;
   inset: 0;
+  z-index: 1;
   overflow: hidden;
-  background: var(--bg);
+  background: transparent;
   transition: transform 0.5s var(--ease), border-radius 0.5s var(--ease), filter 0.5s var(--ease);
   transform-origin: 50% 100%;
 }
@@ -294,7 +335,7 @@ svg.i {
 body.sheet-open.phone #app {
   transform: translateY(calc(var(--sat) * 0.5)) scale(0.93);
   border-radius: 40px;
-  filter: brightness(0.82);
+  filter: brightness(0.85);
 }
 
 .pane {
@@ -304,12 +345,8 @@ body.sheet-open.phone #app {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg-elev);
+  background: transparent;
   contain: layout paint;
-}
-
-.pane.mailboxes {
-  background: var(--bg);
 }
 
 .scroll {
@@ -348,9 +385,9 @@ body.sheet-open.phone #app {
   position: absolute;
   z-index: -1;
   inset: 0 0 -28px 0;
-  background: linear-gradient(to bottom, var(--pane-bg, var(--bg-elev)) 20%, transparent);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--sky-b) 80%, transparent) 20%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   -webkit-mask: linear-gradient(to bottom, #000 45%, transparent);
   mask: linear-gradient(to bottom, #000 45%, transparent);
   opacity: 0;
@@ -360,10 +397,6 @@ body.sheet-open.phone #app {
 
 .pane.scrolled .navbar::before {
   opacity: 0.92;
-}
-
-.pane.mailboxes {
-  --pane-bg: var(--bg);
 }
 
 .nav-title {
@@ -439,7 +472,7 @@ body.sheet-open.phone #app {
   position: absolute;
   z-index: -1;
   inset: -24px 0 0 0;
-  background: linear-gradient(to top, var(--pane-bg, var(--bg-elev)) 10%, transparent);
+  background: linear-gradient(to top, color-mix(in srgb, var(--sky-c) 80%, transparent) 10%, transparent);
   -webkit-mask: linear-gradient(to top, #000 40%, transparent);
   mask: linear-gradient(to top, #000 40%, transparent);
   opacity: 0.85;
@@ -536,7 +569,10 @@ body.sheet-open.phone #app {
 
 .group {
   margin: 0 16px 26px;
-  background: var(--bg-elev);
+  background: var(--sheen), var(--glass);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--edge), var(--lift);
   border-radius: 26px;
   overflow: hidden;
 }
@@ -613,7 +649,10 @@ body.sheet-open.phone #app {
   align-items: center;
   gap: 14px;
   border-radius: 26px;
-  background: var(--bg-elev);
+  background: var(--sheen), var(--glass);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--edge), var(--lift);
 }
 
 .account-card .who {
@@ -663,7 +702,7 @@ body.sheet-open.phone #app {
   column-gap: 0;
   padding: 11px 16px 11px 4px;
   text-align: left;
-  background: var(--bg-elev);
+  background: transparent;
   touch-action: pan-y;
   will-change: transform;
 }
@@ -682,7 +721,7 @@ body.sheet-open.phone #app {
 }
 
 .row.selected {
-  background: var(--tint);
+  background: var(--sheen), linear-gradient(180deg, color-mix(in srgb, var(--tint) 92%, white), var(--tint-deep));
   color: #fff;
   border-radius: 14px;
 }
@@ -1065,7 +1104,6 @@ body.sheet-open.phone #app {
 
 .mail-frame-wrap.plain .mail-frame {
   background: transparent;
-  color-scheme: light dark;
 }
 
 .quote-row {
@@ -1235,7 +1273,7 @@ body.sheet-open.phone #app {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: var(--bg-elev);
+  background: var(--field);
   display: grid;
   place-items: center;
   color: var(--tint);
@@ -1303,15 +1341,17 @@ body.sheet-open.phone #app {
 
 /* ---------- Phone: navigation stack ---------- */
 
+/* (the panes are clear, on the sky: the one being left fades as it steps back, so the two never show through each other) */
 body.phone .pane {
   left: 0;
   right: 0;
-  transition: transform 0.52s var(--ease);
-  will-change: transform;
+  transition: transform 0.52s var(--ease), opacity 0.4s var(--ease);
+  will-change: transform, opacity;
 }
 
 body.phone .pane[data-pos="behind"] {
   transform: translateX(-28%);
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -1322,22 +1362,6 @@ body.phone .pane[data-pos="ahead"] {
 
 body.phone .pane[data-pos="current"] {
   transform: none;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.12);
-}
-
-body.phone .pane::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: #000;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.52s var(--ease);
-  z-index: 50;
-}
-
-body.phone .pane[data-pos="behind"]::after {
-  opacity: 0.08;
 }
 
 body.phone.dragging .pane {
@@ -1379,7 +1403,6 @@ body.pad .pane.mailboxes {
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-shadow), var(--glass-inner);
   transition: transform 0.55s var(--spring), opacity 0.4s;
-  --pane-bg: transparent;
 }
 
 body.pad .pane.mailboxes .scroll {
@@ -1403,6 +1426,9 @@ body.pad .pane.mailboxes .large-title {
 
 body.pad .pane.mailboxes .group {
   background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   margin: 0 10px 18px;
   border-radius: 0;
   overflow: visible;
@@ -1442,6 +1468,9 @@ body.pad .pane.mailboxes .cell.current .count {
 
 body.pad .pane.mailboxes .account-card {
   background: var(--bg-fill);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   margin: 0 10px 10px;
   border-radius: 20px;
   padding: 12px;
@@ -1682,10 +1711,12 @@ body.phone .sheet-scrim {
   z-index: 101;
   display: flex;
   flex-direction: column;
-  background: var(--bg-elev);
+  background: var(--sheet);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
   overflow: hidden;
   transition: transform 0.55s var(--ease), border-radius 0.4s;
-  box-shadow: 0 -10px 60px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--edge), 0 -10px 60px rgba(0, 0, 0, 0.22);
 }
 
 body.phone .sheet {
@@ -2023,78 +2054,29 @@ body.phone .sheet.kb .compose-accessory {
 .login {
   position: fixed;
   inset: 0;
+  z-index: 150;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   place-items: center;
   overflow: hidden;
-  background: #0b1020;
   padding: 24px;
-}
-
-.login .blob {
-  position: absolute;
-  width: 70vmax;
-  height: 70vmax;
-  border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.85;
-  animation: drift 22s ease-in-out infinite alternate;
-}
-
-.login .b1 {
-  background: radial-gradient(circle, #3a7bff, transparent 65%);
-  top: -30vmax;
-  left: -20vmax;
-}
-
-.login .b2 {
-  background: radial-gradient(circle, #b34bff, transparent 65%);
-  bottom: -35vmax;
-  right: -25vmax;
-  animation-delay: -7s;
-}
-
-.login .b3 {
-  background: radial-gradient(circle, #19d3c5, transparent 65%);
-  top: 30%;
-  left: 40%;
-  width: 45vmax;
-  height: 45vmax;
-  animation-delay: -13s;
-  opacity: 0.55;
-}
-
-@keyframes drift {
-  0% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(8vmax, 6vmax) scale(1.12);
-  }
-  100% {
-    transform: translate(-6vmax, 10vmax) scale(0.95);
-  }
 }
 
 .login-card {
   position: relative;
   width: min(380px, 100%);
   padding: 34px 26px 26px;
-  border-radius: 40px;
+  border-radius: 34px;
   text-align: center;
-  color: #fff;
-  --glass-bg: rgba(255, 255, 255, 0.12);
-  --glass-rim: rgba(255, 255, 255, 0.7);
-  --glass-rim-2: rgba(255, 255, 255, 0.12);
-  --glass-inner: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 -1px 1px rgba(255, 255, 255, 0.1);
-  --glass-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
-  animation: card-in 0.9s var(--spring) both;
+  color: var(--text);
+  background: var(--sheen), var(--glass);
+  animation: card-in 0.8s var(--ease) both;
 }
 
 @keyframes card-in {
   from {
     opacity: 0;
-    transform: translateY(30px) scale(0.94);
+    transform: translateY(24px) scale(0.96);
   }
 }
 
@@ -2148,39 +2130,8 @@ body.phone .sheet.kb .compose-accessory {
 
 .login-card p {
   margin: 0 0 26px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-2);
   font-size: 15px;
-}
-
-.login-field {
-  display: flex;
-  align-items: center;
-  height: 54px;
-  padding: 0 6px 0 20px;
-  border-radius: 27px;
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
-}
-
-.login-field input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: none;
-  color: #fff;
-  font-size: 17px;
-}
-
-.login-field input::placeholder {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.login-field .gbtn {
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
-  padding: 0;
 }
 
 .login-go {
@@ -2199,15 +2150,7 @@ body.phone .sheet.kb .compose-accessory {
   min-height: 20px;
   margin-top: 12px;
   font-size: 14px;
-  color: #ffb4ae;
-}
-
-.login-demo {
-  margin-top: 6px;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.7);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: var(--text-2);
 }
 
 /* ---------- Accessibility ---------- */
@@ -2224,8 +2167,11 @@ body.phone .sheet.kb .compose-accessory {
 @media (prefers-reduced-transparency: reduce) {
   .glass,
   .menu,
-  body.pad .pane.mailboxes {
-    background: var(--bg-elev);
+  body.pad .pane.mailboxes,
+  .group,
+  .account-card,
+  .sheet {
+    background: var(--glass-strong);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

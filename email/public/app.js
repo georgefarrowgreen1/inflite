@@ -517,6 +517,31 @@
 
   const api = DEMO ? demoApi() : realApi();
 
+  // The look, as the account has it (its page's Appearance, for every app on the site): Automatic, Light or Dark, kept
+  // in this browser too, so theme.js has it for the first frame next time
+  const THEME_COLOR = { dark: "#1b2860", light: "#dde3fb" };
+  function lookOf(v) {
+    v = v === "light" || v === "dark" ? v : "auto";
+    const root = document.documentElement;
+    if (root.dataset.theme === (v === "auto" ? undefined : v)) return;
+    if (v === "auto") delete root.dataset.theme;
+    else root.dataset.theme = v;
+    try {
+      localStorage.setItem("mail:appearance", v);
+    } catch {}
+    for (const m of document.querySelectorAll('meta[name="theme-color"]'))
+      m.setAttribute("content", v === "auto" ? THEME_COLOR[m.media.includes("dark") ? "dark" : "light"] : THEME_COLOR[v]);
+    // (email bodies are drawn for one look or the other)
+    if (S.message) renderDetail({ keepScroll: true });
+  }
+  const isDark = () => {
+    const t = document.documentElement.dataset.theme;
+    return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  };
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+    if (!document.documentElement.dataset.theme && S.message) renderDetail({ keepScroll: true });
+  });
+
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
@@ -800,6 +825,7 @@
         const p = g.dx / W();
         cur.style.transform = `translateX(${g.dx}px)`;
         prev.style.transform = `translateX(${-28 * (1 - p)}%)`;
+        prev.style.opacity = String(Math.min(1, p * 1.4));
       },
       { passive: false }
     );
@@ -813,6 +839,7 @@
       const prev = [els.mailboxes, els.list, els.detail][S.depth - 1];
       cur.style.transform = "";
       prev.style.transform = "";
+      prev.style.opacity = "";
       if (was.dx > W() * 0.33 || was.v > 0.45) goBack();
     };
     document.addEventListener("touchend", end, { passive: true });
@@ -827,7 +854,14 @@
     return h("button.gbtn.glass", { "aria-label": label, title: label, onclick, ...extra }, icon(name));
   }
 
+  // The site's sky (styles in app.css), once, behind the app and the sign-in card alike
+  function ensureSky() {
+    if (document.querySelector(".sky")) return;
+    document.body.prepend(h("div.sky", { "aria-hidden": "true" }, h("i.aura.a1"), h("i.aura.a2"), h("i.aura.a3")));
+  }
+
   function build() {
+    ensureSky();
     document.getElementById("app")?.remove();
     const app = h("div", { id: "app" });
 
@@ -1835,23 +1869,23 @@
     const csp = allowRemote
       ? "default-src 'none'; img-src 'self' data: https: http:; style-src 'unsafe-inline' https:; font-src data: https:; media-src https:"
       : "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; font-src data:";
+    const dark = isDark();
+    const css = getComputedStyle(document.documentElement);
+    const v = (n) => css.getPropertyValue(n).trim();
     const look = designed
       ? `:root{color-scheme:light}
 html,body{margin:0;padding:0;background:#fff}
 body{padding:16px;font:15px/1.5 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#1c1c1e}
 blockquote{margin:8px 0;padding-left:12px;border-left:2px solid #c7c7cc;color:#555}
 a{color:#0a84ff}`
-      : `:root{color-scheme:light dark}
+      : `:root{color-scheme:${dark ? "dark" : "light"}}
 html,body{margin:0;padding:0;background:transparent}
-body{padding:14px 20px 8px;font:17px/1.45 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#1c1c1e}
-blockquote{margin:8px 0;padding-left:12px;border-left:2px solid rgba(60,60,67,.3);color:rgba(60,60,67,.65)}
-a{color:#0a84ff}
-@media (prefers-color-scheme:dark){
-body{color:#f5f5f7}
-body *{color:inherit!important;background-color:transparent!important}
-blockquote{border-left-color:rgba(235,235,245,.3)!important;color:rgba(235,235,245,.62)!important}
-a,a *{color:#409cff!important}
-}`;
+body{padding:14px 20px 8px;font:17px/1.45 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:${v("--mail-text")}}
+blockquote{margin:8px 0;padding-left:12px;border-left:2px solid ${v("--mail-rule")};color:${v("--mail-quote")}}
+a{color:${v("--mail-link")}}
+${dark ? `body *{color:inherit!important;background-color:transparent!important}
+blockquote{border-left-color:${v("--mail-rule")}!important;color:${v("--mail-quote")}!important}
+a,a *{color:${v("--mail-link")}!important}` : ""}`;
     const doc = `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1866,6 +1900,7 @@ pre{white-space:pre-wrap}
 </style></head><body>${m.html.replace(/<script[\s\S]*?<\/script>/gi, "")}</body></html>`;
 
     const frame = h("iframe.mail-frame", {
+      style: { colorScheme: designed ? "light" : dark ? "dark" : "light" },
       title: "Message content",
       sandbox: "allow-same-origin allow-popups allow-popups-to-escape-sandbox",
       referrerpolicy: "no-referrer",
@@ -2812,7 +2847,8 @@ pre{white-space:pre-wrap}
       go,
       h("div.login-error", { role: "alert" }, error || who)
     );
-    const login = h("div.login", h("div.blob.b1"), h("div.blob.b2"), h("div.blob.b3"), card);
+    ensureSky();
+    const login = h("div.login", card);
     document.querySelector(".login")?.remove();
     document.body.append(login);
     if (error) card.classList.add("shake");
@@ -2839,6 +2875,7 @@ pre{white-space:pre-wrap}
   async function boot() {
     const [me, counts] = await Promise.all([api.me(), api.counts()]);
     S.me = me;
+    if (me.account?.appearance) lookOf(me.account.appearance);
     S.counts = counts;
     if (!els.list || !els.list.isConnected) build();
     else {
@@ -2888,6 +2925,7 @@ pre{white-space:pre-wrap}
       }
       s ||= await api.session();
       accountOrigin = s.accountOrigin || accountOrigin;
+      if (s.user?.appearance) lookOf(s.user.appearance);
       if (s.access !== "ok") return showGate(s.access, { user: s.user, error });
       await enter();
     } catch (err) {

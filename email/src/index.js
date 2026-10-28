@@ -109,7 +109,8 @@ async function api(request, env, ctx, url) {
   throw new HttpError(404, "Not found");
 }
 
-const publicUser = (v) => (v?.signedIn ? { name: v.name, handle: v.handle, email: v.email, admin: !!v.admin } : null);
+const publicUser = (v) =>
+  v?.signedIn ? { name: v.name, handle: v.handle, email: v.email, admin: !!v.admin, appearance: v.appearance || "auto" } : null;
 
 const senderName = (env, view) => env.DISPLAY_NAME || view?.name || "";
 
