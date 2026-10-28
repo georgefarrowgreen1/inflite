@@ -51,6 +51,11 @@
     check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
     download: '<path d="M12 4v11.5M7 11l5 5 5-5"/><path d="M5 20h14"/>',
     camera: '<path d="M4 8.5h3l1.5-2h7L17 8.5h3v10H4z"/><circle cx="12" cy="13" r="3.2"/>',
+    sliders: '<path d="M4 7.5h9M18.5 7.5H20M4 16.5h1.5M11 16.5h9"/><circle cx="15.8" cy="7.5" r="2.4"/><circle cx="8.2" cy="16.5" r="2.4"/>',
+    at: '<circle cx="12" cy="12" r="3.5"/><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>',
+    shield: '<path d="M12 3.5 5 6v6c0 4.5 3 7.5 7 8.5 4-1 7-4 7-8.5V6z"/>',
+    pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+    star: '<path d="m12 4 2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z"/>',
     play: '<path d="M8 5.5v13l10.5-6.5z"/>',
     share: '<path d="M12 15V3.5M7.5 8 12 3.5 16.5 8"/><path d="M8.5 10.5H7a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6.5a2 2 0 0 0-2-2h-1.5"/>',
     lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5v-3a4 4 0 0 1 8 0v3"/>',
@@ -266,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.10";
+  const BUILD = "1.11";
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -325,6 +330,12 @@
       send: (payload, opts) => req("POST", "/api/send", payload, opts),
       saveDraft: (draft) => req("POST", "/api/drafts", draft),
       rawUrl: (id) => `/api/messages/${id}/raw`,
+      settings: () => req("GET", "/api/settings"),
+      saveSettings: (patch) => req("PATCH", "/api/settings", patch),
+      checkAddress: (local) => req("GET", `/api/addresses/check?${qs({ local })}`),
+      createAddress: (body) => req("POST", "/api/addresses", body),
+      updateAddress: (email, patch) => req("PATCH", `/api/addresses/${encodeURIComponent(email)}`, patch),
+      deleteAddress: (email) => req("DELETE", `/api/addresses/${encodeURIComponent(email)}`),
     };
   }
 
@@ -546,6 +557,16 @@
       });
     }
     const threadMsgs = (id) => msgs.filter((m) => m.threadId === id && m.folder !== "drafts");
+    const demoSet = {
+      domain: "inflite.ai",
+      catchall: "keep",
+      signature: "",
+      colors: ["blue", "green", "orange", "pink", "purple", "teal", "grey"],
+      addresses: [
+        { email: "hello@inflite.ai", name: ME.name, color: "blue", category: null, notify: true, isDefault: true, count: 214 },
+        { email: "support@inflite.ai", name: "inflite Support", color: "green", category: "updates", notify: false, isDefault: false, count: 38 },
+      ],
+    };
     return {
       async session() {
         return { access: "ok", accountOrigin: "", user: { name: ME.name, handle: "george", email: ME.email, admin: true } };
@@ -554,7 +575,40 @@
         return { ok: true };
       },
       async me() {
-        return { displayName: ME.name, domain: "inflite.ai", defaultFrom: ME.email, identities: [ME.email, "support@inflite.ai"] };
+        const def = demoSet.addresses.find((a) => a.isDefault)?.email || ME.email;
+        return { displayName: ME.name, domain: "inflite.ai", defaultFrom: def, identities: demoSet.addresses.map((a) => a.email), addresses: demoSet.addresses, signature: demoSet.signature };
+      },
+      async settings() {
+        await delay();
+        return JSON.parse(JSON.stringify(demoSet));
+      },
+      async saveSettings(patch) {
+        Object.assign(demoSet, patch);
+        return this.settings();
+      },
+      async checkAddress(local) {
+        const l = String(local || "").toLowerCase();
+        const bad = !/^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/.test(l) ? "Use letters, numbers, dots, dashes or underscores, starting and ending with a letter or number." : null;
+        const taken = !bad && demoSet.addresses.some((a) => a.email === `${l}@inflite.ai`);
+        return { ok: !bad && !taken, problem: bad || (taken ? "That’s already one of your addresses." : null) };
+      },
+      async createAddress(b) {
+        const c = await this.checkAddress(b.local);
+        if (!c.ok) throw new ApiError(400, c.problem);
+        const a = { email: `${b.local.toLowerCase()}@inflite.ai`, name: b.name || "", color: b.color || "blue", category: b.category ?? null, notify: b.notify !== false, isDefault: false, count: 0 };
+        demoSet.addresses.push(a);
+        return a;
+      },
+      async updateAddress(email, patch) {
+        const a = demoSet.addresses.find((x) => x.email === email);
+        if (patch.isDefault) demoSet.addresses.forEach((x) => (x.isDefault = x === a));
+        const { isDefault, ...rest } = patch;
+        Object.assign(a, rest);
+        return { ...a };
+      },
+      async deleteAddress(email) {
+        demoSet.addresses = demoSet.addresses.filter((a) => a.email !== email);
+        return { ok: true };
       },
       async version() {
         return { v: String(Date.now()), build: null };
@@ -872,7 +926,8 @@
                 },
               },
               it.checked !== undefined && icon("check", "check"),
-              h("span.lbl", it.label),
+              it.dot && h("span.m-dot", { style: { background: it.dot } }),
+              h("span.lbl", it.sub ? [h("span", it.label), h("small.m-sub", it.sub)] : it.label),
               it.hint && h("span.hint", it.hint),
               it.icon && icon(it.icon)
             )
@@ -1229,6 +1284,10 @@
       { role: "dialog", "aria-label": "You" },
       card,
       h("div.p-grp", row("bell", "bell", "Notifications", notif), row("img", "photo", "Remote Images", images)),
+      h(
+        "div.p-grp",
+        h("button.p-row.p-set", { type: "button", onclick: () => (closeMenu(true), openSettings()) }, h("span.p-ic.set", icon("sliders")), h("span.p-l", "Settings"), icon("chevronRight", "p-chev"))
+      ),
       h("div.p-grp", h("button.p-row.p-out", { type: "button", onclick: () => (closeMenu(), signOut()) }, h("span.p-ic.out", icon("signout")), h("span.p-l", "Sign Out")))
     );
     const layer = h("div.menu-layer.profile-layer");
@@ -1249,6 +1308,479 @@
     requestAnimationFrame(() => requestAnimationFrame(() => (pop.classList.add("open"), layer.classList.add("open"))));
     card.focus({ preventScroll: true });
     menuState = { layer, menu: pop, opener: anchor, onClose: () => anchor.classList.remove("lit") };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Settings: your addresses on the domain (each one's name, colour, where its mail goes, whether it notifies, the
+  // default), what happens to mail to any other address, and your signature. A sheet of pages, as iOS Settings has it.
+  // ---------------------------------------------------------------------------
+
+  const ADDR_COLORS = { blue: "#2f6cf0", green: "#1fa75a", orange: "#f08a1c", pink: "#e8457f", purple: "#8a5cf0", teal: "#1b9e9a", grey: "#6b7389" };
+  const addrColor = (email) => ADDR_COLORS[(S.me?.addresses || []).find((a) => a.email === String(email || "").toLowerCase())?.color] || null;
+
+  let setState = null;
+
+  function openSettings() {
+    if (setState || sheetState) return;
+    closeMenu(true);
+    let data = null;
+    let failed = null;
+    const stack = [];
+    const appEl = document.getElementById("app");
+    const opener = document.activeElement;
+    const scrim = h("div.sheet-scrim", { onclick: () => S.layout === "pad" && close() });
+    const pages = h("div.set-pages");
+    const sheet = h("div.sheet.set-sheet", { role: "dialog", "aria-modal": "true", "aria-label": "Mail Settings" }, h("div.sheet-grabber"), pages);
+
+    const load = async () => {
+      try {
+        data = await api.settings();
+        failed = null;
+      } catch (err) {
+        failed = err.message;
+      }
+      redraw();
+    };
+    // (the rest of Mail told: the From menu, colours and signature)
+    const refreshMe = () =>
+      api
+        .me()
+        .then((me) => {
+          S.me = { ...S.me, ...me };
+        })
+        .catch(() => {});
+
+    // A page: its bar (back, title, an action) and what scrolls under it
+    let current = null;
+    function draw(dir) {
+      const view = stack[stack.length - 1];
+      const v = view();
+      const page = h(
+        "div.set-page",
+        h("div.set-bar", h("div.set-l", v.left || null), h("div.set-t", v.title || ""), h("div.set-r", v.right || null)),
+        h("div.set-scroll", v.body)
+      );
+      if (current && dir) {
+        const old = current;
+        page.classList.add(dir === "in" ? "from-right" : "from-left");
+        old.classList.add(dir === "in" ? "to-left" : "to-right");
+        pages.append(page);
+        page.offsetHeight;
+        page.classList.remove("from-right", "from-left");
+        setTimeout(() => old.remove(), 420);
+      } else {
+        current?.remove();
+        pages.append(page);
+      }
+      current = page;
+      // (a new address: its field, so the keyboard comes up within the tap; else the page's first control)
+      if (dir) (page.querySelector(".set-local") || page.querySelector(".set-bar button, .set-scroll button"))?.focus({ preventScroll: true });
+    }
+    function redraw() {
+      if (!setState) return;
+      const keep = current?.querySelector(".set-scroll")?.scrollTop || 0;
+      const focusKey = document.activeElement?.dataset?.k;
+      draw(null);
+      current.querySelector(".set-scroll").scrollTop = keep;
+      const f = focusKey && current.querySelector(`[data-k="${focusKey}"]`);
+      if (f) {
+        f.focus({ preventScroll: true });
+        try {
+          f.setSelectionRange(f.value.length, f.value.length);
+        } catch {}
+      }
+    }
+    const push = (view) => (stack.push(view), draw("in"));
+    const pop = () => {
+      if (stack.length > 1) stack.pop(), draw("out");
+      else close();
+    };
+
+    const backBtn = (label) => h("button.set-link.set-back", { type: "button", onclick: pop }, icon("chevronLeft"), label);
+    const group = (...rows) => h("div.set-group", rows);
+    const k = (text) => h("div.set-k", text);
+    const hint = (text) => h("p.set-hint", text);
+    const dot = (color) => h("span.set-dot", { style: { background: ADDR_COLORS[color] || ADDR_COLORS.blue } });
+    function row({ ic, tint, lead, title, sub, value, onclick, end, cls }) {
+      return h(
+        onclick ? "button.set-row" : "div.set-row",
+        { type: onclick ? "button" : null, onclick, class: cls || null },
+        ic ? h(`span.set-ic.${tint}`, icon(ic)) : lead || null,
+        h("span.set-tx", h("b", title), sub ? h("small", sub) : null),
+        value != null ? h("span.set-val", value) : null,
+        end !== undefined ? end : onclick ? icon("chevronRight", "set-chev") : null
+      );
+    }
+    function swOf(on, label, onchange) {
+      const b = h("button.switch", { type: "button", role: "switch", "aria-checked": String(!!on), "aria-label": label });
+      b.addEventListener("click", () => {
+        const v = b.getAttribute("aria-checked") !== "true";
+        b.setAttribute("aria-checked", String(v));
+        onchange(v);
+      });
+      return b;
+    }
+    // (Mail decides, or always People, or always Updates)
+    function segOf(value, onpick) {
+      const opts = [
+        [null, "Auto"],
+        ["people", "People"],
+        ["updates", "Updates"],
+      ];
+      return h(
+        "div.set-seg",
+        { role: "radiogroup", "aria-label": "Sort into" },
+        opts.map(([v, label]) =>
+          h(
+            "button",
+            { type: "button", role: "radio", "aria-checked": String(value === v), class: value === v ? "on" : null, onclick: () => value !== v && onpick(v) },
+            label
+          )
+        )
+      );
+    }
+    function swatches(value, onpick) {
+      return h(
+        "div.set-swatches",
+        { role: "radiogroup", "aria-label": "Colour" },
+        Object.entries(ADDR_COLORS).map(([name, hex]) =>
+          h("button.set-swatch", {
+            type: "button",
+            role: "radio",
+            "aria-label": name[0].toUpperCase() + name.slice(1),
+            "aria-checked": String(value === name),
+            class: value === name ? "on" : null,
+            style: `--c: ${hex}`,
+            onclick: () => value !== name && onpick(name),
+          })
+        )
+      );
+    }
+    const arrivesSaid = (a) =>
+      [a.name || S.me?.displayName || null, a.category === "updates" ? "to Updates" : a.category === "people" ? "to People" : null, a.notify ? null : "no notifications"]
+        .filter(Boolean)
+        .join(" · ") || "As Mail sorts it";
+
+    // The first page: the addresses, other addresses, the signature
+    function mainView() {
+      const done = h("button.set-link.strong", { type: "button", onclick: close }, "Done");
+      if (!data)
+        return {
+          title: "Settings",
+          right: done,
+          body: failed ? group(row({ title: "Couldn’t load Settings", sub: failed, onclick: load, end: null })) : h("div.load-more", h("div.spinner")),
+        };
+      const catchBtn = row({
+        ic: "shield",
+        tint: "indigo",
+        title: "Mail to other addresses",
+        sub: `Anything else @${data.domain}`,
+        value: data.catchall === "reject" ? "Turn Away" : "Keep",
+        end: icon("chevronDown", "set-chev"),
+        onclick: (e) =>
+          showMenu(
+            e.currentTarget,
+            [
+              { label: "Keep", sub: "It arrives in Mail, as now", checked: data.catchall !== "reject", action: () => saveSettings({ catchall: "keep" }) },
+              { label: "Turn Away", sub: "Its sender hears it doesn’t exist", checked: data.catchall === "reject", action: () => saveSettings({ catchall: "reject" }) },
+            ],
+            { title: "Mail to Other Addresses", dropdown: true }
+          ),
+      });
+      return {
+        title: "",
+        right: done,
+        body: [
+          h("div.set-head", h("img", { src: "/icon-180.png", alt: "", width: 64, height: 64 }), h("b", "Mail"), h("span", "Your addresses and how mail arrives")),
+          k("Addresses"),
+          group(
+            data.addresses.map((a) =>
+              row({
+                lead: dot(a.color),
+                title: [a.email, a.isDefault ? h("span.set-badge", "Default") : null],
+                sub: arrivesSaid(a),
+                onclick: () => push(() => addressView(a.email)),
+              })
+            ),
+            h("button.set-row.set-add", { type: "button", onclick: () => push(newView()) }, h("span.set-plus", "+"), h("span.set-tx", h("b", "New Address")))
+          ),
+          k("Receiving"),
+          group(catchBtn),
+          k("Sending"),
+          group(
+            row({
+              ic: "pen",
+              tint: "amber",
+              title: "Signature",
+              sub: data.signature ? data.signature.split("\n")[0] : "None",
+              onclick: () => push(signatureView),
+            })
+          ),
+        ],
+      };
+    }
+
+    async function saveSettings(patch) {
+      const was = data;
+      data = { ...data, ...patch };
+      redraw();
+      try {
+        data = await api.saveSettings(patch);
+        refreshMe();
+      } catch (err) {
+        data = was;
+        toast(err.message, { error: true });
+      }
+      redraw();
+    }
+
+    async function saveAddress(email, patch) {
+      const i = data.addresses.findIndex((a) => a.email === email);
+      if (i < 0) return;
+      const was = data.addresses[i];
+      data.addresses[i] = { ...was, ...patch };
+      if (patch.isDefault) data.addresses.forEach((a, j) => (a.isDefault = j === i));
+      redraw();
+      try {
+        const got = await api.updateAddress(email, patch);
+        data.addresses[i] = { ...data.addresses[i], ...got };
+        refreshMe();
+      } catch (err) {
+        data.addresses[i] = was;
+        toast(err.message, { error: true });
+      }
+      redraw();
+    }
+
+    // An address's own page
+    function addressView(email) {
+      const a = data?.addresses.find((x) => x.email === email);
+      if (!a) return { title: "", left: backBtn("Settings"), body: hint("That address has gone.") };
+      const nameInput = h("input.set-input", {
+        type: "text",
+        value: a.name,
+        placeholder: S.me?.displayName || "Name",
+        "data-k": "name",
+        autocomplete: "off",
+        enterkeyhint: "done",
+        "aria-label": "Name",
+        onkeydown: (e) => e.key === "Enter" && e.currentTarget.blur(),
+        onchange: (e) => saveAddress(email, { name: e.currentTarget.value.trim() }),
+      });
+      return {
+        title: `${email.split("@")[0]}@`,
+        left: backBtn("Settings"),
+        body: [
+          h(
+            "div.set-head",
+            h("span.set-big", { style: { background: ADDR_COLORS[a.color] } }, icon("at")),
+            h("b", email),
+            h("span", a.count ? `${a.count.toLocaleString(locale)} message${a.count === 1 ? "" : "s"}` : "No mail yet")
+          ),
+          group(h("label.set-field", h("span.set-fl", "Name"), nameInput)),
+          hint("The name people see on mail from this address."),
+          k("Arrives in"),
+          group(
+            row({ ic: "inbox", tint: "blue", title: "Sort into", end: segOf(a.category, (v) => saveAddress(email, { category: v })) }),
+            row({ ic: "bell", tint: "red", title: "Notify me", sub: "For new mail to it", end: swOf(a.notify, "Notify me", (v) => saveAddress(email, { notify: v })) })
+          ),
+          k("Colour"),
+          group(h("div.set-row.plain", swatches(a.color, (v) => saveAddress(email, { color: v })))),
+          a.isDefault
+            ? hint("New messages are sent from this address.")
+            : [
+                group(row({ ic: "star", tint: "amber", title: "Make Default", sub: "Where new messages are sent from", onclick: () => saveAddress(email, { isDefault: true }), end: null })),
+                group(
+                  h(
+                    "button.set-row.set-danger",
+                    {
+                      type: "button",
+                      onclick: async (e) => {
+                        const ok = await confirmMenu(e.currentTarget, `Delete ${email}? Its mail stays in Mail.`, "Delete Address", { destructive: true });
+                        if (!ok) return;
+                        try {
+                          await api.deleteAddress(email);
+                          data.addresses = data.addresses.filter((x) => x.email !== email);
+                          refreshMe();
+                          pop();
+                          toast("Address Deleted", { icon: "trash" });
+                        } catch (err) {
+                          toast(err.message, { error: true });
+                        }
+                      },
+                    },
+                    "Delete Address"
+                  )
+                ),
+                hint(data.catchall === "reject" ? "Once it’s deleted, new mail to it is turned away." : "Once it’s deleted, new mail to it still arrives, as mail to other addresses."),
+              ],
+        ],
+      };
+    }
+
+    // A new address: what's before the @ (checked as it's typed), its name, where its mail goes, its colour
+    function newView() {
+      const n = { local: "", name: "", category: null, notify: true, color: Object.keys(ADDR_COLORS)[data.addresses.length % 7], check: null, busy: false };
+      let checkToken = 0;
+      // (what the check found, said in place, so the field being typed in isn't drawn again)
+      const showCheck = () => {
+        if (n.saidEl) {
+          n.saidEl.className = `set-avail${n.check ? (n.check.ok ? " ok" : " bad") : ""}`;
+          setKids(n.saidEl, n.check ? (n.check.ok ? [icon("check"), "Available"] : n.check.problem) : "");
+        }
+        if (n.createBtn) n.createBtn.disabled = !n.check?.ok || n.busy;
+        if (n.hintEl) n.hintEl.textContent = n.local ? `Mail to ${n.local.toLowerCase()}@${data.domain} arrives straight away, and you can send from it.` : "Mail to it arrives straight away, and you can send from it.";
+      };
+      const check = debounce(async () => {
+        const t = ++checkToken;
+        const local = n.local.trim().toLowerCase();
+        if (!local) return ((n.check = null), showCheck());
+        try {
+          const r = await api.checkAddress(local);
+          if (t === checkToken) ((n.check = r), showCheck());
+        } catch {}
+      }, 250);
+      const create = async () => {
+        if (!n.check?.ok || n.busy) return;
+        n.busy = true;
+        redraw();
+        try {
+          const a = await api.createAddress({ local: n.local.trim().toLowerCase(), name: n.name.trim(), category: n.category, notify: n.notify, color: n.color });
+          data.addresses.push(a);
+          refreshMe();
+          pop();
+          toast(`${a.email} Created`, { icon: "check" });
+        } catch (err) {
+          n.busy = false;
+          toast(err.message, { error: true });
+          redraw();
+        }
+      };
+      return () => {
+        const localInput = h("input.set-local", {
+          type: "text",
+          value: n.local,
+          placeholder: "name",
+          "data-k": "local",
+          autocomplete: "off",
+          autocapitalize: "off",
+          autocorrect: "off",
+          spellcheck: "false",
+          inputmode: "email",
+          enterkeyhint: "next",
+          "aria-label": `Address, before @${data.domain}`,
+          size: Math.max(4, n.local.length + 1),
+          oninput: (e) => {
+            e.currentTarget.size = Math.max(4, e.currentTarget.value.length + 1);
+            n.local = e.currentTarget.value.replace(/\s+/g, "");
+            n.check = null;
+            showCheck();
+            check();
+          },
+        });
+        const said = h(
+          "div.set-avail",
+          { class: n.check ? (n.check.ok ? "ok" : "bad") : null, "aria-live": "polite" },
+          n.check ? (n.check.ok ? [icon("check"), "Available"] : n.check.problem) : ""
+        );
+        const createBtn = h("button.set-link.strong", { type: "button", disabled: !n.check?.ok || n.busy, onclick: create }, n.busy ? "Creating…" : "Create");
+        n.saidEl = said;
+        n.createBtn = createBtn;
+        return {
+          title: "New Address",
+          left: h("button.set-link", { type: "button", onclick: pop }, "Cancel"),
+          right: createBtn,
+          body: [
+            group(h("label.set-addr", localInput, h("span.set-dom", `@${data.domain}`))),
+            said,
+            k("Shown as"),
+            group(
+              h(
+                "label.set-field",
+                h("span.set-fl", "Name"),
+                h("input.set-input", {
+                  type: "text",
+                  value: n.name,
+                  placeholder: S.me?.displayName || "Name",
+                  "data-k": "nname",
+                  autocomplete: "off",
+                  "aria-label": "Name",
+                  oninput: (e) => (n.name = e.currentTarget.value),
+                })
+              )
+            ),
+            k("Arrives in"),
+            group(
+              row({ ic: "inbox", tint: "blue", title: "Sort into", end: segOf(n.category, (v) => ((n.category = v), redraw())) }),
+              row({ ic: "bell", tint: "red", title: "Notify me", sub: "For new mail to it", end: swOf(n.notify, "Notify me", (v) => (n.notify = v)) })
+            ),
+            k("Colour"),
+            group(h("div.set-row.plain", swatches(n.color, (v) => ((n.color = v), redraw())))),
+            (n.hintEl = hint(n.local ? `Mail to ${n.local.toLowerCase()}@${data.domain} arrives straight away, and you can send from it.` : "Mail to it arrives straight away, and you can send from it.")),
+          ],
+        };
+      };
+    }
+
+    // The signature: added under new messages and replies
+    function signatureView() {
+      let t = null;
+      const area = h("textarea.set-sig", {
+        rows: 6,
+        placeholder: "Your signature",
+        "data-k": "sig",
+        "aria-label": "Signature",
+        oninput: () => {
+          clearTimeout(t);
+          t = setTimeout(() => saveSig(area.value), 700);
+        },
+        onblur: () => (clearTimeout(t), saveSig(area.value)),
+      });
+      area.value = data.signature;
+      const saveSig = async (v) => {
+        if (v === data.signature) return;
+        data.signature = v;
+        try {
+          await api.saveSettings({ signature: v });
+          refreshMe();
+        } catch (err) {
+          toast(err.message, { error: true });
+        }
+      };
+      return { title: "Signature", left: backBtn("Settings"), body: [group(area), hint("Added under new messages and replies, from every address.")] };
+    }
+
+    function close() {
+      if (!setState) return;
+      setState = null;
+      document.activeElement?.blur?.();
+      if (appEl) appEl.inert = false;
+      document.body.classList.remove("sheet-open");
+      scrim.classList.remove("open");
+      sheet.classList.remove("open");
+      setTimeout(() => (scrim.remove(), sheet.remove()), 650);
+      if (opener?.isConnected && S.layout !== "phone") opener.focus?.({ preventScroll: true });
+      setTimeout(updateWhenSafe, 800);
+    }
+
+    sheet.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      const f = [...sheet.querySelectorAll(".set-page:last-child button:not(:disabled), .set-page:last-child input, .set-page:last-child textarea")].filter((x) => x.offsetParent);
+      if (!f.length) return;
+      if (e.shiftKey && document.activeElement === f[0]) (e.preventDefault(), f[f.length - 1].focus());
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) (e.preventDefault(), f[0].focus());
+    });
+
+    setState = { back: () => (menuState ? closeMenu() : pop()), close };
+    stack.push(mainView);
+    if (appEl) appEl.inert = true;
+    document.body.append(scrim, sheet);
+    draw(null);
+    sheet.offsetHeight;
+    document.body.classList.add("sheet-open");
+    scrim.classList.add("open");
+    sheet.classList.add("open");
+    load();
   }
 
   // ---------------------------------------------------------------------------
@@ -1361,6 +1893,7 @@
         "-",
         ...addrs.map((a) => ({
           label: `Only Mail to ${a.address.split("@")[0]}@`,
+          dot: addrColor(a.address),
           hint: a.unread ? String(a.unread) : "",
           checked: S.address === a.address,
           action: () => setAddress(S.address === a.address ? null : a.address),
@@ -3686,6 +4219,8 @@ pre{white-space:pre-wrap}
       draftId: init.draftId || null,
       showCc: !!((init.cc && init.cc.length) || (init.bcc && init.bcc.length)),
     };
+    // (your signature, under a new message or reply, as Settings has it)
+    if (!init.draftId && !c.text && S.me?.signature) c.text = `\n\n${S.me.signature}`;
     const snapshot = JSON.stringify([c.to, c.cc, c.bcc, c.subject, c.text, c.attachments.length]);
 
     const scrim = h("div.sheet-scrim");
@@ -3906,6 +4441,7 @@ pre{white-space:pre-wrap}
           (S.me?.identities || [c.from]).map((addr) => ({
             label: addr,
             checked: addr === c.from,
+            dot: addrColor(addr),
             action: () => {
               c.from = addr;
               drawFrom();
@@ -4376,10 +4912,11 @@ pre{white-space:pre-wrap}
     if (e.key === "Escape") {
       if (menuState) return closeMenu();
       if (sheetState) return requestCloseCompose();
+      if (setState) return setState.back();
       if (S.layout === "phone" && S.depth > 0) return goBack();
     }
     const typing = e.target.closest?.("input,textarea,[contenteditable]");
-    if (typing || sheetState || menuState || e.metaKey || e.ctrlKey || e.altKey || !els.list) return;
+    if (typing || sheetState || setState || menuState || e.metaKey || e.ctrlKey || e.altKey || !els.list) return;
     const t = S.thread && !S.thread.loading ? S.thread : null;
     const k = e.key;
     if (k === "c" || k === "n") return e.preventDefault(), openCompose();
@@ -4595,6 +5132,13 @@ pre{white-space:pre-wrap}
     updateBadge();
     await loadList();
     setupPush();
+    // (opened at its settings, from the account page)
+    if (location.hash === "#settings") {
+      try {
+        history.replaceState(history.state, "", location.pathname + location.search);
+      } catch {}
+      openSettings();
+    }
     // (opened from a notification)
     if (/thread=/.test(location.hash)) {
       const url = location.href;
@@ -4619,7 +5163,7 @@ pre{white-space:pre-wrap}
   function updateWhenSafe() {
     if (!S.newBuild) return;
     const typing = !!els.detailToolbar?.querySelector(".qr-field")?.value.trim();
-    if (sheetState || pendingSends.size || menuState || S.swiping || openSwipe || typing || S.searching) return;
+    if (sheetState || setState || pendingSends.size || menuState || S.swiping || openSwipe || typing || S.searching) return;
     try {
       sessionStorage.setItem("mail:updated", "1");
     } catch {}

@@ -1,16 +1,29 @@
 import PostalMime from "postal-mime";
 import { ensureSchema, findThread, cleanMessageId, upsertContacts, bumpVersion } from "./db.js";
 import { pushAll, peopleUnread } from "./push.js";
+import { arrivalFor } from "./addresses.js";
 
 // Handles mail delivered by Cloudflare Email Routing. Nothing that arrives is lost: the original is kept first, and if
 // reading it fails it still shows in the stream (with the original to download), and goes to FORWARD_TO if that's set.
 export async function receiveEmail(message, env, ctx) {
+  // (to an address that isn't one of yours, with Settings set to turn those away: refused, so its sender hears)
+  let arrival = { address: null, reject: false };
+  try {
+    await ensureSchema(env);
+    arrival = await arrivalFor(env, message.to);
+  } catch (err) {
+    console.error("couldn't check the address", err);
+  }
+  if (arrival.reject) {
+    message.setReject("This address doesn’t exist.");
+    return;
+  }
   const id = crypto.randomUUID();
   const raw = await new Response(message.raw).arrayBuffer();
   await env.MAIL.put(`raw/${id}.eml`, raw, { httpMetadata: { contentType: "message/rfc822" } });
   try {
     await ensureSchema(env);
-    await store(message, env, ctx, id, raw);
+    await store(message, env, ctx, id, raw, arrival.address);
   } catch (err) {
     console.error("couldn't read an incoming message", id, err);
     if (env.FORWARD_TO) ctx.waitUntil(message.forward(env.FORWARD_TO).catch((e) => console.error("forward", e)));
@@ -26,7 +39,7 @@ export async function receiveEmail(message, env, ctx) {
   }
 }
 
-async function store(message, env, ctx, id, raw) {
+async function store(message, env, ctx, id, raw, address) {
   const email = await PostalMime.parse(raw);
   const from = mailbox(email.from) || { name: "", email: message.from || "" };
   from.email ||= message.from || "";
@@ -47,7 +60,7 @@ async function store(message, env, ctx, id, raw) {
   const inReplyTo = cleanMessageId(email.inReplyTo);
   const existingThread = await findThread(env, inReplyTo, email.references);
   const threadId = existingThread || id;
-  const category = await classify(env, email, from.email, !!existingThread);
+  const category = await classify(env, email, from.email, !!existingThread, address?.category);
   const date = parseDate(email.date);
 
   // (at most 30 parts kept apart; any more stay in the original)
@@ -109,8 +122,10 @@ async function store(message, env, ctx, id, raw) {
   ctx.waitUntil(upsertContacts(env, [from]));
   await bumpVersion(env);
 
-  // A notice for mail from people (not for updates: newsletters, receipts and the like wait in the stream)
-  if (category === "people") {
+  // A notice for mail from people (not for updates: newsletters, receipts and the like wait in the stream), unless its
+  // address is set not to notify; an address set to Updates that notifies, notifies for all of it
+  const notify = address ? address.notify && (category === "people" || address.category === "updates") : category === "people";
+  if (notify) {
     ctx.waitUntil(
       peopleUnread(env).then((badge) =>
         pushAll(env, {
@@ -128,7 +143,7 @@ async function store(message, env, ctx, id, raw) {
   if (env.FORWARD_TO) ctx.waitUntil(message.forward(env.FORWARD_TO));
 }
 
-// People or Updates: a rule set for the sender wins; then a reply in a conversation you're part of is People; then the
+// People or Updates: a rule set for the sender wins; then the address's own setting; then a reply in a conversation you're part of is People; then the
 // signs bulk mail carries (an unsubscribe link, a list, "bulk" precedence, an automated sender) make it Updates.
 const BULK_SENDER = /^(no-?reply|do-?not-?reply|notifications?|newsletters?|news|updates?|alerts?|receipts?|billing|invoices?|mailer(-daemon)?|bounces?|marketing|digest)([+._-]|@)/i;
 
@@ -140,11 +155,13 @@ function unsubOf(email) {
   return /<(https:|mailto:)/i.test(v) ? v.slice(0, 2000) : null;
 }
 
-async function classify(env, email, fromEmail, inConversation) {
+async function classify(env, email, fromEmail, inConversation, addressCategory) {
   const rule = await env.DB.prepare(`SELECT category FROM sender_rules WHERE email = ?1`)
     .bind((fromEmail || "").toLowerCase())
     .first();
   if (rule) return rule.category;
+  // (then where its address sends its mail, as Settings has it)
+  if (addressCategory) return addressCategory;
   if (inConversation) return "people";
   const header = (k) => (email.headers || []).find((h) => h.key === k)?.value || "";
   const auto = header("auto-submitted");

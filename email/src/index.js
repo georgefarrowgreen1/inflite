@@ -11,6 +11,7 @@ import {
   cleanMessageId,
 } from "./db.js";
 import { receiveEmail, snippet } from "./receive.js";
+import { settings, updateSettings, listAddresses, createAddress, updateAddress, deleteAddress, addressOf, defaultAddress, localProblem } from "./addresses.js";
 import { listThreads, getThread, threadAction, counts, wakeSnoozed, unsubInfo } from "./threads.js";
 import { vapid, pushAll, pushEndpointOk, peopleUnread } from "./push.js";
 
@@ -125,6 +126,29 @@ async function route(request, env, ctx, url, view) {
   // (the mailbox's version, and the app's: an open Mail updates itself when a new one is deployed)
   if (pathname === "/api/version" && method === "GET") return json({ v: await mailVersion(env), build: buildOf(env), app: await appBuild(env, request) });
   if (pathname === "/api/me" && method === "GET") return me(env, view);
+  // Settings: the addresses, what happens to mail to others, the signature
+  if (pathname === "/api/settings") {
+    if (method === "GET") return json(await settings(env, senderName(env, view)));
+    if (method === "PATCH") {
+      await updateSettings(env, await request.json());
+      return json(await settings(env, senderName(env, view)));
+    }
+  }
+  if (pathname === "/api/addresses/check" && method === "GET") {
+    const local = (url.searchParams.get("local") || "").trim().toLowerCase();
+    const problem = localProblem(local);
+    const taken = !problem && !!(await addressOf(env, `${local}@${env.DOMAIN}`));
+    return json({ ok: !problem && !taken, problem: problem || (taken ? "That’s already one of your addresses." : null) });
+  }
+  if (pathname === "/api/addresses" && method === "POST") return json(await createAddress(env, await request.json()));
+  if ((m = pathname.match(/^\/api\/addresses\/([^/]+)$/))) {
+    const email = decodeURIComponent(m[1]);
+    if (method === "PATCH") return json(await updateAddress(env, email, await request.json()));
+    if (method === "DELETE") {
+      await deleteAddress(env, email);
+      return json({ ok: true });
+    }
+  }
   if (pathname === "/api/photo" && method === "GET") return photo(env, request, url);
   if ((m = pathname.match(/^\/api\/unsubscribe\/([\w-]+)$/))) {
     if (method === "GET") {
@@ -277,15 +301,17 @@ async function photo(env, request, url) {
 const senderName = (env, view) => env.DISPLAY_NAME || view?.name || "";
 
 async function me(env, view) {
-  const defaultFrom = (env.DEFAULT_FROM || `hello@${env.DOMAIN}`).toLowerCase();
-  const { results } = await env.DB.prepare(
-    `SELECT mailbox, COUNT(*) AS c FROM messages WHERE mailbox IS NOT NULL AND mailbox LIKE ?1
-     GROUP BY mailbox ORDER BY c DESC LIMIT 10`
-  )
-    .bind(`%@${env.DOMAIN}`)
-    .all();
-  const identities = [...new Set([defaultFrom, ...results.map((r) => r.mailbox)])];
-  return json({ displayName: senderName(env, view), domain: env.DOMAIN, defaultFrom, identities, account: publicUser(view) });
+  const addresses = await listAddresses(env, { fallbackName: senderName(env, view) });
+  const defaultFrom = addresses.find((a) => a.isDefault)?.email || (env.DEFAULT_FROM || `hello@${env.DOMAIN}`).toLowerCase();
+  const identities = [...new Set([defaultFrom, ...addresses.map((a) => a.email)])];
+  const signature = (await env.DB.prepare(`SELECT v FROM meta WHERE k = 'signature'`).first())?.v || "";
+  return json({ displayName: senderName(env, view), domain: env.DOMAIN, defaultFrom, identities, addresses, signature, account: publicUser(view) });
+}
+
+// (the name a message from an address goes out under: the address's own, as Settings has it, else yours)
+async function nameFor(env, view, from) {
+  const a = await addressOf(env, from).catch(() => null);
+  return a?.name || senderName(env, view);
 }
 
 // The same action on several conversations (Mark All as Read, say)
@@ -522,8 +548,8 @@ function base64ToBytes(b64) {
 async function send(env, ctx, body, view) {
   const size = (Array.isArray(body.attachments) ? body.attachments : []).reduce((n, a) => n + String(a?.content || "").length * 0.75, 0);
   if (size > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
-  const name = senderName(env, view);
-  const from = checkFrom(env, body.from);
+  const from = checkFrom(env, body.from || (await defaultAddress(env)));
+  const name = await nameFor(env, view, from);
   const to = normalizeRecipients(body.to);
   const cc = normalizeRecipients(body.cc);
   const bcc = normalizeRecipients(body.bcc);
