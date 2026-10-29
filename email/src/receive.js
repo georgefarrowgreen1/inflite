@@ -2,6 +2,7 @@ import PostalMime from "postal-mime";
 import { ensureSchema, findThread, cleanMessageId, upsertContacts, bumpVersion } from "./db.js";
 import { pushAll, peopleUnread } from "./push.js";
 import { arrivalFor } from "./addresses.js";
+import { quietNow } from "./auth.js";
 
 // Handles mail delivered by Cloudflare Email Routing. Nothing that arrives is lost: the original is kept first, and if
 // reading it fails it still shows in the stream (with the original to download), and goes to FORWARD_TO if that's set.
@@ -134,7 +135,8 @@ async function store(message, env, ctx, id, raw, address) {
   // A notice for mail from people (not for updates: newsletters, receipts and the like wait in the stream), unless its
   // address is set not to notify; an address set to Updates that notifies, notifies for all of it
   const notify = address ? address.notify && (category === "people" || address.category === "updates") : category === "people";
-  if (notify) {
+  // (none in the account's Quiet Hours: what came meanwhile is there, unread, when they're over)
+  if (notify && !(await quietNow(env))) {
     ctx.waitUntil(
       peopleUnread(env).then((badge) =>
         pushAll(env, {

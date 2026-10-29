@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.30";
+  const BUILD = "1.31";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -337,6 +337,38 @@ const IFL = (() => {
     requestAnimationFrame(() => requestAnimationFrame(() => noteEl?.classList.add("on")));
     const n = noteEl;
     noteT = setTimeout(() => { n.classList.remove("on"); setTimeout(() => n.remove(), 400); }, 3600);
+  }
+  // Notifications on this device, asked for in one tap (a phone asks each app for itself, and only from a tap): when
+  // the app's opened from the account's Notifications page to turn them on (#notify), or from the menu's row where
+  // they're off. What they tell you is the account's. turnOn(): asks the browser first thing, → true once they're on
+  let allowEl = null;
+  function allow(app, line, turnOn) {
+    allowEl?.remove();
+    const img = el("img", "ifa-ic"); img.src = iconUrl(app); img.alt = "";
+    const go = el("button", "ifa-go", "Allow Notifications"), later = el("button", "ifa-later", "Not Now");
+    go.type = later.type = "button";
+    const sheet = el("div", "ifa-sheet", img, el("h2", "ifa-t", "Notifications on this device"), el("p", "ifa-p", line), go, later);
+    sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-modal", "true"); sheet.setAttribute("aria-label", "Notifications on this device");
+    const layer = allowEl = el("div", "ifa-layer", sheet), was = document.activeElement;
+    const key = (e) => { if (e.key === "Escape") shut(); };
+    const shut = () => { document.removeEventListener("keydown", key, true); layer.classList.remove("on"); setTimeout(() => layer.remove(), 320); if (allowEl === layer) allowEl = null; was?.focus?.({ preventScroll: true }); };
+    later.onclick = shut;
+    layer.addEventListener("pointerdown", (e) => { if (e.target === layer) shut(); });
+    go.onclick = async () => {
+      go.disabled = true; go.textContent = "Turning On…";
+      const on = await Promise.resolve().then(turnOn).catch(() => false);
+      if (on) { shut(); note(app, "Notifications on", "On this device"); } else { go.disabled = false; go.textContent = "Allow Notifications"; }
+    };
+    document.addEventListener("keydown", key, true);
+    document.body.append(layer);
+    requestAnimationFrame(() => requestAnimationFrame(() => layer.classList.add("on")));
+    go.focus({ preventScroll: true });
+  }
+  // (opened to turn them on: #notify, taken out of the address, and whether it was there)
+  function wantsAllow() {
+    if (!/(^#|&)notify(&|$)/.test(location.hash)) return false;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {}
+    return true;
   }
   // this app's version, as it opens: said once if it's new since last time
   function built(app, build) {
@@ -476,9 +508,11 @@ const IFL = (() => {
 
   // (the open menu's rows drawn again, as what they say changes: one that's come or gone)
   const redraw = (rows) => open?.redraw(rows);
-  return { header, headerHtml, watch, settle, glyph, APPS, NAME, menu, close, redraw, isOpen: () => !!open, built, note, iconUrl };
+  return { header, headerHtml, watch, settle, glyph, APPS, NAME, menu, close, redraw, isOpen: () => !!open, built, note, iconUrl, allow, wantsAllow };
 })();
 // ==== end of InFlite's menu ====
+  // (opened from the account's Notifications page to turn them on here: #notify, asked once Mail's open)
+  let ASK_NOTIFY = IFL.wantsAllow();
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -1484,7 +1518,8 @@ const IFL = (() => {
       build: BUILD,
       me: { name: name || "Your account", line: me.defaultFrom || "", photo: avatar({ name, email: me.defaultFrom, me: true }, "p-photo") },
       rows: [
-        { icon: "bell", color: "red", label: "Notifications", on: !!S.pushOn, toggle: async () => (await togglePush(), !!S.pushOn) },
+        // (what Mail tells you is set in your account, its Notifications page, every app's: here, whether this device's on)
+        { key: "notify", icon: "bell", color: "red", label: "Notifications", value: S.pushOn ? "On" : "Off here", warn: !S.pushOn, open: () => accountOrigin && window.open(`${accountOrigin}/#from=mail&open=notify-mail`, "_blank", "noopener") },
         { icon: "image", color: "blue", label: "Remote Images", on: !!S.remoteImages, toggle: () => (toggleRemoteImages(), !!S.remoteImages) },
         // (the address new mail goes from, chosen here; the signature under it, a tap from its page in Settings)
         (me.addresses || []).length > 1 && { icon: "at", color: "teal", label: "Send From", value: `${String(me.defaultFrom || "").split("@")[0]}@`, open: () => sendFromMenu(anchor) },
@@ -1815,10 +1850,8 @@ const IFL = (() => {
           ),
           hint("Under new messages and replies from this address. Left empty, it has the signature for every address."),
           k("Arrives in"),
-          group(
-            row({ ic: "inbox", tint: "blue", title: "Sort into", end: segOf(a.category, (v) => saveAddress(email, { category: v })) }),
-            row({ ic: "bell", tint: "red", title: "Notify me", sub: "For new mail to it", end: swOf(a.notify, "Notify me", (v) => saveAddress(email, { notify: v })) })
-          ),
+          group(row({ ic: "inbox", tint: "blue", title: "Sort into", end: segOf(a.category, (v) => saveAddress(email, { category: v })) })),
+          hint("Whether new mail to it notifies you is set in your account, under Notifications."),
           k("Colour"),
           group(h("div.set-row.plain", swatches(a.color, (v) => saveAddress(email, { color: v })))),
           a.isDefault
@@ -1945,10 +1978,7 @@ const IFL = (() => {
               )
             ),
             k("Arrives in"),
-            group(
-              row({ ic: "inbox", tint: "blue", title: "Sort into", end: segOf(n.category, (v) => ((n.category = v), redraw())) }),
-              row({ ic: "bell", tint: "red", title: "Notify me", sub: "For new mail to it", end: swOf(n.notify, "Notify me", (v) => (n.notify = v)) })
-            ),
+            group(row({ ic: "inbox", tint: "blue", title: "Sort into", end: segOf(n.category, (v) => ((n.category = v), redraw())) })),
             k("Colour"),
             group(h("div.set-row.plain", swatches(n.color, (v) => ((n.color = v), redraw())))),
             (n.hintEl = hint(n.local ? `Mail to ${n.local.toLowerCase()}@${data.domain} arrives straight away, and you can send from it.` : "Mail to it arrives straight away, and you can send from it.")),
@@ -5764,6 +5794,11 @@ pre{white-space:pre-wrap}
       if (s.user?.appearance) lookOf(s.user.appearance);
       if (s.access !== "ok") return showGate(s.access, { user: s.user, error });
       await enter();
+      if (ASK_NOTIFY) {
+        ASK_NOTIFY = false;
+        setTimeout(() => (S.pushOn ? toast("Notifications are already on on this device", { icon: "bell" })
+          : IFL.allow("mail", "Mail tells you of new mail from people. What it tells you is set in your account.", async () => (await togglePush(), !!S.pushOn))), 600);
+      }
     } catch (err) {
       if (!s) showGate("signin", { error: err.message || "Can’t reach Mail right now." });
       else toast(err.message || "Can’t reach Mail right now.", { error: true });

@@ -19,14 +19,22 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    // (Mail's notifications, as the account's Notifications page shows them: asked from there, with the account's sign-in)
+    const cors = url.pathname === "/api/notify" && request.headers.get("Origin") === env.ACCOUNT_ORIGIN
+      ? { "Access-Control-Allow-Origin": env.ACCOUNT_ORIGIN, "Access-Control-Allow-Credentials": "true", Vary: "Origin" } : null;
+    if (cors && request.method === "OPTIONS")
+      return new Response(null, { status: 204, headers: { ...cors, "Access-Control-Allow-Methods": "GET, PATCH", "Access-Control-Allow-Headers": "Content-Type, X-Inflite", "Access-Control-Max-Age": "600" } });
+    let res;
     try {
-      return await api(request, env, ctx, url);
+      res = await api(request, env, ctx, url, !!cors);
     } catch (err) {
       if (!err.status || err.status >= 500) console.error(err);
       // (the words of errors Mail raised itself; never a database's)
       const said = err.publicMessage || (err.status && err.status < 500 ? err.message : null);
-      return json({ error: said || "Something went wrong. Try again.", access: err.access }, err.status || 500);
+      res = json({ error: said || "Something went wrong. Try again.", access: err.access }, err.status || 500);
     }
+    if (cors) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+    return res;
   },
 
   async email(message, env, ctx) {
@@ -72,7 +80,7 @@ const json = (data, status = 200, headers = {}) =>
 
 const EMAIL_RE = /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/;
 
-async function api(request, env, ctx, url) {
+async function api(request, env, ctx, url, fromAccount = false) {
   const { pathname } = url;
   const method = request.method;
 
@@ -84,7 +92,9 @@ async function api(request, env, ctx, url) {
 
   // Same-site pages elsewhere on inflite.ai also carry the account cookie, so the API answers only this app's own pages.
   const site = request.headers.get("Sec-Fetch-Site");
-  if (site && site !== "same-origin" && site !== "none") throw new HttpError(403, "That request didn’t come from Mail.");
+  // (the account's own page alone, for Mail's notifications: same-site, from its own origin, by name)
+  if (site && site !== "same-origin" && site !== "none" && !(fromAccount && site === "same-site")) throw new HttpError(403, "That request didn’t come from Mail.");
+  if (fromAccount && pathname !== "/api/notify") throw new HttpError(403, "That request didn’t come from Mail.");
 
   if (pathname === "/api/session" && method === "GET") {
     const view = await accountView(env, request);
@@ -118,6 +128,17 @@ async function api(request, env, ctx, url) {
     throw err;
   }
   await ensureSchema(env);
+
+  // Mail's notifications, for the account's Notifications page: how many devices it's on, and each address's on or off
+  if (pathname === "/api/notify") {
+    if (method === "PATCH") {
+      const b = await request.json().catch(() => ({}));
+      if (typeof b.notify !== "boolean") throw new HttpError(400, "Choose on or off.");
+      await updateAddress(env, b.email, { notify: b.notify });
+    } else if (method !== "GET") throw new HttpError(405, "Not allowed.");
+    const [subs, list] = await Promise.all([env.DB.prepare(`SELECT COUNT(*) AS n FROM push_subs`).first(), listAddresses(env, { fallbackName: view.name || "" })]);
+    return json({ on: subs?.n || 0, addresses: list.map((a) => ({ email: a.email, name: a.name || "", notify: a.notify !== false })) });
+  }
 
   const res = await route(request, env, ctx, url, view);
   // (anything that changed the mailbox moves its version on)

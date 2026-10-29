@@ -40,8 +40,30 @@ export async function accountView(env, request) {
   if (!res?.ok) throw Object.assign(new Error("Couldn’t reach your inflite account. Try again in a moment."), { status: 502, publicMessage: "Couldn’t reach your inflite account. Try again in a moment." });
   const view = await res.json();
   if (checked.size > 200) checked.clear();
-  if (accessOf(view) === "ok") checked.set(cookie, { at: Date.now(), view });
+  if (accessOf(view) === "ok") {
+    checked.set(cookie, { at: Date.now(), view });
+    // (the account's Quiet Hours, kept here for new mail's notices, which come with no one's sign-in to ask with)
+    if (view.quiet) keepQuiet(env, view.quiet).catch(() => {});
+  }
   return view;
+}
+
+// The account's Quiet Hours, as its Notifications page has them ({ on, from, to, tz }): kept when they change, and whether
+// it's within them now
+let quietKept = null;
+async function keepQuiet(env, q) {
+  const v = JSON.stringify({ on: !!q.on, from: Number(q.from) || 0, to: Number(q.to) || 0, tz: String(q.tz || "UTC") });
+  if (v === quietKept) return;
+  await env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('quiet', ?1) ON CONFLICT(k) DO UPDATE SET v = excluded.v`).bind(v).run();
+  quietKept = v;
+}
+export async function quietNow(env, t = Date.now()) {
+  let q = null;
+  try { q = JSON.parse((await env.DB.prepare(`SELECT v FROM meta WHERE k = 'quiet'`).first())?.v || "null"); } catch {}
+  if (!q?.on || q.from === q.to) return false;
+  let h;
+  try { h = Number(new Intl.DateTimeFormat("en-GB", { timeZone: q.tz, hour: "numeric", hourCycle: "h23" }).format(t)); } catch { return false; }
+  return q.from > q.to ? h >= q.from || h < q.to : h >= q.from && h < q.to;
 }
 
 // What stands between this browser and the inbox, if anything.
