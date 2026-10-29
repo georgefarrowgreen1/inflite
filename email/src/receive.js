@@ -47,18 +47,21 @@ async function store(message, env, ctx, id, raw, address) {
   const cc = addresses(email.cc);
   const replyTo = addresses(email.replyTo)[0]?.email || null;
   const messageId = cleanMessageId(email.messageId) || `${id}@${env.DOMAIN}`;
-  // (the same message delivered again: kept once)
+  // (the same message delivered again: kept once. Only the same one, though: the same ID from the same sender with the
+  // same subject. A message's ID can be known ahead, so one sent first under it mustn't make the real one be dropped:
+  // a different message under an ID that's taken is kept, as its own)
   if (email.messageId) {
-    const dup = await env.DB.prepare(`SELECT id FROM messages WHERE message_id = ?1 AND mailbox = ?2 LIMIT 1`)
+    const dup = await env.DB.prepare(`SELECT id, from_email, subject FROM messages WHERE message_id = ?1 AND mailbox = ?2 LIMIT 5`)
       .bind(messageId, (message.to || "").toLowerCase())
-      .first();
-    if (dup) {
+      .all();
+    const same = dup.results.some((d) => String(d.from_email || "").toLowerCase() === String(from.email || "").toLowerCase() && (d.subject || "") === (email.subject || ""));
+    if (same) {
       await env.MAIL.delete(`raw/${id}.eml`);
       return;
     }
   }
   const inReplyTo = cleanMessageId(email.inReplyTo);
-  const existingThread = await findThread(env, inReplyTo, email.references);
+  const existingThread = await findThread(env, inReplyTo, email.references, from.email || "", email.subject || "");
   const threadId = existingThread || id;
   const category = await classify(env, email, from.email, !!existingThread, address?.category);
   const date = parseDate(email.date);

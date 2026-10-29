@@ -169,19 +169,30 @@ export async function upsertContacts(env, people) {
   if (stmts.length) await env.DB.batch(stmts);
 }
 
-// Finds the thread a message belongs to from its In-Reply-To / References.
-export async function findThread(env, inReplyTo, references) {
+// Finds the thread a message belongs to from its In-Reply-To / References. For mail that's come in (from: who it's
+// from, subject: its subject), a message it names counts only if it's plausibly the same conversation: one you sent,
+// one this sender was part of, or one with the same subject. A message's ID is no secret (anyone on a thread or a
+// list sees it), so naming one alone mustn't put a stranger's mail into a private conversation.
+const bareSubject = (s) => (s || "").replace(/^((re|fwd?|aw|sv)\s*:\s*)+/i, "").trim().toLowerCase();
+export async function findThread(env, inReplyTo, references, from = null, subject = null) {
   // (the newest few dozen are plenty, and D1 takes at most 100 bound values)
   const refs = (references || "").split(/\s+/).map(cleanMessageId).filter(Boolean).slice(-50);
   const ids = [...new Set([cleanMessageId(inReplyTo), ...refs].filter(Boolean))];
   if (!ids.length) return null;
   const placeholders = ids.map((_, i) => `?${i + 1}`).join(",");
-  const row = await env.DB.prepare(
-    `SELECT thread_id FROM messages WHERE message_id IN (${placeholders}) LIMIT 1`
+  const { results } = await env.DB.prepare(
+    `SELECT thread_id, folder, from_email, to_json, cc_json, subject FROM messages WHERE message_id IN (${placeholders}) LIMIT 20`
   )
     .bind(...ids)
-    .first();
-  return row?.thread_id || null;
+    .all();
+  if (from === null) return results[0]?.thread_id || null;
+  const who = String(from || "").toLowerCase(), about = bareSubject(subject);
+  const part = (json) => { try { return JSON.parse(json || "[]").some((a) => String(a?.email || "").toLowerCase() === who); } catch { return false; } };
+  // (the likeliest first, where an ID is on more than one: the sender's own message, then one you sent, then one they
+  // were part of, then one on the same subject)
+  const rank = (m) => (who && String(m.from_email || "").toLowerCase() === who ? 4 : m.folder === "sent" ? 3 : who && (part(m.to_json) || part(m.cc_json)) ? 2 : about && bareSubject(m.subject) === about ? 1 : 0);
+  const best = results.map((m) => [rank(m), m]).filter(([r]) => r > 0).sort((x, y) => y[0] - x[0])[0];
+  return best?.[1].thread_id || null;
 }
 
 export function cleanMessageId(id) {
