@@ -74,10 +74,13 @@ const MIGRATIONS = [
   `ALTER TABLE addresses ADD COLUMN signature TEXT`,
   // (a sender's mail found without reading the whole mailbox: unsubscribing, Always, how often you open them)
   `CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_email, date)`,
+  // (when it went in the Trash: emptied 30 days after; what's there already counts from now)
+  `ALTER TABLE messages ADD COLUMN trashed_at INTEGER`,
+  `UPDATE messages SET trashed_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000 WHERE folder = 'trash' AND trashed_at IS NULL`,
 ];
 
 // Bumped whenever SCHEMA or MIGRATIONS change, so a new isolate checks one row rather than running them all again.
-const SCHEMA_VERSION = "8";
+const SCHEMA_VERSION = "9";
 
 let ready;
 

@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.29";
+  const BUILD = "1.30";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -2957,7 +2957,7 @@ const IFL = (() => {
             later: ["clock", "Nothing put off"],
             flagged: ["flag", "Nothing flagged"],
             done: ["check", "Nothing done yet"],
-            trash: ["trash", "Trash is empty"],
+            trash: ["trash", "Trash is empty", "What you put here goes for good after 30 days."],
           }[S.lens];
     return h("div.empty.content-in", icon(ic), h("b", said), more || null);
   }

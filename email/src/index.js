@@ -39,8 +39,7 @@ export default {
     try {
       await ensureSchema(env);
       const woken = await wakeSnoozed(env);
-      if (!woken.length) return;
-      const badge = await peopleUnread(env);
+      const badge = woken.length ? await peopleUnread(env) : 0;
       await Promise.allSettled(
         woken.map((w) =>
           pushAll(env, { title: w.from || "Mail", body: `Back from Later: ${w.subject}`, tag: w.threadId, url: `/#thread=${w.threadId}`, badge })
@@ -49,6 +48,9 @@ export default {
     } catch (err) {
       console.error("scheduled: Later", err);
     }
+    // once a day: what's been in the Trash 30 days goes for good, and people kept for addressing mail who've had
+    // nothing to or from them in half a year, with no mail left of theirs
+    await tidy(env).catch((err) => console.error("scheduled: tidy", err));
   },
 };
 
@@ -344,6 +346,23 @@ async function threadBatch(env, { ids, ...body }) {
   }
   for (const id of good) await threadAction(env, id, body, deleteMessages);
   return json({ ok: true });
+}
+
+const TRASH_DAYS = 30, CONTACT_DAYS = 180;
+async function tidy(env, t = Date.now()) {
+  const day = new Date(t).toISOString().slice(0, 10);
+  if ((await env.DB.prepare(`SELECT v FROM meta WHERE k = 'tidy_day'`).first())?.v === day) return;
+  await env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('tidy_day', ?1) ON CONFLICT(k) DO UPDATE SET v = excluded.v`).bind(day).run();
+  // (a few hundred a day at most: any more go the next day)
+  const { results } = await env.DB.prepare(`SELECT id FROM messages WHERE folder = 'trash' AND trashed_at < ?1 LIMIT 500`).bind(t - TRASH_DAYS * 864e5).all();
+  for (let i = 0; i < results.length; i += 100) await deleteMessages(env, results.slice(i, i + 100).map((r) => r.id));
+  await env.DB.prepare(
+    `DELETE FROM contacts WHERE coalesce(last_used, 0) < ?1
+       AND NOT EXISTS (SELECT 1 FROM messages WHERE lower(from_email) = contacts.email)
+       AND NOT EXISTS (SELECT 1 FROM messages WHERE to_json LIKE '%"' || contacts.email || '"%' OR cc_json LIKE '%"' || contacts.email || '"%')`
+  )
+    .bind(t - CONTACT_DAYS * 864e5)
+    .run();
 }
 
 async function emptyTrash(env) {

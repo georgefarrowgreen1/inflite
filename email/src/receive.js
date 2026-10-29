@@ -85,6 +85,8 @@ async function store(message, env, ctx, id, raw, address) {
     ...attachments.map((a) => env.MAIL.put(`att/${a.id}`, a.content, { httpMetadata: { contentType: a.type } })),
   ]);
 
+  // (the files just kept go again if the message can't be: else they'd stay with nothing pointing at them)
+  const unkeep = () => env.MAIL.delete([`body/${id}.json`, ...attachments.map((a) => `att/${a.id}`)]).catch(() => {});
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO messages (id, folder, thread_id, message_id, in_reply_to, refs, mailbox,
@@ -120,7 +122,10 @@ async function store(message, env, ctx, id, raw, address) {
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
       ).bind(a.id, id, a.filename, a.type, a.size, a.contentId, a.disposition)
     ),
-  ]);
+  ]).catch(async (err) => {
+    await unkeep();
+    throw err;
+  });
 
   // (the message is kept by now: these failing mustn't send it down the couldn't-read path, kept and forwarded twice)
   ctx.waitUntil(upsertContacts(env, [from]).catch((e) => console.error("contacts", e)));

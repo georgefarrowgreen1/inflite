@@ -269,15 +269,15 @@ export async function threadAction(env, id, body, deleteMessages) {
       break;
     case "trash":
       await D.prepare(
-        `UPDATE messages SET prev_folder = folder, folder = 'trash', snooze_until = NULL
+        `UPDATE messages SET prev_folder = folder, folder = 'trash', snooze_until = NULL, trashed_at = ?2
          WHERE thread_id = ?1 AND folder NOT IN ('trash', 'drafts')`
       )
-        .bind(id)
+        .bind(id, Date.now())
         .run();
       break;
     case "restore":
       await D.prepare(
-        `UPDATE messages SET folder = COALESCE(prev_folder, 'inbox'), prev_folder = NULL WHERE thread_id = ?1 AND folder = 'trash'`
+        `UPDATE messages SET folder = COALESCE(prev_folder, 'inbox'), prev_folder = NULL, trashed_at = NULL WHERE thread_id = ?1 AND folder = 'trash'`
       )
         .bind(id)
         .run();
