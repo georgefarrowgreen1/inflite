@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.26";
+  const BUILD = "1.27";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -352,6 +352,8 @@ const IFL = (() => {
     open = null;
     m.anchor.classList.remove("ifm-lit");
     document.removeEventListener("keydown", m.key, true);
+    // (focus back on your photo, if it was in the menu: else it's left on nothing, and a screen reader starts again at the top)
+    if (m.layer.contains(document.activeElement) || document.activeElement === document.body) m.anchor.focus?.({ preventScroll: true });
     m.layer.classList.remove("open");
     m.pop.classList.remove("open");
     if (now) m.layer.remove();
@@ -484,8 +486,10 @@ const IFL = (() => {
 
   function realApi() {
     async function req(method, path, body, opts = {}) {
+      // (given up on after 20 seconds, so a request that hangs can't leave the list, or the page, waiting for ever)
       const res = await fetch(path, {
         method,
+        signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(20000) : undefined,
         credentials: "same-origin",
         keepalive: opts.keepalive,
         headers: {
@@ -494,6 +498,8 @@ const IFL = (() => {
           ...(body !== undefined && { "Content-Type": "application/json" }),
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
+      }).catch(() => {
+        throw new ApiError(0, navigator.onLine === false ? "You’re offline." : "Couldn’t reach Mail. Try again in a moment.");
       });
       let data = null;
       try {
@@ -2095,6 +2101,17 @@ const IFL = (() => {
   }
 
   async function signOut() {
+    // (this device's notifications end with its sign-in, and what it searched for goes with it)
+    try {
+      const sub = await (swReg || (await navigator.serviceWorker?.getRegistration()))?.pushManager?.getSubscription();
+      if (sub) {
+        await api.pushUnsubscribe(sub.endpoint).catch(() => {});
+        await sub.unsubscribe().catch(() => {});
+      }
+    } catch {}
+    try {
+      localStorage.removeItem(RECENT_KEY);
+    } catch {}
     try {
       await api.logout();
     } catch {}
@@ -2831,7 +2848,7 @@ const IFL = (() => {
       "div.swipe-hint",
       icon("check"),
       h("span", "Swipe right when you've dealt with something, left to bring it back later."),
-      h("button", { type: "button", "aria-label": "Got It", onclick: () => dismissSwipeHint() }, icon("x"))
+      h("button", { type: "button", "aria-label": "Dismiss Tip", onclick: () => dismissSwipeHint() }, icon("x"))
     );
     return el;
   }
@@ -3441,7 +3458,7 @@ const IFL = (() => {
       h(
         "p",
         info.of > 1 ? `You've opened ${info.opened} of their last ${info.of} emails. ` : "",
-        info.how === "page" ? "Mail will open their page to finish." : "Mail will ask them to stop, and move what's here to Done."
+        info.how === "page" ? "Mail will open their page to finish." : info.how === "mail" && info.to ? `Mail will email ${info.to} to ask them to stop, and move what's here to Done.` : "Mail will ask them to stop, and move what's here to Done."
       ),
       go,
       h("button.pbtn.quiet-btn", { type: "button", onclick: close }, "Cancel")
@@ -4020,6 +4037,15 @@ const IFL = (() => {
   // Designed emails (their own backgrounds) keep a white card; plain ones take the app's own colours, dark mode too.
   const DESIGNED = /\bbgcolor\s*=|background(-color|-image)?\s*:|<(table|td|body)[^>]*\sbackground\s*=/i;
 
+  // The email's own HTML, parsed (inert: nothing loads) rather than matched, so a tag hidden inside another can't come
+  // back once the outer one's taken out: no scripts, and no link, meta or base (a preconnect or a base would reach the
+  // sender with Remote Images off). Its styles kept; its body's attributes carried over by the frame's own parser.
+  function cleanMail(html) {
+    const d = new DOMParser().parseFromString(html, "text/html");
+    d.querySelectorAll("script, link, meta, base, noscript").forEach((e) => e.remove());
+    return [...d.head.querySelectorAll("style")].map((e) => e.outerHTML).join("") + d.body.outerHTML;
+  }
+
   function htmlFrame(m) {
     const remotePattern = /(src|background)\s*=\s*["']?\s*https?:|url\(\s*["']?https?:/i;
     const hasRemote = remotePattern.test(m.html);
@@ -4058,7 +4084,7 @@ img{max-width:100%;height:auto}
 pre{white-space:pre-wrap}
 .inflite-q{display:none!important}
 .inflite-showq .inflite-q{display:revert!important}
-</style></head><body>${m.html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<(link|meta|base)\b[^>]*>/gi, "")}</body></html>`;
+</style></head><body>${cleanMail(m.html)}</body></html>`;
 
     const frame = h("iframe.mail-frame", {
       style: { colorScheme: designed ? "light" : dark ? "dark" : "light" },
@@ -5155,7 +5181,7 @@ pre{white-space:pre-wrap}
       document.activeElement?.blur?.();
       const appEl = document.getElementById("app");
       if (appEl) appEl.inert = false;
-      if (sheetOpener?.isConnected && S.layout !== "phone") sheetOpener.focus({ preventScroll: true });
+      if (sheetOpener?.isConnected) sheetOpener.focus({ preventScroll: true });
       sheetOpener = null;
       setTimeout(updateWhenSafe, 800);
       document.body.classList.remove("sheet-open");
@@ -5327,7 +5353,8 @@ pre{white-space:pre-wrap}
     if (c.quote) {
       const qText = c.quote.text || htmlToText(c.quote.html);
       text += `\n\n${c.quote.header}\n\n${c.quote.forward ? qText : qText.split("\n").map((l) => `> ${l}`).join("\n")}`;
-      const qHtml = c.quote.html ? bodyInner(c.quote.html) : textToHtml(c.quote.text);
+      // (pictures shown from Mail's own attachments are Mail's links, no use to anyone else: they're left out)
+      const qHtml = c.quote.html ? bodyInner(c.quote.html).replace(/<img\b[^>]*\bsrc\s*=\s*["']?\/api\/attachments\/[^>]*>/gi, "") : textToHtml(c.quote.text);
       html += `<br><div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#6e6e73;font-size:14px">${textToHtml(c.quote.header)}</div><blockquote type="cite" style="margin:10px 0 0;padding:0 0 0 12px;border-left:2px solid #c7c7cc">${qHtml}</blockquote>`;
     }
     const attachments = [];

@@ -72,10 +72,12 @@ const MIGRATIONS = [
      is_default INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
   // (an address's own signature, over the one for every address)
   `ALTER TABLE addresses ADD COLUMN signature TEXT`,
+  // (a sender's mail found without reading the whole mailbox: unsubscribing, Always, how often you open them)
+  `CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_email, date)`,
 ];
 
 // Bumped whenever SCHEMA or MIGRATIONS change, so a new isolate checks one row rather than running them all again.
-const SCHEMA_VERSION = "7";
+const SCHEMA_VERSION = "8";
 
 let ready;
 

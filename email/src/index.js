@@ -1,4 +1,4 @@
-import { accountView, accessOf, passOn, forgetCheck } from "./auth.js";
+import { accountView, accessOf, passOn, forgetCheck, accountCookie } from "./auth.js";
 import {
   bumpVersion,
   mailVersion,
@@ -36,15 +36,19 @@ export default {
 
   // Every few minutes: conversations whose Later time has come go back in the stream, with a notice.
   async scheduled(event, env, ctx) {
-    await ensureSchema(env);
-    const woken = await wakeSnoozed(env);
-    if (!woken.length) return;
-    const badge = await peopleUnread(env);
-    await Promise.all(
-      woken.map((w) =>
-        pushAll(env, { title: w.from || "Mail", body: `Back from Later: ${w.subject}`, tag: w.threadId, url: `/#thread=${w.threadId}`, badge })
-      )
-    );
+    try {
+      await ensureSchema(env);
+      const woken = await wakeSnoozed(env);
+      if (!woken.length) return;
+      const badge = await peopleUnread(env);
+      await Promise.allSettled(
+        woken.map((w) =>
+          pushAll(env, { title: w.from || "Mail", body: `Back from Later: ${w.subject}`, tag: w.threadId, url: `/#thread=${w.threadId}`, badge })
+        )
+      );
+    } catch (err) {
+      console.error("scheduled: Later", err);
+    }
   },
 };
 
@@ -154,7 +158,7 @@ async function route(request, env, ctx, url, view) {
     if (method === "GET") {
       const info = await unsubInfo(env, m[1]);
       if (!info) throw new HttpError(404, "This sender doesn't say how to unsubscribe.");
-      return json({ sender: info.sender, opened: info.opened, of: info.of, how: info.oneClick && info.https ? "oneclick" : info.mailto ? "mail" : info.https ? "page" : null });
+      return json({ sender: info.sender, opened: info.opened, of: info.of, how: info.oneClick && info.https ? "oneclick" : info.mailto ? "mail" : info.https ? "page" : null, to: info.mailto ? mailtoTo(info.mailto) : null });
     }
     if (method === "POST") return unsubscribe(env, m[1]);
   }
@@ -201,6 +205,16 @@ async function route(request, env, ctx, url, view) {
 
 // Unsubscribe: by the sender's one-click address (RFC 8058) if it has one, else by the email it gives; failing both, the
 // page it gives, for Mail to open. Then everything from it that's waiting goes to Done.
+// (the address a sender's unsubscribe email goes to, shown before it's sent; its subject and body kept short and plain)
+function mailtoTo(mailto) {
+  try {
+    const to = decodeURIComponent(new URL(mailto).pathname);
+    return EMAIL_RE.test(to) ? to : null;
+  } catch {
+    return null;
+  }
+}
+const oneLine = (v, n) => String(v || "").replace(/[\r\n]+/g, " ").trim().slice(0, n);
 async function unsubscribe(env, threadId) {
   const info = await unsubInfo(env, threadId);
   if (!info) throw new HttpError(404, "This sender doesn't say how to unsubscribe.");
@@ -224,15 +238,15 @@ async function unsubscribe(env, threadId) {
   }
   if (!done && info.mailto) {
     const u = new URL(info.mailto);
-    const to = decodeURIComponent(u.pathname);
-    if (EMAIL_RE.test(to)) {
+    const to = mailtoTo(info.mailto);
+    if (to) {
       let from;
       try {
         from = checkFrom(env, info.mailbox);
       } catch {
         from = checkFrom(env, null);
       }
-      await env.EMAIL.send({ from, to, subject: u.searchParams.get("subject") || "unsubscribe", text: u.searchParams.get("body") || "unsubscribe" });
+      await env.EMAIL.send({ from, to, subject: oneLine(u.searchParams.get("subject"), 200) || "unsubscribe", text: oneLine(u.searchParams.get("body"), 500) || "unsubscribe" });
       done = true;
     }
   }
@@ -291,7 +305,7 @@ const publicUser = (v) =>
 // answers /api/account/), kept for good by the browser under its ?v= (when it last changed)
 async function photo(env, request, url) {
   const r = await fetch(`${env.ACCOUNT_ORIGIN}/api/account/me/photo?v=${encodeURIComponent(url.searchParams.get("v") || "")}`, {
-    headers: { Cookie: request.headers.get("Cookie") || "", Accept: "image/*" },
+    headers: { Cookie: accountCookie(request), Accept: "image/*" },
   });
   const type = r.headers.get("Content-Type") || "";
   if (!r.ok || !type.startsWith("image/")) throw new HttpError(404, "No photo.");

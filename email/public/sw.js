@@ -3,6 +3,25 @@
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
+// The browser renewed this device's subscription: the new one kept in its place, so notices carry on without Mail
+// being opened first
+self.addEventListener("pushsubscriptionchange", (e) => {
+  e.waitUntil(
+    (async () => {
+      const post = (path, body) =>
+        fetch(path, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Inflite": "1" }, body: JSON.stringify(body) });
+      let sub = e.newSubscription;
+      if (!sub) {
+        const { key } = await (await fetch("/api/push/key", { credentials: "same-origin" })).json();
+        const raw = atob(key.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((key.length + 3) % 4));
+        sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) });
+      }
+      await post("/api/push/subscribe", sub.toJSON());
+      if (e.oldSubscription?.endpoint && e.oldSubscription.endpoint !== sub.endpoint) await post("/api/push/unsubscribe", { endpoint: e.oldSubscription.endpoint });
+    })().catch(() => {})
+  );
+});
+
 self.addEventListener("push", (e) => {
   let d = {};
   try {

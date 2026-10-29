@@ -119,8 +119,9 @@ async function store(message, env, ctx, id, raw, address) {
     ),
   ]);
 
-  ctx.waitUntil(upsertContacts(env, [from]));
-  await bumpVersion(env);
+  // (the message is kept by now: these failing mustn't send it down the couldn't-read path, kept and forwarded twice)
+  ctx.waitUntil(upsertContacts(env, [from]).catch((e) => console.error("contacts", e)));
+  await bumpVersion(env).catch((e) => console.error("version", e));
 
   // A notice for mail from people (not for updates: newsletters, receipts and the like wait in the stream), unless its
   // address is set not to notify; an address set to Updates that notifies, notifies for all of it
@@ -140,7 +141,7 @@ async function store(message, env, ctx, id, raw, address) {
   }
 
   // Optional safety net: also forward to a verified address.
-  if (env.FORWARD_TO) ctx.waitUntil(message.forward(env.FORWARD_TO));
+  if (env.FORWARD_TO) ctx.waitUntil(message.forward(env.FORWARD_TO).catch((e) => console.error("forward", e)));
 }
 
 // People or Updates: a rule set for the sender wins; then the address's own setting; then a reply in a conversation you're part of is People; then the
