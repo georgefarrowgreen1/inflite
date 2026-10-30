@@ -2266,8 +2266,21 @@ const IFL = (() => {
   addEventListener("online", () => ((S.offline = false), renderListChrome()));
   addEventListener("offline", () => renderListChrome());
 
+  // What has the focus in a part about to be drawn again, said so its new self can be found (a tab by its key, a button
+  // by its class and name): so the keyboard and VoiceOver stay where they were as the list's counts refresh
+  function focusOf(...parts) {
+    const a = document.activeElement;
+    if (!a || !parts.some((p) => p?.contains(a))) return null;
+    return { k: a.dataset?.k, cls: a.className, label: a.getAttribute("aria-label") };
+  }
+  function refocus(f, ...parts) {
+    if (!f) return;
+    for (const p of parts) for (const el of p?.querySelectorAll("button") || [])
+      if ((f.k && el.dataset.k === f.k) || (!f.k && el.className === f.cls && el.getAttribute("aria-label") === f.label)) return el.focus({ preventScroll: true });
+  }
   function renderListChrome() {
     if (!els.listTitle) return;
+    const kept = focusOf(els.listTitle, els.listSubtitle, els.tabs);
     const title = listTitle();
     const n = !S.query && (S.lens === "people" || S.lens === "updates") ? lensCount(S.lens) : 0;
     setKids(
@@ -2307,6 +2320,7 @@ const IFL = (() => {
     setKids(els.listNavTitle, title, n ? h("small", `${n} unread`) : null);
     renderTabs();
     renderSearchHelp();
+    refocus(kept, els.listTitle, els.listSubtitle, els.tabs);
   }
 
   // Search's filters, beside what's typed: who it's from, when, with files, unread. Each kept here and put into the
