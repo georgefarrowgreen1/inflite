@@ -1,6 +1,9 @@
 // Mail's service worker: only for notifications (nothing is cached; Mail always loads fresh).
 
 self.addEventListener("install", () => self.skipWaiting());
+// (the updater every app shares, about to load a new version: Mail's files are fetched afresh by the page itself, past
+// the browser's copy, so there's nothing for this worker to do: IFL.updates)
+self.addEventListener("message", (e) => { if (e.data?.ifl === "renew") e.ports[0]?.postMessage({ ifl: "renewed" }); });
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
 // The browser renewed this device's subscription: the new one kept in its place, so notices carry on without Mail
