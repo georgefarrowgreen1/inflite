@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.34";
+  const BUILD = "1.35";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -2163,6 +2163,7 @@ const IFL = (() => {
     } catch {}
     if (DEMO) return toast("Demo mode — nothing to sign out of", { icon: "lock" });
     showGate("signin");
+    if (authOrigin() !== accountOrigin) location.assign(`${authOrigin()}/#${new URLSearchParams({ signout: "mail", back: `${location.origin}/` })}`);
   }
 
   // From the title: what shows (in People and Updates), then everything else the list can do
@@ -5590,9 +5591,11 @@ pre{white-space:pre-wrap}
   // Login
   // ---------------------------------------------------------------------------
 
-  // Signing in happens on the inflite account's page (account.inflite.ai). Mail sends you there with the hash of a word
-  // it keeps in this tab; the page sends you back with a code that's good once, and only with that word.
+  // Signing in happens on inflite's sign-in page (auth.inflite.ai, beside the account's page). Mail sends you there with
+  // the hash of a word it keeps in this tab; the page sends you back with a code that's good once, and only with that
+  // word. Signing out ends there too, which says so and offers the way back. (Locally, the account's page does both.)
   let accountOrigin = "";
+  const authOrigin = () => (/\/\/account\.localhost(:|$)/.test(accountOrigin) ? accountOrigin : accountOrigin.replace("//account.", "//auth."));
   const VERIFIER_KEY = "inflite:signin-verifier";
 
   function onSignedOut(access) {
@@ -5612,7 +5615,7 @@ pre{white-space:pre-wrap}
       sessionStorage.setItem(VERIFIER_KEY, verifier);
     } catch {}
     const back = `${location.origin}/`;
-    location.assign(`${accountOrigin}/#${new URLSearchParams({ signin: "mail", ask, back })}`);
+    location.assign(`${authOrigin()}/#${new URLSearchParams({ signin: "mail", ask, back })}`);
   }
 
   // Back from the account's page with a code: swapped for the site's sign-in. Returns the session, or null.
