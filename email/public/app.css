@@ -233,6 +233,20 @@ svg.i {
   background: radial-gradient(120% 80% at 50% -10%, var(--sky-a), var(--sky-b) 52%, var(--sky-c)) var(--sky-top);
 }
 
+/* (on a phone or a tablet, as the account page's: the sky ends above Safari's bar at the foot, fading into the page's own
+   colours (html, body), so Safari takes it as the layer at the top of the page and tints the strip behind the status
+   bar with its colour, --sky-top; reaching the foot of the screen, it's taken for the page's background, and the strip
+   is filled with the page's near-white instead) */
+@media (hover: none) {
+  .sky {
+    bottom: auto;
+    min-height: 0;
+    height: calc(100% - 120px);
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 160px), transparent);
+    mask-image: linear-gradient(#000 calc(100% - 160px), transparent);
+  }
+}
+
 /* (each light soft at its edge by its own gradient rather than a blur, and moved on in small steps, as the site's are,
    so the glass over them isn't redrawn every frame) */
 .aura {
