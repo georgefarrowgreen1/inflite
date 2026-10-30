@@ -6031,3 +6031,11 @@ button.set-row:active {
 .ifs-hero b { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .ifs-hero span { font-size: 14px; opacity: 0.62; }
 /* ==== end of InFlite's menu ==== */
+
+/* Small buttons with a larger place to tap than they show */
+.sub-tag, .s-clear, .quote-toggle, .from-chip, .later-note button, .unsub-btn { position: relative; }
+.sub-tag::after, .s-clear::after, .quote-toggle::after, .from-chip::after, .later-note button::after, .unsub-btn::after {
+  content: "";
+  position: absolute;
+  inset: -8px -4px;
+}

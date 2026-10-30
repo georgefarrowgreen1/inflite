@@ -3867,25 +3867,37 @@ const IFL = (() => {
     // (said, when the reply goes from an address other than the default: the one the mail came to)
     const via = last?.mailbox && last.mailbox !== S.me?.defaultFrom && mine(last.mailbox) ? ` from ${last.mailbox.split("@")[0]}@` : "";
     const said = who ? `Reply to ${who}${via}` : `Reply${via}`;
+    // (what's typed is kept for each conversation, so a redraw, or going to another and back, never loses it; it goes
+    // once the reply's on its way, and comes back if it couldn't be)
+    const drafts = (S.qrDrafts ||= new Map());
     const field = h("textarea.qr-field", { rows: 1, placeholder: `${said}…`, "aria-label": said, enterkeyhint: "send" });
+    field.value = drafts.get(t.id) || "";
     const send = h("button.qr-send", { type: "button", "aria-label": "Send", disabled: true }, icon("arrowUp"));
     const grow = () => {
       field.style.height = "auto";
       field.style.height = `${Math.min(field.scrollHeight, 120)}px`;
       send.disabled = !field.value.trim();
     };
-    field.addEventListener("input", grow);
+    field.addEventListener("input", () => { if (field.value) drafts.set(t.id, field.value); else drafts.delete(t.id); grow(); });
+    if (field.value) requestAnimationFrame(grow);
     const go = () => {
       const text = field.value.trim();
       if (!text) return;
       field.value = "";
       grow();
       field.blur();
+      let queued = false;
       withReplyTarget(t.id, (m) => {
         const c = replyDraft(m, "reply");
         const sig = sigFor(c.from);
         c.text = sig ? `${text}\n\n${sig}` : text;
         queueSend(c);
+        queued = true;
+        drafts.delete(t.id);
+      }).then(() => {
+        if (queued) return;
+        drafts.set(t.id, text);
+        if (field.isConnected && !field.value) { field.value = text; grow(); }
       });
     };
     send.addEventListener("click", go);
@@ -4476,7 +4488,8 @@ pre{white-space:pre-wrap}
       const thumb = items[index].id === a.id ? fromImg : null;
       const tr = thumb?.isConnected && thumb.getBoundingClientRect();
       const b = img && contained(img);
-      if (tr && tr.width && b && zoom[index].s <= 1.01) {
+      // (shrinking back into its thumbnail, unless motion's turned down: then it simply fades)
+      if (tr && tr.width && b && zoom[index].s <= 1.01 && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
         const z = zoom[index];
         img.style.transition = "none";
         img.animate(
