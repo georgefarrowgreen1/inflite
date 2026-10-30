@@ -5552,6 +5552,8 @@ pre{white-space:pre-wrap}
     if (k === "/") return e.preventDefault(), els.searchInput.focus();
     if (k === "1") return setCategory("people");
     if (k === "2") return setCategory("updates");
+    // (the arrows scroll what's being read, where the focus is in it; j and k always go to the next and the one before)
+    if ((k === "ArrowDown" || k === "ArrowUp") && els.detail?.contains(document.activeElement)) return;
     if (k === "j" || k === "ArrowDown") {
       e.preventDefault();
       if (S.selectedId) stepThread(1);
