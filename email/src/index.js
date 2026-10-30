@@ -260,16 +260,11 @@ async function unsubscribe(env, threadId) {
     }
   }
   if (!done && info.mailto) {
-    const u = new URL(info.mailto);
     const to = mailtoTo(info.mailto);
     if (to) {
-      let from;
-      try {
-        from = checkFrom(env, info.mailbox);
-      } catch {
-        from = checkFrom(env, null);
-      }
-      await env.EMAIL.send({ from, to, subject: oneLine(u.searchParams.get("subject"), 200) || "unsubscribe", text: oneLine(u.searchParams.get("body"), 500) || "unsubscribe" });
+      // (from the default address, and saying only "unsubscribe": the sender's header chooses where it goes, never what
+      // it says, nor which of your addresses it's from, so an unsubscribe can't be made into a message from you)
+      await env.EMAIL.send({ from: checkFrom(env, null), to, subject: "unsubscribe", text: "unsubscribe" });
       done = true;
     }
   }
@@ -541,8 +536,10 @@ async function attachment(env, id, url, request) {
   const obj = row && (await env.MAIL.get(`att/${id}`, range ? { range: request.headers } : undefined));
   if (!obj) throw new HttpError(404, "Attachment not found");
   const name = (row.filename || "attachment").replace(/["\\\r\n]/g, "_");
-  const download = url.searchParams.has("download");
-  const type = row.type || "application/octet-stream";
+  // (shown in place only if it's a picture, a sound, a film or a PDF; anything else, an HTML page say, is a download,
+  // so it never opens as a page of Mail's own)
+  const type = row.type || "application/octet-stream", viewable = /^(image\/(png|jpe?g|gif|webp|avif|heic|bmp)|audio\/[\w.+-]+|video\/[\w.+-]+|application\/pdf)$/i.test(type);
+  const download = url.searchParams.has("download") || !viewable;
   const headers = {
     "Content-Type": type,
     "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${name}"; filename*=UTF-8''${encodeURIComponent(row.filename || "attachment")}`,

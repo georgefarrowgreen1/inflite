@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.32";
+  const BUILD = "1.33";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -354,7 +354,10 @@ const IFL = (() => {
     const sheet = el("div", "ifa-sheet", img, el("h2", "ifa-t", "Notifications on this device"), el("p", "ifa-p", line), go, later);
     sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-modal", "true"); sheet.setAttribute("aria-label", "Notifications on this device");
     const layer = allowEl = el("div", "ifa-layer", sheet), was = document.activeElement;
-    const key = (e) => { if (e.key === "Escape") shut(); };
+    const key = (e) => {
+      if (e.key === "Escape") shut();
+      else if (e.key === "Tab") { e.preventDefault(); (document.activeElement === go ? later : go).focus(); }
+    };
     const shut = () => { document.removeEventListener("keydown", key, true); layer.classList.remove("on"); setTimeout(() => layer.remove(), 320); if (allowEl === layer) allowEl = null; was?.focus?.({ preventScroll: true }); };
     later.onclick = shut;
     layer.addEventListener("pointerdown", (e) => { if (e.target === layer) shut(); });
@@ -388,6 +391,7 @@ const IFL = (() => {
     const m = open;
     if (!m) return;
     open = null;
+    m.behind?.forEach((c) => { c.inert = false; });
     m.anchor.classList.remove("ifm-lit");
     document.removeEventListener("keydown", m.key, true);
     // (focus back on your photo, if it was in the menu: else it's left on nothing, and a screen reader starts again at the top)
@@ -419,7 +423,7 @@ const IFL = (() => {
           sw.setAttribute("aria-checked", String(!!r.on)); sw.setAttribute("aria-label", r.label);
           if (r.key) sw.dataset.k = r.key;
           sw.disabled = !!r.disabled;
-          sw.onclick = async () => { const next = sw.getAttribute("aria-checked") !== "true"; sw.setAttribute("aria-checked", String(next)); const v = await r.toggle?.(next); if (typeof v === "boolean") sw.setAttribute("aria-checked", String(v)); };
+          sw.onclick = async () => { const next = sw.getAttribute("aria-checked") !== "true"; sw.setAttribute("aria-checked", String(next)); let v; try { v = await r.toggle?.(next); } catch (_) { v = !next; } if (typeof v === "boolean") sw.setAttribute("aria-checked", String(v)); };
           rows.append(el("div", "ifm-row" + (r.disabled ? " off" : ""), ic, el("span", "ifm-l", r.label), sw));
         } else {
           // (a value or none, its chevron in the same column: lined up with every other row's)
@@ -443,7 +447,7 @@ const IFL = (() => {
     const out = el("button", "ifm-out", said("Sign Out")); out.insertAdjacentHTML("afterbegin", svg("signout")); out.type = "button"; out.onclick = act(o.signOut);
     const foot = el("div", "ifm-foot", el("span", "ifm-ver", mark, `${NAME[o.app]} ${o.build}`, o.update ? null : status), o.update ? status : null, o.signOut ? out : null);
     const pop = el("div", `ifm-pop ifm-in-${o.app}`, card, rowsBox, foot);
-    pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "You and your apps");
+    pop.setAttribute("role", "dialog"); pop.setAttribute("aria-modal", "true"); pop.setAttribute("aria-label", "You and your apps");
     const layer = el("div", "ifm-layer", pop);
     layer.addEventListener("pointerdown", (e) => { if (e.target === layer) { e.preventDefault(); close(); } });
     const key = (e) => {
@@ -455,6 +459,9 @@ const IFL = (() => {
       }
     };
     document.addEventListener("keydown", key, true);
+    // (the page behind out of reach while it's open: a screen reader stays in the menu)
+    const behind = [...document.body.children].filter((c) => !c.inert && c.tagName !== "SCRIPT");
+    behind.forEach((c) => { c.inert = true; });
     document.body.append(layer);
     // (under your photo, from where it grows; over it, if your photo's low on the screen)
     const r = anchor.getBoundingClientRect(), H = window.innerHeight, W = window.innerWidth;
@@ -465,7 +472,7 @@ const IFL = (() => {
     pop.style.left = `${left}px`;
     pop.style.transformOrigin = `${r.left + r.width / 2 - left}px ${below ? "-10px" : "calc(100% + 10px)"}`;
     anchor.classList.add("ifm-lit");
-    open = { anchor, layer, pop, key, onClose: o.onClose, redraw: (list) => {
+    open = { anchor, layer, pop, key, behind, onClose: o.onClose, redraw: (list) => {
       // (the focus kept on the row it was on, by its key)
       const k = document.activeElement?.dataset?.k;
       rowsBox.replaceChildren(...drawRows(list));
@@ -1114,9 +1121,7 @@ const IFL = (() => {
   // ---------------------------------------------------------------------------
 
   // (its box measured once per touch, and moved at most once a frame)
-  // No pinch zoom in Safari (which goes by its own gesture events rather than the viewport or touch-action)
-  const noZoom = (e) => e.preventDefault();
-  for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, noZoom, { passive: false });
+  // (pinching zooms, for anyone who needs it larger: Safari isn't told otherwise)
 
   let litEl = null, litRect = null, litPos = null, litFrame = 0;
   function light(e) {
@@ -1292,7 +1297,8 @@ const IFL = (() => {
 
   function updateLayout() {
     const w = window.innerWidth;
-    const phone = w < 700;
+    // (narrow, or short: a phone on its side keeps the phone's layout, its height too little for two panes and compose)
+    const phone = w < 700 || (window.innerHeight < 500 && w < 1000);
     const body = document.body;
     const was = S.layout;
     S.layout = phone ? "phone" : "pad";
@@ -1325,6 +1331,7 @@ const IFL = (() => {
         return;
       }
       p.dataset.pos = i < S.depth ? "behind" : i === S.depth ? "current" : "ahead";
+      document.body.classList.toggle("deep", S.depth > 0);
       p.inert = i !== S.depth;
     });
   }
@@ -3212,9 +3219,11 @@ const IFL = (() => {
       g.lastT = now;
       const width = g.width;
       let x = g.base + dx;
-      const fullAt = width * 0.5;
+      // (all the way: past half the row, and always well past its actions when they're open, so closing an open row
+      // never counts as swiping it all the way, on a narrow phone where its actions are most of the row)
+      const fullAt = Math.max(width * 0.5, LEFT_W + 40), fullRight = Math.min(-width * 0.6, -RIGHT_W - 40);
       const prevFull = g.full;
-      g.full = x > fullAt ? "left" : x < -width * 0.6 ? "right" : null;
+      g.full = x > fullAt ? "left" : x < fullRight ? "right" : null;
       if (g.full !== prevFull && navigator.vibrate) navigator.vibrate(8);
       x = Math.max(-width, Math.min(width, x));
       g.x = x;
@@ -3585,7 +3594,8 @@ const IFL = (() => {
     const patch = action === "category" ? { category: extra.category } : action === "snooze" ? { snoozeUntil: extra.until, done: false } : PATCH[action] || {};
     if (t) Object.assign(t, patch);
     if (S.thread?.id === id) Object.assign(S.thread, patch);
-    const leaving = !!t && !inView(t);
+    // (the one that's open, read by opening it, stays till the list's next asked for: else Unread takes it straight away)
+    const leaving = !!t && !inView(t) && !(action === "read" && S.selectedId === id);
     if (leaving && S.selectedId === id) await leaveThread(id);
     if (leaving) removeRow(id);
     else updateRow(id);
@@ -3724,7 +3734,9 @@ const IFL = (() => {
 
   async function loadBody(id) {
     if (S.bodies.has(id)) return S.bodies.get(id);
-    const m = await api.message(id);
+    let m;
+    try { m = await api.message(id); S.bodyErr?.delete(id); }
+    catch (err) { (S.bodyErr ||= new Map()).set(id, err.message || "Couldn't load it."); throw err; }
     // (the most recent few dozen kept: newsletters can be large)
     if (S.bodies.size >= 30) S.bodies.delete(S.bodies.keys().next().value);
     S.bodies.set(id, m);
@@ -3765,9 +3777,15 @@ const IFL = (() => {
       scrollToNewest();
       if (full.unread) act(id, "read", {}, { quiet: true });
     } catch (err) {
-      if (token === S.detailToken) toast(err.message, { error: true });
+      if (token === S.detailToken) {
+        S.thread = { ...S.thread, loading: false, failed: err.message || "Couldn't open it." };
+        renderDetail({ keepScroll: true });
+      }
     }
   }
+
+  // what couldn't load, said where it would have been, with a way to try again
+  const loadFailed = (said, again) => h("div.load-failed", h("p", said), h("button.chip", { type: "button", onclick: again }, "Try Again"));
 
   function stepThread(dir) {
     const i = S.threads.findIndex((t) => t.id === S.selectedId);
@@ -3922,7 +3940,8 @@ const IFL = (() => {
       { class: keepScroll ? null : "content-in" },
       convHead(t),
       // (oldest first, as a conversation reads; the newest at the foot, by the reply)
-      t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", [...t.messages].reverse().map(messageCard))
+      t.failed ? loadFailed(t.failed, () => openThread(t.id, { fromNav: true }))
+        : t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", [...t.messages].reverse().map(messageCard))
     );
     setKids(els.detailScroll, content);
     els.detailScroll.scrollTop = keepScroll ? top : 0;
@@ -3967,6 +3986,7 @@ const IFL = (() => {
     return h(
       "header.conv-head",
       { tabindex: "-1" },
+      t.subject && t.subject.length > 48 ? h("h2.conv-subject", t.subject) : null,
       meta,
       t.snoozeUntil
         ? h(
@@ -4006,7 +4026,9 @@ const IFL = (() => {
       open
         ? full
           ? [messageBody(full), full.attachments?.length ? attachmentsEl(full.attachments) : null, h("div.msg-foot", fmtLongDate(m.date))]
-          : h("div.load-more", h("div.spinner"))
+          : S.bodyErr?.has(m.id)
+            ? loadFailed(S.bodyErr.get(m.id), () => { S.bodyErr.delete(m.id); renderCard(m.id); loadBody(m.id).catch(() => {}).finally(() => renderCard(m.id)); })
+            : h("div.load-more", h("div.spinner"))
         : null
     );
   }
@@ -4117,7 +4139,7 @@ a,a *{color:${v("--mail-link")}!important}` : ""}`;
 <base target="_blank">
 <style>
 ${look}
-html,body{touch-action:pan-x pan-y}
+html,body{touch-action:manipulation}
 body{overflow-wrap:anywhere;-webkit-text-size-adjust:100%}
 img{max-width:100%;height:auto}
 pre{white-space:pre-wrap}
@@ -4139,7 +4161,10 @@ pre{white-space:pre-wrap}
       const d = frame.contentDocument;
       if (!d?.body) return;
       const b = d.body.getBoundingClientRect();
-      const px = Math.ceil(b.bottom + (parseFloat(d.defaultView.getComputedStyle(d.body).marginBottom) || 0));
+      // (a template that holds the body to the page's height, html,body{height:100%}, overflows it instead: the
+      // document's own height then says how tall it really is)
+      const over = d.documentElement.scrollHeight > frame.offsetHeight + 1 ? d.documentElement.scrollHeight : 0;
+      const px = Math.ceil(Math.max(b.bottom + (parseFloat(d.defaultView.getComputedStyle(d.body).marginBottom) || 0), over));
       if (Math.abs(px - frame.offsetHeight) > 1) frame.style.height = `${px}px`;
     };
     let lastWidth = 0;
@@ -4151,7 +4176,8 @@ pre{white-space:pre-wrap}
       lastWidth = avail;
       d.body.style.zoom = "";
       const sw = d.documentElement.scrollWidth;
-      if (sw > avail + 2) d.body.style.zoom = String(Math.max(0.4, avail / sw));
+      // (shrunk no further than this, so its words stay readable: what's left is scrolled sideways, in the frame)
+      if (sw > avail + 2) d.body.style.zoom = String(Math.max(0.6, avail / sw));
       fit();
     };
 
@@ -4177,7 +4203,7 @@ pre{white-space:pre-wrap}
       const rw = new ResizeObserver(() => (frame.isConnected ? fitWidth() : rw.disconnect()));
       rw.observe(frame);
       d.addEventListener("load", fit, true);
-      for (const ev of ["gesturestart", "gesturechange", "gestureend"]) d.addEventListener(ev, noZoom, { passive: false });
+
     });
 
     const parts = [];
@@ -4750,6 +4776,19 @@ pre{white-space:pre-wrap}
     }
   }
 
+  // A message being written, kept on this device every couple of seconds (its words and who it's to, not its attachments),
+  // till it's sent, saved as a draft or thrown away: so a draft that couldn't be saved, the app closed in the background,
+  // or a sign-in that's run out, loses nothing. Offered again when Mail next opens
+  const UNSENT = "mail:unsent";
+  const keepUnsent = (c) => { try { const { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, draftId } = c; localStorage.setItem(UNSENT, JSON.stringify({ mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, draftId, at: Date.now() })); } catch {} };
+  const forgetUnsent = () => { try { localStorage.removeItem(UNSENT); } catch {} };
+  function offerUnsent() {
+    let u = null;
+    try { u = JSON.parse(localStorage.getItem(UNSENT) || "null"); } catch {}
+    if (!u || Date.now() - u.at > 14 * 864e5) return forgetUnsent();
+    toast(u.subject ? `“${u.subject.slice(0, 40)}” wasn’t sent or saved` : "A message wasn’t sent or saved", { icon: "drafts", actionLabel: "Open", duration: 9000, action: () => { forgetUnsent(); openCompose(u); } });
+  }
+
   function openCompose(init = {}) {
     if (sheetState) return;
     closeMenu(true);
@@ -5217,6 +5256,9 @@ pre{white-space:pre-wrap}
       const st = sheetState;
       if (!st) return;
       sheetState = null;
+      clearInterval(st.keepT);
+      // (sent, or nothing written: no copy kept; thrown away or saved, its own action forgets it once it's done)
+      if (mode === "sending" || !st.dirty()) forgetUnsent();
       document.activeElement?.blur?.();
       const appEl = document.getElementById("app");
       if (appEl) appEl.inert = false;
@@ -5264,7 +5306,9 @@ pre{white-space:pre-wrap}
       dirty,
       closeBtn,
       close: closeSheet,
+      keepT: setInterval(() => { if (dirty()) keepUnsent(c); }, 2000),
       saveDraft: async () => {
+        keepUnsent(c);
         closeSheet();
         try {
           await api.saveDraft({
@@ -5280,14 +5324,17 @@ pre{white-space:pre-wrap}
             quote: c.quote,
             attachments: await draftAttachments(c.attachments),
           });
+          forgetUnsent();
           toast("Draft Saved", { icon: "drafts" });
           refreshCounts();
           loadList({ quiet: true });
         } catch (err) {
-          toast(err.message, { error: true });
+          // (not saved: it's still on this device, and opens again from here)
+          toast(`${err.message} It’s kept on this device.`, { error: true, actionLabel: "Open", duration: 8000, action: () => { forgetUnsent(); openCompose({ ...c }); } });
         }
       },
       deleteDraft: async () => {
+        forgetUnsent();
         closeSheet();
         if (c.draftId) {
           try {
@@ -5425,13 +5472,16 @@ pre{white-space:pre-wrap}
       const payload = await buildPayload(job.c);
       await api.send(payload, { keepalive });
       toast("Message Sent", { icon: "check" });
+      forgetUnsent();
       S.failedSends = S.failedSends.filter((j) => j !== job);
       refreshCounts();
       loadList({ quiet: true });
       // (a reply shows in its conversation)
       if (S.thread && job.c.inReplyTo) openThread(S.thread.id, { fromNav: true });
     } catch (err) {
-      // (kept for the dot to offer again, unless it's the message itself that's wrong)
+      // (kept for the dot to offer again, unless it's the message itself that's wrong; and kept on this device either way,
+      // offered again next time if it's not sent or edited before then)
+      keepUnsent(job.c);
       if (!(err.status >= 400 && err.status < 500)) {
         S.failedSends.push(job);
         renderListChrome();
@@ -5447,6 +5497,7 @@ pre{white-space:pre-wrap}
 
   // Don't lose a queued message if the app is closed during the undo window.
   window.addEventListener("pagehide", () => {
+    if (sheetState?.dirty()) keepUnsent(sheetState.c);
     for (const job of pendingSends) {
       clearTimeout(job.timer);
       runSend(job, { keepalive: true });
@@ -5621,6 +5672,9 @@ pre{white-space:pre-wrap}
 
   // Signed out: nothing of the mailbox stays on screen or in memory (the app, any open sheet or menu, what was loaded)
   function forgetMail() {
+    // (a message being written kept first: it's offered again once signed in)
+    if (sheetState?.dirty()) keepUnsent(sheetState.c);
+    clearInterval(sheetState?.keepT);
     closeMenu(true);
     document.querySelectorAll(".sheet, .sheet-scrim, .toast").forEach((el) => el.remove());
     document.body.classList.remove("sheet-open", "dragging", "moving");
@@ -5662,6 +5716,7 @@ pre{white-space:pre-wrap}
   async function enter() {
     const login = document.querySelector(".login");
     await boot();
+    setTimeout(offerUnsent, 1200);
     if (login) {
       login.style.transition = "opacity .5s var(--ease), transform .6s var(--ease)";
       login.style.opacity = "0";
@@ -5805,7 +5860,7 @@ pre{white-space:pre-wrap}
       }
     } catch (err) {
       if (!s) showGate("signin", { error: err.message || "Can’t reach Mail right now." });
-      else toast(err.message || "Can’t reach Mail right now.", { error: true });
+      else toast(err.message || "Can’t reach Mail right now.", { error: true, actionLabel: "Try Again", duration: 120000, action: () => location.reload() });
     }
   }
 

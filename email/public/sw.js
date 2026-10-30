@@ -88,6 +88,8 @@ self.addEventListener("notificationclick", (e) => {
     return;
   }
   let url = new URL(e.notification.data?.url || "/", self.location.origin).href;
+  // (only ever Mail's own pages)
+  if (!url.startsWith(self.location.origin + "/")) url = self.location.origin + "/";
   if (e.action === "reply") url += "&reply=1";
   e.waitUntil(openMail(url));
 });
