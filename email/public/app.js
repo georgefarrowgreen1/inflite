@@ -271,7 +271,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.36";
+  const BUILD = "1.37";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -5532,7 +5532,8 @@ pre{white-space:pre-wrap}
     }
   });
 
-  // Keep the compose sheet above the on-screen keyboard.
+  // Keep the compose sheet, and the search field as it's typed in, above the on-screen keyboard: iOS lays it over the
+  // page's foot, where the search field is, rather than making the page shorter (--kb, html.kb-up: app.css).
   if (window.visualViewport) {
     const vv = window.visualViewport;
     let lastKb = -1;
@@ -5542,6 +5543,7 @@ pre{white-space:pre-wrap}
       if (v === lastKb) return;
       lastKb = v;
       document.documentElement.style.setProperty("--kb", `${v}px`);
+      document.documentElement.classList.toggle("kb-up", v > 0);
       document.querySelector(".sheet")?.classList.toggle("kb", v > 0);
     };
     vv.addEventListener("resize", onVV);

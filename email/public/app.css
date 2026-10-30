@@ -4213,6 +4213,16 @@ textarea:focus-visible {
   flex: 1 1 auto;
 }
 
+/* searching with the keyboard up: the field just above it, where you can see what you type (iOS lays the keyboard over
+   the page's foot rather than shortening it: app.js --kb), and nothing for the home bar under it */
+.toolbar.searching {
+  transition: bottom 0.3s var(--spring);
+}
+html.kb-up .toolbar.searching {
+  bottom: var(--kb, 0px);
+  padding-bottom: 10px;
+}
+
 .toolbar.searching .search input,
 .toolbar.searching .search .search-x {
   opacity: 1;
