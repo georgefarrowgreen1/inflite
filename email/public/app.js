@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.44";
+  const BUILD = "1.45";
   // (what's new in it, said once it's in)
-  const NEWS = "After Flag, Read, Later, Done or Delete from a conversation's menu, or Done while reading one, the keyboard and VoiceOver stay on that conversation, or the one now in its place, instead of losing their place";
+  const NEWS = "Your photo, the list's title and the dot beside it are easier to tap; when the list reloads slowly, the keyboard stays on the conversation you were on; and on a phone, pressing e again as a conversation closes no longer brings it back";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1330,6 +1330,8 @@ const IFL = (() => {
     detailToken: 0,
     swiping: false,
     newIds: new Set(),
+    // (the conversation that's open, acted on from its page on a phone, while it goes back to the list)
+    leaving: null,
   };
 
   const els = {};
@@ -3156,6 +3158,10 @@ const IFL = (() => {
 
   function renderRows() {
     closeOpenSwipe(true);
+    // (a row with the focus, or something in it, drawn again, moved or gone, however late the list comes: the focus kept on
+    // its conversation's new row, or the one in its place, as keepRowFocus does; only while nothing else has taken it)
+    const a = document.activeElement, had = els.rows.contains(a) ? a.closest(".row") : null;
+    const place = had && rowPlace(had, a);
     // (a list while there are rows in it, each an item: nothing in it, what it says in their place isn't one)
     if (!S.drafts.length && !S.threads.length) {
       els.rows.removeAttribute("role");
@@ -3193,6 +3199,7 @@ const IFL = (() => {
       }
       markSelectedRow();
     }
+    if (place && document.activeElement !== a && (!document.activeElement || document.activeElement === document.body)) focusPlace(place);
     renderFooter();
     S.newIds = new Set();
   }
@@ -4023,8 +4030,11 @@ const IFL = (() => {
     if (S.selectedId !== id) return;
     if (S.layout === "phone") {
       if (S.depth === 1) {
+        // (a key meanwhile, as it goes back to the list, does nothing to it: its own lead action is Inbox now, say)
+        S.leaving = id;
         goBack();
         await wait(420);
+        if (S.leaving === id) S.leaving = null;
         // (back on its row, where going back puts the focus: kept in the list as the row goes)
         const row = document.activeElement?.closest?.(".row[data-id]");
         if (row?.dataset.id === id) keepRowFocus(row);
@@ -6282,6 +6292,8 @@ pre{white-space:pre-wrap}
     if (k === "a") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "replyAll")));
     if (k === "f") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "forward")));
     if (!["e", "#", "Delete", "u", "l"].includes(k)) return;
+    // (the conversation done with from its own page, on a phone, going back to the list: again, nothing (leaveThread))
+    if (t.id === S.leaving) return;
     if (row) keepRowFocus(row);
     if (k === "e") return act(t.id, leadAction(t).act);
     if (k === "#" || k === "Delete") return t.trashed ? confirmDelete(row || els.detailToolbar, t.id) : act(t.id, "trash");
@@ -6294,27 +6306,35 @@ pre{white-space:pre-wrap}
   // rather than falling back to the conversation that's open, or to nothing. Its ring shown again only if it had one, so
   // a pointer sees none appear)
   function keepRowFocus(row) {
-    // (each row by what it's for, a conversation or a draft, so its new self can be found)
-    const of = (r) => (r.dataset.id ? `.row[data-id="${CSS.escape(r.dataset.id)}"]` : `.row[data-draft="${CSS.escape(r.dataset.draft || "")}"]`);
-    const rows = [...els.rows.querySelectorAll(".row")].map(of);
-    const i = rows.indexOf(of(row));
-    const ring = row.matches(":focus-visible");
-    // (a row on its way out, folding away, counted as gone: so a second key at once acts on the next, not on it again)
-    const gone = (r) => !r.isConnected || !!r.closest(".removing");
+    const place = rowPlace(row);
     const back = () => {
       const a = document.activeElement;
       // (or left where a tap elsewhere put it, closing the row's menu say, while the row's still there)
-      if ((a && a !== document.body && a !== row) || !gone(row)) return;
-      const r = [rows[i], rows[i + 1], rows[i - 1]].map((s) => s && els.rows?.querySelector(s)).find((x) => x && !gone(x));
-      if (r) return r.focus({ preventScroll: true, focusVisible: ring });
-      // (the list can have the focus only till it's moved on from)
-      if (!els.rows?.isConnected) return;
-      els.rows.tabIndex = -1;
-      els.rows.addEventListener("blur", () => els.rows.removeAttribute("tabindex"), { once: true });
-      els.rows.focus({ preventScroll: true, focusVisible: ring });
+      if ((a && a !== document.body && a !== row) || !rowGone(row)) return;
+      focusPlace(place);
     };
     setTimeout(back, 0);
     setTimeout(back, 450);
+  }
+  // (where a row is in the list, so the focus can be put back on its new self, or the one in its place: each row by what
+  // it's for, a conversation or a draft; and whether what had the focus showed its ring)
+  function rowPlace(row, had = row) {
+    const of = (r) => (r.dataset.id ? `.row[data-id="${CSS.escape(r.dataset.id)}"]` : `.row[data-draft="${CSS.escape(r.dataset.draft || "")}"]`);
+    const rows = [...els.rows.querySelectorAll(".row")].map(of);
+    return { rows, i: rows.indexOf(of(row)), ring: had.matches(":focus-visible") };
+  }
+  // (a row on its way out, folding away, counted as gone: so a second key at once acts on the next, not on it again)
+  function rowGone(r) {
+    return !r.isConnected || !!r.closest(".removing");
+  }
+  function focusPlace({ rows, i, ring }) {
+    const r = [rows[i], rows[i + 1], rows[i - 1]].map((s) => s && els.rows?.querySelector(s)).find((x) => x && !rowGone(x));
+    if (r) return r.focus({ preventScroll: true, focusVisible: ring });
+    // (the list can have the focus only till it's moved on from)
+    if (!els.rows?.isConnected) return;
+    els.rows.tabIndex = -1;
+    els.rows.addEventListener("blur", () => els.rows.removeAttribute("tabindex"), { once: true });
+    els.rows.focus({ preventScroll: true, focusVisible: ring });
   }
 
   // ---------------------------------------------------------------------------

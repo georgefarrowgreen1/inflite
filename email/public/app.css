@@ -6113,3 +6113,37 @@ html { touch-action: pan-x pan-y; }
   position: absolute;
   inset: -8px -4px;
 }
+
+/* (to a finger, your photo and the list's title a finger's height to tap, however small the bar makes them as the list
+   scrolls, and drawn the same) */
+@media (pointer: coarse) {
+  .pane.list .gbtn.profile::before {
+    display: block;
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(50% - 24px);
+    bottom: calc(50% - 24px);
+  }
+
+  .title-btn {
+    position: relative;
+  }
+
+  /* (more of it above than below: clear of the filter's tag under the bar, and that tag's own reach) */
+  .title-btn::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(50% - 27px);
+    bottom: calc(50% - 19px);
+  }
+}
+
+/* (the dot beside the list's title: its fingertip's worth from where the title ends, not over it, and as the title's,
+   clear of the filter's tag under the bar) */
+.large-title .status-dot::before {
+  inset: -25px -28px -13px -8px;
+}
