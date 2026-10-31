@@ -221,10 +221,10 @@
     },
   };
 
+  // (web addresses, and email addresses, which write a message here: mailtoDraft)
   function linkify(escaped) {
-    return escaped.replace(
-      /\b(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])/g,
-      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+    return escaped.replace(/\b(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g, (all, url, mail) =>
+      url ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>` : `<a href="mailto:${mail}">${mail}</a>`
     );
   }
 
@@ -257,6 +257,32 @@
 
   const EMAIL_RE = /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/;
 
+  // A mailto: link (RFC 6068) as a message to write: who it's to, with any cc and bcc, its subject and its words. A "+"
+  // is a plus here, not a space. → null if it isn't one
+  function mailtoDraft(href) {
+    const m = /^mailto:([^?#]*)(?:\?([^#]*))?/i.exec(String(href || "").trim());
+    if (!m) return null;
+    const dec = (v) => {
+      try {
+        return decodeURIComponent(v);
+      } catch {
+        return v;
+      }
+    };
+    const people = (v) => dec(v).split(/[,;]/).map(parseAddress).filter((p) => EMAIL_RE.test(p.email));
+    const out = { to: people(m[1]), cc: [], bcc: [], subject: "", text: "" };
+    for (const kv of (m[2] || "").split("&")) {
+      const i = kv.indexOf("=");
+      if (i < 0) continue;
+      const k = kv.slice(0, i).toLowerCase(), v = kv.slice(i + 1);
+      if (k === "to") out.to.push(...people(v));
+      else if (k === "cc" || k === "bcc") out[k].push(...people(v));
+      else if (k === "subject") out.subject = dec(v);
+      else if (k === "body") out.text = dec(v).replace(/\r\n/g, "\n");
+    }
+    return out;
+  }
+
   function fileToBase64(blob) {
     return new Promise((resolve, reject) => {
       const r = new FileReader();
@@ -271,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.39";
+  const BUILD = "1.40";
   // (what's new in it, said once it's in)
-  const NEWS = "Pinching no longer zooms the page: it stays the app's own size (maps and photos still pinch)";
+  const NEWS = "Sending's surer: photos go on a slow connection, nothing's sent twice, and what you've written is kept until it's gone; tap an address in a message to write to it";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -336,17 +362,23 @@ const IFL = (() => {
   };
 
   // the same short note in every app
+  // (read out from a place that's always there, unseen, as the home page's toast is: a note only just put in the page
+  // with its words already in it often isn't read out at all)
+  const sayEl = el("p", "ifm-say"); sayEl.setAttribute("role", "status"); sayEl.setAttribute("aria-live", "polite");
+  document.body?.append(sayEl);
   let noteEl = null, noteT = 0;
   function note(app, title, sub) {
     noteEl?.remove();
     clearTimeout(noteT);
     const img = el("img", "ifm-note-ic"); img.src = iconUrl(app); img.alt = "";
     noteEl = el("div", "ifm-note", img, el("span", "ifm-note-tx", el("b", "", title), sub ? el("small", "", sub) : null));
-    noteEl.setAttribute("role", "status");
     document.body.append(noteEl);
-    requestAnimationFrame(() => requestAnimationFrame(() => noteEl?.classList.add("on")));
+    if (!sayEl.isConnected) document.body.append(sayEl);
+    sayEl.textContent = "";
     const n = noteEl;
-    noteT = setTimeout(() => { n.classList.remove("on"); setTimeout(() => n.remove(), 400); }, 3600);
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (noteEl !== n) return; n.classList.add("on"); sayEl.textContent = sub ? `${title}. ${sub}` : title; }));
+    // (what it said emptied as it goes, so the same words next time are a change, and read out again)
+    noteT = setTimeout(() => { n.classList.remove("on"); sayEl.textContent = ""; setTimeout(() => n.remove(), 400); }, 3600);
   }
   // Notifications on this device, asked for in one tap (a phone asks each app for itself, and only from a tap): when
   // the app's opened from the account's Notifications page to turn them on (#notify), or from the menu's row where
@@ -399,13 +431,13 @@ const IFL = (() => {
   // or come back to it and not touched it yet (before you'd notice); else once you've left it be for a minute, never
   // while you're typing, in a sheet or a menu, or the app says it's busy (sending, recording, uploading). One that must
   // go in (min: a fix that can't wait) goes in at the first moment you're not busy. Meanwhile the menu's foot has Update
-  // instead of its green dot. Before it loads, where you are is kept (the app's save()) and it opens there again (here()),
-  // and the new version's files are fetched afresh first, past any copy the app or the browser keeps, so it's never a
-  // mix of the old and the new; once for each new version, so a copy that's still the old one mid-release isn't loaded
-  // over and over.
+  // instead of its green dot. The new version's files are fetched afresh first, past any copy the app or the browser
+  // keeps, so it's never a mix of the old and the new (and if you start on something meanwhile, it waits again); then
+  // where you are is kept (the app's save()) and it opens there again (here()); once for each new version, so a copy
+  // that's still the old one mid-release isn't loaded over and over.
   // o: { app, build, url (default "version"), field (in its answer, default "build"), busy() → true while it's not to
   //      be interrupted, save() → where you are (to JSON), files: what to fetch afresh where there's no service worker }
-  const U = { app: "", build: "", url: "version", field: "build", busy: null, save: null, files: null, ready: null, at: 0, back: Date.now(), touch: 0, going: false, told: "" };
+  const U = { app: "", build: "", url: "version", field: "build", busy: null, save: null, files: null, ready: null, fresh: "", at: 0, back: Date.now(), touch: 0, going: false, told: "" };
   const typing = () => { const a = document.activeElement; return !!a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || (a.tagName === "INPUT" && !a.readOnly && !/^(button|checkbox|radio|range|submit|reset|file|color)$/.test(a.type))); };
   const busyNow = () => typing() || !!open || !!document.querySelector("dialog[open], .ifa-layer, [aria-busy='true']") || !!U.busy?.();
   // (a version's parts as numbers: 1.76 after 1.8, as 1.80 is written)
@@ -459,33 +491,55 @@ const IFL = (() => {
   async function apply(asked) {
     const r = U.ready;
     if (!r || U.going) return;
-    const key = `ifl-upd:${U.app}`;
+    // (its files already fetched afresh, the last time it was about to go in: U.fresh, below)
+    const key = `ifl-upd:${U.app}`, got = U.fresh === r.build;
     try {
       const k = JSON.parse(sessionStorage.getItem(key) || "null");
-      if (!asked && k?.build === r.build && Date.now() - k.at < 10 * 60e3) return;
+      if (!asked && !got && k?.build === r.build && Date.now() - k.at < 10 * 60e3) return;
       sessionStorage.setItem(key, JSON.stringify({ build: r.build, at: Date.now() }));
     } catch (_) {}
     U.going = true;
     close(true);
+    if (!got) {
+      const t = U.touch;
+      if (!(await afresh())) {
+        // (a new version's worker that couldn't fetch all its files (Weather's are all or none), or hasn't yet: loaded
+        // now, it'd be the old version again. Still offered, it's tried again once that worker's taken over, else in ten
+        // minutes; tried afresh, not taken as fresh: a worker taking over has fetched its own files, not always the
+        // app's (Mail's are fetched by the page, U.files))
+        U.going = false;
+        navigator.serviceWorker?.addEventListener("controllerchange", () => { if (U.ready?.build === r.build) try { sessionStorage.removeItem(key); } catch (_) {} }, { once: true });
+        if (asked) note(U.app, `${NAME[U.app]} couldn’t update just now`, "It tries again by itself");
+        return;
+      }
+      // (and if you've started on something meanwhile (typing, a sheet, a tap), it waits for the next moment you're not)
+      if (!asked && (busyNow() || (!r.must && U.touch !== t))) { U.fresh = r.build; U.going = false; return; }
+    }
+    // (where you are kept as it goes, not before the wait: you may have scrolled meanwhile)
     try { const at = U.save?.(); if (at != null) sessionStorage.setItem(`ifl-here:${U.app}`, JSON.stringify({ at, t: Date.now() })); } catch (_) {}
-    await afresh();
     location.reload();
   }
   // the new version's files, fetched afresh before it loads: a service worker of the app's own for each version (as
   // Weather's) installed with all of them; one that keeps one version's files (Markets', Fitness') asked to fetch them
-  // again; and without one, the page and its files asked of the network past the browser's own copy
+  // again; and without one, the page and its files asked of the network past the browser's own copy. → false if a new
+  // worker was being installed and hasn't taken over (its files not all fetched, or not yet)
   async function afresh() {
     const sw = navigator.serviceWorker, wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
     try {
       const reg = await sw?.getRegistration();
       if (reg) {
+        const was = reg.active;
         await Promise.race([reg.update().catch(() => {}), wait(6000)]);
-        if (reg.installing || reg.waiting) await Promise.race([new Promise((ok) => sw.addEventListener("controllerchange", ok, { once: true })), wait(10000)]);
+        if (reg.installing || reg.waiting) {
+          await Promise.race([new Promise((ok) => sw.addEventListener("controllerchange", ok, { once: true })), wait(10000)]);
+          if (reg.active === was) return false;
+        }
         const c = sw.controller;
         if (c) await Promise.race([new Promise((ok) => { const ch = new MessageChannel(); ch.port1.onmessage = ok; c.postMessage({ ifl: "renew" }, [ch.port2]); }), wait(8000)]);
       }
       if (U.files) await Promise.race([Promise.all(U.files.map((u) => fetch(u, { cache: "reload", credentials: "same-origin" }).catch(() => null))), wait(4000)]);
     } catch (_) {}
+    return true;
   }
   // where you were as it updated (save()), as the new version opens: once, and only if moments ago; else null
   function here(app) {
@@ -506,6 +560,7 @@ const IFL = (() => {
     m.behind?.forEach((c) => { c.inert = false; });
     m.anchor.classList.remove("ifm-lit");
     document.removeEventListener("keydown", m.key, true);
+    window.visualViewport?.removeEventListener("resize", m.fit);
     // (focus back on your photo, if it was in the menu: else it's left on nothing, and a screen reader starts again at the top)
     if (m.layer.contains(document.activeElement) || document.activeElement === document.body) m.anchor.focus?.({ preventScroll: true });
     m.layer.classList.remove("open");
@@ -572,20 +627,28 @@ const IFL = (() => {
       }
     };
     document.addEventListener("keydown", key, true);
-    // (the page behind out of reach while it's open: a screen reader stays in the menu)
-    const behind = [...document.body.children].filter((c) => !c.inert && c.tagName !== "SCRIPT");
+    // (the page behind out of reach while it's open: a screen reader stays in the menu. Not the notes' place, so one
+    // said meanwhile (a new version's ready) is still read out)
+    const behind = [...document.body.children].filter((c) => !c.inert && c.tagName !== "SCRIPT" && c !== sayEl);
     behind.forEach((c) => { c.inert = true; });
     document.body.append(layer);
-    // (under your photo, from where it grows; over it, if your photo's low on the screen)
-    const r = anchor.getBoundingClientRect(), H = window.innerHeight, W = window.innerWidth;
+    // (under your photo, from where it grows; over it, if your photo's low on the screen. Under it, no taller than the
+    // screen leaves it, so on a short one (a phone on its side) it scrolls, and its foot's never out of reach below;
+    // fitted again as what's in sight changes while it's open: the keyboard going as the menu takes the focus from a
+    // field, which left it short, or the phone turned)
+    const tall = () => Math.min(window.innerHeight, window.visualViewport?.height || Infinity);
+    const r = anchor.getBoundingClientRect(), H = tall(), W = window.innerWidth;
     const left = Math.max(12, Math.min(r.left - 2, W - pop.offsetWidth - 12));
     const below = r.bottom + 10 + pop.offsetHeight <= H - 12 || r.top < H / 2;
     const top = below ? r.bottom + 10 : Math.max(12, r.top - 10 - pop.offsetHeight);
+    const fit = () => { if (below) pop.style.maxHeight = `${Math.max(0, tall() - top - 12)}px`; };
+    fit();
+    window.visualViewport?.addEventListener("resize", fit);
     pop.style.top = `${top}px`;
     pop.style.left = `${left}px`;
     pop.style.transformOrigin = `${r.left + r.width / 2 - left}px ${below ? "-10px" : "calc(100% + 10px)"}`;
     anchor.classList.add("ifm-lit");
-    open = { anchor, layer, pop, key, behind, onClose: o.onClose, redraw: (list) => {
+    open = { anchor, layer, pop, key, fit, behind, onClose: o.onClose, redraw: (list) => {
       // (the focus kept on the row it was on, by its key)
       const k = document.activeElement?.dataset?.k;
       rowsBox.replaceChildren(...drawRows(list));
@@ -648,21 +711,52 @@ const IFL = (() => {
     }
   }
 
+  // A message going with its files (or a draft with them): given up on only once its upload has stopped moving for half a
+  // minute, not after 20 seconds whatever (a few photos take longer than that to go up from a phone), by XMLHttpRequest,
+  // which says how far an upload's got as fetch can't; once it's all up, a minute for Mail's answer (sending it on takes
+  // a while too). → a Response, as fetch's
+  function upload(method, path, headers, body) {
+    return new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      let timer = 0;
+      const giveUpIn = (ms) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => x.abort(), ms);
+      };
+      x.open(method, path);
+      for (const [k, v] of Object.entries(headers)) x.setRequestHeader(k, v);
+      x.upload.onprogress = () => giveUpIn(30000);
+      x.upload.onload = () => giveUpIn(60000);
+      x.onload = () => (clearTimeout(timer), resolve(new Response(x.responseText || null, { status: x.status })));
+      x.onerror = x.onabort = () => (clearTimeout(timer), reject(new Error("Not sent")));
+      giveUpIn(30000);
+      x.send(body);
+    });
+  }
+
   function realApi() {
     async function req(method, path, body, opts = {}) {
-      // (given up on after 20 seconds, so a request that hangs can't leave the list, or the page, waiting for ever)
-      const res = await fetch(path, {
-        method,
-        signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(20000) : undefined,
-        credentials: "same-origin",
-        keepalive: opts.keepalive,
-        headers: {
-          "X-Inflite": "1",
-          ...(STANDALONE && { "X-Home-Screen": "1" }),
-          ...(body !== undefined && { "Content-Type": "application/json" }),
-        },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      }).catch(() => {
+      const headers = {
+        "X-Inflite": "1",
+        ...(STANDALONE && { "X-Home-Screen": "1" }),
+        ...(body !== undefined && { "Content-Type": "application/json" }),
+      };
+      const text = body !== undefined ? JSON.stringify(body) : undefined;
+      // (kept going as the page goes only if it's small enough for the browser to: 64 KB at most)
+      const keepalive = !!opts.keepalive && (text || "").length < 64000 && new Blob([text || ""]).size < 64000;
+      // (given up on after 20 seconds, so a request that hangs can't leave the list, or the page, waiting for ever; an
+      // upload, once it stops moving)
+      const res = await (opts.upload && !keepalive
+        ? upload(method, path, headers, text)
+        : fetch(path, {
+            method,
+            signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(20000) : undefined,
+            credentials: "same-origin",
+            keepalive,
+            headers,
+            body: text,
+          })
+      ).catch(() => {
         throw new ApiError(0, navigator.onLine === false ? "You’re offline." : "Couldn’t reach Mail. Try again in a moment.");
       });
       let data = null;
@@ -699,8 +793,10 @@ const IFL = (() => {
       message: (id) => req("GET", `/api/messages/${id}`),
       remove: (id) => req("DELETE", `/api/messages/${id}`),
       contacts: (q) => req("GET", `/api/contacts?${qs({ q })}`),
-      send: (payload, opts) => req("POST", "/api/send", payload, opts),
-      saveDraft: (draft) => req("POST", "/api/drafts", draft),
+      send: (payload, opts) => req("POST", "/api/send", payload, { ...opts, upload: true }),
+      // (which of these, by the outbox's names for them, went after all: { sent })
+      sent: (keys) => req("GET", `/api/sends?${qs({ keys: keys.join(",") })}`),
+      saveDraft: (draft) => req("POST", "/api/drafts", draft, { upload: true }),
       rawUrl: (id) => `/api/messages/${id}/raw`,
       settings: () => req("GET", "/api/settings"),
       saveSettings: (patch) => req("PATCH", "/api/settings", patch),
@@ -1001,13 +1097,13 @@ const IFL = (() => {
         return { ok: true };
       },
       async counts() {
-        const out = { people: { threads: 0, unread: 0 }, updates: { threads: 0, unread: 0 }, flagged: 0, snoozed: 0, done: 0 };
+        const out = { people: { threads: 0, unread: 0 }, updates: { threads: 0, unread: 0 }, flagged: 0, snoozed: 0 };
         for (const t of allThreads()) {
           if (!t.done && t.snoozeUntil) out.snoozed++;
           else if (!t.done) {
             out[t.category].threads++;
             if (t.unread) out[t.category].unread++;
-          } else out.done++;
+          }
           if (t.starred) out.flagged++;
         }
         out.trash = allThreads(true).length;
@@ -1070,8 +1166,8 @@ const IFL = (() => {
         if (action === "delete") for (const m of ms) msgs.splice(msgs.indexOf(m), 1);
         return { ok: true };
       },
-      async threadBatch({ ids, ...body }) {
-        for (const id of ids) await this.threadAction(id, body);
+      async threadBatch({ ids, every, ...body }) {
+        for (const id of ids || (await this.threads(every)).threads.map((t) => t.id)) await this.threadAction(id, body);
         return { ok: true };
       },
       async emptyTrash() {
@@ -1203,6 +1299,10 @@ const IFL = (() => {
     filter: "all",
     failedSends: [],
     offline: false,
+    // (the list that couldn't be loaded: said in its place, with Try Again)
+    listErr: null,
+    // (when what's being read was last scrolled or touched, in its frames too: the updater waits for a quiet minute)
+    readAt: 0,
     view: "all",
     pushOn: false,
     category: "people",
@@ -1223,6 +1323,10 @@ const IFL = (() => {
     layout: "phone",
     remoteImages: store.get("remoteImages", false),
     listToken: 0,
+    // (changes made here, and those Mail doesn't have yet: editing)
+    edits: 0,
+    acting: 0,
+    listAgain: false,
     detailToken: 0,
     swiping: false,
     newIds: new Set(),
@@ -1371,28 +1475,37 @@ const IFL = (() => {
 
   let toastEl = null;
   let toastTimer = null;
+  // (the toast showing: when it goes, whether the pointer or the focus is holding it, and its Undo, for the z key)
+  let toastNow = null;
+
+  // How the last thing was done: by touch or a pointer, or by a key, VoiceOver or Switch Control (a click no pointer
+  // made, or none just before it). Those take longer to reach a toast's Undo, so it stays longer for them (undoFor)
+  let byKeys = false, pointedAt = 0;
+  addEventListener("pointerdown", (e) => e.isTrusted && ((byKeys = false), (pointedAt = Date.now())), true);
+  addEventListener("keydown", (e) => e.isTrusted && !["Shift", "Control", "Alt", "Meta"].includes(e.key) && (byKeys = true), true);
+  addEventListener("click", (e) => e.isTrusted && (e.detail === 0 || Date.now() - pointedAt > 1500) && (byKeys = true), true);
+  const undoFor = () => (byKeys ? 10000 : 4000);
 
   function toast(message, { icon: ic = "check", actionLabel, action, duration = 2600, error } = {}) {
     if (!toastEl) {
       toastEl = h("div.toast.glass.strong", { role: "status", "aria-live": "polite" });
+      // (held while the pointer's over it or the focus is in it, so what it says can be read and its button reached)
+      toastEl.addEventListener("pointerenter", (e) => e.pointerType === "mouse" && holdToast("pointer", true));
+      toastEl.addEventListener("pointerleave", (e) => e.pointerType === "mouse" && holdToast("pointer", false));
+      toastEl.addEventListener("focusin", () => holdToast("focus", true));
+      toastEl.addEventListener("focusout", () => holdToast("focus", false));
       document.body.append(toastEl);
     }
     clearTimeout(toastTimer);
     toastEl.className = `toast glass strong${error ? " error" : ""}`;
+    const run = () => {
+      hide();
+      action?.();
+    };
     setKids(toastEl, 
       icon(error ? "alert" : ic),
       h("span.msg", message),
-      actionLabel &&
-        h(
-          "button.gbtn",
-          {
-            onclick: () => {
-              hide();
-              action?.();
-            },
-          },
-          actionLabel
-        )
+      actionLabel && h("button.gbtn", { onclick: run }, actionLabel)
     );
     if (!actionLabel) toastEl.style.paddingRight = "20px";
     else toastEl.style.paddingRight = "";
@@ -1400,9 +1513,26 @@ const IFL = (() => {
     const hide = () => {
       clearTimeout(toastTimer);
       toastEl.classList.remove("show");
+      if (toastNow?.hide === hide) toastNow = null;
     };
+    toastNow = { hide, undo: actionLabel === "Undo" ? run : null, ends: Date.now() + duration, pointer: false, focus: false };
     toastTimer = setTimeout(hide, duration);
     return { hide };
+  }
+
+  // (held: its time stops; let go: what was left of it, and a moment at least)
+  function holdToast(by, on) {
+    const t = toastNow;
+    if (!t || t[by] === on) return;
+    const was = t.pointer || t.focus;
+    t[by] = on;
+    if (on && !was) {
+      clearTimeout(toastTimer);
+      t.left = Math.max(0, t.ends - Date.now());
+    } else if (!on && was && !t.pointer && !t.focus) {
+      t.ends = Date.now() + Math.max(t.left, 1500);
+      toastTimer = setTimeout(t.hide, t.ends - Date.now());
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1432,6 +1562,8 @@ const IFL = (() => {
 
   let movingTimer;
   function setPositions() {
+    // (none yet, at the way in: a notice's address arriving there, say)
+    if (!els.list) return;
     // (panes made solid while they slide, so one doesn't show through the other)
     if (S.layout === "phone" && els.list?.dataset.pos && els.detail.dataset.pos !== (S.depth ? "current" : "ahead")) {
       document.body.classList.add("moving");
@@ -1602,6 +1734,8 @@ const IFL = (() => {
       const scroll = pane.querySelector(".scroll");
       scroll.addEventListener("scroll", () => pane.classList.toggle("scrolled", scroll.scrollTop > 28), { passive: true });
     }
+    // (what's being read, scrolled: the updater waits, IFL.updates busy)
+    els.detailScroll.addEventListener("scroll", () => (S.readAt = Date.now()), { passive: true });
     els.listScroll.addEventListener("scroll", onListScroll, { passive: true });
     els.listScroll.addEventListener("touchend", onListTouchEnd, { passive: true });
     setupRowGestures(els.rows);
@@ -1644,7 +1778,10 @@ const IFL = (() => {
       me: { name: name || "Your account", line: me.defaultFrom || "", photo: avatar({ name, email: me.defaultFrom, me: true }, "p-photo") },
       rows: [
         // (what Mail tells you is set in your account, its Notifications page, every app's: here, whether this device's on)
-        { key: "notify", icon: "bell", color: "red", label: "Notifications", value: S.pushOn ? "On" : "Off here", warn: !S.pushOn, open: () => accountOrigin && window.open(`${accountOrigin}/#from=mail&open=notify-mail`, "_blank", "noopener") },
+        // (off here: turned on here, as only this device can; on: what it tells you, in your account, in this window, as
+        // your card opens it, so a Home Screen Mail's sign-in goes with it)
+        { key: "notify", icon: "bell", color: "red", label: "Notifications", value: S.pushOn ? "On" : "Off here", warn: !S.pushOn,
+          open: () => (S.pushOn ? accountOrigin && location.assign(`${accountOrigin}/#from=mail&open=notify-mail`) : askNotify()) },
         { icon: "image", color: "blue", label: "Remote Images", on: !!S.remoteImages, toggle: () => (toggleRemoteImages(), !!S.remoteImages) },
         // (the address new mail goes from, chosen here; the signature under it, a tap from its page in Settings)
         (me.addresses || []).length > 1 && { icon: "at", color: "teal", label: "Send From", value: `${String(me.defaultFrom || "").split("@")[0]}@`, open: () => sendFromMenu(anchor) },
@@ -1755,13 +1892,16 @@ const IFL = (() => {
       // (a new address: its field, so the keyboard comes up within the tap; else the page's first control)
       if (dir) (page.querySelector(".set-local") || page.querySelector(".set-bar button, .set-scroll button"))?.focus({ preventScroll: true });
     }
+    // (a page's controls, in order: the focus kept on the same one when it's drawn again, as what it shows comes)
+    const controls = (page) => [...page.querySelectorAll("button, input, textarea")];
     function redraw() {
       if (!setState) return;
       const keep = current?.querySelector(".set-scroll")?.scrollTop || 0;
       const focusKey = document.activeElement?.dataset?.k;
+      const at = current ? controls(current).indexOf(document.activeElement) : -1;
       draw(null);
       current.querySelector(".set-scroll").scrollTop = keep;
-      const f = focusKey && current.querySelector(`[data-k="${focusKey}"]`);
+      const f = (focusKey && current.querySelector(`[data-k="${focusKey}"]`)) || (at >= 0 && controls(current)[at]);
       if (f) {
         f.focus({ preventScroll: true });
         try {
@@ -2148,7 +2288,10 @@ const IFL = (() => {
       scrim.classList.remove("open");
       sheet.classList.remove("open");
       setTimeout(() => (scrim.remove(), sheet.remove()), 650);
-      if (opener?.isConnected && S.layout !== "phone") opener.focus?.({ preventScroll: true });
+      // (back where it was opened from: your photo, mostly, where InFlite's menu leaves it as it closes; that drawn
+      // again meanwhile, or opened with nothing in focus (from the account page), your photo still)
+      const back = opener?.isConnected && opener !== document.body ? opener : els.listNav?.querySelector(".profile");
+      back?.focus?.({ preventScroll: true });
     }
 
     sheet.addEventListener("keydown", (e) => {
@@ -2164,6 +2307,9 @@ const IFL = (() => {
     if (appEl) appEl.inert = true;
     document.body.append(scrim, sheet);
     draw(null);
+    // (the focus in it, on its first control, so VoiceOver and the keyboard start there rather than behind it, where
+    // nothing can be reached now)
+    current.querySelector(".set-bar button, .set-scroll button")?.focus({ preventScroll: true });
     sheet.offsetHeight;
     document.body.classList.add("sheet-open");
     scrim.classList.add("open");
@@ -2191,6 +2337,14 @@ const IFL = (() => {
   }
 
   const keyBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+
+  // Notifications on this device, asked for here: the sheet every app has, whose tap turns them on (where this browser
+  // can't have them, or it's the demo, said why instead)
+  function askNotify() {
+    if (S.pushOn) return toast("Notifications are already on on this device", { icon: "bell" });
+    if (!PUSH_OK || DEMO) return togglePush();
+    IFL.allow("mail", "Mail tells you of new mail from people. What it tells you is set in your account.", async () => (await togglePush(), !!S.pushOn));
+  }
 
   async function togglePush() {
     if (DEMO) return toast("Demo mode — notifications need the real Mail", { icon: "bell" });
@@ -2267,8 +2421,11 @@ const IFL = (() => {
         await sub.unsubscribe().catch(() => {});
       }
     } catch {}
+    // (and the replies left typed at conversations' feet: qrDrafts)
+    S.qrDrafts = null;
     try {
       localStorage.removeItem(RECENT_KEY);
+      localStorage.removeItem(QR_KEY);
     } catch {}
     try {
       await api.logout();
@@ -2285,7 +2442,7 @@ const IFL = (() => {
       items.push(...FILTERS.map((f) => ({ label: f.label, checked: S.filter === f.k, action: () => setFilter(f.k) })), "-");
     if (S.lens === "flagged" || S.lens === "trash") items.push({ label: "Back to People", icon: "person", action: () => setLens("people") }, "-");
     if (S.view !== "trash")
-      items.push({ label: "Mark All as Read", icon: "envelopeOpen", disabled: !S.threads.some((t) => t.unread), action: markAllRead });
+      items.push({ label: "Mark All as Read", icon: "envelopeOpen", disabled: !S.threads.some((t) => t.unread) && !S.hasMore, action: markAllRead });
     // (each address mail has come to, once there's more than one: only its mail)
     const addrs = S.counts.addresses || [];
     if (S.view !== "trash" && addrs.length > 1)
@@ -2376,7 +2533,12 @@ const IFL = (() => {
     }
   }
 
-  addEventListener("online", () => ((S.offline = false), renderListChrome()));
+  addEventListener("online", () => {
+    S.offline = false;
+    renderListChrome();
+    // (a list that couldn't be loaded offline, loaded now)
+    if (S.listErr && S.me && !S.loading) loadList();
+  });
   addEventListener("offline", () => renderListChrome());
 
   // What has the focus in a part about to be drawn again, said so its new self can be found (a tab by its key, a button
@@ -2910,10 +3072,17 @@ const IFL = (() => {
     resetList();
   }
 
+  // (the list you're in, as the server's asked for it)
+  const listAsk = () => ({ view: S.view, category: S.query || S.view === "trash" ? null : S.category, address: S.address, q: S.query });
+
+  // → true once what Mail answered is what's shown
   async function loadList({ more = false, quiet = false } = {}) {
+    // (a page more asked for again while one's coming, or with none left: nothing, and nothing on its way put aside)
+    if (more && (S.loadingMore || !S.hasMore)) return;
     const token = ++S.listToken;
+    const edits = S.edits;
+    let aside = false;
     if (more) {
-      if (S.loadingMore || !S.hasMore) return;
       S.loadingMore = true;
     } else if (!quiet) {
       S.loading = true;
@@ -2922,40 +3091,50 @@ const IFL = (() => {
     renderFooter();
     try {
       const last = S.threads[S.threads.length - 1];
-      const params = {
-        view: S.view,
-        category: S.query || S.view === "trash" ? null : S.category,
-        address: S.address,
-        q: S.query,
-        before: more && last ? last.sort ?? last.date : undefined,
-      };
+      const params = { ...listAsk(), before: more && last ? last.sort ?? last.date : undefined };
       // (the first page, asked for on opening alongside everything else)
       const early = S.prefetch && JSON.stringify(S.prefetch.params) === JSON.stringify(params) ? S.prefetch.res : null;
       S.prefetch = null;
       const res = await (early || api.threads(params));
       if (token !== S.listToken) return;
+      // (something changed here while it was on its way, which it may not have seen: asked for again once Mail has it)
+      if (quiet && !more && S.edits !== edits) {
+        if (!S.acting) return loadList({ quiet });
+        S.listAgain = aside = true;
+        return false;
+      }
       if (more) {
         S.threads = S.threads.concat(res.threads);
         S.hasMore = res.hasMore;
       } else {
         const known = new Set(S.threads.map((t) => `${t.id}:${t.date}`));
         S.newIds = quiet && S.threads.length ? new Set(res.threads.filter((t) => !known.has(`${t.id}:${t.date}`)).map((t) => t.id)) : new Set();
-        // (older pages already loaded are kept)
+        // (older pages already loaded are kept: not one that's now in this page, moved up as a reply came in it)
         const oldest = res.threads[res.threads.length - 1];
-        const older = quiet && oldest && res.hasMore ? S.threads.filter((t) => (t.sort ?? t.date) < (oldest.sort ?? oldest.date)) : [];
+        const fresh = new Set(res.threads.map((t) => t.id));
+        const older = quiet && oldest && res.hasMore ? S.threads.filter((t) => !fresh.has(t.id) && (t.sort ?? t.date) < (oldest.sort ?? oldest.date)) : [];
         S.threads = res.threads.concat(older);
         S.drafts = res.drafts || [];
         if (!older.length) S.hasMore = res.hasMore;
+        S.listErr = null;
       }
       S.updatedAt = Date.now();
+      return true;
     } catch (err) {
-      if (token === S.listToken && err.status !== 401) toast(err.message, { error: true });
+      // (nothing to show for it: said in the list's place, with Try Again (emptyEl); else over what was loaded before)
+      if (token === S.listToken && err.status !== 401) {
+        if (!more) S.listErr = err.message || "Couldn’t load your mail.";
+        if (more || S.threads.length) toast(err.message, { error: true });
+      }
     } finally {
       if (token === S.listToken) {
         S.loading = false;
         S.loadingMore = false;
-        renderRows();
-        renderListChrome();
+        // (put aside: what's shown stays as it is meanwhile, a row going out still going)
+        if (!aside) {
+          renderRows();
+          renderListChrome();
+        }
       }
     }
   }
@@ -2972,10 +3151,13 @@ const IFL = (() => {
 
   function renderRows() {
     closeOpenSwipe(true);
+    // (a list while there are rows in it, each an item: nothing in it, what it says in their place isn't one)
     if (!S.drafts.length && !S.threads.length) {
+      els.rows.removeAttribute("role");
       if (S.loading) setKids(els.rows);
       else setKids(els.rows, emptyEl());
     } else {
+      els.rows.setAttribute("role", "list");
       const old = new Map();
       for (const el of [...els.rows.children]) el.dataset.key ? old.set(el.dataset.key, el) : el.remove();
       const want = S.drafts.map((d) => [`d:${d.id}`, draftSig(d), () => draftRowEl(d)]);
@@ -2998,8 +3180,12 @@ const IFL = (() => {
         prev = el;
       }
       for (const el of old.values()) el.remove();
-      // (drafts but no conversations: the drafts, then what an empty list says)
-      if (!S.threads.length && !S.loading) els.rows.append(emptyEl());
+      // (drafts but no conversations: the drafts, then what an empty list says, as one more item)
+      if (!S.threads.length && !S.loading) {
+        const said = emptyEl();
+        said.setAttribute("role", "listitem");
+        els.rows.append(said);
+      }
       markSelectedRow();
     }
     renderFooter();
@@ -3019,6 +3205,7 @@ const IFL = (() => {
   function swipeHintEl() {
     const el = h(
       "div.swipe-hint",
+      { role: "listitem" },
       icon("check"),
       h("span", "Swipe right when you've dealt with something, left to bring it back later."),
       h("button", { type: "button", "aria-label": "Dismiss Tip", onclick: () => dismissSwipeHint() }, icon("x"))
@@ -3113,6 +3300,8 @@ const IFL = (() => {
   }
 
   function emptyEl() {
+    // (not loaded: said, rather than that there's nothing here)
+    if (S.listErr) return loadFailed(S.listErr, () => loadList());
     if (S.query) return emptySearch();
     // (People clear: nothing here at all; the dot beside the title says so)
     if (S.lens === "people" && S.filter === "all" && !S.address) return h("div.empty.quiet-empty", { "aria-label": "Caught up" });
@@ -3184,9 +3373,10 @@ const IFL = (() => {
           "div.subject",
           t.hasAttachments ? icon("clip") : null,
           h("span.subj-t", t.subject),
-          // (in Updates, a sender that says how to stop)
+          // (in Updates, a sender that says how to stop: to tap. Inside the row, which is a button itself, VoiceOver and
+          // the keyboard have it from the row's menu instead (unsubItem), as a button within a button can't be reached)
           t.canUnsub && t.category === "updates" && !t.done && !t.trashed && !S.query
-            ? h("button.unsub-btn", { type: "button", "aria-label": `Unsubscribe from ${displayName(t.from)}`, onclick: (e) => (e.stopPropagation(), unsubSheet(t)) }, "Unsubscribe")
+            ? h("button.unsub-btn", { type: "button", tabindex: "-1", "aria-hidden": "true", onclick: (e) => (e.stopPropagation(), unsubSheet(t)) }, "Unsubscribe")
             : null
         ),
         h("div.preview", t.latest?.folder === "sent" ? h("span.you", "You: ") : null, t.latest?.snippet || " ")
@@ -3347,8 +3537,10 @@ const IFL = (() => {
       const width = g.width;
       let x = g.base + dx;
       // (all the way: past half the row, and always well past its actions when they're open, so closing an open row
-      // never counts as swiping it all the way, on a narrow phone where its actions are most of the row)
-      const fullAt = Math.max(width * 0.5, LEFT_W + 40), fullRight = Math.min(-width * 0.6, -RIGHT_W - 40);
+      // never counts as swiping it all the way, on a narrow phone where its actions are most of the row. From a closed
+      // row, leftwards, no further than a finger can go across it: on a 320pt phone, past its actions is off its edge)
+      const past = Math.min(-width * 0.6, -RIGHT_W - 40);
+      const fullAt = Math.max(width * 0.5, LEFT_W + 40), fullRight = g.base < 0 ? past : Math.max(past, -width * 0.8);
       const prevFull = g.full;
       g.full = x > fullAt ? "left" : x < fullRight ? "right" : null;
       if (g.full !== prevFull && navigator.vibrate) navigator.vibrate(8);
@@ -3581,12 +3773,16 @@ const IFL = (() => {
       { label: t.starred ? "Unflag" : "Flag", icon: "flag", action: () => act(t.id, t.starred ? "unflag" : "flag") },
       { label: t.unread ? "Mark as Read" : "Mark as Unread", icon: t.unread ? "envelopeOpen" : "envelopeBadge", action: () => act(t.id, t.unread ? "read" : "unread") },
       ...categoryItems(t),
+      ...unsubItem(t),
       "-",
       t.trashed
         ? { label: "Delete Forever", icon: "trash", destructive: true, action: () => confirmDelete(anchor, t.id) }
         : { label: "Move to Trash", icon: "trash", destructive: true, action: () => act(t.id, "trash") },
     ];
   }
+
+  // (a sender that says how to stop: Unsubscribe, here as well as on its row in Updates, where VoiceOver can't reach it)
+  const unsubItem = (t) => (t.canUnsub && !t.trashed ? [{ label: "Unsubscribe…", icon: "news", action: () => unsubSheet(t) }] : []);
 
   function rowMoreMenu(anchor, t) {
     showMenu(anchor, rowItems(t, anchor));
@@ -3605,17 +3801,23 @@ const IFL = (() => {
     const who = displayName(info.sender) || info.sender.email;
     const layer = h("div.menu-layer.center.unsub-layer");
     const close = () => closeMenu();
-    const go = h("button.pbtn.danger-btn", { type: "button" }, "Unsubscribe");
-    go.addEventListener("click", async () => {
+    // (their page: opened by the tap itself, a link, as one opened once Mail's answered can be blocked as a pop-up. Asked
+    // of Mail first, and its page then turned away, the toast has it to open instead)
+    const finish = (url) => {
+      const w = url && window.open(url, "_blank");
+      if (w) w.opener = null;
+      toast(`Finish on ${who}'s page`, w || !url ? { icon: "news" } : { icon: "news", actionLabel: "Open", duration: 10000, action: () => window.open(url, "_blank", "noopener") });
+    };
+    const go = info.page
+      ? h("a.pbtn.danger-btn", { href: info.page, target: "_blank", rel: "noopener noreferrer", onclick: () => (close(), finish()) }, "Unsubscribe")
+      : h("button.pbtn.danger-btn", { type: "button" }, "Unsubscribe");
+    if (!info.page) go.addEventListener("click", async () => {
       go.disabled = true;
       go.textContent = "Unsubscribing…";
       try {
         const r = await api.unsubscribe(t.id);
         close();
-        if (r.open) {
-          window.open(r.open, "_blank", "noopener");
-          return toast(`Finish on ${who}'s page`, { icon: "news" });
-        }
+        if (r.open) return finish(r.open);
         toast(`Unsubscribed from ${who}`, { icon: "check" });
         refreshCounts();
         loadList({ quiet: true });
@@ -3715,41 +3917,62 @@ const IFL = (() => {
     return true;
   }
 
+  // A change shown here before Mail has it. A list that was asked for before Mail had it, landing meanwhile, would undo
+  // it on the screen (a conversation swiped away coming back), so one that lands then is asked for again once Mail has
+  // the change (loadList)
+  function editing() {
+    S.edits++;
+    S.acting++;
+  }
+  function edited() {
+    if (--S.acting || !S.listAgain) return false;
+    S.listAgain = false;
+    loadList({ quiet: true });
+    return true;
+  }
+
   async function act(id, action, extra = {}, { quiet } = {}) {
     if (action === "done" || action === "snooze") dismissSwipeHint();
     const t = S.threads.find((x) => x.id === id);
     const patch = action === "category" ? { category: extra.category } : action === "snooze" ? { snoozeUntil: extra.until, done: false } : PATCH[action] || {};
-    if (t) Object.assign(t, patch);
-    if (S.thread?.id === id) Object.assign(S.thread, patch);
-    // (the one that's open, read by opening it, stays till the list's next asked for: else Unread takes it straight away)
-    const leaving = !!t && !inView(t) && !(action === "read" && S.selectedId === id);
-    if (leaving && S.selectedId === id) await leaveThread(id);
-    if (leaving) removeRow(id);
-    else updateRow(id);
-    markSelectedRow();
-    if (S.thread?.id === id) {
-      renderDetailChrome();
-      if (["snooze", "unsnooze", "category", "flag", "unflag"].includes(action)) renderConvHead();
-    }
-    if (!quiet) actionToast(id, action, extra, t);
+    // (where it was, for Undo: put away till Later from Done goes back to Done)
+    const wasDone = !!(t || (S.thread?.id === id ? S.thread : null))?.done;
+    editing();
     try {
-      await api.threadAction(id, { action, ...extra });
-    } catch (err) {
-      toast(err.message, { error: true });
-      loadList({ quiet: true });
+      if (t) Object.assign(t, patch);
+      if (S.thread?.id === id) Object.assign(S.thread, patch);
+      // (the one that's open, read by opening it, stays till the list's next asked for: else Unread takes it straight away)
+      const leaving = !!t && !inView(t) && !(action === "read" && S.selectedId === id);
+      if (leaving && S.selectedId === id) await leaveThread(id);
+      if (leaving) removeRow(id);
+      else updateRow(id);
+      markSelectedRow();
+      if (S.thread?.id === id) {
+        renderDetailChrome();
+        if (["snooze", "unsnooze", "category", "flag", "unflag"].includes(action)) renderConvHead();
+      }
+      if (!quiet) actionToast(id, action, extra, t, wasDone);
+      try {
+        await api.threadAction(id, { action, ...extra });
+      } catch (err) {
+        toast(err.message, { error: true });
+        loadList({ quiet: true });
+      }
+      refreshCounts();
+      // (back where it was, after an undo: in the list again)
+      if (!t && ["inbox", "restore", "unsnooze", "done"].includes(action)) loadList({ quiet: true });
+    } finally {
+      edited();
     }
-    refreshCounts();
-    // (back where it was, after an undo: in the list again)
-    if (!t && ["inbox", "restore", "unsnooze"].includes(action)) loadList({ quiet: true });
   }
 
-  function actionToast(id, action, extra, t) {
-    const undo = (back) => ({ actionLabel: "Undo", duration: 4000, action: () => act(id, back) });
+  function actionToast(id, action, extra, t, wasDone) {
+    const undo = (back) => ({ actionLabel: "Undo", duration: undoFor(), action: () => act(id, back) });
     if (action === "done") toast("Done", { icon: "check", ...undo("inbox") });
     else if (action === "inbox") toast("Back in Inbox", { icon: "inbox" });
     else if (action === "trash") toast("Moved to Trash", { icon: "trash", ...undo("restore") });
     else if (action === "restore") toast("Restored", { icon: "inbox" });
-    else if (action === "snooze") toast(`Later: ${fmtWhen(extra.until)}`, { icon: "clock", ...undo(t?.done ? "inbox" : "unsnooze") });
+    else if (action === "snooze") toast(`Later: ${fmtWhen(extra.until)}`, { icon: "clock", ...undo(wasDone ? "done" : "unsnooze") });
     else if (action === "unsnooze") toast("Back in Inbox", { icon: "inbox" });
     else if (action === "category") {
       const where = extra.category === "people" ? "People" : "Updates";
@@ -3758,16 +3981,21 @@ const IFL = (() => {
   }
 
   async function deleteThread(id) {
-    await leaveThread(id);
-    removeRow(id);
+    editing();
     try {
-      await api.threadAction(id, { action: "delete" });
-      toast("Deleted", { icon: "trash" });
-    } catch (err) {
-      toast(err.message, { error: true });
-      loadList({ quiet: true });
+      await leaveThread(id);
+      removeRow(id);
+      try {
+        await api.threadAction(id, { action: "delete" });
+        toast("Deleted", { icon: "trash" });
+      } catch (err) {
+        toast(err.message, { error: true });
+        loadList({ quiet: true });
+      }
+      refreshCounts();
+    } finally {
+      edited();
     }
-    refreshCounts();
   }
 
   // If the conversation being acted on is open, move away from it first.
@@ -3791,20 +4019,27 @@ const IFL = (() => {
     }
   }
 
+  // (the whole list, as the server has it: not only the conversations loaded so far, a page of forty at a time)
   async function markAllRead() {
-    const ids = S.threads.filter((t) => t.unread).map((t) => t.id);
-    if (!ids.length) return;
-    for (const id of ids) Object.assign(S.threads.find((t) => t.id === id), PATCH.read);
-    if (S.view === "unread") {
-      S.threads = [];
-    }
-    renderRows();
+    if (!S.threads.some((t) => t.unread) && !S.hasMore) return;
+    editing();
+    let again = false;
     try {
-      await api.threadBatch({ ids, action: "read" });
-    } catch (err) {
-      toast(err.message, { error: true });
+      for (const t of S.threads) if (t.unread) Object.assign(t, PATCH.read);
+      if (S.view === "unread") {
+        S.threads = [];
+      }
+      renderRows();
+      try {
+        await api.threadBatch({ action: "read", every: listAsk() });
+      } catch (err) {
+        toast(err.message, { error: true });
+      }
+      refreshCounts();
+    } finally {
+      again = edited();
     }
-    refreshCounts();
+    if (!again) loadList({ quiet: true });
   }
 
   // (forever: asked first)
@@ -3821,20 +4056,25 @@ const IFL = (() => {
       { destructive: true }
     );
     if (!sure) return;
-    S.threads = [];
-    renderRows();
-    if (S.thread?.trashed) {
-      S.thread = null;
-      S.selectedId = null;
-      renderDetail();
-    }
+    editing();
     try {
-      await api.emptyTrash();
-      toast("Trash Emptied", { icon: "trash" });
-    } catch (err) {
-      toast(err.message, { error: true });
+      S.threads = [];
+      renderRows();
+      if (S.thread?.trashed) {
+        S.thread = null;
+        S.selectedId = null;
+        renderDetail();
+      }
+      try {
+        await api.emptyTrash();
+        toast("Trash Emptied", { icon: "trash" });
+      } catch (err) {
+        toast(err.message, { error: true });
+      }
+      refreshCounts();
+    } finally {
+      edited();
     }
-    refreshCounts();
   }
 
   async function refreshCounts() {
@@ -3859,20 +4099,38 @@ const IFL = (() => {
   // A conversation: every message in it, newest first; the newest (and any unread) open
   // ---------------------------------------------------------------------------
 
+  // (each asked for once at a time, however many want it)
+  const bodyLoads = new Map();
   async function loadBody(id) {
-    if (S.bodies.has(id)) return S.bodies.get(id);
-    let m;
-    try { m = await api.message(id); S.bodyErr?.delete(id); }
-    catch (err) { (S.bodyErr ||= new Map()).set(id, err.message || "Couldn't load it."); throw err; }
-    // (the most recent few dozen kept: newsletters can be large)
-    if (S.bodies.size >= 30) S.bodies.delete(S.bodies.keys().next().value);
-    S.bodies.set(id, m);
-    return m;
+    if (S.bodies.has(id)) {
+      // (the most recently wanted kept longest)
+      const m = S.bodies.get(id);
+      S.bodies.delete(id);
+      return S.bodies.set(id, m), m;
+    }
+    if (bodyLoads.has(id)) return bodyLoads.get(id);
+    const loading = (async () => {
+      let m;
+      try { m = await api.message(id); S.bodyErr?.delete(id); }
+      catch (err) { (S.bodyErr ||= new Map()).set(id, err.message || "Couldn't load it."); throw err; }
+      // (the most recent few dozen kept: newsletters can be large)
+      if (S.bodies.size >= 30) S.bodies.delete(S.bodies.keys().next().value);
+      S.bodies.set(id, m);
+      return m;
+    })().finally(() => bodyLoads.delete(id));
+    bodyLoads.set(id, loading);
+    return loading;
   }
+
+  // (with the newest, those that open by themselves: unread in the inbox, the newest few of them (a busy list's dozens
+  // would each be fetched and drawn at once); the rest are a tap away)
+  const unreadFew = (msgs) => msgs.filter((m) => m.unread && m.folder === "inbox").slice(0, 5);
 
   // Replies go to the newest message someone else sent (or the newest, if it's all yours)
   async function withReplyTarget(threadId, fn) {
     try {
+      // (the open conversation being asked for again, as something's come in it: its newest, once that's here)
+      await S.threadFresh;
       const t = S.thread?.id === threadId && S.thread.messages ? S.thread : await api.thread(threadId);
       const target = t.messages.find((m) => m.folder !== "sent") || t.messages[0];
       fn(await loadBody(target.id));
@@ -3896,7 +4154,7 @@ const IFL = (() => {
     try {
       const full = await api.thread(id);
       if (token !== S.detailToken) return;
-      S.expanded = new Set([full.messages[0]?.id, ...full.messages.filter((m) => m.unread && m.folder === "inbox").map((m) => m.id)].filter(Boolean));
+      S.expanded = new Set([full.messages[0], ...unreadFew(full.messages)].filter(Boolean).map((m) => m.id));
       await Promise.all([...S.expanded].map((mid) => loadBody(mid).catch(() => null)));
       if (token !== S.detailToken) return;
       S.thread = full;
@@ -3909,6 +4167,38 @@ const IFL = (() => {
         renderDetail({ keepScroll: true });
       }
     }
+  }
+
+  // The conversation that's open, asked for again once the list says it's changed (a message come in it, say, while
+  // Mail was in the background): what's new added at the foot, opened, where the newest is, and the rest as it was (what
+  // was open, where you'd scrolled to); read, as opening it reads it, if it's on the screen. Meanwhile a reply from the
+  // foot waits for it (withReplyTarget), so it answers the newest
+  function refreshThread() {
+    const t = S.thread, row = t && S.threads.find((x) => x.id === t.id);
+    if (!row || t.loading || !t.messages || (row.date === t.date && row.count === t.count)) return;
+    const token = S.detailToken;
+    S.threadFresh = (async () => {
+      const full = await api.thread(t.id);
+      const had = new Set(t.messages.map((m) => m.id)), fresh = full.messages.filter((m) => !had.has(m.id));
+      const few = unreadFew(fresh), open = fresh.filter((m) => m === full.messages[0] || few.includes(m));
+      await Promise.all(open.map((m) => loadBody(m.id).catch(() => null)));
+      if (token !== S.detailToken || S.thread !== t) return;
+      open.forEach((m) => S.expanded.add(m.id));
+      S.thread = full;
+      // (only new ones, each newer than any before: added; else, something gone say, drawn again)
+      const box = els.detailScroll?.querySelector(".msgs"), newest = t.messages[0]?.date || 0;
+      if (box && t.messages.every((m) => full.messages.some((x) => x.id === m.id)) && fresh.every((m) => m.date >= newest)) {
+        for (const m of [...fresh].reverse()) box.append(messageCard(m));
+        renderConvHead();
+      } else renderDetail({ keepScroll: true });
+      // (the bar at the foot drawn again for whoever wrote last, unless a reply's being typed in it)
+      if (!els.detailToolbar?.contains(document.activeElement)) qrKeep = null;
+      renderDetailChrome();
+      if (full.unread && !document.hidden && (S.layout !== "phone" || S.depth > 0)) act(full.id, "read", {}, { quiet: true });
+    })()
+      .catch(() => {})
+      .finally(() => (S.threadFresh = null));
+    return S.threadFresh;
   }
 
   // what couldn't load, said where it would have been, with a way to try again
@@ -3988,6 +4278,24 @@ const IFL = (() => {
     return el;
   }
 
+  // The replies typed at the foot, one for each conversation, kept on this device as the compose sheet's message is: so
+  // switching apps (iOS may close Mail meanwhile) or an update loses none of them. A fortnight at most, as that is; each
+  // change written as it's made
+  const QR_KEY = "mail:replies";
+  function qrDrafts() {
+    if (S.qrDrafts) return S.qrDrafts;
+    let kept = null;
+    try { kept = JSON.parse(localStorage.getItem(QR_KEY) || "null"); } catch {}
+    if (!kept || typeof kept !== "object" || Array.isArray(kept)) kept = {};
+    for (const [id, d] of Object.entries(kept)) if (typeof d?.text !== "string" || !d.text || !(Date.now() - d.at < 14 * 864e5)) delete kept[id];
+    const save = () => { try { localStorage.setItem(QR_KEY, JSON.stringify(kept)); } catch {} };
+    return (S.qrDrafts = {
+      get: (id) => kept[id]?.text,
+      set: (id, text) => ((kept[id] = { text, at: Date.now() }), save()),
+      delete: (id) => (delete kept[id], save()),
+    });
+  }
+
   function buildQuickReply(t) {
     const last = t.messages?.find((m) => m.folder !== "sent");
     const who = last ? (displayName(last.from) || "").split(/\s+/)[0] : "";
@@ -3996,8 +4304,9 @@ const IFL = (() => {
     const said = who ? `Reply to ${who}${via}` : `Reply${via}`;
     // (what's typed is kept for each conversation, so a redraw, or going to another and back, never loses it; it goes
     // once the reply's on its way, and comes back if it couldn't be)
-    const drafts = (S.qrDrafts ||= new Map());
-    const field = h("textarea.qr-field", { rows: 1, placeholder: `${said}…`, "aria-label": said, enterkeyhint: "send" });
+    const drafts = qrDrafts();
+    // (Return on the keyboard makes a new line, as it does in a message, and says so; the arrow beside it sends)
+    const field = h("textarea.qr-field", { rows: 1, placeholder: `${said}…`, "aria-label": said, enterkeyhint: "enter" });
     field.value = drafts.get(t.id) || "";
     const send = h("button.qr-send", { type: "button", "aria-label": "Send", disabled: true }, icon("arrowUp"));
     const grow = () => {
@@ -4058,6 +4367,7 @@ const IFL = (() => {
       { label: "Mark as Unread", icon: "envelopeBadge", action: () => act(t.id, "unread") },
       "-",
       ...categoryItems(t),
+      ...unsubItem(t),
       "-",
       !DEMO && newest && { label: "Download Original", icon: "download", action: () => window.open(api.rawUrl(newest.id), "_blank") },
       t.trashed && { label: "Delete Forever", icon: "trash", destructive: true, action: () => deleteThread(t.id) },
@@ -4167,9 +4477,18 @@ const IFL = (() => {
           ? [messageBody(full), full.attachments?.length ? attachmentsEl(full.attachments) : null, h("div.msg-foot", fmtLongDate(m.date))]
           : S.bodyErr?.has(m.id)
             ? loadFailed(S.bodyErr.get(m.id), () => { S.bodyErr.delete(m.id); renderCard(m.id); loadBody(m.id).catch(() => {}).finally(() => renderCard(m.id)); })
-            : h("div.load-more", h("div.spinner"))
+            : (bodyAgain(m.id), h("div.load-more", h("div.spinner")))
         : null
     );
+  }
+
+  // (open with nothing to show, its body let go to make room for others', say: asked for, and drawn once it's here, if
+  // it's still open where it was)
+  function bodyAgain(id) {
+    const t = S.thread;
+    loadBody(id)
+      .catch(() => {})
+      .finally(() => S.thread === t && S.expanded.has(id) && els.detailScroll?.querySelector(`.mcard[data-mid="${CSS.escape(id)}"]`) && renderCard(id));
   }
 
   async function toggleMessage(id) {
@@ -4342,6 +4661,10 @@ pre{white-space:pre-wrap}
       const rw = new ResizeObserver(() => (frame.isConnected ? fitWidth() : rw.disconnect()));
       rw.observe(frame);
       d.addEventListener("load", fit, true);
+      // (touched, scrolled sideways or read with the keys in here: the updater waits, as it does for a touch on the page)
+      for (const ev of ["pointerdown", "wheel", "keydown", "scroll"]) d.addEventListener(ev, () => (S.readAt = Date.now()), { capture: true, passive: true });
+      // (an email address in it, tapped: a message to it, written here rather than in another app)
+      d.addEventListener("click", mailtoHere);
 
     });
 
@@ -4505,6 +4828,23 @@ pre{white-space:pre-wrap}
     document.body.append(el);
     if (appEl) appEl.inert = true;
 
+    // The file shown, had as it's shown (from what its slide has just loaded), so Share hands it over within the tap:
+    // iOS lets a tap share only for a moment, and a file still coming over mobile data would outlast it. One at a time;
+    // a video (not loaded to be shown, only its first moments) only once it's asked for
+    let kept = null;
+    function ready(x, asked) {
+      if (!navigator.canShare || !navigator.share) return null;
+      if (kept?.x === x) return kept.p;
+      if (!asked && kindOf(x) === "video") return null;
+      const k = (kept = { x, file: null });
+      // (a data: address, the demo's, made here rather than fetched: the page's own rules don't let fetch read one)
+      k.p = (x.url.startsWith("data:") ? Promise.resolve().then(() => dataBlob(x.url)) : fetch(x.url, { credentials: "same-origin" })
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("Couldn’t get that file.")))))
+        .then((blob) => (k.file = new File([blob], x.filename || "attachment", { type: x.type || blob.type })));
+      k.p.catch(() => kept === k && (kept = null));
+      return k.p;
+    }
+
     // each slide's content, made when it's near (so a long gallery doesn't load every file at once)
     const zoom = items.map(() => ({ s: 1, x: 0, y: 0 }));
     function fill(i) {
@@ -4516,7 +4856,7 @@ pre{white-space:pre-wrap}
       else if (kind === "video") slide.append(h("video.v-video", { src: x.url, controls: true, playsinline: true, preload: "metadata" }));
       else
         slide.append(
-          h("iframe.v-pdf", { src: x.url, title: x.filename }),
+          h("iframe.v-pdf", { src: x.url, title: x.filename, onload: (e) => (e.currentTarget.dataset.loaded = "1") }),
           h("a.v-open.glass", { href: x.url, target: "_blank", rel: "noopener" }, "Open in Browser", icon("arrowRight"))
         );
     }
@@ -4547,6 +4887,10 @@ pre{white-space:pre-wrap}
       [i - 1, i, i + 1].forEach(fill);
       place(animate);
       const x = items[i];
+      // (once what the slide shows has come, so it's had from there rather than fetched a second time)
+      const media = slides[i].querySelector(".v-img, .v-pdf");
+      if (media && !(media.complete || media.dataset.loaded)) media.addEventListener("load", () => index === i && ready(x), { once: true });
+      else ready(x);
       titleEl.textContent = x.filename;
       countEl.textContent = items.length > 1 ? `${i + 1} of ${items.length}` : fmtSize(x.size);
       slides.forEach((sl, j) => sl.setAttribute("aria-hidden", String(j !== i)));
@@ -4634,9 +4978,16 @@ pre{white-space:pre-wrap}
     async function share(x) {
       try {
         if (navigator.canShare && navigator.share) {
-          const blob = await fetch(x.url, { credentials: "same-origin" }).then((r) => (r.ok ? r.blob() : Promise.reject(new Error("Couldn't get that file."))));
-          const file = new File([blob], x.filename || "attachment", { type: x.type || blob.type });
-          if (navigator.canShare({ files: [file] })) return await navigator.share({ files: [file] });
+          const file = kept?.x === x && kept.file ? kept.file : await ready(x, true);
+          if (navigator.canShare({ files: [file] })) {
+            try {
+              return await navigator.share({ files: [file] });
+            } catch (err) {
+              // (it took longer to come than the tap lasts: it's here now, a tap away)
+              if (err?.name !== "NotAllowedError") throw err;
+              return toast("Ready to Share", { icon: "share", actionLabel: "Share", duration: 8000, action: () => navigator.share({ files: [file] }).catch(() => {}) });
+            }
+          }
         }
         const link = h("a", { href: downloadUrl(x.url), download: x.filename || "" });
         document.body.append(link);
@@ -4884,6 +5235,8 @@ pre{white-space:pre-wrap}
       quote: { header, html: m.html || "", text: m.text || "", forward: mode === "forward" },
       inReplyTo: mode === "forward" ? null : m.messageId,
       references: mode === "forward" ? null : [m.references, m.messageId].filter(Boolean).join(" "),
+      // (the conversation it answers: shown again once it's sent, if that's the one open then)
+      threadId: mode === "forward" ? null : m.threadId || null,
       attachments:
         mode === "forward"
           ? (m.attachments || []).map((a) => ({ filename: a.filename, type: a.type, size: a.size, url: a.url }))
@@ -4891,14 +5244,32 @@ pre{white-space:pre-wrap}
     };
   }
 
+  // An attached file's contents: the file picked, or kept with a draft; one forwarded, from Mail's own copy. One that
+  // can't be had is said, never left out (a message or a draft would otherwise go, or be saved over, without it)
+  async function attachmentBlob(a) {
+    if (a.file) return a.file;
+    if (!a.url) return null;
+    // (a data: address, made here: the page's own rules, connect-src, don't let fetch read one)
+    if (a.url.startsWith("data:")) return dataBlob(a.url);
+    const r = await fetch(a.url, { credentials: "same-origin" }).catch(() => null);
+    if (!r?.ok) throw new ApiError(r?.status || 0, `Couldn’t attach “${a.filename}”.${r ? "" : " Try again in a moment."}`);
+    return r.blob();
+  }
+  function dataBlob(url) {
+    const i = url.indexOf(","), head = url.slice(5, i), body = url.slice(i + 1), b64 = /;base64$/i.test(head);
+    const type = head.replace(/;base64$/i, "") || "application/octet-stream";
+    if (!b64) return new Blob([decodeURIComponent(body)], { type });
+    const bin = atob(body), bytes = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+    return new Blob([bytes], { type });
+  }
+
   // A draft's attachments kept with it (as data, since the files picked won't be there next time)
   async function draftAttachments(list) {
     const out = [];
     for (const a of list || []) {
-      try {
-        const blob = a.file || (a.url ? await (await fetch(a.url, { credentials: "same-origin" })).blob() : null);
-        if (blob) out.push({ filename: a.filename, type: a.type || blob.type, size: blob.size, content: await fileToBase64(blob) });
-      } catch {}
+      const blob = await attachmentBlob(a);
+      if (blob) out.push({ filename: a.filename, type: a.type || blob.type, size: blob.size, content: await fileToBase64(blob) });
     }
     return out;
   }
@@ -4907,9 +5278,12 @@ pre{white-space:pre-wrap}
     try {
       const msg = await api.message(id);
       const c = msg.compose || { to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.text };
-      c.attachments = (c.attachments || []).map((a) =>
-        a.content ? { filename: a.filename, type: a.type, size: a.size, url: `data:${a.type || "application/octet-stream"};base64,${a.content}` } : a
-      );
+      // (the files kept with it, as files again: sent or saved as if just picked)
+      c.attachments = (c.attachments || []).map((a) => {
+        if (!a.content) return a;
+        const file = dataBlob(`data:${a.type || "application/octet-stream"};base64,${a.content}`);
+        return { filename: a.filename, type: a.type, size: a.size || file.size, file, preview: /^image\//.test(a.type) ? URL.createObjectURL(file) : null };
+      });
       openCompose({ ...c, draftId: id });
     } catch (err) {
       toast(err.message, { error: true });
@@ -4920,13 +5294,93 @@ pre{white-space:pre-wrap}
   // till it's sent, saved as a draft or thrown away: so a draft that couldn't be saved, the app closed in the background,
   // or a sign-in that's run out, loses nothing. Offered again when Mail next opens
   const UNSENT = "mail:unsent";
-  const keepUnsent = (c) => { try { const { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, draftId } = c; localStorage.setItem(UNSENT, JSON.stringify({ mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, draftId, at: Date.now() })); } catch {} };
+  const keepUnsent = (c) => { try { const { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId } = c; localStorage.setItem(UNSENT, JSON.stringify({ mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId, at: Date.now() })); } catch {} };
   const forgetUnsent = () => { try { localStorage.removeItem(UNSENT); } catch {} };
   function offerUnsent() {
     let u = null;
     try { u = JSON.parse(localStorage.getItem(UNSENT) || "null"); } catch {}
     if (!u || Date.now() - u.at > 14 * 864e5) return forgetUnsent();
     toast(u.subject ? `“${u.subject.slice(0, 40)}” wasn’t sent or saved` : "A message wasn’t sent or saved", { icon: "drafts", actionLabel: "Open", duration: 9000, action: () => { forgetUnsent(); openCompose(u); } });
+  }
+
+  // The outbox: each message sent from here (waiting out its few seconds of Undo, on its way, or not sent), kept on this
+  // device with its files (in IndexedDB, as localStorage can't hold them) till Mail has it: so closing Mail, iOS putting
+  // it away, or an update loses none of them, and each is offered again as Mail next opens (offerOutbox). Where the
+  // browser keeps nothing, or doesn't answer, the one copy above as before (job.kept: whether the outbox has it); never in
+  // the demo, whose page shares this address's storage with the real Mail
+  const outbox = (() => {
+    let db = null;
+    const open = () =>
+      (db ||= Promise.race([
+        new Promise((ok, no) => {
+          const r = indexedDB.open("mail", 1);
+          r.onupgradeneeded = () => r.result.createObjectStore("outbox", { keyPath: "id" });
+          r.onsuccess = () => ok(r.result);
+          r.onerror = () => no(r.error);
+        }),
+        wait(3000).then(() => null),
+      ]).catch(() => null));
+    // (one request, in a transaction of its own: its answer once it's written, or null if it couldn't be)
+    const one = async (mode, ask) => {
+      const d = DEMO || typeof indexedDB === "undefined" ? null : await open();
+      if (!d) return null;
+      return new Promise((ok) => {
+        try {
+          const t = d.transaction("outbox", mode), r = ask(t.objectStore("outbox"));
+          t.oncomplete = () => ok(r.result ?? true);
+          t.onerror = t.onabort = () => ok(null);
+        } catch {
+          ok(null);
+        }
+      });
+    };
+    // (a job as it's kept: what's needed to send it again, or open it, its files as files)
+    const record = ({ id, at, edit, c }) => ({
+      id,
+      at,
+      edit: !!edit,
+      c: {
+        ...["mode", "from", "to", "cc", "bcc", "subject", "text", "quote", "inReplyTo", "references", "threadId", "draftId"].reduce((o, k) => ((o[k] = c[k] ?? null), o), {}),
+        attachments: (c.attachments || []).map(({ filename, type, size, file, url }) => ({ filename, type, size, file: file || null, url: url || null })),
+      },
+    });
+    return {
+      keep: (job) => one("readwrite", (s) => s.put(record(job))),
+      drop: (id) => one("readwrite", (s) => s.delete(id)),
+      all: async () => (await one("readonly", (s) => s.getAll())) || [],
+    };
+  })();
+
+  // What the outbox kept from before (Mail closed, or put away and closed by iOS, before a message's answer came): those
+  // that went after all, let go (Mail's asked); those that were on their way, as messages that didn't send (the dot sends
+  // them again); those being changed, to open. → whether anything was said
+  async function offerOutbox() {
+    const known = new Set([...pendingSends, ...S.failedSends, ...heldSends].map((j) => j.id));
+    const kept = [];
+    for (const r of await outbox.all()) {
+      if (!r?.id || !r.c || known.has(r.id)) continue;
+      if (Date.now() - r.at > 14 * 864e5) outbox.drop(r.id);
+      else kept.push(r);
+    }
+    const went = new Set(kept.length ? (await api.sent(kept.map((r) => r.id)).catch(() => null))?.sent || [] : []);
+    const jobs = [];
+    for (const r of kept) {
+      if (went.has(r.id)) { outbox.drop(r.id); continue; }
+      const attachments = (r.c.attachments || []).map((a) => ({ ...a, preview: a.file && /^image\//.test(a.type) ? URL.createObjectURL(a.file) : null }));
+      jobs.push({ id: r.id, at: r.at, edit: r.edit, kept: true, cancelled: false, timer: null, c: { ...r.c, attachments } });
+    }
+    const toSend = jobs.filter((j) => !j.edit), toEdit = jobs.find((j) => j.edit);
+    if (toSend.length) {
+      S.failedSends.push(...toSend);
+      renderListChrome();
+    }
+    if (toEdit) {
+      const s = toEdit.c.subject;
+      toast(s ? `“${s.slice(0, 40)}” wasn’t sent` : "A message wasn’t sent", { icon: "drafts", actionLabel: "Open", duration: 9000, action: () => bringBack(toEdit) });
+    } else if (toSend.length) {
+      toast(`${toSend.length === 1 ? "A message" : `${toSend.length} messages`} didn’t send`, { icon: "sent", actionLabel: "Try Again", duration: 9000, action: retryFailed });
+    }
+    return jobs.length > 0;
   }
 
   function openCompose(init = {}) {
@@ -4943,6 +5397,7 @@ pre{white-space:pre-wrap}
       quote: init.quote || null,
       inReplyTo: init.inReplyTo || null,
       references: init.references || null,
+      threadId: init.threadId || null,
       attachments: init.attachments || [],
       draftId: init.draftId || null,
       showCc: !!((init.cc && init.cc.length) || (init.bcc && init.bcc.length)),
@@ -5061,7 +5516,7 @@ pre{white-space:pre-wrap}
         if (/[,;]/.test(input.value)) {
           commit();
           clearSuggest();
-        } else suggest(key, input);
+        } else (suggest(key, input), update());
       });
       input.addEventListener("blur", () =>
         setTimeout(() => {
@@ -5072,7 +5527,7 @@ pre{white-space:pre-wrap}
       );
       input.addEventListener("paste", () => setTimeout(commit, 0));
       draw();
-      fields[key] = { field, input, draw };
+      fields[key] = { field, input, draw, commit };
       return field;
     }
 
@@ -5197,7 +5652,10 @@ pre{white-space:pre-wrap}
     function drawFrom() {
       fromBtn.setAttribute("aria-label", `From ${c.from}`);
       fromBtn.title = `From ${c.from}`;
-      setKids(fromBtn, avatar({ name: S.me?.displayName, email: c.from, me: true }, "from-av"), icon("chevronDown"));
+      // (your photo; and the address, when it isn't the one new mail goes from: a reply from the one the mail came to,
+      // say, as the reply at a conversation's foot says it)
+      const other = S.me?.defaultFrom && c.from && c.from.toLowerCase() !== S.me.defaultFrom.toLowerCase();
+      setKids(fromBtn, avatar({ name: S.me?.displayName, email: c.from, me: true }, "from-av"), other ? h("span", `${c.from.split("@")[0]}@`) : null, icon("chevronDown"));
     }
     drawFrom();
 
@@ -5365,19 +5823,16 @@ pre{white-space:pre-wrap}
     function update() {
       titleEl.textContent = c.subject.trim() || (c.mode === "forward" ? "Forward" : c.mode.startsWith("reply") ? "Reply" : "New Message");
       const all = [...c.to, ...c.cc, ...c.bcc];
-      sendBtn.disabled = !all.length || all.some((p) => !EMAIL_RE.test(p.email));
+      // (an address typed but not yet made a name counts: Send takes it as it is, and says if it isn't one (doSend))
+      const typed = ["to", "cc", "bcc"].some((k) => fields[k]?.input.value.trim());
+      sendBtn.disabled = (!all.length && !typed) || all.some((p) => !EMAIL_RE.test(p.email));
       const size = c.attachments.reduce((n, a) => n + (a.size || 0), 0);
       hint.textContent = size ? fmtSize(size) : "";
     }
 
     async function doSend() {
-      for (const k of ["to", "cc", "bcc"]) {
-        const f = fields[k];
-        if (f?.input.value.trim()) {
-          c[k].push(...f.input.value.split(/[,;]+/).map(parseAddress).filter((p) => p.email));
-          f.input.value = "";
-        }
-      }
+      // (what's typed and not yet a name, made one, as Return would: shown as it's taken, red if it isn't an address)
+      for (const k of ["to", "cc", "bcc"]) fields[k]?.commit();
       const all = [...c.to, ...c.cc, ...c.bcc];
       const bad = all.find((p) => !EMAIL_RE.test(p.email));
       if (!all.length || bad) {
@@ -5389,7 +5844,7 @@ pre{white-space:pre-wrap}
         if (!ok) return subjectInput.focus();
       }
       closeSheet("sending");
-      queueSend(c);
+      queueSend(c, { sheet: true });
     }
 
     function closeSheet(mode) {
@@ -5397,8 +5852,9 @@ pre{white-space:pre-wrap}
       if (!st) return;
       sheetState = null;
       clearInterval(st.keepT);
-      // (sent, or nothing written: no copy kept; thrown away or saved, its own action forgets it once it's done)
-      if (mode === "sending" || !st.dirty()) forgetUnsent();
+      // (nothing written: no copy kept; sent, its copy's the outbox's once it has it (queueSend); thrown away or saved,
+      // its own action forgets it once it's done)
+      if (mode !== "sending" && !st.dirty()) forgetUnsent();
       document.activeElement?.blur?.();
       const appEl = document.getElementById("app");
       if (appEl) appEl.inert = false;
@@ -5411,6 +5867,8 @@ pre{white-space:pre-wrap}
       setTimeout(() => {
         scrim.remove();
         sheet.remove();
+        // (a message brought back while this one was open (bringBack): now it can be)
+        if (!sheetState && heldSends.length) bringBack(heldSends.shift());
       }, 650);
     }
 
@@ -5552,24 +6010,54 @@ pre{white-space:pre-wrap}
     ]);
   }
 
-  // Sending waits a few seconds so it can be undone.
+  // Sending waits a few seconds so it can be undone. Each message is a job, in pendingSends from then till Mail has it,
+  // and in the outbox; its id is its name there and to Mail, the same each time it's asked to go, so one asked again
+  // (its answer lost, say) is never sent twice (index.js send)
   const pendingSends = new Set();
+  // (brought back while another message was open: each opens once that one's closed)
+  const heldSends = [];
+  const jobId = () => crypto.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 
-  function queueSend(c) {
-    const job = { c, cancelled: false, timer: null };
+  // sheet: from the compose sheet, whose own copy on this device the outbox's now takes over from
+  function queueSend(c, { sheet = false } = {}) {
+    const job = { id: jobId(), at: Date.now(), c, sheet, cancelled: false, timer: null };
     pendingSends.add(job);
+    outbox.keep(job).then((ok) => {
+      job.kept = !!ok;
+      if (sheet) ok ? forgetUnsent() : keepUnsent(c);
+    });
+    // (longer to undo, for those who'd take longer to reach Undo: undoFor)
+    const wait = undoFor();
     toast("Sending…", {
       icon: "sent",
       actionLabel: "Undo",
-      duration: 4200,
+      duration: wait + 200,
       action: () => {
+        if (job.started) return toast("Too late to undo: it’s on its way", { icon: "sent" });
         job.cancelled = true;
         clearTimeout(job.timer);
         pendingSends.delete(job);
-        openCompose(c);
+        bringBack(job);
       },
     });
-    job.timer = setTimeout(() => runSend(job), 4000);
+    job.timer = setTimeout(() => runSend(job), wait);
+  }
+
+  // A message back in the sheet to be changed (Undo, or Edit on one that didn't send): out of the outbox, the sheet's
+  // own copy kept from the start. With another message open, it opens once that's closed, kept meanwhile (and offered
+  // as Mail next opens, should Mail close first)
+  function bringBack(job) {
+    S.failedSends = S.failedSends.filter((j) => j !== job);
+    renderListChrome();
+    if (sheetState) {
+      job.edit = true;
+      if (!heldSends.includes(job)) heldSends.push(job);
+      outbox.keep(job);
+      return toast("It opens again once you’ve closed this one", { icon: "drafts" });
+    }
+    outbox.drop(job.id);
+    keepUnsent(job.c);
+    openCompose(job.c);
   }
 
   async function buildPayload(c) {
@@ -5584,7 +6072,7 @@ pre{white-space:pre-wrap}
     }
     const attachments = [];
     for (const a of c.attachments) {
-      const blob = a.file || (a.url && !a.url.startsWith("data:") ? await (await fetch(a.url, { credentials: "same-origin" })).blob() : a.url ? await (await fetch(a.url)).blob() : null);
+      const blob = await attachmentBlob(a);
       if (!blob) continue;
       attachments.push({ filename: a.filename, type: a.type, content: await fileToBase64(blob) });
     }
@@ -5606,45 +6094,60 @@ pre{white-space:pre-wrap}
   async function runSend(job, { keepalive } = {}) {
     if (job.cancelled || job.started) return;
     job.started = true;
-    pendingSends.delete(job);
+    // (on its way till Mail answers: the updater waits for it)
+    pendingSends.add(job);
     try {
       const payload = await buildPayload(job.c);
-      await api.send(payload, { keepalive });
+      await api.send({ ...payload, key: job.id }, { keepalive });
       toast("Message Sent", { icon: "check" });
-      forgetUnsent();
+      outbox.drop(job.id);
+      if (job.sheet && !job.kept) forgetUnsent();
       S.failedSends = S.failedSends.filter((j) => j !== job);
       refreshCounts();
       loadList({ quiet: true });
-      // (a reply shows in its conversation)
-      if (S.thread && job.c.inReplyTo) openThread(S.thread.id, { fromNav: true });
+      // (a reply shows in its conversation, if that's the one open: not in another gone to meanwhile)
+      if (job.c.inReplyTo && job.c.threadId && S.thread?.id === job.c.threadId) openThread(S.thread.id, { fromNav: true });
     } catch (err) {
-      // (kept for the dot to offer again, unless it's the message itself that's wrong; and kept on this device either way,
-      // offered again next time if it's not sent or edited before then)
-      keepUnsent(job.c);
-      if (!(err.status >= 400 && err.status < 500)) {
+      // (kept for the dot to offer again, as it is in the outbox for next time, unless it's the message itself that's
+      // wrong: that's to be changed (Edit), and offered to open next time. Signed out, it's sent again once you're back.
+      // Where the outbox couldn't keep it, the one copy this device keeps, as before)
+      if (!job.kept) keepUnsent(job.c);
+      if (err.status >= 400 && err.status < 500 && err.status !== 401) {
+        job.edit = true;
+        if (job.kept) outbox.keep(job);
+      } else {
         S.failedSends.push(job);
         renderListChrome();
       }
+      // (still on its way from the time before, its answer lost: asked again in a moment, as itself. Not to Edit, which
+      // would make it another message, and send it twice)
+      const going = err.status === 503;
       toast(err.message || "Couldn't send", {
         error: true,
-        actionLabel: "Edit",
+        actionLabel: going ? "Try Again" : "Edit",
         duration: 8000,
-        action: () => openCompose(job.c),
+        action: going ? retryFailed : () => bringBack(job),
       });
+    } finally {
+      pendingSends.delete(job);
     }
   }
 
-  // Don't lose a queued message if the app is closed during the undo window.
-  window.addEventListener("pagehide", () => {
+  // Don't lose a queued message if the app is closed or put away during the undo window: it goes at once (iOS often only
+  // suspends a Home Screen app as it's put away, with no pagehide; it's in the outbox meanwhile either way)
+  function sendNow() {
     if (sheetState?.dirty()) keepUnsent(sheetState.c);
     for (const job of pendingSends) {
       clearTimeout(job.timer);
       runSend(job, { keepalive: true });
     }
-  });
+  }
+  window.addEventListener("pagehide", sendNow);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && sendNow());
 
-  // Keep the compose sheet, and the search field as it's typed in, above the on-screen keyboard: iOS lays it over the
-  // page's foot, where the search field is, rather than making the page shorter (--kb, html.kb-up: app.css).
+  // Keep the compose sheet, the search field as it's typed in, and the reply at a conversation's foot, above the on-screen
+  // keyboard: iOS lays it over the page's foot, where those are, rather than making the page shorter (--kb, html.kb-up:
+  // app.css).
   if (window.visualViewport) {
     const vv = window.visualViewport;
     let lastKb = -1;
@@ -5661,6 +6164,17 @@ pre{white-space:pre-wrap}
     vv.addEventListener("scroll", onVV);
   }
 
+  // An email address tapped (a mailto: link, in a message or in its text, linkify): a message to it, written here, not
+  // in another app (or an alert that there's no mail app)
+  function mailtoHere(e) {
+    const a = e.target.closest?.("a[href]");
+    const draft = a && mailtoDraft(a.getAttribute("href"));
+    if (!draft) return;
+    e.preventDefault();
+    if (!sheetState) openCompose(draft);
+  }
+  document.addEventListener("click", mailtoHere);
+
   // ---------------------------------------------------------------------------
   // Keyboard shortcuts (iPad with a keyboard, desktop)
   // ---------------------------------------------------------------------------
@@ -5673,8 +6187,13 @@ pre{white-space:pre-wrap}
       if (S.layout === "phone" && S.depth > 0) return goBack();
     }
     const typing = e.target.closest?.("input,textarea,[contenteditable]");
+    // (z, or ⌘Z, while a toast offers Undo: undone from wherever the keyboard is, as its button's at the page's end)
+    if (toastNow?.undo && (e.key === "z" || e.key === "Z") && !e.shiftKey && !e.altKey && !typing && !sheetState && !setState && !menuState)
+      return e.preventDefault(), toastNow.undo();
     if (typing || sheetState || setState || menuState || e.metaKey || e.ctrlKey || e.altKey || !els.list) return;
-    const t = S.thread && !S.thread.loading ? S.thread : null;
+    // (a row with the focus: what's done is done to its conversation, not the one that's open; to nothing, on a draft's)
+    const row = els.rows?.contains(document.activeElement) ? document.activeElement.closest(".row") : null;
+    const t = row ? S.threads.find((x) => x.id === row.dataset.id) || null : S.thread && !S.thread.loading ? S.thread : null;
     const k = e.key;
     if (k === "c" || k === "n") return e.preventDefault(), openCompose();
     if (k === "/") return e.preventDefault(), els.searchInput.focus();
@@ -5694,11 +6213,29 @@ pre{white-space:pre-wrap}
     if (k === "r") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "reply")));
     if (k === "a") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "replyAll")));
     if (k === "f") return withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "forward")));
+    if (!["e", "#", "Delete", "u", "l"].includes(k)) return;
+    if (row) keepRowFocus(row);
     if (k === "e") return act(t.id, leadAction(t).act);
-    if (k === "#" || k === "Delete") return t.trashed ? confirmDelete(els.detailToolbar, t.id) : act(t.id, "trash");
+    if (k === "#" || k === "Delete") return t.trashed ? confirmDelete(row || els.detailToolbar, t.id) : act(t.id, "trash");
     if (k === "u") return act(t.id, t.unread ? "read" : "unread");
     if (k === "l") return act(t.id, t.starred ? "unflag" : "flag");
   });
+
+  // (the row a key acted on, drawn again or gone from the list: the focus kept on it, or moved on to the next, so the keys
+  // carry on from there rather than falling back to the conversation that's open)
+  function keepRowFocus(row) {
+    const ids = [...els.rows.querySelectorAll(".row[data-id]")].map((r) => r.dataset.id);
+    const i = ids.indexOf(row.dataset.id);
+    const back = () => {
+      if (document.activeElement && document.activeElement !== document.body) return;
+      for (const id of [ids[i], ids[i + 1], ids[i - 1]]) {
+        const r = id && els.rows?.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
+        if (r) return r.focus({ preventScroll: true });
+      }
+    };
+    setTimeout(back, 0);
+    setTimeout(back, 450);
+  }
 
   // ---------------------------------------------------------------------------
   // Login
@@ -5765,6 +6302,11 @@ pre{white-space:pre-wrap}
       text: "Add a passkey to your account to use Mail, as Admin needs.",
       button: "Open your account",
     },
+    // (Mail, or the account, couldn't be reached as Mail opened: not signed out, so nothing to sign in to)
+    offline: {
+      text: "",
+      button: "Try Again",
+    },
   };
 
   // Signed out (or not let in): as the site's other apps have it, the mark high on the page, out of a glow; the name a
@@ -5781,7 +6323,8 @@ pre{white-space:pre-wrap}
         type: "button",
         onclick: () => {
           go.disabled = true;
-          if (access === "passkey") location.assign(`${accountOrigin}/`);
+          if (access === "offline") startAgain();
+          else if (access === "passkey") location.assign(`${accountOrigin}/`);
           else goToAccount();
         },
       },
@@ -5792,7 +6335,7 @@ pre{white-space:pre-wrap}
     ensureSky();
     const login = h(
       `div.login.welcome.ifl-in${again ? ".again" : ""}`,
-      { role: "main", "aria-labelledby": "login-title" },
+      { role: "main", "aria-labelledby": "login-title", "data-access": access },
       flightScene(),
       // (where each part sits is InFlite's way in, shared by every app: copied into app.css from the georgefarrowgreen
       // repository's .tools/inflite/signin.css by its .tools/signin.mjs)
@@ -5824,10 +6367,10 @@ pre{white-space:pre-wrap}
     document.querySelectorAll(".sheet, .sheet-scrim, .toast").forEach((el) => el.remove());
     document.body.classList.remove("sheet-open", "dragging", "moving");
     sheetState = null;
-    toastEl = null;
+    toastEl = toastNow = null;
     document.getElementById("app")?.remove();
     for (const k of Object.keys(els)) delete els[k];
-    Object.assign(S, { me: null, counts: {}, threads: [], drafts: [], thread: null, selectedId: null, query: "", address: null, version: null, prefetch: null, depth: 0 });
+    Object.assign(S, { me: null, counts: {}, threads: [], drafts: [], thread: null, selectedId: null, query: "", address: null, version: null, prefetch: null, depth: 0, listErr: null });
     S.bodies.clear();
     S.expanded.clear();
     try {
@@ -5861,7 +6404,9 @@ pre{white-space:pre-wrap}
   async function enter() {
     const login = document.querySelector(".login");
     await boot();
-    setTimeout(offerUnsent, 1200);
+    // (what didn't go last time, from the outbox; else a message that was being written)
+    // (not the one copy, though, while it's a message being written or waiting out its Undo: that's this one, not last time's)
+    setTimeout(() => offerOutbox().then((said) => said || sheetState || pendingSends.size || offerUnsent()), 1200);
     if (login) {
       login.style.transition = "opacity .5s var(--ease), transform .6s var(--ease)";
       login.style.opacity = "0";
@@ -5893,7 +6438,10 @@ pre{white-space:pre-wrap}
     // in a menu or sheet; the conversation you were in kept for it, in the address, and opened again. The version
     // deployed is handed over as Mail syncs: poll, below)
     IFL.updates({ app: "mail", build: BUILD, url: "/api/version", field: "app", files: ["/", "/app.js", "/app.css", "/theme.js"],
-      busy: () => !!(sheetState || setState || pendingSends.size || menuState || S.swiping || openSwipe || S.searching || els.detailToolbar?.querySelector(".qr-field")?.value.trim()),
+      // (reading counts as touching it: scrolling a message, or touching it, happens in its own frame, out of the
+      // updater's sight; and the viewer open, a film playing in it say, needs no touching at all)
+      busy: () => !!(sheetState || setState || pendingSends.size || menuState || viewer || S.swiping || openSwipe || S.searching ||
+        Date.now() - S.readAt < (window.__iflQuiet || 60e3) || els.detailToolbar?.querySelector(".qr-field")?.value.trim()),
       save: () => {
         const at = S.thread && !S.thread.loading ? `#thread=${encodeURIComponent(S.thread.id)}` : "";
         try { history.replaceState(null, "", location.pathname + location.search + at); } catch {}
@@ -5936,25 +6484,29 @@ pre{white-space:pre-wrap}
     if (document.hidden) return;
     renderListChrome();
     if (S.swiping || openSwipe || S.loading) return;
-    // (nothing has changed since last time: nothing more to ask)
+    // (nothing has changed since last time: nothing more to ask. The version's taken as seen only once the list it
+    // brought has landed: a list put aside (by a page more being asked for, say) is asked for again next time)
+    let seen;
     try {
       const { v, build, app } = await api.version();
       if (S.offline) ((S.offline = false), renderListChrome());
       // (the Mail deployed, handed to the updater every app shares: IFL.updates)
       if (app) IFL.offer(app);
       S.build ||= build;
-      if (v && v === S.version) {
+      // (unless the list couldn't be loaded last time: asked for again now Mail's answering)
+      if (v && v === S.version && !S.listErr) {
         S.updatedAt = Date.now();
         return renderListChrome();
       }
-      S.version = v;
+      seen = v;
     } catch (err) {
       // (no answer at all, rather than an error from Mail: offline)
       if (!err.status) ((S.offline = true), renderListChrome());
     }
     const before = S.counts.people?.unread || 0;
     await refreshCounts();
-    if (!S.query) await loadList({ quiet: true });
+    if (S.query || (await loadList({ quiet: true }))) S.version = seen ?? S.version;
+    await refreshThread();
     const after = S.counts.people?.unread || 0;
     // (new conversations in People, while looking elsewhere)
     if (after > before && (S.lens !== "people" || S.filter !== "all")) toast(`${after - before} New in People`, { icon: "person" });
@@ -5984,14 +6536,25 @@ pre{white-space:pre-wrap}
       await enter();
       if (ASK_NOTIFY) {
         ASK_NOTIFY = false;
-        setTimeout(() => (S.pushOn ? toast("Notifications are already on on this device", { icon: "bell" })
-          : IFL.allow("mail", "Mail tells you of new mail from people. What it tells you is set in your account.", async () => (await togglePush(), !!S.pushOn))), 600);
+        setTimeout(askNotify, 600);
       }
     } catch (err) {
-      if (!s) showGate("signin", { error: err.message || "Can’t reach Mail right now." });
+      // (no answer, or Mail or the account not answering: said so, with Try Again, and tried again by itself as the
+      // connection comes back, rather than sent off to sign in when you're signed in already)
+      if (!s) showGate(!err.status || err.status >= 500 ? "offline" : "signin", { error: err.message || "Can’t reach Mail right now." });
       else toast(err.message || "Can’t reach Mail right now.", { error: true, actionLabel: "Try Again", duration: 120000, action: () => location.reload() });
     }
   }
+
+  // (Mail couldn't be reached as it opened: tried again from Try Again, as the connection comes back, or as Mail's
+  // brought back to the screen, once at a time)
+  let starting = null;
+  function startAgain() {
+    if (starting || !document.querySelector('.login[data-access="offline"]')) return;
+    starting = start().finally(() => (starting = null));
+  }
+  addEventListener("online", startAgain);
+  document.addEventListener("visibilitychange", () => !document.hidden && startAgain());
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();

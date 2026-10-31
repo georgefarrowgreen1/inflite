@@ -77,10 +77,19 @@ const MIGRATIONS = [
   // (when it went in the Trash: emptied 30 days after; what's there already counts from now)
   `ALTER TABLE messages ADD COLUMN trashed_at INTEGER`,
   `UPDATE messages SET trashed_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000 WHERE folder = 'trash' AND trashed_at IS NULL`,
+  // (each message sent, by the app's own name for it, so one asked for again is never sent twice: index.js send)
+  `CREATE TABLE IF NOT EXISTS sends (key TEXT PRIMARY KEY, id TEXT, at INTEGER NOT NULL)`,
+  // (the conversations in the stream, and those flagged, found without reading every message there's ever been: Done
+  // keeps them all. threads.js counts, listFilter)
+  `CREATE INDEX IF NOT EXISTS idx_messages_inbox ON messages(thread_id) WHERE folder = 'inbox'`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_starred ON messages(thread_id) WHERE starred = 1`,
+  // (the rest of your addresses one message came to, as a list (",a@…,b@…,"), kept once rather than as another
+  // conversation: receive.js store)
+  `ALTER TABLE messages ADD COLUMN also_to TEXT`,
 ];
 
 // Bumped whenever SCHEMA or MIGRATIONS change, so a new isolate checks one row rather than running them all again.
-const SCHEMA_VERSION = "9";
+const SCHEMA_VERSION = "11";
 
 let ready;
 

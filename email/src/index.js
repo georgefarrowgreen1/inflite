@@ -1,4 +1,4 @@
-import { accountView, accessOf, passOn, forgetCheck, accountCookie } from "./auth.js";
+import { accountView, accessOf, passOn, forgetCheck, accountCookie, quietNow } from "./auth.js";
 import {
   bumpVersion,
   mailVersion,
@@ -10,9 +10,9 @@ import {
   findThread,
   cleanMessageId,
 } from "./db.js";
-import { receiveEmail, snippet } from "./receive.js";
+import { receiveEmail, retryPending, snippet } from "./receive.js";
 import { settings, updateSettings, listAddresses, createAddress, updateAddress, deleteAddress, addressOf, defaultAddress, localProblem } from "./addresses.js";
-import { listThreads, getThread, threadAction, counts, wakeSnoozed, unsubInfo } from "./threads.js";
+import { listThreads, getThread, threadAction, counts, wakeSnoozed, unsubInfo, readAll } from "./threads.js";
 import { vapid, pushAll, pushEndpointOk, peopleUnread } from "./push.js";
 
 export default {
@@ -42,20 +42,24 @@ export default {
   },
 
 
-  // Every few minutes: conversations whose Later time has come go back in the stream, with a notice.
+  // Every few minutes: conversations whose Later time has come go back in the stream, with a notice (none in the
+  // account's Quiet Hours, as for new mail, receive.js: they're back, unread, when those are over)
   async scheduled(event, env, ctx) {
     try {
       await ensureSchema(env);
       const woken = await wakeSnoozed(env);
-      const badge = woken.length ? await peopleUnread(env) : 0;
+      const told = woken.length && !(await quietNow(env)) ? woken : [];
+      const badge = told.length ? await peopleUnread(env) : 0;
       await Promise.allSettled(
-        woken.map((w) =>
+        told.map((w) =>
           pushAll(env, { title: w.from || "Mail", body: `Back from Later: ${w.subject}`, tag: w.threadId, url: `/#thread=${w.threadId}`, badge })
         )
       );
     } catch (err) {
       console.error("scheduled: Later", err);
     }
+    // mail that came while the database wasn't answering, read in now it is (receive.js)
+    await retryPending(env, ctx).catch((err) => console.error("scheduled: pending", err));
     // once a day: what's been in the Trash 30 days goes for good, and people kept for addressing mail who've had
     // nothing to or from them in half a year, with no mail left of theirs
     await tidy(env).catch((err) => console.error("scheduled: tidy", err));
@@ -181,7 +185,9 @@ async function route(request, env, ctx, url, view) {
     if (method === "GET") {
       const info = await unsubInfo(env, m[1]);
       if (!info) throw new HttpError(404, "This sender doesn't say how to unsubscribe.");
-      return json({ sender: info.sender, opened: info.opened, of: info.of, how: info.oneClick && info.https ? "oneclick" : info.mailto ? "mail" : info.https ? "page" : null, to: info.mailto ? mailtoTo(info.mailto) : null });
+      const how = info.oneClick && info.https ? "oneclick" : info.mailto ? "mail" : info.https ? "page" : null;
+      // (their page, where that's the way: opened by the tap itself, as a page opened after waiting for Mail is blocked)
+      return json({ sender: info.sender, opened: info.opened, of: info.of, how, to: info.mailto ? mailtoTo(info.mailto) : null, page: how === "page" ? info.https : null });
     }
     if (method === "POST") return unsubscribe(env, m[1]);
   }
@@ -217,6 +223,15 @@ async function route(request, env, ctx, url, view) {
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)\/raw$/)) && method === "GET") return rawMessage(env, m[1]);
   if ((m = pathname.match(/^\/api\/attachments\/([\w-]+)$/)) && method === "GET") return attachment(env, m[1], url, request);
   if (pathname === "/api/contacts" && method === "GET") return contacts(env, url);
+  // (which of the messages an app kept in its outbox went after all, by its names for them: their answers never got back)
+  if (pathname === "/api/sends" && method === "GET") {
+    const keys = (url.searchParams.get("keys") || "").split(",").filter((k) => /^[\w-]{8,64}$/.test(k)).slice(0, 50);
+    if (!keys.length) return json({ sent: [] });
+    const { results } = await env.DB.prepare(`SELECT key FROM sends WHERE id IS NOT NULL AND key IN (${keys.map((_, i) => `?${i + 1}`).join(",")})`)
+      .bind(...keys)
+      .all();
+    return json({ sent: results.map((r) => r.key) });
+  }
   if (pathname === "/api/send" && method === "POST") {
     if (Number(request.headers.get("Content-Length")) > 36 * 1024 * 1024) throw new HttpError(413, "That message is too big to send.");
     return send(env, ctx, await request.json(), view);
@@ -347,7 +362,12 @@ async function nameFor(env, view, from) {
 }
 
 // The same action on several conversations (Mark All as Read, say)
-async function threadBatch(env, { ids, ...body }) {
+async function threadBatch(env, { ids, every, ...body }) {
+  // (Mark All as Read on a whole list, every: what it is, as it's asked for; however much of it has been loaded)
+  if (body.action === "read" && every && typeof every === "object") {
+    await readAll(env, every);
+    return json({ ok: true });
+  }
   if (!Array.isArray(ids) || !ids.length) throw new HttpError(400, "No conversations");
   if (ids.length > (body.action === "delete" ? 25 : 200)) throw new HttpError(400, "Too many conversations at once");
   const good = ids.map(String).filter((id) => /^[\w-]+$/.test(id));
@@ -364,21 +384,35 @@ async function threadBatch(env, { ids, ...body }) {
   return json({ ok: true });
 }
 
-const TRASH_DAYS = 30, CONTACT_DAYS = 180;
+const TRASH_DAYS = 30, CONTACT_DAYS = 180, CONTACTS_A_DAY = 90;
 async function tidy(env, t = Date.now()) {
   const day = new Date(t).toISOString().slice(0, 10);
   if ((await env.DB.prepare(`SELECT v FROM meta WHERE k = 'tidy_day'`).first())?.v === day) return;
   await env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('tidy_day', ?1) ON CONFLICT(k) DO UPDATE SET v = excluded.v`).bind(day).run();
+  // (what's been sent, by its app's name for it, kept a week: long enough for any asking again)
+  await env.DB.prepare(`DELETE FROM sends WHERE at < ?1`).bind(t - 7 * 864e5).run();
   // (a few hundred a day at most: any more go the next day)
   const { results } = await env.DB.prepare(`SELECT id FROM messages WHERE folder = 'trash' AND trashed_at < ?1 LIMIT 500`).bind(t - TRASH_DAYS * 864e5).all();
   for (let i = 0; i < results.length; i += 100) await deleteMessages(env, results.slice(i, i + 100).map((r) => r.id));
-  await env.DB.prepare(
-    `DELETE FROM contacts WHERE coalesce(last_used, 0) < ?1
-       AND NOT EXISTS (SELECT 1 FROM messages WHERE lower(from_email) = contacts.email)
-       AND NOT EXISTS (SELECT 1 FROM messages WHERE to_json LIKE '%"' || contacts.email || '"%' OR cc_json LIKE '%"' || contacts.email || '"%')`
-  )
-    .bind(t - CONTACT_DAYS * 864e5)
-    .run();
+  // (people: ninety a day at most, in turn, from where the day before left off, rather than every one half a year quiet
+  // checked against every message each day: each not found as a sender reads the whole mailbox for its name, and D1
+  // does one thing at a time. As a sender, by index: from_email is kept in lower case, as contacts are)
+  const stale = t - CONTACT_DAYS * 864e5;
+  const after = (await env.DB.prepare(`SELECT v FROM meta WHERE k = 'tidy_contact'`).first())?.v || "";
+  const { results: due } = await env.DB.prepare(`SELECT email FROM contacts WHERE email > ?1 AND coalesce(last_used, 0) < ?2 ORDER BY email LIMIT ${CONTACTS_A_DAY}`)
+    .bind(after, stale)
+    .all();
+  if (due.length)
+    await env.DB.prepare(
+      `DELETE FROM contacts WHERE email IN (${due.map((_, i) => `?${i + 2}`).join(",")}) AND coalesce(last_used, 0) < ?1
+         AND NOT EXISTS (SELECT 1 FROM messages WHERE from_email = contacts.email)
+         AND NOT EXISTS (SELECT 1 FROM messages WHERE to_json LIKE '%"' || contacts.email || '"%' OR cc_json LIKE '%"' || contacts.email || '"%')`
+    )
+      .bind(stale, ...due.map((r) => r.email))
+      .run();
+  // (the last of them reached: from the start again tomorrow)
+  const next = due.length < CONTACTS_A_DAY ? "" : due[due.length - 1].email;
+  await env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('tidy_contact', ?1) ON CONFLICT(k) DO UPDATE SET v = excluded.v`).bind(next).run();
 }
 
 async function emptyTrash(env) {
@@ -653,28 +687,50 @@ async function send(env, ctx, body, view) {
     }),
   };
 
-  let result;
-  try {
-    result = await env.EMAIL.send(message);
-  } catch (err) {
-    console.error("send failed", err.code, err.message);
-    const hint =
-      err.code === "E_SENDER_NOT_VERIFIED"
-        ? `${env.DOMAIN} isn't verified for Email Sending yet.`
-        : err.code === "E_RATE_LIMIT_EXCEEDED"
-          ? "Sending limit reached. Try again later."
-          : err.message;
-    throw new HttpError(502, hint || "Couldn't send the message.");
+  // Each message once, however often it's asked for (key: the app's own name for it, the same each time it asks): one
+  // whose answer never got back to the phone (a slow upload given up on, the app put away) and asked for again is said
+  // to have gone, not sent twice. One still going from the first time says so, to be asked again in a moment; one left
+  // half done minutes ago is taken as not sent.
+  const key = typeof body.key === "string" && /^[\w-]{8,64}$/.test(body.key) ? body.key : null;
+  if (key) {
+    const claim = await env.DB.prepare(`INSERT INTO sends (key, at) VALUES (?1, ?2) ON CONFLICT(key) DO NOTHING`).bind(key, Date.now()).run();
+    if (!claim.meta?.changes) {
+      const was = await env.DB.prepare(`SELECT id, at FROM sends WHERE key = ?1`).bind(key).first();
+      if (was?.id) return json({ ok: true, id: was.id });
+      if (was && Date.now() - was.at < 2 * 60e3) throw new HttpError(503, "That message is still sending. Try again in a moment.");
+      await env.DB.prepare(`UPDATE sends SET at = ?2 WHERE key = ?1`).bind(key, Date.now()).run();
+    }
   }
 
-  // Sent: whatever happens to the copy kept here, the answer is that it went (so it's never sent twice).
-  const id = crypto.randomUUID();
-  try {
-    await keepSent(env, ctx, { id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId: body.draftId });
-  } catch (err) {
-    console.error("sent, but the copy wasn't kept", err);
-  }
-  return json({ ok: true, id });
+  // (sending, and what's kept of it here, carried through even if the phone stops waiting for the answer)
+  const going = (async () => {
+    let result;
+    try {
+      result = await env.EMAIL.send(message);
+    } catch (err) {
+      console.error("send failed", err.code, err.message);
+      if (key) await env.DB.prepare(`DELETE FROM sends WHERE key = ?1`).bind(key).run().catch(() => {});
+      const hint =
+        err.code === "E_SENDER_NOT_VERIFIED"
+          ? `${env.DOMAIN} isn't verified for Email Sending yet.`
+          : err.code === "E_RATE_LIMIT_EXCEEDED"
+            ? "Sending limit reached. Try again later."
+            : err.message;
+      throw new HttpError(502, hint || "Couldn't send the message.");
+    }
+
+    // Sent: whatever happens to the copy kept here, the answer is that it went (so it's never sent twice).
+    const id = crypto.randomUUID();
+    if (key) await env.DB.prepare(`UPDATE sends SET id = ?2 WHERE key = ?1`).bind(key, id).run().catch((err) => console.error("sent, but not noted as sent", err));
+    try {
+      await keepSent(env, ctx, { id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId: body.draftId });
+    } catch (err) {
+      console.error("sent, but the copy wasn't kept", err);
+    }
+    return id;
+  })();
+  ctx.waitUntil(going.catch(() => {}));
+  return json({ ok: true, id: await going });
 }
 
 async function keepSent(env, ctx, { id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId }) {

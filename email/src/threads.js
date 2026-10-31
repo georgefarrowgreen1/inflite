@@ -42,7 +42,7 @@ export function searchCondition(q, bind) {
       }
       case "to": {
         const p = like(v);
-        conds.push(`(lower(to_json) LIKE ${p} OR lower(cc_json) LIKE ${p} OR lower(mailbox) LIKE ${p})`);
+        conds.push(`(lower(to_json) LIKE ${p} OR lower(cc_json) LIKE ${p} OR lower(mailbox) LIKE ${p} OR also_to LIKE ${p})`);
         break;
       }
       case "file":
@@ -74,27 +74,28 @@ const AGG = `thread_id, MAX(MAX(date), MAX(COALESCE(bumped_at, 0))) AS last, MAX
   SUM(folder = 'inbox' AND unread = 1) AS unread, MAX(starred) AS starred, MAX(has_attachments) AS atts,
   SUM(folder = 'inbox') AS inbox, MIN(COALESCE(category, 'people')) AS category, MAX(COALESCE(snooze_until, 0)) AS snooze`;
 
-export async function listThreads(env, url) {
-  const view = VIEWS.includes(url.searchParams.get("view")) ? url.searchParams.get("view") : "all";
-  const category = ["people", "updates"].includes(url.searchParams.get("category")) ? url.searchParams.get("category") : null;
-  const address = (url.searchParams.get("address") || "").trim().toLowerCase() || null;
+// Which conversations a list holds (its view, People or Updates, an address, a search: sp, the list's own asking), as
+// what's read of each message (where) and what each conversation as a whole must have (having), its values bound by bind
+function listFilter(sp, bind, now) {
+  const view = VIEWS.includes(sp.get("view")) ? sp.get("view") : "all";
+  const category = ["people", "updates"].includes(sp.get("category")) ? sp.get("category") : null;
+  const address = (sp.get("address") || "").trim().toLowerCase() || null;
   // (in:trash: the search made in the Trash, in place of everywhere else)
-  const raw = (url.searchParams.get("q") || "").trim();
+  const raw = (sp.get("q") || "").trim();
   const trashSearch = /(^|\s)in:trash(?=\s|$)/i.test(raw);
   const q = raw.replace(/(^|\s)in:\S+/gi, " ").replace(/\s+/g, " ").trim();
-  // (count=1: how many conversations it finds, for the searches offered beside one that finds none; up to 999)
-  const counting = url.searchParams.get("count") === "1";
-  const before = Number(url.searchParams.get("before")) || null;
-  const limit = Math.max(1, Math.min(Math.floor(Number(url.searchParams.get("limit"))) || 40, 100));
-  const now = Date.now();
-
-  const params = [];
-  const bind = (v) => {
-    params.push(v);
-    return `?${params.length}`;
-  };
   const inTrash = trashSearch || (view === "trash" && !q);
   const where = inTrash ? `folder = 'trash'` : `folder NOT IN ('trash', 'drafts')`;
+  // (a list of the stream's, or the flagged, reads only the conversations that can be in it, found by an index of their
+  // own: not every one there's ever been, which Done keeps for good. Whole conversations, so what's added up of each is
+  // as it was: scope, for the grouping; where, for each one's messages)
+  const among =
+    q || inTrash ? null
+    : view === "unread" ? `folder = 'inbox' AND unread = 1`
+    : view === "all" || view === "later" ? `folder = 'inbox'`
+    : view === "flagged" ? `starred = 1`
+    : null;
+  const scope = among ? `${where} AND thread_id IN (SELECT thread_id FROM messages WHERE ${among})` : where;
   const having = [];
   if (trashSearch && !q) having.push("1");
   else if (q) having.push(`SUM(CASE WHEN ${searchCondition(q, bind)} THEN 1 ELSE 0 END) > 0`);
@@ -105,12 +106,34 @@ export async function listThreads(env, url) {
   else if (view === "later") having.push(`SUM(folder = 'inbox') > 0`, `MAX(COALESCE(snooze_until, 0)) > ${bind(now)}`);
   else if (view === "done") having.push(`SUM(folder = 'inbox') = 0`);
   if (category && !q && !inTrash && !trashSearch) having.push(`MIN(COALESCE(category, 'people')) = ${bind(category)}`);
-  if (address) having.push(`SUM(lower(mailbox) = ${bind(address)}) > 0`);
+  // (one that came to two of your addresses, kept once, is the other's too: also_to)
+  if (address) {
+    const a = bind(address);
+    having.push(`SUM(lower(mailbox) = ${a} OR instr(COALESCE(also_to, ''), ',' || ${a} || ',') > 0) > 0`);
+  }
+  return { view, category, address, q, trashSearch, where, scope, having };
+}
+
+const binder = (params) => (v) => {
+  params.push(v);
+  return `?${params.length}`;
+};
+
+export async function listThreads(env, url) {
+  // (count=1: how many conversations it finds, for the searches offered beside one that finds none; up to 999)
+  const counting = url.searchParams.get("count") === "1";
+  const before = Number(url.searchParams.get("before")) || null;
+  const limit = Math.max(1, Math.min(Math.floor(Number(url.searchParams.get("limit"))) || 40, 100));
+  const now = Date.now();
+
+  const params = [];
+  const bind = binder(params);
+  const { view, category, address, q, trashSearch, where, scope, having } = listFilter(url.searchParams, bind, now);
   if (before) having.push(`MAX(MAX(date), MAX(COALESCE(bumped_at, 0))) < ${bind(before)}`);
 
   if (counting) {
     const row = await env.DB.prepare(
-      `SELECT COUNT(*) AS n FROM (SELECT thread_id FROM messages WHERE ${where} AND thread_id IS NOT NULL GROUP BY thread_id
+      `SELECT COUNT(*) AS n FROM (SELECT thread_id FROM messages WHERE ${scope} AND thread_id IS NOT NULL GROUP BY thread_id
        ${having.length ? `HAVING ${having.join(" AND ")}` : ""} LIMIT 999)`
     )
       .bind(...params)
@@ -118,7 +141,7 @@ export async function listThreads(env, url) {
     return { count: row?.n || 0 };
   }
   const { results: groups } = await env.DB.prepare(
-    `SELECT ${AGG} FROM messages WHERE ${where} AND thread_id IS NOT NULL GROUP BY thread_id
+    `SELECT ${AGG} FROM messages WHERE ${scope} AND thread_id IS NOT NULL GROUP BY thread_id
      ${having.length ? `HAVING ${having.join(" AND ")}` : ""} ORDER BY ${view === "later" && !q ? "snooze ASC" : "last DESC"} LIMIT ${bind(limit + 1)}`
   )
     .bind(...params)
@@ -135,6 +158,20 @@ export async function listThreads(env, url) {
     drafts = results.map(rowToSummary);
   }
   return { threads, drafts, hasMore };
+}
+
+// Mark All as Read: every conversation in a list (list: its view, category, address and search, as listThreads is asked),
+// not only the pages of it loaded so far
+export async function readAll(env, list) {
+  const params = [];
+  const sp = new URLSearchParams(Object.entries(list || {}).filter(([k, v]) => ["view", "category", "address", "q"].includes(k) && typeof v === "string" && v));
+  const { scope, having } = listFilter(sp, binder(params), Date.now());
+  await env.DB.prepare(
+    `UPDATE messages SET unread = 0 WHERE unread = 1 AND thread_id IN (SELECT thread_id FROM messages WHERE ${scope} AND thread_id IS NOT NULL
+     GROUP BY thread_id ${having.length ? `HAVING ${having.join(" AND ")}` : ""})`
+  )
+    .bind(...params)
+    .run();
 }
 
 // Each conversation as the list shows it: its latest message, who's in it (newest first), and its state.
@@ -312,49 +349,47 @@ export async function threadAction(env, id, body, deleteMessages) {
 }
 
 // Figures for the chips: conversations in the stream and unread, for People and Updates; flagged; each address that
-// has had mail, with its unread.
+// has had mail, with its unread. Added up here, of the conversations in the stream alone (found by their index), rather
+// than every conversation there's ever been sent back to be counted: Done keeps them all, and this is asked after
+// every change.
 export async function counts(env) {
   const now = Date.now();
-  const { results } = await env.DB.prepare(
-    `SELECT ${AGG} FROM messages WHERE folder NOT IN ('trash', 'drafts') AND thread_id IS NOT NULL GROUP BY thread_id`
-  ).all();
-  const out = {
-    people: { threads: 0, unread: 0 },
-    updates: { threads: 0, unread: 0 },
-    flagged: 0,
-    snoozed: 0,
-    done: 0,
-  };
-  for (const r of results) {
-    const c = out[r.category === "updates" ? "updates" : "people"];
-    if (r.inbox > 0 && r.snooze > now) out.snoozed++;
-    else if (r.inbox > 0) {
-      c.threads++;
-      if (r.unread) c.unread++;
-    } else out.done++;
-    if (r.starred) out.flagged++;
-  }
-  const [trash, drafts, addresses] = await env.DB.batch([
-    env.DB.prepare(`SELECT COUNT(DISTINCT thread_id) AS n FROM messages WHERE folder = 'trash'`),
-    env.DB.prepare(`SELECT COUNT(*) AS n FROM messages WHERE folder = 'drafts'`),
-    env.DB.prepare(
+  const D = env.DB;
+  const stream = `SELECT ${AGG} FROM messages WHERE folder NOT IN ('trash', 'drafts') AND thread_id IN (SELECT thread_id FROM messages WHERE folder = 'inbox')
+    GROUP BY thread_id`;
+  const [sums, later, ups, flagged, trash, drafts, addresses] = await D.batch([
+    D.prepare(
+      `SELECT SUM(snooze > ?1) AS snoozed,
+         SUM(snooze <= ?1 AND category != 'updates') AS people, SUM(snooze <= ?1 AND category != 'updates' AND unread > 0) AS peopleUnread,
+         SUM(snooze <= ?1 AND category = 'updates') AS updates, SUM(snooze <= ?1 AND category = 'updates' AND unread > 0) AS updatesUnread
+       FROM (${stream})`
+    ).bind(now),
+    // (for the caught-up screen: the next conversation back from Later, and the newest Updates, whose senders it names)
+    D.prepare(`SELECT thread_id, snooze FROM (${stream}) WHERE snooze > ?1 ORDER BY snooze LIMIT 1`).bind(now),
+    D.prepare(`SELECT thread_id FROM (${stream}) WHERE snooze <= ?1 AND category = 'updates' ORDER BY last DESC LIMIT 4`).bind(now),
+    D.prepare(`SELECT COUNT(DISTINCT thread_id) AS n FROM messages WHERE starred = 1 AND folder NOT IN ('trash', 'drafts')`),
+    D.prepare(`SELECT COUNT(DISTINCT thread_id) AS n FROM messages WHERE folder = 'trash'`),
+    D.prepare(`SELECT COUNT(*) AS n FROM messages WHERE folder = 'drafts'`),
+    D.prepare(
       `SELECT lower(mailbox) AS address, COUNT(*) AS n, SUM(folder = 'inbox' AND unread = 1) AS unread FROM messages
        WHERE folder IN ('inbox', 'archive') AND mailbox LIKE ?1 GROUP BY lower(mailbox) ORDER BY n DESC LIMIT 12`
     ).bind(`%@${env.DOMAIN}`),
   ]);
-  out.trash = trash.results[0]?.n || 0;
-  out.drafts = drafts.results[0]?.n || 0;
-  out.addresses = addresses.results.map((a) => ({ address: a.address, unread: a.unread || 0 }));
+  const n = sums.results[0] || {};
+  const out = {
+    people: { threads: n.people || 0, unread: n.peopleUnread || 0 },
+    updates: { threads: n.updates || 0, unread: n.updatesUnread || 0 },
+    flagged: flagged.results[0]?.n || 0,
+    snoozed: n.snoozed || 0,
+    trash: trash.results[0]?.n || 0,
+    drafts: drafts.results[0]?.n || 0,
+    addresses: addresses.results.map((a) => ({ address: a.address, unread: a.unread || 0 })),
+  };
 
-  // For the caught-up screen: the next conversation back from Later, and who the newest Updates are from
-  const later = results.filter((r) => r.inbox > 0 && r.snooze > now).sort((a, b) => a.snooze - b.snooze)[0];
-  const ups = results
-    .filter((r) => r.inbox > 0 && r.snooze <= now && r.category === "updates")
-    .sort((a, b) => b.last - a.last)
-    .slice(0, 4);
-  const ids = [...(later ? [later.thread_id] : []), ...ups.map((r) => r.thread_id)];
+  const next = later.results[0];
+  const ids = [...(next ? [next.thread_id] : []), ...ups.results.map((r) => r.thread_id)];
   if (ids.length) {
-    const { results: latest } = await env.DB.prepare(
+    const { results: latest } = await D.prepare(
       `SELECT thread_id, from_name, from_email, subject, date FROM messages WHERE thread_id IN (${ids.map((_, i) => `?${i + 1}`).join(",")})
        AND folder = 'inbox' ORDER BY date DESC`
     )
@@ -362,11 +397,11 @@ export async function counts(env) {
       .all();
     const first = (id) => latest.find((m) => m.thread_id === id);
     const who = (m) => (m ? { name: m.from_name || "", email: m.from_email } : null);
-    if (later) {
-      const m = first(later.thread_id);
-      out.nextLater = { id: later.thread_id, at: later.snooze, from: who(m), subject: cleanSubject(m?.subject) || "(No Subject)" };
+    if (next) {
+      const m = first(next.thread_id);
+      out.nextLater = { id: next.thread_id, at: next.snooze, from: who(m), subject: cleanSubject(m?.subject) || "(No Subject)" };
     }
-    out.updatesFrom = ups.map((r) => who(first(r.thread_id))).filter(Boolean);
+    out.updatesFrom = ups.results.map((r) => who(first(r.thread_id))).filter(Boolean);
   }
   // (the Home Screen badge and the title: unread conversations in People)
   out.inbox = { unread: out.people.unread };

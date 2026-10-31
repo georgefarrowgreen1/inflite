@@ -2261,7 +2261,7 @@ body.sheet-open.phone #app::after {
 
 .banner button {
   margin-left: auto;
-  color: var(--tint);
+  color: var(--tint-text);
   font-weight: 600;
   font-size: 14px;
   padding: 4px 2px;
@@ -2276,7 +2276,7 @@ body.sheet-open.phone #app::after {
 }
 
 .mail-body a {
-  color: var(--tint);
+  color: var(--tint-text);
 }
 
 .mail-body .quote {
@@ -2955,7 +2955,7 @@ body.phone .toast .msg {
   min-width: 0;
   padding: 0 14px;
   font-weight: 600;
-  color: var(--tint);
+  color: var(--tint-text);
 }
 
 .toast svg {
@@ -3179,8 +3179,9 @@ body.pad .sheet-grabber {
   height: 32px;
   padding: 0 12px 0 3px;
   border-radius: 16px;
-  background: color-mix(in srgb, var(--tint) 14%, transparent);
-  color: var(--tint);
+  /* (the darker blue for words, on a paler wash: 4.5:1 on the sheet in light) */
+  background: color-mix(in srgb, var(--tint) 10%, transparent);
+  color: var(--tint-text);
   font-size: 15px;
   max-width: 100%;
   white-space: nowrap;
@@ -3899,6 +3900,10 @@ textarea:focus-visible {
 .load-failed p {
   margin: 0;
   font-size: 15px;
+}
+/* (the list that couldn't be loaded, said where it would be, as low as what an empty list says) */
+.rows > .load-failed {
+  padding-top: 80px;
 }
 
 /* a long subject, in full, at the head of the conversation */
@@ -4621,6 +4626,15 @@ html.kb-up .toolbar.searching {
   font-weight: 600;
 }
 
+/* (a sender's own page, opened by the tap: a link, looking as the button does) */
+a.pbtn {
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .pbtn.quiet-btn {
   background: none;
   color: var(--tint-text);
@@ -4698,10 +4712,22 @@ html.kb-up .toolbar.searching {
   flex-direction: column;
   align-items: stretch;
   gap: 10px;
+  transition: bottom 0.3s var(--spring);
 }
 
 .pane.detail .scroll {
   padding-bottom: calc(var(--sab) + 150px);
+}
+
+/* a reply being typed with the keyboard up: the bar just above it, where you can see what you type, as search is (iOS
+   lays the keyboard over the page's foot rather than shortening it: app.js --kb), and the conversation able to scroll
+   clear of it */
+html.kb-up .pane.detail .toolbar:focus-within {
+  bottom: var(--kb, 0px);
+  padding-bottom: 10px;
+}
+html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
+  padding-bottom: calc(var(--kb, 0px) + 150px);
 }
 
 .d-acts {
@@ -5696,6 +5722,15 @@ button.set-row:active {
   text-align: center;
   font-size: 15px;
 }
+
+/* A short screen (a phone on its side): the name and the way in side by side, the name on the left, Sign in on the
+   right, rather than one over the other */
+@media (max-height: 500px) and (orientation: landscape) {
+  .ifl-in .ifl-top { top: calc(env(safe-area-inset-top, 0px) + 28px); right: 50%; max-width: none; padding-left: max(24px, env(safe-area-inset-left, 0px)); }
+  .ifl-in .ifl-logo { width: 116px; height: 116px; margin-bottom: -10px; }
+  .ifl-in .ifl-title { font-size: 34px; }
+  .ifl-in .ifl-cta { left: 50%; max-width: none; bottom: calc(44px + env(safe-area-inset-bottom, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+}
 /* ==== end of InFlite's way in ==== */
 
 /* Search's filters: From, Date, Files, Unread (the ones on first, blue, named, with an ×); From and Date open their
@@ -5989,6 +6024,8 @@ html { touch-action: pan-x pan-y; }
 .ifm-note-tx { display: grid; line-height: 1.2; }
 .ifm-note-tx b { font-size: 16px; font-weight: 600; }
 .ifm-note-tx small { font-size: 13.5px; color: var(--ifm-text-2); font-variant-numeric: tabular-nums; }
+/* (what it says, read out from here: always there, unseen, and taking no room on any app's page) */
+.ifm-say { position: fixed; top: 0; left: 0; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; pointer-events: none; }
 
 /* InFlite's header, the same in every app (.tools/inflite/menu.js header): your photo · the screen's name, large, its line
    under it · the actions in one capsule. Each app gives it its colours (--ifh-ink, --ifh-ink-2, --ifh-tint, --ifh-band: the

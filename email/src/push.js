@@ -134,10 +134,12 @@ export async function pushAll(env, note) {
   return sent.reduce((a, b) => a + b, 0);
 }
 
-// (the Home Screen badge: unread conversations in People)
+// (the Home Screen badge: unread conversations in People; only those with something unread in the inbox read, not every
+// conversation there's ever been)
 export async function peopleUnread(env) {
   const row = await env.DB.prepare(
     `SELECT COUNT(*) AS n FROM (SELECT thread_id FROM messages WHERE folder NOT IN ('trash', 'drafts') AND thread_id IS NOT NULL
+       AND thread_id IN (SELECT thread_id FROM messages WHERE folder = 'inbox' AND unread = 1)
        GROUP BY thread_id HAVING SUM(folder = 'inbox' AND unread = 1) > 0 AND MIN(COALESCE(category, 'people')) = 'people'
        AND MAX(COALESCE(snooze_until, 0)) <= ?1)`
   )
