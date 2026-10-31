@@ -3884,8 +3884,10 @@ textarea:focus-visible {
   outline: none;
 }
 
-/* (inside a row's or a card's own edges, which clip anything outside them) */
+/* (inside a row's or a card's own edges, which clip anything outside them; and the list's, given the focus once
+   nothing's left in it, edge to edge) */
 .row:focus-visible,
+.rows:focus-visible,
 .msg-head:focus-visible,
 .s-main:focus-visible {
   outline-offset: -3px;

@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.43";
+  const BUILD = "1.44";
   // (what's new in it, said once it's in)
-  const NEWS = "Closing a swiped conversation's More or Later menu puts you back on that conversation, for VoiceOver and the keyboard, not on its hidden button";
+  const NEWS = "After Flag, Read, Later, Done or Delete from a conversation's menu, or Done while reading one, the keyboard and VoiceOver stay on that conversation, or the one now in its place, instead of losing their place";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1466,7 +1466,11 @@ const IFL = (() => {
     layer.classList.remove("open");
     // (back to what opened it, as a menu does; from a swiped row's buttons, which are hidden once it closes, to the row)
     const back = opener?.closest?.(".swipe-actions") ? opener.closest(".row-wrap")?.querySelector(".row") : opener;
-    if (back?.isConnected && (menu.contains(document.activeElement) || document.activeElement === document.body)) back.focus?.({ preventScroll: true });
+    if (back?.isConnected && (menu.contains(document.activeElement) || document.activeElement === document.body)) {
+      back.focus?.({ preventScroll: true });
+      // (and on a row, kept there as what was chosen draws it again, or on the one in its place once it's gone)
+      if (back.matches?.(".row[data-id]") && els.rows?.contains(back)) keepRowFocus(back);
+    }
     if (immediate) return layer.remove();
     menu.classList.remove("open");
     menu.classList.add("closing");
@@ -3436,7 +3440,12 @@ const IFL = (() => {
   function updateRow(id) {
     const t = S.threads.find((x) => x.id === id);
     const old = els.rows.querySelector(`.row-wrap[data-id="${CSS.escape(id)}"]`);
-    if (t && old) old.replaceWith(threadRowEl(t));
+    if (!t || !old) return;
+    // (the row with the focus, drawn again, as the next one opened is read: the focus kept on it, its ring only if it had one)
+    const had = old.contains(document.activeElement), ring = had && document.activeElement.matches(":focus-visible");
+    const el = threadRowEl(t);
+    old.replaceWith(el);
+    if (had) el.querySelector(".row")?.focus({ preventScroll: true, focusVisible: ring });
   }
 
   function markSelectedRow() {
@@ -4016,14 +4025,22 @@ const IFL = (() => {
       if (S.depth === 1) {
         goBack();
         await wait(420);
+        // (back on its row, where going back puts the focus: kept in the list as the row goes)
+        const row = document.activeElement?.closest?.(".row[data-id]");
+        if (row?.dataset.id === id) keepRowFocus(row);
       }
       S.selectedId = null;
       return;
     }
     const i = S.threads.findIndex((t) => t.id === id);
     const next = S.threads[i + 1] || S.threads[i - 1];
-    if (next && next.id !== id) openThread(next.id);
-    else {
+    // (the next one opened in its place; the focus left where it is, on the rows when it was on this one's: keepRowFocus;
+    // from the conversation itself, Done or a key there, on to the next one's heading, as its own would be gone)
+    const a = document.activeElement, inside = !!els.detail?.contains(a), ring = inside && a.matches(":focus-visible");
+    if (next && next.id !== id) {
+      openThread(next.id, { keepFocus: true });
+      if (inside && document.activeElement === document.body) els.detailScroll.querySelector(".conv-head")?.focus({ preventScroll: true, focusVisible: ring });
+    } else {
       S.selectedId = null;
       S.thread = null;
       renderDetail();
@@ -4150,7 +4167,7 @@ const IFL = (() => {
     }
   }
 
-  async function openThread(id, { fromNav } = {}) {
+  async function openThread(id, { fromNav, keepFocus } = {}) {
     // (a search that found what you opened: kept among the recent ones)
     if (S.query) rememberSearch(S.query);
     S.selectedId = id;
@@ -4160,7 +4177,7 @@ const IFL = (() => {
     renderDetail();
     if (S.layout === "phone" && !fromNav) pushDepth(1);
     // (the conversation's heading takes the focus, so VoiceOver reads it and the keyboard carries on from there)
-    if (S.layout === "phone" || document.activeElement?.closest?.(".row")) els.detailScroll.querySelector(".conv-head")?.focus({ preventScroll: true });
+    if (!keepFocus && (S.layout === "phone" || document.activeElement?.closest?.(".row"))) els.detailScroll.querySelector(".conv-head")?.focus({ preventScroll: true });
     const token = ++S.detailToken;
     try {
       const full = await api.thread(id);
@@ -4169,7 +4186,10 @@ const IFL = (() => {
       await Promise.all([...S.expanded].map((mid) => loadBody(mid).catch(() => null)));
       if (token !== S.detailToken) return;
       S.thread = full;
+      // (its heading, given the focus as it opened, drawn again now it's all here: the focus given to it again)
+      const head = els.detailScroll.querySelector(".conv-head"), had = !!head && head === document.activeElement, ring = had && head.matches(":focus-visible");
       renderDetail({ keepScroll: true });
+      if (had && document.activeElement === document.body) els.detailScroll.querySelector(".conv-head")?.focus({ preventScroll: true, focusVisible: ring });
       scrollToNewest();
       if (full.unread) act(id, "read", {}, { quiet: true });
     } catch (err) {
@@ -4225,6 +4245,9 @@ const IFL = (() => {
     if (!els.detailNav) return;
     const t = S.thread;
     const i = t ? S.threads.findIndex((x) => x.id === t.id) : -1;
+    // (a button in the bar with the focus, More after its Flag say, drawn again for the same conversation: kept on it)
+    const a = document.activeElement, keep = t && els.detailNav.dataset.thread === t.id && els.detailNav.contains(a) ? a.getAttribute("aria-label") : null;
+    const ring = !!keep && a.matches(":focus-visible");
     setKids(
       els.detailNav,
       S.layout === "phone" ? gbtn("chevronLeft", `Back to ${listTitle()}`, goBack) : null,
@@ -4250,6 +4273,8 @@ const IFL = (() => {
         : null,
       t ? gbtn("more", "More", (e) => detailMenu(e.currentTarget)) : null
     );
+    els.detailNav.dataset.thread = t?.id || "";
+    if (keep && document.activeElement === document.body) els.detailNav.querySelector(`button[aria-label="${CSS.escape(keep)}"]`)?.focus({ preventScroll: true, focusVisible: ring });
     els.detailNavTitle.textContent = t?.subject || "";
     const lead = t && leadAction(t);
     // (what to do with it, as pills; and a reply written right here, without the compose sheet)
@@ -4422,7 +4447,10 @@ const IFL = (() => {
   function renderConvHead() {
     const old = els.detailScroll?.querySelector(".conv-head");
     if (!old || !S.thread) return renderDetail({ keepScroll: true });
-    old.replaceWith(convHead(S.thread));
+    // (with the focus, flagged by its key say: the focus kept on it)
+    const had = old === document.activeElement, el = convHead(S.thread);
+    old.replaceWith(el);
+    if (had) el.focus({ preventScroll: true });
   }
 
   // Only one message again (opened or closed, remote images loaded); the others' frames keep their place
@@ -6261,17 +6289,29 @@ pre{white-space:pre-wrap}
     if (k === "l") return act(t.id, t.starred ? "unflag" : "flag");
   });
 
-  // (the row a key acted on, drawn again or gone from the list: the focus kept on it, or moved on to the next, so the keys
-  // carry on from there rather than falling back to the conversation that's open)
+  // (the row a key or its menu acted on, drawn again or gone from the list: the focus kept on it, or moved on to the next
+  // (the one before, if it was the last), or to the list once there's none, so the keys and VoiceOver carry on from there
+  // rather than falling back to the conversation that's open, or to nothing. Its ring shown again only if it had one, so
+  // a pointer sees none appear)
   function keepRowFocus(row) {
-    const ids = [...els.rows.querySelectorAll(".row[data-id]")].map((r) => r.dataset.id);
-    const i = ids.indexOf(row.dataset.id);
+    // (each row by what it's for, a conversation or a draft, so its new self can be found)
+    const of = (r) => (r.dataset.id ? `.row[data-id="${CSS.escape(r.dataset.id)}"]` : `.row[data-draft="${CSS.escape(r.dataset.draft || "")}"]`);
+    const rows = [...els.rows.querySelectorAll(".row")].map(of);
+    const i = rows.indexOf(of(row));
+    const ring = row.matches(":focus-visible");
+    // (a row on its way out, folding away, counted as gone: so a second key at once acts on the next, not on it again)
+    const gone = (r) => !r.isConnected || !!r.closest(".removing");
     const back = () => {
-      if (document.activeElement && document.activeElement !== document.body) return;
-      for (const id of [ids[i], ids[i + 1], ids[i - 1]]) {
-        const r = id && els.rows?.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
-        if (r) return r.focus({ preventScroll: true });
-      }
+      const a = document.activeElement;
+      // (or left where a tap elsewhere put it, closing the row's menu say, while the row's still there)
+      if ((a && a !== document.body && a !== row) || !gone(row)) return;
+      const r = [rows[i], rows[i + 1], rows[i - 1]].map((s) => s && els.rows?.querySelector(s)).find((x) => x && !gone(x));
+      if (r) return r.focus({ preventScroll: true, focusVisible: ring });
+      // (the list can have the focus only till it's moved on from)
+      if (!els.rows?.isConnected) return;
+      els.rows.tabIndex = -1;
+      els.rows.addEventListener("blur", () => els.rows.removeAttribute("tabindex"), { once: true });
+      els.rows.focus({ preventScroll: true, focusVisible: ring });
     };
     setTimeout(back, 0);
     setTimeout(back, 450);
