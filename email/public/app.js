@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.40";
+  const BUILD = "1.41";
   // (what's new in it, said once it's in)
-  const NEWS = "Sending's surer: photos go on a slow connection, nothing's sent twice, and what you've written is kept until it's gone; tap an address in a message to write to it";
+  const NEWS = "A send that got no answer offers Try Again, so it can never go twice; two Mail windows no longer contradict each other; and a narrow phone's swipe shows the actions without filing to Later";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -3469,7 +3469,9 @@ const IFL = (() => {
   // ---------------------------------------------------------------------------
 
   const LEFT_W = 88;
-  const RIGHT_W = 4 * 72;
+  // (the four on the right, 72pt each; narrower on a narrow phone, so that all the way, well past them, is still within
+  // a finger's reach across the row: on a 320pt phone, 54pt each, and all the way from 256pt)
+  const rightW = (width) => Math.min(4 * 72, Math.round(width * 0.8) - 40);
   let openSwipe = null;
 
   function setRowOffset(wrap, x, { animate = false, full = null } = {}) {
@@ -3536,11 +3538,9 @@ const IFL = (() => {
       g.lastT = now;
       const width = g.width;
       let x = g.base + dx;
-      // (all the way: past half the row, and always well past its actions when they're open, so closing an open row
-      // never counts as swiping it all the way, on a narrow phone where its actions are most of the row. From a closed
-      // row, leftwards, no further than a finger can go across it: on a 320pt phone, past its actions is off its edge)
-      const past = Math.min(-width * 0.6, -RIGHT_W - 40);
-      const fullAt = Math.max(width * 0.5, LEFT_W + 40), fullRight = g.base < 0 ? past : Math.max(past, -width * 0.8);
+      // (all the way: past half the row, and always well past its actions (40pt), open or not, so dragging far just to
+      // show them never counts as all the way, on a narrow phone where they're most of the row: rightW)
+      const fullAt = Math.max(width * 0.5, LEFT_W + 40), fullRight = -Math.max(width * 0.6, rightW(width) + 40);
       const prevFull = g.full;
       g.full = x > fullAt ? "left" : x < fullRight ? "right" : null;
       if (g.full !== prevFull && navigator.vibrate) navigator.vibrate(8);
@@ -3584,7 +3584,7 @@ const IFL = (() => {
       }
       let target = 0;
       if (st.x > LEFT_W / 2 || (st.v > 0.5 && st.x > 0)) target = LEFT_W;
-      else if (st.x < -RIGHT_W / 2 || (st.v < -0.5 && st.x < 0)) target = -RIGHT_W;
+      else if (st.x < -rightW(width) / 2 || (st.v < -0.5 && st.x < 0)) target = -rightW(width);
       if (st.base && Math.sign(st.v) === -Math.sign(st.base) && Math.abs(st.v) > 0.3) target = 0;
       setRowOffset(st.wrap, target, { animate: true });
       openSwipe = target ? st.wrap : null;
@@ -5353,23 +5353,26 @@ pre{white-space:pre-wrap}
 
   // What the outbox kept from before (Mail closed, or put away and closed by iOS, before a message's answer came): those
   // that went after all, let go (Mail's asked); those that were on their way, as messages that didn't send (the dot sends
-  // them again); those being changed, to open. → whether anything was said
+  // them again); those being changed, to open. Never one another Mail window has, sending it or waiting out its Undo
+  // (take). → whether anything was said
   async function offerOutbox() {
     const known = new Set([...pendingSends, ...S.failedSends, ...heldSends].map((j) => j.id));
     const kept = [];
     for (const r of await outbox.all()) {
       if (!r?.id || !r.c || known.has(r.id)) continue;
       if (Date.now() - r.at > 14 * 864e5) outbox.drop(r.id);
-      else kept.push(r);
+      else if (await take(r)) kept.push(r);
     }
     const went = new Set(kept.length ? (await api.sent(kept.map((r) => r.id)).catch(() => null))?.sent || [] : []);
     const jobs = [];
     for (const r of kept) {
-      if (went.has(r.id)) { outbox.drop(r.id); continue; }
+      if (went.has(r.id)) { outbox.drop(r.id); letGo(r); continue; }
       const attachments = (r.c.attachments || []).map((a) => ({ ...a, preview: a.file && /^image\//.test(a.type) ? URL.createObjectURL(a.file) : null }));
-      jobs.push({ id: r.id, at: r.at, edit: r.edit, kept: true, cancelled: false, timer: null, c: { ...r.c, attachments } });
+      jobs.push({ id: r.id, at: r.at, edit: r.edit, kept: true, cancelled: false, timer: null, letGo: r.letGo, c: { ...r.c, attachments } });
     }
     const toSend = jobs.filter((j) => !j.edit), toEdit = jobs.find((j) => j.edit);
+    // (those to open, let go: offered, not kept here, so another window, or next time, offers them too)
+    for (const j of jobs) if (j.edit) letGo(j);
     if (toSend.length) {
       S.failedSends.push(...toSend);
       renderListChrome();
@@ -6017,11 +6020,30 @@ pre{white-space:pre-wrap}
   // (brought back while another message was open: each opens once that one's closed)
   const heldSends = [];
   const jobId = () => crypto.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  // A job's this window's alone while it's sending it, or keeping it for the dot or to open (pendingSends,
+  // S.failedSends, heldSends), by a lock in its name: so another Mail window opened meanwhile doesn't offer it as one
+  // that didn't send (offerOutbox). → whether this window has it now (where the browser has no locks, always)
+  const take = (job) =>
+    new Promise((got) => {
+      if (!navigator.locks?.request) return got(true);
+      navigator.locks
+        .request(`mail-send:${job.id}`, { ifAvailable: true }, (lock) => {
+          got(!!lock);
+          return lock && !job.gone ? new Promise((done) => (job.letGo = done)) : null;
+        })
+        .catch(() => got(true));
+    });
+  // (let go once it's sent, back in the sheet, or Mail's said it's to be changed)
+  const letGo = (job) => {
+    job.gone = true;
+    job.letGo?.();
+  };
 
   // sheet: from the compose sheet, whose own copy on this device the outbox's now takes over from
   function queueSend(c, { sheet = false } = {}) {
     const job = { id: jobId(), at: Date.now(), c, sheet, cancelled: false, timer: null };
     pendingSends.add(job);
+    take(job);
     outbox.keep(job).then((ok) => {
       job.kept = !!ok;
       if (sheet) ok ? forgetUnsent() : keepUnsent(c);
@@ -6052,10 +6074,13 @@ pre{white-space:pre-wrap}
     if (sheetState) {
       job.edit = true;
       if (!heldSends.includes(job)) heldSends.push(job);
+      // (this window's again while it waits, if it had let it go: one Mail refused, or offered to open)
+      if (job.gone) ((job.gone = false), take(job));
       outbox.keep(job);
       return toast("It opens again once you’ve closed this one", { icon: "drafts" });
     }
     outbox.drop(job.id);
+    letGo(job);
     keepUnsent(job.c);
     openCompose(job.c);
   }
@@ -6101,6 +6126,7 @@ pre{white-space:pre-wrap}
       await api.send({ ...payload, key: job.id }, { keepalive });
       toast("Message Sent", { icon: "check" });
       outbox.drop(job.id);
+      letGo(job);
       if (job.sheet && !job.kept) forgetUnsent();
       S.failedSends = S.failedSends.filter((j) => j !== job);
       refreshCounts();
@@ -6108,25 +6134,28 @@ pre{white-space:pre-wrap}
       // (a reply shows in its conversation, if that's the one open: not in another gone to meanwhile)
       if (job.c.inReplyTo && job.c.threadId && S.thread?.id === job.c.threadId) openThread(S.thread.id, { fromNav: true });
     } catch (err) {
-      // (kept for the dot to offer again, as it is in the outbox for next time, unless it's the message itself that's
-      // wrong: that's to be changed (Edit), and offered to open next time. Signed out, it's sent again once you're back.
-      // Where the outbox couldn't keep it, the one copy this device keeps, as before)
+      // (kept for the dot to offer again, as it is in the outbox for next time, unless Mail said it's the message itself
+      // that's wrong: that's to be changed (Edit), and offered to open next time. Signed out, it's sent again once you're
+      // back. Where the outbox couldn't keep it, the one copy this device keeps, as before)
       if (!job.kept) keepUnsent(job.c);
-      if (err.status >= 400 && err.status < 500 && err.status !== 401) {
+      const refused = err.status >= 400 && err.status < 500 && err.status !== 401;
+      if (refused) {
         job.edit = true;
         if (job.kept) outbox.keep(job);
+        letGo(job);
       } else {
         S.failedSends.push(job);
         renderListChrome();
       }
-      // (still on its way from the time before, its answer lost: asked again in a moment, as itself. Not to Edit, which
-      // would make it another message, and send it twice)
-      const going = err.status === 503;
+      // (no answer, or none that says whether it went (the connection lost, Mail failing, or still sending it from the
+      // time before): asked again as itself, from Try Again. Not Edit, which would make it another message, sent twice if
+      // the first did go. Edit only where Mail refused it, or it never left here: a file that couldn't be read, say)
+      const again = !refused && err.status !== undefined;
       toast(err.message || "Couldn't send", {
         error: true,
-        actionLabel: going ? "Try Again" : "Edit",
+        actionLabel: again ? "Try Again" : "Edit",
         duration: 8000,
-        action: going ? retryFailed : () => bringBack(job),
+        action: again ? retryFailed : () => bringBack(job),
       });
     } finally {
       pendingSends.delete(job);

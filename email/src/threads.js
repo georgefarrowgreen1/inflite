@@ -370,11 +370,22 @@ export async function counts(env) {
     D.prepare(`SELECT COUNT(DISTINCT thread_id) AS n FROM messages WHERE starred = 1 AND folder NOT IN ('trash', 'drafts')`),
     D.prepare(`SELECT COUNT(DISTINCT thread_id) AS n FROM messages WHERE folder = 'trash'`),
     D.prepare(`SELECT COUNT(*) AS n FROM messages WHERE folder = 'drafts'`),
+    // (each address's mail, with what came to it too, kept once on another of yours (also_to), as its list has it:
+    // added up below from each address and the others it came to, of which there are few)
     D.prepare(
-      `SELECT lower(mailbox) AS address, COUNT(*) AS n, SUM(folder = 'inbox' AND unread = 1) AS unread FROM messages
-       WHERE folder IN ('inbox', 'archive') AND mailbox LIKE ?1 GROUP BY lower(mailbox) ORDER BY n DESC LIMIT 12`
+      `SELECT lower(mailbox) AS address, also_to, COUNT(*) AS n, SUM(folder = 'inbox' AND unread = 1) AS unread FROM messages
+       WHERE folder IN ('inbox', 'archive') AND (mailbox LIKE ?1 OR also_to IS NOT NULL) GROUP BY lower(mailbox), also_to`
     ).bind(`%@${env.DOMAIN}`),
   ]);
+  const ours = `@${env.DOMAIN}`.toLowerCase(), byAddress = new Map();
+  for (const r of addresses.results)
+    for (const a of [r.address, ...String(r.also_to || "").split(",")]) {
+      if (!a?.endsWith(ours)) continue;
+      if (!byAddress.has(a)) byAddress.set(a, { address: a, n: 0, unread: 0 });
+      const x = byAddress.get(a);
+      x.n += r.n;
+      x.unread += r.unread || 0;
+    }
   const n = sums.results[0] || {};
   const out = {
     people: { threads: n.people || 0, unread: n.peopleUnread || 0 },
@@ -383,7 +394,7 @@ export async function counts(env) {
     snoozed: n.snoozed || 0,
     trash: trash.results[0]?.n || 0,
     drafts: drafts.results[0]?.n || 0,
-    addresses: addresses.results.map((a) => ({ address: a.address, unread: a.unread || 0 })),
+    addresses: [...byAddress.values()].sort((a, b) => b.n - a.n).slice(0, 12).map(({ address, unread }) => ({ address, unread })),
   };
 
   const next = later.results[0];
