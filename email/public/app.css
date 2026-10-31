@@ -43,6 +43,8 @@
   --sar: env(safe-area-inset-right, 0px);
   --kb: 0px;
   --nav-h: 54px;
+  /* (the bars' top: under the notch, or a little air where there's none, in a browser or on a computer) */
+  --nav-top: max(var(--sat), 10px);
 
   /* the motion every app on the site shares: glide (things put in place, and sheets), out (settling in), and a soft
      spring (about 2% past, for a press let go) */
@@ -67,7 +69,7 @@
     --text: #0d1020; --text-2: rgba(20, 24, 44, 0.66); --text-3: rgba(20, 24, 44, 0.62);
     --glass: rgba(255, 255, 255, 0.58); --glass-strong: rgba(250, 251, 255, 0.9); --glass-ctl: rgba(20, 30, 60, 0.06); --sheet: rgba(246, 247, 252, 0.95);
     --line: rgba(20, 24, 44, 0.09); --press: rgba(20, 24, 44, 0.05); --field: rgba(20, 30, 60, 0.06);
-    --ift-tint: #0f8f7b; --ift-badge: #0a7464; --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
+    --ift-tint: #076a5a; --ift-on: #fff; --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
     --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.95), inset 0 -1px 0.5px rgba(255, 255, 255, 0.4), inset 0 0 22px rgba(255, 255, 255, 0.3);
     --lift: 0 0 0 0.5px rgba(20, 30, 60, 0.08), 0 22px 44px -20px rgba(40, 50, 100, 0.28), 0 2px 6px rgba(40, 50, 100, 0.06);
     --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%);
@@ -83,7 +85,7 @@
     --text: #0d1020; --text-2: rgba(20, 24, 44, 0.66); --text-3: rgba(20, 24, 44, 0.62);
     --glass: rgba(255, 255, 255, 0.58); --glass-strong: rgba(250, 251, 255, 0.9); --glass-ctl: rgba(20, 30, 60, 0.06); --sheet: rgba(246, 247, 252, 0.95);
     --line: rgba(20, 24, 44, 0.09); --press: rgba(20, 24, 44, 0.05); --field: rgba(20, 30, 60, 0.06);
-    --ift-tint: #0f8f7b; --ift-badge: #0a7464; --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
+    --ift-tint: #076a5a; --ift-on: #fff; --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
     --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.95), inset 0 -1px 0.5px rgba(255, 255, 255, 0.4), inset 0 0 22px rgba(255, 255, 255, 0.3);
     --lift: 0 0 0 0.5px rgba(20, 30, 60, 0.08), 0 22px 44px -20px rgba(40, 50, 100, 0.28), 0 2px 6px rgba(40, 50, 100, 0.06);
     --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%);
@@ -414,7 +416,7 @@ body.sheet-open.phone #app::after {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding-top: calc(var(--sat) + var(--nav-h));
+  padding-top: calc(var(--nav-top) + var(--nav-h));
   padding-bottom: calc(var(--sab) + 96px);
   padding-left: var(--sal);
   padding-right: var(--sar);
@@ -428,8 +430,8 @@ body.sheet-open.phone #app::after {
   top: 0;
   left: 0;
   right: 0;
-  height: calc(var(--sat) + var(--nav-h));
-  padding: var(--sat) calc(12px + var(--sar)) 0 calc(12px + var(--sal));
+  height: calc(var(--nav-top) + var(--nav-h));
+  padding: var(--nav-top) calc(12px + var(--sar)) 0 calc(12px + var(--sal));
   display: flex;
   align-items: center;
   gap: 8px;
@@ -475,7 +477,7 @@ body.sheet-open.phone #app::after {
 .nav-title {
   position: absolute;
   left: 50%;
-  top: calc(var(--sat) + var(--nav-h) / 2);
+  top: calc(var(--nav-top) + var(--nav-h) / 2);
   transform: translate(-50%, -50%) translateY(6px);
   font-weight: 600;
   font-size: 17px;
@@ -2650,12 +2652,13 @@ body.sheet-open.phone #app::after {
 
 /* ---------- Phone: navigation stack ---------- */
 
-/* (the panes are clear, on the sky: the one being left fades as it steps back, so the two never show through each other) */
+/* (the panes are clear, on the sky: the one being left fades as it steps back, so the two never show through each other;
+   a layer kept ready for the slide, not for the fade, which would stop the glass over the list blurring what's under it) */
 body.phone .pane {
   left: 0;
   right: 0;
   transition: transform 0.52s var(--ease), opacity 0.4s var(--ease);
-  will-change: transform, opacity;
+  will-change: transform;
 }
 
 body.phone .pane[data-pos="behind"] {
@@ -4089,6 +4092,11 @@ textarea:focus-visible {
 
 /* ---------- The tab bar, and search beside it (InFlite's tab bar: its sizes, --ift-*, from the shared copy at the
    foot; the tab you're on and its counts in Mail's teal) ---------- */
+
+/* (the two in the middle where the list is wider than the bar can grow, as on a phone on its side, like Chat's and Fitness's) */
+.pane.list .toolbar {
+  justify-content: center;
+}
 
 .toolbar .tabs {
   position: relative;

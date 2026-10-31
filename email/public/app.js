@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.41";
+  const BUILD = "1.42";
   // (what's new in it, said once it's in)
-  const NEWS = "A send that got no answer offers Try Again, so it can never go twice; two Mail windows no longer contradict each other; and a narrow phone's swipe shows the actions without filing to Later";
+  const NEWS = "The tab bar's glass blurs properly on phones, its counts are easier to read in light mode, and it sits in the middle with your phone on its side; the header has a little more room at the top, and the swipe tip makes sense with a mouse";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -3203,11 +3203,18 @@ const IFL = (() => {
   }
 
   function swipeHintEl() {
+    // (in the words for what you have: a finger swipes; a mouse or trackpad drags, and right-clicks for the rest)
+    const mouse = matchMedia("(pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches;
     const el = h(
       "div.swipe-hint",
       { role: "listitem" },
       icon("check"),
-      h("span", "Swipe right when you've dealt with something, left to bring it back later."),
+      h(
+        "span",
+        mouse
+          ? "Drag a conversation right when you've dealt with it, left to bring it back later. Right-click for more."
+          : "Swipe right when you've dealt with something, left to bring it back later."
+      ),
       h("button", { type: "button", "aria-label": "Dismiss Tip", onclick: () => dismissSwipeHint() }, icon("x"))
     );
     return el;
@@ -3383,8 +3390,11 @@ const IFL = (() => {
       )
     );
     const lead = leadAction(t);
+    // (seen only when swiped; VoiceOver and the keyboard have the same from the row's menu, rowItems, so they aren't read
+    // out ahead of each conversation)
     const actions = h(
       "div.swipe-actions",
+      { "aria-hidden": "true" },
       h("div.side.left", h(`button.${lead.cls}.lead`, { "data-act": lead.act, tabindex: "-1" }, icon(lead.ic), lead.label)),
       h(
         "div.side.right",
@@ -3409,7 +3419,7 @@ const IFL = (() => {
       avatar(d.to[0] || d.from),
       h(
         "div.body",
-        h("div.top", h("span.from", h("span.draft-tag", "Draft"), d.to.length ? d.to.map(displayName).join(", ") : "No Recipients"), h("span.date", fmtListDate(d.date))),
+        h("div.top", h("span.from", h("span.draft-tag", "Draft"), d.to.length ? d.to.map(displayName).join(", ") : "No Recipients"), h("span.date", fmtListDate(d.date), icon("chevronRight"))),
         h("div.subject", d.subject || "(No Subject)"),
         h("div.preview", d.snippet || " ")
       )
