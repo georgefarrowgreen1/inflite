@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.42";
+  const BUILD = "1.43";
   // (what's new in it, said once it's in)
-  const NEWS = "The tab bar's glass blurs properly on phones, its counts are easier to read in light mode, and it sits in the middle with your phone on its side; the header has a little more room at the top, and the swipe tip makes sense with a mouse";
+  const NEWS = "Closing a swiped conversation's More or Later menu puts you back on that conversation, for VoiceOver and the keyboard, not on its hidden button";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1464,8 +1464,9 @@ const IFL = (() => {
     opener?.classList.remove("menu-open");
     if (opener?.hasAttribute("aria-expanded")) opener.setAttribute("aria-expanded", "false");
     layer.classList.remove("open");
-    // (back to what opened it, as a menu does)
-    if (opener?.isConnected && (menu.contains(document.activeElement) || document.activeElement === document.body)) opener.focus?.({ preventScroll: true });
+    // (back to what opened it, as a menu does; from a swiped row's buttons, which are hidden once it closes, to the row)
+    const back = opener?.closest?.(".swipe-actions") ? opener.closest(".row-wrap")?.querySelector(".row") : opener;
+    if (back?.isConnected && (menu.contains(document.activeElement) || document.activeElement === document.body)) back.focus?.({ preventScroll: true });
     if (immediate) return layer.remove();
     menu.classList.remove("open");
     menu.classList.add("closing");
