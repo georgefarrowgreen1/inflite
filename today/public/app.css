@@ -116,11 +116,11 @@ html.boot #out, html.boot #in { visibility: hidden; }
 .section { margin: 0 0 26px; }
 .slabel { margin: 0 18px 8px; font: 600 13px/1.2 var(--font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-3); }
 .slabel:focus { outline: none; }
-.section .foot { margin: 8px 20px 0; font-size: 13px; line-height: 1.4; color: var(--text-3); }
-.section .foot a, .section .foot button { color: var(--tint-text); font-weight: 600; text-decoration: none; }
+:is(.section, .bsheet) .foot { margin: 8px 20px 0; font-size: 13px; line-height: 1.4; color: var(--text-3); }
+:is(.section, .bsheet) .foot a, :is(.section, .bsheet) .foot button { color: var(--tint-text); font-weight: 600; text-decoration: none; }
 /* (a word to tap in a line of small print, Turn On Here: a finger's reach around it, as the header's buttons have) */
-.section .foot button { position: relative; }
-.section .foot button::after { content: ""; position: absolute; inset: -13px -6px; }
+:is(.section, .bsheet) .foot button { position: relative; }
+:is(.section, .bsheet) .foot button::after { content: ""; position: absolute; inset: -13px -6px; }
 .group { border-radius: var(--r-group); overflow: hidden; }
 .row { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 58px; padding: 10px 18px; text-align: left; color: var(--text); text-decoration: none; }
 button.row:active, a.row:active { background: var(--press); }
@@ -414,9 +414,9 @@ label.row:active { background: var(--press); }
 .switch:checked::before { transform: translateX(20px); }
 .switch:disabled { opacity: 0.45; cursor: default; }
 .mwhy { color: var(--text-2) !important; }
-.section .mwhy { margin-top: 14px; }
+.bsheet .mwhy { margin-top: 14px; }
 .mfoot { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 4px 0; }
-#morning { scroll-margin-top: 84px; }
+.bsheet .mgroup:first-of-type { margin-top: 4px; }
 
 /* ---- sheets from the foot ---- */
 .dimmer { position: fixed; inset: 0; z-index: 50; background: var(--dim); opacity: 0; pointer-events: none; transition: opacity 0.45s; }
@@ -484,14 +484,9 @@ label.row:active { background: var(--press); }
 .nf-card h1 { margin: 0; font: 700 24px/1.2 var(--font-d); letter-spacing: -0.3px; }
 .nf-card p { margin: 0; max-width: 34ch; font-size: 15px; line-height: 1.45; color: var(--text-2); }
 
-/* ---- on an iPad: the header over the column; on a computer: the day on the left, the morning beside it ---- */
-@media (min-width: 672px) and (max-width: 1079px) {
+/* ---- on an iPad or a computer: the header over the column ---- */
+@media (min-width: 672px) {
   #hd .ifh { padding-left: calc((100% - 640px) / 2 + 16px); padding-right: calc((100% - 640px) / 2 + 16px); }
-}
-@media (min-width: 1080px) {
-  #day { max-width: 1100px; display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 0 32px; align-items: start; }
-  #hd .ifh { padding-left: max(16px, calc((100% - 1100px) / 2 + 16px)); padding-right: max(16px, calc((100% - 1100px) / 2 + 16px)); }
-  .col-b { padding-top: 0; }
 }
 .d-short { display: none; }
 @media (max-width: 360px) {

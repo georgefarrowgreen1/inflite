@@ -5,9 +5,9 @@
 import { CARD_KEYS, APP, esc, safe, hm, dateLong, dateShort, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.03";
+const BUILD = "1.04";
 // (what's new in it, said once it's in)
-const NEWS = "Simpler at the foot: the About Today section is gone";
+const NEWS = "The morning notification’s settings are in the menu now: tap your photo, then Morning Notification";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -775,7 +775,7 @@ async function sendPrefs() {
       const p = cleanPrefs(r.prefs), same = JSON.stringify(p) === JSON.stringify(S.prefs);
       S.prefs = p;
       S.view.prefs = p; keepSession(S.view);
-      if (!same) { drawCards(); if (sheetOpen) drawEdit(); }
+      if (!same) { drawCards(); if (sheetOpen?.id === "sh-edit") drawEdit(); }
     }
   } catch (e) {
     if (e.status !== 401) toast(e.message);
@@ -951,11 +951,13 @@ async function tryNow() {
     drawMorning();
   }
 }
+// (the morning's settings: a sheet, opened from the menu)
 function toMorning() {
-  const sec = $("#morning");
-  if (!sec || $("#in").hidden) return;
-  sec.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
-  $("#mh").focus({ preventScroll: true });
+  if (!S.view || $("#in").hidden) return;
+  IFL.close(true);
+  closeSheet();
+  drawMorning();
+  openSheet("morning");
 }
 
 // ---------------------------------------------------------------- the account's appearance, kept for theme.js
@@ -1041,7 +1043,7 @@ function wire() {
   // (a sign-in's code, come in the address without the page opening afresh: opened afresh, to finish it)
   addEventListener("hashchange", () => (new URLSearchParams(location.hash.slice(1)).get("signin") ? location.reload() : fromHash()));
 }
-// (opened at a place: #morning, the morning section; #notify, from Account's "Turn On in Today": asked in one tap)
+// (opened at a place: #morning, the morning's settings; #notify, from Account's "Turn On in Today": asked in one tap)
 function fromHash() {
   if (!S.view) return;
   if (IFL.wantsAllow()) {

@@ -65,25 +65,25 @@
       <p class="kept" id="kept" role="status" hidden></p>
       <div id="cards"></div>
     </div>
-    <div class="col-b">
-      <section class="section" id="morning" aria-labelledby="mh">
-        <h2 class="slabel" id="mh" tabindex="-1">Morning</h2>
-        <div class="group glass mgroup">
-          <label class="row plain"><span class="tx"><b>Morning Notification</b><small>One notification, instead of one from each app</small></span><input type="checkbox" class="switch" role="switch" id="mOn"></label>
-          <label class="row plain pick" id="mAtRow"><span class="tx"><b>Time</b></span><span class="val"><span id="atSaid">07:00</span><span class="chev-d" id="atChev"></span></span>
-            <select id="mAt" aria-label="Time of the morning notification"></select></label>
-        </div>
-        <p class="foot mwhy" id="mWhy" hidden></p>
-        <div class="group glass mgroup" id="lines"></div>
-        <div class="group glass mgroup">
-          <a class="row plain" id="namesRow" href="https://account.inflite.ai/" data-account="notify-inflight"><span class="tx"><b>Names on the Lock Screen</b><small>Chat’s own setting, in your Account</small></span><span class="val" id="namesSaid">Off</span><span class="chev"></span></a>
-        </div>
-        <p class="foot" id="mOut" hidden></p>
-        <p class="foot" id="mFoot"></p>
-        <div class="mfoot"><button class="pill primary" id="tryNow" type="button" disabled></button><a class="pill" id="mNotify" href="https://account.inflite.ai/" data-account="notify">Notifications</a></div>
-      </section>
-    </div>
   </main>
+</div>
+
+<!-- Morning: the one notification, its time and its lines (from the menu) -->
+<div class="bsheet" id="morning" role="dialog" aria-modal="true" aria-labelledby="mh">
+  <div class="bsheet-head"><h2 id="mh" tabindex="-1">Morning Notification</h2><button class="ifs-btn" type="button" data-close aria-label="Close"></button></div>
+  <div class="group glass mgroup">
+    <label class="row plain"><span class="tx"><b>Morning Notification</b><small>One notification, instead of one from each app</small></span><input type="checkbox" class="switch" role="switch" id="mOn"></label>
+    <label class="row plain pick" id="mAtRow"><span class="tx"><b>Time</b></span><span class="val"><span id="atSaid">07:00</span><span class="chev-d" id="atChev"></span></span>
+      <select id="mAt" aria-label="Time of the morning notification"></select></label>
+  </div>
+  <p class="foot mwhy" id="mWhy" hidden></p>
+  <div class="group glass mgroup" id="lines"></div>
+  <div class="group glass mgroup">
+    <a class="row plain" id="namesRow" href="https://account.inflite.ai/" data-account="notify-inflight"><span class="tx"><b>Names on the Lock Screen</b><small>Chat’s own setting, in your Account</small></span><span class="val" id="namesSaid">Off</span><span class="chev"></span></a>
+  </div>
+  <p class="foot" id="mOut" hidden></p>
+  <p class="foot" id="mFoot"></p>
+  <div class="mfoot"><button class="pill primary" id="tryNow" type="button" disabled></button><a class="pill" id="mNotify" href="https://account.inflite.ai/" data-account="notify">Notifications</a></div>
 </div>
 
 <!-- Edit: what Today shows, and in what order -->
