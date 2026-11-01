@@ -572,7 +572,6 @@ html { touch-action: pan-x pan-y; }
 .ifm-in-fitness { --ifm-tint: #f0542e; }
 .ifm-in-markets { --ifm-tint: #12a46a; }
 .ifm-in-mail { --ifm-tint: #1aa58f; }
-.ifm-in-today { --ifm-tint: #2a6ae6; }
 .ifm-in-account { --ifm-tint: #5b4fe0; }
 
 .ifm-layer { position: fixed; inset: 0; z-index: 2147483000; background: transparent; transition: background 0.3s ease, backdrop-filter 0.3s ease; }
@@ -618,8 +617,6 @@ html { touch-action: pan-x pan-y; }
 .ifm-ic.indigo { background: linear-gradient(160deg, #8a7dff, #5546e0); }
 .ifm-ic.grey { background: linear-gradient(160deg, #9aa3b8, #6b7389); }
 .ifm-ic.teal { background: linear-gradient(160deg, #4fd6c4, #169b8f); }
-/* (an app's own icon in a row: Today's, at the top of every other app's menu) */
-.ifm-ic.ifm-img { padding: 0; background: none; object-fit: cover; }
 .ifm-l { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ifm-val { font-size: 15px; color: var(--ifm-text-2); white-space: nowrap; }
 /* (its own name: an app's .warn, a banner of its own, isn't this) */
@@ -743,6 +740,7 @@ html { touch-action: pan-x pan-y; }
 .ifs-hero img { width: 64px; height: 64px; border-radius: 15px; margin-bottom: 6px; box-shadow: 0 10px 22px -10px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.15); }
 .ifs-hero b { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .ifs-hero span { font-size: 14px; opacity: 0.62; }
+.ifm-in-today { --ifm-tint: #2a6ae6; }
 /* ==== end of InFlite's menu ==== */
 
 /* ==== InFlite's way in, shared: from .tools/inflite/signin.css by node .tools/signin.mjs (change it there) ==== */
