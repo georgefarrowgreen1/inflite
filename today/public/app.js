@@ -5,9 +5,9 @@
 import { CARD_KEYS, APP, esc, safe, hm, dateLong, dateShort, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.05";
+const BUILD = "1.06";
 // (what's new in it, said once it's in)
-const NEWS = "The morning notification’s settings, without the small print";
+const NEWS = "The morning notification’s settings, without the buttons at the foot";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -831,8 +831,6 @@ const LINES = [
   ["chat", () => "Pigeons on their way to you"],
   ["markets", () => "How your portfolio’s doing"],
 ];
-// (what this device is, for "Show it on this …": a phone, an iPad (which says it's a Mac, with a touch screen), or else a computer)
-const deviceWord = () => { const ua = navigator.userAgent; return /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "iPad" : /iPhone|iPod|Mobi/.test(ua) ? "phone" : "computer"; };
 // (why this device can't have it, in Fitness's words: fitness/app.js pushWhy)
 const canPush = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 function pushWhy() {
@@ -862,9 +860,6 @@ function drawMorning() {
   const lines = full ? m.lines : {};
   $("#lines").innerHTML = LINES.map(([k, sub]) => `<label class="row"><span class="ic app"><img src="${APP[k].icon}" alt=""></span><span class="tx"><b>${NAMES[k]}</b><small>${esc(sub(m))}</small></span><input type="checkbox" class="switch" role="switch" data-line="${k}" ${lines[k] ? "checked" : ""} ${full ? "" : "disabled"} aria-label="${NAMES[k]} in the morning notification"></label>`).join("");
   $("#namesSaid").textContent = m.names ? "On, from Chat" : "Off";
-  const tn = $("#tryNow");
-  tn.innerHTML = `${G.bell}Show it on this ${deviceWord()}`;
-  tn.disabled = !(m.thisDevice === true && S.endpoint);
 }
 async function putMorning(patch) {
   const body = { ...patch, tz: browserTz() };
@@ -929,19 +924,6 @@ async function turnOn() {
     return false;
   }
 }
-async function tryNow() {
-  const b = $("#tryNow");
-  if (!S.endpoint) return;
-  b.disabled = true;
-  try {
-    const r = await call("/api/morning/try", { method: "POST", body: { endpoint: S.endpoint } });
-    toast(r?.sent ? "Sent" : "It didn’t send just now. Try again in a moment.");
-  } catch (e) {
-    if (e.status !== 401) toast(e.message);
-  } finally {
-    drawMorning();
-  }
-}
 // (the morning's settings: a sheet, opened from the menu)
 function toMorning() {
   if (!S.view || $("#in").hidden) return;
@@ -967,7 +949,6 @@ function wire() {
   for (const b of $$(".ifs-btn:empty")) b.innerHTML = G.x;
   for (const c of $$(".row .chev:empty")) c.innerHTML = G.chev;
   $("#atChev").innerHTML = G.down;
-  $("#tryNow").innerHTML = `${G.bell}Show it on this ${deviceWord()}`;
   // (Try Again on a card that couldn't load: that card alone, asked again)
   $("#cards").addEventListener("click", (e) => {
     const r = e.target.closest("[data-retry]");
@@ -1002,7 +983,6 @@ function wire() {
     if (s) putMorning({ lines: { [s.dataset.line]: s.checked } });
   });
   $("#mWhy").addEventListener("click", (e) => { if (e.target.closest("[data-turnon]")) turnOn(); });
-  $("#tryNow").addEventListener("click", tryNow);
   $("#edList").addEventListener("click", (e) => {
     const b = e.target.closest("[data-mv]");
     if (!b) return;

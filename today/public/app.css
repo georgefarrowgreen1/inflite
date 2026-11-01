@@ -415,7 +415,6 @@ label.row:active { background: var(--press); }
 .switch:disabled { opacity: 0.45; cursor: default; }
 .mwhy { color: var(--text-2) !important; }
 .bsheet .mwhy { margin-top: 14px; }
-.mfoot { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 4px 0; }
 .bsheet .mgroup:first-of-type { margin-top: 4px; }
 
 /* ---- sheets from the foot ---- */
