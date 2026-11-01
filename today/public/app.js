@@ -5,9 +5,9 @@
 import { CARD_KEYS, APP, esc, safe, hm, dateLong, dateShort, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.02";
+const BUILD = "1.03";
 // (what's new in it, said once it's in)
-const NEWS = "The Morning section is simpler: its settings, without the Lock Screen picture";
+const NEWS = "Simpler at the foot: the About Today section is gone";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -665,8 +665,6 @@ async function openAccount(open) {
 function wireLinks() {
   const L = S.links || DEFAULT_LINKS, at = (k, path = "/") => (safe(L[k]) ? `${L[k]}${path}` : "#");
   for (const a of $$("[data-account]")) a.href = accountHref(a.dataset.account);
-  $("#aLive").href = at("chat", "/tracker");
-  $("#aWeather").href = at("weather");
 }
 
 // ---------------------------------------------------------------- the cards
@@ -975,7 +973,6 @@ function wire() {
   $("#join").addEventListener("click", (e) => { e.preventDefault(); goToAccount(true); });
   for (const b of $$(".ifs-btn:empty")) b.innerHTML = G.x;
   for (const c of $$(".row .chev:empty")) c.innerHTML = G.chev;
-  $("#icBell").innerHTML = G.bell;
   $("#atChev").innerHTML = G.down;
   $("#tryNow").innerHTML = `${G.bell}Show it on this ${deviceWord()}`;
   // (Try Again on a card that couldn't load: that card alone, asked again)

@@ -450,7 +450,6 @@ label.row:active { background: var(--press); }
   background: var(--sheen), var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), var(--lift); transition: transform 0.45s var(--ease-spring), opacity 0.25s; }
 .toast.on { transform: translate(-50%, 0); opacity: 1; }
 
-.about .foot a { color: var(--tint-text); font-weight: 600; text-decoration: none; }
 
 /* ---- signed out: InFlite's way in (where each part sits is the shared block's, at the foot), in Today's colours, with
    what InFlite is and its apps between the name and Sign in ---- */
