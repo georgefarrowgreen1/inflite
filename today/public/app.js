@@ -2,12 +2,12 @@
 // from each. Everything shown comes from your InFlite account (this site's Worker passes your sign-in on to
 // account.inflite.ai: today/src/index.js), worked out there by each app's own rules: this page only draws it (cards.js)
 // and sends what you change (Edit, Morning). Signed out, it's InFlite's way in (index.html's, there without a script too).
-import { CARD_KEYS, APP, esc, safe, hm, dayKey, dateLong, dateShort, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
+import { CARD_KEYS, APP, esc, safe, hm, dateLong, dateShort, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.01";
+const BUILD = "1.02";
 // (what's new in it, said once it's in)
-const NEWS = "Your day from every app on one page, and one morning notification instead of several";
+const NEWS = "The Morning section is simpler: its settings, without the Lock Screen picture";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -834,25 +834,6 @@ const LINES = [
   ["chat", () => "Pigeons on their way to you"],
   ["markets", () => "How your portfolio’s doing"],
 ];
-function lockHtml(m) {
-  const tz = m.tz || S.answer?.tz || browserTz(), p = m.preview;
-  if (!p) {
-    const now = Date.now();
-    return { html: `<div class="lk-top"><span class="lk-lock">${G.lock}</span><span class="lk-date">${esc(dateLong(now, tz))}</span><span class="lk-time">${hm(now, tz)}</span></div><div class="lk-note none">${m.on ? "Your morning’s notification shows here" : "Off: turn it on to have it each morning"}</div>`, said: "Lock Screen preview" };
-  }
-  const at = typeof p.at === "number" ? p.at : Date.now(), lines = (Array.isArray(p.lines) ? p.lines : []).filter((l) => typeof l === "string");
-  // (the next one, on a later day: its words are as they'd be now, worked out from now's forecast and warnings, so it's
-  // shown at now and said as how it reads now, never as what tomorrow's will say)
-  const later = p.kind !== "sent" && dayKey(at, tz) !== dayKey(Date.now(), tz), shown = later ? Date.now() : at;
-  const when = !m.on ? "Off: turn it on to have it each morning" : p.kind === "sent" ? `This morning’s came at ${hm(at, tz)}`
-    : later ? `How it reads now · Tomorrow’s comes at ${hm(at, tz)}` : `This morning’s comes at ${hm(at, tz)}`;
-  return {
-    html: `<div class="lk-top"><span class="lk-lock">${G.lock}</span><span class="lk-date">${esc(dateLong(shown, tz))}</span><span class="lk-time">${hm(shown, tz)}</span></div>
-      <div class="lk-note"><img src="/icon.svg" alt=""><span class="ln-h"><b>Today</b><span>now</span></span><b class="ln-t">${esc(p.title)}</b>${lines.map((l) => `<span class="ln-l">${esc(l)}</span>`).join("")}</div>
-      <span class="lk-when">${G.clock}${esc(when)}</span>`,
-    said: `Lock Screen preview, ${hm(shown, tz)}: ${p.title || ""}. ${lines.join(". ")}. ${when}`,
-  };
-}
 // (what this device is, for "Show it on this …": a phone, an iPad (which says it's a Mac, with a touch screen), or else a computer)
 const deviceWord = () => { const ua = navigator.userAgent; return /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "iPad" : /iPhone|iPod|Mobi/.test(ua) ? "phone" : "computer"; };
 // (why this device can't have it, in Fitness's words: fitness/app.js pushWhy)
@@ -866,10 +847,6 @@ function drawMorning() {
   const m = S.morning;
   if (!m || !S.view) return;
   const full = m.lines && typeof m.lines === "object";
-  const lk = lockHtml(m), lock = $("#lock");
-  lock.innerHTML = lk.html;
-  lock.setAttribute("aria-label", lk.said);
-  lock.classList.toggle("off", !m.on);
   $("#mOn").checked = !!m.on;
   $("#mAtRow").hidden = !m.on;
   const at = Number.isInteger(m.at) ? m.at : 420, sel = $("#mAt"), opts = [];
