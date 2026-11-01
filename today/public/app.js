@@ -5,9 +5,9 @@
 import { CARD_KEYS, APP, esc, safe, hm, dateLong, dateShort, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.04";
+const BUILD = "1.05";
 // (what's new in it, said once it's in)
-const NEWS = "The morning notification’s settings are in the menu now: tap your photo, then Morning Notification";
+const NEWS = "The morning notification’s settings, without the small print";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -413,7 +413,6 @@ const MIN = 60e3;
 const browserTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London"; } catch { return "Europe/London"; } };
 const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const clock = (mins) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
-const and2 = (a) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} and ${a.at(-1)}` : a[0] || "");
 const DEFAULT_LINKS = (() => {
   const live = /(^|\.)inflite\.ai$/.test(location.hostname);
   const at = (n) => (live ? `https://${n}.inflite.ai` : `${location.protocol}//${n}.${location.hostname}${location.port ? ":" + location.port : ""}`);
@@ -863,14 +862,6 @@ function drawMorning() {
   const lines = full ? m.lines : {};
   $("#lines").innerHTML = LINES.map(([k, sub]) => `<label class="row"><span class="ic app"><img src="${APP[k].icon}" alt=""></span><span class="tx"><b>${NAMES[k]}</b><small>${esc(sub(m))}</small></span><input type="checkbox" class="switch" role="switch" data-line="${k}" ${lines[k] ? "checked" : ""} ${full ? "" : "disabled"} aria-label="${NAMES[k]} in the morning notification"></label>`).join("");
   $("#namesSaid").textContent = m.names ? "On, from Chat" : "Off";
-  const out = (Array.isArray(m.preview?.out) ? m.preview.out : []).map((k) => NAMES[k] || String(k));
-  $("#mOut").textContent = out.length ? `${and2(out)} ${out.length > 1 ? "have" : "has"} nothing for today yet, so ${out.length > 1 ? "their lines stay" : "its line stays"} out: a line comes only when there’s something to say.` : "";
-  $("#mOut").hidden = !out.length;
-  const rw = !!m.replaces?.weather, rf = !!m.replaces?.fitness;
-  const instead = rw && rf ? " While it’s on, it comes instead of Weather’s morning briefing and Fitness’s morning reminder on your devices; Weather’s briefing email still comes."
-    : rw ? " While it’s on, it comes instead of Weather’s morning briefing on your devices; Weather’s briefing email still comes."
-    : rf ? " While it’s on, it comes instead of Fitness’s morning reminder on your devices." : "";
-  $("#mFoot").textContent = `It comes at its time, whatever your Quiet Hours, as Weather’s morning briefing does. It never carries a word anyone wrote, and names stay off the Lock Screen unless Chat’s are on.${instead}`;
   const tn = $("#tryNow");
   tn.innerHTML = `${G.bell}Show it on this ${deviceWord()}`;
   tn.disabled = !(m.thisDevice === true && S.endpoint);
