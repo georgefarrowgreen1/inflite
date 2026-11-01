@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>InFlite Today</title>
+  <meta name="description" content="Your day from InFlite’s apps on one page: the weather where you are, pigeons on their way, today’s ride and how your money’s doing. One sign-in, free, and no ads.">
+  <link rel="canonical" href="https://inflite.ai/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="InFlite">
+  <meta property="og:title" content="InFlite Today">
+  <meta property="og:description" content="Your day from InFlite’s apps on one page: the weather where you are, pigeons on their way, today’s ride and how your money’s doing. One sign-in, free, and no ads.">
+  <meta property="og:image" content="https://inflite.ai/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="InFlite’s mark, and Today: your day, from all your apps">
+  <meta property="og:url" content="https://inflite.ai/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#dde3fb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b2860" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Today">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-180.png">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/app.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+<div class="sky" aria-hidden="true"><div class="aura a1"></div><div class="aura a2"></div><div class="aura a3"></div></div>
+
+<!-- Signed out: InFlite's way in, as every app has it (the shared .ifl-in block), with what InFlite is and its apps -->
+<main class="today-out ifl-in" id="out">
+  <div class="ifl-top">
+    <div class="ifl-logo"><img src="/icon.svg" alt="" width="96" height="96"></div>
+    <h1 class="ifl-title">Today</h1>
+    <p class="ifl-tagline">Your day, from all your apps</p>
+  </div>
+  <nav class="today-apps" aria-label="InFlite’s apps">
+    <p class="today-apps-line">One sign-in for all of InFlite’s apps: free, and no ads.</p>
+    <ul>
+      <li><a href="https://chat.inflite.ai/" data-app="chat" title="Chat: letters carried by pigeon" aria-label="Chat: letters carried by pigeon"><img src="/apps/chat.svg" alt="" width="44" height="44"><span>Chat</span></a></li>
+      <li><a href="https://weather.inflite.ai/" data-app="weather" title="Weather: a forecast that explains itself" aria-label="Weather: a forecast that explains itself"><img src="/apps/weather.svg" alt="" width="44" height="44"><span>Weather</span></a></li>
+      <li><a href="https://fitness.inflite.ai/" data-app="fitness" title="Fitness: your training, a day at a time" aria-label="Fitness: your training, a day at a time"><img src="/apps/fitness.svg" alt="" width="44" height="44"><span>Fitness</span></a></li>
+      <li><a href="https://finance.inflite.ai/" data-app="finance" title="Markets: your money, said simply" aria-label="Markets: your money, said simply"><img src="/apps/markets.svg" alt="" width="44" height="44"><span>Markets</span></a></li>
+    </ul>
+  </nav>
+  <div class="ifl-cta">
+    <p class="today-said" id="outSaid" role="status" hidden></p>
+    <p class="ifl-brand"><img src="/inflite.svg" alt="" width="22" height="22">Powered by InFlite</p>
+    <a class="ifl-go pill primary" id="signin" href="https://auth.inflite.ai/">Sign in</a>
+    <p class="ifl-new"><a id="join" href="https://auth.inflite.ai/">New here? Make an account</a></p>
+  </div>
+</main>
+
+<!-- Signed in: your day. The header, the cards and the morning are drawn by app.js from the account's answers -->
+<div class="today-in" id="in" hidden>
+  <div id="hd"></div>
+  <main id="day">
+    <div class="col-a">
+      <p class="kept" id="kept" role="status" hidden></p>
+      <div id="cards"></div>
+    </div>
+    <div class="col-b">
+      <section class="section" id="morning" aria-labelledby="mh">
+        <h2 class="slabel" id="mh" tabindex="-1">Morning</h2>
+        <div class="lock" id="lock" role="img" aria-label="Lock Screen preview"></div>
+        <div class="group glass mgroup">
+          <label class="row plain"><span class="tx"><b>Morning Notification</b><small>One notification, instead of one from each app</small></span><input type="checkbox" class="switch" role="switch" id="mOn"></label>
+          <label class="row plain pick" id="mAtRow"><span class="tx"><b>Time</b></span><span class="val"><span id="atSaid">07:00</span><span class="chev-d" id="atChev"></span></span>
+            <select id="mAt" aria-label="Time of the morning notification"></select></label>
+        </div>
+        <p class="foot mwhy" id="mWhy" hidden></p>
+        <div class="group glass mgroup" id="lines"></div>
+        <div class="group glass mgroup">
+          <a class="row plain" id="namesRow" href="https://account.inflite.ai/" data-account="notify-inflight"><span class="tx"><b>Names on the Lock Screen</b><small>Chat’s own setting, in your Account</small></span><span class="val" id="namesSaid">Off</span><span class="chev"></span></a>
+        </div>
+        <p class="foot" id="mOut" hidden></p>
+        <p class="foot" id="mFoot"></p>
+        <div class="mfoot"><button class="pill primary" id="tryNow" type="button" disabled></button><a class="pill" id="mNotify" href="https://account.inflite.ai/" data-account="notify">Notifications</a></div>
+      </section>
+
+      <section class="section about" aria-labelledby="ah">
+        <h2 class="slabel" id="ah">About Today</h2>
+        <div class="group glass">
+          <a class="row" href="https://account.inflite.ai/" data-account="notify" id="aNotify"><span class="ic indigo" id="icBell"></span><span class="tx"><b>Notifications</b><small>Each app’s, and Quiet Hours, in your Account</small></span><span class="chev"></span></a>
+          <a class="row" href="https://chat.inflite.ai/tracker" id="aLive"><span class="ic app"><img src="/apps/chat.svg" alt=""></span><span class="tx"><b>Chat Live</b><small>Every pigeon in the air right now, on one map</small></span><span class="chev"></span></a>
+          <a class="row" href="https://weather.inflite.ai/" id="aWeather"><span class="ic app"><img src="/apps/weather.svg" alt=""></span><span class="tx"><b>Weather</b><small>Works without signing in. Try it now</small></span><span class="chev"></span></a>
+        </div>
+        <p class="foot">Every line on this page is written by its app’s own rules, from what you’ve added there: nothing is guessed. One sign-in, free, and no ads.</p>
+      </section>
+    </div>
+  </main>
+</div>
+
+<!-- Edit: what Today shows, and in what order -->
+<div class="bsheet" id="sh-edit" role="dialog" aria-modal="true" aria-labelledby="eh">
+  <div class="bsheet-head"><h2 id="eh" tabindex="-1">Edit Today</h2><button class="ifs-btn" type="button" data-close aria-label="Close"></button></div>
+  <p class="sh-sub">What Today shows, and in what order. It changes as you go, on every device you sign in on.</p>
+  <div class="group" id="edList"></div>
+  <span class="vh" id="edSay" role="status"></span>
+  <div class="sh-acts"><button class="pill" id="edReset" type="button">Back to the day’s order</button><button class="pill primary" data-close type="button">Done</button></div>
+</div>
+</body>
+</html>

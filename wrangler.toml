@@ -1,3 +1,25 @@
+# inflite.ai: InFlite Today (today/): its page and files are today/public; only /api/* and /version run the Worker
+# (today/src/index.js), which passes the account's cookie on to account.inflite.ai (the georgefarrowgreen repo's
+# functions/_todayapp.js). Workers Builds deploys it from here. Mail is a Worker of its own (email/).
 name = "inflite"
-main = "src/index.js"
+main = "today/src/index.js"
 compatibility_date = "2026-10-01"
+# (only at inflite.ai: not at inflite.<account>.workers.dev too, where every write would be refused anyway, its Origin
+# not Today's; and no per-version preview addresses)
+workers_dev = false
+preview_urls = false
+
+[assets]
+directory = "./today/public"
+binding = "ASSETS"
+not_found_handling = "404-page"
+run_worker_first = ["/api/*", "/version"]
+
+[vars]
+ACCOUNT_ORIGIN = "https://account.inflite.ai"
+
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
+[observability]
+enabled = true
