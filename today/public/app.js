@@ -373,7 +373,9 @@ const IFL = (() => {
     open = { anchor, layer, pop, key, fit, behind, onClose: o.onClose, redraw: (list) => {
       // (the focus kept on the row it was on, by its key)
       const k = document.activeElement?.dataset?.k;
-      rowsBox.replaceChildren(...(todayGroup ? [todayGroup] : []), ...drawRows(list));
+      // (Today's group never taken out and put back, which would drop a focus on it: only the app's own rows after it)
+      for (const g of [...rowsBox.children]) if (g !== todayGroup) g.remove();
+      rowsBox.append(...drawRows(list));
       if (k) rowsBox.querySelector(`[data-k="${k}"]`)?.focus({ preventScroll: true });
     } };
     requestAnimationFrame(() => requestAnimationFrame(() => { layer.classList.add("open"); pop.classList.add("open"); }));
@@ -441,6 +443,7 @@ const S = {
   prefs: { order: [...CARD_KEYS], hidden: [] },
   answer: null, // the last cards answer (GET /api/today): { at, tz, cards, morning }
   answerAt: 0, // when it came (or was kept)
+  skew: 0, // how far this device's clock was behind the account's, as the last answer came (never less than 0)
   kept: false, // drawn from this browser's copy, not yet fresh
   morning: null, // the morning view (2.5), or the session's few words of it
   device: null, // this device's name for the server: the first 16 of b64url(SHA-256(endpoint))
@@ -473,8 +476,9 @@ async function call(path, { method = "GET", body } = {}) {
 }
 
 // ---------------------------------------------------------------- this browser's copy of your day, per account
-// Kept so Today opens with your day on a train; drawn only once the account has said it's you (or, with no answer, if
-// the last time it said so was you and under 12 hours ago), and gone the moment it's known you've signed out.
+// Kept so Today opens with your day on a train; drawn only once the account has said it's you (or, in a Home Screen
+// Today with no answer at all, if the last time it said so was you and under 12 hours ago), and gone the moment it's
+// known you've signed out.
 const KEPT = "today:session", CARDS_KEY = (id) => `today:cards:${id}`;
 const readJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch { return null; } };
 function keepSession(view) { try { localStorage.setItem(KEPT, JSON.stringify({ id: view.user.id, at: Date.now(), view })); } catch {} }
@@ -600,6 +604,7 @@ function gotCards(answer) {
   if (!answer || typeof answer !== "object" || !answer.cards) return;
   if (!S.view) { waitingAnswer = answer; return; }
   S.answer = answer; S.answerAt = Date.now(); S.kept = false; S.loadedAt = Date.now();
+  S.skew = Math.max(0, (Number.isFinite(answer.at) ? answer.at : 0) - Date.now());
   if (answer.morning) S.morning = answer.morning;
   keepCards(answer);
   drawCards();
@@ -681,7 +686,10 @@ function wireLinks() {
 }
 
 // ---------------------------------------------------------------- the cards
-const ctx = () => ({ links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), now: Date.now() });
+// (now, for anything worked out from the answer: never before the answer's own moment, where this device's clock is
+// behind the account's, so a pigeon that's landed is never said to land, nor one landed this morning tomorrow)
+const nowish = () => Math.max(Date.now() + S.skew, Number.isFinite(S.answer?.at) ? S.answer.at : 0);
+const ctx = () => ({ links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), now: nowish() });
 function cleanPrefs(p) {
   const order = (Array.isArray(p?.order) ? p.order : []).filter((k) => CARD_KEYS.includes(k));
   for (const k of CARD_KEYS) if (!order.includes(k)) order.push(k);
@@ -849,15 +857,20 @@ function lockHtml(m) {
     return { html: `<div class="lk-top"><span class="lk-lock">${G.lock}</span><span class="lk-date">${esc(dateLong(now, tz))}</span><span class="lk-time">${hm(now, tz)}</span></div><div class="lk-note none">${m.on ? "Your morning’s notification shows here" : "Off: turn it on to have it each morning"}</div>`, said: "Lock Screen preview" };
   }
   const at = typeof p.at === "number" ? p.at : Date.now(), lines = (Array.isArray(p.lines) ? p.lines : []).filter((l) => typeof l === "string");
+  // (the next one, on a later day: its words are as they'd be now, worked out from now's forecast and warnings, so it's
+  // shown at now and said as how it reads now, never as what tomorrow's will say)
+  const later = p.kind !== "sent" && dayKey(at, tz) !== dayKey(Date.now(), tz), shown = later ? Date.now() : at;
   const when = !m.on ? "Off: turn it on to have it each morning" : p.kind === "sent" ? `This morning’s came at ${hm(at, tz)}`
-    : dayKey(at, tz) === dayKey(Date.now(), tz) ? `This morning’s comes at ${hm(at, tz)}` : `Tomorrow’s comes at ${hm(at, tz)}`;
+    : later ? `How it reads now · Tomorrow’s comes at ${hm(at, tz)}` : `This morning’s comes at ${hm(at, tz)}`;
   return {
-    html: `<div class="lk-top"><span class="lk-lock">${G.lock}</span><span class="lk-date">${esc(dateLong(at, tz))}</span><span class="lk-time">${hm(at, tz)}</span></div>
+    html: `<div class="lk-top"><span class="lk-lock">${G.lock}</span><span class="lk-date">${esc(dateLong(shown, tz))}</span><span class="lk-time">${hm(shown, tz)}</span></div>
       <div class="lk-note"><img src="/icon.svg" alt=""><span class="ln-h"><b>Today</b><span>now</span></span><b class="ln-t">${esc(p.title)}</b>${lines.map((l) => `<span class="ln-l">${esc(l)}</span>`).join("")}</div>
       <span class="lk-when">${G.clock}${esc(when)}</span>`,
-    said: `Lock Screen preview, ${hm(at, tz)}: ${p.title || ""}. ${lines.join(". ")}. ${when}`,
+    said: `Lock Screen preview, ${hm(shown, tz)}: ${p.title || ""}. ${lines.join(". ")}. ${when}`,
   };
 }
+// (what this device is, for "Show it on this …": a phone, an iPad (which says it's a Mac, with a touch screen), or else a computer)
+const deviceWord = () => { const ua = navigator.userAgent; return /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "iPad" : /iPhone|iPod|Mobi/.test(ua) ? "phone" : "computer"; };
 // (why this device can't have it, in Fitness's words: fitness/app.js pushWhy)
 const canPush = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 function pushWhy() {
@@ -900,7 +913,7 @@ function drawMorning() {
     : rf ? " While it’s on, it comes instead of Fitness’s morning reminder on your devices." : "";
   $("#mFoot").textContent = `It comes at its time, whatever your Quiet Hours, as Weather’s morning briefing does. It never carries a word anyone wrote, and names stay off the Lock Screen unless Chat’s are on.${instead}`;
   const tn = $("#tryNow");
-  tn.innerHTML = `${G.bell}Show it on this phone`;
+  tn.innerHTML = `${G.bell}Show it on this ${deviceWord()}`;
   tn.disabled = !(m.thisDevice === true && S.endpoint);
 }
 async function putMorning(patch) {
@@ -1003,7 +1016,7 @@ function wire() {
   for (const c of $$(".row .chev:empty")) c.innerHTML = G.chev;
   $("#icBell").innerHTML = G.bell;
   $("#atChev").innerHTML = G.down;
-  $("#tryNow").innerHTML = `${G.bell}Show it on this phone`;
+  $("#tryNow").innerHTML = `${G.bell}Show it on this ${deviceWord()}`;
   // (Try Again on a card that couldn't load: that card alone, asked again)
   $("#cards").addEventListener("click", (e) => {
     const r = e.target.closest("[data-retry]");
@@ -1133,8 +1146,10 @@ async function load() {
     view = await sessionAsked;
   } catch (e) {
     if (e.status === 401) return signedOutNow();
-    // (no answer: the copy kept here, if the last answer said it was this account, under 12 hours ago)
-    const ks = readJSON(KEPT);
+    // (no answer at all (no network, not an error from the account), in a Home Screen Today, whose sign-in is its own and
+    // so can't be ended by another app without Today knowing: the copy kept here, if the last answer said it was this
+    // account, under 12 hours ago. In a browser tab, another InFlite app may have signed out meanwhile: no one's day, then)
+    const ks = e.status === 0 && standalone() ? readJSON(KEPT) : null;
     if (ks?.view?.user?.id && ks.id === ks.view.user.id && Date.now() - ks.at < 12 * 3600e3 && keptFor(ks.id)) {
       signedIn(ks.view, { offline: true });
       return;
@@ -1160,7 +1175,7 @@ function start() {
   // (each minute, with no fetch: the place's clock, the pigeons' times to go, the date, the kept copy's word)
   setInterval(() => {
     if (!S.view) return;
-    tick($("#cards"), Date.now());
+    tick($("#cards"), nowish());
     drawLine();
     drawKept();
   }, MIN);

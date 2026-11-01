@@ -45,10 +45,11 @@ const dayNo = (t, tz) => {
   const p = Object.fromEntries(dtf(tz, { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(t).map((x) => [x.type, x.value]));
   return Math.round(Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day)) / (24 * HR));
 };
-// "", "tomorrow " or "Wed ": the day of t, said from today's
+// "", "tomorrow ", "yesterday ", "Wed ", or six days or more off "Fri 23 Oct " (as Chat's atTime: a weekday alone reads as
+// this week's): the day of t, said from today's
 function dayWord(t, now, tz) {
   const d = dayNo(t, tz) - dayNo(now, tz);
-  return d === 0 ? "" : d === 1 ? "tomorrow " : d === -1 ? "yesterday " : `${wkShort(t, tz)} `;
+  return d === 0 ? "" : d === 1 ? "tomorrow " : d === -1 ? "yesterday " : Math.abs(d) < 6 ? `${wkShort(t, tz)} ` : `${wkShort(t, tz)} ${dayMonth(t, tz)} `;
 }
 // (as Chat says how long, pigeon/app.js fmtDur: "1d 2h", "8h 9m", "12m", "under a minute")
 const togo = (ms) => {
@@ -91,7 +92,6 @@ export const G = {
   flag: sv('<path d="M5.5 21V4.5M5.5 4.5h11l-2.2 4 2.2 4h-11"/>'),
   sun: sv('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/>', 2),
   info: sv('<circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.4"/><path d="M12 7.7v.1" stroke-width="2.8"/>'),
-  play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.5 5.2v13.6c0 .8.9 1.3 1.6.8l10.2-6.8c.6-.4.6-1.2 0-1.6L9.1 4.4c-.7-.5-1.6 0-1.6.8z"/></svg>',
   bird: `<svg viewBox="0 0 24 24" class="bird-ic" aria-hidden="true"><path d="${BIRD_D}" transform="matrix(-1 0 0 1 24 0)"/></svg>`,
   birdL: `<svg viewBox="0 0 24 24" class="pg-bird" aria-hidden="true"><path d="${BIRD_D}"/></svg>`,
   flame: '<svg viewBox="0 0 24 24" class="pg-flame" aria-hidden="true"><path d="M12 21c-3.9 0-6.5-2.6-6.5-6.2 0-2.6 1.4-4.6 3-6.3.3 1.7 1.2 2.9 2.4 3.4-.4-3.3 1-6.1 3.4-8.4.2 2.8 1.6 4.4 2.9 6 1 1.3 1.8 2.9 1.8 4.9 0 4-2.6 6.6-6.5 6.6Z"/></svg>',
@@ -181,7 +181,7 @@ function weather(c, ctx) {
     return `<div class="wx-hour${isNow ? " now" : ""}" role="listitem" aria-label="${esc(said)}"><span class="h-time">${esc(x.time)}</span><span class="h-icon">${wxIcon(x.icon, 30)}</span><span class="h-temp num">${esc(x.temp)}</span>${wet ? `<span class="h-pop">${pop(x)}</span>` : ""}</div>`;
   }).join("");
   const inner = `${head("weather", c, meta, `Open Weather for ${p.name || "your place"}`)}
-    <div class="wx-now"><span class="t num">${esc(now.temp)}</span>${wxIcon(now.icon, 58)}<span class="d"><b>${esc(now.label)}</b><small><span class="nw">H ${esc(day.hi)} L ${esc(day.lo)}</span> · <span class="nw">Feels like ${esc(now.feels)}</span></small></span></div>
+    <div class="wx-now"><span class="t num">${esc(now.temp)}</span>${wxIcon(now.icon, 58)}<span class="d"><b>${esc(now.label)}</b><small><span class="nw">H ${esc(day.hi)} L ${esc(day.lo)}</span> <span class="nw">· Feels like ${esc(now.feels)}</span></small></span></div>
     <p class="wx-brief"><b>${esc(c.lead)}</b>${c.more ? ` ${esc(c.more)}` : ""}</p>
     ${warn}
     ${list.length ? `<a class="wx-ahead" href="${href(c.href)}" aria-label="${esc(`${hours.label}, in Weather`)}"><span class="lab">${G.clock}${esc(hours.label)}</span><span class="wx-hours" role="list">${hrs}</span></a>` : ""}
@@ -209,30 +209,43 @@ function track(p, now) {
   const span = Math.max(1, p.landsAt - p.sentAt), f = Math.max(0, Math.min(1, (now - p.sentAt) / span)), kind = KINDS.includes(p.kind) ? p.kind : "standard";
   return `<span class="pg-track k-${kind}${now >= p.landsAt ? " done" : ""}" ${vars({ f })} aria-hidden="true"><i></i><b class="cb">${G.bird}</b></span>`;
 }
-// "lands about 11:05", "lands at 11:05" (within ten minutes, when Chat's sure of it), "lands tomorrow about 08:40"
-const landsSaid = (p, now, tz) => `lands ${dayWord(p.landsAt, now, tz)}<span data-word>${p.landsAt - now <= 10 * MIN ? "at" : "about"}</span> ${hm(p.landsAt, tz)}`;
+// "lands about 11:05", "lands at 11:05" (within ten minutes, when Chat's sure of it), "lands tomorrow about 08:40", and
+// once it's down "landed at 11:05" (on a day gone or today, never one still to come): said again each minute (tick)
+const whenSaid = (lands, now, tz) => (lands <= now ? `landed ${dayWord(lands, now, tz)}at ${hm(lands, tz)}`
+  : `lands ${dayWord(lands, now, tz)}${lands - now <= 10 * MIN ? "at" : "about"} ${hm(lands, tz)}`);
+const togoSaid = (lands, now) => (lands <= now ? "Landed" : `${togo(lands - now)} to go`);
+// (the card's title, from how many are still flying to you and how many have landed unread: said again as they land)
+const chatTitle = (flying, landed, who1) => (flying > 1 ? `${flying} pigeons on their way to you` : flying ? "A pigeon on its way to you"
+  : landed > 1 ? `${landed} pigeons landed` : landed === 1 ? `${who1}’s pigeon landed` : "No pigeons on their way to you");
+// (a streak's time left, as Chat says it: pigeon/app.js streakLeft and its Flight Streak row)
+const streakSaid = (ends, now) => `Send a pigeon in the next ${togo(Math.max(MIN, ends - now))} to keep it`;
 function chat(c, ctx) {
   const { now, tz } = ctx, list = (x) => (Array.isArray(x) ? x.filter((p) => p && typeof p === "object") : []);
   const inbound = list(c.inbound), unread = list(c.unread), mine = list(c.mine), more = num(c.more) || 0;
-  const inAir = inbound.length + mine.length + more, unreadN = unread.reduce((a, u) => a + (num(u.n) || 0), 0);
-  const title = inbound.length > 1 ? `${inbound.length} pigeons on their way to you` : inbound.length ? "A pigeon on its way to you"
-    : unreadN > 1 ? `${unreadN} pigeons landed` : unreadN === 1 ? `${firstOf(unread[0].who)}’s pigeon landed` : "No pigeons on their way";
+  const flies = (p) => !((num(p.landsAt) || 0) <= now), down = inbound.filter((p) => !flies(p));
+  const inAir = inbound.length - down.length + mine.filter(flies).length + more, unreadN = unread.reduce((a, u) => a + (num(u.n) || 0), 0);
+  const un1 = unreadN === 1 ? firstOf((unread.find((u) => num(u.n)) || unread[0]).who) : "";
+  const title = chatTitle(inbound.length - down.length, unreadN + down.length, unreadN + down.length !== 1 ? "" : unreadN ? un1 : firstOf(down[0].who));
   const carrier = (p, yours) => (p.bird?.name ? `${p.bird.name}${p.bird.rank ? `, ${p.bird.rank}` : ""}` : p.mystery ? (yours && KINDS.includes(p.kind) ? `Mystery: ${p.kind}` : "A mystery pigeon") : KIND_SAID[p.kind] || "A pigeon");
-  const live = (p) => `data-sent="${num(p.sentAt) || 0}" data-lands="${num(p.landsAt) || 0}"`;
+  const live = (p) => `data-sent="${num(p.sentAt) || 0}" data-lands="${num(p.landsAt) || 0}" data-tz="${esc(tz)}"`;
   const inRow = (p) => {
     const where = num(p.km) ? ` · ${miles(p.km)}${p.from ? ` from ${esc(p.from)}` : ""}` : p.from ? ` · from ${esc(p.from)}` : "";
-    return `<a class="pg-row" href="${href(p.href)}" ${live(p)}>${av(p.who)}<span class="pg-tx"><b>${esc(firstOf(p.who))}’s ${landsSaid(p, now, tz)}</b><small>${esc(carrier(p, false))}${where} · <span data-togo>${togo(p.landsAt - now)} to go</span></small></span><span class="pg-go">${G.chev}</span>${track(p, now)}</a>`;
+    return `<a class="pg-row in" href="${href(p.href)}" ${live(p)} data-who="${esc(firstOf(p.who))}">${av(p.who)}<span class="pg-tx"><b>${esc(firstOf(p.who))}’s pigeon <span data-when>${esc(whenSaid(p.landsAt, now, tz))}</span></b><small>${esc(carrier(p, false))}${where} · <span data-togo>${togoSaid(p.landsAt, now)}</span></small></span><span class="pg-go">${G.chev}</span>${track(p, now)}</a>`;
   };
-  const unRow = (u) => `<a class="pg-row" href="${href(u.href)}">${av(u.who)}<span class="pg-tx"><b>${esc(firstOf(u.who))}’s landed ${dayWord(u.last, now, tz)}at ${hm(u.last, tz)}</b><small class="pg-unread">${num(u.n) > 1 ? `${u.n} not read yet` : "Not read yet"}</small></span><span class="pg-go">${G.chev}</span></a>`;
+  // (landed unread: when the last of them landed, never later than now, so never on a day still to come)
+  const unRow = (u) => {
+    const t = Math.min(num(u.last) ?? now, now), many = num(u.n) > 1;
+    return `<a class="pg-row" href="${href(u.href)}">${av(u.who)}<span class="pg-tx"><b>${esc(firstOf(u.who))}’s ${many ? "pigeons landed, the last" : "pigeon landed"} ${esc(dayWord(t, now, tz))}at ${hm(t, tz)}</b><small class="pg-unread">${many ? `${u.n} not read yet` : "Not read yet"}</small></span><span class="pg-go">${G.chev}</span></a>`;
+  };
   const myRow = (p) => {
     const where = num(p.km) ? ` · ${miles(p.km)}${p.to ? ` to ${esc(p.to)}` : ""}` : p.to ? ` · to ${esc(p.to)}` : "";
-    return `<a class="pg-row mine" href="${href(p.href)}" ${live(p)}>${av(p.who)}<span class="pg-tx"><b>To ${esc(firstOf(p.who))} · ${landsSaid(p, now, tz)}</b><small>${esc(carrier(p, true))}${where} · <span data-togo>${togo(p.landsAt - now)} to go</span></small></span><span class="pg-go">${G.chev}</span>${track(p, now)}</a>`;
+    return `<a class="pg-row mine" href="${href(p.href)}" ${live(p)}>${av(p.who)}<span class="pg-tx"><b>To ${esc(firstOf(p.who))} · <span data-when>${esc(whenSaid(p.landsAt, now, tz))}</span></b><small>${esc(carrier(p, true))}${where} · <span data-togo>${togoSaid(p.landsAt, now)}</span></small></span><span class="pg-go">${G.chev}</span>${track(p, now)}</a>`;
   };
-  const s = c.streak;
-  const streak = s && num(s.n) ? `<a class="pg-streak" href="${href(s.href)}">${G.flame}<span class="tx"><b>${s.n}-day flight streak with ${esc(firstOf(s.who))}</b><small>Ends at ${hm(s.endsAt, tz)} if no pigeon flies today</small></span>${G.chev.replace("<svg", '<svg class="pg-chev"')}</a>` : "";
+  const s = c.streak, ends = num(s?.endsAt);
+  const streak = s && num(s.n) && ends ? `<a class="pg-streak" href="${href(s.href)}"${ends <= now ? " hidden" : ""}>${G.flame}<span class="tx"><b>${s.n}-day flight streak with ${esc(firstOf(s.who))}</b><small data-ends="${ends}">${streakSaid(ends, now)}</small></span>${G.chev.replace("<svg", '<svg class="pg-chev"')}</a>` : "";
   const rows = [...inbound.map(inRow), ...unread.map(unRow)].join("");
   return `${head("chat", c, inAir ? `${inAir} in the air` : "")}
-    <h3 class="tc-h">${esc(title)}</h3>
+    <h3 class="tc-h" data-pgtitle data-unread="${unreadN}" data-who1="${esc(un1)}" data-more="${more}">${esc(title)}</h3>
     ${rows ? `<div class="pg-list">${rows}</div>` : ""}
     ${mine.length ? `<p class="pg-label">Yours in the air</p><div class="pg-list">${mine.map(myRow).join("")}</div>${more > 0 ? `<p class="pg-more">and ${more} more in the air, in Chat</p>` : ""}` : ""}
     ${streak}
@@ -257,8 +270,9 @@ function profile(steps, label) {
   return `<div class="ft-prof-mini"><svg class="ft-chart mini" width="100%" height="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">${body}</svg></div>`;
 }
 const RATINGS = ["great", "good", "fair", "poor"];
-// the best time to ride, as Weather says it, with every daylight hour coloured by how good it is, and now
-function bestBox(b, tz, now) {
+// the best time to ride (or run), as Weather says it, with every daylight hour coloured by how good it is (Fitness's
+// ratings, fitness/besttime.js ratingOf, with their key), and now
+function bestBox(b, tz, now, sport = "ride") {
   if (!b) return "";
   const row = b.poor
     ? `<span class="ft-best poor"><span class="ft-wxi">${G.info}</span><span class="tx"><b>${esc(b.said)}</b><small>${esc(b.sub)}</small></span></span>`
@@ -270,11 +284,14 @@ function bestBox(b, tz, now) {
   const win = !b.poor && num(b.start) != null && num(b.end) != null ? `<span class="ft-bt-win" ${vars({ x: pos(b.start), w: pos(b.end) - pos(b.start) })}></span>` : "";
   const p = pos(now);
   const nowL = `<span class="ft-bt-now" data-t0="${t0}" data-n="${n}" ${vars({ x: Math.max(0, Math.min(100, p)) })}${p > 0 && p < 100 ? "" : " hidden"}></span>`;
+  // (every third hour marked, and the end of the last: the one before it left out if it'd sit too close)
   const marks = [];
-  for (let i = 0; i < n; i += 3) marks.push(i);
-  const axis = marks.map((i) => `<span ${vars({ x: (i / n) * 100 })}>${esc(hm(grid[i].t, tz).slice(0, 2))}</span>`).join("");
-  const said = `Each daylight hour for a ride: ${grid.map((g) => `${hm(g.t, tz)} ${String(g.rating || "")}`).join(", ")}${!b.poor && b.span ? `. Best ${b.span}` : ""}`;
-  return `<div class="ft-bestbox">${row}<div class="ft-bt" role="img" aria-label="${esc(said)}"><div class="ft-bt-cells" ${vars({ n })}>${cells}</div>${win}${nowL}</div><div class="ft-bt-axis" aria-hidden="true">${axis}</div></div>`;
+  for (let i = 0; i <= n; i += 3) marks.push(i);
+  if (marks.at(-1) !== n) { if (n - marks.at(-1) < 2 && marks.length > 1) marks.pop(); marks.push(n); }
+  const axis = marks.map((i) => `<span ${vars({ x: (i / n) * 100 })}>${esc(hm(i < n ? grid[i].t : grid[n - 1].t + HR, tz).slice(0, 2))}</span>`).join("");
+  const said = `Each daylight hour for a ${sport === "run" ? "run" : "ride"}: ${grid.map((g) => `${hm(g.t, tz)} ${String(g.rating || "")}`).join(", ")}${!b.poor && b.span ? `. Best ${b.span}` : ""}`;
+  const key = `<div class="ft-bt-key" aria-hidden="true">${RATINGS.map((r) => `<span><i class="${r}"></i>${r.charAt(0).toUpperCase() + r.slice(1)}</span>`).join("")}</div>`;
+  return `<div class="ft-bestbox">${row}<div class="ft-bt" role="img" aria-label="${esc(said)}"><div class="ft-bt-cells" ${vars({ n })}>${cells}</div>${win}${nowL}</div><div class="ft-bt-axis" aria-hidden="true">${axis}</div>${key}</div>`;
 }
 const SPORT = (s) => { const w = String(s || "ride").toLowerCase(); return w.charAt(0).toUpperCase() + w.slice(1); };
 const chip = (text, { cls = "", tile = "ft-s-ride", icon = G.ride } = {}) => `<span class="ft-sport${cls ? " " + cls : ""}"><i class="ft-tile ${tile}">${icon}</i>${esc(text)}</span>`;
@@ -298,7 +315,9 @@ function fitness(c, ctx) {
       ${foot(open, send)}`;
   }
   if (c.kind === "rest") {
-    return `${hd}${chip("Rest day", { cls: "rest", tile: "ft-s-rest", icon: G.heart })}<h3 class="tc-h">Rest, and let it sink in</h3>${s?.why ? `<p class="ft-why">${esc(s.why)}</p>` : ""}${nextRow(c.next, c)}${foot(open, send)}`;
+    // (the rest day's reason, as Fitness gave it: the card's own why, as only a session has a session)
+    const why = typeof c.why === "string" && c.why.trim() ? c.why : "";
+    return `${hd}${chip("Rest day", { cls: "rest", tile: "ft-s-rest", icon: G.heart })}<h3 class="tc-h">Rest, and let it sink in</h3>${why ? `<p class="ft-why">${esc(why)}</p>` : ""}${nextRow(c.next, c)}${foot(open, send)}`;
   }
   if (c.kind === "event") {
     return `${hd}${chip("Event day", { tile: "ft-s-ride", icon: G.flag })}<h3 class="tc-h">${esc(c.event?.name || s?.name || "Your event")}</h3>${foot(open, send)}`;
@@ -311,8 +330,8 @@ function fitness(c, ctx) {
   return `${hd}${chip(`${word}${s.kind ? ` · ${s.kind}` : ""}`, { icon: sport === "run" ? G.run : G.ride })}<h3 class="tc-h">${esc(s.name)}</h3>${meta ? `<p class="ft-meta">${meta}</p>` : ""}
     ${profile(s.steps, `${s.name}: its shape, step by step`)}
     ${s.why ? `<p class="ft-why"><b>Why today:</b> ${esc(s.why)}</p>` : ""}
-    ${bestBox(c.best, tz, now)}
-    ${foot(linkPill(`Start ${sport}`, c.href, { primary: true, icon: G.play }), linkPill("Change", c.href), send)}`;
+    ${bestBox(c.best, tz, now, sport)}
+    ${foot(linkPill("Details", c.href, { primary: true }), linkPill("Change", c.href), send)}`;
 }
 
 // ---------------------------------------------------------------- Markets
@@ -357,14 +376,18 @@ function markets(c, ctx) {
   const m = c.market || {}, shut = Array.isArray(m.shut) ? m.shut.filter((x) => typeof x === "string") : [];
   const said = shut.length ? `${and2(shut)} ${shut.length > 1 ? "are" : "is"} shut today` : String(m.said || "");
   const traded = !!c.traded, change = num(c.change) || 0;
-  let words = "";
-  if (traded && Math.abs(change) >= 0.01) {
-    const out = [];
-    if (c.top && num(c.top.change) > 0) out.push(`<a class="mk-name" href="${href(c.top.href)}">${esc(c.top.name)}</a> did most of the work, adding ${money(c.top.change)}.`);
-    if (c.low && num(c.low.change) < 0) out.push(`<a class="mk-name" href="${href(c.low.href)}">${esc(c.low.name)}</a> ${out.length ? "gave back" : "took away"} ${money(-c.low.change)}.`);
-    words = out.join(" ");
-  } else words = "No change today yet: your holdings are as they closed.";
   const left = (Array.isArray(c.leftOut) ? c.leftOut : []).filter((x) => typeof x === "string");
+  // (Markets' own words for the day, markets/app.js daySaid: one priced holding said by its own change, two or more by
+  // the one that did most and the one that gave back; on a day a market's shut, only that your holdings are as they closed)
+  const name = (x) => `<a class="mk-name" href="${href(x.href)}">${esc(x.name)}</a>`, one = owned - left.length === 1 ? c.top || c.low : null;
+  let words = "";
+  if (traded && Math.abs(change) >= 0.01 && one && num(c.pct) != null) words = `${name(one)} is ${c.pct >= 0 ? "up" : "down"} ${fmt(Math.abs(c.pct))}% today.`;
+  else if (traded && Math.abs(change) >= 0.01) {
+    const out = [];
+    if (c.top && num(c.top.change) > 0) out.push(`${name(c.top)} did most of the work, adding ${money(c.top.change)}.`);
+    if (c.low && num(c.low.change) < 0) out.push(`${name(c.low)} ${out.length ? "gave back" : "took away"} ${money(-c.low.change)}.`);
+    words = out.join(" ");
+  } else words = !traded && shut.length ? "Your holdings are as they closed." : "No change today yet: your holdings are as they closed.";
   const leftSaid = left.length ? `<p class="tc-p mk-left">${esc(`${and2(left)} ${left.length === 1 ? "isn’t" : "aren’t"} in this total: no price for ${left.length === 1 ? "it" : "them"} just now.`)}</p>` : "";
   const aria = `Your portfolio is at ${money(num(c.value) || 0)}${traded ? `, ${change >= 0 ? "up" : "down"} ${money(Math.abs(change))} (${fmt(Math.abs(num(c.pct) || 0))}%) today` : ""}. Open Markets`;
   return `${head("markets", c, esc(meta))}
@@ -379,22 +402,33 @@ function markets(c, ctx) {
 }
 
 // ---------------------------------------------------------------- each minute, with no fetch: the place's clock, how long
-// each pigeon has to go and how far it's come, and where now is among the best hours
+// each pigeon has to go, how far it's come and when it lands or landed (and so the Chat card's title and count), the
+// streak's time left, and where now is among the best hours
+const setText = (el, s) => { if (el && el.textContent !== s) el.textContent = s; };
 export function tick(root, now) {
-  for (const el of root.querySelectorAll("[data-wxclock]")) {
-    const s = placeClock(now, Number(el.dataset.off) || 0, el.dataset.clk);
-    if (el.textContent !== s) el.textContent = s;
-  }
+  for (const el of root.querySelectorAll("[data-wxclock]")) setText(el, placeClock(now, Number(el.dataset.off) || 0, el.dataset.clk));
   for (const row of root.querySelectorAll(".pg-row[data-lands]")) {
     const sent = Number(row.dataset.sent), lands = Number(row.dataset.lands);
     if (!lands) continue;
-    const t = row.querySelector("[data-togo]"), w = row.querySelector("[data-word]"), tr = row.querySelector(".pg-track");
-    if (t) t.textContent = now >= lands ? "Landed" : `${togo(lands - now)} to go`;
-    if (w && lands - now <= 10 * MIN) w.textContent = "at";
+    const tr = row.querySelector(".pg-track");
+    setText(row.querySelector("[data-togo]"), togoSaid(lands, now));
+    setText(row.querySelector("[data-when]"), whenSaid(lands, now, row.dataset.tz));
     if (tr) {
       tr.style.setProperty("--f", String(Math.max(0, Math.min(1, (now - sent) / Math.max(1, lands - sent)))));
       tr.classList.toggle("done", now >= lands);
     }
+  }
+  for (const h of root.querySelectorAll("[data-pgtitle]")) {
+    const card = h.closest(".tcard") || root, ins = [...card.querySelectorAll(".pg-row.in[data-lands]")];
+    const down = ins.filter((r) => Number(r.dataset.lands) <= now), un = Number(h.dataset.unread) || 0, landed = un + down.length;
+    setText(h, chatTitle(ins.length - down.length, landed, landed !== 1 ? "" : un ? h.dataset.who1 : down[0].dataset.who));
+    const air = ins.length - down.length + [...card.querySelectorAll(".pg-row.mine[data-lands]")].filter((r) => Number(r.dataset.lands) > now).length + (Number(h.dataset.more) || 0);
+    setText(card.querySelector(".tc-meta"), air ? `${air} in the air` : "");
+  }
+  for (const el of root.querySelectorAll("[data-ends]")) {
+    const ends = Number(el.dataset.ends), row = el.closest(".pg-streak");
+    setText(el, streakSaid(ends, now));
+    if (row) row.hidden = ends <= now;
   }
   for (const el of root.querySelectorAll(".ft-bt-now")) {
     const t0 = Number(el.dataset.t0), n = Number(el.dataset.n), p = ((now - t0) / (n * HR)) * 100;
