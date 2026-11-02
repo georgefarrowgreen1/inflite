@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.45";
+  const BUILD = "1.46";
   // (what's new in it, said once it's in)
-  const NEWS = "Your photo, the list's title and the dot beside it are easier to tap; when the list reloads slowly, the keyboard stays on the conversation you were on; and on a phone, pressing e again as a conversation closes no longer brings it back";
+  const NEWS = "Opened from another app, Mail fits the screen it’s in, so nothing at its foot is out of reach";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1228,12 +1228,16 @@ const IFL = (() => {
   let viewH = () => window.innerHeight;
   if (navigator.standalone === true && screen.width && screen.height) {
     const root = document.documentElement;
+    const behindBar = () => { if (!matchMedia("(orientation: portrait)").matches) return true; const p = document.createElement("div"); p.style.cssText = "position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none"; document.body.appendChild(p); const t = p.offsetHeight; p.remove(); return t > 0; };
     const fit = () => {
       const portrait = matchMedia("(orientation: portrait)").matches;
       const w = portrait ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
       const h = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
       // (only when the window is the whole screen, not an iPad window beside another app)
-      const whole = Math.abs(window.innerWidth - w) < 2;
+      // (and only when the page itself fills it, running up behind the status bar: a link from another Home Screen app
+      // opens in iOS's own small browser, still "standalone" but under its bar, with no status bar inset, where sized
+      // to the screen the page ran off its foot, Sign in with it)
+      const whole = Math.abs(window.innerWidth - w) < 2 && behindBar();
       root.classList.toggle("fullscreen-fix", whole);
       if (whole) root.style.setProperty("--screen-h", `${h}px`);
       if (window.scrollY) window.scrollTo(0, 0);
