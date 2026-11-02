@@ -5,9 +5,9 @@
 import { CARD_KEYS, APP, esc, safe, hm, dateLong, dateShort, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.07";
+const BUILD = "1.08";
 // (what's new in it, said once it's in)
-const NEWS = "Send to a friend sends the card itself to Chat";
+const NEWS = "Chat’s card tells messages from letters, and shows letters simply when pigeons are off";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -828,7 +828,7 @@ const NAMES = { weather: "Weather", fitness: "Fitness", chat: "Chat", markets: "
 const LINES = [
   ["weather", (m) => (m.place ? `The title: the day in ${m.place}` : "The title: the day where you are")],
   ["fitness", () => "Today’s session and the best time"],
-  ["chat", () => "Pigeons on their way to you"],
+  ["chat", () => (S.answer?.cards?.chat?.pigeons === false ? "Letters on their way to you" : "Pigeons on their way to you")],
   ["markets", () => "How your portfolio’s doing"],
 ];
 // (why this device can't have it, in Fitness's words: fitness/app.js pushWhy)

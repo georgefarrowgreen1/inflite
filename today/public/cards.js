@@ -92,6 +92,8 @@ export const G = {
   flag: sv('<path d="M5.5 21V4.5M5.5 4.5h11l-2.2 4 2.2 4h-11"/>'),
   sun: sv('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/>', 2),
   info: sv('<circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.4"/><path d="M12 7.7v.1" stroke-width="2.8"/>'),
+  // (a plain arrow: Send to a friend for someone with Chat's pigeons off)
+  send: sv('<path d="M5 12h13.5M12.5 6l6 6-6 6"/>', 2.4),
   bird: `<svg viewBox="0 0 24 24" class="bird-ic" aria-hidden="true"><path d="${BIRD_D}" transform="matrix(-1 0 0 1 24 0)"/></svg>`,
   birdL: `<svg viewBox="0 0 24 24" class="pg-bird" aria-hidden="true"><path d="${BIRD_D}"/></svg>`,
   flame: '<svg viewBox="0 0 24 24" class="pg-flame" aria-hidden="true"><path d="M12 21c-3.9 0-6.5-2.6-6.5-6.2 0-2.6 1.4-4.6 3-6.3.3 1.7 1.2 2.9 2.4 3.4-.4-3.3 1-6.1 3.4-8.4.2 2.8 1.6 4.4 2.9 6 1 1.3 1.8 2.9 1.8 4.9 0 4-2.6 6.6-6.5 6.6Z"/></svg>',
@@ -106,11 +108,12 @@ function head(key, card, meta = "", label = "") {
 // Send to a friend: Chat, with the card's line to start a letter with (never a word of anyone's letter), and beside it
 // the card itself, packed by the server (sendCard: base64url, or null), for Chat to draw and keep up to date. The words
 // come first, so an older Chat still finds them; a sendCard that isn't plain base64url is left out, never put in a link
-function sendPill(card, ctx) {
+// (glyph: the bird, or a plain arrow from Chat's card for someone with pigeons off)
+function sendPill(card, ctx, glyph = G.bird) {
   const chat = safe(ctx.links?.chat);
   if (!card.share || typeof card.share !== "string" || !chat) return "";
   const ok = typeof card.sendCard === "string" && /^[A-Za-z0-9_-]{1,6000}$/.test(card.sendCard);
-  return `<a class="pill" href="${esc(`${chat.replace(/\/+$/, "")}/#share=${encodeURIComponent(card.share)}${ok ? `&card=${card.sendCard}` : ""}`)}" data-send>${G.bird}Send to a friend</a>`;
+  return `<a class="pill" href="${esc(`${chat.replace(/\/+$/, "")}/#share=${encodeURIComponent(card.share)}${ok ? `&card=${card.sendCard}` : ""}`)}" data-send>${glyph}Send to a friend</a>`;
 }
 const foot = (...xs) => { const s = xs.filter(Boolean).join(""); return s ? `<div class="tc-foot">${s}</div>` : ""; };
 const linkPill = (label, h, { primary = false, icon = "" } = {}) => `<a class="pill${primary ? " primary" : ""}" href="${href(h)}">${icon}${esc(label)}</a>`;
@@ -217,42 +220,62 @@ function track(p, now) {
 const whenSaid = (lands, now, tz) => (lands <= now ? `landed ${dayWord(lands, now, tz)}at ${hm(lands, tz)}`
   : `lands ${dayWord(lands, now, tz)}${lands - now <= 10 * MIN ? "at" : "about"} ${hm(lands, tz)}`);
 const togoSaid = (lands, now) => (lands <= now ? "Landed" : `${togo(lands - now)} to go`);
-// (the card's title, from how many are still flying to you and how many have landed unread: said again as they land)
-const chatTitle = (flying, landed, who1) => (flying > 1 ? `${flying} pigeons on their way to you` : flying ? "A pigeon on its way to you"
+// (with Chat's pigeons off, a letter is a letter: "arrives 14:40", "arrives tomorrow 08:40", and once it's in "arrived at
+// 14:40"; and "Arrived" for how long it has to go)
+const arriveSaid = (lands, now, tz) => (lands <= now ? `arrived ${dayWord(lands, now, tz)}at ${hm(lands, tz)}` : `arrives ${dayWord(lands, now, tz)}${hm(lands, tz)}`);
+const togoLetter = (lands, now) => (lands <= now ? "Arrived" : `${togo(lands - now)} to go`);
+// (the card's title, from how many are still flying to you and how many have landed unread: said again as they land.
+// With pigeons on, unread messages alone (no letter flying or landed among them: msgOnly) are said as messages; with them
+// off, letters on their way, then anything unread as new messages)
+const chatTitle = (flying, landed, who1, { pigeons = true, msgOnly = false, down = 0 } = {}) => (!pigeons
+  ? (flying > 1 ? `${flying} letters on their way to you` : flying ? "A letter on its way to you"
+    : landed > 1 ? `${landed} new messages` : landed === 1 ? `${who1} sent you a message` : "No new messages")
+  : !flying && !down && msgOnly && landed ? (landed > 1 ? `${landed} new messages` : `${who1} sent you a message`)
+  : flying > 1 ? `${flying} pigeons on their way to you` : flying ? "A pigeon on its way to you"
   : landed > 1 ? `${landed} pigeons landed` : landed === 1 ? `${who1}’s pigeon landed` : "No pigeons on their way to you");
 // (a streak's time left, as Chat says it: pigeon/app.js streakLeft and its Flight Streak row)
 const streakSaid = (ends, now) => `Send a pigeon in the next ${togo(Math.max(MIN, ends - now))} to keep it`;
+// (pigeons: false when the card says Chat's pigeons are off; left out, they're on, as on an older card. Then letters are
+// said plainly, with no bird, kind or streak, and unread messages, counted apart from letters, as messages)
 function chat(c, ctx) {
   const { now, tz } = ctx, list = (x) => (Array.isArray(x) ? x.filter((p) => p && typeof p === "object") : []);
+  const pigeons = c.pigeons !== false;
   const inbound = list(c.inbound), unread = list(c.unread), mine = list(c.mine), more = num(c.more) || 0;
   const flies = (p) => !((num(p.landsAt) || 0) <= now), down = inbound.filter((p) => !flies(p));
   const inAir = inbound.length - down.length + mine.filter(flies).length + more, unreadN = unread.reduce((a, u) => a + (num(u.n) || 0), 0);
   const un1 = unreadN === 1 ? firstOf((unread.find((u) => num(u.n)) || unread[0]).who) : "";
-  const title = chatTitle(inbound.length - down.length, unreadN + down.length, unreadN + down.length !== 1 ? "" : unreadN ? un1 : firstOf(down[0].who));
+  // (a row of messages alone: as many messages as unread)
+  const allMsgs = (u) => num(u.n) > 0 && num(u.messages) === num(u.n), msgOnly = unread.some((u) => num(u.n)) && unread.every((u) => !num(u.n) || allMsgs(u));
+  const title = chatTitle(inbound.length - down.length, unreadN + down.length, unreadN + down.length !== 1 ? "" : unreadN ? un1 : firstOf(down[0].who), { pigeons, msgOnly, down: down.length });
   const carrier = (p, yours) => (p.bird?.name ? `${p.bird.name}${p.bird.rank ? `, ${p.bird.rank}` : ""}` : p.mystery ? (yours && KINDS.includes(p.kind) ? `Mystery: ${p.kind}` : "A mystery pigeon") : KIND_SAID[p.kind] || "A pigeon");
   const live = (p) => `data-sent="${num(p.sentAt) || 0}" data-lands="${num(p.landsAt) || 0}" data-tz="${esc(tz)}"`;
   const inRow = (p) => {
+    if (!pigeons) return `<a class="pg-row in" href="${href(p.href)}" ${live(p)} data-letter data-who="${esc(firstOf(p.who))}">${av(p.who)}<span class="pg-tx"><b>${esc(firstOf(p.who))}’s letter <span data-when>${esc(arriveSaid(p.landsAt, now, tz))}</span></b><small>${p.from ? `From ${esc(p.from)} · ` : ""}<span data-togo>${togoLetter(p.landsAt, now)}</span></small></span><span class="pg-go">${G.chev}</span></a>`;
     const where = num(p.km) ? ` · ${miles(p.km)}${p.from ? ` from ${esc(p.from)}` : ""}` : p.from ? ` · from ${esc(p.from)}` : "";
     return `<a class="pg-row in" href="${href(p.href)}" ${live(p)} data-who="${esc(firstOf(p.who))}">${av(p.who)}<span class="pg-tx"><b>${esc(firstOf(p.who))}’s pigeon <span data-when>${esc(whenSaid(p.landsAt, now, tz))}</span></b><small>${esc(carrier(p, false))}${where} · <span data-togo>${togoSaid(p.landsAt, now)}</span></small></span><span class="pg-go">${G.chev}</span>${track(p, now)}</a>`;
   };
   // (landed unread: when the last of them landed, never later than now, so never on a day still to come)
   const unRow = (u) => {
     const t = Math.min(num(u.last) ?? now, now), many = num(u.n) > 1;
+    // (messages alone: who sent them, and how many)
+    if (allMsgs(u)) return `<a class="pg-row msg" href="${href(u.href)}">${av(u.who)}<span class="pg-tx"><b>${many ? `${num(u.n)} new messages from ${esc(firstOf(u.who))}` : `${esc(firstOf(u.who))} sent you a message`}</b><small class="pg-unread">${many ? "The last sent" : "Sent"} ${esc(dayWord(t, now, tz))}at ${hm(t, tz)}</small></span><span class="pg-go">${G.chev}</span></a>`;
+    if (!pigeons) return `<a class="pg-row" href="${href(u.href)}">${av(u.who)}<span class="pg-tx"><b>${esc(firstOf(u.who))}’s ${many ? "letters arrived, the last" : "letter arrived"} ${esc(dayWord(t, now, tz))}at ${hm(t, tz)}</b><small class="pg-unread">${many ? `${u.n} not read yet` : "Not read yet"}</small></span><span class="pg-go">${G.chev}</span></a>`;
     return `<a class="pg-row" href="${href(u.href)}">${av(u.who)}<span class="pg-tx"><b>${esc(firstOf(u.who))}’s ${many ? "pigeons landed, the last" : "pigeon landed"} ${esc(dayWord(t, now, tz))}at ${hm(t, tz)}</b><small class="pg-unread">${many ? `${u.n} not read yet` : "Not read yet"}</small></span><span class="pg-go">${G.chev}</span></a>`;
   };
   const myRow = (p) => {
+    if (!pigeons) return `<a class="pg-row mine" href="${href(p.href)}" ${live(p)} data-letter>${av(p.who)}<span class="pg-tx"><b>Your letter to ${esc(firstOf(p.who))} <span data-when>${esc(arriveSaid(p.landsAt, now, tz))}</span></b><small><span data-togo>${togoLetter(p.landsAt, now)}</span></small></span><span class="pg-go">${G.chev}</span></a>`;
     const where = num(p.km) ? ` · ${miles(p.km)}${p.to ? ` to ${esc(p.to)}` : ""}` : p.to ? ` · to ${esc(p.to)}` : "";
     return `<a class="pg-row mine" href="${href(p.href)}" ${live(p)}>${av(p.who)}<span class="pg-tx"><b>To ${esc(firstOf(p.who))} · <span data-when>${esc(whenSaid(p.landsAt, now, tz))}</span></b><small>${esc(carrier(p, true))}${where} · <span data-togo>${togoSaid(p.landsAt, now)}</span></small></span><span class="pg-go">${G.chev}</span>${track(p, now)}</a>`;
   };
-  const s = c.streak, ends = num(s?.endsAt);
+  const s = pigeons ? c.streak : null, ends = num(s?.endsAt);
   const streak = s && num(s.n) && ends ? `<a class="pg-streak" href="${href(s.href)}"${ends <= now ? " hidden" : ""}>${G.flame}<span class="tx"><b>${s.n}-day flight streak with ${esc(firstOf(s.who))}</b><small data-ends="${ends}">${streakSaid(ends, now)}</small></span>${G.chev.replace("<svg", '<svg class="pg-chev"')}</a>` : "";
   const rows = [...inbound.map(inRow), ...unread.map(unRow)].join("");
-  return `${head("chat", c, inAir ? `${inAir} in the air` : "")}
-    <h3 class="tc-h" data-pgtitle data-unread="${unreadN}" data-who1="${esc(un1)}" data-more="${more}">${esc(title)}</h3>
+  return `${head("chat", c, pigeons && inAir ? `${inAir} in the air` : "")}
+    <h3 class="tc-h" data-pgtitle data-pigeons="${pigeons ? 1 : 0}" data-msgonly="${msgOnly ? 1 : 0}" data-unread="${unreadN}" data-who1="${esc(un1)}" data-more="${more}">${esc(title)}</h3>
     ${rows ? `<div class="pg-list">${rows}</div>` : ""}
-    ${mine.length ? `<p class="pg-label">Yours in the air</p><div class="pg-list">${mine.map(myRow).join("")}</div>${more > 0 ? `<p class="pg-more">and ${more} more in the air, in Chat</p>` : ""}` : ""}
+    ${mine.length ? `<p class="pg-label">${pigeons ? "Yours in the air" : "Your letters on their way"}</p><div class="pg-list">${mine.map(myRow).join("")}</div>${more > 0 ? `<p class="pg-more">and ${more} more ${pigeons ? "in the air" : "on their way"}, in Chat</p>` : ""}` : ""}
     ${streak}
-    ${foot(sendPill(c, ctx))}`;
+    ${foot(sendPill(c, ctx, pigeons ? G.bird : G.send))}`;
 }
 
 // ---------------------------------------------------------------- Fitness
@@ -413,9 +436,9 @@ export function tick(root, now) {
   for (const row of root.querySelectorAll(".pg-row[data-lands]")) {
     const sent = Number(row.dataset.sent), lands = Number(row.dataset.lands);
     if (!lands) continue;
-    const tr = row.querySelector(".pg-track");
-    setText(row.querySelector("[data-togo]"), togoSaid(lands, now));
-    setText(row.querySelector("[data-when]"), whenSaid(lands, now, row.dataset.tz));
+    const tr = row.querySelector(".pg-track"), letter = row.hasAttribute("data-letter");
+    setText(row.querySelector("[data-togo]"), letter ? togoLetter(lands, now) : togoSaid(lands, now));
+    setText(row.querySelector("[data-when]"), letter ? arriveSaid(lands, now, row.dataset.tz) : whenSaid(lands, now, row.dataset.tz));
     if (tr) {
       tr.style.setProperty("--f", String(Math.max(0, Math.min(1, (now - sent) / Math.max(1, lands - sent)))));
       tr.classList.toggle("done", now >= lands);
@@ -423,10 +446,10 @@ export function tick(root, now) {
   }
   for (const h of root.querySelectorAll("[data-pgtitle]")) {
     const card = h.closest(".tcard") || root, ins = [...card.querySelectorAll(".pg-row.in[data-lands]")];
-    const down = ins.filter((r) => Number(r.dataset.lands) <= now), un = Number(h.dataset.unread) || 0, landed = un + down.length;
-    setText(h, chatTitle(ins.length - down.length, landed, landed !== 1 ? "" : un ? h.dataset.who1 : down[0].dataset.who));
+    const down = ins.filter((r) => Number(r.dataset.lands) <= now), un = Number(h.dataset.unread) || 0, landed = un + down.length, pigeons = h.dataset.pigeons !== "0";
+    setText(h, chatTitle(ins.length - down.length, landed, landed !== 1 ? "" : un ? h.dataset.who1 : down[0].dataset.who, { pigeons, msgOnly: h.dataset.msgonly === "1", down: down.length }));
     const air = ins.length - down.length + [...card.querySelectorAll(".pg-row.mine[data-lands]")].filter((r) => Number(r.dataset.lands) > now).length + (Number(h.dataset.more) || 0);
-    setText(card.querySelector(".tc-meta"), air ? `${air} in the air` : "");
+    setText(card.querySelector(".tc-meta"), pigeons && air ? `${air} in the air` : "");
   }
   for (const el of root.querySelectorAll("[data-ends]")) {
     const ends = Number(el.dataset.ends), row = el.closest(".pg-streak");
