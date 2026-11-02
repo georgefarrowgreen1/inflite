@@ -103,11 +103,14 @@ function head(key, card, meta = "", label = "") {
   const a = APP[key];
   return `<a class="tc-head" href="${href(card.href)}" aria-label="${esc(label || `Open ${a.name}`)}"><img src="${a.icon}" alt=""><span class="tc-app">${a.name}</span><span class="tc-meta">${meta}</span><span class="tc-go"><span>Open</span>${G.open}</span></a>`;
 }
-// Send to a friend: Chat, with the card's line to start a letter with (never a word of anyone's letter)
+// Send to a friend: Chat, with the card's line to start a letter with (never a word of anyone's letter), and beside it
+// the card itself, packed by the server (sendCard: base64url, or null), for Chat to draw and keep up to date. The words
+// come first, so an older Chat still finds them; a sendCard that isn't plain base64url is left out, never put in a link
 function sendPill(card, ctx) {
   const chat = safe(ctx.links?.chat);
   if (!card.share || typeof card.share !== "string" || !chat) return "";
-  return `<a class="pill" href="${esc(`${chat.replace(/\/+$/, "")}/#share=${encodeURIComponent(card.share)}`)}" data-send>${G.bird}Send to a friend</a>`;
+  const ok = typeof card.sendCard === "string" && /^[A-Za-z0-9_-]{1,6000}$/.test(card.sendCard);
+  return `<a class="pill" href="${esc(`${chat.replace(/\/+$/, "")}/#share=${encodeURIComponent(card.share)}${ok ? `&card=${card.sendCard}` : ""}`)}" data-send>${G.bird}Send to a friend</a>`;
 }
 const foot = (...xs) => { const s = xs.filter(Boolean).join(""); return s ? `<div class="tc-foot">${s}</div>` : ""; };
 const linkPill = (label, h, { primary = false, icon = "" } = {}) => `<a class="pill${primary ? " primary" : ""}" href="${href(h)}">${icon}${esc(label)}</a>`;
