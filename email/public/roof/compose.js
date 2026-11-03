@@ -11,9 +11,17 @@
 //   Try Again"; over Mail's 256 KB on this phone: it stays, "Couldn’t keep this on your phone. Try Again when you’re
 //   online" (RI8).
 // Closing never asks (S4-D18): a changed compose closed any way but Send or Delete Draft has its words written to
-//   mail:unsent synchronously in onClose (outbox.keepUnsent), then a server draft (best effort) and "Draft saved".
-//   Delete Draft is in the ⋯ menu. While it's open, store.compose is true (busy, S4-D13) and mail:unsent is kept up
-//   to date, so flush (C10) has the words.
+//   mail:unsent synchronously in onClose (outbox.keepUnsent), then a server draft (best effort, keepalive when it has
+//   no file's bytes) and "Draft saved". Closed while Send is uploading: left to the outbox (no second draft). Delete
+//   Draft is in the ⋯ menu. While it's open, store.compose is true (busy, S4-D13), mail:unsent is kept up to date and
+//   the outbox tracks it (outbox.track), so flush (C10) saves it and hands its draft's id back; unchanged since then,
+//   closing saves nothing again (sign-out: nothing written after Mail's keys are cleared).
+// Words kept on this phone (mail:unsent) are dropped only once Mail has them: never by a compose closed unchanged.
+//   An earlier compose's words still there when one opens are saved to Mail first (online), else reopened in a new
+//   blank compose; a compose opened for something else meanwhile never writes over them. A close save that failed is
+//   tried again on "online". A draft's own files ({ i }, from api.draft) are listed with every save, so it keeps them.
+// A quoteOld draft: its quote key is left out of every save here (Mail keeps the quote it has); only Send, after
+//   "Send Without the Quoted Text?", sends quote: null.
 import { STORAGE, CAP } from "./store.js";
 import { MAIL } from "./api.js";
 
@@ -22,7 +30,16 @@ const LISTS = ["to", "cc", "bcc"];
 const titleOf = (c) => c.subject.trim() || (c.quote?.mode === "forward" ? "Forward" : c.quote ? "Reply" : "New Message");
 const people = (l) => (Array.isArray(l) ? l : []).filter((p) => p && p.email).map((p) => ({ name: String(p.name || ""), email: String(p.email) }));
 // (the words kept on the phone and sent to Mail: never a file's bytes)
-export const fieldsOf = (c) => ({ from: c.from, to: c.to, cc: c.cc, bcc: c.bcc, subject: c.subject, text: c.text, quote: c.quote, inReplyTo: c.inReplyTo, references: c.references, draftId: c.draftId });
+export const fieldsOf = (c) => ({ from: c.from, to: c.to, cc: c.cc, bcc: c.bcc, subject: c.subject, text: c.text, quote: c.quote, inReplyTo: c.inReplyTo, references: c.references, draftId: c.draftId, quoteOld: !!c.quoteOld });
+// (words worth keeping: someone to send to, a subject or a message)
+export const hasWords = (u) => !!u && !!(u.subject || String(u.text || "").trim() || [u.to, u.cc, u.bcc].some((l) => Array.isArray(l) && l.length));
+const online = () => typeof navigator === "undefined" || navigator.onLine !== false;
+// (which copy mail:unsent holds: its time, as the outbox stamps it)
+const stamp = (u) => (u ? u.at ?? JSON.stringify(u) : null);
+const isFile = (f) => typeof File !== "undefined" && f instanceof File;
+// (a draft for Mail from kept words: a quote only when it's { of, mode }; none, or quoteOld, leaves the key out, so Mail
+// keeps the quote the draft has; a missing key and none are the same for a new draft)
+export const draftOf = (f, attachments) => ({ id: f.draftId || undefined, from: f.from, to: f.to || [], cc: f.cc || [], bcc: f.bcc || [], subject: f.subject || "", text: f.text || "", inReplyTo: f.inReplyTo || null, references: f.references || null, ...(f.quote?.of && !f.quoteOld && { quote: { of: f.quote.of, mode: f.quote.mode } }), attachments });
 const sizeOf = (s) => (typeof s === "string" ? s.length * 2 : 0);
 // (whether these words fit beside what Mail already keeps on this phone: all mail:* at most CAP)
 export function fits(fields) {
@@ -35,11 +52,44 @@ const b64 = (file) => new Promise((ok, no) => { const r = new FileReader(); r.on
 async function draftFiles(files) {
   const out = [];
   for (const f of files) {
-    if (typeof File !== "undefined" && f instanceof File) out.push({ filename: f.name, type: f.type || "application/octet-stream", size: f.size, content: await b64(f) });
-    else if (f.ref) out.push({ ref: f.ref });
-    else if (f.i != null) out.push({ i: f.i });
+    if (isFile(f)) out.push({ filename: f.name, type: f.type || "application/octet-stream", size: f.size, content: await b64(f) });
+    else if (f?.ref) out.push({ ref: f.ref });
+    else if (Number.isInteger(f?.i)) out.push({ i: f.i });
   }
   return out;
+}
+
+// ---- words left on this phone (mail:unsent): one save at a time, after any close save still going; dropped only if
+// what's there is still what was saved
+let closing = null, leftJob = null, armed = false;
+function saveLeft(ctx) {
+  if (leftJob) return leftJob;
+  leftJob = (async () => {
+    await closing?.catch(() => {});
+    const u = ctx.outbox.unsent();
+    if (!hasWords(u)) return true;
+    if (!online()) return false;
+    try {
+      // (a draft it was: its own files listed again as Mail numbers them, so this save keeps them)
+      let files = [], id = u.draftId || null;
+      if (id) {
+        try { files = (await ctx.api.draft(id))?.compose?.files || []; }
+        catch (e) { if (e?.status === 404) id = null; else throw e; }
+      }
+      await ctx.api.saveDraft(draftOf({ ...u, draftId: id }, await draftFiles(files)), null);
+      if (stamp(ctx.outbox.unsent()) === stamp(u)) ctx.outbox.dropUnsent();
+      ctx.fw.toast("Your unsent message is in Drafts");
+      return true;
+    } catch (_) { return false; }
+  })().finally(() => { leftJob = null; });
+  return leftJob;
+}
+// (kept here after a save that failed: tried again when the connection's back)
+function retryOnline(ctx) {
+  if (armed || typeof addEventListener !== "function") return;
+  armed = true;
+  const go = () => { removeEventListener("online", go); armed = false; saveLeft(ctx); };
+  addEventListener("online", go);
 }
 
 export function openCompose(ctx, init = {}) {
@@ -53,9 +103,27 @@ export function openCompose(ctx, init = {}) {
     files: (init.files || []).slice(), quoteOld: !!init.quoteOld,
   };
   const loading = !!c.draftId && !init.to && !init.subject && !init.text;
+  const blank = !c.draftId && !c.quote && !c.quoteOld && !c.subject && !c.text && !c.files.length && !LISTS.some((k) => c[k].length);
   if (!c.draftId && !c.text) { const s = sigFor(c.from); if (s) c.text = `\n\n${s}`; }
-  let snap = JSON.stringify([fieldsOf(c), c.files.length]), ended = null, keepT = 0, h = null, sending = false;
-  const dirty = () => JSON.stringify([fieldsOf(c), c.files.length]) !== snap;
+  const sigOf = () => JSON.stringify([fieldsOf(c), c.files.map((f) => (isFile(f) ? `${f.name}:${f.size}` : f?.ref || f?.i))]);
+  let snap = sigOf(), saved = null, ended = null, keepT = 0, h = null, sending = false, wrote = false, off = null;
+  const dirty = () => sigOf() !== snap;
+  // (an earlier compose's words still only on this phone: this one never writes over them while they're there)
+  let leftAt = null;
+  const held = () => leftAt != null && stamp(ctx.outbox.unsent()) === leftAt;
+  // (reopened from this phone's copy of a draft: the draft's own files not known yet, so listed from Mail before any save)
+  let unknown = false;
+  async function filesReady() {
+    if (!unknown || !c.draftId) return;
+    let got = [];
+    try { got = (await api.draft(c.draftId))?.compose?.files || []; }
+    catch (e) { if (e?.status !== 404) throw e; c.draftId = null; }
+    if (!unknown) return;
+    unknown = false;
+    c.files = [...got, ...c.files];
+    if (!ended) drawFiles();
+  }
+  const keep = () => { if (held()) return false; const k = ctx.outbox.keepUnsent(fieldsOf(c)); if (k) wrote = true; return k; };
   const EMAIL_RE = logic.EMAIL_RE || /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   // ---- To, Cc, Bcc: each person a chip; what's typed made one at a comma, Return or on leaving; suggestions by POST
@@ -167,12 +235,18 @@ export function openCompose(ctx, init = {}) {
   drawFiles(); drawQuote();
   ccRow.after(sugg);
 
+  function redraw() {
+    for (const k of LISTS) fields[k].draw();
+    ccRow.hidden = !(c.cc.length || c.bcc.length);
+    subject.value = c.subject; text.value = c.text; if (from) from.value = c.from;
+    drawFiles(); drawQuote(); changed();
+  }
   function changed() {
     if (ended) return;
     const t = h?.el.querySelector(".ifs-head h2");
     if (t) t.textContent = titleOf(c);
     clearTimeout(keepT);
-    keepT = setTimeout(() => { if (!ended && dirty()) ctx.outbox.keepUnsent(fieldsOf(c)); }, 800);
+    keepT = setTimeout(() => { if (!ended && dirty()) keep(); }, 800);
   }
 
   // ---- closing: Send, Delete Draft, or any other way (kept, S4-D18)
@@ -182,25 +256,38 @@ export function openCompose(ctx, init = {}) {
   }
   function closed() {
     clearTimeout(keepT); clearTimeout(suggT);
+    try { off?.(); } catch (_) {}
     store.set({ compose: false }, "compose");
+    // (closed while Send is saving it: the outbox has it; send() lets the phone's copy go once it answers)
+    if (sending) { ended = "send"; return; }
     if (ended === "send") return;
     if (ended === "delete") {
-      ctx.outbox.dropUnsent();
+      if (!held()) ctx.outbox.dropUnsent();
       if (c.draftId) api.remove(c.draftId).catch(() => {});
       return;
     }
     ended = "close";
     for (const k of LISTS) fields[k].commit();
     clearTimeout(keepT);
-    if (!dirty()) { if (!c.draftId) ctx.outbox.dropUnsent(); return; }
-    const f = fieldsOf(c);
-    const kept = ctx.outbox.keepUnsent(f);
-    (async () => {
-      const { id } = await api.saveDraft({ id: c.draftId || undefined, from: c.from, to: c.to, cc: c.cc, bcc: c.bcc, subject: c.subject, text: c.text, inReplyTo: c.inReplyTo, references: c.references, quote: c.quote, attachments: await draftFiles(c.files) });
-      if (id) c.draftId = id;
-      ctx.outbox.dropUnsent();
+    // (unchanged, or unchanged since flush saved it: nothing to save; only this compose's own copy let go)
+    if (!dirty() || sigOf() === saved) { if (wrote && !held()) ctx.outbox.dropUnsent(); return; }
+    const kept = keep();
+    const at = kept ? stamp(ctx.outbox.unsent()) : null;
+    const bytes = c.files.some(isFile);
+    const job = (async () => {
+      await filesReady();
+      const r = await api.saveDraft(draftOf(fieldsOf(c), await draftFiles(c.files)), null, { keepalive: !bytes });
+      if (r?.id) c.draftId = r.id;
+      if (kept && stamp(ctx.outbox.unsent()) === at) ctx.outbox.dropUnsent();
       fw.toast("Draft saved");
-    })().catch(() => fw.toast(kept ? "Kept on this phone. It’s saved to Mail when you’re back online." : "Couldn’t keep this on your phone. Try Again when you’re online"));
+    })();
+    closing = job;
+    job.catch(() => {
+      if (kept) retryOnline(ctx);
+      fw.toast(!kept ? "Couldn’t keep this on your phone. Try Again when you’re online"
+        : bytes ? "Kept on this phone, without its files. It’s saved to Mail when you’re back online."
+        : "Kept on this phone. It’s saved to Mail when you’re back online.");
+    }).finally(() => { if (closing === job) closing = null; });
   }
 
   async function send() {
@@ -208,11 +295,16 @@ export function openCompose(ctx, init = {}) {
     for (const k of LISTS) fields[k].commit();
     const all = LISTS.flatMap((k) => c[k]), bad = all.find((p) => !EMAIL_RE.test(p.email));
     if (!all.length || bad) return fw.toast(bad ? `“${bad.email}” isn’t a valid address` : "Add a recipient");
-    if (!c.subject.trim() && !(await ctx.open.confirm({ title: "No Subject", text: "This message has no subject.", yes: "Send Anyway", no: "Cancel" }))) return subject.focus();
+    if (!c.subject.trim() && !(await ctx.open.confirm({ title: "No Subject", text: "This message has no subject.", yes: "Send Anyway", no: "Cancel" }))) return h.closed ? undefined : subject.focus();
+    if (h.closed) return;
     if (c.quoteOld && !(await ctx.open.confirm({ title: "Send Without the Quoted Text?", text: "This draft was started in Mail on its own. Sent from here, it goes without the message it quotes.", yes: "Send", no: "Cancel" }))) return;
-    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
-    if (offline && c.files.length) return fw.toast("Files need a connection. Try Again");
-    const f = fieldsOf(c);
+    if (h.closed) return;
+    const offline = !online();
+    if (offline && (c.files.length || unknown)) return fw.toast(c.files.length ? "Files need a connection. Try Again" : "This draft needs a connection. Try Again");
+    try { await filesReady(); } catch (_) { return fw.toast("Couldn’t reach Mail. Try Again"); }
+    if (h.closed) return;
+    // (a quoteOld draft goes without its quote, as "Send Without the Quoted Text?" said: quote null, not left out)
+    const f = { ...fieldsOf(c), quoteOld: false };
     if (offline && !fits(f)) return fw.toast("Couldn’t keep this on your phone. Try Again when you’re online");
     // (saved first, the sheet up meanwhile with the upload's progress; closed once the outbox has it, S4-D18)
     sending = true;
@@ -222,10 +314,16 @@ export function openCompose(ctx, init = {}) {
     catch (e) { r = { ok: false, error: e?.message }; }
     sending = false;
     prog.textContent = "";
-    if (h.closed) return r;
+    if (h.closed) {
+      // (closed while it was saving: the outbox has it, or, refused, its words kept here and said so)
+      if (r?.ok) { if (wrote && !held()) ctx.outbox.dropUnsent(); }
+      else if (keep()) { retryOnline(ctx); fw.toast("Couldn’t send. It’s kept on this phone"); }
+      else fw.toast(r?.error || "Couldn’t send. Try Again");
+      return r;
+    }
     h.setBusy(false);
     if (!r?.ok) { fw.toast(r?.error || "Couldn’t send. Try Again"); return r; }
-    ctx.outbox.dropUnsent();
+    if (!held()) ctx.outbox.dropUnsent();
     end("send");
     return r;
   }
@@ -237,19 +335,43 @@ export function openCompose(ctx, init = {}) {
     onClose: closed,
   });
   store.set({ compose: true }, "compose");
+  // (flush, C10: saves these words as a draft and hands its id back; unchanged since, it isn't saved again)
+  off = ctx.outbox.track?.(() => (!ended && dirty() && sigOf() !== saved ? { ...fieldsOf(c), files: c.files.slice() } : null),
+    (id) => { c.draftId = id; saved = sigOf(); }) || null;
+
+  // words an earlier compose left on this phone: saved to Mail first, else (offline) reopened here when this one's blank
+  const left = ctx.outbox.unsent?.();
+  const ready = hasWords(left) ? saveLeft(ctx) : Promise.resolve(true);
+  if (hasWords(left)) {
+    leftAt = stamp(left);
+    ready.then((ok) => {
+      if (ok || ended || !held()) return;
+      if (blank && !dirty()) {
+        leftAt = null;
+        Object.assign(c, { from: left.from || c.from, to: people(left.to), cc: people(left.cc), bcc: people(left.bcc), subject: String(left.subject || ""), text: String(left.text || ""),
+          quote: left.quote?.of ? { of: String(left.quote.of), mode: left.quote.mode } : null, quoteOld: !!left.quoteOld, inReplyTo: left.inReplyTo || null, references: left.references || null, draftId: left.draftId || null });
+        redraw();
+        wrote = true;
+        // (a draft it was: its own files asked of Mail once there's a connection, before it's saved or sent)
+        if (c.draftId) { unknown = true; if (typeof addEventListener === "function") addEventListener("online", () => filesReady().catch(() => {}), { once: true }); }
+        fw.toast("Here’s what you were writing. It’s kept on this phone.");
+      } else {
+        retryOnline(ctx);
+        fw.toast("Your earlier message is kept on this phone. It’s saved to Mail when you’re back online.");
+      }
+    });
+  }
 
   // a draft opened from Drafts: its fields from Mail (drafts only; no body of anyone else's, §3.1)
   if (loading) {
     h.setBusy(true);
-    api.draft(c.draftId).then(({ compose: d = {}, quoteOld }) => {
+    // (after any words left on this phone are saved: they may be this very draft's)
+    ready.then(() => api.draft(c.draftId)).then(({ compose: d = {}, quoteOld }) => {
       if (ended) return;
       Object.assign(c, { from: d.from || c.from, to: people(d.to), cc: people(d.cc), bcc: people(d.bcc), subject: String(d.subject || ""), text: String(d.text || ""), inReplyTo: d.inReplyTo || null, references: d.references || null,
         quote: d.quote?.of ? { of: String(d.quote.of), mode: d.quote.mode } : null, quoteOld: !!quoteOld, files: Array.isArray(d.files) ? d.files.slice() : [] });
-      for (const k of LISTS) fields[k].draw();
-      ccRow.hidden = !(c.cc.length || c.bcc.length);
-      subject.value = c.subject; text.value = c.text; if (from) from.value = c.from;
-      drawFiles(); drawQuote(); changed();
-      snap = JSON.stringify([fieldsOf(c), c.files.length]);
+      redraw();
+      snap = sigOf();
       h.setBusy(false);
     }, () => { if (!ended) { h.setBusy(false); fw.toast("Couldn’t open that draft. Try again in a moment."); } });
   }
