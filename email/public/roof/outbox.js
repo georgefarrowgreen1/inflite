@@ -186,7 +186,9 @@ export function createOutbox(ctx) {
     if (u && (u.subject || u.text || u.to?.length)) jobs.push(api.saveDraft(await payload(fieldsOf(u), []), null, { keepalive }).then(() => dropUnsent(), () => { lost++; }));
     const n = jobs.length;
     let done = 0;
-    await Promise.race([Promise.all(jobs.map((j) => Promise.resolve(j).finally(() => done++))), new Promise((ok) => setTimeout(ok, FLUSH_MS))]);
+    let cap = 0;
+    await Promise.race([Promise.all(jobs.map((j) => Promise.resolve(j).finally(() => done++))), new Promise((ok) => { cap = setTimeout(ok, FLUSH_MS); })]);
+    clearTimeout(cap);
     if (done < n) lost += n - done;
     keepQueue();
     mirror();
