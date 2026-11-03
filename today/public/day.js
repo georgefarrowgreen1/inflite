@@ -12,7 +12,7 @@
 //   mergeWaiting(rows, said) → the server's Waiting rows, each with the engine's words only where they may go beside it
 //   dayLine(answer, now, phase?) → { text, html }: the header's line for the phase ("16:05 · your ride")
 //   comingAt(upcoming, now, phase, { dawn, tz }?) → the Coming Up rows still to come at now (in the evening, tonight's and
-//     tomorrow's first)
+//     tomorrow's first), and a ride not in yet (late: true) though its time has passed
 //   stopDay(root) → nothing: nothing more timed or drawn here for root (the page has taken it back). The same happens by
 //     itself once the page takes root's data-phase off (drawing its own four cards there, or signed out)
 // ctx (all but now may be left out; the page hands in what it has):
@@ -360,17 +360,22 @@ async function sinceAll(root, st, c) {
 }
 
 // ---------------------------------------------------------------- Coming Up
-// (still to come at now, soonest first. In the evening, what's left of tonight (a call at 20:00, a pigeon landing) and
+// (still to come at now, soonest first, with a ride not in yet (late: true, at its start, §7.6) kept though its time has
+// passed, for the rest of its day where the answer is. In the evening, what's left of tonight (a call at 20:00, a pigeon landing) and
 // tomorrow's first thing (§7.3), and nothing after it: tomorrow starts at dawn, the next morning in the answer's
 // timeline, or without one at midnight where the answer's tz is)
 export function comingAt(upcoming, now, phase, { dawn = null, tz } = {}) {
-  const rows = list(upcoming).filter((r) => num(r.at) != null && r.at > now && str(r.title)).sort((a, b) => a.at - b.at);
+  const late = (r) => r.late === true && (tz ? dayKey(r.at, tz) === dayKey(now, tz) : now < r.at + 86400000);
+  const rows = list(upcoming).filter((r) => num(r.at) != null && (r.at > now || late(r)) && str(r.title)).sort((a, b) => a.at - b.at);
   if (phase !== "evening") return rows;
   const at = num(dawn), first = rows.findIndex(at != null ? (r) => r.at >= at : (r) => dayKey(r.at, tz) !== dayKey(now, tz));
   return first < 0 ? rows : rows.slice(0, first + 1);
 }
 // (the next morning's start in the answer's timeline, after now)
 const dawnAfter = (answer, now) => list(answer.timeline).filter((x) => x.phase === "morning" && num(x.at) != null && x.at > now).sort((a, b) => a.at - b.at)[0]?.at ?? null;
+// (when the tick takes a row away: at its time, but a ride not in yet (late: its at, the ride's start, has passed) stays
+// until the next morning, or a day on without a timeline; a new answer replaces it sooner, once the ride's in)
+const dueOf = (r, answer, now) => r.late === true ? dawnAfter(answer, now) ?? r.at + 86400000 : r.at;
 function comingHtml(rows, st, now) {
   const tz = str(st.answer.tz) || undefined, ctx = { ...st.ctx, links: linksOf(st.ctx) };
   return `<h2 class="slabel">${LABELS.coming}</h2><div class="group glass">${rows.map((r) => {
@@ -378,7 +383,7 @@ function comingHtml(rows, st, now) {
     const h = linkTo(r.href, st.ctx), other = dayKey(r.at, tz) !== dayKey(now, tz);
     const send = sendButton(r, ctx, { label: "", glyph: G.bird, cls: "dc-send", aria: `Send to a friend: ${r.title}` });
     const inner = `<span class="dc-tm">${esc(hm(r.at, tz))}${other ? `<small>${esc(wkShort(r.at, tz))}</small>` : ""}</span>${app ? `<img class="dc-ic" src="${app.icon}" alt="">` : `<span class="dc-ic"></span>`}<span class="tx"><b>${esc(r.title)}</b>${str(r.sub) ? `<small>${esc(r.sub)}</small>` : ""}</span>`;
-    return `<div class="dc-row" data-due="${r.at}"${send ? " data-sends" : ""}>
+    return `<div class="dc-row" data-due="${dueOf(r, st.answer, now)}"${send ? " data-sends" : ""}>
       ${h ? `<a class="row dc-main" href="${esc(h)}">${inner}</a>` : `<div class="row dc-main">${inner}</div>`}${send}
     </div>`;
   }).join("")}</div>`;
