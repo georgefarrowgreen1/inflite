@@ -7,14 +7,19 @@
 // At the hub (Today First: InFlite one app at inflite.ai, IFL.hub, handed in as ctx.hub), every link here goes through
 // IFL.hub.go (an app's own address as the hub's path: weather. → /weather/), and Send to a friend is a button that opens
 // Chat's sheet where you are (IFL.hub.send). Off the hub, or before it's ready, the links and Send are as they always were.
+// Mail's card (One roof stage 4, s4/spec §2.5) is mailcard.js's: for the site's admin, and only when Mail answered, so
+// it's never a placeholder, a stale card or an error card, only drawn or absent.
 import { weatherIcon } from "/wxicons.js";
+import { mailCard } from "/mailcard.js";
 
-export const CARD_KEYS = ["weather", "chat", "fitness", "markets"];
+export const CARD_KEYS = ["weather", "chat", "fitness", "markets", "mail"];
 export const APP = {
   weather: { name: "Weather", icon: "/apps/weather.svg" },
   chat: { name: "Chat", icon: "/apps/chat.svg" },
   fitness: { name: "Fitness", icon: "/apps/fitness.svg" },
   markets: { name: "Markets", icon: "/apps/markets.svg" },
+  // (the address written out, not mailcard.js's MAIL_ICON: the two import each other, and this runs first)
+  mail: { name: "Mail", icon: "/apps/mail.svg" },
 };
 const MIN = 60e3, HR = 60 * MIN;
 
@@ -171,6 +176,7 @@ const linkPill = (label, h, { primary = false, icon = "" } = {}) => `<a class="p
 // a card waiting for its answer: its head, and the shape of what's coming
 export function placeholder(key) {
   const a = APP[key];
+  if (key === "mail") return "";
   return `<article class="tcard glass loading" data-app="${key}" aria-label="${a.name}"><div class="tc-head"><img src="${a.icon}" alt=""><span class="tc-app">${a.name}</span><span class="tc-meta"></span></div><div class="sk" aria-hidden="true"><i></i><i></i><i></i></div><span class="vh">Getting ${a.name}’s day…</span></article>`;
 }
 
@@ -185,6 +191,12 @@ function notOk(key, card) {
 // the whole card, from its part of the answer: ctx = { links, tz, now, hub? }
 export function cardHTML(key, card, ctx) {
   const a = APP[key];
+  // (Mail's: drawn from Mail's answer, or not at all; never a placeholder, a stale card or an error card)
+  if (key === "mail") {
+    let inner = "";
+    try { inner = card?.state === "ok" ? mailCard(card, ctx || {}) : ""; } catch (e) { console.error(e); }
+    return inner ? `<article class="tcard glass" data-app="mail" data-state="ok" aria-label="${a.name}">${inner}</article>` : "";
+  }
   let inner = "", cls = "";
   drawing = ctx;
   try {
