@@ -491,6 +491,9 @@ export function createFrame(opts = {}) {
   });
   on(globalThis, "popstate", (e) => {
     if (gone) return;
+    // (back or forward to a module that's been switched off since: the page as the server now has it, its hub page)
+    const any = parse(L.href, { roof: true });
+    if (any?.kind === "app" && !isOn(any.app)) return L.reload();
     F.sheet.closeAll();
     leaveEntry();
     const st = H.state?.ifl, was = depth;
