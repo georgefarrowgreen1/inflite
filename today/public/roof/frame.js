@@ -89,6 +89,7 @@ export function createFrame(opts = {}) {
   // (each app's flag, ANDed with hub: a stage-1 host gives no apps, which is Weather's roof alone)
   const appsOf = (s) => { const o = {}; if (s.hub) for (const a of Object.keys(REGISTRY)) o[a] = !!(s.apps ? s.apps[a] : a === "weather" && s.roof); return o; };
   const sess = () => { const s = sess0(); return { ...s, apps: appsOf(s) }; };
+  const isOn = (app) => !!sess().apps[app];
   const roofs = () => sess().apps;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const newKey = () => Math.random().toString(36).slice(2, 10);
