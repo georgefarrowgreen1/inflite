@@ -11,6 +11,8 @@
 // preload(app): loadConnector(app), then a <link rel=modulepreload> per connector.files entry ending .js.
 // watchVersion(app, build, F): asks /<app>/version as the page becomes visible (at most every 10 minutes); a build
 //   other than this one sets F.stale (D21).
+// loadService(app, F) → Promise<Service> (stage 3, S3-C3): import(REGISTRY[app].service), then its startService({ path,
+//   ui: F.forModule(app), onStale }) (onStale: F.stale = true). Only the frame calls it, once per app (F.service).
 // keepOffline(app, build, files): { ifl: "keep", app, build, files } (absolute same-origin paths) to the root worker,
 //   once per build and list per page: connector.files after mount; files ∪ connector.lazy again only on the Home Screen,
 //   at idle, 10 s or more after the first show (C4, s24 §8). preload reads files only.
@@ -76,6 +78,13 @@ export async function loadConnector(app) {
   if (!R) throw new Error(`no module ${app}`);
   const m = await import(R.connector);
   return m.connector;
+}
+
+export async function loadService(app, F) {
+  const R = REGISTRY[app];
+  if (!R?.service) throw new Error(`no service for ${app}`);
+  const m = await import(R.service);
+  return m.startService({ path: R.path, ui: F.forModule(app), onStale: () => { F.stale = true; } });
 }
 
 export function preload(app) {
