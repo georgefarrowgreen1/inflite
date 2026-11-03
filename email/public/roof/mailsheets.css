@@ -1,2 +1,70 @@
 /* Mail's compose, Mail Settings and viewer sheets under the roof (One roof stage 4, s4/spec §4.1, §2.2): scoped under
-   .ifl-sheet[data-app=mail], the framework's tokens only, nothing on :root, html or body. B0-b: empty; MR writes it. */
+   .ifl-sheet[data-app=mail], the framework's tokens only, nothing on :root, html or body. */
+
+/* ---- compose (mail-compose) */
+.ifl-sheet[data-app=mail] .mc { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ifl-sheet[data-app=mail] .mc-head { display: flex; align-items: flex-start; gap: 8px; }
+.ifl-sheet[data-app=mail] .mc-head .mc-row { flex: 1; }
+.ifl-sheet[data-app=mail] .mc-row { display: flex; align-items: flex-start; gap: 6px; min-height: 44px; padding: 6px 2px; border-bottom: 1px solid var(--line); }
+.ifl-sheet[data-app=mail] .mc-k { flex: none; padding-top: 6px; color: var(--text-2); font-size: 15px; }
+.ifl-sheet[data-app=mail] .mc-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.ifl-sheet[data-app=mail] .mc-chips input { flex: 1; min-width: 120px; min-height: 32px; border: 0; background: none; outline: none; }
+.ifl-sheet[data-app=mail] .mc-chip { max-width: 100%; padding: 4px 10px; border-radius: var(--r-pill, 999px); background: var(--acc-wash, var(--glass-ctl)); color: var(--acc-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.ifl-sheet[data-app=mail] .mc-chip.bad { color: var(--danger); background: var(--glass-ctl); }
+.ifl-sheet[data-app=mail] .mc-from { max-width: 46%; min-height: 36px; margin-top: 6px; padding: 0 8px; border-radius: 12px; border: 1px solid var(--line); background: var(--glass-ctl); font-size: 14px; }
+.ifl-sheet[data-app=mail] .mc-sugg { display: flex; flex-direction: column; }
+.ifl-sheet[data-app=mail] .mc-sugg:empty { display: none; }
+.ifl-sheet[data-app=mail] .mc-opt { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 8px; border-radius: 12px; text-align: left; }
+.ifl-sheet[data-app=mail] .mc-opt:hover, .ifl-sheet[data-app=mail] .mc-opt:focus-visible { background: var(--press); }
+.ifl-sheet[data-app=mail] .mc-opt span { display: flex; flex-direction: column; min-width: 0; }
+.ifl-sheet[data-app=mail] .mc-opt small { color: var(--text-2); }
+.ifl-sheet[data-app=mail] .mc-cc[hidden] { display: none; }
+.ifl-sheet[data-app=mail] .mc-subject { min-height: 48px; padding: 8px 2px; border: 0; border-bottom: 1px solid var(--line); background: none; outline: none; font-weight: 600; }
+.ifl-sheet[data-app=mail] .mc-text { min-height: 180px; padding: 10px 2px; border: 0; background: none; outline: none; resize: vertical; field-sizing: content; line-height: 1.45; }
+.ifl-sheet[data-app=mail] .mc-files { display: flex; flex-wrap: wrap; gap: 6px; }
+.ifl-sheet[data-app=mail] .mc-file { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 36px; padding: 4px 12px; border-radius: 12px; background: var(--glass-ctl); font-size: 14px; }
+.ifl-sheet[data-app=mail] .mc-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ifl-sheet[data-app=mail] .mc-quote { margin: 6px 0; padding: 10px 12px; border-left: 3px solid var(--acc); border-radius: 0 12px 12px 0; background: var(--glass-ctl); color: var(--text-2); font-size: 14px; }
+.ifl-sheet[data-app=mail] .mc-quote[hidden] { display: none; }
+.ifl-sheet[data-app=mail] .mc-quote p { margin: 4px 0 8px; overflow-wrap: anywhere; }
+.ifl-sheet[data-app=mail] .mc-qk { color: var(--text); font-size: 13px; }
+.ifl-sheet[data-app=mail] .mc-tools, .ifl-sheet[data-app=mail] .mc-more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 8px; }
+.ifl-sheet[data-app=mail] .mc-more[hidden] { display: none; }
+.ifl-sheet[data-app=mail] svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ifl-sheet[data-app=mail] svg[data-icon=more] { fill: currentColor; stroke: none; }
+
+/* ---- Mail Settings (mail-settings) */
+.ifl-sheet[data-app=mail] .ms, .ifl-sheet[data-app=mail] .ifs-page { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ifl-sheet[data-app=mail] .ms-note { margin: -4px 4px 4px; color: var(--text-2); font-size: 13px; line-height: 1.4; }
+.ifl-sheet[data-app=mail] .ms-head { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 8px; text-align: center; }
+.ifl-sheet[data-app=mail] .ms-head b { overflow-wrap: anywhere; }
+.ifl-sheet[data-app=mail] .ms-head span { color: var(--text-2); font-size: 14px; }
+.ifl-sheet[data-app=mail] .ms-field { display: flex; flex-direction: column; gap: 6px; }
+.ifl-sheet[data-app=mail] .ms-field > span { margin: 0 4px; color: var(--text-2); font-size: 13px; font-weight: 600; }
+.ifl-sheet[data-app=mail] .ms-input, .ifl-sheet[data-app=mail] .ms-sig { width: 100%; min-height: 44px; padding: 10px 14px; border-radius: var(--r-well, 16px); border: 1px solid var(--line); background: var(--glass-ctl); outline: none; }
+.ifl-sheet[data-app=mail] .ms-sig { resize: vertical; line-height: 1.4; }
+.ifl-sheet[data-app=mail] .ms-dot, .ifl-sheet[data-app=mail] .ms-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: var(--c, #2f6cf0); }
+.ifl-sheet[data-app=mail] .ms-swatches { display: flex; flex-wrap: wrap; gap: 10px; padding: 4px; }
+.ifl-sheet[data-app=mail] .ms-swatch { width: 34px; height: 34px; box-shadow: 0 0 0 2px transparent; }
+.ifl-sheet[data-app=mail] .ms-swatch[aria-checked=true] { box-shadow: 0 0 0 2px var(--bg, transparent), 0 0 0 4px var(--c, #2f6cf0); }
+.ifl-sheet[data-app=mail] [data-colour=blue] { --c: #2f6cf0; } .ifl-sheet[data-app=mail] [data-colour=green] { --c: #1fa75a; }
+.ifl-sheet[data-app=mail] [data-colour=orange] { --c: #f08a1c; } .ifl-sheet[data-app=mail] [data-colour=pink] { --c: #e8457f; }
+.ifl-sheet[data-app=mail] [data-colour=purple] { --c: #8a5cf0; } .ifl-sheet[data-app=mail] [data-colour=teal] { --c: #1b9e9a; }
+.ifl-sheet[data-app=mail] [data-colour=grey] { --c: #6b7389; }
+
+/* ---- the pictures viewer (mail-viewer): tall, dark, a picture at a time */
+.ifl-sheet[data-app=mail][data-sheet=mail-viewer] { height: calc(100dvh - 24px); max-height: none; }
+.ifl-sheet[data-app=mail] .mv { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 60dvh; }
+.ifl-sheet[data-app=mail] .mv-stage { position: relative; flex: 1; overflow: hidden; border-radius: 18px; background: #000; touch-action: none; outline: none; }
+.ifl-sheet[data-app=mail] .mv-track { display: flex; height: 100%; transform: translateX(calc(var(--i, 0) * -100% + var(--dx, 0px))); transition: transform .4s var(--ease-glide, ease); }
+.ifl-sheet[data-app=mail] .mv-track.still { transition: none; }
+.ifl-sheet[data-app=mail] .mv-slide { flex: 0 0 100%; display: grid; place-items: center; overflow: hidden; }
+.ifl-sheet[data-app=mail] .mv-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; transform: translate(var(--zx, 0), var(--zy, 0)) scale(var(--zs, 1)); transition: transform .25s var(--ease-glide, ease); }
+.ifl-sheet[data-app=mail] .mv-slide.zoomed .mv-img { transition: none; }
+.ifl-sheet[data-app=mail] .mv-wait { width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .25); border-top-color: #fff; animation: mv-spin 1s linear infinite; }
+@keyframes mv-spin { to { transform: rotate(360deg); } }
+.ifl-sheet[data-app=mail] .mv-prev, .ifl-sheet[data-app=mail] .mv-next { position: absolute; top: 50%; translate: 0 -50%; }
+.ifl-sheet[data-app=mail] .mv-prev { left: 8px; } .ifl-sheet[data-app=mail] .mv-next { right: 8px; }
+.ifl-sheet[data-app=mail] .mv-count { align-self: center; color: var(--text-2); font-size: 13px; }
+.ifl-sheet[data-app=mail] .mv .ifl-empty { color: #fff; }
+@media (prefers-reduced-motion: reduce) { .ifl-sheet[data-app=mail] .mv-track, .ifl-sheet[data-app=mail] .mv-img { transition: none; } }
