@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.48";
-export const NEWS = "InFlite’s note about its one app shows only on Mail’s own Home Screen icon, never over a page in a small browser";
+export const BUILD = "1.49";
+export const NEWS = "Getting ready to open inside InFlite, and replies and forwards quote the message as Mail itself does";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

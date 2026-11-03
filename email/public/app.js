@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.48";
+  const BUILD = "1.49";
   // (what's new in it, said once it's in)
-  const NEWS = "InFlite’s note about its one app shows only on Mail’s own Home Screen icon, never over a page in a small browser";
+  const NEWS = "Getting ready to open inside InFlite, and replies and forwards quote the message as Mail itself does";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
