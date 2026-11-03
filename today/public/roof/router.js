@@ -12,7 +12,7 @@
 //   An app's arg is only ever [A-Za-z0-9_.^=-]{1,40} after that one decoding; You's and Weather's [A-Za-z0-9_-]{1,40} as
 //   written, never decoded (stage 1's rule, kept); anything else (or a bad %) is dropped (null).
 //
-// History state the frame writes: { ifl: { d: depth, k: key } } only (§3.3); nothing here reads it.
+// History state the frame writes: { ifl: { d: depth, k: key, b } } only (§3.3); nothing here reads it.
 
 // The apps that are modules. sections = the module's SECTIONS = its connector's sections (roofcontract.test); css = the
 // module's stylesheets, linked and awaited before mount (D2). Optional fields (s24-contracts §3):

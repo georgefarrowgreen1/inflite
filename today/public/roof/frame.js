@@ -60,8 +60,8 @@
 //     q is "" until an import of this app's failed, then "?retry=<n>"; /<app>/version asked beside it (≤ once a minute),
 //     and at once on a failure: a new build reloads at the route once nothing is unsaved (s24 §7)
 //
-// History state the frame writes: { ifl: { d: depth, k: key } }, kept with whatever else the entry holds. Scroll is
-// kept per entry and per app section in memory; sessionStorage["ifl-roof-y"] = { p: formatted route, y } on pagehide.
+// History state the frame writes: { ifl: { d: depth, k: key, b: the entry before's name or null } }, kept with whatever
+// else the entry holds. Scroll is kept per entry and per app section in memory; sessionStorage["ifl-roof-y"] = { p: formatted route, y } on pagehide.
 import { REGISTRY, parse, format, owns, ownPath } from "./router.js";
 import { createHeader } from "./header.js";
 import { createTabs } from "./tabs.js";
