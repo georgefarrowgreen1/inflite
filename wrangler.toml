@@ -20,8 +20,9 @@ run_worker_first = ["/api/*", "/version", "/chats", "/chats/*", "/weather", "/we
 [vars]
 ACCOUNT_ORIGIN = "https://account.inflite.ai"
 # (InFlite's hub, today/src/hub.js: each app's own address, which the hub speaks as and connects to; Markets is
-# finance.'s. HUB_KEY, which the apps' hosts know the hub by, is a secret: npx wrangler secret put HUB_KEY. Until it's
-# set every hub path answers 503 and Today links to each app's own address, as before)
+# finance.'s. HUB_KEY, which the apps' hosts know the hub by, is a secret: npx wrangler secret put HUB_KEY, the same
+# value as the Pages project's HUB_KEY secret. Until both are set, and match, every hub path answers 503 and Today
+# links to each app's own address, as before)
 CHAT_ORIGIN = "https://chat.inflite.ai"
 WEATHER_ORIGIN = "https://weather.inflite.ai"
 FITNESS_ORIGIN = "https://fitness.inflite.ai"
@@ -35,9 +36,13 @@ binding = "CF_VERSION_METADATA"
 [observability]
 enabled = true
 
-# The staging hub (spec §15.2), deployed by hand: npx wrangler deploy --env next (Workers Builds deploys production
-# only). The same Worker at next.inflite.ai, with a HUB_KEY secret of its own (npx wrangler secret put HUB_KEY --env
-# next); the account's cookie covers it. TODAY_AS: the site it stands in for, whose addresses it takes as its own.
+# Everything above is production, the top-level environment: Workers Builds' deploy command for it is
+# npx wrangler deploy --env="" (plain npx wrangler deploy deploys the same, with a warning that an environment exists).
+# The staging hub (spec §15.2), deployed by hand: npx wrangler deploy --env next. The same Worker at next.inflite.ai,
+# whose HUB_KEY secret (npx wrangler secret put HUB_KEY --env next) must be the same value as the Pages project's
+# HUB_KEY, as production's is (the apps' hosts know one key), and whose address must be in the Pages project's
+# HUB_ORIGINS (https://inflite.ai,https://next.inflite.ai); the account's cookie covers it. TODAY_AS: the site it stands
+# in for, whose addresses it takes as its own.
 [env.next]
 name = "inflite-next"
 workers_dev = false
