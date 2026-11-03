@@ -159,9 +159,13 @@ export function createFrame(opts = {}) {
       const off = Object.keys(REGISTRY).filter((a) => was[a] && !now[a]);
       providers();
       if (!off.length) return;
-      const bounce = off.includes(shownMod()?.app);
-      for (const a of off) if (!bounce || a !== shownMod()?.app) unmount(a);
-      if (bounce) F.flush().then(() => safely(() => { ss("ifl-roof-bounce", "1"); put(L.pathname + L.hash); L.reload(); }));
+      const shownApp = shownMod()?.app, bounce = off.includes(shownApp);
+      for (const a of off) if (a !== shownApp) unmount(a);
+      if (!bounce) return;
+      const go = () => { unmount(shownApp); ss("ifl-roof-bounce", "1"); put(L.pathname + L.hash); L.reload(); };
+      // (nothing unsaved: at once, as stage 1 did; else what's unsaved saved first, and the bounce once it's done)
+      if (!F.busy()) { T(() => mods[shownApp]?.instance?.flush?.()); return go(); }
+      F.flush().then(() => safely(go));
     },
     forModule: (app) => modOf(app).fw,
     destroy() {
