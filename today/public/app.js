@@ -948,8 +948,10 @@ const said = new Promise((ok) => { saidOk = ok; });
 function hubSays(state) {
   S.hub = state === "yes" || (state === "unknown" && !!BOOT_APP);
   S.roof = S.hub && (state === "unknown" || roofSaid);
-  // (no answer at a module's address: that module on, as the Worker served this page for it, and Weather as stage 1 had it)
-  S.apps = !S.hub ? {} : state === "unknown" ? { ...keptApps(), weather: true, [BOOT_APP.app]: true } : { ...appsSaid };
+  // (no answer at a module's address: Weather on as stage 1 had it, and the boot app on (the Worker served this page for
+  // it) unless this tab's kept answer says it's off: the root worker serves its kept / there too when the hub's own page
+  // fails)
+  S.apps = !S.hub ? {} : state === "unknown" ? { ...keptApps(), weather: true, [BOOT_APP.app]: BOOT_APP.app === "weather" || keptApp(BOOT_APP.app) !== false } : { ...appsSaid };
   if (!S.hub) IFL.hub.degrade(ownLinks());
   // (signed out: the way in's second way, Today's own, only beside Chats' trip)
   $("#alsoRow").hidden = !S.hub;
@@ -1200,10 +1202,13 @@ function showOut(said = "") {
   signinHref();
   lift();
 }
-// signed out, as it's found out: by the account's answer, a 401, or the service worker's word
-function signedOutNow() {
-  // (signed out elsewhere, confirmed: the apps' copies of you here go too; Chat's own engine signs itself out, S2-D10)
-  forgetApps({ chat: false }).catch(() => {});
+// signed out, as it's found out: by the account's answer, a 401, or the service worker's word. sure: the account itself
+// said so (/api/session's 401 or signedIn false, or the frame's lost(), which asks it first)
+function signedOutNow(sure) {
+  // (signed out elsewhere, confirmed: the apps' copies of you here go too; Chat's own engine signs itself out, S2-D10. Any
+  // other 401 or word asks the account afresh first: a stray 401 never wipes them)
+  if (sure === true) forgetApps({ chat: false }).catch(() => {});
+  else { sessionCheck = null; checkSession().then((inn) => inn === false && forgetApps({ chat: false })).catch(() => {}); }
   forgetKept();
   clearTimeout(prefsT); prefsT = 0;
   S.view = null; S.answer = null; S.morning = null; S.kept = false; S.dayLine = null; waitingAnswer = null;
@@ -1292,7 +1297,7 @@ function frame() {
   F = createFrame({
     root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
     session: () => ({ view: S.view, hub: S.hub, roof: S.roof, apps: S.apps, links: S.links || DEFAULT_LINKS }),
-    lost: signedOutNow, checkSession, hubAgain: () => hubAgain(30e3), save, changed: () => { cardsStale = true; },
+    lost: () => signedOutNow(true), checkSession, hubAgain: () => hubAgain(30e3), save, changed: () => { cardsStale = true; },
     onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
     today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you,
   });
@@ -2061,7 +2066,7 @@ async function load() {
     view = await sessionAsked;
   } catch (e) {
     if (!(await hubKnown())) return;
-    if (e.status === 401) return signedOutNow();
+    if (e.status === 401) return signedOutNow(true);
     // (no answer at all (no network, not an error from the account), in a Home Screen Today, whose sign-in is its own and
     // so can't be ended by another app without Today knowing: the copy kept here, if the last answer said it was this
     // account, under 12 hours ago. In a browser tab, another InFlite app may have signed out meanwhile: no one's day, then)
@@ -2075,7 +2080,7 @@ async function load() {
   }
   if (view?.links) S.links = view.links;
   if (!(await hubKnown())) return;
-  if (!view?.signedIn) return signedOutNow();
+  if (!view?.signedIn) return signedOutNow(true);
   signedIn(view);
   wireLinks();
   if (!asked) askCards();

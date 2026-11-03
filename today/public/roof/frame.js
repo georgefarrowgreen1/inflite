@@ -43,7 +43,8 @@
 //     acts: [{ icon, label, run }] (data-act = icon); badges: { [sectionId]: n }
 //     sections: false hides the switcher; back: { label } says where Back goes (the action is always F.nav.back)
 //   fw.nav.go(path, { replace, kind }), fw.nav.back(), fw.nav.section(id, { arg }), fw.nav.href(key, arg) →
-//     router.format({ app, key, arg }), fw.nav.depth() → number (0: a cold screen)
+//     router.format({ app, key, arg }), fw.nav.depth() → number (0: a cold screen); kind: "push" | "tab" | "zoom" |
+//     "section" (anything else, "pop" too, is ignored: a Back is only ever the frame's own)
 //   fw.sheet.open(spec) → Handle           sheet.js, accent = the app
 //   fw.toast(text, opts)
 //   fw.send({ words, packed, what }), fw.sendButton({ words, packed, what }) → Element
@@ -76,6 +77,8 @@ const TODAY = { kind: "tab", tab: "today", arg: null };
 const T = (f, d) => { try { return f(); } catch (_) { return d; } };
 const ss = (k, v) => T(() => sessionStorage.setItem(k, v));
 const val = (x) => (typeof x === "function" ? x() : x);
+// (the kinds a module may ask fw.nav.go for; "pop" is the frame's own Back)
+const KINDS = ["push", "tab", "zoom", "section"];
 
 export function createFrame(opts = {}) {
   const H = history, L = location, doc = document, html = doc.documentElement;
@@ -86,8 +89,8 @@ export function createFrame(opts = {}) {
   // (each app's flag, ANDed with hub: a stage-1 host gives no apps, which is Weather's roof alone)
   const appsOf = (s) => { const o = {}; if (s.hub) for (const a of Object.keys(REGISTRY)) o[a] = !!(s.apps ? s.apps[a] : a === "weather" && s.roof); return o; };
   const sess = () => { const s = sess0(); return { ...s, apps: appsOf(s) }; };
-  const roofs = () => { const s = sess(); return s.hub ? s.apps : false; };
   const isOn = (app) => !!sess().apps[app];
+  const roofs = () => sess().apps;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const newKey = () => Math.random().toString(36).slice(2, 10);
   const ys = new Map(), backTo = new Map();
@@ -111,18 +114,26 @@ export function createFrame(opts = {}) {
     ss("ifl-here:today", JSON.stringify({ at: T(() => opts.save?.()) ?? null, t: Date.now() }));
     L.reload();
   };
-  // (a reload this page starts itself, once nothing is unsaved (C7): checked each second while it's busy, for up to
-  // `ms`; then at the next hidden, flushed first)
-  let later = 0;
-  const safely = (go, ms = 10e3) => {
-    clearInterval(later);
+  // (a reload this page starts itself, once nothing is unsaved (C7): checked each second while busy() (F.busy), for up
+  // to `ms`; then at each next hidden, flushed first. One at a time: a new one drops the last one's timer and listener)
+  let later = 0, hid = null;
+  const unlater = () => { clearInterval(later); hid?.(); hid = null; };
+  const safely = (go, ms = 10e3, busy = F.busy) => {
+    unlater();
     const t0 = Date.now(), tick = () => {
-      if (gone) return clearInterval(later);
-      if (!F.busy()) { clearInterval(later); return go(); }
-      if (Date.now() - t0 > ms) { clearInterval(later); const off = F.on("hidden", () => { off(); F.flush().then(() => !F.busy() && go()); }); }
+      if (gone) return unlater();
+      if (!busy()) { unlater(); return go(); }
+      if (Date.now() - t0 > ms) { unlater(); hid = F.on("hidden", () => { unlater(); F.flush().then(() => (busy() ? safely(go, ms, busy) : go())); }); }
     };
     later = setInterval(tick, 1000);
     tick();
+  };
+  // (a module switched off and not shown: its own flush() first where it has one, then unmounted, unless it's been
+  // mounted again or shown meanwhile)
+  const letGo = (a) => {
+    const m = mods[a], f = T(() => m?.instance?.flush?.());
+    if (!f?.then) return unmount(a);
+    f.then(null, () => {}).then(() => { if (mods[a] === m && shown?.id !== "m:" + a) unmount(a); });
   };
 
   const F = {
@@ -151,22 +162,33 @@ export function createFrame(opts = {}) {
       } else if (el && shown) { el.hidden = true; el.inert = true; }
     },
     refresh() { const s = shown && screens[shown.id]; if (s) F.header.set(tabHead(s.spec, F.route)); },
-    // (the host has already changed what session() says; v is Weather's flag, apps the new map. Apps turned off are let
-    // go of, the shown one with D14's bounce once nothing is unsaved (s24 §7); apps turned on get their search provider)
-    setRoof() {
-      const now = sess().apps, was = lastApps;
+    // (v is Weather's flag (stage 1's argument, alone from a host before stages 2–4), apps the new map, each ANDed with
+    // hub; the host changes what session() says too. Apps turned off are let go of, the shown one with D14's bounce once
+    // nothing is unsaved (s24 §7); apps turned on get their search provider)
+    setRoof(v, apps) {
+      const s = sess(), now = apps && typeof apps === "object" ? appsOf({ ...s, apps }) : v === undefined ? s.apps : { ...lastApps, weather: !!(s.hub && v) }, was = lastApps;
       lastApps = now;
       const off = Object.keys(REGISTRY).filter((a) => was[a] && !now[a]);
       providers();
       if (!off.length) return;
-      const bounce = off.includes(shownMod()?.app);
-      for (const a of off) if (!bounce || a !== shownMod()?.app) unmount(a);
-      if (bounce) F.flush().then(() => safely(() => { ss("ifl-roof-bounce", "1"); put(L.pathname + L.hash); L.reload(); }));
+      const a = shownMod()?.app;
+      for (const x of off) if (x !== a) letGo(x);
+      if (!off.includes(a)) return;
+      // (nothing unsaved: at once, as stage 1 did; else what's unsaved saved first, and the bounce once it's done; left
+      // for another screen meanwhile: let go of, no marker, no reload)
+      const here = () => shown?.id === "m:" + a, busy = () => here() && F.busy();
+      const go = () => {
+        if (!here()) return letGo(a);
+        T(() => mods[a]?.instance?.flush?.());
+        unmount(a); ss("ifl-roof-bounce", "1"); put(L.pathname + L.hash); L.reload();
+      };
+      if (!busy()) return go();
+      F.flush().then(() => safely(go, 10e3, busy));
     },
     forModule: (app) => modOf(app).fw,
     destroy() {
       if (gone) return;
-      clearInterval(later);
+      unlater();
       for (const a of Object.keys(mods)) unmount(a);
       F.sheet.closeAll();
       for (const f of Object.values(provs)) f();
@@ -201,7 +223,7 @@ export function createFrame(opts = {}) {
       if (!o.replace) { depth++; key = newKey(); routes.length = depth; }
       put(p, !o.replace);
       routes[depth] = r;
-      render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom ? hintOf(o.zoomFrom, u) : null, y: o.replace && shown?.id === idOf(r) ? scrollY : 0 });
+      render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom && r.app === "weather" ? hintOf(o.zoomFrom, u) : null, y: o.replace && shown?.id === idOf(r) ? scrollY : 0 });
     },
     back() {
       const top = F.sheet.top();
@@ -260,7 +282,8 @@ export function createFrame(opts = {}) {
       sections: h.sections === false || h.sections === null ? null : R.sections, section: r.section, onSection: (id) => F.nav.section(r.app, id),
     };
   }
-  // what the tapped card says, for the module's first paint (§2.3): { sky, temp, place }
+  // what the tapped card says, for the module's first paint (§2.3): { sky, temp, place }; Weather's cards only (S2-D17:
+  // another module's hint is null, and it drops the clone with fw.zoomTarget once its hero is in)
   const hintOf = (card, u) => ({
     sky: /(?:^|\s)wx-sk-([\w-]+)/.exec(card.className)?.[1] || null,
     temp: card.querySelector(".wx-now .t")?.textContent.trim() || null,
@@ -287,7 +310,7 @@ export function createFrame(opts = {}) {
       html.dataset.app = r.kind === "app" ? r.app : "inflite";
       F.tabs.set(r.kind === "app" ? "apps" : r.tab);
       const y = pop ? ys.get(r.kind === "app" ? `${k}:${r.section}` : k) ?? ys.get(k) ?? 0 : o.y || 0;
-      if (pop) o.popY = y;
+      if (pop && stays(r, prev?.route)) o.popY = y;
       const el = r.kind === "app" ? showApp(r, o) : showTab(r);
       if (!o.first) scrollTo(0, y);
       if (!o.first && (!same || stays(r, prev.route))) {
@@ -403,7 +426,7 @@ export function createFrame(opts = {}) {
       contract: CONTRACT, app, screenEl: m.el, ui,
       header: { set(spec = {}) { m.header = { ...m.header, ...spec }; if (mine()) F.header.set(appHead(F.route)); } },
       nav: {
-        go: (path, o) => F.nav.go(path, { from: app, replace: !!o?.replace, kind: o?.kind }), back: () => F.nav.back(),
+        go: (path, o) => F.nav.go(path, { from: app, replace: !!o?.replace, kind: KINDS.includes(o?.kind) ? o.kind : null }), back: () => F.nav.back(),
         section: (id, o) => F.nav.section(app, id, o), href: (k, arg = null) => format({ app, key: k, arg }), depth: () => curDepth(),
       },
       sheet: { open: (spec) => F.sheet.open({ app, ...spec }) },
@@ -490,6 +513,14 @@ export function createFrame(opts = {}) {
   });
   on(globalThis, "popstate", (e) => {
     if (gone) return;
+    // (back or forward to a module that's been switched off since: Today drawn below, as stage 1 did; then, online, the
+    // page as the server now has it (its hub page), once what's unsaved is saved (C7; none if something couldn't be)
+    // and if still at that address)
+    const any = parse(L.href, { roof: true });
+    if (any?.kind === "app" && !isOn(any.app) && navigator.onLine !== false) {
+      const at = L.href;
+      F.flush().then((f) => !gone && !f.lost && L.href === at && safely(() => L.href === at && L.reload()));
+    }
     F.sheet.closeAll();
     leaveEntry();
     const st = H.state?.ifl, was = depth;

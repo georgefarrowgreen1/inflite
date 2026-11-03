@@ -19,7 +19,7 @@
 // | meta(id)                                | GET /api/messages/<id>/meta              | Meta = summary + replyTo, messageId, inReplyTo, references, attachments[{ id, filename, type, size }]
 // | draft(id)                               | GET /api/drafts/<id>                     | { compose: { from, to, cc, bcc, subject, text, inReplyTo, references, quote, files[] }, quoteOld }
 // | batch(body)                             | POST /api/threads/batch                  | { ok } (single-thread actions too: { ids: [id], action, … })
-// | emptyTrash() unsubInfo(id) unsubscribe(id) remove(id) saveSettings(p) checkAddress(l) updateAddress(e, p) | as realApi | as realApi
+// | emptyTrash() unsubInfo(id) unsubscribe(id) remove(id) saveSettings(p) updateAddress(e, p) | as realApi | as realApi
 // | findContacts(q)                         | POST /api/contacts/find { q }            | { contacts }
 // | saveDraft(draft, onProgress)            | POST /api/drafts (XHR, progress)         | { id }
 // | sendDraft(draftId, key)                 | POST /api/send { draftId, key }          | { id }
@@ -28,9 +28,11 @@
 // | fileUrl(id) rawUrl(id)                  | none (a navigation, new tab)             | MAIL + "/api/attachments/<id>", MAIL + "/api/messages/<id>/raw"
 // Payload shapes (frozen): draft { id?, from, to, cc, bcc, subject, text, inReplyTo, references, quote: { of, mode } |
 // null, attachments: [{ filename, type, size, content } | { ref }] }.
+// No checkAddress: realApi's GET /api/addresses/check?local=… puts what was typed into a URL, and the module has no New
+// Address (§4.1 mailsettings), so it is not here (review I6 of B0-b; s4/spec §4.7's list less that one).
 export const STUB = true;
 export const MAIL = `${location.protocol}//email.${location.host.replace(/^next\./, "")}`;
-export const METHODS = ["session", "me", "version", "counts", "settings", "handback", "threads", "search", "thread", "meta", "draft", "batch", "emptyTrash", "unsubInfo", "unsubscribe", "remove", "saveSettings", "checkAddress", "updateAddress", "findContacts", "saveDraft", "sendDraft", "sent", "picture", "fileUrl", "rawUrl"];
+export const METHODS = ["session", "me", "version", "counts", "settings", "handback", "threads", "search", "thread", "meta", "draft", "batch", "emptyTrash", "unsubInfo", "unsubscribe", "remove", "saveSettings", "updateAddress", "findContacts", "saveDraft", "sendDraft", "sent", "picture", "fileUrl", "rawUrl"];
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -60,7 +62,6 @@ export function createApi({ base = MAIL, onLost } = {}) {
     unsubscribe: (tid) => ok({ ok: true }),
     remove: (mid) => ok({ ok: true }),
     saveSettings: (patch) => ok({ domain: "", catchall: "keep", signature: "", colors: [], addresses: [] }),
-    checkAddress: (local) => ok({ ok: false, problem: null }),
     updateAddress: (email, patch) => ok({ email }),
     findContacts: (q) => ok({ contacts: [] }),
     saveDraft: (draft, onProgress) => ok({ ok: true, id: draft?.id || null }),
