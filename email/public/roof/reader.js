@@ -220,22 +220,37 @@ export function view(el, ctx) {
     f.value = replies.get(t.id);
     const send = ui.iconBtn("send", { label: "Send", act: "send", run: () => go() });
     send.replaceChildren(ctx.icon("reply"));
-    const sync = () => { send.disabled = !f.value.trim(); };
+    // (busy from the tap until the outbox answers, so a second tap can't send it twice)
+    let busy = false;
+    const sync = () => { send.disabled = busy || !f.value.trim(); };
     f.addEventListener("input", () => { replies.set(t.id, f.value); sync(); });
     f.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } });
     sync();
     async function go() {
       const text = f.value.trim();
-      if (!text) return;
-      const m = await target(t);
-      if (!m) return fw.toast("Couldn’t send that. Try again in a moment.");
-      const d = logic.replyDraft(m, "reply", me());
-      const sig = (me().addresses || []).find((a) => a.email === String(d.from || "").toLowerCase())?.signature || me().signature || "";
-      d.text = sig ? `${text}\n\n${sig}` : text;
-      f.value = ""; sync(); f.blur(); replies.set(t.id, "");
-      const { files: _, mode: __, threadId: ___, ...draft } = d;
-      try { await ctx.outbox.send({ ...draft, draftId: null }, [], null); }
-      catch (_) { replies.set(t.id, text); if (f.isConnected && !f.value) { f.value = text; sync(); } }
+      if (!text || busy) return;
+      busy = true; sync();
+      let r = null;
+      try {
+        const m = await target(t);
+        if (!m) r = { ok: false, error: "Couldn’t send that. Try again in a moment." };
+        else {
+          const d = logic.replyDraft(m, "reply", me());
+          const sig = (me().addresses || []).find((a) => a.email === String(d.from || "").toLowerCase())?.signature || me().signature || "";
+          d.text = sig ? `${text}\n\n${sig}` : text;
+          f.value = ""; f.blur?.(); replies.set(t.id, "");
+          const { files: _, mode: __, threadId: ___, ...draft } = d;
+          r = await ctx.outbox.send({ ...draft, draftId: null }, [], null);
+        }
+      } catch (e) { r = { ok: false, error: e?.message }; }
+      busy = false;
+      // (not taken: the words put back, in the field and in mail:replies, and why said)
+      if (!r?.ok) {
+        replies.set(t.id, text);
+        if (f.isConnected && !f.value.trim()) f.value = text;
+        fw.toast(r?.error || "Couldn’t send. Try Again");
+      }
+      sync();
     }
     return E("div", { class: "mr-qr" }, f, send);
   }
