@@ -7,6 +7,8 @@
 //       | { kind: "app", app: <a REGISTRY key>, section: <one of its section ids>, key: string, arg: string | null, query: string }
 //   tab arg: only You's, from /#you=<arg> (notify, quiet, rules, phone, apps, account, notify-weather, …).
 //   app key: the hash's key as written, a section id or one of the app's aliases, else the app's first section;
+//   app hash: only where key is one of the app's raw keys (REGISTRY[app].raw: Chats' share), the address's whole hash
+//   after #, as written (≤ 7000 characters; such an address may be up to 2048 + 7000 long); absent otherwise.
 //   app arg: what follows the first = after key, once decodeURIComponent'd (a day YYYY-MM-DD, a settings page, a symbol
 //   such as TSCO.L, ^GSPC or GBPUSD=X, a thread's id); query: the address's search, raw ("" past 400).
 //   An app's arg is only ever [A-Za-z0-9_.^=-]{1,40} after that one decoding; You's and Weather's [A-Za-z0-9_-]{1,40} as
@@ -19,6 +21,14 @@
 //   link   the F.session.links key of the app's own address, where it isn't the app's name (links[R.link || app])
 //   stay   hash keys the frame's tidy (D6) leaves in the address once shown (Mail's reader: #thread=<id>)
 //   idb    the one IndexedDB database the module may open, only from <app>/roof/idb.js (C5)
+// Stage 3 (Chats; roof/s3/spec.md §5.1, S3-C1), optional too:
+//   tab      the tab-bar key whose screen this app's root route is (Chats: "chats"; the frame draws it as a tab screen)
+//   id       the app's data id where it isn't the app's name (Chats: "chat": versions, IFL.built, push app, storage)
+//   raw      hash keys whose whole hash the route carries raw, as route.hash (≤ 7000 characters; Send's #share=…)
+//   service  the one file that may make the app's Worker (Chats: service.js, loaded only by the frame, never a module)
+//   skip     { paths, query }: addresses under the app's path that aren't the framework's (null: a normal navigation):
+//            a path starting with one of paths (Chat's own page at /chats/in/), or a query with one of query's names
+//            (/chats/?engine=1, the milestone-1 engine)
 const fz = (o) => Object.freeze(o);
 const secs = (l) => fz(l.map((s) => fz(s)));
 export const REGISTRY = fz({
@@ -66,6 +76,24 @@ export const REGISTRY = fz({
     aliases: fz({ thread: "people", settings: "people", signin: "people" }),
     stay: fz(["thread"]),
   }),
+  chats: fz({
+    app: "chats",
+    id: "chat",
+    name: "Chats",
+    path: "/chats/",
+    tab: "chats",
+    link: "chat",
+    idb: "inflight",
+    entry: "/chats/roof/chats.js",
+    connector: "/chats/roof/connector.js",
+    service: "/chats/roof/service.js",
+    css: fz(["/chats/roof/chats.css", "/chats/roof/chsheets.css", "/chats/cards.css"]),
+    sections: secs([["chats", "Chats"], ["friends", "Friends"]]),
+    aliases: fz({ open: "chats", settings: "chats", account: "chats", flightlog: "chats", share: "chats", requests: "friends", add: "friends" }),
+    stay: fz(["open"]),
+    raw: fz(["share"]),
+    skip: fz({ paths: fz(["/chats/in/"]), query: fz(["engine"]) }),
+  }),
 });
 
 // The tab bar: [label, href, glyph], as the shared block's IFL.hub.tabs has them (keys, not words).
@@ -82,6 +110,7 @@ export const ownPath = (p) => typeof p === "string" && p.length <= 200 && /^\/(?
 const ARG = /^[\w.^=-]{1,40}$/;
 const QUERY_MAX = 400;
 const HREF_MAX = 2048;
+const RAW_MAX = 7000;
 const BASE = "https://router.invalid";
 const argOf = (s) => (typeof s === "string" && ARG.test(s) ? s : null);
 // (You's arg and Weather's, as stage 1 had them: [\w-] only, never decoded)
@@ -105,7 +134,11 @@ export function parse(href, { roof = false, origin } = {}) {
   // (the length cap is on the address less its query: from the first ? before any # up to that #)
   const h = href.indexOf("#"), q = href.indexOf("?");
   const qLen = q >= 0 && (h < 0 || q < h) ? (h < 0 ? href.length : h) - q : 0;
-  if (href.length - qLen > HREF_MAX) return null;
+  // (a raw key's hash (Chats' #share=…) is capped on its own, RAW_MAX; whether the path is that app's is checked below)
+  const hk = h < 0 ? "" : href.slice(h + 1).split("=")[0];
+  const rawHash = h >= 0 && href.length - h - 1 <= RAW_MAX && Object.values(REGISTRY).some((r) => r.raw?.includes(hk));
+  const long = href.length - qLen > HREF_MAX;
+  if (long && !(rawHash && h - qLen <= HREF_MAX)) return null;
   let u;
   if (href[0] === "/") {
     if (href[1] === "/") return null;
@@ -126,8 +159,10 @@ export function parse(href, { roof = false, origin } = {}) {
   }
   if (!roof) return null;
   for (const r of Object.values(REGISTRY)) {
+    if (r.skip?.paths?.some((p) => path.startsWith(p))) return null;
     if (path !== r.path && path !== r.path + "index.html") continue;
     if (!isOn(roof, r.app)) return null;
+    if (r.skip?.query?.some((n) => u.searchParams.has(n))) return null;
     const eq = hash.indexOf("=");
     const raw = eq < 0 ? hash : hash.slice(0, eq);
     const ids = r.sections.map((s) => s[0]);
@@ -135,7 +170,11 @@ export function parse(href, { roof = false, origin } = {}) {
     const key = section ? raw : ids[0];
     const arg = section && eq >= 0 ? (r.app === "weather" ? arg1 : argIn)(hash.slice(eq + 1)) : null;
     const query = u.search.length <= QUERY_MAX ? u.search : "";
-    return { kind: "app", app: r.app, section: section || ids[0], key, arg, query };
+    const raws = !!section && !!r.raw?.includes(raw);
+    if (long && !raws) return null;
+    const out = { kind: "app", app: r.app, section: section || ids[0], key, arg, query };
+    if (raws) out.hash = hash;
+    return out;
   }
   return null;
 }
