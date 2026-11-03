@@ -9,6 +9,9 @@
 //                signing in from this page's own #signin= (an address's # never reaches a server)
 //   /mail/host.css → the page's look (its rules let in no style but this site's own files)
 // Anything else under /mail/ is not found; only GET and HEAD.
+// One roof, stage 4: today/src/mailroof.js is asked first (the framework's page at /mail/ and Mail's module files, while
+// Mail's switch is on); where it has no answer, this page is as it was.
+import { mailRoof } from "./mailroof.js";
 
 // (an app's address as wrangler.toml gives it: a scheme, a host, perhaps a port, and nothing else)
 const ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i;
@@ -112,6 +115,8 @@ body { display: flex; flex-direction: column; height: 100%; margin: 0; overflow:
 const TAG = `"mh-${[...HOST_CSS].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 7).toString(36)}"`;
 
 export async function mailPage(request, env) {
+  const roofed = await mailRoof(request, env);
+  if (roofed) return roofed;
   const url = new URL(request.url), method = request.method;
   const known = url.pathname === "/mail" || url.pathname === "/mail/" || url.pathname === "/mail/host.css";
   if (!known) return said(404, "Not found.");
