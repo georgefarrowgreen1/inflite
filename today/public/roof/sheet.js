@@ -51,7 +51,7 @@ export function createSheets(F) {
       try { if (d.open) d.close(); } catch (_) {}
       const i = open.indexOf(h);
       if (i >= 0) open.splice(i, 1);
-      d.removeEventListener("cancel", cancel); d.removeEventListener("close", closed); d.removeEventListener("click", click);
+      d.removeEventListener("cancel", cancel); d.removeEventListener("close", closed); d.removeEventListener("click", click); d.removeEventListener("keydown", trap);
       head?.removeEventListener("pointerdown", grab); d.querySelector(".ifs-grab")?.removeEventListener("pointerdown", grab);
       while (stack.length) pop(true);
       if (built) d.remove();
@@ -89,6 +89,15 @@ export function createSheets(F) {
       };
       addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
     }
+    // Tab and Shift-Tab go round the sheet, never out of it to the browser's own bar
+    function trap(e) {
+      if (e.key !== "Tab") return;
+      const f = [...d.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter((x) => x.getClientRects().length && !x.closest("[hidden]"));
+      if (!f.length) return;
+      const i = f.indexOf(document.activeElement);
+      if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+    }
     function push(page = {}) {
       const kids = [...body.children].filter((c) => !c.hidden);
       for (const c of kids) c.hidden = true;
@@ -123,7 +132,7 @@ export function createSheets(F) {
       const back = el("button", { class: "ifs-btn ifs-back", type: "button", "aria-label": "Back", data: { back: "" } }, icon("back"));
       head.prepend(back);
     }
-    d.addEventListener("cancel", cancel); d.addEventListener("close", closed); d.addEventListener("click", click);
+    d.addEventListener("cancel", cancel); d.addEventListener("close", closed); d.addEventListener("click", click); d.addEventListener("keydown", trap);
     head?.addEventListener("pointerdown", grab); d.querySelector(".ifs-grab")?.addEventListener("pointerdown", grab);
     d.classList.remove("closing");
     if (!d.isConnected) document.body.append(d);

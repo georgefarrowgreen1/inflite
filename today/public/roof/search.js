@@ -76,7 +76,8 @@ export function createSearch(F) {
     const list = ui.el("div", { class: "ifl-results", id, role: "listbox", "aria-label": "Results" });
     const say = ui.el("p", { class: "ifl-none", role: "status" });
     const draw = (groups, settled, q) => {
-      list.replaceChildren(...groups.map((g) => ui.el("div", { class: "ifl-sr-group", role: "group", "aria-label": g.group || g.id }, ui.label(g.group || ""),
+      if (groups.length) list.setAttribute("role", "listbox"); else list.removeAttribute("role");
+      list.replaceChildren(...groups.map((g) => ui.el("div", { class: "ifl-sr-group", role: "group", "aria-label": g.group || g.id }, ui.el("div", { class: "ifl-label", "aria-hidden": "true", text: g.group || "" }),
         g.entries.map((e, i) => {
           const r = ui.row({ lead: e.avatar != null ? { avatar: e.avatar } : e.icon ? { app: e.icon } : null, title: e.title, sub: e.sub, trail: "chevron", href: e.href, run: e.href ? null : () => { close(); e.run(); }, label: e.label });
           r.setAttribute("role", "option"); r.id = `${id}-${g.id}-${i}`;

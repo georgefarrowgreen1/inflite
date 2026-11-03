@@ -65,7 +65,7 @@ export function icon(name, { app, size = 24 } = {}) {
   }
   const s = el("span", { class: "ifl-glyph", "aria-hidden": "true", data: { icon: name } });
   const g = IFL()?.glyph?.(GLYPH_OF[name] || name);
-  if (g) s.innerHTML = g;
+  if (g && !/<svg[^>]*>\s*<\/svg>/.test(g)) s.innerHTML = g;
   return s;
 }
 
