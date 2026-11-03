@@ -93,19 +93,19 @@ export const HOST_CSS = `@view-transition { navigation: auto; }
 html { height: 100%; touch-action: pan-x pan-y; -webkit-text-size-adjust: 100%; }
 *, *::before, *::after { box-sizing: border-box; }
 body { display: flex; flex-direction: column; height: 100%; margin: 0; overflow: hidden; background: var(--mh-bg); color: var(--mh-ink); font: 16px/1.25 var(--mh-font); -webkit-font-smoothing: antialiased; }
-.mh-bar { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; min-height: 52px;
+.mh-bar { flex: none; display: flex; align-items: center; gap: 8px; min-height: 52px;
   padding: calc(env(safe-area-inset-top, 0px) + 4px) max(12px, env(safe-area-inset-right, 0px)) 4px max(12px, env(safe-area-inset-left, 0px)); }
 .mh-back, .mh-own { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; margin: 0; border: 0; border-radius: 999px; font: 600 16px/1 var(--mh-font);
   color: var(--mh-tint); cursor: pointer; text-decoration: none; -webkit-tap-highlight-color: transparent; transition: transform 0.2s; }
-.mh-back { justify-self: start; padding: 0 14px 0 8px; background: var(--mh-panel); box-shadow: 0 0 0 0.5px var(--mh-line), 0 6px 14px -8px rgba(20, 30, 70, 0.35); }
-.mh-own { justify-self: end; gap: 5px; padding: 0 4px; font-size: 15px; text-align: right; }
+.mh-back { flex: none; padding: 0 14px 0 8px; background: var(--mh-panel); box-shadow: 0 0 0 0.5px var(--mh-line), 0 6px 14px -8px rgba(20, 30, 70, 0.35); }
+.mh-own { flex: none; gap: 5px; padding: 0 4px; font-size: 15px; white-space: nowrap; }
 .mh-back svg { width: 20px; height: 20px; }
 .mh-own svg { flex: none; width: 17px; height: 17px; }
 .mh-back:active, .mh-own:active { transform: scale(0.94); }
 .mh-back:focus-visible, .mh-own:focus-visible { outline: 2px solid var(--mh-tint); outline-offset: 2px; }
-.mh-t { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
+.mh-t { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .mh-frame { display: block; flex: 1 1 auto; width: 100%; min-height: 0; margin: 0 0 env(safe-area-inset-bottom, 0px); border: 0; background: transparent; color-scheme: normal; }
-@media (max-width: 359px) { .mh-t { display: none; } .mh-bar { grid-template-columns: auto minmax(0, 1fr); } .mh-own { font-size: 14px; } }
+@media (max-width: 359px) { .mh-t { visibility: hidden; } .mh-back { padding-right: 12px; } .mh-own { font-size: 14px; } }
 @media (prefers-reduced-motion: reduce) { .mh-back, .mh-own { transition: none; } }
 `;
 // (a short fingerprint of the look, for If-None-Match: it changes only with a deploy)
