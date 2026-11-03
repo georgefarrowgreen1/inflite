@@ -1167,11 +1167,12 @@ async function signOut() {
   const auth = safe(S.links?.auth) || DEFAULT_LINKS.auth;
   await call("/api/logout", { method: "POST", body: {} }).catch(() => {});
   forgetKept();
+  // (the frame let go of first: a module's own closing (Mail's unsent message) writes before its copies are wiped, never after)
+  unframe();
   // (and the apps' copies of you at this address: the hub's, so every app's)
   await forgetApps({ chat: !chatOut });
   try { localStorage.removeItem("today:push"); } catch {}
   S.view = null;
-  unframe();
   location.assign(`${auth}/#${new URLSearchParams({ signout: "today", back: `${location.origin}/` })}`);
 }
 
@@ -1207,12 +1208,13 @@ function showOut(said = "") {
 function signedOutNow(sure) {
   // (signed out elsewhere, confirmed: the apps' copies of you here go too; Chat's own engine signs itself out, S2-D10. Any
   // other 401 or word asks the account afresh first: a stray 401 never wipes them)
+  // (the frame let go of first, so nothing a module writes as it closes outlives the wipe)
+  unframe();
   if (sure === true) forgetApps({ chat: false }).catch(() => {});
   else { sessionCheck = null; checkSession().then((inn) => inn === false && forgetApps({ chat: false })).catch(() => {}); }
   forgetKept();
   clearTimeout(prefsT); prefsT = 0;
   S.view = null; S.answer = null; S.morning = null; S.kept = false; S.dayLine = null; waitingAnswer = null;
-  unframe();
   letDayGo();
   you?.forgetYou?.();
   for (const id of ["#top", "#waiting", "#coming", "#rest", "#apps", "#you", "#hd"]) $(id).replaceChildren();

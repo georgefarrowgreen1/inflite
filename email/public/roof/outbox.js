@@ -36,7 +36,7 @@ export const FULL = "Couldn’t keep this on your phone. Try Again when you’re
 export const NEEDS = "Files need a connection. Try Again";
 export { CAP };
 
-const FIELDS = ["from", "to", "cc", "bcc", "subject", "text", "quote", "inReplyTo", "references", "threadId", "draftId"];
+const FIELDS = ["from", "to", "cc", "bcc", "subject", "text", "quote", "quoteOld", "inReplyTo", "references", "threadId", "draftId"];
 const fieldsOf = (c = {}) => Object.fromEntries(FIELDS.map((k) => [k, c[k] ?? null]));
 const keyOf = () => `ifl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 const online = () => globalThis.navigator?.onLine !== false;
@@ -70,9 +70,10 @@ export function createOutbox(ctx) {
     const attachments = [];
     for (const f of files || []) {
       if (f?.ref) attachments.push({ ref: f.ref });
+      else if (Number.isInteger(f?.i)) attachments.push({ i: f.i });   // (a stored draft's own file, by its index: kept)
       else if (f && typeof f.arrayBuffer === "function") attachments.push({ filename: f.name || "file", type: f.type || "application/octet-stream", size: f.size, content: await b64(f) });
     }
-    return { ...(d.draftId && { id: d.draftId }), from: d.from, to: d.to || [], cc: d.cc || [], bcc: d.bcc || [], subject: d.subject || "", text: d.text || "", inReplyTo: d.inReplyTo || null, references: d.references || null, quote: d.quote || null, attachments };
+    return { ...(d.draftId && { id: d.draftId }), from: d.from, to: d.to || [], cc: d.cc || [], bcc: d.bcc || [], subject: d.subject || "", text: d.text || "", inReplyTo: d.inReplyTo || null, references: d.references || null, ...(d.quoteOld ? {} : { quote: d.quote || null }), attachments };   // (an old draft's quote left as Mail has it)
   };
   const after = () => { ctx.actions?.counts?.(); ctx.actions?.load?.({ quiet: true }); };
 
