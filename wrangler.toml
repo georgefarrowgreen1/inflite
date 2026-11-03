@@ -19,9 +19,43 @@ run_worker_first = ["/api/*", "/version", "/chats", "/chats/*", "/weather", "/we
 
 [vars]
 ACCOUNT_ORIGIN = "https://account.inflite.ai"
+# (InFlite's hub, today/src/hub.js: each app's own address, which the hub speaks as and connects to; Markets is
+# finance.'s. HUB_KEY, which the apps' hosts know the hub by, is a secret: npx wrangler secret put HUB_KEY. Until it's
+# set every hub path answers 503 and Today links to each app's own address, as before)
+CHAT_ORIGIN = "https://chat.inflite.ai"
+WEATHER_ORIGIN = "https://weather.inflite.ai"
+FITNESS_ORIGIN = "https://fitness.inflite.ai"
+MARKETS_ORIGIN = "https://finance.inflite.ai"
+MAIL_ORIGIN = "https://email.inflite.ai"
+AUTH_ORIGIN = "https://auth.inflite.ai"
 
 [version_metadata]
 binding = "CF_VERSION_METADATA"
 
 [observability]
+enabled = true
+
+# The staging hub (spec §15.2), deployed by hand: npx wrangler deploy --env next (Workers Builds deploys production
+# only). The same Worker at next.inflite.ai, with a HUB_KEY secret of its own (npx wrangler secret put HUB_KEY --env
+# next); the account's cookie covers it. TODAY_AS: the site it stands in for, whose addresses it takes as its own.
+[env.next]
+name = "inflite-next"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "next.inflite.ai", custom_domain = true }]
+
+[env.next.vars]
+ACCOUNT_ORIGIN = "https://account.inflite.ai"
+CHAT_ORIGIN = "https://chat.inflite.ai"
+WEATHER_ORIGIN = "https://weather.inflite.ai"
+FITNESS_ORIGIN = "https://fitness.inflite.ai"
+MARKETS_ORIGIN = "https://finance.inflite.ai"
+MAIL_ORIGIN = "https://email.inflite.ai"
+AUTH_ORIGIN = "https://auth.inflite.ai"
+TODAY_AS = "https://inflite.ai"
+
+[env.next.version_metadata]
+binding = "CF_VERSION_METADATA"
+
+[env.next.observability]
 enabled = true
