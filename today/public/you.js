@@ -84,48 +84,65 @@ export async function drawYou(root, ctx) {
 
 function paint(root, ctx) {
   const u = ctx.view.user || {}, admin = ctx.view.apps?.mail === true;
-  const sec = (id, title, body, foot = "") => `<section class="you-sec" id="${id}"><h2 class="you-h">${esc(title)}</h2><div class="group glass">${body}</div>${foot ? `<p class="you-foot">${foot}</p>` : ""}</section>`;
+  const sec = (id, title, body, foot = "") => body ? `<section class="you-sec" id="${id}"><h2 class="you-h">${esc(title)}</h2><div class="group glass">${body}</div>${foot ? `<p class="you-foot">${foot}</p>` : ""}</section>` : "";
   const row = (k, b, small, end = "") => `<div class="row" data-k="${k}"><span class="tx"><b>${esc(b)}</b>${small ? `<small>${esc(small)}</small>` : ""}</span>${end}</div>`;
-  const seg = (k, opts, on, label) => `<div class="seg" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => `<button type="button" data-${k}="${v}" aria-pressed="${v === on}">${esc(l)}</button>`).join("")}</div>`;
+  const go = (attrs, b, small, val = "") => `<button class="row go" type="button" ${attrs}><span class="tx"><b>${esc(b)}</b>${small ? `<small>${esc(small)}</small>` : ""}</span>${val ? `<span class="val">${esc(val)}</span>` : ""}<span class="chev">${G.chev}</span></button>`;
+  const sw = (attrs, b, small, on, aria, extra = "") => `<label class="row"${extra}><span class="tx"><b>${esc(b)}</b>${small ? `<small>${esc(small)}</small>` : ""}</span><input type="checkbox" class="switch" role="switch" ${attrs} ${on ? "checked" : ""} aria-label="${esc(aria)}"></label>`;
+  const pick = (attrs, b, small, opts, on, aria, extra = "") => `<label class="row pick"${extra}><span class="tx"><b>${esc(b)}</b>${small ? `<small data-line>${esc(small)}</small>` : ""}</span><span class="val"><span>${esc((opts.find(([v]) => v === on) || opts[0])[1])}</span>${G.down}</span><select ${attrs} aria-label="${esc(aria)}">${opts.map(([v, l]) => `<option value="${v}" ${v === on ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
   const out = [];
   // Account
   const photo = typeof ctx.photo === "function" ? ctx.photo(u) : esc([...String(u.first || u.name || "?")][0] || "?");
   out.push(sec("youAccount", "Account", `<button class="row go" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Password, Passkeys and Devices</small></span><span class="chev">${G.chev}</span></button>`));
-  // Rules
-  if (Y.rules !== false) {
-    const rules = Y.rules?.rules || [];
-    const body = !Y.rules ? row("rules", "Rules", "Getting them…") : rules.map((r) => r.soon
-      ? row(`rule-${r.rule}`, r.name, r.line || "Coming in a later version", `<span class="val soon">Coming</span>`)
-      : `<div class="row rule" data-rule="${esc(r.rule)}"><span class="tx"><b>${esc(r.name)}</b><small data-line>${esc(r.line || "")}</small></span>${seg("level", LEVELS, r.level, `${r.name}: Do, Suggest or Quiet`)}</div>`).join("");
-    out.push(sec("youRules", "Rules", body, "A rule drops a level when you undo it, and climbs after ten kept actions."));
-  }
-  // Notifications, by app
+  // Notifications: this phone, Today's morning, quiet hours
   const n = Y.notify;
+  {
+    const why = ctx.pushWhy?.(), rows = [];
+    rows.push(sw(`id="youPhone"${why ? " disabled" : ""}`, "On This Phone", why || "Today’s morning, and what you choose below", phoneOn(ctx), "Notifications on this phone", ` id="youPhoneRow"`));
+    const here = Array.isArray(Y.devices?.here) ? Y.devices.here : [];
+    if (ctx.hub && ctx.view.hubPush === true && Y.devices !== false) {
+      rows.push(here.includes("pg_push") ? row("every", "Every App Notifies Here", "Chats, Weather and Markets as well as Today")
+        : go(`id="youEvery"`, "Get Every App’s Here", "Chats, Weather and Markets as well as Today"));
+    }
+    const t = (n && n.today) || ctx.morning || {};
+    rows.push(go(`id="youMorning"`, "Today’s Morning", "One notification, from all your apps", t.on ? clock(Number.isInteger(t.at) ? t.at : 420) : "Off"));
+    if (n) {
+      const q = { on: false, from: 22, to: 7, ...(n.quiet || {}) };
+      const hours = Array.from({ length: 24 }, (_, h) => [String(h), hh(h)]);
+      rows.push(sw(`id="youQuiet"`, "Quiet Hours", "Every app, but warnings", q.on, "Quiet hours"));
+      if (q.on) rows.push(pick(`id="youQfrom"`, "From", "", hours, String(q.from), "Quiet hours from", ` data-k="qfrom"`), pick(`id="youQto"`, "To", "", hours, String(q.to), "Quiet hours to", ` data-k="qto"`));
+    }
+    out.push(sec("youNotify", "Notifications", rows.join("")));
+  }
+  // From each app
   if (n !== false) {
     let body;
-    if (!n) body = row("notify", "Notifications", "Getting them…");
+    if (!n) body = row("notify", "From Each App", "Getting them…");
     else {
       const chatOn = !!n.chat?.kinds?.messages;
       const places = Array.isArray(n.weather?.places) ? n.weather.places : [];
       const rainOn = places.length > 0 && places.every((p) => p.rain);
       const mktOn = !(n.markets?.off === true), wrapOn = n.markets?.wrap !== false;
-      const t = n.today || ctx.morning || {};
       body = [
-        row("chat", "Friends and Groups", "Never the words", seg("chat", [["all", "All"], ["off", "Off"]], chatOn ? "all" : "off", "Friends and Groups: All or Off")),
-        `<button class="row go" type="button" id="youWx" data-k="weather"><span class="tx"><b>Weather</b><small>Rain and warnings for the places you choose</small></span><span class="val">${places.length ? esc(rainOn ? "Rain on" : places.some((p) => p.rain) ? "Rain for some" : "Rain off") : ""}</span><span class="chev">${G.chev}</span></button>`,
-        `<div class="row" data-k="markets" data-app="markets"><span class="tx"><b>Markets</b><small>Your price alerts</small></span>${seg("alerts", [["on", "Alerts"], ["off", "Off"]], mktOn ? "on" : "off", "Markets: Alerts or Off")}</div>`,
-        `<label class="row" data-app="markets"><span class="tx"><b>Evening Wrap</b><small>How your holdings did, each weekday evening</small></span><input type="checkbox" class="switch" role="switch" data-k="wrap" ${wrapOn ? "checked" : ""} aria-label="Markets: the Evening Wrap"></label>`,
-        // (Fitness Settings only while Fitness is a module here, as its connector offers it; else stage 1's row)
+        sw(`data-k="chat"`, "Chats", "Who wrote, never the words", chatOn, "Chats notifications", ` data-app="chat"`),
+        go(`id="youWx" data-k="weather"`, "Weather", "Rain and warnings for your places", places.length ? (rainOn ? "On" : places.some((p) => p.rain) ? "Some" : "Off") : ""),
+        sw(`data-k="alerts"`, "Markets Alerts", "When a price you watch moves", mktOn, "Markets price alerts", ` data-app="markets"`),
+        sw(`data-k="wrap"`, "Evening Wrap", "How your holdings did, each weekday", wrapOn, "Markets: the Evening Wrap", ` data-app="markets"`),
         ctx.frame?.session?.apps?.fitness === true
-          ? `<a class="row go" href="${esc(ctx.href?.("fitness", "settings") || "/fitness/#settings")}" data-k="fitness" data-app="fitness"><span class="tx"><b>Fitness</b><small>In Today’s morning</small></span><span class="val">Fitness Settings</span><span class="chev">${G.chev}</span></a>`
+          ? `<a class="row go" href="${esc(ctx.href?.("fitness", "settings") || "/fitness/#settings")}" data-k="fitness" data-app="fitness"><span class="tx"><b>Fitness</b><small>In Today’s morning</small></span><span class="chev">${G.chev}</span></a>`
           : row("fitness", "Fitness", "In Today’s morning"),
-        `<button class="row go" type="button" id="youMorning"><span class="tx"><b>Today’s Morning</b><small>One notification, from all your apps</small></span><span class="val">${t.on ? clock(Number.isInteger(t.at) ? t.at : 420) : "Off"}</span><span class="chev">${G.chev}</span></button>`,
-        admin ? `<button class="row go" type="button" id="youMail" data-k="mail" data-app="mail"><span class="tx"><b>Mail</b><small>Through InFlite, and which addresses notify you</small></span><span class="chev">${G.chev}</span></button>` : "",
+        admin ? go(`id="youMail" data-k="mail" data-app="mail"`, "Mail", "Through InFlite, and which addresses") : "",
       ].join("");
     }
-    out.push(sec("youNotify", "Notifications, by App", body));
+    out.push(sec("youApps2", "From Each App", body));
   }
-  // Connected Apps: each app, what it shares with InFlite (its connector's words), and its sheet
+  // Rules: what Today may do for you, each Do, Suggest or Quiet (the ones still to come left out)
+  if (Y.rules !== false) {
+    const rules = (Y.rules?.rules || []).filter((r) => !r.soon);
+    const body = !Y.rules ? row("rules", "Rules", "Getting them…") : rules.map((r) =>
+      pick(`data-rulepick="${esc(r.rule)}"`, r.name, r.line || "", LEVELS, r.level, `${r.name}: Do, Suggest or Quiet`, ` data-rule="${esc(r.rule)}"`)).join("");
+    out.push(sec("youRules", "What Today Does for You", body, "Do: it acts and tells you. Suggest: it asks first. Quiet: it leaves it. Undo one and it drops a level; ten kept and it climbs."));
+  }
+  // Connected Apps
   {
     const body = CONNECTED.filter(([app]) => app !== "mail" || admin).map(([app, name]) => {
       const src = typeof ctx.icon === "function" ? ctx.icon(app === "chats" ? "chat" : app) : "";
@@ -134,41 +151,19 @@ function paint(root, ctx) {
     }).join("");
     out.push(sec("youApps", "Connected Apps", body, "Each app keeps its own server and data. This is all it shares with InFlite."));
   }
-  // This Phone
-  {
-    const why = ctx.pushWhy?.();
-    const rows = [`<label class="row" id="youPhoneRow"><span class="tx"><b>Notifications Here</b><small>${esc(why || "InFlite on this phone: Today’s morning, and what you choose")}</small></span><input type="checkbox" class="switch" role="switch" id="youPhone" ${phoneOn(ctx) ? "checked" : ""} ${why ? "disabled" : ""} aria-label="Notifications on this phone"></label>`];
-    const here = Array.isArray(Y.devices?.here) ? Y.devices.here : [];
-    if (ctx.hub && ctx.view.hubPush === true && Y.devices !== false) {
-      const all = here.includes("pg_push");
-      rows.push(all ? row("every", "Every App’s Notifications", "Chats, Weather and Markets notify you here")
-        : `<button class="row go" type="button" id="youEvery"><span class="tx"><b>Get Every App’s Notifications Here</b><small>Chats, Weather and Markets as well as Today</small></span><span class="chev">${G.chev}</span></button>`);
-    }
-    out.push(sec("youPhone", "This Phone", rows.join("")));
-  }
-  // Other Devices Getting Notifications
+  // Other devices
   const list = Array.isArray(Y.devices?.devices) ? Y.devices.devices : [];
-  if (ctx.hub && Y.devices) {
-    const body = list.length ? list.map(deviceRow).join("") : row("none", "None", "Only this phone gets InFlite’s notifications");
-    out.push(sec("youDevices", "Other Devices Getting Notifications", body));
-  }
-  // Quiet Hours
-  if (n) {
-    const q = { on: false, from: 22, to: 7, ...(n.quiet || {}) };
-    const pick = (k, v, label) => `<label class="row pick" data-k="q${k}"><span class="tx"><b>${label}</b></span><span class="val"><span>${esc(hh(Number(v)))}</span>${G.down}</span><select id="youQ${k}" aria-label="Quiet hours ${label.toLowerCase()}">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === v ? "selected" : ""}>${hh(h)}</option>`).join("")}</select></label>`;
-    const body = `<label class="row"><span class="tx"><b>Quiet Hours</b><small>Every app, but warnings</small></span><input type="checkbox" class="switch" role="switch" id="youQuiet" ${q.on ? "checked" : ""} aria-label="Quiet hours"></label>` + (q.on ? pick("from", q.from, "From") + pick("to", q.to, "To") : "");
-    out.push(sec("youQuietSec", "Quiet Hours", body));
-  }
+  if (ctx.hub && Y.devices && list.length) out.push(sec("youDevices", "Other Devices", list.map(deviceRow).join("")));
   // Chat
-  out.push(sec("youChat", "Chat", `<button class="row go" type="button" id="youChatGo"><span class="tx"><b>Chat Settings</b><small>Show When I’m Typing, Pigeons, Names on the Lock Screen</small></span><span class="chev">${G.chev}</span></button>`));
-  // InFlite: each app's version, as each last said it here
+  out.push(sec("youChat", "Chat", go(`id="youChatGo"`, "Chat Settings", "Typing, Pigeons, Names on the Lock Screen")));
+  // About: each app's version, as each last said it here
   const ver = APPS.map(([k, name]) => {
     let b = k === "today" ? ctx.BUILD : null;
     try { b ||= localStorage.getItem(`ifl-build:${k}`); } catch {}
-    return row(`v-${k}`, name, null, `<span class="val">${b ? `V${esc(b)}` : "Not opened here yet"}</span>`);
+    return row(`v-${k}`, name, null, `<span class="val">${b ? `V${esc(b)}` : "—"}</span>`);
   }).join("");
-  out.push(sec("youVersions", "InFlite", ver));
-  out.push(`<div class="you-out"><button class="pill you-signout" type="button" id="youOut">Sign Out</button></div>`);
+  out.push(sec("youVersions", "About InFlite", ver));
+  out.push(`<section class="you-sec you-out"><div class="group glass"><button class="row you-signout" type="button" id="youOut">Sign Out</button></div></section>`);
   root.innerHTML = out.join("");
   wire(root, ctx);
 }
@@ -186,45 +181,36 @@ function wire(root, ctx) {
   $("#youChatGo")?.addEventListener("click", () => ctx.chatSettings());
   $("#youOut")?.addEventListener("click", (e) => { e.currentTarget.disabled = true; ctx.signOut(); });
   // (a rule's level: Do, Suggest or Quiet, set by you)
-  for (const b of root.querySelectorAll("[data-level]")) b.addEventListener("click", async () => {
-    const r = b.closest("[data-rule]"), rule = r.dataset.rule, level = b.dataset.level, rec = Y.rules?.rules?.find((x) => x.rule === rule);
+  for (const sel of root.querySelectorAll("[data-rulepick]")) sel.addEventListener("change", async () => {
+    const rule = sel.dataset.rulepick, level = sel.value, r = sel.closest("[data-rule]"), rec = Y.rules?.rules?.find((x) => x.rule === rule);
     if (!rec || rec.level === level) return;
-    const was = rec.level;
-    rec.level = level; pressed(r, "level", level);
+    const was = rec.level, shown = r.querySelector(".val > span");
+    const say = (v) => { shown.textContent = (LEVELS.find(([k]) => k === v) || LEVELS[0])[1]; sel.value = v; };
+    rec.level = level; say(level);
     try {
       const a = await ctx.call("/api/rules", { method: "PUT", body: { rule, level } });
       Object.assign(rec, { level: a.level || level, setBy: "you", line: a.line ?? rec.line });
-      r.querySelector("[data-line]").textContent = rec.line || "";
-    } catch (e) { rec.level = was; pressed(r, "level", was); if (e.status !== 401) ctx.toast(e.message); }
+      const ln = r.querySelector("[data-line]"); if (ln) ln.textContent = rec.line || "";
+    } catch (e) { rec.level = was; say(was); if (e.status !== 401) ctx.toast(e.message); }
   });
   // (notifications by app: each a part of the account's settings, as its own page sets them)
-  const patch = async (body, k, v, back) => {
-    pressed(root.querySelector(`[data-k="${k}"]`), k === "chat" ? "chat" : "alerts", v);
-    try { Y.notify = await ctx.call("/api/notify", { method: "PATCH", body }); }
-    // (signed out meanwhile: You's been emptied, and stays so; nothing of the old account drawn back)
-    catch (e) { back(); if (e.status === 401) return; ctx.toast(e.message); }
-    paint(root, ctx);
-  };
-  for (const b of root.querySelectorAll("[data-chat]")) b.addEventListener("click", () => {
-    const on = b.dataset.chat === "all", kinds = Y.notify?.chat?.kinds || { messages: true };
-    patch({ chat: Object.fromEntries(Object.keys(kinds).map((k) => [k, on])) }, "chat", b.dataset.chat, () => {});
+  // (a switch that's a part of the account's notify settings: PATCH it, drawn again from the answer)
+  const flip = (sel, body) => root.querySelector(sel)?.addEventListener("change", async (e) => {
+    const box = e.target, on = box.checked;
+    box.disabled = true;
+    try { Y.notify = await ctx.call("/api/notify", { method: "PATCH", body: body(on) }); }
+    catch (err) { box.checked = !on; box.disabled = false; if (err.status === 401) return; ctx.toast(err.message); return; }
+    if (root.isConnected) { paint(root, ctx); root.querySelector(sel)?.focus({ preventScroll: true }); }
   });
+  flip('#youApps2 [data-k="chat"]', (on) => ({ chat: Object.fromEntries(Object.keys(Y.notify?.chat?.kinds || { messages: true }).map((k) => [k, on])) }));
+  flip('#youApps2 [data-k="alerts"]', (on) => ({ markets: { alerts: on } }));
+  flip('#youApps2 [data-k="wrap"]', (on) => ({ markets: { wrap: on } }));
   // (Weather's: its own sheet, every place's rain and warnings, the briefing and email)
   $("#youWx")?.addEventListener("click", () => openWxNotify(root, ctx));
   // (Mail's, for the site's admin: its own sheet, mailnotify.js)
   $("#youMail")?.addEventListener("click", () => openMailNotifyFrom(ctx));
   // (Connected Apps: each app's connector, as a sheet of the framework's)
   for (const b of root.querySelectorAll("#youApps [data-app]")) b.addEventListener("click", () => ctx.connector?.(b.dataset.app));
-  for (const b of root.querySelectorAll("[data-alerts]")) b.addEventListener("click", () => patch({ markets: { alerts: b.dataset.alerts === "on" } }, "markets", b.dataset.alerts, () => {}));
-  // (Markets' Evening Wrap, moved here from Markets' own settings: PATCH { markets: { wrap } }, as the account reads it)
-  root.querySelector('#youNotify [data-app=markets] [data-k=wrap]')?.addEventListener("change", async (e) => {
-    const sw = e.target, on = sw.checked;
-    sw.disabled = true;
-    try { Y.notify = await ctx.call("/api/notify", { method: "PATCH", body: { markets: { wrap: on } } }); }
-    catch (err) { sw.checked = !on; if (err.status === 401) return; ctx.toast(err.message); }
-    sw.disabled = false;
-    if (root.isConnected) { paint(root, ctx); root.querySelector('#youNotify [data-app=markets] [data-k=wrap]')?.focus({ preventScroll: true }); }
-  });
   // (quiet hours: on or off, from and to, for every app)
   const quiet = (q) => {
     const now = { on: false, from: 22, to: 7, ...(Y.notify?.quiet || {}), ...q };
@@ -298,7 +284,7 @@ function fillEvery(sheet, root, ctx) {
 }
 
 // ---------------------------------------------------------------- /#you=<id>: a section of You, or its sheet
-const SECTIONS = { notify: "youNotify", apps: "youApps", quiet: "youQuietSec", rules: "youRules", phone: "youPhone", account: "youAccount", versions: "youVersions" };
+const SECTIONS = { notify: "youApps2", apps: "youApps", quiet: "youNotify", rules: "youRules", phone: "youNotify", account: "youAccount", versions: "youVersions" };
 export async function goTo(root, ctx, id, drawn) {
   if (!root || !id) return;
   if (id === "notify-weather") return openWxNotify(root, ctx);
