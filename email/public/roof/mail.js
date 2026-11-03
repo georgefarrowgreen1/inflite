@@ -68,12 +68,13 @@ export async function mount(root, fw) {
   });
   const ctx = { store, api, logic, actions: null, fw, layout: () => store.get().layout, icon, open: {}, outbox: null, touched: () => { readAt = Date.now(); } };
   const failed = (e) => { fw.toast("That didn’t open. Try again."); throw e; };
+  const signinJs = () => fw.lazy((q) => import("./signin.js" + q)).catch(failed);
   Object.assign(ctx.open, {
     compose: (init) => fw.lazy((q) => import("./compose.js" + q)).catch(failed).then((m) => m.openCompose(ctx, init || {})),
     later: (ids) => openLater(ctx, ids), views: () => openViews(ctx), rowMenu: (t) => openRowMenu(ctx, t), unsub: (t) => openUnsub(ctx, t),
     settings: (page) => fw.lazy((q) => import("./mailsettings.js" + q)).catch(failed).then((m) => m.openSettings(ctx, page ?? null)),
     viewer: (files, i) => fw.lazy((q) => import("./viewer.js" + q)).catch(failed).then((m) => m.openViewer(ctx, files, i)),
-    signin: () => fw.lazy((q) => import("./signin.js" + q)).catch(failed).then((m) => m.signIn(ctx)),
+    signin: () => signinJs().then((m) => m.signIn(ctx)),
     confirm: (spec) => confirmSheet(ctx, spec),
   });
   ctx.actions = createActions(ctx);
@@ -298,7 +299,7 @@ export async function mount(root, fw) {
       // (an iPad: the pane, the address the lens's)
       if (thread && store.get().layout === "pad") queueMicrotask(() => fw.nav.section(store.get().lens));
       if (r?.key === "settings") ctx.open.settings(r.arg || null);
-      if (r?.key === "signin" && r.arg) fw.lazy((q) => import("./signin.js" + q)).catch(failed).then((m) => m.finishSignIn(ctx, r.arg)).then(() => { if (store.get().access !== "ok") start(); }, () => {});
+      if (r?.key === "signin" && r.arg) signinJs().then((m) => m.finishSignIn(ctx, r.arg)).then(() => { if (store.get().access !== "ok") start(); }, () => {});
       drawState();
       list.draw();
       reader.draw();
