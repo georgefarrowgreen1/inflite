@@ -395,7 +395,7 @@ function nextRow(nx, c) {
 function fitness(c, ctx) {
   const { now, tz } = ctx, s = c.session, metaDay = c.day && /^\d{4}-\d\d-\d\d$/.test(c.day) ? weekday(Date.parse(`${c.day}T12:00:00Z`), "UTC") : "";
   const hd = head("fitness", c, esc(metaDay));
-  const send = sendPill(c, ctx), open = linkPill("Open Fitness", c.href);
+  const send = sendPill(c, ctx), open = "";
   if (c.kind === "done" && c.done) {
     const d = c.done, from = d.from === "garmin" ? " · from Garmin Connect" : d.from === "strava" ? " · from Strava" : "";
     const dist = num(d.dist) != null ? (c.units === "imperial" ? `${(d.dist / 1609.344).toFixed(1)}<u> mi</u>` : `${(d.dist / 1000).toFixed(d.dist < 10000 ? 2 : 1)}<u> km</u>`) : null;
