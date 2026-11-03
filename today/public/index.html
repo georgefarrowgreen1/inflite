@@ -2,6 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8">
+  <meta name="ifl-hub" content="/">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>InFlite Today</title>
   <meta name="description" content="Your day from InFlite’s apps on one page: the weather where you are, pigeons on their way, today’s ride and how your money’s doing. One sign-in, free, and no ads.">
@@ -21,13 +22,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Today">
+  <meta name="apple-mobile-web-app-title" content="InFlite">
   <meta name="format-detection" content="telephone=no">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-180.png">
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/day.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -54,18 +56,27 @@
     <p class="ifl-brand"><img src="/inflite.svg" alt="" width="22" height="22">Powered by InFlite</p>
     <a class="ifl-go pill primary" id="signin" href="https://auth.inflite.ai/">Sign in</a>
     <p class="ifl-new"><a id="join" href="https://auth.inflite.ai/">New here? Make an account</a></p>
+    <p class="ifl-new today-quiet" id="alsoRow" hidden><a id="signinToday" href="https://auth.inflite.ai/">Sign In Without Chats</a></p>
   </div>
 </main>
 
-<!-- Signed in: your day. The header, the cards and the morning are drawn by app.js from the account's answers -->
+<!-- Signed in: InFlite, one app. Today, Apps and You are views of this one page (#today, #apps, #you), with the tab bar
+     Today · Chats · Apps · You (Chats is a page of its own, /chats/). The header, the day, the tiles and You are drawn by
+     app.js (with day.js, apps.js and you.js) from the account's answers -->
 <div class="today-in" id="in" hidden>
   <div id="hd"></div>
-  <main id="day">
-    <div class="col-a">
+  <div id="views">
+    <main id="today" class="view" aria-label="Today">
       <p class="kept" id="kept" role="status" hidden></p>
-      <div id="cards"></div>
-    </div>
-  </main>
+      <div id="top"></div>
+      <section id="waiting"></section>
+      <section id="coming"></section>
+      <section id="rest"></section>
+    </main>
+    <main id="apps" class="view" aria-label="Apps" hidden></main>
+    <main id="you" class="view" aria-label="You" hidden></main>
+  </div>
+  <nav class="ifl-tabs" id="tabs" aria-label="InFlite"></nav>
 </div>
 
 <!-- Morning: the one notification, its time and its lines (from the menu) -->
@@ -81,6 +92,15 @@
   <div class="group glass mgroup">
     <a class="row plain" id="namesRow" href="https://account.inflite.ai/" data-account="notify-inflight"><span class="tx"><b>Names on the Lock Screen</b><small>Chat’s own setting, in your Account</small></span><span class="val" id="namesSaid">Off</span><span class="chev"></span></a>
   </div>
+</div>
+
+<!-- Every app's notifications on this phone (from You): what changes, the old icons still getting them, and the one tap -->
+<div class="bsheet" id="sh-every" role="dialog" aria-modal="true" aria-labelledby="evh">
+  <div class="bsheet-head"><h2 id="evh" tabindex="-1">Every App’s Notifications</h2><button class="ifs-btn" type="button" data-close aria-label="Close"></button></div>
+  <p class="sh-sub">Chats, Weather and Markets will notify you here as well. Fitness’s is in Today’s morning, and Mail keeps its own for now.</p>
+  <p class="sh-sub ev-old" id="evOld">Still getting them, from the apps on their own:</p>
+  <div class="group" id="evList"></div>
+  <div class="sh-acts"><button class="pill primary" type="button" id="evGo">Get Every App’s Notifications Here</button></div>
 </div>
 
 <!-- Edit: what Today shows, and in what order -->

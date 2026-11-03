@@ -1,4 +1,9 @@
 User-agent: *
 Allow: /
 Disallow: /api/
+Disallow: /chats/
+Disallow: /weather/
+Disallow: /fitness/
+Disallow: /markets/
+Disallow: /mail/
 Sitemap: https://inflite.ai/sitemap.xml

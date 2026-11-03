@@ -1,7 +1,10 @@
-// InFlite Today, at inflite.ai: your day from all your apps on one page, and one morning notification instead of one
-// from each. Everything shown comes from your InFlite account (this site's Worker passes your sign-in on to
-// account.inflite.ai: today/src/index.js), worked out there by each app's own rules: this page only draws it (cards.js)
-// and sends what you change (Edit, Morning). Signed out, it's InFlite's way in (index.html's, there without a script too).
+// InFlite, at inflite.ai: one app. Today (your day from all your apps, phase by phase), Apps (each app, opened in this
+// window) and You (rules, notifications, this phone, your sign-in) are views of this one page, with InFlite's tab bar
+// under them (Today · Chats · Apps · You; Chats and the apps are pages beside it, served by this site's Worker). And
+// one morning notification instead of one from each app. Everything shown comes from your InFlite account (this site's
+// Worker passes your sign-in on to account.inflite.ai: today/src/index.js), worked out there by each app's own rules:
+// this page only draws it (day.js, cards.js, apps.js, you.js) and sends what you change. Signed out, it's InFlite's way
+// in (index.html's, there without a script too).
 import { CARD_KEYS, APP, esc, safe, hm, dateLong, dateShort, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
@@ -57,6 +60,8 @@ const IFL = (() => {
     upload: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/>',
     share: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>',
     addp: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/>',
+    bubble: '<path d="M21 11.5a8.4 8.4 0 0 1-12.2 7.5L3 21l2-5.4A8.4 8.4 0 1 1 21 11.5Z"/>',
+    grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   };
   const svg = (name, cls = "") => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GLYPHS[name] || ""}</svg>`;
@@ -417,30 +422,43 @@ const IFL = (() => {
   //   href(app, section) an app at a section: ("weather", "radar") → "/weather/#radar", ("markets", "s=TSCO") →
   //                      "/markets/#s=TSCO", ("chat", "open=<id>") → "/chats/#open=<id>"; off the hub, null (the hub's
   //                      paths aren't pages at an app's own address: the app links its own way, as it always has)
-  //   tabs(el, current)  Today · Chats · Apps · You, as links, into el; current (its key: today, chats, apps or you)
-  //                      marked; off the hub, el left as it is
+  //   tabs(el, current)  Today · Chats · Apps · You, the hub's tab bar, into el; current (its key: today, chats, apps or
+  //                      you) marked; off the hub, el left as it is
   //   back()             back where you came from in the window (the breadcrumb, below), else to Apps; never history's
   //                      own back (Mail keeps history of its own, and an app opened from a notification has none). → true;
   //                      off the hub, nothing done: false
-  //   chat()             Chat's engine (Chat's own page in a hidden frame, which sends a card without leaving): a promise
-  //                      of it, or of null where there's none
-  //   send(words, packed, { to })   a card to a friend: the engine's sheet, else Chats' own, which comes back here after.
-  //                      → a promise of what the engine's sheet says, or true once it's gone to Chats'; off the hub, of
-  //                      false, nothing done (the app sends its own way, chat.<site>/#share=…, as it always has)
-  //   sent(say), closed()           the engine's word that it's sent (said in a toast) or that its sheet's shut
+  //   chat()             Chat's engine: Chat's own page (/chats/?engine=1) in a frame over this one, unseen until it shows
+  //                      its send sheet, which sends a card without leaving. A promise of it (its IFLChat, ready), or of
+  //                      null: not ready (signed out of Chats, its key not here yet, locked), or no answer in 15 seconds.
+  //                      Made on first use, kept while the page is open, dropped after 10 minutes out of sight
+  //   send(words, packed, { to })   a card to a friend: the engine's sheet over this page, else Chats' own, which comes
+  //                      back here after (#share=…&card=…&back=<this page>). → a promise of what the engine's sheet says,
+  //                      or true once it's gone to Chats'; off the hub, of false, nothing done (the app sends its own
+  //                      way, chat.<site>/#share=…, as it always has)
+  //   sent(say), closed()           the engine's word that it's sent (the frame put away, and "Sent to Pat. You’re still
+  //                      here" said) or that its sheet's shut (put away)
   //   signIn()           a signed-out app at the hub signs in through Chats, and comes back here. → true; off the hub,
   //                      nothing done: false
-  //   moved(app, { off })           an old Home Screen icon's note that InFlite is one app now
+  //   moved(app, { off })           an old Home Screen icon (off the hub, opened from the Home Screen): once, the card
+  //                      saying InFlite is one app now, with How to Add and Turn Off Notifications Here (off). → true if shown
+  //   degrade(links)     this page of the hub runs as the apps did before it (its Worker can't serve them yet: Today's
+  //                      /api/hub says not ready): go, href and the tabs give the apps' own addresses (links: { chat,
+  //                      weather, fitness, finance, email }, each an origin; else <app>.<site>), send goes to
+  //                      chat.<site>/#share=…, and there's no engine. degraded: whether it does
   // The breadcrumb: where a page of the hub was left from, for its Back (Chat's pages send no Referer). Written, as the
-  // page you're on (its path, ≤ 200 characters), by go and href to another page, the tabs and links to one; read once as
-  // a page opens (what it was left from); taken as Back goes, so Back never bounces between two pages.
-  // (Working now: on, base, go, href, the breadcrumb and back, signIn, send's way through Chats, sent's toast, tabs as
-  // plain links. Chat's engine, the styled tab bar, moved's note and a notification tapped while a page is open: batch S.)
-  const CRUMB = "ifl-crumb";
+  // page you're on (its path, ≤ 200 characters), by go and href to another page, the tabs and links to one, and a
+  // notification opened on another page; read once as a page opens (what it was left from); taken as Back goes, so Back
+  // never bounces between two pages.
+  // A notification tapped while a page of the hub is open: the root worker (/sw.js) posts { ifl: "open", url } to the
+  // window, and the page goes there (a path of this site's only), in the same window; within an app, its hashchange.
+  // Sent from Chats' own sheet (send's way through Chats): sessionStorage["ifl-sent"], said once here as the page opens.
+  const CRUMB = "ifl-crumb", SENT = "ifl-sent";
   const SUBS = { chat: "/chats/", weather: "/weather/", fitness: "/fitness/", finance: "/markets/", email: "/mail/" };
   const HUB_APPS = { today: "/", chat: "/chats/", chats: "/chats/", weather: "/weather/", fitness: "/fitness/", markets: "/markets/", mail: "/mail/" };
+  // (each hub path's app, by its own address's first part: degraded, the way back to it)
+  const OWN = { chats: "chat", weather: "weather", fitness: "fitness", markets: "finance", mail: "email" };
   // (keys, not words: no app's copy but Today's names Today as an app, iflmenu.test.mjs)
-  const TABS = { today: ["Today", "/"], chats: ["Chats", "/chats/"], apps: ["Apps", "/#apps"], you: ["You", "/#you"] };
+  const TABS = { today: ["Today", "/", "sun"], chats: ["Chats", "/chats/", "bubble"], apps: ["Apps", "/#apps", "grid"], you: ["You", "/#you", "person"] };
   const marker = typeof document !== "undefined" ? document.querySelector?.('meta[name="ifl-hub"]') : null;
   // (a path of this site's: starts /, not //, no \ and nothing unseen (a tab or a new line, which an address drops, so
   // "/\n/x" would be "//x"), no more than 200 characters)
@@ -451,9 +469,16 @@ const IFL = (() => {
   // (what this page was left from, read as it opens: its own later writes are for the page it goes to next)
   const cameFrom = (() => { try { const c = store()?.getItem(CRUMB); return ownPath(c) ? c : null; } catch (_) { return null; } })();
   const leaving = (p) => ownPath(p) && pageOf(p) !== location.pathname;
+  const standalone = () => { try { return navigator.standalone === true || !!matchMedia?.("(display-mode: standalone)").matches; } catch (_) { return false; } };
+  // degraded: the apps' own addresses (degrade's links, else <app>.<site>), and a hub path back to its app's
+  let links = {};
+  const origin = (sub) => links[sub] || `${location.protocol}//${sub}.${location.host.replace(/^next\./, "")}`;
+  const ownAt = (p) => { const m = /^\/(chats|weather|fitness|markets|mail)(?=$|[/?#])\/?([\s\S]*)$/.exec(p); return m ? `${origin(OWN[m[1]])}/${m[2]}` : null; };
+  const stillHere = (say) => (/still here/i.test(say) ? say : `${say.replace(/[.\s]+$/, "")}. You’re still here`);
   const hub = {
     on: !!marker,
     base: marker ? marker.getAttribute("content") || "/" : "",
+    degraded: false,
     go(url) {
       if (!hub.on) return url;
       let u;
@@ -465,28 +490,32 @@ const IFL = (() => {
       if (u.host === location.host || u.host === site) p = rest;
       else if (sub && sub[2] === site && SUBS[sub[1]]) p = SUBS[sub[1]].slice(0, -1) + rest;
       if (p == null) return url;
+      if (hub.degraded) return ownAt(p) || (ownPath(p) ? p : url);
       if (leaving(p)) crumb();
       return p;
     },
     href(app, section = "") {
       if (!hub.on) return null;
       const s = String(section || ""), p = (HUB_APPS[app] || "/") + (!s ? "" : /^[#?]/.test(s) ? s : "#" + s);
+      if (hub.degraded) return ownAt(p) || p;
       if (leaving(p)) crumb();
       return p;
     },
-    tabs(el, current) {
-      if (!el || !hub.on) return el;
-      if (el.tagName !== "NAV") el.setAttribute("role", "navigation");
-      el.setAttribute("aria-label", "InFlite");
-      el.classList.add("ifl-tabs");
-      el.replaceChildren(...Object.entries(TABS).map(([k, [label, to]]) => {
-        const a = document.createElement("a");
-        a.className = "ifl-tab"; a.href = to; a.dataset.tab = k; a.textContent = label;
+    tabs(nav, current) {
+      if (!nav || !hub.on) return nav;
+      if (nav.tagName !== "NAV") nav.setAttribute("role", "navigation");
+      nav.setAttribute("aria-label", "InFlite");
+      nav.classList.add("ifl-tabs");
+      nav.replaceChildren(...Object.entries(TABS).map(([k, [label, to, icon]]) => {
+        const a = document.createElement("a"), href = hub.degraded ? ownAt(to) || to : to;
+        a.className = "ifl-tab"; a.href = href; a.dataset.tab = k;
+        a.insertAdjacentHTML("afterbegin", svg(icon, "ifl-tab-ic"));
+        a.append(el("span", "ifl-tab-l", label));
         if (k === current) a.setAttribute("aria-current", "page");
-        a.addEventListener("click", () => { if (leaving(to)) crumb(); });
+        a.addEventListener("click", () => { if (!hub.degraded && leaving(to)) crumb(); });
         return a;
       }));
-      return el;
+      return nav;
     },
     back() {
       if (!hub.on) return false;
@@ -495,33 +524,193 @@ const IFL = (() => {
       location.assign(to);
       return true;
     },
-    chat: () => Promise.resolve(null),
+    chat,
     send(words, packed, { to } = {}) {
       if (!hub.on) return Promise.resolve(false);
+      const card = typeof packed === "string" && /^[A-Za-z0-9_-]+$/.test(packed) ? "&card=" + packed : "";
+      if (hub.degraded) {
+        location.assign(`${origin("chat")}/#share=${encodeURIComponent(String(words ?? ""))}${card}`);
+        return Promise.resolve(true);
+      }
       return hub.chat().then((c) => {
         if (c && c.state === "ready") return c.share(words, packed, { to });
-        const card = typeof packed === "string" && /^[A-Za-z0-9_-]+$/.test(packed) ? "&card=" + packed : "";
         location.assign("/chats/#share=" + encodeURIComponent(String(words ?? "")) + card + "&back=" + encodeURIComponent(location.pathname + location.hash));
         return true;
       });
     },
-    sent(say) { if (say) toast(String(say)); },
-    closed() {},
+    sent(say) { hide(); if (say) toast(stillHere(String(say).slice(0, 200))); },
+    closed() { hide(); },
     signIn() {
-      if (!hub.on) return false;
+      if (!hub.on || hub.degraded) return false;
       location.assign("/chats/#signin-start&then=" + encodeURIComponent(location.pathname + location.hash));
       return true;
     },
-    moved(app, { off } = {}) {},
+    moved(app, { off } = {}) {
+      if (hub.on || !standalone() || !document.body || !NAME[app]) return false;
+      const k = `ifl-moved:${app}`;
+      try { if (localStorage.getItem(k)) return false; localStorage.setItem(k, String(Date.now())); } catch (_) { return false; }
+      movedCard(app, typeof off === "function" ? off : null);
+      return true;
+    },
+    degrade(own = {}) {
+      if (!hub.on) return false;
+      links = {};
+      for (const k of Object.values(OWN)) if (typeof own?.[k] === "string" && /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(own[k])) links[k] = own[k];
+      hub.degraded = true;
+      dropEngine();
+      return true;
+    },
   };
+
+  // Chat's engine: /chats/?engine=1 in a frame over the page, its IFLChat once it says it's ready (ifl-chat-ready, on
+  // this window), and the frame seen only while it shows its sheet (put away by sent or closed, or when its answer says
+  // no sheet is showing). The frame is in a dialog of its own: shown, the dialog's modal, so it's in the top layer, over
+  // every sheet of the page's own (a modal one too, which would otherwise make it inert) and the only thing a tap
+  // reaches; put away, the dialog's shut but still laid out (unseen, never in the way of a tap: menu.css), so the engine
+  // runs on and its sheet opens at once. The frame is never moved (that would load it again)
+  const ENGINE_WAIT = 15e3, ENGINE_DROP = 10 * 60e3;
+  let engine = null, resting = false;
+  function dropEngine() { engine?.box.remove(); engine = null; }
+  function hide() {
+    const b = engine?.box;
+    if (!b) return;
+    b.classList.remove("on");
+    try { if (b.open) b.close(); } catch (_) {}
+  }
+  function show() {
+    const b = engine?.box;
+    if (!b) return;
+    b.classList.add("on");
+    try { if (!b.open) b.showModal(); } catch (_) {}
+  }
+  // (the engine as the page uses it: its own calls, the frame shown for its sheet, and put away where nothing's showing:
+  // a card refused (false, { ok: false }, { why }); sendTo's one tap sent ({ ok: true, say }: said here too). A sheet
+  // that's shown is put away by its own word, sent or closed)
+  const none = (r) => r === false || (!!r && typeof r === "object" && (r.ok === false || !!r.why));
+  const wrap = (c) => ({
+    get state() { return c.state; },
+    share(...a) { show(); return Promise.resolve().then(() => c.share(...a)).then((r) => { if (none(r)) hide(); return r; }, (e) => { hide(); throw e; }); },
+    sendTo(...a) {
+      show();
+      return Promise.resolve().then(() => c.sendTo(...a)).then((r) => { if (r?.ok === true) hub.sent(r.say || "Sent"); else if (none(r)) hide(); return r; }, (e) => { hide(); throw e; });
+    },
+    waiting: (...a) => c.waiting(...a),
+    since: (...a) => c.since(...a),
+    refresh: (...a) => c.refresh(...a),
+    signOut: (...a) => c.signOut(...a),
+  });
+  const ready = () => { const c = engine?.api; return c && c.state === "ready" ? wrap(c) : null; };
+  function chat() {
+    if (!hub.on || hub.degraded || resting || !document.body) return Promise.resolve(null);
+    if (engine) return engine.api ? Promise.resolve(ready()) : engine.wait;
+    const box = document.createElement("dialog"), f = document.createElement("iframe");
+    box.className = "ifl-engine-box";
+    box.setAttribute("aria-label", "Chats");
+    // (shut some other way (Escape, while the page has the focus): put away, as closed() would. Not when it's been shown
+    // again since: this word comes a moment after it's shut)
+    box.addEventListener("close", () => { if (!box.open) box.classList.remove("on"); });
+    f.name = "ifl-chat"; f.className = "ifl-engine"; f.src = "/chats/?engine=1";
+    f.setAttribute("title", "Chats");
+    box.append(f);
+    const e = engine = { box, frame: f, api: null, wait: null };
+    e.wait = new Promise((ok) => {
+      let t = 0;
+      const done = () => {
+        clearTimeout(t);
+        removeEventListener("ifl-chat-ready", done);
+        if (engine !== e) return ok(null);
+        let c = null;
+        try { c = f.contentWindow?.IFLChat || null; } catch (_) {}
+        // (no engine in time: the frame dropped, and for two minutes none asked for again (a Send goes through Chats'
+        // own sheet at once meanwhile); after that, the next use asks again)
+        if (!c) { dropEngine(); resting = true; setTimeout(() => { resting = false; }, 2 * 60e3); return ok(null); }
+        e.api = c;
+        ok(ready());
+      };
+      addEventListener("ifl-chat-ready", done);
+      t = setTimeout(done, ENGINE_WAIT);
+    });
+    document.body.append(box);
+    return e.wait;
+  }
+  // (out of sight for ten minutes, the engine's let go: made again when it's next wanted)
+  let hiddenAt = 0, dropT = 0;
+  if (hub.on) document.addEventListener("visibilitychange", () => {
+    clearTimeout(dropT);
+    if (document.visibilityState === "hidden") { hiddenAt = Date.now(); dropT = setTimeout(() => { if (document.visibilityState === "hidden") dropEngine(); }, ENGINE_DROP); return; }
+    if (hiddenAt && Date.now() - hiddenAt >= ENGINE_DROP) dropEngine();
+    hiddenAt = 0;
+  });
+
   // (a link to another of the hub's pages, followed: the breadcrumb, as the page is left, with where it was scrolled to)
   if (hub.on) document.addEventListener("click", (e) => {
     const a = e.target?.closest?.("a[href]");
-    if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+    if (hub.degraded || !a || a.target === "_blank" || a.hasAttribute("download")) return;
     let u;
     try { u = new URL(a.href, location.href); } catch (_) { return; }
     if (u.origin === location.origin && leaving(u.pathname + u.hash)) crumb();
   }, true);
+  // (a notification tapped while this page is open: the root worker's word, to a path of this site's only. Heard, it's
+  // said so on the port the worker gave, else the worker opens it some other way: a page that has no ear for it)
+  if (hub.on) navigator.serviceWorker?.addEventListener?.("message", (e) => {
+    const d = e.data;
+    if (!d || d.ifl !== "open" || !ownPath(d.url)) return;
+    try { e.ports?.[0]?.postMessage({ ifl: "opened" }); } catch (_) {}
+    if (hub.degraded) return location.assign(hub.go(d.url));
+    if (leaving(d.url)) crumb();
+    location.assign(d.url);
+  });
+  // (the hub's look: html.ifl-hub, and pages that cross-fade into each other, the tab bar staying put. menu.css asks for
+  // it of every page (@view-transition, which can't be kept to html.ifl-hub there, and must be in a stylesheet to be
+  // there as the next page's first shown): off the hub, every page lets it go as it's left, so nothing changes there; at
+  // the hub, one that can't be done is let go quietly)
+  if (hub.on) document.documentElement?.classList.add("ifl-hub");
+  // (the Home Screen icon's badge, as many notifications as are still showing: counted again by the root worker as a
+  // page of the hub opens and each time it's back in sight, so those tapped or cleared meanwhile are gone from it)
+  const recount = () => { try { navigator.serviceWorker?.getRegistration?.("/")?.then?.((r) => r?.active?.postMessage({ ifl: "badge" }), () => {}); } catch (_) {} };
+  if (hub.on) {
+    recount();
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") recount(); });
+  }
+  const vt = (e) => { const t = e.viewTransition; if (!t) return; for (const k of ["ready", "finished", "updateCallbackDone"]) t[k]?.catch?.(() => {}); if (!hub.on) t.skipTransition?.(); };
+  addEventListener("pageswap", vt);
+  addEventListener("pagereveal", vt);
+
+  // the card for an old Home Screen icon: InFlite is one app now (as allow's sheet looks)
+  function movedCard(app, off) {
+    const img = el("img", "ifa-ic"); img.src = iconUrl(app); img.alt = "";
+    const how = el("button", "ifa-go", "How to Add"), stop = off ? el("button", "ifa-later ifa-off", "Turn Off Notifications Here") : null, later = el("button", "ifa-later", "Not Now");
+    for (const b of [how, stop, later]) if (b) b.type = "button";
+    const steps = el("p", "ifa-p ifa-steps", "In Safari, open inflite.ai, tap Share, then Add to Home Screen. Sign in there once, and every app is in it.");
+    steps.hidden = true;
+    const sheet = el("div", "ifa-sheet", img, el("h2", "ifa-t", "InFlite is one app now"), el("p", "ifa-p", "Today, Chats and every app in one place. Add inflite.ai to your Home Screen."), steps, how, stop, later);
+    sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-modal", "true"); sheet.setAttribute("aria-label", "InFlite is one app now");
+    const layer = el("div", "ifa-layer ifl-moved", sheet), was = document.activeElement;
+    const shut = () => { document.removeEventListener("keydown", key, true); layer.classList.remove("on"); setTimeout(() => layer.remove(), 320); was?.focus?.({ preventScroll: true }); };
+    // (Escape shuts it; Tab and Shift-Tab go round its buttons, never behind it)
+    const key = (e) => {
+      if (e.key === "Escape") return shut();
+      if (e.key !== "Tab") return;
+      const f = [how, stop, later].filter((b) => b && !b.hidden && !b.disabled);
+      if (!f.length) return;
+      e.preventDefault();
+      const i = f.indexOf(document.activeElement);
+      f[i < 0 ? (e.shiftKey ? f.length - 1 : 0) : (i + (e.shiftKey ? f.length - 1 : 1)) % f.length].focus({ preventScroll: true });
+    };
+    how.onclick = () => { steps.hidden = false; how.hidden = true; later.textContent = "Done"; later.focus({ preventScroll: true }); };
+    if (stop) stop.onclick = async () => {
+      stop.disabled = true; stop.textContent = "Turning Off…";
+      const done = await Promise.resolve().then(off).then(() => true, () => false);
+      if (done) { shut(); note(app, "Notifications off here", "They come to InFlite instead, once it’s on your Home Screen"); }
+      else { stop.disabled = false; stop.textContent = "Turn Off Notifications Here"; }
+    };
+    later.onclick = shut;
+    layer.addEventListener("pointerdown", (e) => { if (e.target === layer) shut(); });
+    document.addEventListener("keydown", key, true);
+    document.body.append(layer);
+    requestAnimationFrame(() => requestAnimationFrame(() => layer.classList.add("on")));
+    how.focus?.({ preventScroll: true });
+  }
   // a plain toast: the words alone, said out, gone in a few seconds
   let toastEl = null, toastT = 0;
   function toast(text) {
@@ -534,12 +723,23 @@ const IFL = (() => {
     requestAnimationFrame(() => requestAnimationFrame(() => { if (toastEl !== t) return; t.classList.add("on"); sayEl.textContent = text; }));
     toastT = setTimeout(() => { t.classList.remove("on"); sayEl.textContent = ""; setTimeout(() => t.remove(), 400); }, 3600);
   }
+  // (sent from Chats' own sheet, and back: said once, here)
+  if (hub.on) {
+    let said = null;
+    try { said = store()?.getItem(SENT); store()?.removeItem(SENT); } catch (_) {}
+    if (said) toast(stillHere(String(said).slice(0, 200)));
+  }
 
-  return { header, headerHtml, watch, settle, glyph, APPS, NAME, menu, close, redraw, isOpen: () => !!open, built, note, iconUrl, allow, wantsAllow,
+  const api = { header, headerHtml, watch, settle, glyph, APPS, NAME, menu, close, redraw, isOpen: () => !!open, built, note, iconUrl, allow, wantsAllow,
     updates, offer, here, update: () => apply(true), updateReady: () => !!U.ready, hub };
+  // (at the hub, the page's IFL on its window too: so Chat's engine, a frame of this page's, can say it's sent or shut its
+  // sheet (parent.IFL.hub.sent(say), parent.IFL.hub.closed(), §8.2), and Today's day and cards find the page's own hub.
+  // A const at the top of a module or a script is never the window's own. It can be taken back (configurable), so a
+  // page's own global IFL never clashes with it, and one put there first (a test's stand-in) is left as it is)
+  if (hub.on && typeof window !== "undefined") try { Object.defineProperty(window, "IFL", { value: api, configurable: true, writable: true }); } catch (_) {}
+  return api;
 })();
 // ==== end of InFlite's menu ====
-
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const MIN = 60e3;
 const browserTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London"; } catch { return "Europe/London"; } };
@@ -548,22 +748,28 @@ const clock = (mins) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${Str
 const DEFAULT_LINKS = (() => {
   const live = /(^|\.)inflite\.ai$/.test(location.hostname);
   const at = (n) => (live ? `https://${n}.inflite.ai` : `${location.protocol}//${n}.${location.hostname}${location.port ? ":" + location.port : ""}`);
-  return { chat: at("chat"), weather: at("weather"), fitness: at("fitness"), finance: at("finance"), account: at("account"), auth: at("auth") };
+  return { chat: at("chat"), weather: at("weather"), fitness: at("fitness"), finance: at("finance"), email: at("email"), account: at("account"), auth: at("auth") };
 })();
 
 // ---------------------------------------------------------------- what the page knows
 const S = {
-  view: null, // the session view, signed in (2.3): { user, prefs, morning, links }
+  view: null, // the session view, signed in (2.3): { user, prefs, morning, links, quiet, apps, hubPush }
   links: null,
   prefs: { order: [...CARD_KEYS], hidden: [] },
-  answer: null, // the last cards answer (GET /api/today): { at, tz, cards, morning }
+  answer: null, // the last cards answer (GET /api/today?v=2): { at, tz, cards, morning } and, from an account side that
+  //               knows Today First, v: 2 with the day (phase, tops, waiting, upcoming, acts, apps, …)
   answerAt: 0, // when it came (or was kept)
   skew: 0, // how far this device's clock was behind the account's, as the last answer came (never less than 0)
   kept: false, // drawn from this browser's copy, not yet fresh
   morning: null, // the morning view (2.5), or the session's few words of it
   device: null, // this device's name for the server: the first 16 of b64url(SHA-256(endpoint))
   endpoint: null, // this device's push endpoint (only ever sent in a body)
-  loadedAt: 0,
+  loadedAt: 0, // when the day was last asked for
+  hub: false, // the hub's Worker can serve the apps here (GET /api/hub): else Today runs as it did before (degraded)
+  tab: "today", // the view shown: today, apps or you
+  dayLine: null, // the header's line, as the day (day.js) says it for its phase
+  asked5: false, // the one fetch 5 seconds after an answer still being planned, made
+  boundary: 0, // the until whose crossing has had its fetch put in hand
 };
 let sheetOpen = null, waitingAnswer = null;
 
@@ -589,6 +795,35 @@ async function call(path, { method = "GET", body } = {}) {
   }
   return data;
 }
+// (a route this account side doesn't have yet: an older one, or one not built yet. Either way, that part isn't there)
+const missing = (e) => e?.status === 404 || e?.status === 501;
+
+// ---------------------------------------------------------------- the hub: whether this site's Worker serves the apps
+// Asked once a visit (GET /api/hub, kept in sessionStorage): ready, the tab bar's Chats, the Apps tiles and every Send are
+// the hub's (/chats/, /weather/, …, Chat's engine over the page); not ready (its key not set yet) or no answer, Today runs
+// as it did before: each app at its own address, Send through chat.<site>/#share=, no engine, and You without the rows
+// only the hub has (IFL.hub.degrade)
+const HUB_KEY = "ifl-hub-ready";
+// (waited for 1.5 s at most, beside the session's own request: slower than that, this page runs as before, and the
+// answer, when it comes, is kept for the visit's next page)
+async function hubReady() {
+  try { const v = sessionStorage.getItem(HUB_KEY); if (v === "1" || v === "0") return v === "1"; } catch {}
+  const asked = fetch("/api/hub", { credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" } }).then(async (r) => {
+    const j = r.ok ? await r.json().catch(() => null) : null;
+    const ready = j?.ready === true;
+    if (typeof j?.ready === "boolean" || r.status === 404 || r.status === 503) try { sessionStorage.setItem(HUB_KEY, ready ? "1" : "0"); } catch {}
+    return ready;
+  });
+  return Promise.race([asked, new Promise((ok) => setTimeout(() => ok(false), 1500))]).catch(() => false);
+}
+const ownLinks = () => { const L = S.links || DEFAULT_LINKS; return { chat: L.chat, weather: L.weather, fitness: L.fitness, finance: L.finance, email: L.email || DEFAULT_LINKS.email }; };
+function hubSays(ready) {
+  S.hub = !!ready;
+  if (!S.hub) IFL.hub.degrade(ownLinks());
+  // (signed out: the way in's second way, Today's own, only beside Chats' trip)
+  $("#alsoRow").hidden = !S.hub;
+  $("#signin").href = S.hub ? "/chats/#signin-start&then=/" : `${safe(S.links?.auth) || DEFAULT_LINKS.auth}/`;
+}
 
 // ---------------------------------------------------------------- this browser's copy of your day, per account
 // Kept so Today opens with your day on a train; drawn only once the account has said it's you (or, in a Home Screen
@@ -597,13 +832,18 @@ async function call(path, { method = "GET", body } = {}) {
 const KEPT = "today:session", CARDS_KEY = (id) => `today:cards:${id}`;
 const readJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch { return null; } };
 function keepSession(view) { try { localStorage.setItem(KEPT, JSON.stringify({ id: view.user.id, at: Date.now(), view })); } catch {} }
-// (only the four cards' answer, as version 1 has it: none of a version 2 answer's day, which is fetched afresh, and no
-// pigeon's place, which a Chat place is, kept under today:*)
+// (only the four cards' answer, as version 1 has it: none of a version 2 answer's day, which is fetched afresh; no
+// pigeon's place, which a Chat place is; no Markets card, whose figures are money, so offline its place is held until
+// it's back; and of the morning, its settings, not how the next one reads, which says the portfolio's worth. Kept under
+// today:*, none of them is)
+const MORNING_KEPT = ["on", "at", "tz", "lines", "names", "devices", "thisDevice", "place"];
 function keptOf(answer) {
-  const a = { at: answer.at, tz: answer.tz, cards: answer.cards, ...(answer.morning ? { morning: answer.morning } : {}) }, chat = a.cards?.chat;
+  const m = answer.morning && typeof answer.morning === "object" ? Object.fromEntries(MORNING_KEPT.filter((k) => k in answer.morning).map((k) => [k, answer.morning[k]])) : null;
+  const a = { at: answer.at, tz: answer.tz, cards: { ...(answer.cards || {}) }, ...(m ? { morning: m } : {}) }, chat = a.cards.chat;
+  delete a.cards.markets;
   if (chat && typeof chat === "object") {
     const noPlace = (l, k) => (Array.isArray(l) ? l.map((p) => (p && typeof p === "object" ? { ...p, [k]: null } : p)) : l);
-    a.cards = { ...a.cards, chat: { ...chat, inbound: noPlace(chat.inbound, "from"), mine: noPlace(chat.mine, "to") } };
+    a.cards.chat = { ...chat, inbound: noPlace(chat.inbound, "from"), mine: noPlace(chat.mine, "to") };
   }
   return a;
 }
@@ -627,10 +867,13 @@ function keptFor(id) {
   return c && c.id === id && c.answer && typeof c.answer === "object" ? c : null;
 }
 
-// ---------------------------------------------------------------- signing in, by InFlite's hand-back (as Mail does)
-// Signing in happens on InFlite's sign-in page (auth.inflite.ai). Today sends you there with the hash of a word it keeps
-// in this tab; the page sends you back with a code that's good once, and only with that word. A Home Screen Today has
-// its own cookie jar, so it signs in this way too.
+// ---------------------------------------------------------------- signing in
+// Chat first (the hub's): Sign in goes to Chats' own trip (/chats/#signin-start&then=/), which signs in Chats, Today and
+// every app at once and comes back here. Beside it, quietly, Today's own trip (Sign In Without Chats), which never
+// waits on Chat's key: InFlite's hand-back, as Mail does. Today sends you to InFlite's sign-in page (auth.inflite.ai) with
+// the hash of a word it keeps in this tab; the page sends you back with a code that's good once, and only with that word.
+// A Home Screen Today has its own cookie jar, so it signs in this way too. Where the hub can't serve Chats yet, Sign in is
+// Today's own trip.
 const VERIFIER_KEY = "inflite:signin-verifier";
 const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 let sessionAsked = null;
@@ -655,20 +898,22 @@ async function finishSignIn() {
   return call("/api/auth/handback", { method: "POST", body: { code, verifier } });
 }
 
-// Signing out of Today signs out of the account in this browser, as every app does: this device's morning notification
-// stopped first, your day forgotten here, then the sign-in page says so and offers the way back.
+// Signing out of InFlite (You, or the menu): this device's notifications stopped first (in every app's table), Chat's
+// sign-in and key on this phone gone too where its engine's here, the account's sign-in ended, your day forgotten here,
+// then the sign-in page says so and offers the way back (§11.5)
 async function signOut() {
   try {
     const sub = await currentSub();
     if (sub) {
-      await call("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch(() => {});
+      await call("/api/device", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch((e) => (missing(e) ? call("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }) : null)).catch(() => {});
       await sub.unsubscribe().catch(() => {});
     }
   } catch {}
-  forgetKept();
-  try { localStorage.removeItem("today:push"); } catch {}
+  if (S.hub) await Promise.race([IFL.hub.chat().then((c) => c?.signOut?.()).catch(() => {}), new Promise((ok) => setTimeout(ok, 4000))]);
   const auth = safe(S.links?.auth) || DEFAULT_LINKS.auth;
   await call("/api/logout", { method: "POST", body: {} }).catch(() => {});
+  forgetKept();
+  try { localStorage.removeItem("today:push"); } catch {}
   S.view = null;
   location.assign(`${auth}/#${new URLSearchParams({ signout: "today", back: `${location.origin}/` })}`);
 }
@@ -687,13 +932,14 @@ function showOut(said = "") {
   for (const a of $$(".today-apps a[data-app]")) { const h = safe(L[a.dataset.app]); if (h) a.href = `${h}/`; }
   lift();
 }
-// signed out, as it's found out: by the account's answer, a 401, or the service worker's word after a notification
+// signed out, as it's found out: by the account's answer, a 401, or the service worker's word
 function signedOutNow() {
   forgetKept();
   clearTimeout(prefsT); prefsT = 0;
-  S.view = null; S.answer = null; S.morning = null; S.kept = false; waitingAnswer = null;
-  $("#cards").replaceChildren();
-  $("#hd").replaceChildren();
+  S.view = null; S.answer = null; S.morning = null; S.kept = false; S.dayLine = null; waitingAnswer = null;
+  letDayGo();
+  you?.forgetYou?.();
+  for (const id of ["#top", "#waiting", "#coming", "#rest", "#apps", "#you", "#hd"]) $(id).replaceChildren();
   showOut();
 }
 
@@ -702,18 +948,18 @@ function signedIn(view, { offline = false } = {}) {
   const was = S.view?.user?.id;
   S.view = view;
   S.links = view.links || S.links || DEFAULT_LINKS;
+  if (!S.hub) IFL.hub.degrade(ownLinks());
   // (the same account's order and hidden cards, unless a change made here is still on its way to the account)
   if (!(was === view.user.id && prefsBusy())) S.prefs = cleanPrefs(view.prefs);
   // (a copy kept for anyone else: gone)
   forgetKept(CARDS_KEY(view.user.id));
   if (!offline) keepSession(view);
   appearance(view.user.appearance);
-  if (was !== view.user.id) { S.answer = null; S.kept = false; }
+  if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; if (was) you?.forgetYou?.(); }
   if (!S.morning || !("lines" in S.morning)) S.morning = view.morning || S.morning;
   $("#out").hidden = true;
   $("#in").hidden = false;
-  drawHeader();
-  wireLinks();
+  route({ quiet: true });
   if (waitingAnswer) { const a = waitingAnswer; waitingAnswer = null; gotCards(a); }
   else if (!S.answer) {
     const k = keptFor(view.user.id);
@@ -722,20 +968,74 @@ function signedIn(view, { offline = false } = {}) {
   drawCards();
   drawMorning();
   lift();
+  // (Chat's engine, made once the day's first drawn, when the page has a moment: for Waiting for You's words)
+  if (S.hub && !offline) idle(() => { if (S.view) IFL.hub.chat(); });
 }
+const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 3000 }) : setTimeout(fn, 1200));
 
 // a cards answer: drawn once the account's said who's signed in, and kept for next time
 function gotCards(answer) {
   if (!answer || typeof answer !== "object" || !answer.cards) return;
   if (!S.view) { waitingAnswer = answer; return; }
-  S.answer = answer; S.answerAt = Date.now(); S.kept = false; S.loadedAt = Date.now();
+  S.answer = answer; S.answerAt = Date.now(); S.kept = false;
   S.skew = Math.max(0, (Number.isFinite(answer.at) ? answer.at : 0) - Date.now());
   if (answer.morning) S.morning = answer.morning;
+  if (answer.v !== 2) S.dayLine = null;
   keepCards(answer);
   drawCards();
   drawLine();
   drawMorning();
+  if (S.tab === "apps") drawAppsNow();
+  // (the day still being worked out on the account: asked once more, 5 seconds on; once an answer's no longer planning,
+  // the next that is gets its own)
+  if (!answer.planning) S.asked5 = false;
+  else if (!S.asked5) { S.asked5 = true; setTimeout(() => refresh(), 5000); }
+  // (the minute's tick put to this answer's moments: its until may come sooner)
+  nextMinute();
 }
+
+// ---------------------------------------------------------------- the views: Today, Apps and You, one page
+// #today (the default), #apps and #you, switched in the page (history, so Back goes back between them), with the tab bar
+// under them: Chats is a page of its own (/chats/)
+const VIEWS = ["today", "apps", "you"];
+const TITLES = { today: "Today", apps: "Apps", you: "You" };
+const tabOf = () => { const h = location.hash.slice(1); return VIEWS.includes(h) ? h : "today"; };
+function route({ quiet = false } = {}) {
+  if (!S.view) return;
+  const was = S.tab;
+  S.tab = tabOf();
+  for (const k of VIEWS) $(`#${k}`).hidden = k !== S.tab;
+  IFL.hub.tabs($("#tabs"), S.tab);
+  drawHeader();
+  if (S.tab === "apps") drawAppsNow();
+  if (S.tab === "you") drawYouNow();
+  if (!quiet && was !== S.tab) { scrollTo(0, 0); IFL.settle(); }
+}
+// (a tab of this page's: in the page, a step in its history; Chats, a page of its own, as a link)
+function onTab(e) {
+  const a = e.target.closest("a.ifl-tab");
+  const k = a?.dataset.tab;
+  if (!a || !VIEWS.includes(k) || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  e.preventDefault();
+  if (k === S.tab) return scrollTo({ top: 0, behavior: "smooth" });
+  try { history.pushState(null, "", k === "today" ? location.pathname + location.search : `#${k}`); } catch {}
+  route();
+}
+let apps = null, you = null;
+function drawAppsNow() {
+  import("/apps.js").then((m) => { apps = m; if (S.view) m.drawApps($("#apps"), appsCtx()); }, () => {});
+}
+function drawYouNow() {
+  import("/you.js").then((m) => { you = m; if (S.view) m.drawYou($("#you"), youCtx()); }, () => {});
+}
+const appsCtx = () => ({ answer: S.answer, view: S.view, hub: S.hub, href: (app, section) => IFL.hub.href(app, section), icon: (app) => IFL.iconUrl(app) });
+const youCtx = () => ({
+  view: S.view, hub: S.hub, call, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
+  kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
+  sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, toMorning, openAccount, signOut, canPush, pushWhy,
+  chatSettings: () => location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`),
+  openSheet, closeSheet, BUILD,
+});
 
 // ---------------------------------------------------------------- the header, and InFlite's menu
 const ID_OK = (id) => typeof id === "string" && /^[\w-]{8,64}$/.test(id);
@@ -744,15 +1044,19 @@ function photoHtml(u) {
   return u.photoAt && ID_OK(u.id) ? `${initial}<img class="av-img" src="/api/avatar?id=${encodeURIComponent(u.id)}&amp;v=${encodeURIComponent(String(u.photoAt))}" alt="">` : initial;
 }
 function lineHtml() {
+  if (S.tab === "apps") return "Each one here, in this window";
+  if (S.tab === "you") return S.view?.user?.handle ? `@${esc(S.view.user.handle)}` : "";
+  if (S.dayLine) return esc(S.dayLine);
   const tz = S.answer?.tz || browserTz(), now = Date.now(), w = S.answer?.cards?.weather;
   const place = w?.state === "ok" && w.place?.name ? w.place.name : null;
   return `<span class="d-long">${esc(dateLong(now, tz))}</span><span class="d-short">${esc(dateShort(now, tz))}</span>${place ? ` · ${esc(place)}` : ""}`;
 }
 function drawHeader() {
   const u = S.view.user;
-  $("#hd").innerHTML = IFL.headerHtml({ me: photoHtml(u), title: "Today", line: lineHtml(), acts: [{ icon: "Edit", label: "Edit Today: hide and reorder cards", attrs: 'id="edit" data-word' }] });
+  lineSaid = lineHtml();
+  $("#hd").innerHTML = IFL.headerHtml({ me: photoHtml(u), title: TITLES[S.tab], line: lineSaid, acts: [S.tab === "today" ? { icon: "Edit", label: "Edit Today: hide and reorder cards", attrs: 'id="edit" data-word' } : null] });
   $("#hd .ifh-me").addEventListener("click", (e) => openMenu(e.currentTarget));
-  $("#edit").addEventListener("click", openEdit);
+  $("#edit")?.addEventListener("click", openEdit);
   IFL.watch();
 }
 let lineSaid = "";
@@ -774,14 +1078,20 @@ function openMenu(anchor) {
     build: BUILD,
     me: { name: u.name || u.handle || "Your account", line: u.handle ? `@${u.handle}` : "", photo: menuPhoto(u) },
     rows: [
-      { icon: "bell", color: "red", label: "Notifications", key: "notify", open: () => openAccount("notify") },
+      { icon: "bell", color: "red", label: "Notifications", key: "notify", open: () => go("you") },
       { icon: "sun", color: "orange", label: matchMedia("(max-width: 360px)").matches ? "Morning" : "Morning Notification", key: "morning", value: m.on ? clock(m.at) : "Off", open: toMorning },
       "-",
-      { icon: "sliders", color: "grey", label: "Edit Today", key: "edit", open: openEdit },
+      { icon: "sliders", color: "grey", label: "Edit Today", key: "edit", open: () => { go("today"); openEdit(); } },
     ],
     account: () => openAccount(),
     signOut,
   });
+}
+// (a view of this page's, from anywhere in it)
+function go(k) {
+  if (S.tab === k) return;
+  try { history.pushState(null, "", k === "today" ? location.pathname + location.search : `#${k}`); } catch {}
+  route();
 }
 // Your account, at the place asked for (open=…). From a Home Screen Today, whose sign-in the browser doesn't share, with
 // a code good for a minute that signs the account's page in too (as Markets does)
@@ -804,28 +1114,40 @@ async function openAccount(open) {
   location.assign(accountHref(open));
 }
 function wireLinks() {
-  const L = S.links || DEFAULT_LINKS, at = (k, path = "/") => (safe(L[k]) ? `${L[k]}${path}` : "#");
   for (const a of $$("[data-account]")) a.href = accountHref(a.dataset.account);
 }
 
-// ---------------------------------------------------------------- the cards
+// ---------------------------------------------------------------- the day
 // (now, for anything worked out from the answer: never before the answer's own moment, where this device's clock is
 // behind the account's, so a pigeon that's landed is never said to land, nor one landed this morning tomorrow)
 const nowish = () => Math.max(Date.now() + S.skew, Number.isFinite(S.answer?.at) ? S.answer.at : 0);
-const ctx = () => ({ links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), now: nowish() });
+const ctx = () => ({ links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), now: nowish(), hub: IFL.hub });
 function cleanPrefs(p) {
   const order = (Array.isArray(p?.order) ? p.order : []).filter((k) => CARD_KEYS.includes(k));
   for (const k of CARD_KEYS) if (!order.includes(k)) order.push(k);
   const hidden = (Array.isArray(p?.hidden) ? p.hidden : []).filter((k) => CARD_KEYS.includes(k));
   return { order: [...new Set(order)], hidden: [...new Set(hidden)] };
 }
+// Today's day: a version 2 answer (Today First's, phase by phase) drawn by /day.js into #today (its top card, Waiting for
+// You, Coming Up, and The Rest of Today: the four cards); an answer without v (an account side from before it, or this
+// browser's copy) as the four cards, in #rest, as Today always drew them. day.js not loading, or failing, the four cards
+// all the same.
 function drawCards(anim) {
-  const box = $("#cards");
   if (!S.view) return;
-  // (a version 2 answer, Today First's day phase by phase, is drawn by /day.js: into #today where the page has one;
-  // until it has, the four cards are drawn as ever, below, and day.js draws over them once it's loaded, so a day.js that
-  // draws nothing yet still leaves Today its cards)
-  if (S.answer?.v === 2) { drawDayNow(); if ($("#today")) { drawKept(); return; } }
+  if (S.answer?.v === 2 && !S.kept) return drawDayNow(anim);
+  drawFour(anim);
+}
+// (#today taken back from day.js: nothing more timed or drawn there from it)
+function letDayGo() {
+  try { day?.stopDay?.($("#today")); } catch {}
+  delete $("#today").dataset.phase;
+}
+function drawFour(anim) {
+  const box = $("#rest");
+  letDayGo();
+  for (const id of ["#top", "#waiting", "#coming"]) $(id).replaceChildren();
+  box.className = "cards";
+  box.hidden = false;
   const shown = S.prefs.order.filter((k) => !S.prefs.hidden.includes(k));
   const was = new Map($$(".tcard", box).map((c) => [c.dataset.app, c.getBoundingClientRect().top]));
   const f = document.activeElement, inside = box.contains(f) ? f : null;
@@ -852,19 +1174,58 @@ function drawCards(anim) {
   }
   drawKept();
 }
-// Today First's day (an answer with v: 2, from an account side that knows it), drawn by /day.js once it's loaded: only if
-// it's still the answer by then. (Not in sw.js's FILES yet, where batch S puts it: no account side answers v 2 before
-// batch T1, so nothing asks for it as Today opens until then. Once FILES has it, this is a plain import of the path,
-// which todaysw.test.mjs then checks is kept.)
-const DAY_JS = new URL("day.js", location.origin + "/").href;
+// Today First's day, drawn by /day.js once it's loaded: only if it's still the answer by then. ctx: now() (the answer's
+// clock), hub (the page's own IFL.hub: the hub's paths and Chat's engine, or the apps' own addresses where it's degraded),
+// prefs (Edit's order and hidden cards, for The Rest of Today), links, tz, call(path, o) (the page's own requests, so a
+// 401 from Undo, Take or Keep signs the page out at once), toast(text), refresh() (the day asked again: after Undo, Take
+// or Keep), line(text) (the header's line for the phase; null: the date), drawFour() (the four cards, as an answer
+// without v draws them), timers: false (nothing timed in day.js: the page's own minute, below, ticks it, and only while
+// it's signed in with this answer, so a day forgotten here stays forgotten)
+let day = null;
+const dayCtx = () => ({ now: nowish, hub: IFL.hub, prefs: S.prefs, links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), call, toast, refresh: () => refresh(),
+  line: (text) => { if (S.view) { S.dayLine = text == null ? null : String(text).slice(0, 120); drawLine(); } }, drawFour: () => drawFour(), timers: false });
 function drawDayNow() {
-  const answer = S.answer, root = $("#today") || $("#cards");
-  import(DAY_JS).then((m) => { if (S.answer === answer) m.drawDay(root, answer, { now: nowish }); }, () => {});
+  const answer = S.answer;
+  $("#rest").className = "";
+  import("/day.js").then((m) => {
+    day = m;
+    if (S.answer !== answer || !S.view) return;
+    try { m.drawDay($("#today"), answer, dayCtx()); } catch (e) { console.error(e); drawFour(); }
+    drawKept();
+  }, () => { if (S.answer === answer) drawFour(); });
 }
 function drawKept() {
   const k = $("#kept"), old = S.kept && Date.now() - S.answerAt > 10 * MIN;
   k.hidden = !old;
   if (old) k.textContent = `Updated ${hm(S.answerAt, S.answer?.tz || browserTz())}`;
+}
+// each minute, on the minute (the answer's clock), or at the answer's next moment if that's sooner (its until, a step of
+// its timeline, a Coming Up row's time, an Undo's end), with no request: the day's next phase at its minute (from the
+// answer's tops), passed rows gone, the pigeons' times, the date, the kept copy's word; then, past a phase's end, the day
+// asked again a little later, in the background
+let minuteT = 0;
+function nextMinute() {
+  clearTimeout(minuteT);
+  const now = nowish(), a = S.answer?.v === 2 && !S.kept ? S.answer : null;
+  const list = (x) => (Array.isArray(x) ? x : []);
+  const due = a ? [a.until, ...list(a.timeline).map((x) => x?.at), ...list(a.upcoming).map((x) => x?.at), ...list(a.acts).map((x) => x?.undoUntil)].filter((x) => Number.isFinite(x) && x > now) : [];
+  const next = Math.min((Math.floor(now / MIN) + 1) * MIN, ...due);
+  minuteT = setTimeout(() => { minute(); nextMinute(); }, Math.max(250, next - now + 20));
+}
+function minute() {
+  if (!S.view) return;
+  const now = nowish(), a = S.answer;
+  if (a?.v === 2 && !S.kept && day) { try { day.tickDay($("#today"), a, now); } catch (e) { console.error(e); } }
+  else tick($("#rest"), now);
+  drawLine();
+  drawKept();
+  if (a?.v === 2 && Number.isFinite(a.until) && now >= a.until && S.boundary !== a.until) {
+    S.boundary = a.until;
+    setTimeout(() => { if (S.answer === a) refresh(); }, 90e3);
+  }
+  // (every five minutes while it's in sight, every two while a ride's near or on)
+  const every = a?.v === 2 && (a.phase === "preride" || a.phase === "riding") ? 2 * MIN : 5 * MIN;
+  if (document.visibilityState === "visible" && Date.now() - S.loadedAt >= every) refresh();
 }
 // the same answer again (with the morning, worked out from the same cards), or one card's alone (Try Again)
 async function refresh(only = null) {
@@ -873,7 +1234,7 @@ async function refresh(only = null) {
   if (only) q.set("only", only);
   else { q.set("v", "2"); q.set("with", "morning"); }
   if (S.device) q.set("device", S.device);
-  S.loadedAt = Date.now();
+  if (!only) S.loadedAt = Date.now();
   try {
     const a = await call(`/api/today?${q}`);
     if (!only) return gotCards(a);
@@ -888,6 +1249,14 @@ async function refresh(only = null) {
   } catch (e) {
     if (e.status !== 401 && only) toast(e.message);
   }
+}
+// (back to the page: the day afresh, and Chat's engine caught up; at most once in a few seconds)
+let backAt = 0;
+function back() {
+  if (!S.view || Date.now() - backAt < 3000) return;
+  backAt = Date.now();
+  refresh();
+  if (S.hub) IFL.hub.chat().then((c) => c?.refresh?.()).catch(() => {});
 }
 
 // ---------------------------------------------------------------- Edit: hide and reorder, kept on your account
@@ -959,6 +1328,7 @@ function openSheet(id) {
     $("#in").inert = false;
     document.removeEventListener("keydown", key, true);
     back?.focus?.({ preventScroll: true });
+    if (id === "morning" && S.tab === "you") drawYouNow();
   };
   for (const b of $$("[data-close]", s)) b.onclick = closeSheet;
   d.onclick = closeSheet;
@@ -989,9 +1359,9 @@ const LINES = [
 // (why this device can't have it, in Fitness's words: fitness/app.js pushWhy)
 const canPush = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 function pushWhy() {
-  if (canPush()) return Notification.permission === "denied" ? "Notifications are blocked for Today in this browser’s settings." : null;
+  if (canPush()) return Notification.permission === "denied" ? "Notifications are blocked for InFlite in this browser’s settings." : null;
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-  return ios && !standalone() ? "Add Today to your Home Screen first (Share, then Add to Home Screen), and turn this on there." : "This browser can’t show notifications.";
+  return ios && !standalone() ? "Add InFlite to your Home Screen first (Share, then Add to Home Screen), and turn this on there." : "This browser can’t show notifications.";
 }
 function drawMorning() {
   const m = S.morning;
@@ -1032,7 +1402,11 @@ async function putMorning(patch) {
   }
 }
 
-// ---------------------------------------------------------------- push on this device
+// ---------------------------------------------------------------- push on this device: the one subscription (§11.3)
+// The root worker's (/sw.js, scope /) is this phone's one subscription for InFlite. Turned on (You → This Phone, the
+// morning's switch): Today's morning only (POST /api/device {sub, tz}: td_push). Every app's notifications come here only
+// from a tap on Get Every App's Notifications Here (fanOut: POST /api/device {sub, fan: true}); never on its own, never
+// on first run. An account side from before (404 or 501): POST /api/push, the morning only, as Today always did.
 const toBytes = (b64) => { const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64.length + 3) % 4)); return Uint8Array.from(s, (c) => c.charCodeAt(0)); };
 const hashOf = async (endpoint) => b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(endpoint))).slice(0, 16);
 async function swReg() {
@@ -1041,7 +1415,7 @@ async function swReg() {
 }
 async function currentSub() {
   if (!canPush()) return null;
-  const reg = await navigator.serviceWorker.getRegistration().catch(() => null);
+  const reg = await navigator.serviceWorker.getRegistration("/").catch(() => null);
   return (await reg?.pushManager?.getSubscription().catch(() => null)) || null;
 }
 // this device's name for the server, from its subscription (none: no device)
@@ -1056,22 +1430,42 @@ async function findDevice() {
     return null;
   }
 }
-// Turned on, from a tap: the browser asked first thing (a phone asks only from a tap), then this device's subscription,
-// with the account's key, handed to the account, and the morning on. → true once it's on here
-async function turnOn() {
-  if (!canPush()) { toast(pushWhy()); return false; }
-  const asked = Notification.permission === "granted" ? "granted" : await Notification.requestPermission().catch(() => "denied");
-  if (asked !== "granted") { toast("Notifications are blocked for Today in this browser’s settings."); drawMorning(); return false; }
+// (this device's subscription to the account: the device route, else Today's own as before: a renewed one (was) moved in
+// Today's own table, as the root worker does, else added)
+async function postDevice(sub, extra = {}) {
   try {
-    const reg = await swReg();
-    if (!reg) throw new Error("Couldn’t turn it on just now. Try again in a moment.");
-    const { key } = await call("/api/push/key");
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toBytes(key) });
-    await call("/api/push", { method: "POST", body: { sub: sub.toJSON() } });
-    S.endpoint = sub.endpoint;
-    S.device = await hashOf(sub.endpoint);
-    try { localStorage.setItem("today:push", sub.endpoint); } catch {}
+    return await call("/api/device", { method: "POST", body: { sub: sub.toJSON(), tz: browserTz(), ...extra } });
+  } catch (e) {
+    if (!missing(e) || extra.fan) throw e;
+    if (extra.was) {
+      const moved = await call("/api/push/move", { method: "POST", body: { sub: sub.toJSON(), was: extra.was } }).catch(() => null);
+      if (moved?.moved) return moved;
+    }
+    return call("/api/push", { method: "POST", body: { sub: sub.toJSON() } });
+  }
+}
+// the subscription itself, from a tap (a phone asks only from a tap): the browser asked first, then the account's key
+async function subscribe() {
+  if (!canPush()) { toast(pushWhy()); return null; }
+  const asked = Notification.permission === "granted" ? "granted" : await Notification.requestPermission().catch(() => "denied");
+  if (asked !== "granted") { toast("Notifications are blocked for InFlite in this browser’s settings."); drawMorning(); return null; }
+  const reg = await swReg();
+  if (!reg) throw new Error("Couldn’t turn it on just now. Try again in a moment.");
+  const { key } = await call("/api/push/key");
+  return (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toBytes(key) }));
+}
+async function kept(sub) {
+  S.endpoint = sub.endpoint;
+  S.device = await hashOf(sub.endpoint);
+  try { localStorage.setItem("today:push", sub.endpoint); } catch {}
+}
+// Turned on, from a tap: this device's subscription handed to the account, and the morning on. → true once it's on here
+async function turnOn() {
+  try {
+    const sub = await subscribe();
+    if (!sub) return false;
+    await postDevice(sub);
+    await kept(sub);
     return await putMorning({ on: true });
   } catch (e) {
     if (e.status !== 401) toast(e.message || "Couldn’t turn it on just now. Try again in a moment.");
@@ -1079,7 +1473,40 @@ async function turnOn() {
     return false;
   }
 }
-// (the morning's settings: a sheet, opened from the menu)
+// This Phone, off: its subscription taken out of every table (and Today's own, on an older account side); kept, so
+// turning it on again is one tap. What's known here of it says so at once (the morning's thisDevice, this browser's
+// today:push), as the account now does, so You's switch stays off
+async function turnOff() {
+  const sub = await currentSub();
+  if (!sub) return true;
+  try {
+    await call("/api/device", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch((e) => { if (missing(e)) return call("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }); throw e; });
+    try { localStorage.removeItem("today:push"); } catch {}
+    if (S.morning && typeof S.morning === "object") S.morning = { ...S.morning, thisDevice: false };
+    drawMorning();
+    return true;
+  } catch (e) {
+    if (e.status !== 401) toast(e.message);
+    return false;
+  }
+}
+// Get Every App's Notifications Here: only ever from its own tap (You). → the account's answer ({ ok, tables })
+async function fanOut() {
+  const sub = await subscribe();
+  if (!sub) return null;
+  const r = await postDevice(sub, { fan: true });
+  await kept(sub);
+  return r;
+}
+// (the browser changed this device's subscription while Today was shut, and its worker couldn't say so: said now)
+async function deviceMoved() {
+  let was = null;
+  try { was = localStorage.getItem("today:push"); } catch {}
+  const sub = was ? await currentSub() : null;
+  if (!sub || sub.endpoint === was) return;
+  try { await postDevice(sub, { was }); await kept(sub); } catch {}
+}
+// (the morning's settings: a sheet, opened from the menu or You)
 function toMorning() {
   if (!S.view || $("#in").hidden) return;
   IFL.close(true);
@@ -1099,13 +1526,16 @@ function appearance(a) {
 
 // ---------------------------------------------------------------- what's tapped
 function wire() {
-  $("#signin").addEventListener("click", (e) => { e.preventDefault(); goToAccount(false); });
+  // (Sign in: Chats' trip, which signs in everything, where the hub serves Chats; else, and Sign In Without Chats, Today's own)
+  $("#signin").addEventListener("click", (e) => { e.preventDefault(); if (S.hub) location.assign("/chats/#signin-start&then=/"); else goToAccount(false); });
+  $("#signinToday").addEventListener("click", (e) => { e.preventDefault(); goToAccount(false); });
   $("#join").addEventListener("click", (e) => { e.preventDefault(); goToAccount(true); });
+  $("#tabs").addEventListener("click", onTab);
   for (const b of $$(".ifs-btn:empty")) b.innerHTML = G.x;
   for (const c of $$(".row .chev:empty")) c.innerHTML = G.chev;
   $("#atChev").innerHTML = G.down;
   // (Try Again on a card that couldn't load: that card alone, asked again)
-  $("#cards").addEventListener("click", (e) => {
+  $("#today").addEventListener("click", (e) => {
     const r = e.target.closest("[data-retry]");
     if (!r) return;
     r.disabled = true;
@@ -1166,14 +1596,20 @@ function wire() {
     prefsChanged();
     toast("Back in the day’s order");
   });
-  // (a sign-in's code, come in the address without the page opening afresh: opened afresh, to finish it)
-  addEventListener("hashchange", () => (new URLSearchParams(location.hash.slice(1)).get("signin") ? location.reload() : fromHash()));
+  // (a sign-in's code, come in the address without the page opening afresh: opened afresh, to finish it; a view's hash,
+  // its view; #morning or #notify, as they say)
+  addEventListener("hashchange", () => {
+    if (new URLSearchParams(location.hash.slice(1)).get("signin")) return location.reload();
+    route();
+    fromHash();
+  });
+  addEventListener("popstate", () => route());
 }
 // (opened at a place: #morning, the morning's settings; #notify, from Account's "Turn On in Today": asked in one tap)
 function fromHash() {
   if (!S.view) return;
   if (IFL.wantsAllow()) {
-    IFL.allow("today", "Today tells you your day each morning, from all your apps, in one notification. What’s in it is set in Today, under Morning.", turnOn);
+    IFL.allow("today", "Today tells you your day each morning, from all your apps, in one notification. What’s in it is set in You, under This Phone.", turnOn);
     return;
   }
   if (location.hash === "#morning") {
@@ -1182,33 +1618,58 @@ function fromHash() {
   }
 }
 
-// ---------------------------------------------------------------- the service worker: notifications, and opening offline
+// ---------------------------------------------------------------- the root service worker: notifications, and offline
+// (its words to the page: a Chat push came, so Chat's engine catches up and the day's asked again; a notification tapped
+// is IFL.hub's, { ifl: "open", url }; an older worker's { open } and { ifl: "signedout" } still understood)
+let syncT = 0;
 function worker() {
   if (!("serviceWorker" in navigator)) return;
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
   navigator.serviceWorker.addEventListener("message", (e) => {
     const d = e.data || {};
-    // (a notification came for a device that's been signed out: nothing of anyone's day stays here)
     if (d.ifl === "signedout") return signedOutNow();
+    if (d.inflight === "sync") {
+      if (S.hub) IFL.hub.chat().then((c) => c?.refresh?.()).catch(() => {});
+      clearTimeout(syncT);
+      syncT = setTimeout(() => refresh(), 1500);
+      return;
+    }
     if (typeof d.open === "string") {
       let u;
       try { u = new URL(d.open, location.origin); } catch { return; }
       if (u.origin !== location.origin) return;
-      if (u.pathname === location.pathname && u.search === location.search) { history.replaceState(null, "", u.hash || location.pathname); if (u.hash === "#morning") toMorning(); else refresh(); }
+      if (u.pathname === location.pathname && u.search === location.search) { history.replaceState(null, "", u.hash || location.pathname); route(); if (u.hash === "#morning") toMorning(); else refresh(); }
       else location.assign(u.href);
     }
   });
 }
 
 // ---------------------------------------------------------------- opening
+const hubAsked = hubReady();
+// (a notification tapped while the hub couldn't serve its app (before its key, or rolled back): the root worker opens
+// Today with #go=<the app's path here>, and it's gone there from here, the hub's way where it's ready, else the app's own
+// address, as Today 1.08 would. Only a path of this site's)
+function goFromHash() {
+  const p = new URLSearchParams(location.hash.slice(1)).get("go");
+  if (p == null) return false;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch {}
+  if (!/^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]{0,300}$/.test(p)) return false;
+  hubAsked.then((ready) => {
+    if (!ready) IFL.hub.degrade(ownLinks());
+    location.replace(ready ? p : IFL.hub.go(p));
+  });
+  return true;
+}
 async function load() {
   const devP = findDevice();
+  S.asked5 = false;
   let view = null;
   if (new URLSearchParams(location.hash.slice(1)).get("signin")) {
     try {
       view = await finishSignIn();
     } catch (e) {
       sessionAsked = null;
+      hubSays(await hubAsked);
       showOut(e.status === 0 ? e.message : e.message || "That sign-in didn’t work. Try again.");
       return;
     }
@@ -1231,6 +1692,7 @@ async function load() {
   try {
     view = await sessionAsked;
   } catch (e) {
+    hubSays(await hubAsked);
     if (e.status === 401) return signedOutNow();
     // (no answer at all (no network, not an error from the account), in a Home Screen Today, whose sign-in is its own and
     // so can't be ended by another app without Today knowing: the copy kept here, if the last answer said it was this
@@ -1244,34 +1706,32 @@ async function load() {
     return;
   }
   if (view?.links) S.links = view.links;
+  hubSays(await hubAsked);
   if (!view?.signedIn) return signedOutNow();
   signedIn(view);
+  wireLinks();
   if (!asked) askCards();
   fromHash();
+  devP.then(deviceMoved);
   const at = IFL.here("today");
   if (at?.y) requestAnimationFrame(() => scrollTo(0, at.y));
 }
 
 function start() {
+  if (goFromHash()) return;
   wire();
   worker();
   IFL.built("today", BUILD, NEWS);
-  IFL.updates({ app: "today", build: BUILD, url: "/version", field: "build", busy: () => !!sheetOpen, save: () => ({ y: Math.round(scrollY) }), files: ["/", "/app.js", "/cards.js", "/wxicons.js", "/app.css", "/theme.js"] });
+  IFL.updates({ app: "today", build: BUILD, url: "/version", field: "build", busy: () => !!sheetOpen, save: () => ({ y: Math.round(scrollY) }),
+    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js"] });
   load();
-  // (each minute, with no fetch: the place's clock, the pigeons' times to go, the date, the kept copy's word)
-  setInterval(() => {
-    if (!S.view) return;
-    tick($("#cards"), nowish());
-    drawLine();
-    drawKept();
-  }, MIN);
-  // (every five minutes while it's in view, and on coming back to it after two or more: the day afresh)
-  setInterval(() => { if (S.view && document.visibilityState === "visible") refresh(); }, 5 * MIN);
+  nextMinute();
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
-    if (S.view && Date.now() - S.loadedAt >= 2 * MIN) refresh();
-    else if (!S.view && $("#outSaid").textContent) load();
+    if (S.view) back();
+    else if ($("#outSaid").textContent) load();
   });
+  addEventListener("pageshow", (e) => { if (e.persisted) back(); });
   addEventListener("online", () => { if (!S.view || S.kept) load(); });
 }
 start();
