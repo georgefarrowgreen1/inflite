@@ -13,13 +13,21 @@ import {
 import { receiveEmail, retryPending, snippet } from "./receive.js";
 import { settings, updateSettings, listAddresses, createAddress, updateAddress, deleteAddress, addressOf, defaultAddress, localProblem } from "./addresses.js";
 import { listThreads, getThread, threadAction, counts, wakeSnoozed, unsubInfo, readAll } from "./threads.js";
-import { vapid, pushAll, pushEndpointOk, peopleUnread } from "./push.js";
+import { vapid, pushAll, pushEndpointOk, peopleUnread, noticeInflite } from "./push.js";
+import { listedOrigins, hubOf, hubHeaders, preflight, hubRefusal, hubNavigation, RASTER } from "./hubgate.js";
+import { cleanQuote, quoteFrom, withQuote } from "./quote.js";
+import { keyOk, card, notice, searchParams } from "./connect.js";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (PAGE.has(url.pathname)) return page(request, env);
+    // (the module InFlite's page runs Mail as, under the roof: its files, passed through at inflite.ai/mail/roof/)
+    if (url.pathname.startsWith("/roof/")) return roofFile(request, env, url);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    // (InFlite's page, at a hub whose switch is on: hubgate.js)
+    const hub = hubOf(request, env);
+    if (hub && request.method === "OPTIONS") return preflight(hub);
     // (Mail's notifications, as the account's Notifications page shows them: asked from there, with the account's sign-in)
     const cors = url.pathname === "/api/notify" && request.headers.get("Origin") === env.ACCOUNT_ORIGIN
       ? { "Access-Control-Allow-Origin": env.ACCOUNT_ORIGIN, "Access-Control-Allow-Credentials": "true", Vary: "Origin" } : null;
@@ -27,7 +35,7 @@ export default {
       return new Response(null, { status: 204, headers: { ...cors, "Access-Control-Allow-Methods": "GET, PATCH", "Access-Control-Allow-Headers": "Content-Type, X-Inflite", "Access-Control-Max-Age": "600" } });
     let res;
     try {
-      res = await api(request, env, ctx, url, !!cors);
+      res = await api(request, env, ctx, url, !!cors, hub);
     } catch (err) {
       if (!err.status || err.status >= 500) console.error(err);
       // (the words of errors Mail raised itself; never a database's)
@@ -35,6 +43,10 @@ export default {
       res = json({ error: said || "Something went wrong. Try again.", access: err.access }, err.status || 500);
     }
     if (cors) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+    if (hub) for (const [k, v] of Object.entries(hubHeaders(hub))) res.headers.set(k, v);
+    // (a file's answer differs by who asks: a hub may read only pictures, so no cache gives one asker's answer to another)
+    if (url.pathname.startsWith("/api/attachments/") && !/(^|,)\s*origin\s*(,|$)/i.test(res.headers.get("Vary") || ""))
+      res.headers.set("Vary", res.headers.get("Vary") ? `${res.headers.get("Vary")}, Origin` : "Origin");
     return res;
   },
 
@@ -51,8 +63,10 @@ export default {
       const woken = await wakeSnoozed(env);
       const told = woken.length && !(await quietNow(env)) ? woken : [];
       const badge = told.length ? await peopleUnread(env) : 0;
+      // (through InFlite, when George has chosen that: Mail's own only where the account says it isn't telling anyone)
       await Promise.allSettled(
-        told.map((w) =>
+        told.map(async (w) =>
+          (await noticeInflite(env, { kind: "later", threadId: w.threadId })) &&
           pushAll(env, { title: w.from || "Mail", body: `Back from Later: ${w.subject}`, tag: w.threadId, url: `/#thread=${w.threadId}`, badge })
         )
       );
@@ -86,13 +100,12 @@ const SAFE = { "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "
 // in it that isn't an address, 'none', as before. The rest of _headers' rules for the page set here too, so the page is
 // the same whether or not the files' own headers came with it.
 const PAGE = new Set(["/", "/index.html"]);
-const ORIGIN_RE = /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i;
 const MAIL_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; font-src 'self' data: https:; media-src 'self' https:; connect-src 'self'; worker-src 'self'; frame-src 'self' about: blob:; object-src 'none'; base-uri 'self'; form-action 'self'";
+// (every hub listed, switched on or not: the framed page of milestone 1 is how Mail opens at a hub whose switch is off)
 function pagePolicy(env) {
-  const hubs = typeof env.HUB_ORIGIN === "string" ? env.HUB_ORIGIN.trim().split(/\s+/).filter(Boolean) : [];
-  const ok = hubs.length > 0 && hubs.every((o) => ORIGIN_RE.test(o));
-  return `${MAIL_CSP}; frame-ancestors ${ok ? hubs.map((o) => o.toLowerCase()).join(" ") : "'none'"}`;
+  const hubs = listedOrigins(env);
+  return `${MAIL_CSP}; frame-ancestors ${hubs.length ? hubs.join(" ") : "'none'"}`;
 }
 const PAGE_HEADERS = {
   "Cache-Control": "no-cache",
@@ -118,9 +131,25 @@ const json = (data, status = 200, headers = {}) =>
 
 const EMAIL_RE = /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/;
 
-async function api(request, env, ctx, url, fromAccount = false) {
+// (the asks by POST that change nothing: the mailbox's version stays as it is)
+const READ_POSTS = new Set(["/api/threads/search", "/api/contacts/find"]);
+
+async function api(request, env, ctx, url, fromAccount = false, hub = null) {
   const { pathname } = url;
   const method = request.method;
+
+  // (what InFlite's page may never ask for: hubgate.js, spec §3.5)
+  if (hub) {
+    const why = hubRefusal(request, url);
+    if (why) throw new HttpError(403, why);
+  }
+
+  // Today's card, for the account's server, by the key it shares with Mail: never a cookie, before anyone's sign-in
+  if (pathname === "/api/connector/card" && method === "GET") {
+    if (!(await keyOk(request, env))) throw new HttpError(401, "Not allowed.");
+    await ensureSchema(env);
+    return json(await card(env));
+  }
 
   // Mutating requests must carry a custom header, which browsers won't send
   // cross-site without a CORS preflight (CSRF protection).
@@ -131,7 +160,11 @@ async function api(request, env, ctx, url, fromAccount = false) {
   // Same-site pages elsewhere on inflite.ai also carry the account cookie, so the API answers only this app's own pages.
   const site = request.headers.get("Sec-Fetch-Site");
   // (the account's own page alone, for Mail's notifications: same-site, from its own origin, by name)
-  if (site && site !== "same-origin" && site !== "none" && !(fromAccount && site === "same-site")) throw new HttpError(403, "That request didn’t come from Mail.");
+  // (and InFlite's page, at a hub whose switch is on, by CORS; or a tap there that opens a file or an original at Mail's
+  // own address, while one is: hubgate.js)
+  const nav = !hub && site === "same-site" && hubNavigation(request, url, env);
+  if (site && site !== "same-origin" && site !== "none" && !(fromAccount && site === "same-site") && !(hub && site === "same-site") && !nav)
+    throw new HttpError(403, "That request didn’t come from Mail.");
   if (fromAccount && pathname !== "/api/notify") throw new HttpError(403, "That request didn’t come from Mail.");
 
   if (pathname === "/api/session" && method === "GET") {
@@ -160,6 +193,15 @@ async function api(request, env, ctx, url, fromAccount = false) {
 
   const view = await accountView(env, request);
   const access = accessOf(view);
+  // A notice's words, for the phone just told only that one's due (InFlite's notices, S4-D8): even when the 12-hour
+  // check is due again, as Mail's own notices show their words then too
+  let m;
+  if ((m = pathname.match(/^\/api\/notice\/([\w-]{1,64})$/)) && method === "GET" && (access === "ok" || access === "reauth")) {
+    await ensureSchema(env);
+    const words = await notice(env, m[1]);
+    if (!words) throw new HttpError(404, "No notice.");
+    return json(words);
+  }
   if (access !== "ok") {
     const err = new HttpError(401, access === "notadmin" ? "Mail is only for the site’s admin." : "Sign in to open Mail.");
     err.access = access;
@@ -178,13 +220,13 @@ async function api(request, env, ctx, url, fromAccount = false) {
     return json({ on: subs?.n || 0, addresses: list.map((a) => ({ email: a.email, name: a.name || "", notify: a.notify !== false })) });
   }
 
-  const res = await route(request, env, ctx, url, view);
+  const res = await route(request, env, ctx, url, view, hub);
   // (anything that changed the mailbox moves its version on)
-  if (method !== "GET" && res.ok) ctx.waitUntil(bumpVersion(env).catch(() => {}));
+  if (method !== "GET" && res.ok && !READ_POSTS.has(pathname)) ctx.waitUntil(bumpVersion(env).catch(() => {}));
   return res;
 }
 
-async function route(request, env, ctx, url, view) {
+async function route(request, env, ctx, url, view, hub = null) {
   const { pathname } = url;
   const method = request.method;
   let m;
@@ -208,7 +250,12 @@ async function route(request, env, ctx, url, view) {
   if (pathname === "/api/addresses" && method === "POST") return json(await createAddress(env, await request.json()));
   if ((m = pathname.match(/^\/api\/addresses\/([^/]+)$/))) {
     const email = decodeURIComponent(m[1]);
-    if (method === "PATCH") return json(await updateAddress(env, email, await request.json()));
+    if (method === "PATCH") {
+      const b = await request.json();
+      // (the address mail goes from unless chosen: at Mail's own address, S4-D11)
+      if (hub && b?.isDefault) throw new HttpError(403, "Choose the default address in Mail Settings at Mail’s own address.");
+      return json(await updateAddress(env, email, b));
+    }
     if (method === "DELETE") {
       await deleteAddress(env, email);
       return json({ ok: true });
@@ -228,6 +275,12 @@ async function route(request, env, ctx, url, view) {
   if (pathname === "/api/counts" && method === "GET") return json(await counts(env));
   if (pathname === "/api/threads" && method === "GET") return json(await listThreads(env, url));
   if (pathname === "/api/threads/batch" && method === "POST") return threadBatch(env, await request.json());
+  // (a search asked in the request's body, as InFlite's page asks: the same as /api/threads?q=)
+  if (pathname === "/api/threads/search" && method === "POST") {
+    const sp = searchParams(await request.json().catch(() => null));
+    if (!sp) throw new HttpError(400, "That search is too long.");
+    return json(await listThreads(env, new URL(`https://mail/api/threads?${sp}`)));
+  }
   if ((m = pathname.match(/^\/api\/threads\/([\w-]+)$/))) {
     if (method === "GET") {
       const t = await getThread(env, m[1]);
@@ -249,14 +302,23 @@ async function route(request, env, ctx, url, view) {
   }
   if (pathname === "/api/messages" && method === "GET") return listMessages(env, url);
   if (pathname === "/api/messages/batch" && method === "POST") return batchUpdate(env, await request.json());
+  // (a message without its body: who, when, about what, its files; for InFlite's reader, whose bodies are Mail's frame)
+  if ((m = pathname.match(/^\/api\/messages\/([\w-]+)\/meta$/)) && method === "GET") return messageMeta(env, m[1]);
+  // (a draft's fields, without the old quoted text: drafts only)
+  if ((m = pathname.match(/^\/api\/drafts\/([\w-]+)$/)) && method === "GET") return getDraft(env, m[1]);
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)$/))) {
     if (method === "GET") return getMessage(env, m[1]);
     if (method === "PATCH") return updateMessage(env, m[1], await request.json());
     if (method === "DELETE") return deleteMessages(env, [m[1]]);
   }
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)\/raw$/)) && method === "GET") return rawMessage(env, m[1]);
-  if ((m = pathname.match(/^\/api\/attachments\/([\w-]+)$/)) && method === "GET") return attachment(env, m[1], url, request);
+  if ((m = pathname.match(/^\/api\/attachments\/([\w-]+)$/)) && method === "GET") return attachment(env, m[1], url, request, hub);
   if (pathname === "/api/contacts" && method === "GET") return contacts(env, url);
+  if (pathname === "/api/contacts/find" && method === "POST") {
+    const sp = searchParams(await request.json().catch(() => null));
+    if (!sp) throw new HttpError(400, "That search is too long.");
+    return contacts(env, new URL(`https://mail/api/contacts?${sp}`));
+  }
   // (which of the messages an app kept in its outbox went after all, by its names for them: their answers never got back)
   if (pathname === "/api/sends" && method === "GET") {
     const keys = (url.searchParams.get("keys") || "").split(",").filter((k) => /^[\w-]{8,64}$/.test(k)).slice(0, 50);
@@ -358,6 +420,40 @@ async function appBuild(env, request) {
     const m = r.ok && /const BUILD = "([\d.]+)"/.exec(await r.text());
     appBuildCache = { key, build: m ? m[1] : null };
     return appBuildCache.build;
+  } catch {
+    return null;
+  }
+}
+
+// The module InFlite's page runs Mail as (email/public/roof/), passed through by InFlite's Worker at /mail/roof/<file>:
+// a script or a style that's there, as it is, asked again each time (no-cache), never Mail's page in its place (the
+// files' not_found_handling answers any other path with it). And /roof/version: the module's BUILD, for an open page to
+// tell it's behind (as appBuild reads app.js's).
+const ROOF_FILE = /^\/roof\/\w[\w.-]*\.(js|css)$/;
+async function roofFile(request, env, url) {
+  const none = () => new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store", ...SAFE } });
+  if (request.method !== "GET" && request.method !== "HEAD") return none();
+  if (url.pathname === "/roof/version") return json({ build: await roofBuild(env, request) });
+  if (!ROOF_FILE.test(url.pathname)) return none();
+  const res = await env.ASSETS.fetch(request);
+  const type = res.headers.get("Content-Type") || "";
+  const ok = res.status === 304 || (res.status === 200 && (url.pathname.endsWith(".js") ? /^(text|application)\/javascript\b/i : /^text\/css\b/i).test(type));
+  if (!ok) return none();
+  const out = new Response(res.body, res);
+  out.headers.set("Cache-Control", "no-cache");
+  out.headers.set("X-Content-Type-Options", "nosniff");
+  return out;
+}
+let roofBuildCache = null;
+async function roofBuild(env, request) {
+  const key = buildOf(env) || "dev";
+  if (roofBuildCache?.key === key) return roofBuildCache.build;
+  try {
+    const r = await env.ASSETS.fetch(new Request(new URL("/roof/mail.js", request.url)));
+    const m = r.ok && /\bBUILD\s*=\s*"([\d.]+)"/.exec(await r.text());
+    // (kept only once it's read: a deploy whose module isn't there yet asks again)
+    if (m) roofBuildCache = { key, build: m[1] };
+    return m ? m[1] : null;
   } catch {
     return null;
   }
@@ -513,12 +609,82 @@ async function getMessage(env, id) {
     attachments.push({ id: a.id, filename: a.filename, type: a.type, size: a.size, url: href });
   }
 
+  // (a draft written in InFlite keeps only which message it quotes: opened here, in Mail on its own, it has the quote
+  // whole, as Mail's compose shows and sends it)
+  let compose = body.compose || null;
+  const q = compose && cleanQuote(compose.quote);
+  if (q && !q.header) {
+    const whole = await quoteFrom(env, q).catch(() => null);
+    compose = { ...compose, quote: whole ? { ...whole, of: q.of } : null };
+  }
   return json({
     ...rowToMessage(row),
     text: body.text || "",
     html,
-    compose: body.compose || null,
+    compose,
     attachments,
+  });
+}
+
+// A message as InFlite's reader has it: what the list knows of it and its headers for a reply, and its own files (not the
+// pictures set in its text); never its body (spec §3.5)
+async function messageMeta(env, id) {
+  const row = await env.DB.prepare(`SELECT * FROM messages WHERE id = ?1`).bind(id).first();
+  if (!row) throw new HttpError(404, "Message not found");
+  const { results } = await env.DB.prepare(`SELECT id, filename, type, size, content_id FROM attachments WHERE message_id = ?1`).bind(id).all();
+  // (which are pictures in its text, as getMessage tells them: read here, never passed on)
+  let html = "";
+  if (results.some((a) => a.content_id)) {
+    const obj = await env.MAIL.get(`body/${id}.json`);
+    html = obj ? String((await obj.json())?.html || "") : "";
+  }
+  const attachments = results
+    .filter((a) => !(a.content_id && html.includes(`cid:${a.content_id}`)))
+    .map((a) => ({ id: a.id, filename: a.filename, type: a.type, size: a.size }));
+  return json({ ...rowToMessage(row), attachments });
+}
+
+// A draft's fields for InFlite's compose (drafts only): its quote as which message it quotes ({ of, mode }), found by its
+// of or by the message it answers; one Mail can't tie to a message it has is quoteOld (its quoted text goes only if it's
+// sent from Mail on its own). Its files by name, type and size, never their bytes (i: which of the draft's own it is, for
+// keeping it as it is with the next save; ref: a forwarded file's attachment).
+async function getDraft(env, id) {
+  const row = await env.DB.prepare(`SELECT id FROM messages WHERE id = ?1 AND folder = 'drafts'`).bind(id).first();
+  if (!row) throw new HttpError(404, "Draft not found");
+  const obj = await env.MAIL.get(`body/${id}.json`);
+  const c = (obj && (await obj.json())?.compose) || {};
+  const q = cleanQuote(c.quote);
+  let quote = null, quoteOld = false;
+  if (q?.of) quote = { of: q.of, mode: q.mode || (q.forward ? "forward" : "reply") };
+  else if (q) {
+    const answers = !q.forward && cleanMessageId(c.inReplyTo);
+    const orig = answers && (await env.DB.prepare(`SELECT id FROM messages WHERE message_id = ?1 AND folder != 'drafts' ORDER BY date DESC LIMIT 1`).bind(answers).first());
+    if (orig) quote = { of: orig.id, mode: "reply" };
+    else quoteOld = true;
+  }
+  const people = (l) => (Array.isArray(l) ? l.map((p) => ({ name: String(p?.name || ""), email: String(p?.email || "") })) : []);
+  const files = (Array.isArray(c.attachments) ? c.attachments : []).map((a, i) => ({
+    i,
+    filename: String(a?.filename || "attachment"),
+    type: String(a?.type || "application/octet-stream"),
+    size: Number(a?.size) || 0,
+    ...(a?.ref && { ref: a.ref }),
+  }));
+  return json({
+    id,
+    compose: {
+      from: String(c.from || ""),
+      to: people(c.to),
+      cc: people(c.cc),
+      bcc: people(c.bcc),
+      subject: String(c.subject || ""),
+      text: String(c.text || ""),
+      inReplyTo: c.inReplyTo || null,
+      references: c.references || null,
+      quote,
+      files,
+    },
+    quoteOld,
   });
 }
 
@@ -597,8 +763,10 @@ async function rawMessage(env, id) {
   });
 }
 
-async function attachment(env, id, url, request) {
+async function attachment(env, id, url, request, hub = null) {
   const row = await env.DB.prepare(`SELECT * FROM attachments WHERE id = ?1`).bind(id).first();
+  // (to InFlite's page, pictures alone, which it shows as pictures; the rest opens at Mail's own address, S4-D17)
+  if (hub && row && !RASTER.test(row.type || "")) throw new HttpError(403, "Open this file at Mail’s own address.");
   // (a part asked for, as a video player does, and iPhone insists on before it plays one)
   const range = request?.headers.get("Range");
   const obj = row && (await env.MAIL.get(`att/${id}`, range ? { range: request.headers } : undefined));
@@ -665,6 +833,16 @@ function base64ToBytes(b64) {
 }
 
 async function send(env, ctx, body, view) {
+  body = body && typeof body === "object" ? body : {};
+  // Sending a saved draft, as InFlite's page sends ({ draftId, key } and nothing else): its fields, files and quote, as
+  // kept here (S4-D4). One already sent under that key says so, though its draft has gone.
+  const fromDraft = typeof body.draftId === "string" && Object.keys(body).every((k) => k === "draftId" || k === "key");
+  if (fromDraft) {
+    const k = typeof body.key === "string" && /^[\w-]{8,64}$/.test(body.key) ? body.key : null;
+    const was = k && (await env.DB.prepare(`SELECT id FROM sends WHERE key = ?1 AND id IS NOT NULL`).bind(k).first());
+    if (was) return json({ ok: true, id: was.id });
+    body = { ...(await storedDraft(env, body.draftId)), draftId: body.draftId, key: body.key };
+  }
   const size = (Array.isArray(body.attachments) ? body.attachments : []).reduce((n, a) => n + String(a?.content || "").length * 0.75, 0);
   if (size > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
   const from = checkFrom(env, body.from || (await defaultAddress(env)));
@@ -679,10 +857,15 @@ async function send(env, ctx, body, view) {
   if (bad) throw new HttpError(400, `“${bad.email}” isn't a valid email address.`);
 
   const subject = String(body.subject || "").slice(0, 998);
-  const text = String(body.text || "");
-  const html = body.html ? String(body.html) : undefined;
+  let text = String(body.text || "");
+  let html = body.html ? String(body.html) : undefined;
+  // (quoted here, from Mail's own copy, when the page has none: InFlite's never has the original's body, S4-D4)
+  if (!html && (fromDraft || body.quote)) {
+    const q = cleanQuote(body.quote);
+    ({ text, html } = withQuote(text, q?.header ? q : q ? await quoteFrom(env, q) : null));
+  }
   const inReplyTo = cleanMessageId(body.inReplyTo);
-  const references = String(body.references || "")
+  const references = (Array.isArray(body.references) ? body.references.join(" ") : String(body.references || ""))
     .split(/\s+/)
     .map(cleanMessageId)
     .filter(Boolean);
@@ -690,12 +873,8 @@ async function send(env, ctx, body, view) {
   // (a long thread's chain is trimmed, as mail clients do: the first message and the most recent)
   if (references.length > 20) references.splice(1, references.length - 20);
 
-  const attachments = (Array.isArray(body.attachments) ? body.attachments : []).map((a) => ({
-    id: crypto.randomUUID(),
-    filename: String(a.filename || "attachment"),
-    type: String(a.type || "application/octet-stream"),
-    bytes: base64ToBytes(String(a.content || "")),
-  }));
+  const attachments = await filesOut(env, Array.isArray(body.attachments) ? body.attachments : []);
+  if (attachments.reduce((n, a) => n + a.bytes.byteLength, 0) > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
 
   const toAddr = (r) => (r.name ? { email: r.email, name: r.name } : r.email);
   const headers = {};
@@ -816,21 +995,69 @@ async function keepSent(env, ctx, { id, result, from, name, to, cc, bcc, all, su
   ctx.waitUntil(upsertContacts(env, all));
 }
 
+// A message's files to send: those sent with it, and those forwarded ({ ref: an attachment's id }), copied from Mail's own
+// (never fetched into the page, S4-D4). One that can't be had is said, never left out.
+async function filesOut(env, list) {
+  const out = [];
+  for (const a of list) {
+    if (a?.ref !== undefined) {
+      const ref = typeof a.ref === "string" && /^[\w-]{1,64}$/.test(a.ref) ? a.ref : null;
+      const row = ref && (await env.DB.prepare(`SELECT filename, type FROM attachments WHERE id = ?1`).bind(ref).first());
+      const obj = row && (await env.MAIL.get(`att/${ref}`));
+      if (!obj) throw new HttpError(400, `Couldn’t attach “${String(a.filename || row?.filename || "a file").slice(0, 200)}”.`);
+      out.push({ id: crypto.randomUUID(), filename: String(a.filename || row.filename || "attachment"), type: String(row.type || "application/octet-stream"), bytes: new Uint8Array(await obj.arrayBuffer()) });
+      continue;
+    }
+    out.push({ id: crypto.randomUUID(), filename: String(a?.filename || "attachment"), type: String(a?.type || "application/octet-stream"), bytes: base64ToBytes(String(a?.content || "")) });
+  }
+  return out;
+}
+
+// A saved draft, as send() takes a message
+async function storedDraft(env, id) {
+  const row = /^[\w-]{1,64}$/.test(id) && (await env.DB.prepare(`SELECT id FROM messages WHERE id = ?1 AND folder = 'drafts'`).bind(id).first());
+  const obj = row && (await env.MAIL.get(`body/${id}.json`));
+  const c = obj && (await obj.json())?.compose;
+  if (!c) throw new HttpError(404, "That draft isn’t in Drafts any more.");
+  const { attachments, ...rest } = c;
+  return { ...rest, attachments: Array.isArray(attachments) ? attachments : [] };
+}
+
 // (only ever a draft: never a message that came in or went out)
 async function deleteDraft(env, id) {
   const row = await env.DB.prepare(`SELECT id FROM messages WHERE id = ?1 AND folder = 'drafts'`).bind(id).first();
   if (row) await deleteMessages(env, [row.id]);
 }
 
-// (a draft's attachments, kept in its stored copy: 25 MB at most, like sending)
-function draftFiles(list) {
+// (a draft's attachments, kept in its stored copy: 25 MB at most, like sending. A forwarded file is kept as which
+// attachment it is ({ ref }), copied when it's sent; one the draft already has ({ i }, as /api/drafts/<id> numbers them)
+// stays as it is, as InFlite's page never has its bytes)
+async function draftFiles(env, list, kept = []) {
   const out = [];
   let total = 0;
+  const add = (n) => {
+    total += n;
+    if (total > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
+  };
   for (const a of Array.isArray(list) ? list.slice(0, 20) : []) {
+    if (a?.ref !== undefined) {
+      const ref = typeof a.ref === "string" && /^[\w-]{1,64}$/.test(a.ref) ? a.ref : null;
+      const row = ref && (await env.DB.prepare(`SELECT filename, type, size FROM attachments WHERE id = ?1`).bind(ref).first());
+      if (!row) throw new HttpError(400, `Couldn’t attach “${String(a.filename || "a file").slice(0, 200)}”.`);
+      add(Number(row.size) || 0);
+      out.push({ ref, filename: String(a.filename || row.filename || "attachment").slice(0, 200), type: String(row.type || "application/octet-stream").slice(0, 100), size: Number(row.size) || 0 });
+      continue;
+    }
+    if (a && a.content === undefined && Number.isInteger(a.i)) {
+      const k = kept[a.i];
+      if (!k) continue;
+      add(k.ref ? Number(k.size) || 0 : String(k.content || "").length * 0.75);
+      out.push(k);
+      continue;
+    }
     const content = String(a?.content || "");
     if (!/^[A-Za-z0-9+/=]*$/.test(content)) continue;
-    total += content.length * 0.75;
-    if (total > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
+    add(content.length * 0.75);
     out.push({ filename: String(a.filename || "attachment").slice(0, 200), type: String(a.type || "application/octet-stream").slice(0, 100), size: Number(a.size) || 0, content });
   }
   return out;
@@ -841,6 +1068,9 @@ async function saveDraft(env, body, view) {
   // (a draft's id can't be used to write over anything else)
   const existing = await env.DB.prepare(`SELECT folder FROM messages WHERE id = ?1`).bind(id).first();
   if (existing && existing.folder !== "drafts") id = crypto.randomUUID();
+  // (the files it has now, for those kept as they are: { i })
+  const keeps = existing?.folder === "drafts" && Array.isArray(body.attachments) && body.attachments.some((a) => a && a.content === undefined && Number.isInteger(a.i));
+  const kept = keeps ? (await (await env.MAIL.get(`body/${id}.json`))?.json())?.compose?.attachments || [] : [];
   const compose = {
     from: String(body.from || ""),
     to: normalizeRecipients(body.to),
@@ -850,8 +1080,8 @@ async function saveDraft(env, body, view) {
     text: String(body.text || ""),
     inReplyTo: body.inReplyTo || null,
     references: body.references || null,
-    quote: body.quote || null,
-    attachments: draftFiles(body.attachments),
+    quote: cleanQuote(body.quote),
+    attachments: await draftFiles(env, body.attachments, kept),
   };
   await env.MAIL.put(`body/${id}.json`, JSON.stringify({ text: compose.text, html: "", compose }), {
     httpMetadata: { contentType: "application/json" },

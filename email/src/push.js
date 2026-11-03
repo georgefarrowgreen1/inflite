@@ -147,3 +147,35 @@ export async function peopleUnread(env) {
     .first();
   return row?.n || 0;
 }
+
+// Mail's notices through InFlite (One roof, stage 4, S4-D8). Mail tells the account only that something's due ({ kind:
+// "new"|"later", thread: its id }: no words), with the key they share (MAIL_KEY); the account answers at once { on, will,
+// held } (on: George has chosen notices through InFlite; will: how many of InFlite's devices it's about to tell; held:
+// Quiet Hours or a ride kept them back) and pushes them itself, words fetched by the phone from Mail. → whether Mail
+// should still push through its own subscriptions: when InFlite's are off, or InFlite reaches no device and held nothing.
+// No answer within 3 seconds, or one that makes no sense: Mail pushes itself only if the last answer it heard said off
+// (or it has heard none: the choice starts off), so a notice may be missed but never comes twice. No key: as before.
+export async function noticeInflite(env, { kind, threadId }) {
+  if (!env.MAIL_KEY || !env.ACCOUNT_ORIGIN) return true;
+  let said = null;
+  try {
+    const r = await fetch(`${env.ACCOUNT_ORIGIN}/api/account/mail/notice`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.MAIL_KEY}`, "Content-Type": "application/json", "X-Inflite": "1" },
+      body: JSON.stringify({ kind: kind === "later" ? "later" : "new", thread: String(threadId) }),
+      signal: AbortSignal.timeout(3000),
+    });
+    const a = r.ok ? await r.json() : null;
+    if (a && typeof a.on === "boolean" && Number.isInteger(a.will) && a.will >= 0 && typeof a.held === "boolean") said = a;
+  } catch {}
+  if (said) {
+    await env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('inflite_on', ?1) ON CONFLICT(k) DO UPDATE SET v = excluded.v`)
+      .bind(said.on ? "1" : "0")
+      .run()
+      .catch(() => {});
+    return !said.on || (said.will === 0 && !said.held);
+  }
+  // (the database not answering either: taken as on, a miss rather than a double)
+  const last = await env.DB.prepare(`SELECT v FROM meta WHERE k = 'inflite_on'`).first().catch(() => ({ v: "1" }));
+  return last?.v !== "1";
+}

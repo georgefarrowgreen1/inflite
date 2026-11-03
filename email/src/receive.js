@@ -1,6 +1,6 @@
 import PostalMime from "postal-mime";
 import { ensureSchema, findThread, cleanMessageId, upsertContacts, bumpVersion } from "./db.js";
-import { pushAll, peopleUnread } from "./push.js";
+import { pushAll, peopleUnread, noticeInflite } from "./push.js";
 import { arrivalFor } from "./addresses.js";
 import { quietNow } from "./auth.js";
 
@@ -222,14 +222,16 @@ async function store(message, env, ctx, id, raw, address) {
   const notify = address ? address.notify && (category === "people" || address.category === "updates") : category === "people";
   // (none in the account's Quiet Hours: what came meanwhile is there, unread, when they're over)
   if (notify && !(await quietNow(env))) {
+    // (through InFlite, when George has chosen that: Mail's own only where the account says it isn't telling anyone)
     ctx.waitUntil(
-      peopleUnread(env).then((badge) =>
+      noticeInflite(env, { kind: "new", threadId }).then(async (own) =>
+        own &&
         pushAll(env, {
           title: from.name || from.email,
           body: [email.subject || "(No Subject)", snippet(email.text, email.html)].filter(Boolean).join("\n").slice(0, 240),
           tag: threadId,
           url: `/#thread=${threadId}`,
-          badge,
+          badge: await peopleUnread(env),
         })
       )
     );
