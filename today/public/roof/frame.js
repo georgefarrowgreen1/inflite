@@ -151,10 +151,11 @@ export function createFrame(opts = {}) {
       } else if (el && shown) { el.hidden = true; el.inert = true; }
     },
     refresh() { const s = shown && screens[shown.id]; if (s) F.header.set(tabHead(s.spec, F.route)); },
-    // (the host has already changed what session() says; v is Weather's flag, apps the new map. Apps turned off are let
-    // go of, the shown one with D14's bounce once nothing is unsaved (s24 §7); apps turned on get their search provider)
-    setRoof() {
-      const now = sess().apps, was = lastApps;
+    // (v is Weather's flag (stage 1's argument, alone from a host before stages 2–4), apps the new map, each ANDed with
+    // hub; the host changes what session() says too. Apps turned off are let go of, the shown one with D14's bounce once
+    // nothing is unsaved (s24 §7); apps turned on get their search provider)
+    setRoof(v, apps) {
+      const s = sess(), now = apps && typeof apps === "object" ? appsOf({ ...s, apps }) : v === undefined ? s.apps : { ...lastApps, weather: !!(s.hub && v) }, was = lastApps;
       lastApps = now;
       const off = Object.keys(REGISTRY).filter((a) => was[a] && !now[a]);
       providers();
