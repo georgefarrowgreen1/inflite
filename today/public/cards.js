@@ -4,6 +4,9 @@
 // only markup here is our own (the glyphs, the icons, the fixed words). And no inline styles anywhere: a figure a drawing
 // needs (how far a pigeon's flown, where the best hours are) goes in data-vars, set as custom properties once it's in
 // the page (applyVars), as the page's rules allow no inline styles.
+// At the hub (Today First: InFlite one app at inflite.ai, IFL.hub, handed in as ctx.hub), every link here goes through
+// IFL.hub.go (an app's own address as the hub's path: weather. → /weather/), and Send to a friend is a button that opens
+// Chat's sheet where you are (IFL.hub.send). Off the hub, or before it's ready, the links and Send are as they always were.
 import { weatherIcon } from "/wxicons.js";
 
 export const CARD_KEYS = ["weather", "chat", "fitness", "markets"];
@@ -17,9 +20,29 @@ const MIN = 60e3, HR = 60 * MIN;
 
 // ---------------------------------------------------------------- text, addresses, times
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-// (an address from the account: https only, or http where Today itself is (a test on this computer))
-export const safe = (h) => (typeof h === "string" && (/^https:\/\//i.test(h) || (location.protocol === "http:" && /^http:\/\//i.test(h))) ? h : null);
-const href = (h) => esc(safe(h) || "#");
+// (an address from the account: https only, or http where Today itself is (a test on this computer), or a path of this
+// site's (the hub's /weather/#radar): starting with one /, never two (another site), with no \ (which a browser reads as
+// /), nothing unseen (a tab or a new line, which an address drops, so "/\n/x" would be "//x"), and no ":" before its
+// first /)
+export const safe = (h) => {
+  if (typeof h !== "string") return null;
+  if (/^https:\/\//i.test(h) || (typeof location !== "undefined" && location.protocol === "http:" && /^http:\/\//i.test(h))) return h;
+  return /^\/(?!\/)/.test(h) && !/[\\\u0000-\u001f\u007f]/.test(h) && !/^[^/]*:/.test(h) ? h : null;
+};
+// ---------------------------------------------------------------- the hub
+// (IFL.hub, as the page hands it in (ctx.hub), else a page-wide one; and whether it's on and ready: at the hub, and not
+// running degraded (its key not set yet, addendum A1), where every app is still at its own address)
+export const hubOf = (ctx) => ctx?.hub || globalThis.IFL?.hub || null;
+export const onHub = (ctx) => { const h = hubOf(ctx); return !!(h && h.on === true && !h.degraded && h.ready !== false && typeof h.go === "function"); };
+// (the card being drawn's ctx, for its links: set by cardHTML as it draws, which it does all at once)
+let drawing = null;
+// an address from the answer, at the hub as the hub's own path (IFL.hub.go), and checked either way
+const linkOf = (h, ctx = drawing) => {
+  if (typeof h !== "string") return null;
+  if (onHub(ctx)) { try { return safe(hubOf(ctx).go(h)); } catch { return null; } }
+  return safe(h);
+};
+const href = (h) => esc(linkOf(h) || "#");
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const and2 = (a) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} and ${a.at(-1)}` : a[0] || "");
 
@@ -39,7 +62,7 @@ export const dateLong = (t, tz) => dtf(tz, { weekday: "long", day: "numeric", mo
 export const dateShort = (t, tz) => dtf(tz, { weekday: "short", day: "numeric", month: "short" }).format(t);
 const dayMonth = (t, tz) => dtf(tz, { day: "numeric", month: "short" }).format(t);
 const weekday = (t, tz) => dtf(tz, { weekday: "long" }).format(t);
-const wkShort = (t, tz) => dtf(tz, { weekday: "short" }).format(t);
+export const wkShort = (t, tz) => dtf(tz, { weekday: "short" }).format(t);
 // (the calendar day of t where tz is, as a count of days: so two days a clock change apart are still one day apart)
 const dayNo = (t, tz) => {
   const p = Object.fromEntries(dtf(tz, { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(t).map((x) => [x.type, x.value]));
@@ -47,7 +70,7 @@ const dayNo = (t, tz) => {
 };
 // "", "tomorrow ", "yesterday ", "Wed ", or six days or more off "Fri 23 Oct " (as Chat's atTime: a weekday alone reads as
 // this week's): the day of t, said from today's
-function dayWord(t, now, tz) {
+export function dayWord(t, now, tz) {
   const d = dayNo(t, tz) - dayNo(now, tz);
   return d === 0 ? "" : d === 1 ? "tomorrow " : d === -1 ? "yesterday " : Math.abs(d) < 6 ? `${wkShort(t, tz)} ` : `${wkShort(t, tz)} ${dayMonth(t, tz)} `;
 }
@@ -108,12 +131,39 @@ function head(key, card, meta = "", label = "") {
 // Send to a friend: Chat, with the card's line to start a letter with (never a word of anyone's letter), and beside it
 // the card itself, packed by the server (sendCard: base64url, or null), for Chat to draw and keep up to date. The words
 // come first, so an older Chat still finds them; a sendCard that isn't plain base64url is left out, never put in a link
-// (glyph: the bird, or a plain arrow from Chat's card for someone with pigeons off)
-function sendPill(card, ctx, glyph = G.bird) {
-  const chat = safe(ctx.links?.chat);
-  if (!card.share || typeof card.share !== "string" || !chat) return "";
-  const ok = typeof card.sendCard === "string" && /^[A-Za-z0-9_-]{1,6000}$/.test(card.sendCard);
-  return `<a class="pill" href="${esc(`${chat.replace(/\/+$/, "")}/#share=${encodeURIComponent(card.share)}${ok ? `&card=${card.sendCard}` : ""}`)}" data-send>${glyph}Send to a friend</a>`;
+// (glyph: the bird, or a plain arrow from Chat's card for someone with pigeons off). At the hub, a button: Chat's own
+// sheet opens over the page you're on (IFL.hub.send(share, sendCard, { to })), and you stay there. Off it, a link to
+// Chat's #share=, as it always was.
+//   sendButton(card: { share, sendCard }, ctx, { label, glyph, to, cls, aria }) → the button or link, or "" with nothing
+//   to send
+const PACKED = /^[A-Za-z0-9_-]{1,6000}$/, FRIEND = /^[\w-]{8,64}$/;
+export function sendButton(card, ctx, { label = "Send to a friend", glyph = G.bird, to = null, cls = "pill", aria = "" } = {}) {
+  const share = card && typeof card.share === "string" && card.share ? card.share : null;
+  if (!share) return "";
+  const packed = typeof card.sendCard === "string" && PACKED.test(card.sendCard) ? card.sendCard : "";
+  const chat = safe(ctx?.links?.chat), link = chat ? `${chat.replace(/\/+$/, "")}/#share=${encodeURIComponent(share)}${packed ? `&card=${packed}` : ""}` : "";
+  const said = aria ? ` aria-label="${esc(aria)}"` : "";
+  if (onHub(ctx)) {
+    sendHub = hubOf(ctx);
+    wireSend();
+    return `<button class="${esc(cls)}" type="button" data-send data-share="${esc(share)}"${packed ? ` data-card="${packed}"` : ""}${to && FRIEND.test(to) ? ` data-to="${esc(to)}"` : ""}${link ? ` data-href="${esc(link)}"` : ""}${said}>${glyph}${esc(label)}</button>`;
+  }
+  return link ? `<a class="${esc(cls)}" href="${esc(link)}" data-send${said}>${glyph}${esc(label)}</a>` : "";
+}
+function sendPill(card, ctx, glyph = G.bird) { return sendButton(card, ctx, { glyph }); }
+// (one listener for every Send button at the hub, wherever it's drawn: the cards here and Today's day, day.js)
+let sendHub = null, sendWired = false;
+function wireSend() {
+  if (sendWired || typeof document === "undefined") return;
+  sendWired = true;
+  document.addEventListener("click", (e) => {
+    const b = e.target?.closest?.("button[data-send]");
+    if (!b || !sendHub) return;
+    e.preventDefault();
+    const to = FRIEND.test(b.dataset.to || "") ? b.dataset.to : undefined, back = safe(b.dataset.href || "");
+    // (the hub gone since it was drawn says false, and the card goes Chat's own way)
+    Promise.resolve(sendHub.send(b.dataset.share || "", b.dataset.card || null, { to })).then((r) => { if (r === false && back) location.assign(back); }, () => {});
+  });
 }
 const foot = (...xs) => { const s = xs.filter(Boolean).join(""); return s ? `<div class="tc-foot">${s}</div>` : ""; };
 const linkPill = (label, h, { primary = false, icon = "" } = {}) => `<a class="pill${primary ? " primary" : ""}" href="${href(h)}">${icon}${esc(label)}</a>`;
@@ -132,10 +182,11 @@ function notOk(key, card) {
   return `${head(key, card, meta)}<p class="tc-p tc-said">${esc(card.said)}</p>${foot(act, retry)}`;
 }
 
-// the whole card, from its part of the answer: ctx = { links, tz, now }
+// the whole card, from its part of the answer: ctx = { links, tz, now, hub? }
 export function cardHTML(key, card, ctx) {
   const a = APP[key];
   let inner = "", cls = "";
+  drawing = ctx;
   try {
     if (!card || typeof card !== "object") card = { state: "error", said: "Couldn’t load this just now.", retry: true };
     if (card.state !== "ok") inner = notOk(key, card);
@@ -147,6 +198,8 @@ export function cardHTML(key, card, ctx) {
     console.error(e);
     inner = notOk(key, { state: "error", href: card?.href, said: "Couldn’t show this just now." });
     cls = "";
+  } finally {
+    drawing = null;
   }
   return `<article class="tcard glass${cls ? " " + cls : ""}" data-app="${key}" data-state="${esc(card?.state || "error")}" aria-label="${a.name}">${inner}</article>`;
 }
@@ -199,9 +252,9 @@ function weather(c, ctx) {
 const KINDS = ["standard", "swift", "turbo", "rocket", "dumb"];
 // (Chat's words for a pigeon of each kind, pigeon/app.js, without their punctuation)
 const KIND_SAID = { standard: "A standard pigeon", swift: "A swift pigeon", turbo: "A turbo pigeon", rocket: "A rocket pigeon", dumb: "A dumb pigeon" };
-const firstOf = (who) => String(who?.first || who?.name || "Someone");
+export const firstOf = (who) => String(who?.first || who?.name || "Someone");
 // (each friend's own colour, by their id, behind their initial; their picture over it, where they have one)
-function av(who) {
+export function av(who) {
   const id = String(who?.id || "");
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
