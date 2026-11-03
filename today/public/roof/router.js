@@ -9,8 +9,8 @@
 //   app key: the hash's key as written, a section id or one of the app's aliases, else the app's first section;
 //   app arg: what follows the first = after key, once decodeURIComponent'd (a day YYYY-MM-DD, a settings page, a symbol
 //   such as TSCO.L, ^GSPC or GBPUSD=X, a thread's id); query: the address's search, raw ("" past 400).
-//   An app's arg is only ever [A-Za-z0-9_.^=-]{1,40} after that one decoding, You's [A-Za-z0-9_-]{1,40} as written;
-//   anything else (or a bad %) is dropped (null).
+//   An app's arg is only ever [A-Za-z0-9_.^=-]{1,40} after that one decoding; You's and Weather's [A-Za-z0-9_-]{1,40} as
+//   written, never decoded (stage 1's rule, kept); anything else (or a bad %) is dropped (null).
 //
 // History state the frame writes: { ifl: { d: depth, k: key } } only (§3.3); nothing here reads it.
 
@@ -84,8 +84,8 @@ const QUERY_MAX = 400;
 const HREF_MAX = 2048;
 const BASE = "https://router.invalid";
 const argOf = (s) => (typeof s === "string" && ARG.test(s) ? s : null);
-// (You's arg, as stage 1 had it: [\w-] only, never decoded)
-const tabArg = (s) => (typeof s === "string" && /^[\w-]{1,40}$/.test(s) ? s : null);
+// (You's arg and Weather's, as stage 1 had them: [\w-] only, never decoded)
+const arg1 = (s) => (typeof s === "string" && /^[\w-]{1,40}$/.test(s) ? s : null);
 // (an arg as the address writes it: decoded once; a bad % → null)
 const argIn = (s) => { try { return argOf(decodeURIComponent(s)); } catch (_) { return null; } };
 // (whether an app's routes are ours: roof true (every app) or a map with the app's flag true)
@@ -121,7 +121,7 @@ export function parse(href, { roof = false, origin } = {}) {
   if (path === "/" || path === "/index.html") {
     if (hash === "apps") return { kind: "tab", tab: "apps", arg: null };
     if (hash === "you") return { kind: "tab", tab: "you", arg: null };
-    if (hash.startsWith("you=")) return { kind: "tab", tab: "you", arg: tabArg(hash.slice(4)) };
+    if (hash.startsWith("you=")) return { kind: "tab", tab: "you", arg: arg1(hash.slice(4)) };
     return { kind: "tab", tab: "today", arg: null };
   }
   if (!roof) return null;
@@ -133,7 +133,7 @@ export function parse(href, { roof = false, origin } = {}) {
     const ids = r.sections.map((s) => s[0]);
     const section = ids.includes(raw) ? raw : Object.hasOwn(r.aliases, raw) ? r.aliases[raw] : null;
     const key = section ? raw : ids[0];
-    const arg = section && eq >= 0 ? argIn(hash.slice(eq + 1)) : null;
+    const arg = section && eq >= 0 ? (r.app === "weather" ? arg1 : argIn)(hash.slice(eq + 1)) : null;
     const query = u.search.length <= QUERY_MAX ? u.search : "";
     return { kind: "app", app: r.app, section: section || ids[0], key, arg, query };
   }
@@ -158,7 +158,7 @@ export function format(route) {
   const kind = route.kind ?? (route.app != null ? "app" : route.tab != null ? "tab" : null);
   if (kind === "tab") {
     if (route.tab === "apps") return "/#apps";
-    if (route.tab === "you") { const a = tabArg(route.arg); return a ? `/#you=${a}` : "/#you"; }
+    if (route.tab === "you") { const a = arg1(route.arg); return a ? `/#you=${a}` : "/#you"; }
     return "/";
   }
   const r = kind === "app" && typeof route.app === "string" && Object.hasOwn(REGISTRY, route.app) ? REGISTRY[route.app] : null;
@@ -169,7 +169,7 @@ export function format(route) {
   const hasKey = route.key != null;
   const fits = hasKey && sectionOf(route.key) === section;
   const key = fits ? route.key : section;
-  const a = fits || !hasKey ? argOf(route.arg) : null;
+  const a = fits || !hasKey ? (r.app === "weather" ? arg1 : argOf)(route.arg) : null;
   if (a) return `${r.path}#${key}=${a}`;
   return key === ids[0] ? r.path : `${r.path}#${key}`;
 }

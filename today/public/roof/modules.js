@@ -35,7 +35,7 @@ export async function loadModule(app, F) {
   try {
     await Promise.race([F.hubAgain?.(), new Promise((ok) => setTimeout(ok, 2000))]);
     const s = F.session;
-    if (!s.apps?.[app]) throw new Error(`${app} isn't a module here (the hub or its switch is off)`);
+    if (!s.apps?.[app]) throw new Error(`the hub or the roof is off (${app}'s switch)`);
     const m = await Promise.race([import(n ? `${R.entry}?retry=${n}` : R.entry), wait(12e3, "the module")]);
     if (m?.CONTRACT !== 1 || typeof m.mount !== "function") throw new Error(`${app}: contract ${m?.CONTRACT} isn't 1`);
     await Promise.all(R.css.map(css));
