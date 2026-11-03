@@ -30,7 +30,18 @@
   <script src="/fade.js"></script>
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/roof/roof.css">
   <link rel="stylesheet" href="/day.css">
+  <link rel="modulepreload" href="/cards.js">
+  <link rel="modulepreload" href="/roof/frame.js">
+  <link rel="modulepreload" href="/roof/router.js">
+  <link rel="modulepreload" href="/roof/header.js">
+  <link rel="modulepreload" href="/roof/tabs.js">
+  <link rel="modulepreload" href="/roof/sheet.js">
+  <link rel="modulepreload" href="/roof/toast.js">
+  <link rel="modulepreload" href="/roof/ui.js">
+  <link rel="modulepreload" href="/roof/search.js">
+  <link rel="modulepreload" href="/roof/send.js">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -61,28 +72,30 @@
   </div>
 </main>
 
-<!-- Signed in: InFlite, one app. Today, Apps and You are views of this one page (#today, #apps, #you), with the tab bar
-     Today · Chats · Apps · You (Chats is a page of its own, /chats/). The header, the day, the tiles and You are drawn by
-     app.js (with day.js, apps.js and you.js) from the account's answers -->
+<!-- Signed in: InFlite, one app, on its framework (/roof/: One roof). Today, Apps and You are screens of this one page
+     (#today, #apps, #you), and so is Weather (/weather/, made in #views on first open), under one header (#hd) and one tab
+     bar Today · Chats · Apps · You (#tabs; Chats is a page of its own, /chats/). The frame (/roof/frame.js) draws the
+     header and the tab bar into their hosts; the day, the tiles and You are drawn by app.js (with day.js, apps.js and
+     you.js) from the account's answers -->
 <div class="today-in" id="in" hidden>
   <div id="hd"></div>
   <div id="views">
-    <main id="today" class="view" aria-label="Today">
+    <main id="today" class="view ifl-screen" aria-label="Today">
       <p class="kept" id="kept" role="status" hidden></p>
       <div id="top"></div>
       <section id="waiting"></section>
       <section id="coming"></section>
       <section id="rest"></section>
     </main>
-    <main id="apps" class="view" aria-label="Apps" hidden></main>
-    <main id="you" class="view" aria-label="You" hidden></main>
+    <main id="apps" class="view ifl-screen" aria-label="Apps" hidden></main>
+    <main id="you" class="view ifl-screen" aria-label="You" hidden></main>
   </div>
   <nav class="ifl-tabs" id="tabs" aria-label="InFlite"></nav>
 </div>
 
-<!-- Morning: the one notification, its time and its lines (from the menu) -->
-<div class="bsheet" id="morning" role="dialog" aria-modal="true" aria-labelledby="mh">
-  <div class="bsheet-head"><h2 id="mh" tabindex="-1">Morning Notification</h2><button class="ifs-btn" type="button" data-close aria-label="Close"></button></div>
+<!-- The page's own sheets, InFlite's sheet (One roof §3.8: the frame opens each with F.sheet.openEl) -->
+<!-- Morning: the one notification, its time and its lines (from the menu, and You) -->
+<dialog class="ifl-sheet" id="morning" aria-labelledby="morning-t"><div class="ifs-grab" aria-hidden="true"></div><header class="ifs-head"><h2 id="morning-t" tabindex="-1">Morning Notification</h2><button class="ifs-btn" type="button" data-close aria-label="Close">✕</button></header><div class="ifs-body">
   <div class="group glass mgroup">
     <label class="row plain"><span class="tx"><b>Morning Notification</b><small>One notification, instead of one from each app</small></span><input type="checkbox" class="switch" role="switch" id="mOn"></label>
     <label class="row plain pick" id="mAtRow"><span class="tx"><b>Time</b></span><span class="val"><span id="atSaid">07:00</span><span class="chev-d" id="atChev"></span></span>
@@ -93,24 +106,24 @@
   <div class="group glass mgroup">
     <a class="row plain" id="namesRow" href="https://account.inflite.ai/" data-account="notify-inflight"><span class="tx"><b>Names on the Lock Screen</b><small>Chat’s own setting, in your Account</small></span><span class="val" id="namesSaid">Off</span><span class="chev"></span></a>
   </div>
-</div>
+</div></dialog>
 
 <!-- Every app's notifications on this phone (from You): what changes, the old icons still getting them, and the one tap -->
-<div class="bsheet" id="sh-every" role="dialog" aria-modal="true" aria-labelledby="evh">
-  <div class="bsheet-head"><h2 id="evh" tabindex="-1">Every App’s Notifications</h2><button class="ifs-btn" type="button" data-close aria-label="Close"></button></div>
+<dialog class="ifl-sheet" id="sh-every" aria-labelledby="sh-every-t"><div class="ifs-grab" aria-hidden="true"></div><header class="ifs-head"><h2 id="sh-every-t" tabindex="-1">Every App’s Notifications</h2><button class="ifs-btn" type="button" data-close aria-label="Close">✕</button></header><div class="ifs-body">
   <p class="sh-sub">Chats, Weather and Markets will notify you here as well. Fitness’s is in Today’s morning, and Mail keeps its own for now.</p>
   <p class="sh-sub ev-old" id="evOld">Still getting them, from the apps on their own:</p>
   <div class="group" id="evList"></div>
-  <div class="sh-acts"><button class="pill primary" type="button" id="evGo">Get Every App’s Notifications Here</button></div>
-</div>
+</div><footer class="ifs-acts"><button class="ifl-btn primary" type="button" id="evGo">Get Every App’s Notifications Here</button></footer></dialog>
 
 <!-- Edit: what Today shows, and in what order -->
-<div class="bsheet" id="sh-edit" role="dialog" aria-modal="true" aria-labelledby="eh">
-  <div class="bsheet-head"><h2 id="eh" tabindex="-1">Edit Today</h2><button class="ifs-btn" type="button" data-close aria-label="Close"></button></div>
+<dialog class="ifl-sheet" id="sh-edit" aria-labelledby="sh-edit-t"><div class="ifs-grab" aria-hidden="true"></div><header class="ifs-head"><h2 id="sh-edit-t" tabindex="-1">Edit Today</h2><button class="ifs-btn" type="button" data-close aria-label="Close">✕</button></header><div class="ifs-body">
   <p class="sh-sub">What Today shows, and in what order. It changes as you go, on every device you sign in on.</p>
   <div class="group" id="edList"></div>
   <span class="vh" id="edSay" role="status"></span>
-  <div class="sh-acts"><button class="pill" id="edReset" type="button">Back to the day’s order</button><button class="pill primary" data-close type="button">Done</button></div>
-</div>
+</div><footer class="ifs-acts"><button class="ifl-btn" id="edReset" type="button">Back to the day’s order</button><button class="ifl-btn primary" data-close type="button">Done</button></footer></dialog>
+
+<!-- Weather Notifications (from You's Weather row, /#you=notify-weather, Weather's connector and Weather Settings): rain
+     and warnings for each place, the morning briefing, and email; drawn by you.js from /api/notify -->
+<dialog class="ifl-sheet" id="sh-wxnotify" aria-labelledby="sh-wxnotify-t"><div class="ifs-grab" aria-hidden="true"></div><header class="ifs-head"><h2 id="sh-wxnotify-t" tabindex="-1">Weather Notifications</h2><button class="ifs-btn" type="button" data-close aria-label="Close">✕</button></header><div class="ifs-body" id="wxnBody"></div></dialog>
 </body>
 </html>

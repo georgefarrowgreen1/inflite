@@ -1,11 +1,15 @@
 // InFlite, at inflite.ai: one app. Today (your day from all your apps, phase by phase), Apps (each app, opened in this
-// window) and You (rules, notifications, this phone, your sign-in) are views of this one page, with InFlite's tab bar
-// under them (Today · Chats · Apps · You; Chats and the apps are pages beside it, served by this site's Worker). And
-// one morning notification instead of one from each app. Everything shown comes from your InFlite account (this site's
+// window) and You (rules, notifications, this phone, your sign-in) are screens of this one page, on InFlite's framework
+// (/roof/, One roof: one header, one tab bar Today · Chats · Apps · You, one sheet, one toast, one search), and so is
+// Weather, a module the framework loads in the page at /weather/ (Chats and the other apps are pages beside it, served
+// by this site's Worker). And one morning notification instead of one from each app. Everything shown comes from your InFlite account (this site's
 // Worker passes your sign-in on to account.inflite.ai: today/src/index.js), worked out there by each app's own rules:
 // this page only draws it (day.js, cards.js, apps.js, you.js) and sends what you change. Signed out, it's InFlite's way
 // in (index.html's, there without a script too).
-import { CARD_KEYS, APP, esc, safe, hm, dateLong, dateShort, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
+import { CARD_KEYS, APP, esc, safe, hm, dateLong, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
+import { createFrame } from "/roof/frame.js";
+import { REGISTRY, parse, format } from "/roof/router.js";
+import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
 const BUILD = "1.09";
@@ -801,12 +805,14 @@ const S = {
   endpoint: null, // this device's push endpoint (only ever sent in a body)
   loadedAt: 0, // when the day was last asked for
   hub: false, // the hub's Worker can serve the apps here (GET /api/hub): else Today runs as it did before (degraded)
-  tab: "today", // the view shown: today, apps or you
+  roof: false, // and Weather is the framework's, in this page (GET /api/hub's roof === true, One roof D14); else
+  //              /weather/ is milestone 1's page of the hub, a normal navigation
   dayLine: null, // the header's line, as the day (day.js) says it for its phase
   asked5: false, // the one fetch 5 seconds after an answer still being planned, made
   boundary: 0, // the until whose crossing has had its fetch put in hand
 };
-let sheetOpen = null, waitingAnswer = null;
+// (the page's own sheet that's open, as the frame's sheet handle, and its dialog's id; the frame, made once signed in)
+let sheetOpen = null, sheetId = null, waitingAnswer = null, F = null;
 
 // ---------------------------------------------------------------- the account's API, through this site's Worker
 async function call(path, { method = "GET", body } = {}) {
@@ -835,29 +841,158 @@ const missing = (e) => e?.status === 404 || e?.status === 501;
 
 // ---------------------------------------------------------------- the hub: whether this site's Worker serves the apps
 // Asked once a visit (GET /api/hub, kept in sessionStorage): ready, the tab bar's Chats, the Apps tiles and every Send are
-// the hub's (/chats/, /weather/, …, Chat's engine over the page); not ready (its key not set yet) or no answer, Today runs
-// as it did before: each app at its own address, Send through chat.<site>/#share=, no engine, and You without the rows
-// only the hub has (IFL.hub.degrade)
-const HUB_KEY = "ifl-hub-ready";
-// (waited for 1.5 s at most, beside the session's own request: slower than that, this page runs as before, and the
-// answer, when it comes, is kept for the visit's next page)
-async function hubReady() {
-  try { const v = sessionStorage.getItem(HUB_KEY); if (v === "1" || v === "0") return v === "1"; } catch {}
-  const asked = fetch("/api/hub", { credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" } }).then(async (r) => {
+// the hub's (/chats/, /weather/, …, Chat's engine over the page); not ready (its key not set yet), Today runs as it did
+// before: each app at its own address, Send through chat.<site>/#share=, no engine, and You without the rows only the
+// hub has (IFL.hub.degrade). Three ways (One roof D23): "yes" ({ ready: true }), "no" (an explicit { ready: false }, a
+// 404 or a 503) or "unknown" (no answer in 1.5 s, or no network); only yes and no are kept. At / an unknown is as
+// before (the apps' own addresses until a later answer, kept for the visit's next page); on a /weather/ boot it counts
+// as ready with roof on, as the document is the framework only because the Worker served it with roof on (or the root
+// worker the kept / offline). And roof (D14): Weather in this page, read as j.roof === true (a Worker from before, or
+// none said: off, milestone 1's Weather page), kept beside it as ifl-roof ("1" | "0"; one without the other is asked
+// again)
+const HUB_KEY = "ifl-hub-ready", ROOF_KEY = "ifl-roof", BOUNCE_KEY = "ifl-roof-bounce";
+const ss = {
+  get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} },
+  del: (k) => { try { sessionStorage.removeItem(k); } catch {} },
+};
+// (this document is a module's address: /weather/ or /weather/index.html, which the Worker answers with this page while
+// Weather is the framework's)
+const BOOT_APP = Object.values(REGISTRY).find((r) => location.pathname === r.path || location.pathname === r.path + "index.html") || null;
+let roofSaid = false, hubAt = 0;
+// (what /api/hub said, as it said it: kept, and Weather's old worker let go of as soon as roof's known on, signed in or not)
+function heard(state, roof) {
+  roofSaid = state === "yes" && roof;
+  if (state === "unknown") return;
+  hubAt = Date.now();
+  ss.set(HUB_KEY, state === "yes" ? "1" : "0");
+  ss.set(ROOF_KEY, roof ? "1" : "0");
+  if (roofSaid) { retireWeather(); ss.del(BOUNCE_KEY); }
+}
+function askHub() {
+  return fetch("/api/hub", { credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" } }).then(async (r) => {
     const j = r.ok ? await r.json().catch(() => null) : null;
-    const ready = j?.ready === true;
-    if (typeof j?.ready === "boolean" || r.status === 404 || r.status === 503) try { sessionStorage.setItem(HUB_KEY, ready ? "1" : "0"); } catch {}
-    return ready;
-  });
-  return Promise.race([asked, new Promise((ok) => setTimeout(() => ok(false), 1500))]).catch(() => false);
+    const state = typeof j?.ready === "boolean" ? (j.ready ? "yes" : "no") : r.status === 404 || r.status === 503 ? "no" : "unknown";
+    heard(state, j?.roof === true);
+    return state;
+  }, () => "unknown");
+}
+// → "yes" | "no" | "unknown" (waited for 1.5 s at most, beside the session's own request). On a /weather/ boot only a
+// kept yes with roof on is taken as it is: anything else kept is asked afresh, as this document is the framework only
+// because the Worker (or the root worker, offline) had roof on, so a kept no or roof off may be from before a switch
+// back on; only an answer that says so now bounces or leaves (D14, D23), and no answer counts as ready with roof on
+async function hubReady() {
+  const v = ss.get(HUB_KEY), r = ss.get(ROOF_KEY);
+  const trusted = BOOT_APP ? v === "1" && r === "1" : (v === "1" || v === "0") && (r === "1" || r === "0");
+  if (trusted) {
+    roofSaid = v === "1" && r === "1";
+    if (roofSaid) retireWeather();
+    return v === "1" ? "yes" : "no";
+  }
+  const asked = askHub();
+  const state = await Promise.race([asked, new Promise((ok) => setTimeout(() => ok("unknown"), 1500))]);
+  // (no answer in time: the answer, once it's in, as an ask again's, after the page has gone by the unknown; so a
+  // /weather/ boot that went ahead is told roof's off by its own ask, the D14 bounce, not only by the next one)
+  if (state === "unknown") asked.then((late) => { if (late !== "unknown") said.then(() => setTimeout(() => applyHub(late))); });
+  return state;
+}
+// Asked again (D14): as the page comes back in sight, at most every 5 minutes (within 0: back from the bfcache), and
+// right before Weather's module is loaded, at most every 30 seconds (the frame's ask: once a page, as the module's
+// kept, but not twice at a /weather/ boot that's only just asked). A change is the frame's (F.setRoof): Weather let go
+// of, its links normal navigations, its screen sent to the hub's page
+let againAt = 0, againP = null;
+function hubAgain(within = 5 * MIN) {
+  if (againP) return againP;
+  if (Date.now() - Math.max(againAt, hubAt) < within) return Promise.resolve();
+  againAt = Date.now();
+  againP = askHub().then(applyHub).finally(() => { againP = null; });
+  return againP;
+}
+// (an answer after the first: only ever down, the hub's explicit no degrading the page, roof off letting Weather go;
+// an unknown changes nothing)
+function applyHub(state) {
+  if (state === "unknown") return;
+  if (state === "no" && S.hub) { S.hub = false; IFL.hub.degrade(ownLinks()); }
+  const on = S.hub && roofSaid;
+  if (on !== S.roof) { S.roof = on; F?.setRoof(on); }
+}
+// (Weather's own worker, at scope /weather/ from milestone 1: unregistered, so /weather/ comes to this page, D10)
+let retired = false;
+function retireWeather() {
+  if (retired || !navigator.serviceWorker?.getRegistrations) return;
+  retired = true;
+  navigator.serviceWorker.getRegistrations().then((rs) => {
+    for (const r of rs) { try { if (new URL(r.scope).pathname === "/weather/") r.unregister().catch(() => {}); } catch {} }
+  }, () => {});
 }
 const ownLinks = () => { const L = S.links || DEFAULT_LINKS; return { chat: L.chat, weather: L.weather, fitness: L.fitness, finance: L.finance, email: L.email || DEFAULT_LINKS.email }; };
-function hubSays(ready) {
-  S.hub = !!ready;
+// (where Sign in comes back to: this screen, as its path and hash say, never its query)
+const thenHere = () => encodeURIComponent(location.pathname + location.hash);
+let saidOk = null;
+const said = new Promise((ok) => { saidOk = ok; });
+function hubSays(state) {
+  S.hub = state === "yes" || (state === "unknown" && !!BOOT_APP);
+  S.roof = S.hub && (state === "unknown" || roofSaid);
   if (!S.hub) IFL.hub.degrade(ownLinks());
   // (signed out: the way in's second way, Today's own, only beside Chats' trip)
   $("#alsoRow").hidden = !S.hub;
-  $("#signin").href = S.hub ? "/chats/#signin-start&then=/" : `${safe(S.links?.auth) || DEFAULT_LINKS.auth}/`;
+  signinHref();
+  saidOk();
+}
+// (Sign in's address, as the click goes: written at boot and again whenever the way in's shown, as the screen may have
+// moved in the page since, RI15)
+function signinHref() {
+  $("#signin").href = S.hub ? `/chats/#signin-start&then=${thenHere()}` : `${safe(S.links?.auth) || DEFAULT_LINKS.auth}/`;
+}
+// A /weather/ document that reached this page (D13, D14): with the hub explicitly not ready, Weather's own address (same
+// path, query and hash); with roof off, milestone 1's page of the hub, asked for once (the marker, never a path or a
+// query), and Weather's own address if it's this page again. → true when the page is on its way elsewhere
+function bootGone(state) {
+  if (!BOOT_APP) return false;
+  const rest = location.pathname + location.search + location.hash;
+  if (state === "no") {
+    IFL.hub.degrade(ownLinks());
+    location.replace(IFL.hub.go(rest));
+    return true;
+  }
+  if (state === "yes" && !roofSaid) {
+    if (ss.get(BOUNCE_KEY) === "1") location.replace((safe(S.links?.weather) || DEFAULT_LINKS.weather) + rest.replace(/^\/weather/, ""));
+    else {
+      ss.set(BOUNCE_KEY, "1");
+      // (the same address again, from the server: a reload where it's this one already, as a replace to it would only
+      // move to its hash)
+      const to = location.pathname + location.hash;
+      if (to === location.pathname + location.search + location.hash) location.reload(); else location.replace(to);
+    }
+    return true;
+  }
+  return false;
+}
+// Weather's files asked for ahead (D2): its connector, then a modulepreload for each of its files. On a /weather/ boot,
+// at once (beside /api/session) where the hub's known ready; else once Today's drawn, at idle, where Weather's been used
+// here (wx:places), or as a link to it is touched
+let preloaded = false;
+function preloadWeather() {
+  if (preloaded) return;
+  preloaded = true;
+  import("/roof/modules.js").then((m) => m.preload("weather")).catch(() => {});
+}
+let armed = false;
+function preloadSoon() {
+  if (preloaded || armed || !S.hub || !S.roof) return;
+  let used = false;
+  try { used = localStorage.getItem("wx:places") != null; } catch {}
+  armed = true;
+  if (used) return idle(() => { if (S.hub && S.roof) preloadWeather(); });
+  const touched = (e) => {
+    const a = e.target?.closest?.('a[href^="/weather/"]');
+    if (!a || !S.hub || !S.roof) return;
+    document.removeEventListener("pointerdown", touched, true);
+    document.removeEventListener("focusin", touched, true);
+    preloadWeather();
+  };
+  document.addEventListener("pointerdown", touched, true);
+  document.addEventListener("focusin", touched, true);
 }
 
 // ---------------------------------------------------------------- this browser's copy of your day, per account
@@ -1008,6 +1143,7 @@ async function signOut() {
   await forgetApps({ chat: !chatOut });
   try { localStorage.removeItem("today:push"); } catch {}
   S.view = null;
+  unframe();
   location.assign(`${auth}/#${new URLSearchParams({ signout: "today", back: `${location.origin}/` })}`);
 }
 
@@ -1023,6 +1159,7 @@ function showOut(said = "") {
   $("#out").classList.toggle("said", !!said);
   const L = S.links || DEFAULT_LINKS;
   for (const a of $$(".today-apps a[data-app]")) { const h = safe(L[a.dataset.app]); if (h) a.href = `${h}/`; }
+  signinHref();
   lift();
 }
 // signed out, as it's found out: by the account's answer, a 401, or the service worker's word
@@ -1030,6 +1167,7 @@ function signedOutNow() {
   forgetKept();
   clearTimeout(prefsT); prefsT = 0;
   S.view = null; S.answer = null; S.morning = null; S.kept = false; S.dayLine = null; waitingAnswer = null;
+  unframe();
   letDayGo();
   you?.forgetYou?.();
   for (const id of ["#top", "#waiting", "#coming", "#rest", "#apps", "#you", "#hd"]) $(id).replaceChildren();
@@ -1052,7 +1190,7 @@ function signedIn(view, { offline = false } = {}) {
   if (!S.morning || !("lines" in S.morning)) S.morning = view.morning || S.morning;
   $("#out").hidden = true;
   $("#in").hidden = false;
-  route({ quiet: true });
+  frame();
   if (waitingAnswer) { const a = waitingAnswer; waitingAnswer = null; gotCards(a); }
   else if (!S.answer) {
     const k = keptFor(view.user.id);
@@ -1063,6 +1201,7 @@ function signedIn(view, { offline = false } = {}) {
   lift();
   // (Chat's engine, made once the day's first drawn, when the page has a moment: for Waiting for You's words)
   if (S.hub && !offline) idle(() => { if (S.view) IFL.hub.chat(); });
+  preloadSoon();
 }
 const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 3000 }) : setTimeout(fn, 1200));
 
@@ -1078,7 +1217,7 @@ function gotCards(answer) {
   drawCards();
   drawLine();
   drawMorning();
-  if (S.tab === "apps") drawAppsNow();
+  if (on("apps")) drawAppsNow();
   // (the day still being worked out on the account: asked once more, 5 seconds on; once an answer's no longer planning,
   // the next that is gets its own)
   if (!answer.planning) S.asked5 = false;
@@ -1087,48 +1226,139 @@ function gotCards(answer) {
   nextMinute();
 }
 
-// ---------------------------------------------------------------- the views: Today, Apps and You, one page
-// #today (the default), #apps and #you, switched in the page (history, so Back goes back between them), with the tab bar
-// under them: Chats is a page of its own (/chats/)
-const VIEWS = ["today", "apps", "you"];
-const TITLES = { today: "Today", apps: "Apps", you: "You" };
-const tabOf = () => { const h = location.hash.slice(1); return VIEWS.includes(h) ? h : "today"; };
-function route({ quiet = false } = {}) {
-  if (!S.view) return;
-  const was = S.tab;
-  S.tab = tabOf();
-  for (const k of VIEWS) $(`#${k}`).hidden = k !== S.tab;
-  IFL.hub.tabs($("#tabs"), S.tab);
-  drawHeader();
-  if (S.tab === "apps") drawAppsNow();
-  if (S.tab === "you") drawYouNow();
-  if (!quiet && was !== S.tab) { scrollTo(0, 0); IFL.settle(); }
+// ---------------------------------------------------------------- the screens: Today, Apps and You, on the framework
+// The frame (/roof/frame.js, One roof §3.2) is made once signed in: it owns the header (#hd), the tab bar (#tabs), the
+// screens in #views and the page's history (/, /#apps, /#you, /#you=<section>, and Weather at /weather/…), and draws
+// each of Today, Apps and You from its spec here: its header (crumb, title, line, acts) and what to do as it's shown.
+// Apps and You are drawn as they're first shown (apps.js and you.js, loaded then). Signed out, it's let go of (F.destroy)
+const on = (tab) => F?.route?.kind === "tab" && F.route.tab === tab;
+// (Today's header: the date above its title, and the day's line under it: the phase's, else where the weather is)
+const crumbOf = () => dateLong(Date.now(), S.answer?.tz || browserTz());
+function lineOf() {
+  if (S.dayLine) return S.dayLine;
+  const w = S.answer?.cards?.weather;
+  return w?.state === "ok" && w.place?.name ? String(w.place.name) : "";
 }
-// (a tab of this page's: in the page, a step in its history; Chats, a page of its own, as a link)
-function onTab(e) {
-  const a = e.target.closest("a.ifl-tab");
-  const k = a?.dataset.tab;
-  if (!a || !VIEWS.includes(k) || e.metaKey || e.ctrlKey || e.shiftKey) return;
-  e.preventDefault();
-  if (k === S.tab) return scrollTo({ top: 0, behavior: "smooth" });
-  try { history.pushState(null, "", k === "today" ? location.pathname + location.search : `#${k}`); } catch {}
-  route();
+const EDIT = { icon: "edit", label: "Edit Today: hide and reorder cards", run: () => openEdit() };
+const SCREENS = {
+  today: { el: $("#today"), title: () => "Today", crumb: crumbOf, line: lineOf, acts: [EDIT], onShow() { drawLine(true); }, onHide() {} },
+  apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Each one here, in this window", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
+  you: { el: $("#you"), title: () => "You", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() {} },
+};
+function frame() {
+  if (F) return F;
+  F = createFrame({
+    root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
+    session: () => ({ view: S.view, hub: S.hub, roof: S.roof, links: S.links || DEFAULT_LINKS }),
+    lost: signedOutNow, checkSession, hubAgain: () => hubAgain(30e3), save,
+    onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
+    today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you,
+  });
+  for (const k of Object.keys(SCREENS)) F.screen(k, SCREENS[k]);
+  // (the page's own sheets' close button: the framework's cross, as every sheet it builds has; the ✕ is for no script)
+  for (const b of $$(".ifl-sheet .ifs-btn[data-close]")) b.replaceChildren(F.ui.icon("x"));
+  provide();
+  return F;
+}
+// (signed out: the frame let go of, Weather's module unmounted, its sheets shut; made afresh at the next sign-in)
+function unframe() {
+  const f = F;
+  F = null;
+  try { f?.destroy(); } catch (e) { console.error(e); }
 }
 let apps = null, you = null;
 function drawAppsNow() {
-  import("/apps.js").then((m) => { apps = m; if (S.view) m.drawApps($("#apps"), appsCtx()); }, () => {});
+  import("/apps.js").then((m) => { apps = m; if (S.view && F) m.drawApps($("#apps"), appsCtx()); }, () => {});
 }
-function drawYouNow() {
-  import("/you.js").then((m) => { you = m; if (S.view) m.drawYou($("#you"), youCtx()); }, () => {});
+function drawYouNow(arg = null) {
+  import("/you.js").then((m) => {
+    you = m;
+    if (!S.view || !F) return;
+    const c = youCtx(), drawn = m.drawYou($("#you"), c);
+    if (arg) m.goTo?.($("#you"), c, arg, drawn);
+  }, () => {});
 }
-const appsCtx = () => ({ answer: S.answer, view: S.view, hub: S.hub, href: (app, section) => IFL.hub.href(app, section), icon: (app) => IFL.iconUrl(app) });
+// (Today's answer's minis, through the framework's connectors: loaded as Apps or You needs them)
+const connectors = () => import("/roof/connectors.js");
+const appsCtx = () => ({ answer: S.answer, view: S.view, hub: S.hub, roof: S.roof, href: (app, section) => IFL.hub.href(app, section), icon: (app) => IFL.iconUrl(app), ui: F?.ui, connectors, frame: F });
 const youCtx = () => ({
-  view: S.view, hub: S.hub, call, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
+  view: S.view, hub: S.hub, roof: S.roof, call, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
   kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
   sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, toMorning, openAccount, signOut, canPush, pushWhy,
   chatSettings: () => location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`),
   openSheet, closeSheet, BUILD,
+  frame: F, connectors, connector: (app) => connectors().then((m) => F && m.openConnector(F, app)), go: (path) => F?.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
+  icon: (app) => { try { return IFL.iconUrl(app) || ""; } catch { return ""; } },
 });
+
+// (signed out, or not? For the framework's session.lost(), D3: a module's 401 is believed only once /api/session says
+// so. One read shared for 30 s; no answer is "still signed in", as nothing says otherwise)
+let sessionCheck = null;
+function checkSession() {
+  if (sessionCheck) return sessionCheck;
+  const headers = { Accept: "application/json" };
+  if (standalone()) headers["X-Home-Screen"] = "1";
+  sessionCheck = fetch("/api/session", { credentials: "same-origin", cache: "no-store", headers }).then(async (r) => {
+    if (r.status === 401) return false;
+    if (!r.ok) return true;
+    const j = await r.json().catch(() => null);
+    return j?.signedIn !== false;
+  }, () => true);
+  setTimeout(() => { sessionCheck = null; }, 30e3);
+  return sessionCheck;
+}
+
+// ---------------------------------------------------------------- search: Today's and Settings' (One roof §3.10)
+// What the framework's search finds on this page, on this device only: the day's tops, Coming Up and the cards by their
+// titles, the people waiting for you by name (→ their chat); and You's rows. The query is never kept, sent or written
+const SETTINGS = [
+  ["Notifications", "notify", "Each app’s, and Today’s morning"], ["Weather Notifications", "notify-weather", "Rain and warnings for the places you choose"],
+  ["Quiet Hours", "quiet", "Every app, but warnings"], ["Rules", "rules", "What Today does for you"], ["This Phone", "phone", "Notifications here"],
+  ["Connected Apps", "apps", "What each app shares with InFlite"], ["Account", "account", "Password, Passkeys and Devices"], ["Sign Out", "signout", "Of InFlite, on this device"],
+];
+const found = (q, ...xs) => xs.some((x) => typeof x === "string" && x.toLowerCase().includes(q));
+// (an address from the answer, as this page goes there: the hub's path, or the app's own where it's degraded. Worked
+// out here, not by IFL.hub.go, which leaves the breadcrumb: nothing's written as you type)
+const SUBS = { chat: "/chats", weather: "/weather", fitness: "/fitness", finance: "/markets", email: "/mail" };
+const OWN = { chats: "chat", weather: "weather", fitness: "fitness", markets: "finance", mail: "email" };
+function pathOf(h) {
+  if (typeof h !== "string" || !h) return null;
+  let u;
+  try { u = new URL(h, location.origin); } catch { return null; }
+  let p;
+  if (u.origin === location.origin) p = u.pathname + u.search + u.hash;
+  else if (u.protocol === "https:" && SUBS[/^([a-z]+)\./.exec(u.host)?.[1]]) p = SUBS[/^([a-z]+)\./.exec(u.host)[1]] + u.pathname + u.search + u.hash;
+  else return null;
+  if (S.hub) return p;
+  const m = /^\/(chats|weather|fitness|markets|mail)(?=$|[/?#])\/?([\s\S]*)$/.exec(p);
+  return m ? `${safe(ownLinks()[OWN[m[1]]]) || DEFAULT_LINKS[OWN[m[1]]]}/${m[2]}` : p;
+}
+function todayHits(q) {
+  const a = S.answer, out = [];
+  if (!q || !a || !S.view) return out;
+  const list = (x) => (Array.isArray(x) ? x : []);
+  if (a.v === 2 && !S.kept) {
+    for (const p of list(a.waiting)) if (p && typeof p.first === "string" && /^[\w-]{8,64}$/.test(String(p.id)) && found(q, p.first))
+      out.push({ title: p.first, sub: "Waiting for you", avatar: p.first, href: pathOf(`/chats/#open=${encodeURIComponent(p.id)}`) });
+    const tops = a.tops && typeof a.tops === "object" ? Object.values(a.tops) : [];
+    for (const t of tops) if (t && found(q, t.title, t.chip)) out.push({ title: String(t.title || t.chip), sub: t.chip ? String(t.chip) : "Today", icon: APP[t.kind] ? t.kind : undefined, href: pathOf(list(t.buttons).find((b) => b?.href)?.href) || "/" });
+    for (const u of list(a.upcoming)) if (u && found(q, u.title, u.sub)) out.push({ title: String(u.title), sub: u.sub ? String(u.sub) : "Coming up", icon: APP[u.app] ? u.app : undefined, href: pathOf(u.href) || "/" });
+  }
+  const cards = a.cards || {};
+  for (const k of CARD_KEYS) if (cards[k] && !S.prefs.hidden.includes(k) && found(q, APP[k].name, k === "weather" ? cards[k].place?.name : null))
+    out.push({ title: APP[k].name, sub: "On Today", icon: k, href: pathOf(k === "weather" ? cards[k].href : `/${k === "chat" ? "chats" : k}/`) || "/" });
+  return out.slice(0, 12);
+}
+function settingsHits(q) {
+  if (!q || !S.view) return [];
+  return SETTINGS.filter(([t, , sub]) => found(q, t, sub)).map(([title, id, sub]) => ({ title, sub, href: `/#you=${id}` }));
+}
+// (an entry for the screen already showing: the search closed, no navigation, so Back never meets a twin)
+const notHere = (list) => list.map((e) => (e.href && here(e.href) ? { title: e.title, sub: e.sub, icon: e.icon, avatar: e.avatar, run: () => {} } : e));
+function provide() {
+  F.search.provide({ id: "today", group: "Today", order: 20, search: (q) => notHere(todayHits(String(q || "").trim().toLowerCase())) });
+  F.search.provide({ id: "settings", group: "Settings", order: 40, search: (q) => notHere(settingsHits(String(q || "").trim().toLowerCase())) });
+}
 
 // ---------------------------------------------------------------- the header, and InFlite's menu
 const ID_OK = (id) => typeof id === "string" && /^[\w-]{8,64}$/.test(id);
@@ -1136,32 +1366,21 @@ function photoHtml(u) {
   const initial = esc([...String(u.first || u.name || u.handle || "?")][0] || "?");
   return u.photoAt && ID_OK(u.id) ? `${initial}<img class="av-img" src="/api/avatar?id=${encodeURIComponent(u.id)}&amp;v=${encodeURIComponent(String(u.photoAt))}" alt="">` : initial;
 }
-function lineHtml() {
-  if (S.tab === "apps") return "Each one here, in this window";
-  if (S.tab === "you") return S.view?.user?.handle ? `@${esc(S.view.user.handle)}` : "";
-  if (S.dayLine) return esc(S.dayLine);
-  const tz = S.answer?.tz || browserTz(), now = Date.now(), w = S.answer?.cards?.weather;
-  const place = w?.state === "ok" && w.place?.name ? w.place.name : null;
-  return `<span class="d-long">${esc(dateLong(now, tz))}</span><span class="d-short">${esc(dateShort(now, tz))}</span>${place ? ` · ${esc(place)}` : ""}`;
-}
-function drawHeader() {
-  const u = S.view.user;
-  lineSaid = lineHtml();
-  $("#hd").innerHTML = IFL.headerHtml({ me: photoHtml(u), title: TITLES[S.tab], line: lineSaid, acts: [S.tab === "today" ? { icon: "Edit", label: "Edit Today: hide and reorder cards", attrs: 'id="edit" data-word' } : null] });
-  $("#hd .ifh-me").addEventListener("click", (e) => openMenu(e.currentTarget));
-  $("#edit")?.addEventListener("click", openEdit);
-  IFL.watch();
-}
-let lineSaid = "";
-function drawLine() {
-  const el = $("#hd .ifh-line"), html = lineHtml();
-  if (el && html !== lineSaid) { el.innerHTML = html; lineSaid = html; }
-}
-function menuPhoto(u) {
+// (your photo, as a node: for the frame's header, and InFlite's menu)
+function photoNode(u) {
   const s = document.createElement("span");
   s.className = "me-ph";
   s.innerHTML = photoHtml(u);
   return s;
+}
+// Today's header line and date, as the day goes (the frame's header, patched, only while Today's showing)
+let lineSaid = null;
+function drawLine(force = false) {
+  if (!F || !on("today")) return;
+  const crumb = crumbOf(), line = lineOf(), said = `${crumb}\n${line}`;
+  if (!force && said === lineSaid) return;
+  lineSaid = said;
+  F.header.set({ back: null, crumb: { text: crumb }, title: "Today", line, pick: null, acts: SCREENS.today.acts, sections: null });
 }
 function openMenu(anchor) {
   if (!S.view) return;
@@ -1169,22 +1388,24 @@ function openMenu(anchor) {
   IFL.menu(anchor, {
     app: "today",
     build: BUILD,
-    me: { name: u.name || u.handle || "Your account", line: u.handle ? `@${u.handle}` : "", photo: menuPhoto(u) },
+    me: { name: u.name || u.handle || "Your account", line: u.handle ? `@${u.handle}` : "", photo: photoNode(u) },
     rows: [
-      { icon: "bell", color: "red", label: "Notifications", key: "notify", open: () => go("you") },
+      { icon: "bell", color: "red", label: "Notifications", key: "notify", open: () => go("/#you") },
       { icon: "sun", color: "orange", label: matchMedia("(max-width: 360px)").matches ? "Morning" : "Morning Notification", key: "morning", value: m.on ? clock(m.at) : "Off", open: toMorning },
+      { icon: "link", color: "blue", label: "Connected Apps", key: "apps", open: () => go("/#you=apps") },
       "-",
-      { icon: "sliders", color: "grey", label: "Edit Today", key: "edit", open: () => { go("today"); openEdit(); } },
+      { icon: "sliders", color: "grey", label: "Edit Today", key: "edit", open: () => { go("/"); openEdit(); } },
     ],
     account: () => openAccount(),
     signOut,
   });
 }
-// (a view of this page's, from anywhere in it)
-function go(k) {
-  if (S.tab === k) return;
-  try { history.pushState(null, "", k === "today" ? location.pathname + location.search : `#${k}`); } catch {}
-  route();
+// (a screen of the framework's, from anywhere in the page: none where it's the one showing, so Back never meets a twin;
+// You at another of its own places, in its own entry)
+const here = (path) => { const r = parse(path, { roof: S.hub && S.roof }); return !!r && !!F?.route && format(r) === format(F.route); };
+function go(path) {
+  if (!F || here(path)) return;
+  F.nav.go(path, { replace: on("you") && parse(path)?.tab === "you" });
 }
 // Your account, at the place asked for (open=…). From a Home Screen Today, whose sign-in the browser doesn't share, with
 // a code good for a minute that signs the account's page in too (as Markets does)
@@ -1391,7 +1612,7 @@ async function sendPrefs() {
       const p = cleanPrefs(r.prefs), same = JSON.stringify(p) === JSON.stringify(S.prefs);
       S.prefs = p;
       S.view.prefs = p; keepSession(S.view);
-      if (!same) { drawCards(); if (sheetOpen?.id === "sh-edit") drawEdit(); }
+      if (!same) { drawCards(); if (sheetId === "sh-edit") drawEdit(); }
     }
   } catch (e) {
     if (e.status !== 401) toast(e.message);
@@ -1399,47 +1620,45 @@ async function sendPrefs() {
 }
 
 // ---------------------------------------------------------------- sheets from the foot, and a word after doing something
-let sheetClose = null;
-function openSheet(id) {
-  const s = document.getElementById(id), back = document.activeElement;
-  let d = $(".dimmer");
-  if (!d) { d = document.createElement("div"); d.className = "dimmer"; document.body.append(d); }
-  const FOC = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled])';
-  const key = (e) => {
-    if (e.key === "Escape") { e.preventDefault(); closeSheet(); return; }
-    if (e.key !== "Tab") return;
-    const f = $$(FOC, s).filter((x) => x.getClientRects().length);
-    if (!f.length) return;
-    const i = f.indexOf(document.activeElement);
-    if (!s.contains(document.activeElement)) { e.preventDefault(); f[0].focus(); }
-    else if (e.shiftKey && i <= 0) { e.preventDefault(); f.at(-1).focus(); }
-    else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
-  };
-  sheetClose = () => {
-    sheetOpen = null; sheetClose = null;
-    s.classList.remove("on"); d.classList.remove("on");
-    $("#in").inert = false;
-    document.removeEventListener("keydown", key, true);
-    back?.focus?.({ preventScroll: true });
-    if (id === "morning" && S.tab === "you") drawYouNow();
-  };
-  for (const b of $$("[data-close]", s)) b.onclick = closeSheet;
-  d.onclick = closeSheet;
-  sheetOpen = s;
-  s.classList.add("on"); d.classList.add("on");
-  $("#in").inert = true;
-  document.addEventListener("keydown", key, true);
-  setTimeout(() => $("h2", s)?.focus({ preventScroll: true }), 60);
+// The page's own sheets (index.html: Morning, Every App's, Edit Today, Weather Notifications) are InFlite's sheet, opened
+// by the frame (F.sheet.openEl: a modal <dialog>, Escape and the close button, no history), one at a time; the toast
+// is the framework's (signed out, before the frame's made, its own)
+const handles = new Map(); // id → its handle, open or still shutting
+function openSheet(id, { onClose } = {}) {
+  const s = document.getElementById(id);
+  if (!s || !F) return null;
+  // (already open: kept as it is; still shutting (closed under 340 ms ago): shut at once, and opened afresh once the
+  // dialog's own close event has gone by (it comes a task later, and would shut the new one), rather than end shut with
+  // the closing one)
+  if (sheetOpen && sheetId === id && !s.classList.contains("closing")) return sheetOpen;
+  if (sheetOpen) closeSheet();
+  const old = handles.get(id);
+  if (old) {
+    const wasOpen = s.open;
+    old.now(); handles.delete(id);
+    const again = () => { if (F && !handles.has(id) && !s.open) openSheet(id, { onClose }); };
+    if (wasOpen) s.addEventListener("close", () => setTimeout(again), { once: true });
+    else again();
+    return null;
+  }
+  const h = F.sheet.openEl(s, {
+    onClose: () => {
+      if (handles.get(id) === h) handles.delete(id);
+      if (sheetOpen === h) { sheetOpen = null; sheetId = null; }
+      if (id === "morning" && on("you")) drawYouNow();
+      onClose?.();
+    },
+  });
+  handles.set(id, h);
+  sheetOpen = h; sheetId = id;
+  return h;
 }
-function closeSheet() { sheetClose?.(); }
-function toast(text) {
-  let t = $(".toast");
-  if (!t) { t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); document.body.append(t); }
-  t.textContent = text;
-  t.classList.add("on");
-  clearTimeout(toast.t);
-  toast.t = setTimeout(() => t.classList.remove("on"), 2600);
+function closeSheet() {
+  const h = sheetOpen;
+  sheetOpen = null; sheetId = null;
+  try { h?.close(); } catch {}
 }
+function toast(text, o) { return F ? F.toast(text, o) : roofToast(text, o); }
 
 // ---------------------------------------------------------------- the morning: one notification
 const NAMES = { weather: "Weather", fitness: "Fitness", chat: "Chat", markets: "Markets" };
@@ -1603,8 +1822,9 @@ async function deviceMoved() {
 function toMorning() {
   if (!S.view || $("#in").hidden) return;
   IFL.close(true);
-  closeSheet();
   drawMorning();
+  // (open already: only drawn again; any other sheet's shut by openSheet)
+  if (sheetId === "morning" && !$("#morning").classList.contains("closing")) return;
   openSheet("morning");
 }
 
@@ -1620,10 +1840,9 @@ function appearance(a) {
 // ---------------------------------------------------------------- what's tapped
 function wire() {
   // (Sign in: Chats' trip, which signs in everything, where the hub serves Chats; else, and Sign In Without Chats, Today's own)
-  $("#signin").addEventListener("click", (e) => { e.preventDefault(); if (S.hub) location.assign("/chats/#signin-start&then=/"); else goToAccount(false); });
+  $("#signin").addEventListener("click", (e) => { e.preventDefault(); if (S.hub) location.assign(`/chats/#signin-start&then=${thenHere()}`); else goToAccount(false); });
   $("#signinToday").addEventListener("click", (e) => { e.preventDefault(); goToAccount(false); });
   $("#join").addEventListener("click", (e) => { e.preventDefault(); goToAccount(true); });
-  $("#tabs").addEventListener("click", onTab);
   for (const b of $$(".ifs-btn:empty")) b.innerHTML = G.x;
   for (const c of $$(".row .chev:empty")) c.innerHTML = G.chev;
   $("#atChev").innerHTML = G.down;
@@ -1689,14 +1908,12 @@ function wire() {
     prefsChanged();
     toast("Back in the day’s order");
   });
-  // (a sign-in's code, come in the address without the page opening afresh: opened afresh, to finish it; a view's hash,
-  // its view; #morning or #notify, as they say)
+  // (a sign-in's code, come in the address without the page opening afresh: opened afresh, to finish it; #morning or
+  // #notify, as they say. A screen's address is the frame's: its popstate draws it)
   addEventListener("hashchange", () => {
     if (new URLSearchParams(location.hash.slice(1)).get("signin")) return location.reload();
-    route();
     fromHash();
   });
-  addEventListener("popstate", () => route());
 }
 // (opened at a place: #morning, the morning's settings; #notify, from Account's "Turn On in Today": asked in one tap)
 function fromHash() {
@@ -1706,7 +1923,9 @@ function fromHash() {
     return;
   }
   if (location.hash === "#morning") {
-    try { history.replaceState(null, "", location.pathname + location.search); } catch {}
+    // (the address put back as the screen's own, its history entry kept as the frame wrote it)
+    try { history.replaceState(history.state, "", location.pathname + location.search); } catch {}
+    F?.restamp();
     setTimeout(toMorning, 100);
   }
 }
@@ -1731,7 +1950,9 @@ function worker() {
       let u;
       try { u = new URL(d.open, location.origin); } catch { return; }
       if (u.origin !== location.origin) return;
-      if (u.pathname === location.pathname && u.search === location.search) { history.replaceState(null, "", u.hash || location.pathname); route(); if (u.hash === "#morning") toMorning(); else refresh(); }
+      if (u.hash === "#morning" && u.pathname === "/") { if (F?.route?.kind === "app") F.nav.go("/"); toMorning(); return; }
+      // (the framework's own screens in the page, as any route; anywhere else, gone there)
+      if (F) { F.nav.go(u.pathname + u.search + u.hash, { from: "notification" }); refresh(); }
       else location.assign(u.href);
     }
   });
@@ -1745,24 +1966,36 @@ const hubAsked = hubReady();
 function goFromHash() {
   const p = new URLSearchParams(location.hash.slice(1)).get("go");
   if (p == null) return false;
-  try { history.replaceState(null, "", location.pathname + location.search); } catch {}
+  try { history.replaceState(history.state, "", location.pathname + location.search); } catch {}
+  F?.restamp();
   if (!/^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]{0,300}$/.test(p)) return false;
-  hubAsked.then((ready) => {
+  hubAsked.then((state) => {
+    const ready = state === "yes";
     if (!ready) IFL.hub.degrade(ownLinks());
     location.replace(ready ? p : IFL.hub.go(p));
   });
+  return true;
+}
+// (the hub's answer, once it's in: false where a /weather/ document is on its way elsewhere for it, bootGone)
+async function hubKnown() {
+  const state = await hubAsked;
+  if (bootGone(state)) return false;
+  hubSays(state);
+  if (BOOT_APP && S.roof) preloadWeather();
   return true;
 }
 async function load() {
   const devP = findDevice();
   S.asked5 = false;
   let view = null;
+  // (a /weather/ boot: Weather's files asked for at once, beside the session, unless the hub's known not to serve them)
+  if (BOOT_APP && ss.get(HUB_KEY) !== "0" && ss.get(ROOF_KEY) !== "0") preloadWeather();
   if (new URLSearchParams(location.hash.slice(1)).get("signin")) {
     try {
       view = await finishSignIn();
     } catch (e) {
       sessionAsked = null;
-      hubSays(await hubAsked);
+      if (!(await hubKnown())) return;
       showOut(e.status === 0 ? e.message : e.message || "That sign-in didn’t work. Try again.");
       return;
     }
@@ -1785,7 +2018,7 @@ async function load() {
   try {
     view = await sessionAsked;
   } catch (e) {
-    hubSays(await hubAsked);
+    if (!(await hubKnown())) return;
     if (e.status === 401) return signedOutNow();
     // (no answer at all (no network, not an error from the account), in a Home Screen Today, whose sign-in is its own and
     // so can't be ended by another app without Today knowing: the copy kept here, if the last answer said it was this
@@ -1799,7 +2032,7 @@ async function load() {
     return;
   }
   if (view?.links) S.links = view.links;
-  hubSays(await hubAsked);
+  if (!(await hubKnown())) return;
   if (!view?.signedIn) return signedOutNow();
   signedIn(view);
   wireLinks();
@@ -1810,21 +2043,25 @@ async function load() {
   if (at?.y) requestAnimationFrame(() => scrollTo(0, at.y));
 }
 
+// (where the page was: what the updater's reload, and the frame's reload for a new Weather (D21), bring back)
+const save = () => ({ y: Math.round(scrollY) });
+const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors"].map((f) => `/roof/${f}.js`);
 function start() {
   if (goFromHash()) return;
   wire();
   worker();
   IFL.built("today", BUILD, NEWS);
-  IFL.updates({ app: "today", build: BUILD, url: "/version", field: "build", busy: () => !!sheetOpen, save: () => ({ y: Math.round(scrollY) }),
-    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js"] });
+  IFL.updates({ app: "today", build: BUILD, url: "/version", field: "build", busy: () => !!F?.busy() || !!sheetOpen, save,
+    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css"] });
   load();
   nextMinute();
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
-    if (S.view) back();
+    if (S.view) { back(); hubAgain(); }
     else if ($("#outSaid").textContent) load();
   });
-  addEventListener("pageshow", (e) => { if (e.persisted) back(); });
+  // (back from the browser's own cache of the page (bfcache): the day, and whether the hub serves Weather, asked again)
+  addEventListener("pageshow", (e) => { if (e.persisted && S.view) { back(); hubAgain(0); } });
   addEventListener("online", () => { if (!S.view || S.kept) load(); });
 }
 start();

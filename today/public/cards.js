@@ -231,7 +231,8 @@ function weather(c, ctx) {
   const clk = c.clock === "12" ? "12" : "24", off = num(c.offset) || 0;
   const meta = `${esc(p.name)} · <span data-wxclock data-off="${off}" data-clk="${clk}">${placeClock(ctx.now, off, clk)}</span>`;
   const w = c.warning, colour = WARN_COLOURS.includes(w?.colour) ? w.colour : "yellow";
-  const warn = w ? `<a class="wx-warn ${colour}" href="${href(c.href)}" aria-label="${esc(`${w.chip}, from ${w.issuer || "the official forecaster"}: see it in Weather`)}">${G.warn}<span>${esc(w.chip)}</span>${G.chev.replace("<svg", '<svg class="chev"')}</a>` : "";
+  // (the warning chip: that place's Warnings, in Weather; the head and the hours open its Now, One roof §4.4)
+  const warn = w ? `<a class="wx-warn ${colour}" href="${href(typeof c.href === "string" && c.href ? c.href + "#warnings" : c.href)}" aria-label="${esc(`${w.chip}, from ${w.issuer || "the official forecaster"}: see it in Weather`)}">${G.warn}<span>${esc(w.chip)}</span>${G.chev.replace("<svg", '<svg class="chev"')}</a>` : "";
   const wet = !!hours.wet;
   const pop = (x) => (num(x.pop) >= 20 ? `${Math.round(x.pop / 10) * 10}%` : "");
   const hrs = list.map((x, i) => {
