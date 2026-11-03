@@ -5,7 +5,7 @@
 // 3.6 s; with an action { label, run } 6 s or until it's tapped; the timer waits while the toast is hovered or has the
 // focus. Any action offered here is reachable elsewhere on the screen too (WCAG 2.2.1). text always through
 // textContent; app scopes the accent to the toast.
-// toast(text, { action: { label, run }, app }) → void
+// toast(text, { action: { label, run }, app }) → { close() } (close: let it go now, s24 §4)
 let cur = null;
 export function toast(text, { action = null, app = null } = {}) {
   const d = document;
@@ -40,4 +40,5 @@ export function toast(text, { action = null, app = null } = {}) {
   say.textContent = "";
   requestAnimationFrame(() => requestAnimationFrame(() => { if (cur?.t !== t) return; t.classList.add("on"); say.textContent = b.textContent; }));
   run();
+  return { close: () => { if (cur?.t === t) gone(); } };
 }

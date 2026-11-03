@@ -2,15 +2,21 @@
 // notifications shown here and tapped open in the one window, the Home Screen icon's badge, Chat's delivered tick, and a
 // copy of Today's own files for when there's no network (below). Today still always loads fresh: never any of your day
 // kept here (the page keeps its own copy, per account, and forgets it when you sign out). Chats and the apps beside it
-// (/chats/, /fitness/, …) have workers of their own, for their own files only: none of them holds a subscription. Weather is
-// a module of Today's page now (One roof, spec §8.2, D10): its page at /weather/ is Today's, and its module's files are
-// kept here when the page asks, so it opens offline too.
+// (/chats/, /fitness/, …) have workers of their own, for their own files only: none of them holds a subscription. Each app
+// that's a module of Today's page (One roof, spec §8.2, D10; stages 2–4, s24-contracts §8: Weather, Markets, Fitness,
+// Mail, by their switches) has its page at /<app>/ be Today's, and its module's files kept here when the page asks, so it
+// opens offline too.
+
+// The apps that can be modules (one list: s24 §8): name, and the host of its own address (an address there is made the
+// hub's path for a notification). Stage 3 adds chats.
+const MODS = { weather: { name: "Weather", host: "weather" }, markets: { name: "Markets", host: "finance" }, fitness: { name: "Fitness", host: "fitness" }, mail: { name: "Mail", host: "email" } };
+const MOD_APPS = Object.keys(MODS);
 
 // ---- Today's own files, kept for when there's no network ----
 // Always from the network while there is one, each kept as it comes; only with no answer at all (or Today's host
 // failing) from what was kept last. So Today opens on a train, with the copy of your day the page kept. Only these
 // files: never the API, nor any page or file of Chats' or the apps'.
-const SHELL = "today-app-3";
+const SHELL = "today-app-4";
 const FILES = ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg",
   "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css"];
 self.addEventListener("install", (e) => {
@@ -39,8 +45,8 @@ self.addEventListener("fetch", (e) => {
   const r = e.request, u = new URL(r.url);
   if (r.method !== "GET" || u.origin !== self.location.origin || u.pathname.startsWith("/api/")) return;
   if (r.mode === "navigate") {
-    // (Today's one page, at /; the same page at /weather/, from the network, else the copy of / (never kept as /: what
-    // the hub sends for /weather/ may be Weather's milestone-1 page, with the roof off); any other address is the 404
+    // (Today's one page, at /; the same page at a module's /<app>/, from the network, else the copy of / (never kept as
+    // /: what the hub sends there may be the app's milestone-1 page, with its switch off); any other address is the 404
     // page, or a page of the hub's, from the network)
     if (u.pathname === "/" || u.pathname === "/index.html") e.respondWith(fresh(e, "/"));
     else if (ROOF_DOCS.includes(u.pathname)) e.respondWith(roofDoc(e));
@@ -70,8 +76,8 @@ async function fresh(e, key) {
   return res;
 }
 
-// ---- Weather's module (One roof, spec §8.2): its page at /weather/, and its files kept when the page asks ----
-const ROOF_DOCS = ["/weather/", "/weather/index.html"];
+// ---- the modules (One roof, spec §8.2; s24 §8): each one's page at /<app>/, and its files kept when the page asks ----
+const ROOF_DOCS = MOD_APPS.flatMap((a) => [`/${a}/`, `/${a}/index.html`]);
 async function roofDoc(e) {
   const kept = () => caches.open(SHELL).then((c) => c.match("/")).catch(() => null);
   let res;
@@ -86,13 +92,13 @@ async function roofDoc(e) {
 }
 // The module's files, as the page names them ({ ifl: "keep", app, build, files }, modules.js keepOffline, once a build
 // per page): for an app that is a module, a build as the apps number them, and at most 60 of that app's own files at plain
-// paths (no query, no vendor/, never its worker or version). Kept all or nothing, in roof-<app>-<build>: a build already
+// paths (no query, no vendor/, never its worker or version; files and lazy, C4). Kept all or nothing, in roof-<app>-<build>: a build already
 // kept whole is left as it is (nothing fetched: every open of the page asks again, offline too); otherwise each file is
 // fetched afresh and answered whole by this site before any is put, so one that fails leaves every kept copy as it was
 // (only a cache this ask made is let go, should putting fail); once it's whole, the app's older builds are let go. One
 // ask at a time per app (an old tab's, for an older build, can't finish last and take the newer one's place), and never
 // for a build older than one kept already.
-const KEEP_APPS = ["weather"], KEEP_MAX = 60;
+const KEEP_APPS = MOD_APPS, KEEP_MAX = 60;
 const keeping = new Map(), keepQueue = new Map();
 function keepList(d) {
   if (!d || !KEEP_APPS.includes(d.app) || typeof d.build !== "string" || !/^\d+\.\d{2}$/.test(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
@@ -159,13 +165,15 @@ async function whole(name, files) {
     return false;
   }
 }
-// (a file of Weather's at the hub, as the module loads it: from the network first, else the kept copy, where there's
-// no answer or the hub's failing; a 404 (the roof off) is the hub's word and passed on)
-const moduleFile = (u) => u.pathname.startsWith("/weather/") && !u.search && u.pathname !== "/weather/sw.js" && u.pathname !== "/weather/version" && !u.pathname.endsWith("/");
+// (a file of a module's app at the hub, as the module loads it: from the network first, else the kept copy, where
+// there's no answer or the hub's failing; a 404 (its switch off) is the hub's word and passed on)
+const modOf = (u) => MOD_APPS.find((a) => u.pathname.startsWith(`/${a}/`)) || null;
+const moduleFile = (u) => { const a = modOf(u); return !!a && !u.search && u.pathname !== `/${a}/sw.js` && u.pathname !== `/${a}/version` && !u.pathname.endsWith("/"); };
 async function fromModule(e, u) {
+  const prefix = `roof-${modOf(u)}-`;
   const kept = async () => {
     try {
-      for (const k of await caches.keys()) if (k.startsWith("roof-weather-")) { const m = await (await caches.open(k)).match(u.pathname); if (m) return m; }
+      for (const k of await caches.keys()) if (k.startsWith(prefix)) { const m = await (await caches.open(k)).match(u.pathname); if (m) return m; }
     } catch {}
     return null;
   };
@@ -187,8 +195,8 @@ async function fromModule(e, u) {
 // does. One of Chat's: every window here told (Chat's engine on Today, Chats itself), and one pulse to Chat with this
 // phone's sign-in (the one Chat keeps in IndexedDB), so the sender's tick says delivered. Then the icon's badge: how
 // many are showing.
-const APPS = ["chat", "weather", "fitness", "markets", "today"];
-const NAME = { chat: "Chat", weather: "Weather", fitness: "Fitness", markets: "Markets", today: "Today" };
+const APPS = ["chat", ...MOD_APPS, "today"];
+const NAME = { chat: "Chat", today: "Today", ...Object.fromEntries(MOD_APPS.map((a) => [a, MODS[a].name])) };
 // (an older payload, with no app: Chat's by its address, else Today's)
 const appOf = (d) => (APPS.includes(d.app) ? d.app : typeof d.url === "string" && d.url.includes("/pigeon/") ? "chat" : "today");
 self.addEventListener("push", (e) => {
@@ -212,8 +220,23 @@ async function notify(d) {
     data: { app, url },
   })];
   if (app === "chat") jobs.push(chatCame(d));
+  if (app === "mail") jobs.push(jobs[0].then(() => mailWords(d, { app, url })));
   await Promise.all(jobs.map((j) => j.catch(() => {})));
   await badge();
+}
+// Mail's notice (s4 §6.4): the push carries no words of the mail (a fixed body, the thread's opaque id as its tag), so
+// once that's shown, Mail itself is asked for the sender and subject, with your Mail sign-in (3 s at most), and the
+// notice shown again with them, silently, in the same place. Only for a tag that's an id; nothing fetched is kept.
+const MAIL = () => { const o = new URL(self.location.origin); return `${o.protocol}//email.${o.host.replace(/^next\./, "")}`; };
+async function mailWords(d, data) {
+  if (typeof d.tag !== "string" || !/^[\w-]{1,64}$/.test(d.tag)) return;
+  const words = await Promise.race([
+    fetch(`${MAIL()}/api/notice/${d.tag}`, { credentials: "include", cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    new Promise((ok) => setTimeout(() => ok(null), 3000)),
+  ]);
+  const ok = (x) => typeof x === "string" && x.length > 0 && x.length <= 120;
+  if (!ok(words?.title) || !ok(words?.body)) return;
+  await self.registration.showNotification(words.title, { body: words.body, tag: `mail:${d.tag}`, renotify: false, silent: true, icon: "/icon-192.png", badge: "/icon-192.png", data });
 }
 // the Home Screen icon's badge: as many notifications as are showing. Counted as one comes, as one's tapped or cleared,
 // and as a page of the hub opens or comes back in sight (one cleared while this worker wasn't running)
@@ -245,8 +268,8 @@ const sameOrigin = (u) => { try { return new URL(u).origin === self.location.ori
 // Where a notification opens, by its app: the app in full, at what it's about (§11.4). Its own address's path, made the
 // hub's (Chat's /pigeon/#open=<id> → /chats/#open=<id>; Weather's ./?lat=… → /weather/?lat=…; Fitness's ./ →
 // /fitness/#today; Markets' ./#s=TSCO → /markets/#s=TSCO, ./ → /markets/#today; Today's / → /), never another site's
-const BASES = { chat: "/chats/", weather: "/weather/", fitness: "/fitness/", markets: "/markets/", today: "/" };
-const HOSTS = { chat: "chat", weather: "weather", fitness: "fitness", markets: "finance" };
+const BASES = { chat: "/chats/", today: "/", ...Object.fromEntries(MOD_APPS.map((a) => [a, `/${a}/`])) };
+const HOSTS = { chat: "chat", ...Object.fromEntries(MOD_APPS.map((a) => [a, MODS[a].host])) };
 function openAt(app, raw) {
   const base = BASES[app] || "/", at = new URL(base, self.location.origin);
   let u;
@@ -286,10 +309,10 @@ async function openIn(path) {
   const win = wins.find((w) => w.focused) || wins.find((w) => w.visibilityState === "visible") || wins[0];
   if (win) {
     try { await win.focus(); } catch {}
-    // (a window of the framework (Today's page, at / or /weather/): told to route there in the page, One roof's
-    // {ifl:"route"}; any other page of this site's: told to open it, as before. A window at /weather/ that doesn't say
-    // it's routed is Weather's milestone-1 page there (the roof off, or its old worker not yet retired), which hears only
-    // an open, and isn't this worker's to send elsewhere: told to open it, as milestone 1 did, before any other way)
+    // (a window of the framework (Today's page, at / or a module's /<app>/): told to route there in the page, One roof's
+    // {ifl:"route"}; any other page of this site's: told to open it, as before. A window at /<app>/ that doesn't say
+    // it's routed is the app's milestone-1 page there (its switch off, or its old worker not yet retired), which hears
+    // only an open, and isn't this worker's to send elsewhere: told to open it, as milestone 1 did, before any other way)
     const at = pathOf(win.url);
     if (await told(win, path, FRAMEWORK.includes(at) ? "route" : "open")) return;
     if (ROOF_DOCS.includes(at) && (await told(win, path, "open"))) return;
@@ -300,7 +323,7 @@ async function openIn(path) {
   if (win?.navigate) { try { if (await win.navigate(url)) return; } catch {} }
   await self.clients.openWindow(url);
 }
-const FRAMEWORK = ["/", "/index.html", "/weather/", "/weather/index.html"];
+const FRAMEWORK = ["/", "/index.html", ...ROOF_DOCS];
 const pathOf = (u) => { try { return new URL(u).pathname; } catch { return ""; } };
 // (the window told where: true once it says it's heard ({ifl:"opened"}, or {ifl:"routed"} for a route), within a second)
 function told(win, url, kind = "open") {
