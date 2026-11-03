@@ -6,7 +6,9 @@
 // at all (or Mail's host failing) from what was kept last. So Mail opens on a train or a plane, says it's offline, and
 // tries again by itself as the connection comes back, rather than the phone's "can't open the page". Only these files:
 // never the API.
-const SHELL = "mail-app-1";
+// (mail-app-2: the copies of "/" kept before this, which a message frame at /body/ may have taken the place of, dropped as
+// this one takes over: below)
+const SHELL = "mail-app-2";
 const FILES = ["/", "/app.js", "/app.css", "/theme.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();
@@ -27,8 +29,9 @@ self.addEventListener("activate", (e) =>
 self.addEventListener("fetch", (e) => {
   const r = e.request, u = new URL(r.url);
   if (r.method !== "GET" || u.origin !== self.location.origin || u.pathname.startsWith("/api/")) return;
-  // (any page of Mail's is its one page)
-  const key = r.mode === "navigate" ? "/" : FILES.includes(u.pathname) && !u.search ? u.pathname : null;
+  // (Mail's one page, at / or /index.html, is kept as "/"; any other page opened here, a message's frame at /body/ (on
+  // InFlite's page, One roof) or a file at /api/, is the network's alone: never kept in its place, never answered with it)
+  const key = r.mode === "navigate" ? (u.pathname === "/" || u.pathname === "/index.html" ? "/" : null) : FILES.includes(u.pathname) && !u.search ? u.pathname : null;
   if (key) e.respondWith(fresh(e, key));
 });
 async function fresh(e, key) {
@@ -167,9 +170,11 @@ self.addEventListener("notificationclick", (e) => {
   e.waitUntil(openMail(url));
 });
 
+// (a window of Mail's own, never one inside another page's: a message's frame on InFlite's page is one, and doesn't
+// listen; with none, a new window)
 async function openMail(url) {
   const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-  const win = wins.find((w) => new URL(w.url).origin === self.location.origin);
+  const win = wins.find((w) => w.frameType !== "nested" && new URL(w.url).origin === self.location.origin);
   if (win) {
     await win.focus();
     win.postMessage({ open: url });
