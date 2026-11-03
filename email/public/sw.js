@@ -170,11 +170,16 @@ self.addEventListener("notificationclick", (e) => {
   e.waitUntil(openMail(url));
 });
 
-// (a window of Mail's own, never one inside another page's: a message's frame on InFlite's page is one, and doesn't
-// listen; with none, a new window)
+// (a window of Mail's, never a message's frame at /body/ on InFlite's page, which doesn't listen. Mail's whole page framed
+// at InFlite's /mail/ (milestone 1, the way Mail opens there while its switch is off) is Mail's and listens: told, as
+// before. A window of its own first; with none at all, a new window)
 async function openMail(url) {
   const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-  const win = wins.find((w) => w.frameType !== "nested" && new URL(w.url).origin === self.location.origin);
+  const mine = wins.filter((w) => {
+    const u = new URL(w.url);
+    return u.origin === self.location.origin && !(w.frameType === "nested" && u.pathname.startsWith("/body/"));
+  });
+  const win = mine.find((w) => w.frameType !== "nested") || mine[0];
   if (win) {
     await win.focus();
     win.postMessage({ open: url });

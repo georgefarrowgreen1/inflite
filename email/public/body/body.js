@@ -149,6 +149,9 @@ let at = readHash();
 let msg = null;
 let lastH = 0;
 let touchedAt = 0;
+// (whether #b holds anything yet, a message or a note: no height is said before, so a shell that has loaded but has
+// nothing to show, Mail answering 403, 404 or 500, or no answer at all, says nothing, and the page's 6 s rule covers it)
+let drawn = false;
 
 // (to the page holding this one, only: parent, at p)
 function post(fields) {
@@ -157,7 +160,7 @@ function post(fields) {
 }
 function postHeight() {
   const el = document.getElementById("b");
-  if (!el) return;
+  if (!el || !drawn) return;
   const h = Math.max(40, Math.min(40000, Math.ceil(el.getBoundingClientRect().height)));
   if (Math.abs(h - lastH) <= 1) return;
   lastH = h;
@@ -218,6 +221,7 @@ function note(words) {
   p.className = "note";
   p.textContent = words;
   el.replaceChildren(p);
+  drawn = true;
 }
 
 // The message, drawn (again, for a new theme or with remote pictures now allowed)
@@ -307,6 +311,7 @@ function draw() {
   });
 
   el.replaceChildren(frame, toggleRow);
+  drawn = true;
   post({ designed, remote: hasRemote && !allowRemote });
 }
 
