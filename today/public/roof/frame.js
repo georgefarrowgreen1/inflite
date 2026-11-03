@@ -119,7 +119,8 @@ export function createFrame(opts = {}) {
     unwait();
     const t0 = Date.now(), tick = () => {
       if (gone) return unwait();
-      if (!F.busy()) { unwait(); return go(); }
+      if (!F.busy()) { clearInterval(later); return go(); }
+      // (the hidden handle's set only once the ticks have stopped, so a tick never has one to let go of)
       if (Date.now() - t0 > ms && !atHidden) {
         clearInterval(later);
         const mine = atHidden = F.on("hidden", () => F.flush().then(() => { if (!gone && atHidden === mine && !F.busy()) { unwait(); go(); } }));
