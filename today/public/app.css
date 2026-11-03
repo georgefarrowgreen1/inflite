@@ -509,7 +509,8 @@ label.row:active { background: var(--press); }
 .you-sec .row + .row::before { left: 18px; }
 .you-sec button.row { appearance: none; -webkit-appearance: none; border: 0; background: none; font: inherit; cursor: pointer; }
 .you-sec button.row:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; border-radius: var(--r-group); }
-.you-ph { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; background: linear-gradient(150deg, #8f7ff0, #5e48c8); }
+.you-ph { position: relative; overflow: hidden; flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; background: linear-gradient(150deg, #8f7ff0, #5e48c8); }
+.you-ph .av-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .you-sec .row.rule { flex-wrap: wrap; row-gap: 10px; }
 .you-sec .row.rule .tx { flex-basis: 12em; }
 .seg { flex: none; display: inline-flex; padding: 2px; gap: 2px; border-radius: 10px; background: var(--glass-ctl); box-shadow: 0 0 0 0.5px var(--line); }
@@ -791,10 +792,15 @@ html.ifl-hub .ifl-tabs { view-transition-name: ifl-tabs; }
 .ifl-back svg { width: 20px; height: 20px; stroke-width: 2.4; }
 .ifl-back:active { transform: scale(0.94); }
 .ifl-back:focus-visible { outline: 2px solid var(--ifm-tint); outline-offset: 2px; }
-/* Chat's engine: its page in a frame over the whole page, see-through, above everything but the notes; unseen (and
-   never in the way of a tap) until it shows its sheet, but laid out, so the sheet opens at once */
-.ifl-engine { position: fixed; inset: 0; z-index: 2147483000; display: block; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; color-scheme: normal; }
-.ifl-engine[hidden] { display: block; visibility: hidden; pointer-events: none; }
+/* Chat's engine: its page in a frame over the whole page, see-through, in a dialog of its own. Shown (.on), the dialog's
+   modal, in the top layer over every sheet of the page's own; put away, it's shut but still laid out (never display:
+   none, which a shut dialog is by default and a page's own [hidden] rule would make it), unseen and never in the way of a
+   tap, so the engine runs on and its sheet opens at once */
+dialog.ifl-engine-box { position: fixed; inset: 0; z-index: 2147483000; display: block; box-sizing: border-box; width: 100%; height: 100%; max-width: none; max-height: none;
+  margin: 0; padding: 0; border: 0; background: transparent; overflow: hidden; color-scheme: normal; visibility: hidden; pointer-events: none; }
+dialog.ifl-engine-box.on { visibility: visible; pointer-events: auto; }
+dialog.ifl-engine-box::backdrop { background: transparent; }
+.ifl-engine { display: block; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; color-scheme: normal; }
 /* the note that InFlite is one app now (an old Home Screen icon: moved), as the allow sheet */
 .ifl-moved .ifa-steps { margin-top: -6px; font-size: 14.5px; }
 .ifl-moved .ifa-off { color: var(--ifm-red); }

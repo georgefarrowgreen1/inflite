@@ -7,8 +7,11 @@
 // left out, and This Phone as Today's morning alone. Where the hub can't serve the apps yet (degraded): no Get Every
 // App's Notifications Here and no Other Devices, which only the hub has.
 //   drawYou(root, ctx) → a promise, once it's drawn: ctx is the page's (app.js youCtx): view, hub, call(path, o),
-//   missing(e), toast(text), morning, sub() → this phone's subscription, turnOn(), turnOff(), fanOut(), toMorning(),
+//   missing(e), toast(text), morning (the morning's view as the page has it now), sub() → this phone's subscription,
+//   device() → its name for the account, kept() → the endpoint this browser last handed the account (today:push),
+//   photo(user) → the account's picture (its initial under it), turnOn(), turnOff(), fanOut(), toMorning(),
 //   openAccount(open), signOut(), chatSettings(), canPush(), pushWhy(), openSheet(id), closeSheet(), BUILD
+//   forgetYou() → nothing: what You last asked forgotten (signed out, or another account)
 import { esc, G } from "/cards.js";
 
 const LEVELS = [["do", "Do"], ["suggest", "Suggest"], ["quiet", "Quiet"]];
@@ -19,22 +22,36 @@ const hh = (h) => `${String(h).padStart(2, "0")}:00`;
 const browserTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London"; } catch { return "Europe/London"; } };
 const and = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
 
-// what You shows, as last asked (each null until asked; false where this account side hasn't it)
-const Y = { rules: null, notify: null, devices: null, on: null, busy: false };
+// what You shows, as last asked (each null until asked; false where this account side hasn't it; sub: this phone's
+// subscription, as the browser has it)
+const Y = { rules: null, notify: null, devices: null, sub: null };
 let drawing = null;
+export function forgetYou() { Y.rules = Y.notify = Y.devices = Y.sub = null; drawing = null; }
+
+// This Phone's switch: on where the account has this phone for Today's morning (td_push), as the account says: GET
+// /api/devices' here (asked with this phone's name), else the morning's thisDevice; only where neither says, this
+// browser's own word (the endpoint it last handed the account). Never the subscription alone: turned off, it's kept,
+// so turning on again is one tap
+function phoneOn(ctx) {
+  const sub = Y.sub;
+  if (!sub || (typeof Notification !== "undefined" && Notification.permission !== "granted")) return false;
+  if (Array.isArray(Y.devices?.here) && Y.devices.asked) return Y.devices.here.includes("td_push");
+  const t = ctx.morning?.thisDevice;
+  if (typeof t === "boolean") return t;
+  return !!sub.endpoint && ctx.kept?.() === sub.endpoint;
+}
 
 export async function drawYou(root, ctx) {
   if (!root || !ctx?.view) return;
   // (drawn at once with what's known, then again as each answer comes)
   paint(root, ctx);
   const ask = (path) => ctx.call(path).catch((e) => (ctx.missing(e) ? false : null));
-  const sub = await ctx.sub().catch(() => null);
-  Y.on = !!sub && (typeof Notification === "undefined" || Notification.permission === "granted");
+  const sub = (Y.sub = await ctx.sub().catch(() => null));
   const dev = sub && ctx.device?.() ? `?device=${encodeURIComponent(ctx.device())}` : "";
   const run = (drawing = Promise.all([ask("/api/rules"), ask("/api/notify"), ctx.hub ? ask(`/api/devices${dev}`) : Promise.resolve(false)]));
   const [rules, notify, devices] = await run;
   if (drawing !== run) return;
-  Y.rules = rules; Y.notify = notify; Y.devices = devices;
+  Y.rules = rules; Y.notify = notify; Y.devices = devices && typeof devices === "object" ? { ...devices, asked: !!dev } : devices;
   paint(root, ctx);
 }
 
@@ -45,7 +62,8 @@ function paint(root, ctx) {
   const seg = (k, opts, on, label) => `<div class="seg" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => `<button type="button" data-${k}="${v}" aria-pressed="${v === on}">${esc(l)}</button>`).join("")}</div>`;
   const out = [];
   // Account
-  out.push(sec("youAccount", "Account", `<button class="row go" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${esc([...String(u.first || u.name || "?")][0] || "?")}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Password, Passkeys and Devices</small></span><span class="chev">${G.chev}</span></button>`));
+  const photo = typeof ctx.photo === "function" ? ctx.photo(u) : esc([...String(u.first || u.name || "?")][0] || "?");
+  out.push(sec("youAccount", "Account", `<button class="row go" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Password, Passkeys and Devices</small></span><span class="chev">${G.chev}</span></button>`));
   // Rules
   if (Y.rules !== false) {
     const rules = Y.rules?.rules || [];
@@ -79,7 +97,7 @@ function paint(root, ctx) {
   // This Phone
   {
     const why = ctx.pushWhy?.();
-    const rows = [`<label class="row" id="youPhoneRow"><span class="tx"><b>Notifications Here</b><small>${esc(why || "InFlite on this phone: Today’s morning, and what you choose")}</small></span><input type="checkbox" class="switch" role="switch" id="youPhone" ${Y.on ? "checked" : ""} ${why ? "disabled" : ""} aria-label="Notifications on this phone"></label>`];
+    const rows = [`<label class="row" id="youPhoneRow"><span class="tx"><b>Notifications Here</b><small>${esc(why || "InFlite on this phone: Today’s morning, and what you choose")}</small></span><input type="checkbox" class="switch" role="switch" id="youPhone" ${phoneOn(ctx) ? "checked" : ""} ${why ? "disabled" : ""} aria-label="Notifications on this phone"></label>`];
     const here = Array.isArray(Y.devices?.here) ? Y.devices.here : [];
     if (ctx.hub && ctx.view.hubPush === true && Y.devices !== false) {
       const all = here.includes("pg_push");
@@ -97,7 +115,7 @@ function paint(root, ctx) {
   // Quiet Hours
   if (n) {
     const q = { on: false, from: 22, to: 7, ...(n.quiet || {}) };
-    const pick = (k, v, label) => `<label class="row pick" data-k="q${k}"><span class="tx"><b>${label}</b></span><span class="val"><span>${hh(v)}</span>${G.down}</span><select id="youQ${k}" aria-label="Quiet hours ${label.toLowerCase()}">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === v ? "selected" : ""}>${hh(h)}</option>`).join("")}</select></label>`;
+    const pick = (k, v, label) => `<label class="row pick" data-k="q${k}"><span class="tx"><b>${label}</b></span><span class="val"><span>${esc(hh(Number(v)))}</span>${G.down}</span><select id="youQ${k}" aria-label="Quiet hours ${label.toLowerCase()}">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === v ? "selected" : ""}>${hh(h)}</option>`).join("")}</select></label>`;
     const body = `<label class="row"><span class="tx"><b>Quiet Hours</b><small>Every app, but warnings</small></span><input type="checkbox" class="switch" role="switch" id="youQuiet" ${q.on ? "checked" : ""} aria-label="Quiet hours"></label>` + (q.on ? pick("from", q.from, "From") + pick("to", q.to, "To") : "");
     out.push(sec("youQuietSec", "Quiet Hours", body));
   }
@@ -168,14 +186,16 @@ function wire(root, ctx) {
   $("#youQuiet")?.addEventListener("change", (e) => quiet({ on: e.target.checked }));
   $("#youQfrom")?.addEventListener("change", (e) => quiet({ from: Number(e.target.value) }));
   $("#youQto")?.addEventListener("change", (e) => quiet({ to: Number(e.target.value) }));
-  // (this phone: on, from a tap; off, taken out of every app's table)
+  // (this phone: on, from a tap; off, taken out of every app's table. Done, what's known here says so at once (off: in
+  // none of them; on: Today's morning), and the account's asked again)
   $("#youPhone")?.addEventListener("change", async (e) => {
     const sw = e.target, on = sw.checked;
     sw.disabled = true;
     const ok = await (on ? ctx.turnOn() : ctx.turnOff()).catch(() => false);
-    if (ok) Y.on = on; else sw.checked = !on;
     sw.disabled = false;
-    if (ok) drawYou(root, ctx);
+    if (!ok) { sw.checked = !on; return; }
+    if (Y.devices && Array.isArray(Y.devices.here)) Y.devices.here = on ? [...new Set([...Y.devices.here, "td_push"])] : [];
+    drawYou(root, ctx);
   });
   // Get Every App's Notifications Here: a sheet saying what changes, the old icons still getting them (each with Stop
   // There), and the one button that sends this phone to every app's table. Nothing's sent until that tap
@@ -218,7 +238,9 @@ function fillEvery(sheet, root, ctx) {
     try {
       const r = await ctx.fanOut();
       if (!r) { go.disabled = false; return; }
-      if (Y.devices) Y.devices.here = [...new Set([...(Y.devices.here || []), ...(r.tables || [])])];
+      // (the tables this phone's in now, as the account's answer names them)
+      if (Y.devices) Object.assign(Y.devices, { here: [...new Set([...(Y.devices.asked ? Y.devices.here || [] : []), ...(r.tables || [])])], asked: true });
+      Y.sub = await ctx.sub().catch(() => Y.sub);
       ctx.closeSheet();
       ctx.toast(r.tables?.includes("pg_push") ? "Every app’s notifications come here now" : "Today’s come here; the others aren’t ready to yet");
       paint(root, ctx);

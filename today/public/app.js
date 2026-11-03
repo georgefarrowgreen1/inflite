@@ -564,12 +564,25 @@ const IFL = (() => {
 
   // Chat's engine: /chats/?engine=1 in a frame over the page, its IFLChat once it says it's ready (ifl-chat-ready, on
   // this window), and the frame seen only while it shows its sheet (put away by sent or closed, or when its answer says
-  // no sheet is showing)
+  // no sheet is showing). The frame is in a dialog of its own: shown, the dialog's modal, so it's in the top layer, over
+  // every sheet of the page's own (a modal one too, which would otherwise make it inert) and the only thing a tap
+  // reaches; put away, the dialog's shut but still laid out (unseen, never in the way of a tap: menu.css), so the engine
+  // runs on and its sheet opens at once. The frame is never moved (that would load it again)
   const ENGINE_WAIT = 15e3, ENGINE_DROP = 10 * 60e3;
   let engine = null, resting = false;
-  function dropEngine() { engine?.frame.remove(); engine = null; }
-  function hide() { if (engine) engine.frame.hidden = true; }
-  function show() { if (engine) engine.frame.hidden = false; }
+  function dropEngine() { engine?.box.remove(); engine = null; }
+  function hide() {
+    const b = engine?.box;
+    if (!b) return;
+    b.classList.remove("on");
+    try { if (b.open) b.close(); } catch (_) {}
+  }
+  function show() {
+    const b = engine?.box;
+    if (!b) return;
+    b.classList.add("on");
+    try { if (!b.open) b.showModal(); } catch (_) {}
+  }
   // (the engine as the page uses it: its own calls, the frame shown for its sheet, and put away where nothing's showing:
   // a card refused (false, { ok: false }, { why }); sendTo's one tap sent ({ ok: true, say }: said here too). A sheet
   // that's shown is put away by its own word, sent or closed)
@@ -590,10 +603,16 @@ const IFL = (() => {
   function chat() {
     if (!hub.on || hub.degraded || resting || !document.body) return Promise.resolve(null);
     if (engine) return engine.api ? Promise.resolve(ready()) : engine.wait;
-    const f = document.createElement("iframe");
-    f.name = "ifl-chat"; f.className = "ifl-engine"; f.src = "/chats/?engine=1"; f.hidden = true;
+    const box = document.createElement("dialog"), f = document.createElement("iframe");
+    box.className = "ifl-engine-box";
+    box.setAttribute("aria-label", "Chats");
+    // (shut some other way (Escape, while the page has the focus): put away, as closed() would. Not when it's been shown
+    // again since: this word comes a moment after it's shut)
+    box.addEventListener("close", () => { if (!box.open) box.classList.remove("on"); });
+    f.name = "ifl-chat"; f.className = "ifl-engine"; f.src = "/chats/?engine=1";
     f.setAttribute("title", "Chats");
-    const e = engine = { frame: f, api: null, wait: null };
+    box.append(f);
+    const e = engine = { box, frame: f, api: null, wait: null };
     e.wait = new Promise((ok) => {
       let t = 0;
       const done = () => {
@@ -611,7 +630,7 @@ const IFL = (() => {
       addEventListener("ifl-chat-ready", done);
       t = setTimeout(done, ENGINE_WAIT);
     });
-    document.body.append(f);
+    document.body.append(box);
     return e.wait;
   }
   // (out of sight for ten minutes, the engine's let go: made again when it's next wanted)
@@ -631,10 +650,12 @@ const IFL = (() => {
     try { u = new URL(a.href, location.href); } catch (_) { return; }
     if (u.origin === location.origin && leaving(u.pathname + u.hash)) crumb();
   }, true);
-  // (a notification tapped while this page is open: the root worker's word, to a path of this site's only)
+  // (a notification tapped while this page is open: the root worker's word, to a path of this site's only. Heard, it's
+  // said so on the port the worker gave, else the worker opens it some other way: a page that has no ear for it)
   if (hub.on) navigator.serviceWorker?.addEventListener?.("message", (e) => {
     const d = e.data;
     if (!d || d.ifl !== "open" || !ownPath(d.url)) return;
+    try { e.ports?.[0]?.postMessage({ ifl: "opened" }); } catch (_) {}
     if (hub.degraded) return location.assign(hub.go(d.url));
     if (leaving(d.url)) crumb();
     location.assign(d.url);
@@ -644,6 +665,13 @@ const IFL = (() => {
   // there as the next page's first shown): off the hub, every page lets it go as it's left, so nothing changes there; at
   // the hub, one that can't be done is let go quietly)
   if (hub.on) document.documentElement?.classList.add("ifl-hub");
+  // (the Home Screen icon's badge, as many notifications as are still showing: counted again by the root worker as a
+  // page of the hub opens and each time it's back in sight, so those tapped or cleared meanwhile are gone from it)
+  const recount = () => { try { navigator.serviceWorker?.getRegistration?.("/")?.then?.((r) => r?.active?.postMessage({ ifl: "badge" }), () => {}); } catch (_) {} };
+  if (hub.on) {
+    recount();
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") recount(); });
+  }
   const vt = (e) => { const t = e.viewTransition; if (!t) return; for (const k of ["ready", "finished", "updateCallbackDone"]) t[k]?.catch?.(() => {}); if (!hub.on) t.skipTransition?.(); };
   addEventListener("pageswap", vt);
   addEventListener("pagereveal", vt);
@@ -659,7 +687,16 @@ const IFL = (() => {
     sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-modal", "true"); sheet.setAttribute("aria-label", "InFlite is one app now");
     const layer = el("div", "ifa-layer ifl-moved", sheet), was = document.activeElement;
     const shut = () => { document.removeEventListener("keydown", key, true); layer.classList.remove("on"); setTimeout(() => layer.remove(), 320); was?.focus?.({ preventScroll: true }); };
-    const key = (e) => { if (e.key === "Escape") shut(); };
+    // (Escape shuts it; Tab and Shift-Tab go round its buttons, never behind it)
+    const key = (e) => {
+      if (e.key === "Escape") return shut();
+      if (e.key !== "Tab") return;
+      const f = [how, stop, later].filter((b) => b && !b.hidden && !b.disabled);
+      if (!f.length) return;
+      e.preventDefault();
+      const i = f.indexOf(document.activeElement);
+      f[i < 0 ? (e.shiftKey ? f.length - 1 : 0) : (i + (e.shiftKey ? f.length - 1 : 1)) % f.length].focus({ preventScroll: true });
+    };
     how.onclick = () => { steps.hidden = false; how.hidden = true; later.textContent = "Done"; later.focus({ preventScroll: true }); };
     if (stop) stop.onclick = async () => {
       stop.disabled = true; stop.textContent = "Turning Off…";
@@ -693,8 +730,14 @@ const IFL = (() => {
     if (said) toast(stillHere(String(said).slice(0, 200)));
   }
 
-  return { header, headerHtml, watch, settle, glyph, APPS, NAME, menu, close, redraw, isOpen: () => !!open, built, note, iconUrl, allow, wantsAllow,
+  const api = { header, headerHtml, watch, settle, glyph, APPS, NAME, menu, close, redraw, isOpen: () => !!open, built, note, iconUrl, allow, wantsAllow,
     updates, offer, here, update: () => apply(true), updateReady: () => !!U.ready, hub };
+  // (at the hub, the page's IFL on its window too: so Chat's engine, a frame of this page's, can say it's sent or shut its
+  // sheet (parent.IFL.hub.sent(say), parent.IFL.hub.closed(), §8.2), and Today's day and cards find the page's own hub.
+  // A const at the top of a module or a script is never the window's own. It can be taken back (configurable), so a
+  // page's own global IFL never clashes with it, and one put there first (a test's stand-in) is left as it is)
+  if (hub.on && typeof window !== "undefined") try { Object.defineProperty(window, "IFL", { value: api, configurable: true, writable: true }); } catch (_) {}
+  return api;
 })();
 // ==== end of InFlite's menu ====
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -761,17 +804,17 @@ const missing = (e) => e?.status === 404 || e?.status === 501;
 // as it did before: each app at its own address, Send through chat.<site>/#share=, no engine, and You without the rows
 // only the hub has (IFL.hub.degrade)
 const HUB_KEY = "ifl-hub-ready";
+// (waited for 1.5 s at most, beside the session's own request: slower than that, this page runs as before, and the
+// answer, when it comes, is kept for the visit's next page)
 async function hubReady() {
   try { const v = sessionStorage.getItem(HUB_KEY); if (v === "1" || v === "0") return v === "1"; } catch {}
-  let ready = false, answered = false;
-  try {
-    const r = await Promise.race([fetch("/api/hub", { credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" } }), new Promise((_, no) => setTimeout(() => no(new Error("slow")), 4000))]);
+  const asked = fetch("/api/hub", { credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" } }).then(async (r) => {
     const j = r.ok ? await r.json().catch(() => null) : null;
-    ready = j?.ready === true;
-    answered = typeof j?.ready === "boolean" || r.status === 404 || r.status === 503;
-  } catch {}
-  if (answered) try { sessionStorage.setItem(HUB_KEY, ready ? "1" : "0"); } catch {}
-  return ready;
+    const ready = j?.ready === true;
+    if (typeof j?.ready === "boolean" || r.status === 404 || r.status === 503) try { sessionStorage.setItem(HUB_KEY, ready ? "1" : "0"); } catch {}
+    return ready;
+  });
+  return Promise.race([asked, new Promise((ok) => setTimeout(() => ok(false), 1500))]).catch(() => false);
 }
 const ownLinks = () => { const L = S.links || DEFAULT_LINKS; return { chat: L.chat, weather: L.weather, fitness: L.fitness, finance: L.finance, email: L.email || DEFAULT_LINKS.email }; };
 function hubSays(ready) {
@@ -779,7 +822,7 @@ function hubSays(ready) {
   if (!S.hub) IFL.hub.degrade(ownLinks());
   // (signed out: the way in's second way, Today's own, only beside Chats' trip)
   $("#alsoRow").hidden = !S.hub;
-  $("#signin").href = S.hub ? "/chats/#signin-start&then=/" : "https://auth.inflite.ai/";
+  $("#signin").href = S.hub ? "/chats/#signin-start&then=/" : `${safe(S.links?.auth) || DEFAULT_LINKS.auth}/`;
 }
 
 // ---------------------------------------------------------------- this browser's copy of your day, per account
@@ -894,8 +937,9 @@ function signedOutNow() {
   forgetKept();
   clearTimeout(prefsT); prefsT = 0;
   S.view = null; S.answer = null; S.morning = null; S.kept = false; S.dayLine = null; waitingAnswer = null;
+  letDayGo();
+  you?.forgetYou?.();
   for (const id of ["#top", "#waiting", "#coming", "#rest", "#apps", "#you", "#hd"]) $(id).replaceChildren();
-  delete $("#today").dataset.phase;
   showOut();
 }
 
@@ -911,7 +955,7 @@ function signedIn(view, { offline = false } = {}) {
   forgetKept(CARDS_KEY(view.user.id));
   if (!offline) keepSession(view);
   appearance(view.user.appearance);
-  if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; }
+  if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; if (was) you?.forgetYou?.(); }
   if (!S.morning || !("lines" in S.morning)) S.morning = view.morning || S.morning;
   $("#out").hidden = true;
   $("#in").hidden = false;
@@ -942,8 +986,12 @@ function gotCards(answer) {
   drawLine();
   drawMorning();
   if (S.tab === "apps") drawAppsNow();
-  // (the day still being worked out on the account: asked once more, 5 seconds on)
-  if (answer.planning && !S.asked5) { S.asked5 = true; setTimeout(() => refresh(), 5000); }
+  // (the day still being worked out on the account: asked once more, 5 seconds on; once an answer's no longer planning,
+  // the next that is gets its own)
+  if (!answer.planning) S.asked5 = false;
+  else if (!S.asked5) { S.asked5 = true; setTimeout(() => refresh(), 5000); }
+  // (the minute's tick put to this answer's moments: its until may come sooner)
+  nextMinute();
 }
 
 // ---------------------------------------------------------------- the views: Today, Apps and You, one page
@@ -982,7 +1030,8 @@ function drawYouNow() {
 }
 const appsCtx = () => ({ answer: S.answer, view: S.view, hub: S.hub, href: (app, section) => IFL.hub.href(app, section), icon: (app) => IFL.iconUrl(app) });
 const youCtx = () => ({
-  view: S.view, hub: S.hub, call, missing, toast, morning: S.morning, endpoint: () => S.endpoint, device: () => S.device,
+  view: S.view, hub: S.hub, call, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
+  kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
   sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, toMorning, openAccount, signOut, canPush, pushWhy,
   chatSettings: () => location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`),
   openSheet, closeSheet, BUILD,
@@ -1072,7 +1121,7 @@ function wireLinks() {
 // (now, for anything worked out from the answer: never before the answer's own moment, where this device's clock is
 // behind the account's, so a pigeon that's landed is never said to land, nor one landed this morning tomorrow)
 const nowish = () => Math.max(Date.now() + S.skew, Number.isFinite(S.answer?.at) ? S.answer.at : 0);
-const ctx = () => ({ links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), now: nowish() });
+const ctx = () => ({ links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), now: nowish(), hub: IFL.hub });
 function cleanPrefs(p) {
   const order = (Array.isArray(p?.order) ? p.order : []).filter((k) => CARD_KEYS.includes(k));
   for (const k of CARD_KEYS) if (!order.includes(k)) order.push(k);
@@ -1088,10 +1137,15 @@ function drawCards(anim) {
   if (S.answer?.v === 2 && !S.kept) return drawDayNow(anim);
   drawFour(anim);
 }
+// (#today taken back from day.js: nothing more timed or drawn there from it)
+function letDayGo() {
+  try { day?.stopDay?.($("#today")); } catch {}
+  delete $("#today").dataset.phase;
+}
 function drawFour(anim) {
   const box = $("#rest");
+  letDayGo();
   for (const id of ["#top", "#waiting", "#coming"]) $(id).replaceChildren();
-  delete $("#today").dataset.phase;
   box.className = "cards";
   box.hidden = false;
   const shown = S.prefs.order.filter((k) => !S.prefs.hidden.includes(k));
@@ -1121,12 +1175,15 @@ function drawFour(anim) {
   drawKept();
 }
 // Today First's day, drawn by /day.js once it's loaded: only if it's still the answer by then. ctx: now() (the answer's
-// clock), prefs (Edit's order and hidden cards, for The Rest of Today), links, tz, toast(text), refresh() (the day asked
-// again: after Undo, Take or Keep), line(text) (the header's line for the phase; null: the date), drawFour() (the four
-// cards, as an answer without v draws them)
+// clock), hub (the page's own IFL.hub: the hub's paths and Chat's engine, or the apps' own addresses where it's degraded),
+// prefs (Edit's order and hidden cards, for The Rest of Today), links, tz, call(path, o) (the page's own requests, so a
+// 401 from Undo, Take or Keep signs the page out at once), toast(text), refresh() (the day asked again: after Undo, Take
+// or Keep), line(text) (the header's line for the phase; null: the date), drawFour() (the four cards, as an answer
+// without v draws them), timers: false (nothing timed in day.js: the page's own minute, below, ticks it, and only while
+// it's signed in with this answer, so a day forgotten here stays forgotten)
 let day = null;
-const dayCtx = () => ({ now: nowish, prefs: S.prefs, links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), toast, refresh: () => refresh(),
-  line: (text) => { S.dayLine = text == null ? null : String(text).slice(0, 120); drawLine(); }, drawFour: () => drawFour() });
+const dayCtx = () => ({ now: nowish, hub: IFL.hub, prefs: S.prefs, links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), call, toast, refresh: () => refresh(),
+  line: (text) => { if (S.view) { S.dayLine = text == null ? null : String(text).slice(0, 120); drawLine(); } }, drawFour: () => drawFour(), timers: false });
 function drawDayNow() {
   const answer = S.answer;
   $("#rest").className = "";
@@ -1142,9 +1199,19 @@ function drawKept() {
   k.hidden = !old;
   if (old) k.textContent = `Updated ${hm(S.answerAt, S.answer?.tz || browserTz())}`;
 }
-// each minute, with no request: the day's next phase at its minute (from the answer's tops), passed rows gone, the
-// pigeons' times, the date, the kept copy's word; then, past a phase's end, the day asked again a little later, in the
-// background
+// each minute, on the minute (the answer's clock), or at the answer's next moment if that's sooner (its until, a step of
+// its timeline, a Coming Up row's time, an Undo's end), with no request: the day's next phase at its minute (from the
+// answer's tops), passed rows gone, the pigeons' times, the date, the kept copy's word; then, past a phase's end, the day
+// asked again a little later, in the background
+let minuteT = 0;
+function nextMinute() {
+  clearTimeout(minuteT);
+  const now = nowish(), a = S.answer?.v === 2 && !S.kept ? S.answer : null;
+  const list = (x) => (Array.isArray(x) ? x : []);
+  const due = a ? [a.until, ...list(a.timeline).map((x) => x?.at), ...list(a.upcoming).map((x) => x?.at), ...list(a.acts).map((x) => x?.undoUntil)].filter((x) => Number.isFinite(x) && x > now) : [];
+  const next = Math.min((Math.floor(now / MIN) + 1) * MIN, ...due);
+  minuteT = setTimeout(() => { minute(); nextMinute(); }, Math.max(250, next - now + 20));
+}
 function minute() {
   if (!S.view) return;
   const now = nowish(), a = S.answer;
@@ -1363,12 +1430,17 @@ async function findDevice() {
     return null;
   }
 }
-// (this device's subscription to the account: the device route, else Today's own as before)
+// (this device's subscription to the account: the device route, else Today's own as before: a renewed one (was) moved in
+// Today's own table, as the root worker does, else added)
 async function postDevice(sub, extra = {}) {
   try {
     return await call("/api/device", { method: "POST", body: { sub: sub.toJSON(), tz: browserTz(), ...extra } });
   } catch (e) {
     if (!missing(e) || extra.fan) throw e;
+    if (extra.was) {
+      const moved = await call("/api/push/move", { method: "POST", body: { sub: sub.toJSON(), was: extra.was } }).catch(() => null);
+      if (moved?.moved) return moved;
+    }
     return call("/api/push", { method: "POST", body: { sub: sub.toJSON() } });
   }
 }
@@ -1402,12 +1474,16 @@ async function turnOn() {
   }
 }
 // This Phone, off: its subscription taken out of every table (and Today's own, on an older account side); kept, so
-// turning it on again is one tap
+// turning it on again is one tap. What's known here of it says so at once (the morning's thisDevice, this browser's
+// today:push), as the account now does, so You's switch stays off
 async function turnOff() {
   const sub = await currentSub();
   if (!sub) return true;
   try {
     await call("/api/device", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch((e) => { if (missing(e)) return call("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }); throw e; });
+    try { localStorage.removeItem("today:push"); } catch {}
+    if (S.morning && typeof S.morning === "object") S.morning = { ...S.morning, thisDevice: false };
+    drawMorning();
     return true;
   } catch (e) {
     if (e.status !== 401) toast(e.message);
@@ -1570,6 +1646,20 @@ function worker() {
 
 // ---------------------------------------------------------------- opening
 const hubAsked = hubReady();
+// (a notification tapped while the hub couldn't serve its app (before its key, or rolled back): the root worker opens
+// Today with #go=<the app's path here>, and it's gone there from here, the hub's way where it's ready, else the app's own
+// address, as Today 1.08 would. Only a path of this site's)
+function goFromHash() {
+  const p = new URLSearchParams(location.hash.slice(1)).get("go");
+  if (p == null) return false;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch {}
+  if (!/^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]{0,300}$/.test(p)) return false;
+  hubAsked.then((ready) => {
+    if (!ready) IFL.hub.degrade(ownLinks());
+    location.replace(ready ? p : IFL.hub.go(p));
+  });
+  return true;
+}
 async function load() {
   const devP = findDevice();
   S.asked5 = false;
@@ -1628,13 +1718,14 @@ async function load() {
 }
 
 function start() {
+  if (goFromHash()) return;
   wire();
   worker();
   IFL.built("today", BUILD, NEWS);
   IFL.updates({ app: "today", build: BUILD, url: "/version", field: "build", busy: () => !!sheetOpen, save: () => ({ y: Math.round(scrollY) }),
     files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js"] });
   load();
-  setInterval(minute, MIN);
+  nextMinute();
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
     if (S.view) back();
