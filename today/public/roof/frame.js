@@ -201,7 +201,7 @@ export function createFrame(opts = {}) {
       if (!o.replace) { depth++; key = newKey(); routes.length = depth; }
       put(p, !o.replace);
       routes[depth] = r;
-      render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom ? hintOf(o.zoomFrom, u) : null, y: o.replace && shown?.id === idOf(r) ? scrollY : 0 });
+      render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom && r.app === "weather" ? hintOf(o.zoomFrom, u) : null, y: o.replace && shown?.id === idOf(r) ? scrollY : 0 });
     },
     back() {
       const top = F.sheet.top();
@@ -260,7 +260,8 @@ export function createFrame(opts = {}) {
       sections: h.sections === false || h.sections === null ? null : R.sections, section: r.section, onSection: (id) => F.nav.section(r.app, id),
     };
   }
-  // what the tapped card says, for the module's first paint (§2.3): { sky, temp, place }
+  // what the tapped card says, for the module's first paint (§2.3): { sky, temp, place }; Weather's cards only (S2-D17:
+  // another module's hint is null, and it drops the clone with fw.zoomTarget once its hero is in)
   const hintOf = (card, u) => ({
     sky: /(?:^|\s)wx-sk-([\w-]+)/.exec(card.className)?.[1] || null,
     temp: card.querySelector(".wx-now .t")?.textContent.trim() || null,
