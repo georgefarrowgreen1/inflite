@@ -1,7 +1,10 @@
 // Mail in InFlite's window (Today First, spec §9.4): the script of /mail/, the page today/src/mailhost.js writes, which
 // frames Mail at its own address so its mail never shares this site's origin (and Chat's key).
 // - The frame: Mail's address (the page's data-mail), with the code coming back from signing in (this page's own
-//   #signin=<code>, checked, and taken out of this page's address at once), else Mail as it is.
+//   #signin=<code>, checked, and taken out of this page's address at once); else a conversation a notification opens
+//   (#thread=<id>, its id checked) or Mail's settings (#settings, or #settings=<page>, which Mail opens as #settings),
+//   passed into Mail's address as Mail itself reads them (One roof stage 4, spec §2.3: the page Mail is while its switch
+//   is off); else Mail as it is.
 // - What Mail says, heard only from the frame itself and only from Mail's own address, and only these:
 //     { ifl: "hello", v: 1 }    Mail's in the frame: answered the same, so Mail knows it's InFlite's window it's in
 //     { ifl: "back" }           Mail's Back: to Apps (/#apps), never history's own back (Mail keeps history of its own)
@@ -9,7 +12,10 @@
 //                               sign-in page (data-auth), which comes back here, to /mail/#signin=<code>
 // - Back to Apps, in the bar: /#apps, the same.
 // - A notification tapped while this page is open: the root worker's { ifl: "open", url } (a path of this site's only),
-//   said heard, and gone to, as every page of the hub does (.tools/inflite/menu.js), with this page as the breadcrumb
+//   said heard, and gone to, as every page of the hub does (.tools/inflite/menu.js), with this page as the breadcrumb.
+//   One for this page itself (/mail/#thread=<id>, the conversation a notification of Mail's opens): Mail opened at it in
+//   a fresh frame (an address only its # differs in would never reload this page or the frame, RI5), even while the hub
+//   isn't serving the apps' pages (this one is served all the same);
 //   (sessionStorage "ifl-crumb"), so the page it opens comes Back here. Not while the hub isn't serving the apps' pages
 //   (Today's word for the visit, sessionStorage "ifl-hub-ready" "0": this page is served all the same, the apps' aren't):
 //   then it's not heard, and the root worker opens it its own way (Today, which sends it to the app's own address).
@@ -21,6 +27,8 @@
   // (the code a sign-in hands back, and the word's hash Mail sends to sign in with: letters, digits, - and _ only, so
   // neither can carry another part of an address, & or #, into the frame's or the sign-in page's)
   const CODE = /^[A-Za-z0-9_-]{16,128}$/, ASK = /^[A-Za-z0-9_-]{16,64}$/;
+  // (a conversation's id: letters, digits, - and _ only, 64 at most)
+  const THREAD = /^[\w-]{1,64}$/;
   const ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i;
   const root = document.documentElement;
   const MAIL = ORIGIN.test(root.dataset.mail || "") ? root.dataset.mail : null;
@@ -34,8 +42,21 @@
     try { code = new URLSearchParams(String(hash || "").replace(/^#/, "")).get("signin"); } catch (_) {}
     return code && CODE.test(code) ? code : null;
   }
-  // (where the frame goes: Mail, and the code with it when there's one)
-  const frameSrc = (code) => `${MAIL}/${code ? `#signin=${code}` : ""}`;
+  // (what of this page's # goes into Mail's: the sign-in's code first, else a conversation, else Mail's settings; "" for
+  // none. Each as Mail reads it at its start: #signin=<code>, #thread=<id>, #settings)
+  function markOf(hash) {
+    const code = codeFrom(hash);
+    if (code) return `#signin=${code}`;
+    let p = null;
+    try { p = new URLSearchParams(String(hash || "").replace(/^#/, "")); } catch (_) { return ""; }
+    const thread = p.get("thread");
+    if (thread && THREAD.test(thread)) return `#thread=${thread}`;
+    return p.has("settings") ? "#settings" : "";
+  }
+  // (where the frame goes: Mail, and what of this page's # it's given)
+  const frameSrc = (hash) => `${MAIL}/${markOf(hash)}`;
+  // (the frame, as it is now: a fresh one when a notification opens a conversation here)
+  let frame = null;
   // (the sign-in page, for Mail, back here)
   const signInAt = (ask) => `${AUTH}/#signin=mail&ask=${ask}&back=${encodeURIComponent(location.origin + "/mail/")}`;
   // (a path of this site's: starts /, not //, no \ and nothing unseen, no more than 200 characters)
@@ -65,14 +86,26 @@
   }
 
   function start() {
-    const frame = document.querySelector('iframe[name="ifl-mail"]');
+    frame = document.querySelector('iframe[name="ifl-mail"]');
     document.querySelector(".mh-back")?.addEventListener("click", back);
     addEventListener("message", (e) => heard(e, frame));
     if (!frame || !MAIL) return;
-    const code = codeFrom(location.hash);
+    const hash = location.hash;
     // (the code is good once: out of this page's address before anything else, so a reload never hands it in again)
-    if (location.hash) try { history.replaceState(history.state, "", location.pathname + location.search); } catch (_) {}
-    frame.src = frameSrc(code);
+    if (hash) try { history.replaceState(history.state, "", location.pathname + location.search); } catch (_) {}
+    frame.src = frameSrc(hash);
+  }
+
+  // (Mail again at what a notification opens: a fresh frame, the same in every way but its address, so Mail starts at it
+  // whatever the frame's showing now; where one can't be made, the frame's address set)
+  function reframe(src) {
+    if (!frame) return;
+    let fresh = null;
+    try { fresh = typeof frame.cloneNode === "function" && typeof frame.replaceWith === "function" ? frame.cloneNode(false) : null; } catch (_) { fresh = null; }
+    if (!fresh) { frame.src = src; return; }
+    fresh.src = src;
+    frame.replaceWith(fresh);
+    frame = fresh;
   }
 
   // (a notification tapped while this page is open: the root worker's word, to a path of this site's only. Said heard,
@@ -80,9 +113,19 @@
   // With the hub not serving the apps' pages, not heard: the worker, hearing nothing, opens it its own way)
   navigator.serviceWorker?.addEventListener?.("message", (e) => {
     const d = e.data;
-    if (!d || d.ifl !== "open" || !ownPath(d.url) || notReady()) return;
+    if (!d || d.ifl !== "open" || !ownPath(d.url)) return;
+    // (this page: Mail opened at it here, the hub serving the apps' pages or not)
+    if (!leaving(d.url)) {
+      if (!frame || !MAIL) return;
+      try { e.ports?.[0]?.postMessage({ ifl: "opened" }); } catch (_) {}
+      let hash = "";
+      try { hash = new URL(d.url, location.origin).hash; } catch (_) {}
+      reframe(frameSrc(hash));
+      return;
+    }
+    if (notReady()) return;
     try { e.ports?.[0]?.postMessage({ ifl: "opened" }); } catch (_) {}
-    if (leaving(d.url)) try { store()?.setItem("ifl-crumb", location.pathname); } catch (_) {}
+    try { store()?.setItem("ifl-crumb", location.pathname); } catch (_) {}
     location.assign(d.url);
   });
   // (the Home Screen icon's badge, as many notifications as are still showing: counted again by the root worker as this
