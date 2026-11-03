@@ -35,7 +35,7 @@ export function view(el, ctx) {
   const off = listenFrames({
     remote(id, on) { const c = cur?.cards.get(id); if (c) c.banner.hidden = !on || c.loaded; },
     mailto(href) { const d = logic.mailtoDraft?.(href); if (d) ctx.open.compose(d); },
-    touched() { touched = Date.now(); },
+    touched() { touched = Date.now(); ctx.touched?.(); },
   });
   offs.push(off, fw.on("theme", (t) => themeAll(t)));
   for (const k of ["threadId", "thread", "layout", "offline"]) offs.push(store.on(k, () => draw()));

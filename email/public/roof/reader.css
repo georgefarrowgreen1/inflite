@@ -2,12 +2,13 @@
    .m-mail, the framework's tokens only, nothing on :root, html or body. Scroll is the window on a phone (D20); on an iPad
    the list is 360 px on the left and the reader a sticky pane beside it with its own scroll (S4-D6). */
 .m-mail .ml-reader { display: flex; flex-direction: column; gap: 12px; padding: 4px var(--gutter, 16px) 24px; min-width: 0; }
-.m-mail[data-layout=pad] { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 0 20px; align-items: start; }
-.m-mail[data-layout=pad] .ml-reader {
+/* (the grid is mail.css's .ml-split; the pane is ours: sticky beside the list, its own scroll, "Choose a conversation"
+   while none is open) */
+.m-mail.ml-split > .ml-reader {
   position: sticky; top: var(--hd-h); height: calc(100dvh - var(--hd-h) - var(--tabs-h) - env(safe-area-inset-bottom, 0px));
   overflow: auto; overscroll-behavior: contain; padding-top: 12px; border-left: 1px solid var(--line);
 }
-.m-mail[data-layout=pad] .ml-reader[hidden] { display: flex; }
+.m-mail.ml-split > .ml-reader[hidden] { display: flex; visibility: visible; }
 .m-mail .ml-reader > .ifl-empty { margin: auto; }
 
 /* the iPad's toolbar, the head */
@@ -15,7 +16,7 @@
 .m-mail .mr-bar[hidden] { display: none; }
 .m-mail .mr-head { display: flex; flex-direction: column; gap: 4px; outline: none; }
 .m-mail .mr-subject { margin: 0; font: 600 22px/1.2 var(--font-d, inherit); overflow-wrap: anywhere; }
-.m-mail:not([data-layout=pad]) .mr-subject { font-size: 19px; }
+.m-mail:not(.ml-split) .mr-subject { font-size: 19px; }
 .m-mail .mr-meta { margin: 0; color: var(--text-2); font-size: 14px; }
 .m-mail .mr-later { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; padding: 8px 12px; border-radius: var(--r-well, 16px); background: var(--glass-ctl); color: var(--text-2); font-size: 14px; }
 .m-mail .mr-later svg, .m-mail .mr-acts svg, .m-mail .mr-replies svg, .m-mail .mr-bar svg, .m-mail .mr-file svg, .m-mail .mr-qr svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
