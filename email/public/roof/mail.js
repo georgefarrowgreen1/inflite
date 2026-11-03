@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.50";
-export const NEWS = "Getting ready to open inside InFlite: Back from a message returns you to it in the list";
+export const BUILD = "1.51";
+export const NEWS = "Mail opens inside InFlite: on Today, in Apps and in You, and Confirm It's You brings you straight back";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
