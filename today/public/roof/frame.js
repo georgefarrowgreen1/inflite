@@ -102,8 +102,17 @@ export function createFrame(opts = {}) {
   const svcs = {};
   const svc = (app) => svcs[app] || (isOn(app) && REGISTRY[app]?.service
     ? (svcs[app] = Promise.resolve(opts.retired).catch(() => {}).then(() => import("./modules.js")).then((M) => M.loadService(app, F))
-      .then((s) => (s?.on?.("state", (d) => T(() => opts.serviceState?.(app, d?.state))), s), (e) => { delete svcs[app]; throw e; }))
+      .then((s) => (s?.on?.("state", (d) => { T(() => opts.serviceState?.(app, d?.state)); found(app, s, /^(ready|offline)$/.test(d?.state)); }), s), (e) => { delete svcs[app]; throw e; }))
     : Promise.reject(new Error(`${app}: no service here`)));
+  // (the frame's own search over a service (Chats' People and Messages, §2.4): while it's unlocked and signed in; gone as
+  // it's locked, signed out or let go of)
+  const finds = {};
+  const found = (app, s, v) => {
+    const f = finds[app];
+    if (!v) { delete finds[app]; return f?.then((off) => off?.()); }
+    if (f) return;
+    const p = finds[app] = import("./connectors.js").then((c) => (finds[app] === p && !gone ? c.chatsProvider(F, s) : null)).catch(() => null);
+  };
   const roofs = () => sess().apps;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const newKey = () => Math.random().toString(36).slice(2, 10);
@@ -201,7 +210,7 @@ export function createFrame(opts = {}) {
     },
     forModule: (app) => modOf(app).fw,
     service: (app) => svc(app).then((s) => s.facade),
-    releaseService(app, o) { const p = svcs[app]; if (o?.terminate) delete svcs[app]; p?.then((s) => s.release?.(o), () => {}); },
+    releaseService(app, o) { const p = svcs[app]; if (o?.terminate) { delete svcs[app]; found(app); } return p?.then((s) => s.release?.(o), () => {}); },
     destroy() {
       if (gone) return;
       for (const a of Object.keys(svcs)) F.releaseService(a, { terminate: true });
@@ -234,7 +243,7 @@ export function createFrame(opts = {}) {
       if (r.kind === "app" && stale && shown?.id !== "m:" + r.app && !F.busy()) return L.assign(p);
       const cur = shown?.route;
       const zoom = o.zoomFrom && r.kind === "app" && !reduced() ? o.zoomFrom : null;
-      const kind = o.kind || (zoom ? "zoom" : r.kind === "tab" && cur?.kind === "tab" ? "tab" : "push");
+      const kind = o.kind || (zoom ? "zoom" : isTab(r) && isTab(cur) ? "tab" : "push");
       leaveEntry();
       F.restamp();
       if (!o.replace) { depth++; key = newKey(); routes.length = depth; }
@@ -247,7 +256,8 @@ export function createFrame(opts = {}) {
       if (top) return top.close();
       if (shownMod()?.instance?.back?.()) return;
       if (curDepth() > 0) return H.back();
-      F.nav.go("/#apps", { replace: true, kind: "pop" });
+      const t = F.route?.kind === "app" && REGISTRY[F.route.app].tab;
+      if (!t || !tabRoot(F.route)) F.nav.go(t ? REGISTRY[F.route.app].path : "/#apps", { replace: true, kind: "pop" });
     },
     section(app, id, { arg = null } = {}) {
       const m = mods[app], r0 = F.route, ids = REGISTRY[app]?.sections.map((s) => s[0]);
@@ -281,6 +291,11 @@ export function createFrame(opts = {}) {
   // (a change of a stay key in the same app, a reader opened or closed: a screen change for focus and scroll, C7)
   const stays = (r, p) => r.kind === "app" && p?.kind === "app" && !!REGISTRY[r.app].stay?.some((k) => k === r.key || k === p.key) && (r.key !== p.key || r.arg !== p.arg);
   const shownMod = () => (shown?.id.startsWith("m:") ? mods[shown.id.slice(2)] : null);
+  // (stage 3, S3-C4, S3-C7: a route whose key is one of its app's stay keys (a chat, a thread); an app's root that's a tab
+  // screen (REGISTRY tab: Chats), drawn as one; a tab screen, Today, Apps and You or such a root)
+  const stayR = (r) => r?.kind === "app" && !!REGISTRY[r.app].stay?.includes(r.key);
+  const tabRoot = (r) => r?.kind === "app" && !!REGISTRY[r.app].tab && !stayR(r);
+  const isTab = (r) => r?.kind === "tab" || tabRoot(r);
   const labelOf = (r) => (r?.kind === "app" ? REGISTRY[r.app]?.name : TABN[r?.tab]) || null;
   function leaveEntry() {
     ys.set(key, scrollY);
@@ -293,9 +308,9 @@ export function createFrame(opts = {}) {
   }
   function appHead(r) {
     const R = REGISTRY[r.app], h = mods[r.app]?.header || {}, d = curDepth();
-    const to = d > 0 ? labelOf(routes[d - 1]) : "Apps";
+    const to = d > 0 ? labelOf(routes[d - 1]) : R.tab ? R.name : "Apps", t = tabRoot(r);
     return {
-      ...h, back: { label: h.back?.label || (to ? `Back to ${to}` : "Back") }, crumb: { text: R.name, app: r.app }, title: h.title ?? R.name,
+      ...h, back: t ? null : { label: h.back?.label || (to ? `Back to ${to}` : "Back") }, crumb: t ? null : { text: R.name, app: r.app }, title: h.title ?? R.name,
       sections: h.sections === false || h.sections === null ? null : R.sections, section: r.section, onSection: (id) => F.nav.section(r.app, id),
     };
   }
@@ -325,8 +340,9 @@ export function createFrame(opts = {}) {
       for (const [k, m] of Object.entries(mods)) if ("m:" + k !== id) { m.el.hidden = true; m.el.inert = true; }
       if (!same || r.kind !== "app" || prev.route.section !== r.section) html.classList.remove("ifl-fill");
       html.dataset.app = r.kind === "app" ? r.app : "inflite";
-      F.tabs.set(r.kind === "app" ? "apps" : r.tab);
-      const y = pop ? ys.get(r.kind === "app" ? `${k}:${r.section}` : k) ?? ys.get(k) ?? 0 : o.y || 0;
+      F.tabs.set(r.kind === "app" ? REGISTRY[r.app].tab || "apps" : r.tab);
+      if (!same) F.tabs.away?.(false);
+      const y = stayR(r) ? 0 : pop ? ys.get(r.kind === "app" ? `${k}:${r.section}` : k) ?? ys.get(k) ?? 0 : o.y || 0;
       if (pop && stays(r, prev?.route)) o.popY = y;
       const el = r.kind === "app" ? showApp(r, o) : showTab(r);
       if (!o.first) scrollTo(0, y);
@@ -428,6 +444,7 @@ export function createFrame(opts = {}) {
     return m;
   }
   function unmount(app) {
+    if (svcs[app]) F.releaseService(app, { terminate: true });
     const m = mods[app];
     if (!m) return;
     try { m.instance?.unmount?.(); } catch (e) { console.error(e); }
@@ -462,7 +479,7 @@ export function createFrame(opts = {}) {
       changed: () => { T(() => opts.changed?.(app)); },
       session: { get user() { const u = sess().view?.user || {}; return { id: u.id ?? null, name: u.name ?? null }; }, lost, hubAgain: () => F.hubAgain() },
       visible: () => doc.visibilityState === "visible",
-      on(ev, fn) { const off = F.on(ev, fn); m.offs.push(off); return off; },
+      on(ev, fn) { const off = F.on(ev === "push" ? "push:" + app : ev, fn); m.offs.push(off); return off; },
       theme: () => themeNow(),
       motion: () => (reduced() ? "reduced" : "full"),
       zoomTarget: () => dropClone(m),
@@ -476,7 +493,7 @@ export function createFrame(opts = {}) {
       },
       stale: () => stale,
       service: () => svc(app),
-      tabs: { away: (v) => F.tabs.away?.(!!v), badge: (n) => F.tabs.badge?.(app, n) },
+      tabs: { away: (v) => F.tabs.away(!!v && mine()), badge: (n) => F.tabs.badge(REGISTRY[app].tab, n) },
     };
   }
   const themeNow = () => /^(light|dark)$/.test(html.dataset.theme) ? html.dataset.theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -552,6 +569,7 @@ export function createFrame(opts = {}) {
   // a notification tapped while this page is open (the root worker's { ifl: "route", url }, D10)
   on(navigator.serviceWorker, "message", (e) => {
     const d = e.data;
+    if (d?.inflight === "sync") return emit("push:chats", { app: "chats", tag: typeof d.tag === "string" ? d.tag : null });
     if (!d || d.ifl !== "route" || !ownPath(d.url)) return;
     T(() => e.ports?.[0]?.postMessage({ ifl: "routed" }));
     F.nav.go(d.url, { from: "notification" });

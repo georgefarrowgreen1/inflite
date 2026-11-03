@@ -111,6 +111,13 @@ html.ifl-fill .ifl-hd.ifh { --p: 1 !important; }
   background: color-mix(in srgb, var(--ifl-tab-on) var(--ift-pill), transparent); transition: transform 0.38s var(--ease-glide), width 0.38s var(--ease-glide); pointer-events: none; }
 .ifl-tab-pill[hidden] { display: none; }
 .ifl-tabs.away { transform: translateY(150%); }
+/* stage 3: with Chats in the page the bar is InFlite's indigo on every screen, scoped to the bar so html[data-app]
+   doesn't move it (S3-D16); a tab's count (tabs.js badge: Chats' unread, a number only) */
+.ifl-tabs.has-pill.chats { --ifl-tab-on: #5a4fe0; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ifl-tabs.has-pill.chats { --ifl-tab-on: #9a90ff; } }
+:root[data-theme="dark"] .ifl-tabs.has-pill.chats { --ifl-tab-on: #9a90ff; }
+.ifl-tab-badge { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px;
+  display: grid; place-items: center; font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; background: var(--danger); pointer-events: none; }
 
 /* ---- sheets (sheet.js) on <dialog>: the frozen markup, Weather's motion ---- */
 dialog.ifl-sheet { position: fixed; inset: auto 0 0; z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
@@ -150,6 +157,8 @@ body.sheet-up { overflow: hidden; }
 
 /* ---- the toast (toast.js): the shared note's look, an action when it has one ---- */
 .ifl-toast { max-width: calc(100vw - 32px); bottom: calc(var(--tabs-h) + 24px + env(safe-area-inset-bottom, 0px)); }
+/* (the bar away, a chat's composer in its place: above the composer, as it grows to a few lines; stage 3) */
+body:has(.ifl-tabs.away) .ifl-toast { bottom: calc(max(var(--tabs-h), 120px) + 16px + env(safe-area-inset-bottom, 0px)); }
 .ifl-toast .ifm-note-tx b { overflow-wrap: anywhere; }
 .ifl-toast.has-act { pointer-events: auto; padding-right: 8px; }
 .ifl-toast-act { flex: none; min-height: 36px; padding: 0 14px; border-radius: 999px; font-weight: 600; color: var(--acc-ink); background: var(--acc-wash); position: relative; }
