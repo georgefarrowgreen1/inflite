@@ -17,10 +17,13 @@ import { vapid, pushAll, pushEndpointOk, peopleUnread, noticeInflite } from "./p
 import { listedOrigins, hubOf, hubHeaders, preflight, hubRefusal, hubNavigation, RASTER } from "./hubgate.js";
 import { cleanQuote, quoteFrom, withQuote } from "./quote.js";
 import { keyOk, card, notice, searchParams } from "./connect.js";
+import { body } from "./body.js";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    // (the body shell for InFlite's page, One roof stage 4: body.js answers every /body path, 404 while no hub is on)
+    if (url.pathname === "/body" || url.pathname.startsWith("/body/")) return body(request, env);
     if (PAGE.has(url.pathname)) return page(request, env);
     // (the module InFlite's page runs Mail as, under the roof: its files, passed through at inflite.ai/mail/roof/)
     if (url.pathname.startsWith("/roof/")) return roofFile(request, env, url);
