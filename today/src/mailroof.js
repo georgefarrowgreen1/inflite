@@ -24,13 +24,14 @@ const SAFE = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
 const said = (status, words, extra = {}) => new Response(words, { status, headers: { "Content-Type": "text/plain; charset=utf-8", ...SAFE, ...extra } });
 const originOf = (v) => (typeof v === "string" && ORIGIN.test(v) ? v.toLowerCase() : null);
 
-// One request to Mail's Worker for one of its files, carrying nothing of the browser's but these two
-async function askMail(env, path, request) {
+// One request to Mail's Worker for one of its files, carrying nothing of the browser's but these two (method: HEAD only
+// for a file; the version is always a GET, as its answer's read here, and only this Worker's own answer drops the body)
+async function askMail(env, path, request, method) {
   const mail = originOf(env.MAIL_ORIGIN);
   if (!mail) return null;
   const headers = new Headers();
   for (const k of ["Accept", "If-None-Match"]) { const v = request.headers.get(k); if (v && v.length <= 512) headers.set(k, v); }
-  const method = request.method === "HEAD" ? "HEAD" : "GET", init = { method, headers, redirect: "manual" };
+  const init = { method, headers, redirect: "manual" };
   if (typeof env.MAIL?.fetch === "function") return env.MAIL.fetch(new Request(mail + path, init));
   return fetch((originOf(env.MAIL_VIA) || mail) + path, init);
 }
@@ -47,7 +48,7 @@ export async function mailRoof(request, env) {
   if (file && !m) return said(404, "Not found.");
   let res;
   try {
-    res = await askMail(env, file ? `/roof/${m[1]}` : "/roof/version", request);
+    res = await askMail(env, file ? `/roof/${m[1]}` : "/roof/version", request, file && method === "HEAD" ? "HEAD" : "GET");
   } catch (e) {
     console.error("mail roof", e && e.message);
     return said(502, "Mail can’t be reached just now.");
