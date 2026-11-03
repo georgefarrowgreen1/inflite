@@ -63,7 +63,7 @@ export function openSettings(ctx, page = null) {
         : ui.skeleton("rows", 4));
       return;
     }
-    const remote = ui.row({ lead: { icon: "photo" }, title: "Remote Images", sub: "On this phone: pictures from the senders’ servers, shown without asking", trail: "switch", checked: remoteImages(), onChange: setRemoteImages });
+    const remote = ui.row({ lead: { icon: "globe" }, title: "Remote Images", sub: "On this phone: pictures from the senders’ servers, shown without asking", trail: "switch", checked: remoteImages(), onChange: setRemoteImages });
     remote.dataset.key = "remote-images";
     root.replaceChildren(
       group("Addresses", data.addresses.map((a) => {
@@ -72,10 +72,10 @@ export function openSettings(ctx, page = null) {
         return r;
       })),
       group("Receiving", ui.row({ lead: { icon: "shield" }, title: "Unknown Addresses", sub: `Anything else @${data.domain || "inflite.ai"}`, value: data.catchall === "reject" ? "Turn Away" : "Keep", trail: "chevron", act: "unknown", run: unknown })),
-      group("Sending", ui.row({ lead: { icon: "edit" }, title: "Signature", sub: data.signature ? data.signature.split("\n")[0] : "None, for every address", trail: "chevron", act: "signature", run: signature })),
+      group("Sending", ui.row({ lead: { icon: "pen" }, title: "Signature", sub: data.signature ? data.signature.split("\n")[0] : "None, for every address", trail: "chevron", act: "signature", run: signature })),
       group("This Phone", remote),
       group("More", ui.row({ lead: { app: "mail" }, title: "New Address, Delete or Send From", sub: "Open Mail Settings at Mail’s own address", trail: "chevron", act: "own", href: `${MAIL}/#settings` }),
-        ui.row({ lead: { icon: "bell" }, title: "Notifications", sub: "In You, with InFlite’s own", trail: "chevron", act: "notify", href: "/#you=notify-mail" })),
+        ui.row({ lead: { icon: "bubble" }, title: "Notifications", sub: "In You, with InFlite’s own", trail: "chevron", act: "notify", href: "/#you=notify-mail" })),
     );
     const own = root.querySelector("[data-act=own]");
     own?.setAttribute("target", "_blank");
