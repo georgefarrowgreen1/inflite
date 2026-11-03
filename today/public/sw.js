@@ -92,19 +92,22 @@ async function roofDoc(e) {
 }
 // The module's files, as the page names them ({ ifl: "keep", app, build, files }, modules.js keepOffline, once a build
 // per page): for an app that is a module, a build as the apps number them, and at most 60 of that app's own files at plain
-// paths (no query, no vendor/, never its worker or version; files and lazy, C4). Kept all or nothing, in roof-<app>-<build>: a build already
+// paths (no query, no vendor/ nor a NET file, never its worker or version; files and lazy, C4). Kept all or nothing, in roof-<app>-<build>: a build already
 // kept whole is left as it is (nothing fetched: every open of the page asks again, offline too); otherwise each file is
 // fetched afresh and answered whole by this site before any is put, so one that fails leaves every kept copy as it was
 // (only a cache this ask made is let go, should putting fail); once it's whole, the app's older builds are let go. One
 // ask at a time per app (an old tab's, for an older build, can't finish last and take the newer one's place), and never
 // for a build older than one kept already.
 const KEEP_APPS = MOD_APPS, KEEP_MAX = 60;
+// (the files that are only ever the network's, never kept nor preloaded: s24 §8's NET, as roofcontract has it. Weather's
+// radar stack and rain files, Fitness's maps, share card, file formats and reader; and anyone's vendor/, above)
+const NET = { weather: /^\/weather\/(radar|radarmix|mapstyle|mapgl|mapleaf|rainmap|radarrain)\.js$/, fitness: /^\/fitness\/(map|mapstyle|share|formats|fit|reader)\.js$/ };
 const keeping = new Map(), keepQueue = new Map();
 function keepList(d) {
   if (!d || !KEEP_APPS.includes(d.app) || typeof d.build !== "string" || !/^\d+\.\d{2}$/.test(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
   const base = `/${d.app}/`, out = new Set();
   for (const f of d.files) {
-    if (typeof f !== "string" || !f.startsWith(base) || !/^\/[\w./-]+$/.test(f) || /\/vendor\//.test(f) || f === base + "sw.js" || f === base + "version" || f.endsWith("/")) return null;
+    if (typeof f !== "string" || !f.startsWith(base) || !/^\/[\w./-]+$/.test(f) || /\/vendor\//.test(f) || NET[d.app]?.test(f) || f === base + "sw.js" || f === base + "version" || f.endsWith("/")) return null;
     let u;
     try { u = new URL(f, self.location.origin); } catch { return null; }
     if (u.origin !== self.location.origin || u.pathname !== f) return null;
