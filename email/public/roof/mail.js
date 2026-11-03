@@ -23,10 +23,13 @@
 //   open: { compose(init), later(ids), views(), rowMenu(t), unsub(t), settings(page), viewer(files, i), signin(),
 //           confirm(spec) },
 //   outbox }   (added by B0-b: outbox.js's createOutbox(ctx), so compose.js sends through MM's outbox, S4-D18)
-//   open.compose, open.settings, open.viewer and open.signin reach their lazy files only through fw.lazy(() => import(…)).
+//   open.compose, open.settings, open.viewer and open.signin reach their lazy files only through
+//   fw.lazy((q) => import("./<file>.js" + q)) (s24-contracts §7: q is "?retry=<n>" after a failed import).
 // The header (fw.header.set) is set from here alone, on lens, filter, address, box, counts, offline, threadId, layout:
 //   title = the view with pick ▾ → open.views(); line; acts: Write only ({ icon: "compose", label: "Write", run }); badges
-//   { people: { n, say } } (S4-D26); on a phone reader sections: null and back: { label: "Back to Mail" } (C3, C6).
+//   { people: { n, say } } (S4-D26); on a phone reader sections: false and back: { label: "Back to Mail" }
+//   (s24-contracts §4: false hides the switcher). A Mail API call refused by CORS while online →
+//   fw.session.hubAgain() (s24-contracts §2); a change Today's Mail card shows (counts) → fw.changed().
 import { createStore } from "./store.js";
 import { MAIL, createApi } from "./api.js";
 import * as logic from "./logic.js";
@@ -51,11 +54,11 @@ export async function mount(root, fw) {
   ctx.actions = createActions(ctx);
   ctx.outbox = createOutbox(ctx);
   Object.assign(ctx.open, {
-    compose: (init) => fw.lazy(() => import("./compose.js")).then((m) => m.openCompose(ctx, init)),
+    compose: (init) => fw.lazy((q) => import("./compose.js" + q)).then((m) => m.openCompose(ctx, init)),
     later: (ids) => openLater(ctx, ids), views: () => openViews(ctx), rowMenu: (t) => openRowMenu(ctx, t), unsub: (t) => openUnsub(ctx, t),
-    settings: (page) => fw.lazy(() => import("./mailsettings.js")).then((m) => m.openSettings(ctx, page)),
-    viewer: (files, i) => fw.lazy(() => import("./viewer.js")).then((m) => m.openViewer(ctx, files, i)),
-    signin: () => fw.lazy(() => import("./signin.js")).then((m) => m.signIn(ctx)),
+    settings: (page) => fw.lazy((q) => import("./mailsettings.js" + q)).then((m) => m.openSettings(ctx, page)),
+    viewer: (files, i) => fw.lazy((q) => import("./viewer.js" + q)).then((m) => m.openViewer(ctx, files, i)),
+    signin: () => fw.lazy((q) => import("./signin.js" + q)).then((m) => m.signIn(ctx)),
     confirm: (spec) => confirmSheet(ctx, spec),
   });
   const doc = root.ownerDocument;
