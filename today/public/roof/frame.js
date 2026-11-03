@@ -102,7 +102,7 @@ export function createFrame(opts = {}) {
   const svcs = {};
   const svc = (app) => svcs[app] || (isOn(app) && REGISTRY[app]?.service
     ? (svcs[app] = Promise.resolve(opts.retired).catch(() => {}).then(() => import("./modules.js")).then((M) => M.loadService(app, F))
-      .then((s) => (s?.on?.("state", (d) => { T(() => opts.serviceState?.(app, d?.state)); found(app, s, /^(ready|offline)$/.test(d?.state)); }), s), (e) => { delete svcs[app]; throw e; }))
+      .then((s) => { const st = (d) => { T(() => opts.serviceState?.(app, d?.state)); found(app, s, /^(ready|offline)$/.test(d?.state)); }; s.on?.("state", st); st(s); return s; }, (e) => { delete svcs[app]; throw e; }))
     : Promise.reject(new Error(`${app}: no service here`)));
   // (the frame's own search over a service (Chats' People and Messages, §2.4): while it's unlocked and signed in; gone as
   // it's locked, signed out or let go of)

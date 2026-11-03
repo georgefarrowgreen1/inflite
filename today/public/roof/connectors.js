@@ -19,7 +19,7 @@
 //   is Places (wx:places, on this device; it adds "Weather Settings"): placesProvider(F) = connectorProvider(F, "weather").
 // chatsProvider(F, svc) → off (stage 3, §2.4): Chats' search, the frame's own over its service (never fw.search.provide,
 //   so no module's provider is put aside), registered by the frame while the service is signed in and unlocked. People:
-//   friends and groups by name (names only, from its friends and groups topics); Messages: svc.call("search", q) over
+//   friends and groups by name (names only, from its friends and groups topics, caught up through "*"); Messages: svc.call("search", q) over
 //   what's on this phone, the query to the core by postMessage only. Each opens that chat (/chats/#open=<id>). Orders 5
 //   and 6 (before Apps) while the Chats screen shows, else 15 and 16.
 import { REGISTRY } from "./router.js";
@@ -109,7 +109,7 @@ export function connectorProvider(F, app) {
 export const placesProvider = (F) => connectorProvider(F, "weather");
 export function chatsProvider(F, svc) {
   let list = { friends: [], groups: [] };
-  const offs = ["friends", "groups"].map((t) => svc.on?.(t, (v) => { list = { ...list, [t]: Array.isArray(v) ? v : [] }; }));
+  const off = svc.on("*", ({ topic: t, data: v }) => { if (t === "friends" || t === "groups") list = { ...list, [t]: Array.isArray(v) ? v : [] }; });
   const here = () => F.route?.kind === "app" && F.route.app === "chats";
   const ok = (id) => typeof id === "string" && /^[\w-]{1,40}$/.test(id);
   const to = (title, sub, id) => ({ title, sub, avatar: title, href: `/chats/#open=${id}` });
@@ -124,5 +124,5 @@ export function chatsProvider(F, svc) {
       const t = qOf(q), r = t ? await svc.call("search", t) : [];
       return (Array.isArray(r) ? r : []).filter((x) => ok(x?.chatId)).map((x) => to(String(x.title ?? ""), String(x.sub ?? ""), x.chatId));
     } });
-  return () => { for (const f of [offA, offB, ...offs]) if (typeof f === "function") f(); };
+  return () => { offA(); offB(); off(); };
 }
