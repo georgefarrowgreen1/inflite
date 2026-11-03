@@ -10,8 +10,10 @@
 // (X-Hub-Key, the HUB_KEY secret; MAIN's functions/_middleware.js checks it against a Pages secret of its own). Without
 // the key here, or while the apps' hosts say they don't know it, nothing here is served (503), and GET /api/hub says
 // so to Today's page, which then links to each app's own address, as before (addendum A1).
-// Never the assets binding: Today's own files are the assets', and none of these paths are.
+// Never the assets binding, except the framework's page for /weather/ (One roof, today/src/roof.js: a document at
+// /weather/ is InFlite's one page, while the roof is on): Today's own files are the assets', and none of these paths are.
 import { accountCookie } from "./account.js";
+import { ROOF_DOCS, ROOF_FILES, roofOn, roofPage, retireWorker } from "./roof.js";
 
 // each hub path to the host that serves it: `app` names the vars (<APP>_ORIGIN, the origin spoken as: the app's public
 // address; <APP>_VIA, where to connect, the same in production and a local pass-through in tests), `under` where its
@@ -90,7 +92,19 @@ async function ready(env, request) {
 export async function hub(request, env, ctx) {
   const url = new URL(request.url), p = url.pathname, method = request.method, read = method === "GET" || method === "HEAD";
   // (Today's page asks once a visit whether the hub's there: until it is, it links to each app's own address)
-  if (p === "/api/hub") return read ? json({ ready: await ready(env, request) }) : refuse(405, SAID.method);
+  // (and whether Weather is a module of it there: One roof, roof.yml's switch, D14)
+  if (p === "/api/hub") return read ? json({ ready: await ready(env, request), roof: roofOn(env) }) : refuse(405, SAID.method);
+  // One roof (spec §8.1, D7): with the roof on, a document at /weather/ is the framework's page, and Weather's old worker
+  // there is retired, before the key is asked about (the page itself goes to Weather's own address when the hub says it
+  // isn't ready); with it off (ROOF_OFF "1"), Weather's milestone-1 page is the hub's again, and the module's files are
+  // not found, so a page that missed the change can't start the module either [RB6b]
+  if (read) {
+    if (roofOn(env)) {
+      if (ROOF_DOCS.test(p)) return roofPage(request, env);
+      if (p === "/weather/sw.js") return retireWorker(request);
+      if (p === "/weather") return new Response(null, { status: 301, headers: { Location: `${url.origin}/weather/${url.search}`, ...SAFE } });
+    } else if (ROOF_FILES.test(p) || ROOF_FILES.test(plainPath(p))) return refuse(404, SAID.gone);
+  }
   if (!env?.HUB_KEY) return refuse(503, SAID.notReady);
   // (nor while the apps' hosts have said they don't know its key: everyone here would be the hub's one address to them.
   // What was found is /api/hub's; where nothing fresh is, it's asked beside this request, for the next)
