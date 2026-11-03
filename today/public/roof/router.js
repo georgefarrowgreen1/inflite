@@ -46,11 +46,16 @@ const argOf = (s) => (typeof s === "string" && ARG.test(s) ? s : null);
 // parse(href, { roof, origin }) → Route | null (null: not the framework's, so a normal navigation).
 //   href: a path ("/weather/#radar") or an absolute http(s) URL of this origin (a link's a.href). origin defaults to
 //   globalThis.location.origin; an absolute URL of any other origin, a protocol-relative "//x", anything with a \ or a
-//   control character, or over 2048 characters → null.
+//   control character, or over 2048 characters not counting its query → null. The query alone may be any length: past
+//   400 characters it's dropped ("") and the route kept (§3.3).
 //   roof: the caller's `session.hub && session.roof`; falsy → app paths are not ours (null), tabs still are.
 export function parse(href, { roof = false, origin } = {}) {
-  if (typeof href !== "string" || !href || href.length > HREF_MAX) return null;
+  if (typeof href !== "string" || !href) return null;
   if (/[\\\u0000-\u001f\u007f]/.test(href)) return null;
+  // (the length cap is on the address less its query: from the first ? before any # up to that #)
+  const h = href.indexOf("#"), q = href.indexOf("?");
+  const qLen = q >= 0 && (h < 0 || q < h) ? (h < 0 ? href.length : h) - q : 0;
+  if (href.length - qLen > HREF_MAX) return null;
   let u;
   if (href[0] === "/") {
     if (href[1] === "/") return null;
@@ -85,21 +90,35 @@ export function parse(href, { roof = false, origin } = {}) {
 }
 
 // format(route) → path. Tabs: "/", "/#apps", "/#you", "/#you=<arg>". Apps: the app's path for its first section with no
-// key ("/weather/"), "/weather/#<key>" otherwise (key defaults to the section), "/weather/#<key>=<arg>" with an arg.
-// Never a query (so the address is tidied of ?lat…&name=… once a deep link is shown, D6). Anything unknown → "/".
+// key ("/weather/"), "/weather/#<key>" otherwise, "/weather/#<key>=<arg>" with an arg. Never a query (so the address is
+// tidied of ?lat…&name=… once a deep link is shown, D6). Anything unknown → "/".
+//   kind may be left out: a route with `app` is an app route, else one with `tab` a tab route.
+//   section: one of the app's section ids; left out (or not one), it's the key's section, else the first.
+//   key: used only when it belongs to the section (the section itself, or an alias of it: day → days, settings → now);
+//     a key of another section (a spread route whose section was changed) is dropped, and its arg with it, and the
+//     address is the section's own. With no key, the key is the section and an arg goes with it.
+//   So the frame's calls are:
+//     D6 tidy after a deep link is shown:  format({ app, section })                → "/weather/#days"
+//     fw.nav.section(id, { arg }):         format({ app, section: id, arg })       → "/weather/#radar", "/weather/#days=<arg>"
+//     fw.nav.href(key, arg):               format({ app, key, arg })               → "/weather/#day=2026-11-03"
+//     a spread route, section changed:     format({ ...route, section: "radar" })  → "/weather/#radar" (key day, arg dropped)
 export function format(route) {
   if (!route || typeof route !== "object") return "/";
-  if (route.kind === "tab") {
+  const kind = route.kind ?? (route.app != null ? "app" : route.tab != null ? "tab" : null);
+  if (kind === "tab") {
     if (route.tab === "apps") return "/#apps";
     if (route.tab === "you") { const a = argOf(route.arg); return a ? `/#you=${a}` : "/#you"; }
     return "/";
   }
-  const r = route.kind === "app" && Object.hasOwn(REGISTRY, route.app) ? REGISTRY[route.app] : null;
+  const r = kind === "app" && typeof route.app === "string" && Object.hasOwn(REGISTRY, route.app) ? REGISTRY[route.app] : null;
   if (!r) return "/";
   const ids = r.sections.map((s) => s[0]);
-  const ok = (k) => typeof k === "string" && (ids.includes(k) || Object.hasOwn(r.aliases, k));
-  const key = ok(route.key) ? route.key : ids.includes(route.section) ? route.section : ids[0];
-  const a = argOf(route.arg);
+  const sectionOf = (k) => (typeof k !== "string" ? null : ids.includes(k) ? k : Object.hasOwn(r.aliases, k) ? r.aliases[k] : null);
+  const section = ids.includes(route.section) ? route.section : sectionOf(route.key) || ids[0];
+  const hasKey = route.key != null;
+  const fits = hasKey && sectionOf(route.key) === section;
+  const key = fits ? route.key : section;
+  const a = fits || !hasKey ? argOf(route.arg) : null;
   if (a) return `${r.path}#${key}=${a}`;
   return key === ids[0] ? r.path : `${r.path}#${key}`;
 }
