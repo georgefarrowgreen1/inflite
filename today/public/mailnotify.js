@@ -1,8 +1,9 @@
 // Mail Notifications in You (One roof stage 4, s4/spec S4-D11, §6.5, §2.6): the sheet dialog#sh-mailnotify in index.html
 // (stage 1 §3.8's frozen markup, body #mlnBody), opened at /#you=notify-mail by You's Mail row (the integrator's one
 // line in you.js), Mail Settings and search. For the site's admin alone (Mail is theirs).
-//   openMailNotify(F, o?) → a promise, once the sheet's drawn with its answers. F: InFlite's frame (F.sheet.openEl,
-//   F.ui's builders, F.toast, F.session: hub and apps.mail, F.nav.go, F.hubAgain). o: { fetch } (tests' stand-in).
+//   openMailNotify(F) → a promise, once the sheet's drawn with its answers. F: InFlite's frame (F.sheet.openEl, F.ui's
+//   builders, F.toast, F.session: hub and apps.mail, F.nav.go, F.hubAgain).
+//   notifyTest.fetch: the tests' stand-in for fetch (null: the browser's own).
 //   - Through InFlite: the account's preference (off unless chosen), through Today's own /api/notify (GET answers
 //     mail: { inflite } for the admin; PATCH { mail: { inflite } }). On, Mail's new mail and what's back from Later come
 //     as InFlite's notifications, "Mail" and fixed words, with who it's from and the subject asked of Mail by the phone
@@ -57,11 +58,12 @@ export function mineOf(n) {
   return { inflite: m ? m.inflite === true : null, devices: Number.isInteger(n?.today?.devices) ? n.today.devices : null };
 }
 
+export const notifyTest = { fetch: null };
 let drawn = 0;
-export async function openMailNotify(F, o = {}) {
+export async function openMailNotify(F) {
   const doc = globalThis.document, sheet = doc?.getElementById?.("sh-mailnotify"), body = sheet?.querySelector?.("#mlnBody");
   if (!sheet || !body || !F?.ui || !F?.sheet) return null;
-  const f = typeof o.fetch === "function" ? o.fetch : globalThis.fetch, ui = F.ui, n = ++drawn;
+  const f = typeof notifyTest.fetch === "function" ? notifyTest.fetch : globalThis.fetch, ui = F.ui, n = ++drawn;
   const s = F.session || {}, on = s.hub === true && s.apps?.mail === true, MAIL = mailOrigin();
   body.replaceChildren(ui.el("p", { class: "sh-sub", text: WORDS.getting }));
   const handle = sheet.open ? null : F.sheet.openEl(sheet, {});
