@@ -115,7 +115,10 @@ function paint(root, ctx) {
         `<button class="row go" type="button" id="youWx" data-k="weather"><span class="tx"><b>Weather</b><small>Rain and warnings for the places you choose</small></span><span class="val">${places.length ? esc(rainOn ? "Rain on" : places.some((p) => p.rain) ? "Rain for some" : "Rain off") : ""}</span><span class="chev">${G.chev}</span></button>`,
         `<div class="row" data-k="markets" data-app="markets"><span class="tx"><b>Markets</b><small>Your price alerts</small></span>${seg("alerts", [["on", "Alerts"], ["off", "Off"]], mktOn ? "on" : "off", "Markets: Alerts or Off")}</div>`,
         `<label class="row" data-app="markets"><span class="tx"><b>Evening Wrap</b><small>How your holdings did, each weekday evening</small></span><input type="checkbox" class="switch" role="switch" data-k="wrap" ${wrapOn ? "checked" : ""} aria-label="Markets: the Evening Wrap"></label>`,
-        `<a class="row go" href="${esc(ctx.href?.("fitness", "settings") || "/fitness/#settings")}" data-k="fitness" data-app="fitness"><span class="tx"><b>Fitness</b><small>In Today’s morning</small></span><span class="val">Fitness Settings</span><span class="chev">${G.chev}</span></a>`,
+        // (Fitness Settings only while Fitness is a module here, as its connector offers it; else stage 1's row)
+        ctx.frame?.session?.apps?.fitness === true
+          ? `<a class="row go" href="${esc(ctx.href?.("fitness", "settings") || "/fitness/#settings")}" data-k="fitness" data-app="fitness"><span class="tx"><b>Fitness</b><small>In Today’s morning</small></span><span class="val">Fitness Settings</span><span class="chev">${G.chev}</span></a>`
+          : row("fitness", "Fitness", "In Today’s morning"),
         `<button class="row go" type="button" id="youMorning"><span class="tx"><b>Today’s Morning</b><small>One notification, from all your apps</small></span><span class="val">${t.on ? clock(Number.isInteger(t.at) ? t.at : 420) : "Off"}</span><span class="chev">${G.chev}</span></button>`,
         admin ? row("mail", "Mail", "From Mail’s own app for now") : "",
       ].join("");
@@ -198,7 +201,8 @@ function wire(root, ctx) {
   const patch = async (body, k, v, back) => {
     pressed(root.querySelector(`[data-k="${k}"]`), k === "chat" ? "chat" : "alerts", v);
     try { Y.notify = await ctx.call("/api/notify", { method: "PATCH", body }); }
-    catch (e) { back(); if (e.status !== 401) ctx.toast(e.message); }
+    // (signed out meanwhile: You's been emptied, and stays so; nothing of the old account drawn back)
+    catch (e) { back(); if (e.status === 401) return; ctx.toast(e.message); }
     paint(root, ctx);
   };
   for (const b of root.querySelectorAll("[data-chat]")) b.addEventListener("click", () => {
@@ -215,7 +219,7 @@ function wire(root, ctx) {
     const sw = e.target, on = sw.checked;
     sw.disabled = true;
     try { Y.notify = await ctx.call("/api/notify", { method: "PATCH", body: { markets: { wrap: on } } }); }
-    catch (err) { sw.checked = !on; if (err.status !== 401) ctx.toast(err.message); }
+    catch (err) { sw.checked = !on; if (err.status === 401) return; ctx.toast(err.message); }
     sw.disabled = false;
     if (root.isConnected) { paint(root, ctx); root.querySelector('#youNotify [data-app=markets] [data-k=wrap]')?.focus({ preventScroll: true }); }
   });
@@ -223,8 +227,8 @@ function wire(root, ctx) {
   const quiet = (q) => {
     const now = { on: false, from: 22, to: 7, ...(Y.notify?.quiet || {}), ...q };
     return ctx.call("/api/notify", { method: "PATCH", body: { quiet: { on: now.on, from: now.from, to: now.to, tz: now.tz || browserTz() } } })
-      .then((a) => { Y.notify = a; }, (e) => { if (e.status !== 401) ctx.toast(e.message); })
-      .then(() => paint(root, ctx));
+      .then((a) => { Y.notify = a; return true; }, (e) => { if (e.status !== 401) ctx.toast(e.message); return e.status !== 401; })
+      .then((draw) => draw && paint(root, ctx));
   };
   $("#youQuiet")?.addEventListener("change", (e) => quiet({ on: e.target.checked }));
   $("#youQfrom")?.addEventListener("change", (e) => quiet({ from: Number(e.target.value) }));
