@@ -10,8 +10,9 @@
 // Saves: ctx.api.saveSettings(patch) with only { signature } or { catchall }; ctx.api.updateAddress(email, patch) with
 //   only one of SAVES.address (never isDefault). Nothing else is written (roofmailviews.test).
 import { MAIL } from "./api.js";
+import { STORAGE } from "./store.js";
 
-export const REMOTE = "mail:remote-images";
+export const REMOTE = STORAGE.remoteImages;
 export const SAVES = Object.freeze({ settings: ["signature", "catchall"], address: ["name", "signature", "category", "color"] });
 export const COLOURS = Object.freeze(["blue", "green", "orange", "pink", "purple", "teal", "grey"]);
 const SORT = [["auto", "Auto"], ["people", "People"], ["updates", "Updates"]];

@@ -16,8 +16,8 @@ import { bodyFrame, listenFrames, themeAll } from "./bodyframe.js";
 import { STORAGE } from "./store.js";
 import { MAIL } from "./api.js";
 
-const RASTER = /^image\/(png|jpeg|gif|webp|avif|heic|bmp)$/;
-const isPic = (a) => RASTER.test(String(a?.type || "").toLowerCase());
+const PICTURES = /^image\/(png|jpeg|gif|webp|avif|heic|bmp)$/;
+const isPic = (a) => PICTURES.test(String(a?.type || "").toLowerCase());
 const REPLY_DAYS = 14 * 864e5;
 const remoteOn = () => { try { return localStorage.getItem(STORAGE.remoteImages) === "1"; } catch (_) { return false; } };
 // the replies typed at the foot, one per conversation, kept a fortnight (app.js qrDrafts, 4775–4790)
@@ -161,7 +161,7 @@ export function view(el, ctx) {
   }
   async function picture(a) {
     const id = cur?.id, type = String(a.type).toLowerCase();
-    if (!RASTER.test(type)) return null;
+    if (!PICTURES.test(type)) return null;
     try {
       const blob = new Blob([await (await api.picture(a.id)).arrayBuffer()], { type });
       if (cur?.id !== id) return null;
