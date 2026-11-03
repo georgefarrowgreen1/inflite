@@ -17,8 +17,12 @@ self.addEventListener("install", (e) => {
   e.waitUntil(Promise.race([caches.open(SHELL).then((c) => Promise.all(FILES.map((f) => c.add(f).catch(() => {})))).catch(() => {}), new Promise((ok) => setTimeout(ok, 8000))]));
 });
 // (the updater every app shares, about to load a new version: Today's files are fetched afresh by the page itself, past
-// the browser's copy, through here and kept as they come, so there's nothing more for this worker to do: IFL.updates)
-self.addEventListener("message", (e) => { if (e.data?.ifl === "renew") e.ports[0]?.postMessage({ ifl: "renewed" }); });
+// the browser's copy, through here and kept as they come, so there's nothing more for this worker to do: IFL.updates.
+// A page of the hub opened, or back in sight: the badge counted again, IFL.hub)
+self.addEventListener("message", (e) => {
+  if (e.data?.ifl === "renew") e.ports[0]?.postMessage({ ifl: "renewed" });
+  else if (e.data?.ifl === "badge") e.waitUntil?.(badge());
+});
 self.addEventListener("activate", (e) =>
   e.waitUntil(
     (async () => {
@@ -88,6 +92,11 @@ async function notify(d) {
   })];
   if (app === "chat") jobs.push(chatCame(d));
   await Promise.all(jobs.map((j) => j.catch(() => {})));
+  await badge();
+}
+// the Home Screen icon's badge: as many notifications as are showing. Counted as one comes, as one's tapped or cleared,
+// and as a page of the hub opens or comes back in sight (one cleared while this worker wasn't running)
+async function badge() {
   try {
     const n = (await self.registration.getNotifications()).length;
     if (self.navigator?.setAppBadge) await (n ? self.navigator.setAppBadge(n) : self.navigator.clearAppBadge?.());
@@ -140,23 +149,53 @@ function wanted(app, u) {
 }
 
 // A notification tapped: its place, in the window that's open (a page of this site's, top level: told where, and it goes
-// there itself, IFL.hub's listener), else a new one; only ever this site's pages
+// there itself, IFL.hub's listener, which says it's heard), else, where that page has no ear for it (Today's 404 page,
+// an older page) or there's none, that window sent there (one of this worker's) or a new one; only ever this site's
+// pages. The badge counted again, one fewer. Cleared without a tap: counted again too
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const d = e.notification.data || {};
   const app = APPS.includes(d.app) ? d.app : appOf(d);
-  e.waitUntil(openIn(openAt(app, d.url)));
+  e.waitUntil(Promise.all([openIn(openAt(app, d.url)), badge()]));
 });
+self.addEventListener("notificationclose", (e) => e.waitUntil(badge()));
+const HEARD = 1000;
 async function openIn(path) {
-  const url = new URL(path, self.location.origin).href;
   const wins = (await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => [])).filter((w) => sameOrigin(w.url) && w.frameType !== "nested");
   const win = wins.find((w) => w.focused) || wins.find((w) => w.visibilityState === "visible") || wins[0];
   if (win) {
     try { await win.focus(); } catch {}
-    win.postMessage({ ifl: "open", url: path });
-    return;
+    if (await told(win, path)) return;
   }
+  // (an app's page, where the hub can't serve it just now (before its key, or rolled back): Today, which sends it to the
+  // app's own address, as it did before the hub)
+  const url = new URL(path === "/" || path.startsWith("/#") || (await hubReady()) ? path : `/#go=${encodeURIComponent(path)}`, self.location.origin).href;
+  if (win?.navigate) { try { if (await win.navigate(url)) return; } catch {} }
   await self.clients.openWindow(url);
+}
+// (the window told where: true once it says it's heard, within a second)
+function told(win, url) {
+  return new Promise((ok) => {
+    let ch = null;
+    try { ch = new MessageChannel(); } catch {}
+    if (!ch) { win.postMessage({ ifl: "open", url }); return ok(true); }
+    const done = (v) => { clearTimeout(t); try { ch.port1.close(); } catch {} ok(v); };
+    const t = setTimeout(() => done(false), HEARD);
+    ch.port1.onmessage = (e) => { if (e.data?.ifl === "opened") done(true); };
+    try { win.postMessage({ ifl: "open", url }, [ch.port2]); } catch { done(false); }
+  });
+}
+// (whether the hub's Worker can serve the apps' pages: its own word, GET /api/hub, as Today's page asks it (404 or 503:
+// no); no word in two seconds, or none at all (no network), taken as yes, so the page itself is tried)
+async function hubReady() {
+  try {
+    const r = await Promise.race([fetch("/api/hub", { credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" } }), new Promise((ok) => setTimeout(() => ok(null), 2000))]);
+    if (!r) return true;
+    const j = r.ok ? await r.json().catch(() => null) : null;
+    return typeof j?.ready === "boolean" ? j.ready : r.status !== 404 && r.status !== 503;
+  } catch {
+    return true;
+  }
 }
 
 // The browser renewed this phone's subscription: the new one put in the old one's place, in every app's table that had
