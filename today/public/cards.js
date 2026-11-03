@@ -24,15 +24,15 @@ export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&a
 // site's (the hub's /weather/#radar): starting with one /, never two (another site), with no \ (which a browser reads as
 // /), nothing unseen (a tab or a new line, which an address drops, so "/\n/x" would be "//x"), and no ":" before its
 // first /)
-export const safe = (h) => {
-  if (typeof h !== "string") return null;
-  if (/^https:\/\//i.test(h) || (typeof location !== "undefined" && location.protocol === "http:" && /^http:\/\//i.test(h))) return h;
-  return /^\/(?!\/)/.test(h) && !/[\\\u0000-\u001f\u007f]/.test(h) && !/^[^/]*:/.test(h) ? h : null;
-};
+export const safe = (h) => safeOrigin(h) || (typeof h === "string" && /^\/(?!\/)/.test(h) && !/[\\\u0000-\u001f\u007f]/.test(h) && !/^[^/]*:/.test(h) ? h : null);
+// (an app's own address, to put a path after (an account's link: Chat's, for its #share=): https, or http where Today
+// itself is, and never a path, which "/#share=" after would make "//#share=", another site's)
+export const safeOrigin = (h) => (typeof h === "string" && (/^https:\/\//i.test(h) || (typeof location !== "undefined" && location.protocol === "http:" && /^http:\/\//i.test(h))) ? h : null);
 // ---------------------------------------------------------------- the hub
-// (IFL.hub, as the page hands it in (ctx.hub), else a page-wide one; and whether it's on and ready: at the hub, and not
-// running degraded (its key not set yet, addendum A1), where every app is still at its own address)
-export const hubOf = (ctx) => ctx?.hub || globalThis.IFL?.hub || null;
+// (IFL.hub: the page's own (window.IFL, as the hub sets it for Chat's engine to say it's sent, §8.2), else as the page
+// hands it in (ctx.hub), the same one; and whether it's on and ready: at the hub, and not running degraded (its key not
+// set yet, addendum A1), where every app is still at its own address)
+export const hubOf = (ctx) => globalThis.IFL?.hub || ctx?.hub || null;
 export const onHub = (ctx) => { const h = hubOf(ctx); return !!(h && h.on === true && !h.degraded && h.ready !== false && typeof h.go === "function"); };
 // (the card being drawn's ctx, for its links: set by cardHTML as it draws, which it does all at once)
 let drawing = null;
@@ -141,7 +141,7 @@ export function sendButton(card, ctx, { label = "Send to a friend", glyph = G.bi
   const share = card && typeof card.share === "string" && card.share ? card.share : null;
   if (!share) return "";
   const packed = typeof card.sendCard === "string" && PACKED.test(card.sendCard) ? card.sendCard : "";
-  const chat = safe(ctx?.links?.chat), link = chat ? `${chat.replace(/\/+$/, "")}/#share=${encodeURIComponent(share)}${packed ? `&card=${packed}` : ""}` : "";
+  const chat = safeOrigin(ctx?.links?.chat), link = chat ? `${chat.replace(/\/+$/, "")}/#share=${encodeURIComponent(share)}${packed ? `&card=${packed}` : ""}` : "";
   const said = aria ? ` aria-label="${esc(aria)}"` : "";
   if (onHub(ctx)) {
     sendHub = hubOf(ctx);
