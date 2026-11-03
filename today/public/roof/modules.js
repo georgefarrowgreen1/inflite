@@ -1,18 +1,19 @@
 // Loading the apps that are modules (One roof, spec §3.12, D2, D14, D15, D21). Loaded lazily by the frame (the first
 // app opened, or the idle preload).
 // loadModule(app, F) → Promise<{ m, instance }>: asks /api/hub again through app.js first (F.hubAgain, D14) and refuses
-//   unless F.session.hub && F.session.roof; import(REGISTRY[app].entry) within 12 s; m.CONTRACT === 1; each of
+//   unless F.session.apps[app] (each app's flag, ANDed with hub; s24 §2); import(REGISTRY[app].entry) within 12 s; m.CONTRACT === 1; each of
 //   REGISTRY[app].css linked and awaited (5 s at most; at once if already in); instance = await
 //   m.mount(root, F.forModule(app)); IFL.built(app, m.BUILD, m.NEWS) once it's in; then watchVersion and keepOffline. On a failure the screen shows ui.error: Try Again
 //   (data-act=retry: the entry asked for again, ?retry=<n>) and Open <App> on Its Own (data-act=own: the app's own
-//   address, same path, query and hash); after a second failure, Reload (data-act=reload), which is the real recovery
+//   address, links[R.link || app], same path, query and hash); after a second failure, Reload (data-act=reload), which is the real recovery
 //   (a failed dependency stays failed in the document's module map).
 // loadConnector(app) → Promise<Connector>: import(REGISTRY[app].connector) → its `connector` export.
 // preload(app): loadConnector(app), then a <link rel=modulepreload> per connector.files entry ending .js.
 // watchVersion(app, build, F): asks /<app>/version as the page becomes visible (at most every 10 minutes); a build
 //   other than this one sets F.stale (D21).
 // keepOffline(app, build, files): { ifl: "keep", app, build, files } (absolute same-origin paths) to the root worker,
-//   once per build per page.
+//   once per build and list per page: connector.files after mount; files ∪ connector.lazy again only on the Home Screen,
+//   at idle, 10 s or more after the first show (C4, s24 §8). preload reads files only.
 import { REGISTRY } from "./router.js";
 
 const tries = {}, built = {}, kept = {}, watching = new WeakMap();
@@ -34,7 +35,7 @@ export async function loadModule(app, F) {
   try {
     await Promise.race([F.hubAgain?.(), new Promise((ok) => setTimeout(ok, 2000))]);
     const s = F.session;
-    if (!s.hub || !s.roof) throw new Error("the hub or the roof is off");
+    if (!s.apps?.[app]) throw new Error(`the hub or the roof is off (${app}'s switch)`);
     const m = await Promise.race([import(n ? `${R.entry}?retry=${n}` : R.entry), wait(12e3, "the module")]);
     if (m?.CONTRACT !== 1 || typeof m.mount !== "function") throw new Error(`${app}: contract ${m?.CONTRACT} isn't 1`);
     await Promise.all(R.css.map(css));
@@ -44,7 +45,12 @@ export async function loadModule(app, F) {
     if (!built[app]) { built[app] = 1; try { globalThis.IFL?.built?.(app, m.BUILD, m.NEWS); } catch (_) {} }
     tries[app] = 0;
     watchVersion(app, m.BUILD, F);
-    loadConnector(app).then((c) => keepOffline(app, m.BUILD, c.files || []), () => {});
+    loadConnector(app).then((c) => {
+      keepOffline(app, m.BUILD, c.files || []);
+      const lazy = Array.isArray(c.lazy) ? c.lazy : [];
+      const home = () => { try { return navigator.standalone === true || matchMedia("(display-mode: standalone)").matches; } catch (_) { return false; } };
+      if (lazy.length && home()) setTimeout(() => (globalThis.requestIdleCallback || ((f) => f()))(() => keepOffline(app, m.BUILD, [...(c.files || []), ...lazy])), 10e3);
+    }, () => {});
     return { m, instance };
   } catch (e) {
     tries[app] = n + 1;
@@ -56,7 +62,7 @@ export async function loadModule(app, F) {
 function failed(app, F, root, n) {
   const R = REGISTRY[app], ui = F.ui, links = F.session.links || {};
   const own = () => {
-    const base = links[app] || `${location.protocol}//${app}.${location.host.replace(/^next\./, "")}`;
+    const ln = R.link || app, base = links[ln] || `${location.protocol}//${ln}.${location.host.replace(/^next\./, "")}`;
     location.assign(base.replace(/\/$/, "") + location.pathname.slice(R.path.length - 1) + location.search + location.hash);
   };
   const again = n > 1
@@ -106,7 +112,7 @@ export function watchVersion(app, build, F) {
 }
 
 export function keepOffline(app, build, files) {
-  const k = `${app}:${build}`;
+  const k = `${app}:${build}:${files.length}`;
   const c = navigator.serviceWorker?.controller;
   if (kept[k] || !c) return;
   kept[k] = 1;

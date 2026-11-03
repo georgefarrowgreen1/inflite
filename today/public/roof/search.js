@@ -36,12 +36,16 @@ export function collect(providers, q, update, { slow = SLOW } = {}) {
   });
 }
 
-// the Apps provider: every module (REGISTRY) and app (connectors.js STATIC) with its sections
-function appsProvider() {
-  let all = null;
-  const load = () => (all ||= import("./connectors.js").then((c) => c.STATIC, () => ({})).then((S) =>
-    [...Object.values(REGISTRY).map((R) => ({ name: R.name, icon: R.app, href: R.path, links: R.sections.slice(1).map(([id, l]) => [l, R.path + "#" + id]) })), ...Object.values(S)]
-      .flatMap((c) => [{ title: c.name, sub: "Open", icon: c.icon, href: c.href }, ...(c.links || []).map(([l, href]) => ({ title: `${c.name} · ${l}`, sub: c.name, icon: c.icon, href }))])));
+// the Apps provider: every module (REGISTRY) and app beside (connectors.js STATIC) with its sections; a module that's
+// switched off is listed as STATIC has it (its hub page's), and an app's sections only where the account has the app
+// (view.apps[app] !== false: Mail is the admin's)
+function appsProvider(F) {
+  let st = null;
+  const on = (a) => !!F.session?.apps?.[a], has = (a) => F.session?.view?.apps?.[a] !== false;
+  const mod = (R) => ({ app: R.app, name: R.name, icon: R.app, href: R.path, links: R.sections.slice(1).map(([id, l]) => [l, R.path + "#" + id]) });
+  const load = () => (st ||= import("./connectors.js").then((c) => c.STATIC, () => ({}))).then((S) =>
+    [...Object.values(REGISTRY).filter((R) => !S[R.app]).map(mod), ...Object.values(S).map((c) => (REGISTRY[c.app] && on(c.app) ? mod(REGISTRY[c.app]) : c))]
+      .flatMap((c) => [{ title: c.name, sub: "Open", icon: c.icon, href: c.href }, ...(has(c.app) ? c.links || [] : []).map(([l, href]) => ({ title: `${c.name} · ${l}`, sub: c.name, icon: c.icon, href }))]));
   return {
     id: "apps", group: "Apps", order: 10,
     search: (q) => load().then((a) => { const s = q.trim().toLowerCase(); return s ? a.filter((e) => e.title.toLowerCase().includes(s)) : a; }),
@@ -50,7 +54,7 @@ function appsProvider() {
 
 let n = 0;
 export function createSearch(F) {
-  const provs = new Set([appsProvider()]);
+  const provs = new Set([appsProvider(F)]);
   let h = null, t = 0, gen = 0;
   function open() {
     if (h) return h;
