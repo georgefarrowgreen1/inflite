@@ -21,6 +21,7 @@ const engineAt = (u) => u.pathname.startsWith("/chats/") && u.searchParams.has("
 // files: never the API, nor any page or file of Chats' or the apps'.
 const SHELL = "today-app-4";
 const FILES = ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg",
+  "/mailcard.js", "/mailnotify.js", "/apps/mail.svg",
   "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();

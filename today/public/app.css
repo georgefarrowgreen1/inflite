@@ -499,8 +499,11 @@ label.row:active { background: var(--press); }
 .you-sec .val.soon { font-size: 14px; color: var(--text-2); }
 .pill.small { min-height: 36px; padding: 0 14px; font-size: 14.5px; position: relative; }
 .pill.small::after { content: ""; position: absolute; inset: -4px 0; }
-.you-out { display: grid; justify-items: center; margin: 8px 0 12px; }
-.you-signout { color: var(--warn); min-width: 160px; }
+.you-out { margin-top: 8px; }
+.you-sec button.you-signout { justify-content: center; width: 100%; color: var(--danger, #ff6b6b); font-weight: 600; }
+.you-sec .row .val { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.you-sec .row .tx small { overflow-wrap: anywhere; }
+.you-sec .row.pick .tx { min-width: 0; flex: 1; }
 .ifl-sheet .ev-old { margin-top: 6px; font-weight: 600; color: var(--text-2); }
 .ifl-sheet .dev .tx b { font-size: 16px; }
 

@@ -71,6 +71,8 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 .ifl-hd.ifh { grid-template-columns: auto minmax(112px, 1fr) auto; grid-template-rows: auto; view-transition-name: ifl-hd; --ifh-tint: var(--acc-ink);
   height: calc(var(--ifh-pt0) + 90px - 42px * var(--p)); margin-bottom: calc(var(--ifh-mb, 0px) + 42px * var(--p)); }
 .ifl-hd.ifh.has-secs { grid-template-rows: auto auto; row-gap: 10px; height: calc(var(--ifh-pt0) + 140px - 42px * var(--p)); }
+/* (with sections, the band reaches below them: nothing scrolls visibly under the switcher) */
+.ifl-hd.ifh.has-secs::before { background: linear-gradient(to bottom, var(--ifh-band, rgba(240, 242, 250, 0.9)) 82%, transparent); -webkit-mask-image: linear-gradient(to bottom, #000 88%, transparent); mask-image: linear-gradient(to bottom, #000 88%, transparent); }
 html.ifl-fill .ifl-hd.ifh { --p: 1 !important; }
 .ifl-hd .ifl-back { width: 44px; min-width: 44px; height: 44px; padding: 0; border-radius: 50%; color: var(--acc-ink); }
 .ifl-hd .ifl-back .ifl-glyph, .ifl-hd .ifl-back svg { width: 22px; height: 22px; display: grid; place-items: center; }

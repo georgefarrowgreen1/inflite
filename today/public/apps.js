@@ -11,8 +11,12 @@ const TILES = [
   { app: "weather", name: "Weather", what: "A forecast that explains itself", chips: [["Radar", "radar"], ["Warnings", "warnings"]] },
   { app: "fitness", name: "Fitness", what: "Your training, a day at a time", chips: [["Today", "today"], ["Activities", "activities"], ["Progress", "progress"]] },
   { app: "markets", name: "Markets", what: "Your money, said simply", chips: [["Today", "today"], ["Holdings", "holdings"], ["News", "news"]] },
-  { app: "mail", name: "Mail", what: "For you only", chips: [], only: (view) => view?.apps?.mail === true },
+  // (Mail's chips only while Mail's switch is on here, its lenses then the module's: s4/spec §2.5)
+  { app: "mail", name: "Mail", what: "For you only", chips: [], only: (view) => view?.apps?.mail === true,
+    on: [["People", "people"], ["Updates", "updates"], ["Later", "later"], ["Done", "done"]] },
 ];
+// (whether a module's switch is on here: the frame's session, hub and apps, as the router reads them)
+const switchedOn = (ctx, app) => { const s = ctx.frame?.session; return !!(s && s.hub === true && s.apps?.[app] === true); };
 
 let drawn = 0;
 export function drawApps(root, ctx = {}) {
@@ -24,7 +28,7 @@ export function drawApps(root, ctx = {}) {
   const shown = TILES.filter((t) => !t.only || t.only(ctx.view));
   const make = (t, mini = null) => ui.tile({
     app: t.app, name: t.name, line: typeof lines[t.app] === "string" && lines[t.app] ? lines[t.app] : t.what, href: href(t.app), mini,
-    chips: t.chips.map(([text, s]) => ({ text, href: href(t.app, s) })),
+    chips: (t.on && switchedOn(ctx, t.app) ? t.on : t.chips).map(([text, s]) => ({ text, href: href(t.app, s) })),
   });
   const tiles = shown.map((t) => make(t));
   const grid = document.createElement("div");

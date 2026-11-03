@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.11";
+const BUILD = "1.19";
 // (what's new in it, said once it's in)
-const NEWS = "Ready for Markets, Fitness and Mail to open inside InFlite, and a notification tap opens straight away";
+const NEWS = "You, tidied: notifications in one place, switches and pickers as everywhere else, and the rules on one line each";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -794,7 +794,7 @@ const DEFAULT_LINKS = (() => {
 const S = {
   view: null, // the session view, signed in (2.3): { user, prefs, morning, links, quiet, apps, hubPush }
   links: null,
-  prefs: { order: [...CARD_KEYS], hidden: [] },
+  prefs: { order: CARD_KEYS.filter((k) => k !== "mail"), hidden: [] },
   answer: null, // the last cards answer (GET /api/today?v=2): { at, tz, cards, morning } and, from an account side that
   //               knows Today First, v: 2 with the day (phase, tops, waiting, upcoming, acts, apps, …)
   answerAt: 0, // when it came (or was kept)
@@ -1045,13 +1045,14 @@ const readJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || "nu
 function keepSession(view) { try { localStorage.setItem(KEPT, JSON.stringify({ id: view.user.id, at: Date.now(), view })); } catch {} }
 // (only the four cards' answer, as version 1 has it: none of a version 2 answer's day, which is fetched afresh; no
 // pigeon's place, which a Chat place is; no Markets card, whose figures are money, so offline its place is held until
-// it's back; and of the morning, its settings, not how the next one reads, which says the portfolio's worth. Kept under
+// it's back; no Mail card, which is Mail's answer now or none (s4/spec §2.5); and of the morning, its settings, not how the next one reads, which says the portfolio's worth. Kept under
 // today:*, none of them is)
 const MORNING_KEPT = ["on", "at", "tz", "lines", "names", "devices", "thisDevice", "place"];
 function keptOf(answer) {
   const m = answer.morning && typeof answer.morning === "object" ? Object.fromEntries(MORNING_KEPT.filter((k) => k in answer.morning).map((k) => [k, answer.morning[k]])) : null;
   const a = { at: answer.at, tz: answer.tz, cards: { ...(answer.cards || {}) }, ...(m ? { morning: m } : {}) }, chat = a.cards.chat;
   delete a.cards.markets;
+  delete a.cards.mail;
   if (chat && typeof chat === "object") {
     const noPlace = (l, k) => (Array.isArray(l) ? l.map((p) => (p && typeof p === "object" ? { ...p, [k]: null } : p)) : l);
     a.cards.chat = { ...chat, inbound: noPlace(chat.inbound, "from"), mine: noPlace(chat.mine, "to") };
@@ -1251,7 +1252,7 @@ function signedIn(view, { offline = false } = {}) {
   S.links = view.links || S.links || DEFAULT_LINKS;
   if (!S.hub) IFL.hub.degrade(ownLinks());
   // (the same account's order and hidden cards, unless a change made here is still on its way to the account)
-  if (!(was === view.user.id && prefsBusy())) S.prefs = cleanPrefs(view.prefs);
+  if (!(was === view.user.id && prefsBusy())) S.prefs = cleanPrefs(view.prefs, view);
   // (a copy kept for anyone else: gone)
   forgetKept(CARDS_KEY(view.user.id));
   if (!offline) keepSession(view);
@@ -1398,6 +1399,8 @@ const SETTINGS = [
   ["Notifications", "notify", "Each app’s, and Today’s morning"], ["Weather Notifications", "notify-weather", "Rain and warnings for the places you choose"],
   ["Quiet Hours", "quiet", "Every app, but warnings"], ["Rules", "rules", "What Today does for you"], ["This Phone", "phone", "Notifications here"],
   ["Connected Apps", "apps", "What each app shares with InFlite"], ["Account", "account", "Password, Passkeys and Devices"], ["Sign Out", "signout", "Of InFlite, on this device"],
+  // (Mail's, for the site's admin alone: s4/spec §2.4)
+  ["Mail Notifications", "notify-mail", "Through InFlite, and which addresses notify you", (view) => view?.apps?.mail === true],
 ];
 const found = (q, ...xs) => xs.some((x) => typeof x === "string" && x.toLowerCase().includes(q));
 // (an address from the answer, as this page goes there: the hub's path, or the app's own where it's degraded. Worked
@@ -1434,7 +1437,7 @@ function todayHits(q) {
 }
 function settingsHits(q) {
   if (!q || !S.view) return [];
-  return SETTINGS.filter(([t, , sub]) => found(q, t, sub)).map(([title, id, sub]) => ({ title, sub, href: `/#you=${id}` }));
+  return SETTINGS.filter(([t, , sub, only]) => (!only || only(S.view)) && found(q, t, sub)).map(([title, id, sub]) => ({ title, sub, href: `/#you=${id}` }));
 }
 // (an entry for the screen already showing: the search closed, no navigation, so Back never meets a twin)
 const notHere = (list) => list.map((e) => (e.href && here(e.href) ? { title: e.title, sub: e.sub, icon: e.icon, avatar: e.avatar, run: () => {} } : e));
@@ -1519,10 +1522,13 @@ function wireLinks() {
 // behind the account's, so a pigeon that's landed is never said to land, nor one landed this morning tomorrow)
 const nowish = () => Math.max(Date.now() + S.skew, Number.isFinite(S.answer?.at) ? S.answer.at : 0);
 const ctx = () => ({ links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), now: nowish(), hub: IFL.hub });
-function cleanPrefs(p) {
-  const order = (Array.isArray(p?.order) ? p.order : []).filter((k) => CARD_KEYS.includes(k));
-  for (const k of CARD_KEYS) if (!order.includes(k)) order.push(k);
-  const hidden = (Array.isArray(p?.hidden) ? p.hidden : []).filter((k) => CARD_KEYS.includes(k));
+// (the cards this account can have: Mail's only for the site's admin, view.apps.mail, s4/spec §2.5, S4-D21)
+const cardKeys = (view = S.view) => CARD_KEYS.filter((k) => k !== "mail" || view?.apps?.mail === true);
+function cleanPrefs(p, view = S.view) {
+  const keys = cardKeys(view);
+  const order = (Array.isArray(p?.order) ? p.order : []).filter((k) => keys.includes(k));
+  for (const k of keys) if (!order.includes(k)) order.push(k);
+  const hidden = (Array.isArray(p?.hidden) ? p.hidden : []).filter((k) => keys.includes(k));
   return { order: [...new Set(order)], hidden: [...new Set(hidden)] };
 }
 // Today's day: a version 2 answer (Today First's, phase by phase) drawn by /day.js into #today (its top card, Waiting for
@@ -1986,7 +1992,7 @@ function wire() {
     prefsChanged();
   });
   $("#edReset").addEventListener("click", () => {
-    S.prefs = { order: [...CARD_KEYS], hidden: [] };
+    S.prefs = { order: cardKeys(), hidden: [] };
     drawEdit();
     prefsChanged();
     toast("Back in the day’s order");
@@ -2073,7 +2079,9 @@ async function load() {
   let view = null;
   // (a /weather/ boot: Weather's files asked for at once, beside the session, unless the hub's known not to serve them)
   if (BOOT_APP && ss.get(HUB_KEY) !== "0" && keptApp(BOOT_APP.app) !== false) preload(BOOT_APP.app);
-  if (new URLSearchParams(location.hash.slice(1)).get("signin")) {
+  // (a code at Mail's /mail/ is Mail's own hand-back, S4-D12: left in the address for Mail's module to swap at Mail's
+  // /api/auth/handback with the word it kept; Today's own always comes back to /)
+  if (new URLSearchParams(location.hash.slice(1)).get("signin") && BOOT_APP?.app !== "mail") {
     try {
       view = await finishSignIn();
     } catch (e) {

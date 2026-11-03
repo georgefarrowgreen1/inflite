@@ -228,21 +228,36 @@ function buttonHtml(b, t, st, now) {
   }
   return "";
 }
+// (a line of the top card as a row: the app it's about by its icon, and its words without the app's name in front)
+const MOON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>';
+function lineRow(l) {
+  let app = "", words = l;
+  const m = /^(Markets|Fitness|Weather|Chat|Mail):\s*/i.exec(l);
+  if (m) { app = m[1].toLowerCase(); words = l.slice(m[0].length); }
+  else if (/waiting for an answer|wrote to you|sent you/i.test(l)) app = "chat";
+  else if (/^tomorrow|rain|drizzle|showers|sunny|cloud|breezy|wind|frost|snow/i.test(l)) app = "weather";
+  words = words.charAt(0).toUpperCase() + words.slice(1);
+  const ic = APP[app] ? `<img class="dt-ic" src="${APP[app].icon}" alt="">` : `<span class="dt-ic dt-ic-x">${/^quiet hours/i.test(l) ? MOON : G.clock}</span>`;
+  return `<li>${ic}<span>${esc(words)}</span></li>`;
+}
+// (the digits of a figure, to tell a stat that only says the title again: "−0.2%" beside "Down 0.2%")
+const digitsOf = (x) => (String(x).match(/\d+(?:[.,]\d+)?/g) || []).join(" ");
 function topHtml(t, phase, st, now) {
   const kind = KINDS.includes(t.kind) ? t.kind : "plan", lines = texts(t.lines);
-  const stats = list(t.stats).filter((s) => str(s.label) && (typeof s.value === "string" || num(s.value) != null));
+  const said = digitsOf(t.title);
+  const stats = list(t.stats).filter((s) => str(s.label) && (typeof s.value === "string" || num(s.value) != null)).filter((s) => !said || digitsOf(s.value) !== said);
   const wrote = list(t.wrote).filter((w) => ID.test(str(w.id)) && str(w.first));
-  const buttons = list(t.buttons).map((b) => buttonHtml(b, t, st, now)).filter(Boolean);
+  // (no Open or Send here: the rows say where each thing is, and each app has its own)
+  const buttons = list(t.buttons).filter((b) => b.do !== "open" && b.do !== "sendto").map((b) => buttonHtml(b, t, st, now)).filter(Boolean);
   const to = t.sendTo && ID.test(str(t.sendTo.id)) && str(t.sendTo.first) && str(t.sendTo.why) ? t.sendTo : null;
-  const send = sendButton(t, { ...st.ctx, links: linksOf(st.ctx) }, { label: "Send", glyph: G.bird, aria: "Send this to a friend" });
   return `<article class="tcard glass day-top" data-kind="${kind}" data-phase="${esc(phase)}" aria-labelledby="dt-h">
     ${str(t.chip) ? `<span class="dt-chip">${kind === "done" ? G.check : kind === "ride" ? G.ride : ""}${esc(t.chip)}</span>` : ""}
     <h2 class="tc-h dt-h" id="dt-h" tabindex="-1">${esc(t.title)}</h2>
-    ${lines.length ? `<div class="dt-lines">${lines.map((l) => `<p class="tc-p">${esc(l)}</p>`).join("")}</div>` : ""}
     ${stats.length ? `<dl class="dt-stats">${stats.map((s) => `<div${TONES.includes(s.tone) ? ` class="dt-${s.tone}"` : ""}><dt>${esc(s.label)}</dt><dd>${esc(s.value)}</dd></div>`).join("")}</dl>` : ""}
+    ${lines.length ? `<ul class="dt-rows">${lines.map(lineRow).join("")}</ul>` : ""}
     ${wrote.length ? `<div class="dt-wrote">${wrote.map((w) => `<p class="dt-said" data-wid="${esc(w.id)}" data-first="${esc(w.first)}" data-since="${num(w.at) ?? 0}" hidden></p>`).join("")}</div>` : ""}
     ${to ? `<p class="dt-to">${esc(to.first)} · ${esc(to.why)}</p>` : ""}
-    ${buttons.length || send ? `<div class="tc-foot">${buttons.join("")}${send}</div>` : ""}
+    ${buttons.length ? `<div class="tc-foot">${buttons.join("")}</div>` : ""}
   </article>`;
 }
 
@@ -384,7 +399,7 @@ function comingHtml(rows, st, now) {
   return `<h2 class="slabel">${LABELS.coming}</h2><div class="group glass">${rows.map((r) => {
     const app = APP[r.app === "markets" || r.app === "chat" || r.app === "weather" || r.app === "fitness" ? r.app : ""];
     const h = linkTo(r.href, st.ctx), other = dayKey(r.at, tz) !== dayKey(now, tz);
-    const send = sendButton(r, ctx, { label: "", glyph: G.bird, cls: "dc-send", aria: `Send to a friend: ${r.title}` });
+    const send = "";
     const inner = `<span class="dc-tm">${esc(hm(r.at, tz))}${other ? `<small>${esc(wkShort(r.at, tz))}</small>` : ""}</span>${app ? `<img class="dc-ic" src="${app.icon}" alt="">` : `<span class="dc-ic"></span>`}<span class="tx"><b>${esc(r.title)}</b>${str(r.sub) ? `<small>${esc(r.sub)}</small>` : ""}</span>`;
     return `<div class="dc-row" data-due="${dueOf(r, st.answer, now)}"${send ? " data-sends" : ""}>
       ${h ? `<a class="row dc-main" href="${esc(h)}">${inner}</a>` : `<div class="row dc-main">${inner}</div>`}${send}
