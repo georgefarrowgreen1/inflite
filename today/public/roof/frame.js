@@ -100,10 +100,14 @@ export function createFrame(opts = {}) {
   const isOn = (app) => !!sess().apps[app];
   // (stage 3, S3-C3: each app's service, one promise per app; B0's stub, HOST's to fill)
   const svcs = {};
-  const svc = (app) => svcs[app] || (isOn(app) && REGISTRY[app]?.service
-    ? (svcs[app] = Promise.resolve(opts.retired).catch(() => {}).then(() => import("./modules.js")).then((M) => M.loadService(app, F))
-      .then((s) => { const st = (d) => { T(() => opts.serviceState?.(app, d?.state)); found(app, s, /^(ready|offline)$/.test(d?.state)); }; s.on?.("state", st); st(s); return s; }, (e) => { delete svcs[app]; throw e; }))
-    : Promise.reject(new Error(`${app}: no service here`)));
+  // (one let go of before it's made is never made; its state heard only while it's still this app's one)
+  const svc = (app) => {
+    if (svcs[app]) return svcs[app];
+    if (!isOn(app) || !REGISTRY[app]?.service) return Promise.reject(new Error(`${app}: no service here`));
+    const p = svcs[app] = Promise.resolve(opts.retired).catch(() => {}).then(() => (svcs[app] === p ? import("./modules.js") : Promise.reject(new Error("let go of")))).then((M) => M.loadService(app, F))
+      .then((s) => { const st = (d) => { if (svcs[app] !== p) return; T(() => opts.serviceState?.(app, d?.state)); found(app, s, /^(ready|offline)$/.test(d?.state)); }; s.on?.("state", st); st(s); return s; }, (e) => { if (svcs[app] === p) delete svcs[app]; throw e; });
+    return p;
+  };
   // (the frame's own search over a service (Chats' People and Messages, §2.4): while it's unlocked and signed in; gone as
   // it's locked, signed out or let go of)
   const finds = {};
