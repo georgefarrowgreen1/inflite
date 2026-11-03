@@ -8,7 +8,9 @@
 // connectorOf(app) → Promise<Connector>: Weather → its connector.js (only when hub && roof; else a static fallback
 //   without search/mini); others → STATIC[app].
 // miniOf(app, answer) → Promise<Mini | null>: the connector's mini(answer).
-// openConnector(F, app): the connector sheet (§3.12).
+// openConnector(F, app): the connector sheet (§3.12): F.sheet.open({ sheet: "connector", app, … }) →
+//   dialog.ifl-sheet[data-sheet=connector]. Opened from You's Connected Apps rows (TD: #youApps [data-app=<app>]) and Apps.
+//   (Hooks: MAIN .tools/tests/roofhooks.mjs CONNECTOR_SHEET, YOU_APP_ROW.)
 // placesProvider(F) → off: the Places search provider from Weather's connector.search, plus "Weather Settings".
 export const STUB = true;
 export const STATIC = {};

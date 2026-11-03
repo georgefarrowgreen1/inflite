@@ -1,7 +1,8 @@
 // InFlite's sheet (spec §3.8, D22). B0's stub; FW writes it.
 // createSheets(F) → Sheets:
 //   open(spec) → Handle, spec = { sheet, label, title, hero, body, acts, onClose, app }
-//     sheet: the sheet's name, set as data-sheet on the <dialog> (hooks: search, places, confirm-place, wxsettings, …)
+//     sheet: the sheet's name, set as data-sheet on the <dialog> (the names are fixed: search,
+//       connector, places, confirm-place, wxsettings, day, detail, warning, credits; MAIN .tools/tests/roofhooks.mjs)
 //     label: aria-label when there's no visible title; title: the h2's text; hero: { app, name, line } (.ifs-hero)
 //     body: Node | (bodyEl, handle) => void; acts: [{ label, run, primary, destructive, act }] in the sticky
 //     footer.ifs-acts (act → data-act); onClose(): after it closes, however; app: the accent for this sheet only

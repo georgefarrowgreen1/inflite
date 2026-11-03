@@ -15,7 +15,8 @@
 //   F.nav.go(path, { replace, zoomFrom, from })     in-page if router.owns(path) (and not F.stale into an app, D21),
 //                                                   else IFL.hub.go(path) + location.assign
 //   F.nav.back()                                    the Back rule, §3.4
-//   F.nav.section(app, id, { arg })                 replaceState; header switcher and URL follow
+//   F.nav.section(app, id, { arg })                 replaceState to router.format({ app, section: id, arg }) (no key: a
+//                                                   sheet key of the old route never carries over); header switcher and URL follow
 //   F.route                                         the current Route (router.js), null before the first render
 //   F.header, F.tabs, F.sheet, F.toast, F.search, F.send, F.ui   (header.js, tabs.js, sheet.js, toast.js, search.js,
 //                                                   send.js, ui.js)
@@ -32,8 +33,12 @@
 // fw = F.forModule(app) (§5.2), what a module gets in mount(root, fw):
 //   fw.contract = 1; fw.app; fw.screenEl (main#m-<app>)
 //   fw.ui                                           ui.js's builders
-//   fw.header.set({ title, compactTitle, pick, line, acts, badges })   only while its screen shows
-//   fw.nav.go(path), fw.nav.back(), fw.nav.section(id, { arg }), fw.nav.href(key, arg) → path (router.format; key a section id or an alias: href("day", "2026-11-03") → "/weather/#day=2026-11-03")
+//   fw.header.set({ title, compactTitle, pick, line, acts, badges })   only while its screen shows; header.js's spec:
+//     title, compactTitle?: string; pick: { label, run } | null (the title's ▾: label its aria-label, run() on tap;
+//     Weather: { label: "Places", run: () => open.places() }); line: string; acts: [{ icon, label, run }] (data-act = icon);
+//     badges?: { [sectionId]: n }. (The frame fills back, crumb, sections and section itself.)
+//   fw.nav.go(path), fw.nav.back(), fw.nav.section(id, { arg }) (= F.nav.section(app, id, { arg })),
+//   fw.nav.href(key, arg) → path (router.format({ app, key, arg }); key a section id or an alias: href("day", "2026-11-03") → "/weather/#day=2026-11-03")
 //   fw.sheet.open(spec) → Handle                    sheet.js, accent = the app
 //   fw.toast(text, opts)
 //   fw.send({ words, packed, what }), fw.sendButton({ words, packed, what }) → Element
@@ -85,7 +90,7 @@ export function createFrame(opts = {}) {
         screenEl: null,
         ui,
         header: { set(spec) {} },
-        nav: { go(path) {}, back() {}, section(id, o) {}, href: (section, arg = null) => format({ kind: "app", app, section, key: section, arg }) },
+        nav: { go(path) {}, back() {}, section(id, o) {}, href: (key, arg = null) => format({ app, key, arg }) },
         sheet: { open: (spec) => F.sheet.open(spec) },
         toast: (text, o) => toast(text, { ...o, app }),
         send(spec) {},
