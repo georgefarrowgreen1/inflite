@@ -19,6 +19,11 @@ reminder. Signed out, it's InFlite's way in: what InFlite is, its apps, and Sign
   repo's `functions/_todayapp.js`). It has no D1, cron or secrets, only the var `ACCOUNT_ORIGIN`.
 - **The morning notification** is sent by the georgefarrowgreen repo (`functions/_todaymorning.js`, every 5 minutes
   from its scheduler), to devices Today's page turned it on on.
+- **One roof** (`today/public/roof/`): the framework the page is built on (frame, header, tab bar, sheets, toasts,
+  search, send, connectors). Apps that are modules open inside it with no page load: Weather's module is the
+  georgefarrowgreen repo's `weather/roof/`, served at `/weather/roof/*` through the hub (`today/src/hub.js`,
+  `today/src/roof.js`), and `/weather/` is the framework's own page. The switch: the `ROOF_OFF` secret (the georgefarrowgreen repo's `roof.yml`)
+  puts Weather back to milestone 1's page of the hub in seconds.
 - **Its version** is `BUILD` and `NEWS` in `today/public/app.js`, raised by 0.01 with every change that's pushed;
   `/version` says it, for InFlite's updater (`IFL.updates`).
 
