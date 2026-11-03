@@ -84,13 +84,16 @@ async function roofDoc(e) {
   }
   return res.status >= 500 ? (await kept()) || res : res;
 }
-// The module's files, as the page names them ({ ifl: "keep", app, build, files }, modules.js keepOffline, once a build):
-// for an app that is a module, a build as the apps number them, and at most 60 of that app's own files at plain paths
-// (no query, no vendor/, never its worker or version). Kept all or nothing, in roof-<app>-<build>: each one fetched afresh
-// and answered whole by this site, or that cache is let go and the one before kept; once it's whole, the app's other
-// builds' are let go.
+// The module's files, as the page names them ({ ifl: "keep", app, build, files }, modules.js keepOffline, once a build
+// per page): for an app that is a module, a build as the apps number them, and at most 60 of that app's own files at plain
+// paths (no query, no vendor/, never its worker or version). Kept all or nothing, in roof-<app>-<build>: a build already
+// kept whole is left as it is (nothing fetched: every open of the page asks again, offline too); otherwise each file is
+// fetched afresh and answered whole by this site before any is put, so one that fails leaves every kept copy as it was
+// (only a cache this ask made is let go, should putting fail); once it's whole, the app's older builds are let go. One
+// ask at a time per app (an old tab's, for an older build, can't finish last and take the newer one's place), and never
+// for a build older than one kept already.
 const KEEP_APPS = ["weather"], KEEP_MAX = 60;
-const keeping = new Map();
+const keeping = new Map(), keepQueue = new Map();
 function keepList(d) {
   if (!d || !KEEP_APPS.includes(d.app) || typeof d.build !== "string" || !/^\d+\.\d{2}$/.test(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
   const base = `/${d.app}/`, out = new Set();
@@ -108,24 +111,53 @@ function keep(d) {
   if (!files) return Promise.resolve(false);
   const name = `roof-${d.app}-${d.build}`;
   if (keeping.has(name)) return keeping.get(name);
-  const job = (async () => {
+  const job = (keepQueue.get(d.app) || Promise.resolve())
+    .then(() => keepNow(d.app, d.build, files))
+    .catch(() => false)
+    .finally(() => { keeping.delete(name); if (keepQueue.get(d.app) === job) keepQueue.delete(d.app); });
+  keeping.set(name, job);
+  keepQueue.set(d.app, job);
+  return job;
+}
+// (a build as a number to compare: 1.65 → 165, 10.00 → 1000; the apps' builds always have two decimals)
+const buildNo = (b) => Number(b.replace(".", ""));
+async function keepNow(app, build, files) {
+  const prefix = `roof-${app}-`, name = prefix + build;
+  const builds = (await caches.keys()).filter((k) => k.startsWith(prefix) && /^\d+\.\d{2}$/.test(k.slice(prefix.length)));
+  // (a later build kept already: an old tab's ask, never kept over it)
+  if (builds.some((k) => buildNo(k.slice(prefix.length)) > buildNo(build))) return false;
+  const had = builds.includes(name);
+  if (!(had && (await whole(name, files)))) {
+    let got;
     try {
-      const got = await Promise.all(files.map(async (f) => {
+      got = await Promise.all(files.map(async (f) => {
         const res = await fetch(f, { cache: "no-cache", credentials: "same-origin" });
         if (!res.ok || res.type !== "basic") throw new Error("not kept");
         return [f, res];
       }));
+    } catch {
+      return false;
+    }
+    try {
       const c = await caches.open(name);
       for (const [f, res] of got) await c.put(f, res);
     } catch {
-      await caches.delete(name).catch(() => {});
+      if (!had) await caches.delete(name).catch(() => {});
       return false;
     }
-    for (const k of await caches.keys()) if (k.startsWith(`roof-${d.app}-`) && k !== name) await caches.delete(k);
+  }
+  for (const k of builds) if (k !== name) await caches.delete(k).catch(() => {});
+  return true;
+}
+// (every file asked for is in that cache)
+async function whole(name, files) {
+  try {
+    const c = await caches.open(name);
+    for (const f of files) if (!(await c.match(f))) return false;
     return true;
-  })().finally(() => keeping.delete(name));
-  keeping.set(name, job);
-  return job;
+  } catch {
+    return false;
+  }
 }
 // (a file of Weather's at the hub, as the module loads it: from the network first, else the kept copy, where there's
 // no answer or the hub's failing; a 404 (the roof off) is the hub's word and passed on)
@@ -255,8 +287,12 @@ async function openIn(path) {
   if (win) {
     try { await win.focus(); } catch {}
     // (a window of the framework (Today's page, at / or /weather/): told to route there in the page, One roof's
-    // {ifl:"route"}; any other page of this site's: told to open it, as before)
-    if (await told(win, path, FRAMEWORK.includes(pathOf(win.url)) ? "route" : "open")) return;
+    // {ifl:"route"}; any other page of this site's: told to open it, as before. A window at /weather/ that doesn't say
+    // it's routed is Weather's milestone-1 page there (the roof off, or its old worker not yet retired), which hears only
+    // an open, and isn't this worker's to send elsewhere: told to open it, as milestone 1 did, before any other way)
+    const at = pathOf(win.url);
+    if (await told(win, path, FRAMEWORK.includes(at) ? "route" : "open")) return;
+    if (ROOF_DOCS.includes(at) && (await told(win, path, "open"))) return;
   }
   // (an app's page, where the hub can't serve it just now (before its key, or rolled back): Today, which sends it to the
   // app's own address, as it did before the hub)
