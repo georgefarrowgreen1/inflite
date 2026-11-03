@@ -5732,7 +5732,7 @@ pre{white-space:pre-wrap}
       cc,
       subject,
       text: "",
-      quote: { header, html: m.html || "", text: m.text || "", forward: mode === "forward" },
+      quote: { header, html: m.html || "", text: m.text || "", forward: mode === "forward", of: m.id },
       inReplyTo: mode === "forward" ? null : m.messageId,
       references: mode === "forward" ? null : [m.references, m.messageId].filter(Boolean).join(" "),
       // (the conversation it answers: shown again once it's sent, if that's the one open then)

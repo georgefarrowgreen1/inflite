@@ -9,7 +9,7 @@ import { rowToSummary, bumpVersion } from "./db.js";
 
 export const VIEWS = ["all", "unread", "flagged", "attachments", "later", "done", "trash"];
 
-const cleanSubject = (s) => (s || "").replace(/^((re|fwd?|aw|sv)\s*:\s*)+/i, "").trim();
+export const cleanSubject = (s) => (s || "").replace(/^((re|fwd?|aw|sv)\s*:\s*)+/i, "").trim();
 
 // Search with operators: from:, to:, file: (a file's name), has:attachment (or has:image, has:pdf), is:unread,
 // is:flagged, is:done, before:/after: (YYYY-MM-DD), in:trash (what's in the Trash, which a search otherwise leaves
@@ -202,6 +202,8 @@ async function threadsFrom(env, groups, where, now) {
       id: g.thread_id,
       subject: cleanSubject(latest?.subject) || "(No Subject)",
       latest: latest ? rowToSummary(latest) : null,
+      // (its newest message, whose frame InFlite's reader starts on the tap, beside asking for the conversation)
+      latestId: latest?.id || null,
       from: incoming ? { name: incoming.from_name || "", email: incoming.from_email || "" } : null,
       people,
       count: g.n,
