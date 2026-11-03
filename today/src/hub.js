@@ -89,7 +89,7 @@ async function ready(env, request) {
   return (known(env, t) || (await probe(env, request, t))).ok;
 }
 
-const ROOF_APPS = ["weather", "markets", "fitness"];
+const ROOF_APPS = ["weather", "markets", "fitness", "chats"];
 export async function hub(request, env, ctx) {
   const url = new URL(request.url), p = url.pathname, method = request.method, read = method === "GET" || method === "HEAD";
   // (Today's page asks once a visit whether the hub's there: until it is, it links to each app's own address)
@@ -103,12 +103,15 @@ export async function hub(request, env, ctx) {
   // The same for each module of stage 2 (Markets, Fitness), each by its own switch (opt-in; Weather's opt-out)
   // (every switched-off module's files not found however the path is written, under another app's prefix too
   // (/fitness/..%2Fweather/roof/…), as stage 1 checked Weather's for every read; the on side keyed on the literal path)
+  // And Chats (stage 3, by ROOF_CHATS): its document /chats/ the framework's page, but never with ?engine (milestone 1's
+  // engine, which Today frames) nor at /chats/in/ (Chat's own page, for signing in and keys: forwarded as before);
+  // /chats/sw.js its retiring worker; /chats (no slash) the hub's 301 below, as before. Off, /chats/roof/* not found
   if (read) for (const x of ROOF_APPS) if (!roofOn(env, x) && (filesOf(x).test(p) || filesOf(x).test(plainPath(p)))) return refuse(404, SAID.gone);
-  const a = read && (/^\/(weather|markets|fitness)(\/|$)/.exec(p)?.[1] || /^\/(weather|markets|fitness)(\/|$)/.exec(plainPath(p))?.[1]);
+  const a = read && (/^\/(weather|markets|fitness|chats)(\/|$)/.exec(p)?.[1] || /^\/(weather|markets|fitness|chats)(\/|$)/.exec(plainPath(p))?.[1]);
   if (a && roofOn(env, a)) {
-    if (modOf(p) === a) return roofPage(request, env);
+    if (modOf(p, url.search) === a) return roofPage(request, env);
     if (p === `/${a}/sw.js`) return retireWorker(request, a);
-    if (p === `/${a}`) return new Response(null, { status: 301, headers: { Location: `${url.origin}/${a}/${url.search}`, ...SAFE } });
+    if (p === `/${a}` && a !== "chats") return new Response(null, { status: 301, headers: { Location: `${url.origin}/${a}/${url.search}`, ...SAFE } });
   }
   if (!env?.HUB_KEY) return refuse(503, SAID.notReady);
   // (nor while the apps' hosts have said they don't know its key: everyone here would be the hub's one address to them.
