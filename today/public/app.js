@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.20";
+const BUILD = "1.21";
 // (what's new in it, said once it's in)
-const NEWS = "Smoother moves: pages slide in over each other as on iPhone, tabs settle into place, sheets spring up";
+const NEWS = "Moving between pages, the title changes cleanly instead of the old and new words overlapping";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own

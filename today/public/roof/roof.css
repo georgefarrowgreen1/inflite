@@ -283,7 +283,10 @@ a.ifl-tile:active, .ifl-tile-main:active { transform: scale(0.97); }
 
 /* ---- transitions (§3.7): View Transitions by kind on html[data-vt]; CSS animations where there are none ---- */
 ::view-transition-group(ifl-hd), ::view-transition-group(ifl-tabs) { animation: none; }
-::view-transition-old(ifl-hd), ::view-transition-new(ifl-hd) { animation: none; mix-blend-mode: normal; }
+/* (the header's title and line change with the page: the old words gone quickly before the new come in, so the two
+   never show over each other; its band and buttons stay put) */
+::view-transition-old(ifl-hd) { animation: 0.12s ease-out both ifl-fade-out; mix-blend-mode: normal; }
+::view-transition-new(ifl-hd) { animation: 0.22s ease-in 0.08s both ifl-fade-in; mix-blend-mode: normal; }
 /* (iOS-style: a push slides the new page in over the old from the edge, the old drifting back a third and dimming; a
    pop the reverse; a tab cross-fades with a slight settle and blur; a section glides; a zoom springs. The header and the
    tab bar stay where they are, as a navigation bar does) */
