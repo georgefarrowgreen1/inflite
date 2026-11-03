@@ -46,10 +46,10 @@ export default {
       res = json({ error: said || "Something went wrong. Try again.", access: err.access }, err.status || 500);
     }
     if (cors) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
-    if (hub) for (const [k, v] of Object.entries(hubHeaders(hub))) res.headers.set(k, v);
+    // (Vary added to, never put over what a route said)
+    if (hub) for (const [k, v] of Object.entries(hubHeaders(hub))) k.toLowerCase() === "vary" ? varyOn(res, v) : res.headers.set(k, v);
     // (a file's answer differs by who asks: a hub may read only pictures, so no cache gives one asker's answer to another)
-    if (url.pathname.startsWith("/api/attachments/") && !/(^|,)\s*origin\s*(,|$)/i.test(res.headers.get("Vary") || ""))
-      res.headers.set("Vary", res.headers.get("Vary") ? `${res.headers.get("Vary")}, Origin` : "Origin");
+    if (url.pathname.startsWith("/api/attachments/")) varyOn(res, "Origin");
     return res;
   },
 
@@ -133,6 +133,13 @@ const json = (data, status = 200, headers = {}) =>
   });
 
 const EMAIL_RE = /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/;
+// (an attachment's id, as a forwarded file ({ ref }) names it)
+const REF_RE = /^[\w-]{1,64}$/;
+// (a Vary added to an answer's, never put over it)
+function varyOn(res, name) {
+  const v = res.headers.get("Vary") || "";
+  if (!new RegExp(`(^|,)\\s*${name}\\s*(,|$)`, "i").test(v)) res.headers.set("Vary", v ? `${v}, ${name}` : name);
+}
 
 // (the asks by POST that change nothing: the mailbox's version stays as it is)
 const READ_POSTS = new Set(["/api/threads/search", "/api/contacts/find"]);
@@ -620,6 +627,10 @@ async function getMessage(env, id) {
     const whole = await quoteFrom(env, q).catch(() => null);
     compose = { ...compose, quote: whole ? { ...whole, of: q.of } : null };
   }
+  // (and a file it forwards ({ ref }) at Mail's own address, which Mail on its own fetches to send or save it, as it does
+  // a forwarded file: never a chip with nothing behind it, dropped without a word)
+  if (compose && Array.isArray(compose.attachments))
+    compose = { ...compose, attachments: compose.attachments.map((a) => (a && !a.content && typeof a.ref === "string" && REF_RE.test(a.ref) ? { ...a, url: `/api/attachments/${a.ref}` } : a)) };
   return json({
     ...rowToMessage(row),
     text: body.text || "",
@@ -1000,14 +1011,31 @@ async function keepSent(env, ctx, { id, result, from, name, to, cc, bcc, all, su
 
 // A message's files to send: those sent with it, and those forwarded ({ ref: an attachment's id }), copied from Mail's own
 // (never fetched into the page, S4-D4). One that can't be had is said, never left out.
+// (their sizes from Mail's own rows, 20 forwarded at most, both checked before any is read: never a run out of memory)
 async function filesOut(env, list) {
+  const gone = (a, row) => new HttpError(400, `Couldn’t attach “${String(a.filename || row?.filename || "a file").slice(0, 200)}”.`);
+  const refs = list.filter((a) => a?.ref !== undefined);
+  if (refs.length > 20) throw new HttpError(413, "You can forward 20 files at most.");
+  const rows = new Map();
+  let total = 0;
+  for (const a of list) {
+    if (a?.ref === undefined) {
+      total += String(a?.content || "").length * 0.75;
+      continue;
+    }
+    const ref = typeof a.ref === "string" && REF_RE.test(a.ref) ? a.ref : null;
+    const row = ref && (await env.DB.prepare(`SELECT filename, type, size FROM attachments WHERE id = ?1`).bind(ref).first());
+    if (!row) throw gone(a, row);
+    rows.set(a, { ref, ...row });
+    total += Number(row.size) || 0;
+  }
+  if (total > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
   const out = [];
   for (const a of list) {
-    if (a?.ref !== undefined) {
-      const ref = typeof a.ref === "string" && /^[\w-]{1,64}$/.test(a.ref) ? a.ref : null;
-      const row = ref && (await env.DB.prepare(`SELECT filename, type FROM attachments WHERE id = ?1`).bind(ref).first());
-      const obj = row && (await env.MAIL.get(`att/${ref}`));
-      if (!obj) throw new HttpError(400, `Couldn’t attach “${String(a.filename || row?.filename || "a file").slice(0, 200)}”.`);
+    const row = rows.get(a);
+    if (row) {
+      const obj = await env.MAIL.get(`att/${row.ref}`);
+      if (!obj) throw gone(a, row);
       out.push({ id: crypto.randomUUID(), filename: String(a.filename || row.filename || "attachment"), type: String(row.type || "application/octet-stream"), bytes: new Uint8Array(await obj.arrayBuffer()) });
       continue;
     }
@@ -1034,7 +1062,8 @@ async function deleteDraft(env, id) {
 
 // (a draft's attachments, kept in its stored copy: 25 MB at most, like sending. A forwarded file is kept as which
 // attachment it is ({ ref }), copied when it's sent; one the draft already has ({ i }, as /api/drafts/<id> numbers them)
-// stays as it is, as InFlite's page never has its bytes)
+// stays as it is, as InFlite's page never has its bytes. A forwarded file the draft already keeps stays though Mail has
+// since lost it: its words are still saved, and sending it says the file's gone)
 async function draftFiles(env, list, kept = []) {
   const out = [];
   let total = 0;
@@ -1044,8 +1073,14 @@ async function draftFiles(env, list, kept = []) {
   };
   for (const a of Array.isArray(list) ? list.slice(0, 20) : []) {
     if (a?.ref !== undefined) {
-      const ref = typeof a.ref === "string" && /^[\w-]{1,64}$/.test(a.ref) ? a.ref : null;
+      const ref = typeof a.ref === "string" && REF_RE.test(a.ref) ? a.ref : null;
       const row = ref && (await env.DB.prepare(`SELECT filename, type, size FROM attachments WHERE id = ?1`).bind(ref).first());
+      const had = !row && ref && kept.find((k) => k?.ref === ref);
+      if (had) {
+        add(Number(had.size) || 0);
+        out.push(had);
+        continue;
+      }
       if (!row) throw new HttpError(400, `Couldn’t attach “${String(a.filename || "a file").slice(0, 200)}”.`);
       add(Number(row.size) || 0);
       out.push({ ref, filename: String(a.filename || row.filename || "attachment").slice(0, 200), type: String(row.type || "application/octet-stream").slice(0, 100), size: Number(row.size) || 0 });
@@ -1071,9 +1106,12 @@ async function saveDraft(env, body, view) {
   // (a draft's id can't be used to write over anything else)
   const existing = await env.DB.prepare(`SELECT folder FROM messages WHERE id = ?1`).bind(id).first();
   if (existing && existing.folder !== "drafts") id = crypto.randomUUID();
-  // (the files it has now, for those kept as they are: { i })
-  const keeps = existing?.folder === "drafts" && Array.isArray(body.attachments) && body.attachments.some((a) => a && a.content === undefined && Number.isInteger(a.i));
-  const kept = keeps ? (await (await env.MAIL.get(`body/${id}.json`))?.json())?.compose?.attachments || [] : [];
+  // (what it has now, saved over: its files, for those kept as they are ({ i }) and forwarded ones Mail has since lost
+  // ({ ref }); its quote, kept when the save names none (no quote key): a quote Mail on its own made, which InFlite's page
+  // can't show or tie to a message (quoteOld), still goes when it's sent from there (S4-D18). quote: null takes it off)
+  const stored = existing?.folder === "drafts" ? (await (await env.MAIL.get(`body/${id}.json`))?.json().catch(() => null))?.compose || {} : {};
+  const kept = Array.isArray(stored.attachments) ? stored.attachments : [];
+  const quote = cleanQuote("quote" in body ? body.quote : stored.quote);
   const compose = {
     from: String(body.from || ""),
     to: normalizeRecipients(body.to),
@@ -1083,7 +1121,7 @@ async function saveDraft(env, body, view) {
     text: String(body.text || ""),
     inReplyTo: body.inReplyTo || null,
     references: body.references || null,
-    quote: cleanQuote(body.quote),
+    quote,
     attachments: await draftFiles(env, body.attachments, kept),
   };
   await env.MAIL.put(`body/${id}.json`, JSON.stringify({ text: compose.text, html: "", compose }), {

@@ -80,7 +80,11 @@ export function linkify(escaped) {
 }
 export const textToHtml = (text) => linkify(escapeHtml(text || "")).replace(/\r?\n/g, "<br>");
 
-const NAMED = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };
+const NAMED = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", "#39": "'", hellip: "\u2026", mdash: "\u2014", ndash: "\u2013",
+  lsquo: "\u2018", rsquo: "\u2019", ldquo: "\u201c", rdquo: "\u201d", bull: "\u2022", middot: "\u00b7", copy: "\u00a9", reg: "\u00ae",
+  trade: "\u2122", euro: "\u20ac", pound: "\u00a3", shy: "\u00ad", zwnj: "\u200c", zwj: "\u200d",
+};
 const decode = (s) =>
   s.replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]+\d*);/gi, (all, e) => {
     const k = e.toLowerCase();
@@ -91,26 +95,111 @@ const decode = (s) =>
     return NAMED[k] ?? all;
   });
 
-// (a message's words from its HTML, as the page's DOMParser reading made them: scripts, styles and the head left out, a
-// line for each break and each block's end)
-export function htmlToText(html) {
-  const s = String(html || "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<(script|style|head|title)\b[\s\S]*?<\/\1\s*>/gi, "")
-    .replace(/<br\b[^>]*>/gi, "\n")
-    .replace(/<\/(p|div|tr|li|h1|h2|h3|h4|blockquote)\s*>/gi, "\n")
-    .replace(/<[^>]*>/g, "");
-  return decode(s).replace(/\n{3,}/g, "\n\n").trim();
+// HTML read once, a piece at a time, as a browser reads it (a comment, a tag, or the text between), never by stripping
+// matches from the string: a strip can rebuild what it strips ("<scr<script>ipt>"). What's kept is written out again from
+// what was read: its text with "<" and ">" escaped, so every "<" that goes out starts a tag made here.
+// (a tag cut short by another "<", or by the end, is left out, as a browser leaves out one the end cuts short; and no
+// reading runs back over the string)
+const TOKEN = /<!--[\s\S]*?(?:--!?>|$)|<![^>]*>?|<\?[^>]*>?|<(\/?)([a-zA-Z][^\s\/><]*)((?:[^><"']|"[^"]*"|'[^']*')*)>|<\/?[a-zA-Z][^<>]*(?=<|$)/g;
+// (the elements dropped with all inside them: until their end tag, or the end)
+const skipTo = (html, name, from) => {
+  const re = new RegExp(`</${name}(?=[\\s/>])[^>]*>`, "ig");
+  re.lastIndex = from;
+  const m = re.exec(html);
+  return m ? m.index + m[0].length : html.length;
+};
+// (an attribute kept only when it can't run anything: no on…= handlers, no javascript: or vbscript: address, however
+// it's spelt with entities, tabs or line breaks; no style that runs script)
+const ATTR = /([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+const NAME_OK = /^[a-zA-Z_:][-a-zA-Z0-9_:.]*$/;
+const urlish = (v) =>
+  v
+    .replace(/&#(x[0-9a-f]+|\d+);?/gi, (all, e) => {
+      const n = e[0].toLowerCase() === "x" ? parseInt(e.slice(1), 16) : parseInt(e, 10);
+      return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "";
+    })
+    .replace(/&(tab|newline);?/gi, "")
+    .replace(/&colon;?/gi, ":")
+    .replace(/[\u0000-\u0020\u007f-\u00a0]/g, "")
+    .toLowerCase();
+function attrsOut(raw) {
+  let out = "";
+  for (const m of String(raw || "").matchAll(ATTR)) {
+    const name = m[1];
+    if (!NAME_OK.test(name) || /^on/i.test(name)) continue;
+    const v = m[2] ?? m[3] ?? m[4];
+    if (v === undefined) {
+      out += ` ${name.toLowerCase()}`;
+      continue;
+    }
+    const u = urlish(v);
+    if (/^(java|vb|live)script:/.test(u) || /(java|vb)script:|expression\(|-moz-binding|behavior:/.test(name.toLowerCase() === "style" ? u : "")) continue;
+    out += ` ${name.toLowerCase()}="${v.replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}"`;
+  }
+  return out;
 }
 
-// (the inside of a message's <body>, without what could run or post anything: script, iframe, object, embed, form; and
-// without what belongs to its head)
+// Walks html: for each element in drop, skips it and all inside it; calls on(token) for everything else. Inside a
+// raw-text element kept (style), its text comes as { text, raw: true }.
+function walk(html, drop, on) {
+  const re = new RegExp(TOKEN.source, "g");
+  let at = 0;
+  while (at < html.length) {
+    re.lastIndex = at;
+    const m = re.exec(html);
+    if (!m) {
+      on({ text: html.slice(at) });
+      break;
+    }
+    if (m.index > at) on({ text: html.slice(at, m.index) });
+    at = m.index + m[0].length;
+    if (!m[2]) continue; // (a comment, a doctype, a processing instruction, a tag cut short: left out)
+    const name = m[2].toLowerCase();
+    const end = !!m[1];
+    if (!end && drop.has(name)) {
+      at = skipTo(html, name, at);
+      continue;
+    }
+    on({ name, end, attrs: m[3] });
+    if (!end && name === "style") {
+      const close = /<\/style(?=[\s/>])/gi;
+      close.lastIndex = at;
+      const to = close.exec(html)?.index ?? html.length;
+      on({ text: html.slice(at, to), raw: true });
+      at = to;
+    }
+  }
+}
+
+// (a message's words from its HTML, as the page's DOMParser reading made them: scripts, styles and the head left out, a
+// line for each break and each block's end)
+const TEXT_DROP = new Set(["script", "style", "head", "title"]);
+const BLOCK_END = new Set(["p", "div", "tr", "li", "h1", "h2", "h3", "h4", "blockquote"]);
+export function htmlToText(html) {
+  let s = "";
+  walk(String(html || ""), TEXT_DROP, (t) => {
+    if (t.text !== undefined) s += decode(t.text);
+    else if (!t.end && t.name === "br") s += "\n";
+    else if (t.end && BLOCK_END.has(t.name)) s += "\n";
+  });
+  return s.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// (the inside of a message's <body>, without what could run or post anything: script, iframe, object, embed, form,
+// on…= handlers and javascript: addresses; and without what belongs to its head. Every tag kept is written out again
+// from its name and the attributes kept, its text escaped.)
+const BODY_DROP = new Set(["script", "iframe", "object", "form", "title", "noscript", "head", "applet", "frameset", "noembed", "noframes", "template", "xmp", "plaintext"]);
+const TAG_DROP = new Set(["embed", "html", "body", "meta", "link", "base", "frame", "portal", "animate", "animatemotion", "animatetransform", "set", "param"]);
+const TAG_OK = /^[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)?$/;
 export function bodyInner(html) {
   let s = String(html || "");
   const body = /<body\b[^>]*>([\s\S]*?)(<\/body\s*>|$)/i.exec(s);
-  s = body ? body[1] : s.replace(/<head\b[\s\S]*?<\/head\s*>/gi, "");
-  return s
-    .replace(/<(script|iframe|object|form|title|noscript)\b[\s\S]*?<\/\1\s*>/gi, "")
-    .replace(/<\/?(script|iframe|object|embed|form|title|noscript|html|head|body|meta|link|base)\b[^>]*>/gi, "")
-    .replace(/<!doctype[^>]*>/gi, "");
+  if (body) s = body[1];
+  let out = "";
+  walk(s, BODY_DROP, (t) => {
+    if (t.text !== undefined) out += t.raw ? t.text.replace(/</g, "&lt;") : t.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    else if (TAG_DROP.has(t.name) || !TAG_OK.test(t.name)) return;
+    else out += t.end ? `</${t.name}>` : `<${t.name}${attrsOut(t.attrs)}>`;
+  });
+  return out;
 }
