@@ -9,7 +9,12 @@
 //                               sign-in page (data-auth), which comes back here, to /mail/#signin=<code>
 // - Back to Apps, in the bar: /#apps, the same.
 // - A notification tapped while this page is open: the root worker's { ifl: "open", url } (a path of this site's only),
-//   said heard, and gone to, as every page of the hub does (.tools/inflite/menu.js).
+//   said heard, and gone to, as every page of the hub does (.tools/inflite/menu.js), with this page as the breadcrumb
+//   (sessionStorage "ifl-crumb"), so the page it opens comes Back here. Not while the hub isn't serving the apps' pages
+//   (Today's word for the visit, sessionStorage "ifl-hub-ready" "0": this page is served all the same, the apps' aren't):
+//   then it's not heard, and the root worker opens it its own way (Today, which sends it to the app's own address).
+// - The Home Screen icon's badge: counted again by the root worker as this page opens and each time it's back in sight,
+//   as every page of the hub has it.
 // - The hub's cross-fade between pages: one that can't be done is let go quietly (no error said for it).
 (() => {
   "use strict";
@@ -35,6 +40,11 @@
   const signInAt = (ask) => `${AUTH}/#signin=mail&ask=${ask}&back=${encodeURIComponent(location.origin + "/mail/")}`;
   // (a path of this site's: starts /, not //, no \ and nothing unseen, no more than 200 characters)
   const ownPath = (p) => typeof p === "string" && p.length <= 200 && /^\/(?!\/)/.test(p) && !/[\\\u0000-\u001f\u007f]/.test(p);
+  const store = () => { try { return sessionStorage; } catch (_) { return null; } };
+  // (another page than this one: what a notification opens, for which this page is the breadcrumb)
+  const leaving = (p) => { try { return new URL(p, location.origin).pathname !== location.pathname; } catch (_) { return false; } };
+  // (the hub not serving the apps' pages this visit, as Today found: /api/hub, kept in this tab by Today's page)
+  const notReady = () => { try { return store()?.getItem("ifl-hub-ready") === "0"; } catch (_) { return false; } };
 
   function back() {
     location.assign(APPS);
@@ -66,13 +76,20 @@
   }
 
   // (a notification tapped while this page is open: the root worker's word, to a path of this site's only. Said heard,
-  // on the port the worker gave, so it doesn't open it some other way too)
+  // on the port the worker gave, so it doesn't open it some other way too; this page the breadcrumb for the one it opens.
+  // With the hub not serving the apps' pages, not heard: the worker, hearing nothing, opens it its own way)
   navigator.serviceWorker?.addEventListener?.("message", (e) => {
     const d = e.data;
-    if (!d || d.ifl !== "open" || !ownPath(d.url)) return;
+    if (!d || d.ifl !== "open" || !ownPath(d.url) || notReady()) return;
     try { e.ports?.[0]?.postMessage({ ifl: "opened" }); } catch (_) {}
+    if (leaving(d.url)) try { store()?.setItem("ifl-crumb", location.pathname); } catch (_) {}
     location.assign(d.url);
   });
+  // (the Home Screen icon's badge, as many notifications as are still showing: counted again by the root worker as this
+  // page opens and each time it's back in sight)
+  const recount = () => { try { navigator.serviceWorker?.getRegistration?.("/")?.then?.((r) => r?.active?.postMessage({ ifl: "badge" }), () => {}); } catch (_) {} };
+  recount();
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") recount(); });
   // (the cross-fade into this page and out of it: its promises caught, so one that can't be done says nothing)
   const vt = (e) => { const t = e.viewTransition; if (!t) return; for (const k of ["ready", "finished", "updateCallbackDone"]) t[k]?.catch?.(() => {}); };
   addEventListener("pageswap", vt);
