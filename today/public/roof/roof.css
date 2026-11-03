@@ -285,8 +285,11 @@ a.ifl-tile:active, .ifl-tile-main:active { transform: scale(0.97); }
 ::view-transition-group(ifl-hd), ::view-transition-group(ifl-tabs) { animation: none; }
 /* (the header's title and line change with the page: the old words gone quickly before the new come in, so the two
    never show over each other; its band and buttons stay put) */
-::view-transition-old(ifl-hd) { animation: 0.12s ease-out both ifl-fade-out; mix-blend-mode: normal; }
-::view-transition-new(ifl-hd) { animation: 0.22s ease-in 0.08s both ifl-fade-in; mix-blend-mode: normal; }
+::view-transition-old(ifl-hd) { animation: none; opacity: 0; }
+::view-transition-new(ifl-hd) { animation: 0.2s ease-out both ifl-fade-in; mix-blend-mode: normal; }
+/* (the group never morphs between a compact header and a full one: it takes the new one's place at once) */
+::view-transition-group(ifl-hd) { animation: none; overflow: clip; }
+::view-transition-image-pair(ifl-hd) { isolation: auto; }
 /* (iOS-style: a push slides the new page in over the old from the edge, the old drifting back a third and dimming; a
    pop the reverse; a tab cross-fades with a slight settle and blur; a section glides; a zoom springs. The header and the
    tab bar stay where they are, as a navigation bar does) */
