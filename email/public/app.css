@@ -1143,9 +1143,15 @@ body.sheet-open.phone #app::after {
   font-size: 20px;
   letter-spacing: -0.3px;
 }
+
 .pane.list .subtitle {
   padding-left: calc(12px + var(--sal) + 42px + 12px);
   font-size: 15px;
+}
+/* In InFlite's window (html.embed: Mail framed by the hub's /mail/ page), nothing in your photo's place (the hub's bar has
+   Back to Apps over Mail): the line under the lens's name lined up with the name, at the bar's edge */
+html.embed .pane.list .subtitle {
+  padding-left: calc(12px + var(--sal) + 4px);
 }
 
 /* People | Updates: a glass switch, its thumb sliding on the soft spring */

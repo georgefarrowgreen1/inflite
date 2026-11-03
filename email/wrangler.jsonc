@@ -4,12 +4,13 @@
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
 
-  // Serves the web app from ./public; only /api/* runs the Worker.
+  // Serves the web app from ./public; /api/* runs the Worker, and so does Mail's page (/ and /index.html), whose
+  // Content-Security-Policy the Worker puts in place of public/_headers' one, with frame-ancestors HUB_ORIGIN (below).
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/", "/index.html"]
   },
 
   "routes": [{ "pattern": "email.inflite.ai", "custom_domain": true }],
@@ -21,11 +22,14 @@
   // Cloudflare Email Service (Email Sending).
   "send_email": [{ "name": "EMAIL" }],
 
-  // Signing in is the inflite account's; sent mail goes out under the account's name.
+  // Signing in is the inflite account's; sent mail goes out under the account's name. HUB_ORIGIN: InFlite's window and
+  // its staging hub (a space between them), whose /mail/ pages are the only pages that may frame Mail (Today First; the
+  // root Worker's today/src/mailhost.js; the staging hub at next.inflite.ai is the root Worker's [env.next]).
   "vars": {
     "DOMAIN": "inflite.ai",
     "DEFAULT_FROM": "hello@inflite.ai",
-    "ACCOUNT_ORIGIN": "https://account.inflite.ai"
+    "ACCOUNT_ORIGIN": "https://account.inflite.ai",
+    "HUB_ORIGIN": "https://inflite.ai https://next.inflite.ai"
   },
 
   "triggers": { "crons": ["*/5 * * * *"] },
