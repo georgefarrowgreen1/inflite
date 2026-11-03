@@ -5,8 +5,9 @@
 //   (also taken: snippet, the quoted message's, when the store doesn't hold its Meta). With only a draftId, the draft is
 //   asked for (api.draft): its fields, its quote as { of, mode }, or quoteOld (started in Mail on its own: its quoted
 //   text is added only when it's sent there; Send asks "Send Without the Quoted Text?" first, Q14).
-// Send (data-act=send): the addresses checked, then the sheet closed and ctx.outbox.send(draft, files, onProgress): save,
-//   then send after the undo window (S4-D18, MM's outbox). Offline with files: the sheet stays, "Files need a connection.
+// Send (data-act=send): the addresses checked, then ctx.outbox.send(draft, files, onProgress) (MM's outbox: save, then
+//   send after the undo window, S4-D18) with the sheet up showing the upload's progress; closed once the outbox has it,
+//   kept open with its words on { ok: false }. Offline with files: the sheet stays, "Files need a connection.
 //   Try Again"; over Mail's 256 KB on this phone: it stays, "Couldn’t keep this on your phone. Try Again when you’re
 //   online" (RI8).
 // Closing never asks (S4-D18): a changed compose closed any way but Send or Delete Draft has its words written to
@@ -53,7 +54,7 @@ export function openCompose(ctx, init = {}) {
   };
   const loading = !!c.draftId && !init.to && !init.subject && !init.text;
   if (!c.draftId && !c.text) { const s = sigFor(c.from); if (s) c.text = `\n\n${s}`; }
-  let snap = JSON.stringify([fieldsOf(c), c.files.length]), ended = null, keepT = 0, h = null;
+  let snap = JSON.stringify([fieldsOf(c), c.files.length]), ended = null, keepT = 0, h = null, sending = false;
   const dirty = () => JSON.stringify([fieldsOf(c), c.files.length]) !== snap;
   const EMAIL_RE = logic.EMAIL_RE || /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -161,7 +162,8 @@ export function openCompose(ctx, init = {}) {
     ui.btn("Add Files", { small: true, act: "files", run: () => pick.click() }),
     moreBtn);
   moreBtn.replaceChildren(ctx.icon("more"));
-  const body = el("div", { class: "mc" }, el("div", { class: "mc-head" }, tokens("to", "To"), from), sugg, ccRow, subject, text, filesEl, quoteEl, tools, more, pick);
+  const prog = el("p", { class: "mc-prog", "aria-live": "polite" });
+  const body = el("div", { class: "mc" }, el("div", { class: "mc-head" }, tokens("to", "To"), from), sugg, ccRow, subject, text, filesEl, quoteEl, tools, more, prog, pick);
   drawFiles(); drawQuote();
   ccRow.after(sugg);
 
@@ -202,6 +204,7 @@ export function openCompose(ctx, init = {}) {
   }
 
   async function send() {
+    if (sending) return;
     for (const k of LISTS) fields[k].commit();
     const all = LISTS.flatMap((k) => c[k]), bad = all.find((p) => !EMAIL_RE.test(p.email));
     if (!all.length || bad) return fw.toast(bad ? `“${bad.email}” isn’t a valid address` : "Add a recipient");
@@ -211,9 +214,20 @@ export function openCompose(ctx, init = {}) {
     if (offline && c.files.length) return fw.toast("Files need a connection. Try Again");
     const f = fieldsOf(c);
     if (offline && !fits(f)) return fw.toast("Couldn’t keep this on your phone. Try Again when you’re online");
+    // (saved first, the sheet up meanwhile with the upload's progress; closed once the outbox has it, S4-D18)
+    sending = true;
+    h.setBusy(true);
+    let r = null;
+    try { r = await ctx.outbox.send(f, c.files.slice(), (x) => { prog.textContent = `Sending… ${Math.round(x * 100)}%`; }); }
+    catch (e) { r = { ok: false, error: e?.message }; }
+    sending = false;
+    prog.textContent = "";
+    if (h.closed) return r;
+    h.setBusy(false);
+    if (!r?.ok) { fw.toast(r?.error || "Couldn’t send. Try Again"); return r; }
     ctx.outbox.dropUnsent();
     end("send");
-    return ctx.outbox.send(f, c.files.slice(), init.onProgress);
+    return r;
   }
 
   h = fw.sheet.open({

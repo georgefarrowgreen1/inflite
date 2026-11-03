@@ -68,3 +68,5 @@
 .ifl-sheet[data-app=mail] .mv-count { align-self: center; color: var(--text-2); font-size: 13px; }
 .ifl-sheet[data-app=mail] .mv .ifl-empty { color: #fff; }
 @media (prefers-reduced-motion: reduce) { .ifl-sheet[data-app=mail] .mv-track, .ifl-sheet[data-app=mail] .mv-img { transition: none; } }
+.ifl-sheet[data-app=mail] .mc-prog { margin: 4px 2px 0; color: var(--text-2); font-size: 13px; }
+.ifl-sheet[data-app=mail] .mc-prog:empty { display: none; }
