@@ -1331,7 +1331,9 @@ function frame() {
     root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
     session: () => ({ view: S.view, hub: S.hub, roof: S.roof, apps: S.apps, links: S.links || DEFAULT_LINKS }),
     lost: () => signedOutNow(true), checkSession, hubAgain: () => hubAgain(30e3), save, changed: () => { cardsStale = true; },
-    retired: retiredSoon(), serviceState,
+    // (a thenable, read when the frame first asks for a service: so a worker let go of after the frame's made (the hub's
+    // answer late) is waited for too)
+    retired: { then: (ok, no) => retiredSoon().then(ok, no) }, serviceState,
     onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
     today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you,
   });

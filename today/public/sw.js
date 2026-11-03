@@ -104,8 +104,9 @@ async function roofDoc(e) {
 // for a build older than one kept already.
 const KEEP_APPS = MOD_APPS, KEEP_MAX = 60;
 // (the files that are only ever the network's, never kept nor preloaded: s24 §8's NET, as roofcontract has it. Weather's
-// radar stack and rain files, Fitness's maps, share card, file formats and reader; and anyone's vendor/, above)
-const NET = { weather: /^\/weather\/(radar|radarmix|mapstyle|mapgl|mapleaf|rainmap|radarrain)\.js$/, fitness: /^\/fitness\/(map|mapstyle|share|formats|fit|reader)\.js$/ };
+// radar stack and rain files, Fitness's maps, share card, file formats and reader; Chats' flight sheets, QR scan and
+// their geodata and decoder, and crypto.js's Argon2; and anyone's vendor/, above)
+const NET = { weather: /^\/weather\/(radar|radarmix|mapstyle|mapgl|mapleaf|rainmap|radarrain)\.js$/, fitness: /^\/fitness\/(map|mapstyle|share|formats|fit|reader)\.js$/, chats: /^\/chats\/(roof\/flight|roof\/scan|moon|space|land|placegrid|places|countries|shapes|jsqr|argon2|argon2w)\.js$/ };
 const keeping = new Map(), keepQueue = new Map();
 function keepList(d) {
   if (!d || !KEEP_APPS.includes(d.app) || typeof d.build !== "string" || !/^\d+\.\d{2}$/.test(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
