@@ -9,7 +9,7 @@
 //   shows the Apps provider's entries (every app and its sections). The query never leaves the page: no request, no
 //   URL, no history.state, no storage, no log; nothing is remembered past the sheet.
 // collect(providers, q, update(groups, settled), { slow }) → Promise: the merging, ordered by order then id, each group
-//   at most 8 entries; update is called once the quick ones are in (or slow ms passed) and again as each late one arrives.
+//   at most 8 entries (all of them on an empty field, where only Apps answers); update is called once the quick ones are in (or slow ms passed) and again as each late one arrives.
 import { REGISTRY } from "./router.js";
 
 const SLOW = 300, MAX = 8;
@@ -19,7 +19,7 @@ export function collect(providers, q, update, { slow = SLOW } = {}) {
   let shown = false, left = ps.length;
   const groups = () => ps.filter((p) => got.get(p)?.length).map((p) => ({ id: p.id, group: p.group, entries: got.get(p) }));
   const fire = () => { shown = true; update(groups(), left === 0); };
-  const clean = (r) => (Array.isArray(r) ? r.filter((e) => e && typeof e.title === "string" && (e.href || typeof e.run === "function")).slice(0, MAX) : []);
+  const clean = (r) => (Array.isArray(r) ? r.filter((e) => e && typeof e.title === "string" && (e.href || typeof e.run === "function")).slice(0, q ? MAX : undefined) : []);
   return new Promise((done) => {
     if (!ps.length) { fire(); return done(); }
     const t = setTimeout(() => { if (!shown) fire(); }, slow);
@@ -38,28 +38,13 @@ export function collect(providers, q, update, { slow = SLOW } = {}) {
 
 // the Apps provider: every module (REGISTRY) and app (connectors.js STATIC) with its sections
 function appsProvider() {
-  let stat = null;
-  const load = () => (stat ||= import("./connectors.js").then((c) => c.STATIC, () => ({})));
-  const entries = (S) => {
-    const out = [];
-    for (const R of Object.values(REGISTRY)) {
-      out.push({ title: R.name, sub: "Open", icon: R.app, href: R.path });
-      R.sections.forEach(([id, l], i) => { if (i) out.push({ title: `${R.name} · ${l}`, sub: R.name, icon: R.app, href: `${R.path}#${id}` }); });
-    }
-    for (const c of Object.values(S || {})) {
-      out.push({ title: c.name, sub: "Open", icon: c.icon || c.app, href: c.href });
-      for (const [l, href] of c.links || []) out.push({ title: `${c.name} · ${l}`, sub: c.name, icon: c.icon || c.app, href });
-    }
-    return out;
-  };
+  let all = null;
+  const load = () => (all ||= import("./connectors.js").then((c) => c.STATIC, () => ({})).then((S) =>
+    [...Object.values(REGISTRY).map((R) => ({ name: R.name, icon: R.app, href: R.path, links: R.sections.slice(1).map(([id, l]) => [l, R.path + "#" + id]) })), ...Object.values(S)]
+      .flatMap((c) => [{ title: c.name, sub: "Open", icon: c.icon, href: c.href }, ...(c.links || []).map(([l, href]) => ({ title: `${c.name} · ${l}`, sub: c.name, icon: c.icon, href }))])));
   return {
     id: "apps", group: "Apps", order: 10,
-    search(q) {
-      return load().then((S) => {
-        const all = entries(S), s = q.trim().toLowerCase();
-        return s ? all.filter((e) => e.title.toLowerCase().includes(s)).slice(0, MAX) : all.filter((e) => e.sub === "Open");
-      });
-    },
+    search: (q) => load().then((a) => { const s = q.trim().toLowerCase(); return s ? a.filter((e) => e.title.toLowerCase().includes(s)) : a; }),
   };
 }
 

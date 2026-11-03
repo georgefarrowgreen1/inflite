@@ -24,7 +24,9 @@
 //   sw(checked, onChange(bool), { label }) → label.ifl-switch around input[type=checkbox][role=switch]
 //   field({ type, value, placeholder, label, onInput(value), onEnter(value) }) → .ifl-field with its <input> (.input)
 //   tile({ app, name, line, href, mini: Node|null, chips: [{ text, href }] }) → a.ifl-tile[data-app] (a div with chips)
-//   mini(m) → Element for a Mini: { kind: "num-bars", num, bars, label } | { kind: "pct-spark", pct } (a percentage only, never amounts) | { kind: "num", num, label }
+//   mini(m) → Element for a Mini: { kind: "num-bars", num, bars, label } | { kind: "pct-spark", pct, spark? } (a percentage
+//     only, never amounts; spark: the day's shape as 0…1 values, drawn as an aria-hidden area
+//     clipped by --pts, never with a figure) | { kind: "num", num, label }
 //   avatar(name, { photo }) → .ifl-avatar.av-c1…8
 //   badge(n, { label }) → .ifl-badge
 //   empty({ title, body, acts }) → .ifl-empty;  error({ title, body, acts: [{ label, act, run, primary }] }) → .ifl-error
@@ -192,6 +194,12 @@ export function mini(m) {
   if (m.kind === "pct-spark") {
     const p = Number(m.pct);
     if (Number.isFinite(p)) { box.append(el("b", { class: "num", text: `${p > 0 ? "+" : ""}${p.toFixed(1)}%` })); box.dataset.tone = p >= 0 ? "pos" : "neg"; }
+    const s = m.spark, n = s?.length - 1;
+    if (n > 0) {
+      const i = el("i", { class: "spark", "aria-hidden": "true" });
+      i.style.setProperty("--pts", `0 100%,${s.map((v, j) => `${j * 100 / n}% ${100 - 100 * (+v || 0)}%`)},100% 100%`);
+      box.append(i);
+    }
   }
   if (m.label) box.append(el("small", { text: m.label }));
   return box;

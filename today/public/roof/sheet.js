@@ -89,7 +89,7 @@ export function createSheets(F) {
     // Tab and Shift-Tab go round the sheet, never out of it to the browser's own bar
     function trap(e) {
       if (e.key !== "Tab") return;
-      const f = [...d.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter((x) => x.getClientRects().length && !x.closest("[hidden]"));
+      const f = [...d.querySelectorAll('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.getClientRects().length && !x.closest("[hidden]"));
       if (!f.length) return;
       const i = f.indexOf(document.activeElement);
       if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }

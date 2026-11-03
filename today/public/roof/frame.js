@@ -79,14 +79,11 @@ export function createFrame(opts = {}) {
   const ys = new Map(), backTo = new Map();
   let depth = 0, key = "", routes = [], stale = false, gone = false, shown = null, lastRoof = roofOn(), placesOff = null;
 
-  const stamp = () => {
-    const s = H.state && typeof H.state === "object" ? H.state : {};
-    T(() => H.replaceState({ ...s, ifl: { d: depth, k: key } }, "", L.href));
-  };
+  const put = (p, push, s) => T(() => H[push ? "pushState" : "replaceState"]({ ...s, ifl: { d: depth, k: key } }, "", p));
+  const stamp = () => put(L.href, 0, typeof H.state == "object" && H.state);
   const st0 = H.state?.ifl;
   if (st0 && Number.isInteger(st0.d)) { depth = st0.d; key = String(st0.k || newKey()); } else { key = newKey(); stamp(); }
-  T(() => { H.scrollRestoration = "manual"; });
-  const put = (p, push) => T(() => H[push ? "pushState" : "replaceState"]({ ifl: { d: depth, k: key } }, "", p));
+  H.scrollRestoration = "manual";
   const curDepth = () => (Number.isInteger(H.state?.ifl?.d) ? H.state.ifl.d : depth);
   const here = () => parse(L.href, { roof: roofOn() }) || TODAY;
 
@@ -133,7 +130,8 @@ export function createFrame(opts = {}) {
       placesOff?.(); placesOff = null;
       if (inApp) {
         ss("ifl-roof-bounce", "1");
-        L.replace(L.pathname + L.hash);
+        put(L.pathname + L.hash);
+        L.reload();
       }
     },
     forModule: (app) => modOf(app).fw,
@@ -145,6 +143,9 @@ export function createFrame(opts = {}) {
       for (const f of offs.splice(0)) f();
       F.header.destroy?.(); F.tabs.destroy?.();
       gone = true;
+      html.classList.remove("ifl-fill");
+      html.dataset.app = "inflite";
+      delete html.dataset.route; delete html.dataset.vt;
       if (opts.root) opts.root.hidden = true;
       emit("signedout");
     },
@@ -157,7 +158,7 @@ export function createFrame(opts = {}) {
       F.sheet.closeAll();
       const u = T(() => new URL(String(path), L.href));
       if (!u) return;
-      if (u.origin !== L.origin) return L.assign(u.href);
+      if (u.origin !== L.origin) return /^https?:$/.test(u.protocol) && L.assign(u.href);
       const p = u.pathname + u.search + u.hash;
       const r = parse(p, { roof: roofOn() });
       if (!r) return L.assign(globalThis.IFL?.hub?.go ? globalThis.IFL.hub.go(p) : p);
@@ -166,6 +167,7 @@ export function createFrame(opts = {}) {
       const zoom = o.zoomFrom && r.kind === "app" && !reduced() ? o.zoomFrom : null;
       const kind = o.kind || (zoom ? "zoom" : r.kind === "tab" && cur?.kind === "tab" ? "tab" : "push");
       leaveEntry();
+      F.restamp();
       if (!o.replace) { depth++; key = newKey(); routes.length = depth; }
       put(p, !o.replace);
       routes[depth] = r;
@@ -179,8 +181,8 @@ export function createFrame(opts = {}) {
       F.nav.go("/#apps", { replace: true, kind: "pop" });
     },
     section(app, id, { arg = null } = {}) {
-      const m = mods[app], r0 = F.route;
-      if (!m || shown?.id !== "m:" + app || !REGISTRY[app].sections.some((s) => s[0] === id)) return;
+      const m = mods[app], r0 = F.route, ids = REGISTRY[app]?.sections.map((s) => s[0]);
+      if (!m || shown?.id !== "m:" + app || !ids.includes(id)) return;
       if (r0.section === id && !arg && r0.key === id) return;
       F.sheet.closeAll();
       ys.set(`${key}:${r0.section}`, scrollY);
@@ -188,7 +190,6 @@ export function createFrame(opts = {}) {
       const r = parse(p, { roof: true });
       put(p);
       routes[depth] = r;
-      const ids = REGISTRY[app].sections.map((s) => s[0]);
       html.dataset.dir = ids.indexOf(id) < ids.indexOf(r0.section) ? "back" : "fwd";
       const y = ys.get(`${key}:${id}`) || 0;
       F.route = r; shown.route = r;
@@ -198,7 +199,8 @@ export function createFrame(opts = {}) {
         F.header.set(appHead(r));
         m.root.setAttribute("aria-labelledby", `ifl-sec-${id}`);
         scrollTo(0, y);
-        Promise.resolve(m.instance?.show(r, null)).then(() => { if (F.route === r && y) scrollTo(0, y); }, (e) => console.error(e));
+        const sh = () => F.route === r && m.instance?.show(r, null);
+        Promise.resolve(m.instance ? sh() : m.loading?.then(sh)).then(() => { if (F.route === r && y) scrollTo(0, y); }, (e) => console.error(e));
         return m.el;
       });
       emit("route", r);
@@ -222,9 +224,8 @@ export function createFrame(opts = {}) {
     const R = REGISTRY[r.app], h = mods[r.app]?.header || {}, d = curDepth();
     const to = d > 0 ? labelOf(routes[d - 1]) : "Apps";
     return {
-      back: { label: to ? `Back to ${to}` : "Back" }, crumb: { text: R.name, app: r.app },
-      title: h.title ?? R.name, compactTitle: h.compactTitle, pick: h.pick || null, line: h.line ?? "", acts: h.acts || [],
-      sections: R.sections, section: r.section, badges: h.badges, onSection: (id) => F.nav.section(r.app, id),
+      ...h, back: { label: to ? `Back to ${to}` : "Back" }, crumb: { text: R.name, app: r.app }, title: h.title ?? R.name,
+      sections: R.sections, section: r.section, onSection: (id) => F.nav.section(r.app, id),
     };
   }
   // what the tapped card says, for the module's first paint (§2.3): { sky, temp, place }
@@ -239,7 +240,10 @@ export function createFrame(opts = {}) {
     r ||= TODAY;
     const id = idOf(r), prev = shown, same = prev?.id === id;
     if (r.kind === "app" && stale && prev && !same) return reloadStale();
-    const pop = o.kind === "pop";
+    const pop = o.kind === "pop", k = key;
+    F.route = r;
+    shown = { id, route: r };
+    html.dataset.route = format(r);
     const change = () => {
       if (prev && !same) {
         if (prev.id.startsWith("m:")) mods[prev.id.slice(2)]?.instance?.hide?.();
@@ -247,17 +251,14 @@ export function createFrame(opts = {}) {
       }
       for (const [k, s] of Object.entries(screens)) if (s.el && k !== id) { s.el.hidden = true; s.el.inert = true; }
       for (const [k, m] of Object.entries(mods)) if ("m:" + k !== id) { m.el.hidden = true; m.el.inert = true; }
-      F.route = r;
-      shown = { id, route: r };
       if (!same || r.kind !== "app" || prev.route.section !== r.section) html.classList.remove("ifl-fill");
       html.dataset.app = r.kind === "app" ? r.app : "inflite";
-      html.dataset.route = format(r);
       F.tabs.set(r.kind === "app" ? "apps" : r.tab);
       const el = r.kind === "app" ? showApp(r, o) : showTab(r);
-      const y = pop ? ys.get(r.kind === "app" ? `${key}:${r.section}` : key) ?? ys.get(key) ?? 0 : o.y || 0;
+      const y = pop ? ys.get(r.kind === "app" ? `${k}:${r.section}` : k) ?? ys.get(k) ?? 0 : o.y || 0;
       if (!o.first) scrollTo(0, y);
       if (!o.first && !same) {
-        const f = pop ? backTo.get(key) : null;
+        const f = pop ? backTo.get(k) : null;
         (f?.isConnected && !f.closest("[hidden]") ? f : doc.querySelector("#hd h1.ifh-name"))?.focus?.({ preventScroll: true });
       }
       return el;
@@ -396,7 +397,7 @@ export function createFrame(opts = {}) {
       stale: () => stale,
     };
   }
-  const themeNow = () => html.dataset.theme === "light" || html.dataset.theme === "dark" ? html.dataset.theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  const themeNow = () => /^(light|dark)$/.test(html.dataset.theme) ? html.dataset.theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   // the Places search provider, while hub and roof are on and no module has its own (§3.10)
   function places() {
     if (gone || placesOff || !roofOn() || Object.values(mods).some((m) => m.provs.length)) return;

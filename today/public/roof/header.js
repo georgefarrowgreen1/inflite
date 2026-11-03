@@ -20,7 +20,9 @@ export function createHeader(host, F, { me, onMe } = {}) {
   const hd = IFL.header({ me: "", title: "", line: "", acts: [], cls: "ifl-hd" });
   const $ = (s) => hd.querySelector(s);
   const meB = $(".ifh-me"), tBox = $(".ifh-t"), h1 = $("h1.ifh-name"), line = $(".ifh-line"), acts = $(".ifh-acts");
-  if (me) { const m = me(); if (m) { meB.replaceChildren(m); meB.classList.remove("out"); meB.setAttribute("aria-label", "You and your apps"); } }
+  const m = me?.();
+  if (m) meB.replaceChildren(m);
+  if (onMe) { meB.classList.remove("out"); meB.setAttribute("aria-label", "You and your apps"); meB.setAttribute("aria-haspopup", "dialog"); }
   meB.addEventListener("click", (e) => onMe?.(e.currentTarget));
   const back = el("button", { class: "ifl-back", type: "button", "aria-label": "Back", hidden: true }, icon("back"));
   back.addEventListener("click", () => F?.nav?.back());
@@ -66,11 +68,9 @@ export function createHeader(host, F, { me, onMe } = {}) {
 
   function title(t, c) {
     full.textContent = (small && c) || t || "";
-    hd.classList.toggle("has-short", !!c && c !== t);
     const box = cur.pick ? pick : plain;
-    if (!cur.pick) plain.replaceChildren(full);
-    else if (full.parentNode !== pick) pick.prepend(full);
-    if (h1.firstChild !== box || h1.childNodes.length !== 1) h1.replaceChildren(box);
+    if (full.parentNode !== box) box.prepend(full);
+    if (h1.firstChild !== box) h1.replaceChildren(box);
     if (cur.pick) pick.setAttribute("aria-label", cur.pick.label || "Choose");
     h1.setAttribute("aria-label", t || "");
   }

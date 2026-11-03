@@ -2,8 +2,8 @@
 // app opened, or the idle preload).
 // loadModule(app, F) → Promise<{ m, instance }>: asks /api/hub again through app.js first (F.hubAgain, D14) and refuses
 //   unless F.session.hub && F.session.roof; import(REGISTRY[app].entry) within 12 s; m.CONTRACT === 1; each of
-//   REGISTRY[app].css linked and awaited (5 s at most); IFL.built(app, m.BUILD, m.NEWS) once; instance = await
-//   m.mount(root, F.forModule(app)); then watchVersion and keepOffline. On a failure the screen shows ui.error: Try Again
+//   REGISTRY[app].css linked and awaited (5 s at most; at once if already in); instance = await
+//   m.mount(root, F.forModule(app)); IFL.built(app, m.BUILD, m.NEWS) once it's in; then watchVersion and keepOffline. On a failure the screen shows ui.error: Try Again
 //   (data-act=retry: the entry asked for again, ?retry=<n>) and Open <App> on Its Own (data-act=own: the app's own
 //   address, same path, query and hash); after a second failure, Reload (data-act=reload), which is the real recovery
 //   (a failed dependency stays failed in the document's module map).
@@ -21,7 +21,7 @@ const abs = (p) => new URL(p, location.origin).pathname;
 
 function css(href) {
   let l = document.querySelector(`link[rel=stylesheet][href="${href}"]`);
-  if (l?.dataset.loaded) return Promise.resolve();
+  if (l?.dataset.loaded || l?.sheet) return Promise.resolve();
   if (!l) { l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; document.head.append(l); }
   return Promise.race([new Promise((ok) => { l.addEventListener("load", () => { l.dataset.loaded = "1"; ok(); }, { once: true }); l.addEventListener("error", ok, { once: true }); }), new Promise((ok) => setTimeout(ok, 5000))]);
 }
@@ -38,10 +38,10 @@ export async function loadModule(app, F) {
     const m = await Promise.race([import(n ? `${R.entry}?retry=${n}` : R.entry), wait(12e3, "the module")]);
     if (m?.CONTRACT !== 1 || typeof m.mount !== "function") throw new Error(`${app}: contract ${m?.CONTRACT} isn't 1`);
     await Promise.all(R.css.map(css));
-    if (!built[app]) { built[app] = 1; try { globalThis.IFL?.built?.(app, m.BUILD, m.NEWS); } catch (_) {} }
     root.replaceChildren();
     const instance = await m.mount(root, fw);
     if (!instance || typeof instance.show !== "function") throw new Error(`${app}: mount gave no instance`);
+    if (!built[app]) { built[app] = 1; try { globalThis.IFL?.built?.(app, m.BUILD, m.NEWS); } catch (_) {} }
     tries[app] = 0;
     watchVersion(app, m.BUILD, F);
     loadConnector(app).then((c) => keepOffline(app, m.BUILD, c.files || []), () => {});

@@ -12,10 +12,7 @@ export function createSend(F) {
   return {
     send,
     button(spec = {}) {
-      const ui = F?.ui;
-      if (!ui) return null;
-      const b = ui.btn("Send", { icon: "send", act: "send", label: `Send ${spec.what || "this"} to a friend`, run: () => send(typeof spec === "function" ? spec() : spec) });
-      return b;
+      return F.ui.btn("Send", { icon: "send", act: "send", label: `Send ${spec.what || "this"} to a friend`, run: () => send(typeof spec === "function" ? spec() : spec) });
     },
   };
 }

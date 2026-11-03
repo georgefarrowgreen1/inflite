@@ -1,16 +1,17 @@
 // InFlite's toast (One roof, spec §3.9): the shared block's look (.ifm-note.ifl-toast), above the tab bar, one at a time
 // (IFL's own toast, used by IFL.hub.sent, is let go first, so the two never stack), read out through the one aria-live
-// region the shared block keeps (.ifm-say). 3.6 s; with an action { label, run } 6 s or until it's tapped; the timer
-// waits while the toast is hovered or has the focus. Any action offered here is reachable elsewhere on the screen too
-// (WCAG 2.2.1). text always through textContent; app scopes the accent to the toast.
+// region the shared block keeps (.ifm-say), never a second one: the shared block (in app.js, a module, so it runs with
+// the body there) puts it in the page before anything can toast; a page without it gets the toast seen, not read out.
+// 3.6 s; with an action { label, run } 6 s or until it's tapped; the timer waits while the toast is hovered or has the
+// focus. Any action offered here is reachable elsewhere on the screen too (WCAG 2.2.1). text always through
+// textContent; app scopes the accent to the toast.
 // toast(text, { action: { label, run }, app }) → void
 let cur = null;
 export function toast(text, { action = null, app = null } = {}) {
   const d = document;
   cur?.gone();
   for (const t of d.querySelectorAll(".ifl-toast")) t.remove();
-  let say = d.querySelector(".ifm-say");
-  if (!say) { say = d.createElement("p"); say.className = "ifm-say"; say.setAttribute("role", "status"); say.setAttribute("aria-live", "polite"); d.body.append(say); }
+  const say = d.querySelector(".ifm-say") || {};
   const t = d.createElement("div"), tx = d.createElement("span"), b = d.createElement("b");
   t.className = "ifm-note ifl-toast" + (action ? " has-act" : "");
   if (app) t.dataset.app = app;
