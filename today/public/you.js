@@ -15,7 +15,7 @@
 //   device() → its name for the account, kept() → the endpoint this browser last handed the account (today:push),
 //   photo(user) → the account's picture (its initial under it), turnOn(), turnOff(), fanOut(), toMorning(),
 //   openAccount(open), signOut(), chatSettings(), canPush(), pushWhy(), openSheet(id), closeSheet(), BUILD,
-//   connectors() → the framework's connectors.js, connector(app) → its sheet for that app, icon(app) → its icon's address,
+//   frame (F), connectors() → the framework's connectors.js, connector(app) → its sheet for that app, icon(app) → its icon's address,
 //   go(path) → a screen of the framework's, href(app, section) → an app's address from here (IFL.hub.href)
 //   forgetYou() → nothing: what You last asked forgotten (signed out, or another account)
 //   goTo(root, ctx, id, drawn) → /#you=<id>: its section scrolled to (notify, apps, quiet, rules, phone, account,
@@ -45,7 +45,7 @@ async function sharesOf(ctx) {
   if (!m) return;
   const out = {};
   for (const [app] of CONNECTED) {
-    const c = await Promise.resolve(m.connectorOf(app)).catch(() => null);
+    const c = await Promise.resolve(m.connectorOf(app, ctx.frame)).catch(() => null);
     const s = c?.shares && typeof c.shares === "object" ? c.shares : null;
     out[app] = s ? WORDS.filter(([k]) => typeof s[k] === "string" && s[k]).map(([, w]) => w).join(" · ") : "";
   }

@@ -6,7 +6,7 @@
 // under them. Chats isn't here: it's a tab of its own. Where the hub can't serve the apps yet (IFL.hub.degraded), each
 // opens at its own address, as Today has always linked them.
 //   drawApps(root, ctx: { answer, view, hub, href(app, section), ui (the framework's builders), connectors() → the
-//   framework's connectors.js }) → nothing: the tiles drawn into root (#apps), their minis as each connector has them
+//   framework's connectors.js, frame: F (so Weather's connector is asked for only with hub and roof on) }) → nothing: the tiles drawn into root (#apps), their minis as each connector has them
 const TILES = [
   { app: "weather", name: "Weather", what: "A forecast that explains itself", chips: [["Radar", "radar"], ["Warnings", "warnings"]] },
   { app: "fitness", name: "Fitness", what: "Your training, a day at a time", chips: [["Today", "today"], ["Activities", "activities"], ["Progress", "progress"]] },
@@ -37,7 +37,7 @@ export function drawApps(root, ctx = {}) {
   // (each tile's mini, once its connector says it: the tile drawn again with it, unless it's being used)
   if (!answer || typeof ctx.connectors !== "function") return;
   ctx.connectors().then((m) => Promise.all(shown.map(async (t, i) => {
-    const mini = await Promise.resolve(m.miniOf(t.app, answer)).catch(() => null);
+    const mini = await Promise.resolve(m.miniOf(t.app, answer, ctx.frame)).catch(() => null);
     const was = tiles[i];
     if (!mini || n !== drawn || !was?.isConnected || was.contains(document.activeElement)) return;
     const node = ui.mini(mini), now = node && make(t, node);
