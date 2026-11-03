@@ -1,0 +1,71 @@
+/* Today's day (day.js, Today First): the top card of the phase it is, Waiting for You, Coming Up and The Rest of Today.
+   Built on app.css's own glass, rows, pills and colours (its tokens, light and dark), with nothing inline. */
+
+/* ---- the sections ---- */
+#top, #waiting, #coming, #rest { display: grid; min-width: 0; }
+#rest { gap: 14px; }
+#rest > .slabel, #waiting > .slabel, #coming > .slabel { margin-bottom: 0; }
+#waiting > .slabel, #coming > .slabel { margin-bottom: 8px; }
+#waiting > .group, #coming > .group { min-width: 0; }
+/* (the sections stand apart where the page lays them out, and in the four cards' own list before it does) */
+#cards > .day-sec + .day-sec:not([hidden]) { margin-top: 10px; }
+
+/* ---- the top card ---- */
+.day-top { --dt-ac: var(--c-inflite); gap: 12px; padding-top: 16px; }
+.day-top[data-kind="weather"] { --dt-ac: var(--c-weather); }
+.day-top[data-kind="ride"], .day-top[data-kind="done"] { --dt-ac: var(--c-fitness); }
+.day-top[data-kind="closed"] { --dt-ac: var(--c-account); }
+.dt-chip { justify-self: start; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--dt-ac) 22%, transparent); color: var(--text); font-size: 13.5px; font-weight: 650; overflow-wrap: anywhere; }
+.dt-chip svg { flex: none; width: 15px; height: 15px; }
+.dt-h { font-size: 24px; }
+.dt-lines { display: grid; gap: 4px; }
+.dt-lines .tc-p:first-child { color: var(--text); }
+.dt-stats { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
+.dt-stats > div { min-width: 0; padding: 9px 12px 10px; border-radius: 16px; background: var(--glass-ctl); }
+.dt-stats dt { font-size: 12px; font-weight: 500; color: var(--text-2); }
+.dt-stats dd { margin: 2px 0 0; font: 700 19px/1.15 var(--font-d); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.dt-stats .dt-up dd, .dt-stats .dt-good dd { color: var(--good-text); }
+.dt-stats .dt-down dd { color: var(--danger); }
+.dt-stats .dt-warn dd { color: var(--warn); }
+.dt-wrote { display: grid; gap: 6px; }
+.dt-said { margin: 0; padding: 10px 14px; border-radius: 16px; background: var(--glass-ctl); font-size: 15px; line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
+.dt-to { margin: 0; font-size: 13.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.day-top .tc-foot .pill svg { width: 16px; height: 16px; }
+.day-top .tc-foot a[data-do="open"] svg { order: 2; width: 14px; height: 14px; opacity: 0.75; }
+.dt-h:focus { outline: none; }
+
+/* ---- Waiting for You ---- */
+.dw-row { position: relative; }
+.dw-row + .dw-row::before { content: ""; position: absolute; top: 0; left: 72px; right: 0; height: 0.5px; background: var(--line); }
+.dw-main { align-items: center; }
+.dw-main .tx small { color: var(--text-2); }
+.dw-words { font-size: 15px; line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
+.dw-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 12px 72px; margin-top: -4px; }
+.dw-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px 0 11px; border-radius: 999px; background: var(--glass-ctl);
+  box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.2), 0 0 0 0.5px var(--line); color: var(--text); font: 600 14px/1 var(--font); text-decoration: none; }
+.dw-chip svg { width: 15px; height: 15px; }
+
+/* ---- Coming Up ---- */
+.dc-row { position: relative; display: flex; align-items: center; min-width: 0; }
+.dc-row + .dc-row::before { content: ""; position: absolute; top: 0; left: 72px; right: 0; height: 0.5px; background: var(--line); }
+.dc-main { flex: 1; min-width: 0; gap: 12px; -webkit-touch-callout: none; }
+.dc-row[data-sends] .dc-main { padding-right: 6px; }
+.dc-tm { flex: none; width: 46px; display: grid; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.dc-tm small { font-size: 12px; font-weight: 500; color: var(--text-2); }
+.dc-ic { flex: none; width: 32px; height: 32px; border-radius: 9px; }
+.dc-send { flex: none; display: grid; place-items: center; width: 44px; height: 44px; margin-right: 8px; border-radius: 50%; color: var(--tint-text); text-decoration: none; }
+.dc-send svg { width: 19px; height: 19px; }
+.dc-send:active { background: var(--press); }
+
+/* ---- what Chat's engine says, faded in as it comes (about a second after the day's drawn) ---- */
+.dw-words.in, .dt-said.in { animation: day-in 0.6s var(--ease-out) both; }
+@keyframes day-in { from { opacity: 0; transform: translateY(3px); } }
+
+/* ---- narrow screens ---- */
+@media (max-width: 360px) {
+  .dt-h { font-size: 21px; }
+  .dw-chips { padding-left: 18px; }
+  .dc-tm { width: 42px; font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .dw-words.in, .dt-said.in { animation: none; } }
