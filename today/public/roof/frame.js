@@ -103,7 +103,7 @@ export function createFrame(opts = {}) {
   // (one let go of before it's made is never made; its state heard only while it's still this app's one)
   const svc = (app) => {
     if (svcs[app]) return svcs[app];
-    if (!isOn(app) || !REGISTRY[app]?.service) return Promise.reject(new Error(`${app}: no service here`));
+    if (gone || !isOn(app) || !REGISTRY[app]?.service) return Promise.reject(new Error(`${app}: no service here`));
     const p = svcs[app] = Promise.resolve(opts.retired).catch(() => {}).then(() => (svcs[app] === p ? import("./modules.js") : Promise.reject(new Error("let go of")))).then((M) => M.loadService(app, F))
       .then((s) => { const st = (d) => { if (svcs[app] !== p) return; T(() => opts.serviceState?.(app, d?.state)); found(app, s, /^(ready|offline)$/.test(d?.state)); }; s.on?.("state", st); st(s); return s; }, (e) => { if (svcs[app] === p) delete svcs[app]; throw e; });
     return p;
@@ -296,7 +296,8 @@ export function createFrame(opts = {}) {
   const stays = (r, p) => r.kind === "app" && p?.kind === "app" && !!REGISTRY[r.app].stay?.some((k) => k === r.key || k === p.key) && (r.key !== p.key || r.arg !== p.arg);
   const shownMod = () => (shown?.id.startsWith("m:") ? mods[shown.id.slice(2)] : null);
   // (stage 3, S3-C4, S3-C7: a route whose key is one of its app's stay keys (a chat, a thread); an app's root that's a tab
-  // screen (REGISTRY tab: Chats), drawn as one; a tab screen, Today, Apps and You or such a root)
+  // screen (REGISTRY tab: Chats), drawn as one; a tab screen, Today, Apps and You or such a root. A tab app's stay route
+  // (a chat) gets no window scroll put back: it scrolls its own. Mail's thread keeps s24 C7's)
   const stayR = (r) => r?.kind === "app" && !!REGISTRY[r.app].stay?.includes(r.key);
   const tabRoot = (r) => r?.kind === "app" && !!REGISTRY[r.app].tab && !stayR(r);
   const isTab = (r) => r?.kind === "tab" || tabRoot(r);
@@ -346,7 +347,7 @@ export function createFrame(opts = {}) {
       html.dataset.app = r.kind === "app" ? r.app : "inflite";
       F.tabs.set(r.kind === "app" ? REGISTRY[r.app].tab || "apps" : r.tab);
       if (!same) F.tabs.away?.(false);
-      const y = stayR(r) ? 0 : pop ? ys.get(r.kind === "app" ? `${k}:${r.section}` : k) ?? ys.get(k) ?? 0 : o.y || 0;
+      const y = stayR(r) && REGISTRY[r.app].tab ? 0 : pop ? ys.get(r.kind === "app" ? `${k}:${r.section}` : k) ?? ys.get(k) ?? 0 : o.y || 0;
       if (pop && stays(r, prev?.route)) o.popY = y;
       const el = r.kind === "app" ? showApp(r, o) : showTab(r);
       if (!o.first) scrollTo(0, y);

@@ -941,10 +941,10 @@ function retireOld() {
   const go = Object.keys(appsSaid).filter((a) => appsSaid[a] && !retired.has(a));
   if (!go.length) return;
   for (const a of go) retired.add(a);
-  const p = navigator.serviceWorker.getRegistrations().then((rs) => Promise.all(rs.map((r) => {
+  const gone = navigator.serviceWorker.getRegistrations().then((rs) => Promise.all(rs.map((r) => {
     try { const p = new URL(r.scope).pathname; if (go.some((a) => p === REGISTRY[a].path)) return r.unregister().catch(() => {}); } catch {}
   })), () => {});
-  retiring = Promise.all([retiring, p]);
+  retiring = Promise.all([retiring, gone]);
 }
 const retiredSoon = () => Promise.race([retiring, new Promise((ok) => setTimeout(ok, 3000))]);
 // Chats in this page (stage 3, S3-D6, S3-D12): decided once, as the page boots (the hub ready and Chats on). On, Today's

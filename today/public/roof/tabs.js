@@ -69,7 +69,7 @@ export function createTabs(nav, F) {
   addEventListener("resize", place);
   document.fonts?.ready?.then(place, () => {});
   build();
-  const away = (v) => nav.classList.toggle("away", !!v);
+  const away = (v) => { nav.inert = nav.classList.toggle("away", !!v); };
   const badge = (t, n) => { if (!t) return; n = Math.max(0, Math.floor(Number(n)) || 0); if (counts[t] === n) return; counts[t] = n; set(current); };
   return { el: nav, set, away, badge, refresh: () => { build(); set(current); }, destroy() { nav.removeEventListener("click", click); removeEventListener("resize", place); } };
 }
