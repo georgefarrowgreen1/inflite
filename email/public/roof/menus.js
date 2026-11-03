@@ -33,7 +33,7 @@ export function openViews(ctx) {
   ];
   if (s.box !== "trash" && s.list.rows.some((t) => t.unread)) more.unshift(ui.row({ title: "Mark All as Read", run: () => { h?.close(); actions.markAllRead(); }, act: "readall" }));
   if (s.box === "trash") more.push(ui.row({ title: "Empty Trash", run: async () => { h?.close(); const n = c.trash || s.list.rows.length; if (await ctx.open.confirm({ title: "Empty Trash?", text: `${n === 1 ? "1 conversation" : `${n || "All"} conversations`} will be deleted. This can’t be undone.`, yes: "Empty Trash", danger: true })) actions.emptyTrash(); }, act: "empty" }));
-  if (s.box || s.address) more.unshift(ui.row({ title: `Back to ${logic.LENSES.find((l) => l.k === s.lens)?.label || "People"}`, run: go({ box: null, address: null }), act: "back" }));
+  if (s.box || s.address) more.unshift(ui.row({ title: `Back to ${logic.LENSES.find((l) => l.k === s.lens)?.label || "People"}`, run: go({ box: null, address: null, filter: "all" }), act: "back" }));
   groups.push(ui.list(more));
   groups.push(ui.list([ui.row({ lead: { icon: "gear" }, title: "Mail Settings", trail: "chevron", run: () => { h?.close(); ctx.open.settings(); }, act: "settings" })]));
   h = fw.sheet.open({ sheet: SHEETS.views, title: logic.viewTitle(s), body: ui.el("div", { class: "ml-sheet" }, groups) });

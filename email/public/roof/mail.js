@@ -116,7 +116,7 @@ export async function mount(root, fw) {
   function headOf(s, { lensOnly = false } = {}) {
     const write = { icon: "compose", label: "Write", run: () => ctx.open.compose({}) };
     const n = Number(s.counts?.people) || 0;
-    const badges = { people: n ? { n, say: `People, ${n} unread` } : 0 };
+    const badges = { people: n ? { n, say: `${n} unread` } : 0 };
     if (!lensOnly && s.layout === "phone" && s.threadId && route?.key === "thread") {
       const t = s.thread?.t || s.list.rows.find((r) => r.id === s.threadId);
       const subj = t?.subject || "Conversation";
