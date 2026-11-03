@@ -1,0 +1,15 @@
+<!doctype html>
+<!-- Mail's body shell (One roof stage 4, s4/spec §3.3, §3.4): one page for every message, framed only by the hub origins
+     switched on; the message id is in the hash. Mail's Worker serves it only at /body/ (email/src/body.js), writing
+     data-parents (the hub origins switched on) and ?v=<BUILD> on body.js and body.css. B0-b's empty shell; MB writes it. -->
+<html lang="en-GB" data-parents="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Message</title>
+<link rel="stylesheet" href="/body/body.css">
+<script src="/body/body.js" defer></script>
+</head>
+<body></body>
+</html>
