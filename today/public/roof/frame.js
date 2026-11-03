@@ -385,7 +385,9 @@ export function createFrame(opts = {}) {
       const z = k === "zoom" ? o.zoomFrom : null;
       z?.classList.add("ifl-vt-zoom");
       let t;
-      try { t = doc.startViewTransition(() => { z?.classList.remove("ifl-vt-zoom"); change(); }); } catch (_) { z?.classList.remove("ifl-vt-zoom"); delete html.dataset.vt; change(); return; }
+      // (a transition still running is finished at once first: two never stack, and a stuck one never holds the page)
+      try { transition.cur?.skipTransition?.(); } catch (_) {}
+      try { t = doc.startViewTransition(() => { z?.classList.remove("ifl-vt-zoom"); change(); }); transition.cur = t; setTimeout(() => { if (transition.cur === t) try { t.skipTransition(); } catch (_) {} }, 1500); } catch (_) { z?.classList.remove("ifl-vt-zoom"); delete html.dataset.vt; change(); return; }
       for (const p of ["ready", "updateCallbackDone"]) t[p]?.catch?.(() => {});
       t.finished.catch(() => {}).finally(() => { if (html.dataset.vt === k) delete html.dataset.vt; z?.classList.remove("ifl-vt-zoom"); doc.querySelector(".ifl-zoom-slot .ifl-vt-zoom")?.classList.remove("ifl-vt-zoom"); });
       return;
