@@ -112,14 +112,18 @@ export function createFrame(opts = {}) {
     L.reload();
   };
   // (a reload this page starts itself, once nothing is unsaved (C7): checked each second while it's busy, for up to
-  // `ms`; then at the next hidden, flushed first)
-  let later = 0;
+  // `ms`; then at each hidden, flushed first, until nothing is unsaved). One wait at a time: a new one replaces the old
+  let later = 0, atHidden = null;
+  const unwait = () => { clearInterval(later); atHidden?.(); atHidden = null; };
   const safely = (go, ms = 10e3) => {
-    clearInterval(later);
+    unwait();
     const t0 = Date.now(), tick = () => {
-      if (gone) return clearInterval(later);
-      if (!F.busy()) { clearInterval(later); return go(); }
-      if (Date.now() - t0 > ms) { clearInterval(later); const off = F.on("hidden", () => { off(); F.flush().then(() => !F.busy() && go()); }); }
+      if (gone) return unwait();
+      if (!F.busy()) { unwait(); return go(); }
+      if (Date.now() - t0 > ms && !atHidden) {
+        clearInterval(later);
+        const mine = atHidden = F.on("hidden", () => F.flush().then(() => { if (!gone && atHidden === mine && !F.busy()) { unwait(); go(); } }));
+      }
     };
     later = setInterval(tick, 1000);
     tick();
@@ -163,7 +167,11 @@ export function createFrame(opts = {}) {
       const shownApp = shownMod()?.app, bounce = off.includes(shownApp);
       for (const a of off) if (a !== shownApp) unmount(a);
       if (!bounce) return;
-      const go = () => { unmount(shownApp); ss("ifl-roof-bounce", "1"); put(L.pathname + L.hash); L.reload(); };
+      // (left for another screen while it saved: let go of it there, no bounce and no reload)
+      const go = () => {
+        if (shown?.id !== "m:" + shownApp) { T(() => mods[shownApp]?.instance?.flush?.()); return unmount(shownApp); }
+        unmount(shownApp); ss("ifl-roof-bounce", "1"); put(L.pathname + L.hash); L.reload();
+      };
       // (nothing unsaved: at once, as stage 1 did; else what's unsaved saved first, and the bounce once it's done)
       if (!F.busy()) { T(() => mods[shownApp]?.instance?.flush?.()); return go(); }
       F.flush().then(() => safely(go));
@@ -171,7 +179,7 @@ export function createFrame(opts = {}) {
     forModule: (app) => modOf(app).fw,
     destroy() {
       if (gone) return;
-      clearInterval(later);
+      unwait();
       for (const a of Object.keys(mods)) unmount(a);
       F.sheet.closeAll();
       for (const f of Object.values(provs)) f();
@@ -496,9 +504,14 @@ export function createFrame(opts = {}) {
   });
   on(globalThis, "popstate", (e) => {
     if (gone) return;
-    // (back or forward to a module that's been switched off since: the page as the server now has it, its hub page)
+    // (back or forward to a module that's been switched off since: Today drawn below, as stage 1 did; then, online, the
+    // page as the server now has it (its hub page), once what's unsaved is saved (C7; none if something couldn't be)
+    // and if still at that address)
     const any = parse(L.href, { roof: true });
-    if (any?.kind === "app" && !isOn(any.app)) return L.reload();
+    if (any?.kind === "app" && !isOn(any.app) && navigator.onLine !== false) {
+      const at = L.href;
+      F.flush().then((f) => !gone && !f.lost && L.href === at && safely(() => L.href === at && L.reload()));
+    }
     F.sheet.closeAll();
     leaveEntry();
     const st = H.state?.ifl, was = depth;
