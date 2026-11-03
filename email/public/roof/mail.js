@@ -292,9 +292,11 @@ export async function mount(root, fw) {
 
   return {
     show(r) {
-      route = r;
       const s0 = store.get();
       const thread = r?.key === "thread" && logic.idOk(r.arg) ? r.arg : null;
+      // (back from the phone's reader to the list, in Mail all along: the row that opened it, C7)
+      const from = onScreen && !thread && route?.key === "thread" && s0.layout === "phone" ? s0.threadId : null;
+      route = r;
       cold = !!thread && fw.nav.depth() === 0;
       // (the header first, before anything waits: no subject of the last thread left behind)
       onScreen = true;
@@ -324,6 +326,9 @@ export async function mount(root, fw) {
       drawState();
       list.draw();
       reader.draw();
+      // (the frame gives focus back as the pop is drawn, while the list is still hidden under the reader, so it lands on
+      // the header's title: given to the row here, once the list shows again)
+      if (from) listEl.querySelector(`.ml-row[data-thread="${CSS.escape(from)}"]`)?.focus({ preventScroll: true });
       if (doc.visibilityState === "visible") startPoll();
       if (!bootState.started) {
         bootState.started = start();

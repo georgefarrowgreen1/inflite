@@ -73,6 +73,7 @@ import { createSend } from "./send.js";
 
 export const CONTRACT = 1;
 const TABN = { today: "Today", apps: "Apps", you: "You" };
+const labelOf = (r) => (r?.kind === "app" ? REGISTRY[r.app]?.name : TABN[r?.tab]) || null;
 const TODAY = { kind: "tab", tab: "today", arg: null };
 const T = (f, d) => { try { return f(); } catch (_) { return d; } };
 const ss = (k, v) => T(() => sessionStorage.setItem(k, v));
@@ -96,7 +97,8 @@ export function createFrame(opts = {}) {
   const ys = new Map(), backTo = new Map();
   let depth = 0, key = "", routes = [], stale = false, gone = false, shown = null, lastApps = sess().apps, lazyAt = {}, fails = {};
 
-  const put = (p, push, s) => T(() => H[push ? "pushState" : "replaceState"]({ ...s, ifl: { d: depth, k: key } }, "", p));
+  // (b: the name of the entry before, so a reload there still says where Back goes, C6: kept by a replace)
+  const put = (p, push, s) => T(() => H[push ? "pushState" : "replaceState"]({ ...s, ifl: { d: depth, k: key, b: labelOf(routes[depth - 1]) || (!push && H.state?.ifl?.k === key && H.state.ifl.b) || null } }, "", p));
   const stamp = () => put(L.href, 0, typeof H.state == "object" && H.state);
   const st0 = H.state?.ifl;
   if (st0 && Number.isInteger(st0.d)) { depth = st0.d; key = String(st0.k || newKey()); } else { key = newKey(); stamp(); }
@@ -264,7 +266,6 @@ export function createFrame(opts = {}) {
   // (a change of a stay key in the same app, a reader opened or closed: a screen change for focus and scroll, C7)
   const stays = (r, p) => r.kind === "app" && p?.kind === "app" && !!REGISTRY[r.app].stay?.some((k) => k === r.key || k === p.key) && (r.key !== p.key || r.arg !== p.arg);
   const shownMod = () => (shown?.id.startsWith("m:") ? mods[shown.id.slice(2)] : null);
-  const labelOf = (r) => (r?.kind === "app" ? REGISTRY[r.app]?.name : TABN[r?.tab]) || null;
   function leaveEntry() {
     ys.set(key, scrollY);
     if (F.route?.kind === "app") ys.set(`${key}:${F.route.section}`, scrollY);
@@ -276,7 +277,7 @@ export function createFrame(opts = {}) {
   }
   function appHead(r) {
     const R = REGISTRY[r.app], h = mods[r.app]?.header || {}, d = curDepth();
-    const to = d > 0 ? labelOf(routes[d - 1]) : "Apps";
+    const to = d > 0 ? labelOf(routes[d - 1]) || H.state?.ifl?.b : "Apps";
     return {
       ...h, back: { label: h.back?.label || (to ? `Back to ${to}` : "Back") }, crumb: { text: R.name, app: r.app }, title: h.title ?? R.name,
       sections: h.sections === false || h.sections === null ? null : R.sections, section: r.section, onSection: (id) => F.nav.section(r.app, id),
