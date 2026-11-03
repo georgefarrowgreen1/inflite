@@ -131,7 +131,7 @@ export const G = {
 // (the card's head: its app, a few words, and Open: a link to the app, at the closest place it has to what's shown)
 function head(key, card, meta = "", label = "") {
   const a = APP[key];
-  return `<a class="tc-head" href="${href(card.href)}" aria-label="${esc(label || `Open ${a.name}`)}"><img src="${a.icon}" alt=""><span class="tc-app">${a.name}</span><span class="tc-meta">${meta}</span><span class="tc-go"><span>Open</span>${G.open}</span></a>`;
+  return `<a class="tc-head" href="${href(card.href)}" aria-label="${esc(label || `Open ${a.name}`)}"><img src="${a.icon}" alt=""><span class="tc-app">${a.name}</span><span class="tc-meta">${meta}</span></a>`;
 }
 // Send to a friend: Chat, with the card's line to start a letter with (never a word of anyone's letter), and beside it
 // the card itself, packed by the server (sendCard: base64url, or null), for Chat to draw and keep up to date. The words

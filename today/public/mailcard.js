@@ -36,7 +36,7 @@ export function mailWords(card, { now = Date.now(), tz = "Europe/London" } = {})
 export function mailCard(c, ctx = {}) {
   const w = mailWords(c, ctx);
   if (!w) return "";
-  const head = `<a class="tc-head" href="${href(c.href, ctx)}" aria-label="Open Mail"><img src="${MAIL_ICON}" alt=""><span class="tc-app">Mail</span> <span class="tc-meta"></span><span class="tc-go"><span>Open</span>${G.open}</span></a>`;
+  const head = `<a class="tc-head" href="${href(c.href, ctx)}" aria-label="Open Mail"><img src="${MAIL_ICON}" alt=""><span class="tc-app">Mail</span> <span class="tc-meta"></span></a>`;
   const big = `<h3 class="tc-h">${esc(w.big)}</h3>`;
   const line = !w.line ? "" : w.later
     ? `<p class="tc-p ml-later"><a href="${href(c.later?.href, ctx)}">${G.clock}${esc(w.line)}</a></p>`
