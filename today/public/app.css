@@ -111,7 +111,9 @@ html.boot #out, html.boot #in { visibility: hidden; }
 .ifh-act[data-word]::after { border-radius: 999px; }
 .ifh-name:focus { outline: none; }
 
-#day { max-width: 640px; margin: 0 auto; padding: 4px max(16px, env(safe-area-inset-right, 0px)) calc(56px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+/* the views, Today, Apps and You: one column each, clear of the tab bar at the foot */
+.view { max-width: 640px; margin: 0 auto; padding: 4px max(16px, env(safe-area-inset-right, 0px)) calc(var(--ift-h) + 40px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+#today > section:empty, #top:empty { display: none; }
 .glass { position: relative; background: var(--sheen), var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), var(--lift); }
 .section { margin: 0 0 26px; }
 .slabel { margin: 0 18px 8px; font: 600 13px/1.2 var(--font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-3); }
@@ -155,7 +157,7 @@ button.row:active, a.row:active { background: var(--press); }
 .bird-ic { fill: currentColor; stroke: none; }
 
 /* ---- a card for each app ---- */
-#cards { display: grid; gap: 14px; margin-bottom: 30px; }
+#rest.cards { display: grid; gap: 14px; margin-bottom: 30px; }
 .kept { margin: 0 6px 10px; font-size: 13.5px; color: var(--text-3); }
 .tcard { border-radius: var(--r-card); padding: 12px 18px 16px; display: grid; gap: 12px; min-width: 0; }
 .tcard > * { min-width: 0; }
@@ -444,7 +446,7 @@ label.row:active { background: var(--press); }
 .bsheet .row .tx b { font-size: 16px; }
 
 /* ---- a word after doing something ---- */
-.toast { position: fixed; left: 50%; bottom: calc(32px + env(safe-area-inset-bottom, 0px)); z-index: 60; transform: translate(-50%, 16px); opacity: 0; pointer-events: none;
+.toast { position: fixed; left: 50%; bottom: calc(var(--ift-h) + 28px + env(safe-area-inset-bottom, 0px)); z-index: 60; transform: translate(-50%, 16px); opacity: 0; pointer-events: none;
   max-width: calc(100vw - 32px); padding: 12px 18px; border-radius: 999px; font-size: 15px; font-weight: 600; color: var(--text);
   background: var(--sheen), var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), var(--lift); transition: transform 0.45s var(--ease-spring), opacity 0.25s; }
 .toast.on { transform: translate(-50%, 0); opacity: 1; }
@@ -475,6 +477,52 @@ label.row:active { background: var(--press); }
 @media (max-height: 600px) { .today-apps { display: none; } }
 @media (max-height: 500px) and (orientation: landscape) { .today-apps { display: none; } }
 .today-out.said .today-apps { display: none; }
+
+/* the way in's second way, Today's own sign-in, quieter than the first */
+.today-out .today-quiet { margin-top: 6px; }
+.today-out .today-quiet a { color: var(--text-2); font-weight: 500; }
+
+/* ---- Apps: a tile for each app, its line from the day, chips to its sections ---- */
+.apps-grid { display: grid; gap: 14px; }
+.atile { border-radius: var(--r-card); padding: 6px 6px 12px; display: grid; gap: 4px; }
+.atile-go { display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 8px 12px; border-radius: calc(var(--r-card) - 6px); color: var(--text); text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.atile-go:active { background: var(--press, rgba(120, 120, 128, 0.14)); }
+.atile-go:focus-visible, .achip:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
+.atile-ic { flex: none; width: 52px; height: 52px; border-radius: 13px; box-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.15); }
+.atile-tx { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.atile-tx b { font: 600 19px/1.2 var(--font-d); }
+.atile-tx small { font-size: 15px; color: var(--text-2); overflow-wrap: anywhere; }
+.atile-go .chev { flex: none; display: grid; color: var(--text-3); }
+.atile-go .chev svg { width: 16px; height: 16px; }
+.achips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 0 78px; }
+.achip { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 999px; color: var(--tint-text); background: var(--glass-ctl); box-shadow: 0 0 0 0.5px var(--line);
+  font-size: 14.5px; font-weight: 600; text-decoration: none; position: relative; }
+.achip::after { content: ""; position: absolute; inset: -4px -2px; }
+.apps-note { margin: 18px 18px 0; font-size: 14px; line-height: 1.45; color: var(--text-2); text-align: center; }
+@media (max-width: 360px) { .achips { padding-left: 12px; } }
+
+/* ---- You: your account, rules, notifications, this phone, quiet hours, Chat, versions, Sign Out ---- */
+.you-sec { margin: 0 0 24px; }
+.you-h { margin: 0 18px 8px; font: 600 13px/1.2 var(--font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-2); }
+.you-foot { margin: 8px 18px 0; font-size: 13.5px; line-height: 1.4; color: var(--text-2); }
+.you-sec .row { min-height: 56px; }
+.you-sec .row + .row::before { left: 18px; }
+.you-sec button.row { appearance: none; -webkit-appearance: none; border: 0; background: none; font: inherit; cursor: pointer; }
+.you-sec button.row:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; border-radius: var(--r-group); }
+.you-ph { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; background: linear-gradient(150deg, #8f7ff0, #5e48c8); }
+.you-sec .row.rule { flex-wrap: wrap; row-gap: 10px; }
+.you-sec .row.rule .tx { flex-basis: 12em; }
+.seg { flex: none; display: inline-flex; padding: 2px; gap: 2px; border-radius: 10px; background: var(--glass-ctl); box-shadow: 0 0 0 0.5px var(--line); }
+.seg button { appearance: none; -webkit-appearance: none; min-width: 44px; min-height: 36px; padding: 0 11px; border: 0; border-radius: 8px; background: none; color: var(--text); font: 600 14px/1 var(--font); cursor: pointer; }
+.seg button[aria-pressed="true"] { color: #fff; background: linear-gradient(180deg, #4b95ff, #2a6ae6); box-shadow: 0 2px 6px -2px rgba(42, 106, 230, 0.6); }
+.seg button:focus-visible { outline: 2px solid var(--tint); outline-offset: 1px; }
+.you-sec .val.soon { font-size: 14px; color: var(--text-2); }
+.pill.small { min-height: 36px; padding: 0 14px; font-size: 14.5px; position: relative; }
+.pill.small::after { content: ""; position: absolute; inset: -4px 0; }
+.you-out { display: grid; justify-items: center; margin: 8px 0 12px; }
+.you-signout { color: var(--warn); min-width: 160px; }
+.bsheet .ev-old { margin-top: 6px; font-weight: 600; color: var(--text-2); }
+.bsheet .dev .tx b { font-size: 16px; }
 
 /* ---- a page that isn't here (404.html) ---- */
 .nf { min-height: 100vh; min-height: 100svh; display: grid; place-items: center; padding: 24px 16px; }
@@ -509,7 +557,7 @@ label.row:active { background: var(--press); }
 html { touch-action: pan-x pan-y; }
 /* InFlite's menu, the same in every app (.tools/inflite/menu.js): its own colours, type and shapes, whatever the
    app's, light or dark as the app is (data-theme, else the device) */
-.ifm-layer, .ifm-note, .ifa-layer {
+.ifm-layer, .ifm-note, .ifa-layer, .ifl-tabs, .ifl-back {
   --ifm-sheet: rgba(250, 250, 253, 0.86);
   --ifm-panel: rgba(255, 255, 255, 0.9);
   --ifm-line: rgba(60, 60, 67, 0.14);
@@ -527,13 +575,13 @@ html { touch-action: pan-x pan-y; }
   -webkit-font-smoothing: antialiased;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) :is(.ifm-layer, .ifm-note, .ifa-layer) {
+  :root:not([data-theme="light"]) :is(.ifm-layer, .ifm-note, .ifa-layer, .ifl-tabs, .ifl-back) {
     --ifm-sheet: rgba(36, 38, 52, 0.86); --ifm-panel: rgba(56, 58, 74, 0.72); --ifm-line: rgba(235, 235, 245, 0.12);
     --ifm-text: #f4f5fa; --ifm-text-2: rgba(235, 235, 245, 0.62); --ifm-text-3: rgba(235, 235, 245, 0.34);
     --ifm-press: rgba(235, 235, 245, 0.1); --ifm-red: #ff5a50; --ifm-red-bg: rgba(255, 90, 80, 0.16); --ifm-green: #4fdc8e; --ifm-warn: #ffb44a; --ifm-dim: rgba(0, 0, 0, 0.32);
   }
 }
-:root[data-theme="dark"] :is(.ifm-layer, .ifm-note, .ifa-layer) {
+:root[data-theme="dark"] :is(.ifm-layer, .ifm-note, .ifa-layer, .ifl-tabs, .ifl-back) {
   --ifm-sheet: rgba(36, 38, 52, 0.86); --ifm-panel: rgba(56, 58, 74, 0.72); --ifm-line: rgba(235, 235, 245, 0.12);
   --ifm-text: #f4f5fa; --ifm-text-2: rgba(235, 235, 245, 0.62); --ifm-text-3: rgba(235, 235, 245, 0.34);
   --ifm-press: rgba(235, 235, 245, 0.1); --ifm-red: #ff5a50; --ifm-red-bg: rgba(255, 90, 80, 0.16); --ifm-green: #4fdc8e; --ifm-warn: #ffb44a; --ifm-dim: rgba(0, 0, 0, 0.32);
@@ -713,12 +761,45 @@ html { touch-action: pan-x pan-y; }
 .ifs-hero b { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .ifs-hero span { font-size: 14px; opacity: 0.62; }
 
-/* InFlite's hub (inflite.ai, one window; .tools/inflite/menu.js hub): its tabs, Today · Chats · Apps · You, plain links
-   in a row until they're given the tab bar's look (the --ift-* sizes above); and a toast of words alone, as the note */
-.ifl-tabs { display: flex; justify-content: space-around; gap: var(--ift-gap); min-height: var(--ift-h); padding-bottom: env(safe-area-inset-bottom, 0px); }
-.ifl-tab { flex: 1; display: grid; place-items: center; min-height: 44px; font-size: var(--ift-label); color: inherit; text-decoration: none; }
-.ifl-tab[aria-current="page"] { font-weight: 700; }
+/* InFlite's hub (inflite.ai, one window; .tools/inflite/menu.js hub). Its tab bar, Today · Chats · Apps · You: a glass
+   capsule at the foot of every page of the hub, from the tab bar's sizes above, the one you're on in a soft pill of its
+   colour; it stays put as the pages cross-fade (its view-transition-name; the @view-transition rule is put in by
+   menu.js, at the hub only) */
+.ifl-tabs { --ifl-tab-ink: #3f4250; --ifl-tab-on: #1d55c4; --ifl-tabs-glass: rgba(250, 250, 253, 0.8);
+  position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 40; box-sizing: border-box; display: flex; gap: 0;
+  width: calc(100% - 32px); max-width: var(--ift-max); height: var(--ift-h); margin: 0 auto; padding: var(--ift-pad); border-radius: 999px;
+  background: var(--ifl-tabs-glass); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.7), 0 0 0 0.5px var(--ifm-line), 0 10px 28px -14px rgba(20, 30, 70, 0.45);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ifl-tabs { --ifl-tab-ink: #d2d3de; --ifl-tab-on: #9dbdff; --ifl-tabs-glass: rgba(36, 38, 52, 0.82); } }
+:root[data-theme="dark"] .ifl-tabs { --ifl-tab-ink: #d2d3de; --ifl-tab-on: #9dbdff; --ifl-tabs-glass: rgba(36, 38, 52, 0.82); }
+html.ifl-hub .ifl-tabs { view-transition-name: ifl-tabs; }
+.ifl-tab { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 999px;
+  color: var(--ifl-tab-ink); font-size: var(--ift-label); font-weight: 600; letter-spacing: 0.1px; line-height: 1.1; text-decoration: none;
+  -webkit-tap-highlight-color: transparent; transition: transform 0.2s, color 0.2s, background 0.2s; }
+.ifl-tab-ic { flex: none; width: var(--ift-icon); height: var(--ift-icon); stroke-width: 1.9; }
+.ifl-tab[aria-current="page"] { color: var(--ifl-tab-on); background: color-mix(in srgb, var(--ifl-tab-on) var(--ift-pill), transparent); }
+.ifl-tab:active { transform: scale(0.92); }
+.ifl-tab:focus-visible { outline: 2px solid var(--ifl-tab-on); outline-offset: -2px; }
+/* (a phone on its side: the bar lower, its labels beside their icons) */
+@media (max-height: 500px) and (orientation: landscape) { .ifl-tabs { height: 48px; } .ifl-tab { flex-direction: row; gap: 6px; } .ifl-tab-ic { width: 20px; height: 20px; } }
+/* Back, in the place of an app's menu button at the hub (IFL.hub.back()) */
+.ifl-back { display: inline-flex; align-items: center; justify-content: center; gap: 1px; flex: none; min-width: 44px; height: 42px; margin: 0; padding: 0 14px 0 8px;
+  border: 0; border-radius: 999px; background: var(--ifm-panel); color: var(--ifm-tint); font: 600 16px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  box-shadow: 0 0 0 0.5px var(--ifm-line), 0 6px 14px -8px rgba(20, 30, 70, 0.35); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.2s; }
+.ifl-back svg { width: 20px; height: 20px; stroke-width: 2.4; }
+.ifl-back:active { transform: scale(0.94); }
+.ifl-back:focus-visible { outline: 2px solid var(--ifm-tint); outline-offset: 2px; }
+/* Chat's engine: its page in a frame over the whole page, see-through, above everything but the notes; unseen (and
+   never in the way of a tap) until it shows its sheet, but laid out, so the sheet opens at once */
+.ifl-engine { position: fixed; inset: 0; z-index: 2147483000; display: block; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; color-scheme: normal; }
+.ifl-engine[hidden] { display: block; visibility: hidden; pointer-events: none; }
+/* the note that InFlite is one app now (an old Home Screen icon: moved), as the allow sheet */
+.ifl-moved .ifa-steps { margin-top: -6px; font-size: 14.5px; }
+.ifl-moved .ifa-off { color: var(--ifm-red); }
+/* a toast of words alone, as the note */
 .ifl-toast { padding: 12px 20px; }
+@media (prefers-reduced-motion: reduce) { .ifl-tab, .ifl-back { transition: none; } }
 .ifm-in-today { --ifm-tint: #2a6ae6; }
 /* ==== end of InFlite's menu ==== */
 

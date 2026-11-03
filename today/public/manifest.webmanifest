@@ -1,6 +1,7 @@
 {
-  "name": "InFlite Today",
-  "short_name": "Today",
+  "id": "/",
+  "name": "InFlite",
+  "short_name": "InFlite",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
