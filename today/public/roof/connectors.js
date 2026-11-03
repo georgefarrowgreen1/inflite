@@ -7,7 +7,8 @@
 // STATIC: the apps that aren't modules yet (chats, fitness, markets, mail), with hrefs to their hub pages.
 // connectorOf(app) → Promise<Connector>: Weather → its connector.js (only when hub && roof are on; else a static
 //   fallback without search or mini); the others → STATIC[app].
-// miniOf(app, answer) → Promise<Mini | null>: the connector's mini(answer), null where it has none or it throws.
+// miniOf(app, answer, F?) → Promise<Mini | null>: the connector's mini(answer), null where it has none or it throws
+//   (given F, Weather's connector file is asked for only while hub and roof are on).
 // openConnector(F, app): the connector sheet (dialog.ifl-sheet[data-sheet=connector]): the app's icon, "<App>’s
 //   connector", one line, a row per contract word the app fills, "Open <App>", and for Weather "Weather Settings" and
 //   "Weather Notifications".
@@ -54,9 +55,9 @@ export async function connectorOf(app, F = F0) {
   } catch (_) { return fallback(app); }
 }
 
-export async function miniOf(app, answer) {
+export async function miniOf(app, answer, F = F0) {
   try {
-    const c = await connectorOf(app);
+    const c = await connectorOf(app, F);
     const m = c?.mini ? await c.mini(answer) : null;
     return m && typeof m === "object" && m.kind ? m : null;
   } catch (_) { return null; }
