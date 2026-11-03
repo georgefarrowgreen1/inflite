@@ -19,7 +19,7 @@
 //   go(path) → a screen of the framework's, href(app, section) → an app's address from here (IFL.hub.href)
 //   forgetYou() → nothing: what You last asked forgotten (signed out, or another account)
 //   goTo(root, ctx, id, drawn) → /#you=<id>: its section scrolled to (notify, apps, quiet, rules, phone, account,
-//   signout), or its sheet (notify-weather), once drawn (drawYou's promise)
+//   signout), or its sheet (notify-weather, notify-mail), once drawn (drawYou's promise)
 //   openWxNotify(root, ctx) → the Weather Notifications sheet
 import { esc, G } from "/cards.js";
 
@@ -120,7 +120,7 @@ function paint(root, ctx) {
           ? `<a class="row go" href="${esc(ctx.href?.("fitness", "settings") || "/fitness/#settings")}" data-k="fitness" data-app="fitness"><span class="tx"><b>Fitness</b><small>In Today’s morning</small></span><span class="val">Fitness Settings</span><span class="chev">${G.chev}</span></a>`
           : row("fitness", "Fitness", "In Today’s morning"),
         `<button class="row go" type="button" id="youMorning"><span class="tx"><b>Today’s Morning</b><small>One notification, from all your apps</small></span><span class="val">${t.on ? clock(Number.isInteger(t.at) ? t.at : 420) : "Off"}</span><span class="chev">${G.chev}</span></button>`,
-        admin ? row("mail", "Mail", "From Mail’s own app for now") : "",
+        admin ? `<button class="row go" type="button" id="youMail" data-k="mail" data-app="mail"><span class="tx"><b>Mail</b><small>Through InFlite, and which addresses notify you</small></span><span class="chev">${G.chev}</span></button>` : "",
       ].join("");
     }
     out.push(sec("youNotify", "Notifications, by App", body));
@@ -211,6 +211,8 @@ function wire(root, ctx) {
   });
   // (Weather's: its own sheet, every place's rain and warnings, the briefing and email)
   $("#youWx")?.addEventListener("click", () => openWxNotify(root, ctx));
+  // (Mail's, for the site's admin: its own sheet, mailnotify.js)
+  $("#youMail")?.addEventListener("click", () => openMailNotifyFrom(ctx));
   // (Connected Apps: each app's connector, as a sheet of the framework's)
   for (const b of root.querySelectorAll("#youApps [data-app]")) b.addEventListener("click", () => ctx.connector?.(b.dataset.app));
   for (const b of root.querySelectorAll("[data-alerts]")) b.addEventListener("click", () => patch({ markets: { alerts: b.dataset.alerts === "on" } }, "markets", b.dataset.alerts, () => {}));
@@ -300,6 +302,7 @@ const SECTIONS = { notify: "youNotify", apps: "youApps", quiet: "youQuietSec", r
 export async function goTo(root, ctx, id, drawn) {
   if (!root || !id) return;
   if (id === "notify-weather") return openWxNotify(root, ctx);
+  if (id === "notify-mail") return openMailNotifyFrom(ctx);
   const at = () => (id === "signout" ? root.querySelector(".you-out") : SECTIONS[id] ? root.querySelector(`#${SECTIONS[id]}`) : null);
   // (a section drawn only once its answer's in, Quiet Hours: waited for)
   if (!at()) await Promise.resolve(drawn).catch(() => {});
@@ -308,6 +311,12 @@ export async function goTo(root, ctx, id, drawn) {
   el.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   const h = el.querySelector(".you-h, button");
   if (h) { if (!h.matches("button")) h.tabIndex = -1; h.focus({ preventScroll: true }); }
+}
+
+// ---------------------------------------------------------------- Mail Notifications (#sh-mailnotify)
+// mailnotify.js's, loaded as it's first wanted; for anyone but the admin it says so itself and asks nothing (S4-D21)
+function openMailNotifyFrom(ctx) {
+  return import("/mailnotify.js").then((m) => m.openMailNotify(ctx.frame), () => ctx.toast?.("Couldn’t open Mail Notifications just now. Try again in a moment."));
 }
 
 // ---------------------------------------------------------------- Weather Notifications (#sh-wxnotify)

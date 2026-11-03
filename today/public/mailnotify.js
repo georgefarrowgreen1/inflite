@@ -74,7 +74,12 @@ export async function openMailNotify(F) {
     fill(body, F, st, { f, MAIL, handle, sheet });
     return st;
   }
-  body.replaceChildren(ui.el("p", { class: "sh-sub", text: WORDS.getting }));
+  // (while they're asked: the sheet as it will be, Through InFlite still to say, and with Mail's switch off here the
+  // way to Mail Settings at once, as nothing of Mail's is asked)
+  const wait = ui.row({ title: WORDS.title, sub: WORDS.getting, trail: "switch", checked: false });
+  const box = wait.querySelector("input");
+  if (box) box.disabled = true;
+  body.replaceChildren(ui.list([wait], { label: "Mail" }), ...(on ? [] : elsewhere(F, { on: false }, { f, MAIL, handle, sheet })));
   const [mine, mail] = await Promise.all([
     ask(f, "/api/notify").then(mineOf, () => null),
     on ? ask(f, `${MAIL}/api/notify`, { cors: true }).then(addressesOf, (e) => { mailRefused(F, e); return null; }) : Promise.resolve(null),
@@ -140,10 +145,12 @@ function fill(body, F, st, ctx) {
     });
     out.push(ui.list(rows, { label: "Addresses" }));
   } else {
-    out.push(ui.el("p", { class: "sh-sub mln-elsewhere", text: WORDS.elsewhere }), ui.el("div", { class: "sh-acts" }, ui.btn("Open Mail", { primary: true, run: () => openMail(F, st, ctx) })));
+    out.push(...elsewhere(F, st, ctx));
   }
   body.replaceChildren(...out);
 }
+// (Mail's addresses chosen in Mail Settings: the words, and Open Mail)
+const elsewhere = (F, st, ctx) => [F.ui.el("p", { class: "sh-sub mln-elsewhere", text: WORDS.elsewhere }), F.ui.el("div", { class: "sh-acts" }, F.ui.btn("Open Mail", { primary: true, run: () => openMail(F, st, ctx) }))];
 
 // Open Mail at its settings: here, in this page, where Mail's a module; at the hub's framed /mail/ (which passes
 // #settings into Mail) where the hub serves the apps; else at Mail's own address
