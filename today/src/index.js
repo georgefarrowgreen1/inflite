@@ -2,7 +2,12 @@
 // this Worker. It keeps nothing of its own: every /api/* request is checked here, then passed on with the account's
 // cookie to account.inflite.ai/api/account/today/* (the georgefarrowgreen repo's functions/_todayapp.js), and its answer
 // passed back. /version says which Today is deployed, for InFlite's updater (IFL.updates) and the account's About sheet.
+// And InFlite as one window (Today First): Chats, Weather, Fitness and Markets as pages of this site (/chats/,
+// /weather/, /fitness/, /markets/: the hub, today/src/hub.js), and Mail in a frame at /mail/ (today/src/mailhost.js);
+// wrangler.toml sends those paths here before the assets.
 import { ask, setCookies } from "./account.js";
+import { isHubPath, hub } from "./hub.js";
+import { mailPage } from "./mailhost.js";
 
 // Today's API, each route as the account has it: its path there, how long it's waited for, and whether the account's
 // Set-Cookie comes back with it (signing in, its renewal, signing out: never anywhere else)
@@ -21,6 +26,17 @@ const ROUTES = {
   "DELETE /api/push": { path: "today/push", timeout: 8000 },
   "POST /api/account-link": { path: "today/account-link", timeout: 8000 },
   "GET /api/avatar": { path: "today/avatar", timeout: 8000, image: true },
+  // (Today First's: acts and their Undo, the rules they're done by, notifications and devices, from You)
+  "POST /api/act": { path: "today/act", timeout: 8000 },
+  "POST /api/act/undo": { path: "today/act/undo", timeout: 8000 },
+  "GET /api/rules": { path: "today/rules", timeout: 8000 },
+  "PUT /api/rules": { path: "today/rules", timeout: 8000 },
+  "GET /api/notify": { path: "today/notify", timeout: 8000 },
+  "PATCH /api/notify": { path: "today/notify", timeout: 8000 },
+  "POST /api/device": { path: "today/device", timeout: 8000 },
+  "DELETE /api/device": { path: "today/device", timeout: 8000 },
+  "GET /api/devices": { path: "today/devices", timeout: 8000 },
+  "DELETE /api/devices": { path: "today/devices", timeout: 8000 },
 };
 const PATHS = new Set(Object.keys(ROUTES).map((k) => k.split(" ")[1]));
 // (the only parts of an address passed on: never a push endpoint, which goes only in a body, as an address ends up in logs)
@@ -46,11 +62,14 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), { status
 const refuse = (status, error) => json({ error }, status);
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/version" && request.method === "GET") return version(env, request);
-    if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    const hubbed = isHubPath(url.pathname), mail = url.pathname === "/mail" || url.pathname.startsWith("/mail/");
+    if (!hubbed && !mail && !url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
     try {
+      if (hubbed) return await hub(request, env, ctx);
+      if (mail) return await mailPage(request, env);
       return await api(request, env, url);
     } catch (err) {
       console.error(err);
@@ -86,7 +105,10 @@ async function api(request, env, url) {
   const query = new URLSearchParams();
   for (const k of QUERY) for (const v of url.searchParams.getAll(k)) query.append(k, v);
 
-  const res = await ask(env, request, { method, path: route.path, query, body, timeout: route.timeout, accept: route.image ? "image/*" : "application/json" });
+  // (tests only: the moment of the day to work it out at, passed on where this Worker's TEST_AT says so, never in production)
+  const at = env.TEST_AT === "1" ? request.headers.get("X-Today-At") : null;
+  const headers = at && /^\d{13}$/.test(at) ? { "X-Today-At": at } : null;
+  const res = await ask(env, request, { method, path: route.path, query, body, timeout: route.timeout, accept: route.image ? "image/*" : "application/json", headers });
   if (route.image) return picture(res);
   if (!res || (res.status >= 300 && res.status < 400)) return refuse(502, SAID.down);
 

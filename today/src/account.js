@@ -27,14 +27,17 @@ export function forwardHeaders(request, origin, { body = false, accept = "applic
 }
 
 // A request to the account's address, on the browser's behalf: its answer, or null when it can't be reached or doesn't
-// answer in time (a slow account is the same as one that's down)
-export async function ask(env, request, { method = "GET", path, query = null, body = null, timeout = 8000, accept } = {}) {
+// answer in time (a slow account is the same as one that's down). headers: any more to send, set after the browser's
+// few (tests' X-Today-At, passed on only where this Worker's TEST_AT says so: today/src/index.js)
+export async function ask(env, request, { method = "GET", path, query = null, body = null, timeout = 8000, accept, headers = null } = {}) {
   const origin = new URL(request.url).origin;
   const q = query && [...query.keys()].length ? `?${query}` : "";
+  const h = forwardHeaders(request, origin, { body: body != null, accept });
+  for (const [k, v] of Object.entries(headers || {})) h.set(k, v);
   try {
     return await fetch(`${env.ACCOUNT_ORIGIN}/api/account/${path}${q}`, {
       method,
-      headers: forwardHeaders(request, origin, { body: body != null, accept }),
+      headers: h,
       body: body ?? undefined,
       redirect: "manual",
       signal: AbortSignal.timeout(timeout),

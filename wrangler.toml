@@ -1,5 +1,5 @@
-# inflite.ai: InFlite Today (today/): its page and files are today/public; only /api/* and /version run the Worker
-# (today/src/index.js), which passes the account's cookie on to account.inflite.ai (the georgefarrowgreen repo's
+# inflite.ai: InFlite Today (today/): its page and files are today/public; only /api/*, /version and the hub's paths
+# run the Worker (today/src/index.js), which passes the account's cookie on to account.inflite.ai (the georgefarrowgreen repo's
 # functions/_todayapp.js). Workers Builds deploys it from here. Mail is a Worker of its own (email/).
 name = "inflite"
 main = "today/src/index.js"
@@ -13,7 +13,9 @@ preview_urls = false
 directory = "./today/public"
 binding = "ASSETS"
 not_found_handling = "404-page"
-run_worker_first = ["/api/*", "/version"]
+# (and InFlite's hub, Today First: Chats, Weather, Fitness and Markets at /chats/, /weather/, /fitness/ and /markets/,
+# and Mail framed at /mail/; today/src/hub.js and mailhost.js)
+run_worker_first = ["/api/*", "/version", "/chats", "/chats/*", "/weather", "/weather/*", "/fitness", "/fitness/*", "/markets", "/markets/*", "/mail", "/mail/*"]
 
 [vars]
 ACCOUNT_ORIGIN = "https://account.inflite.ai"
