@@ -79,18 +79,20 @@ const SAFE = { "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "
 
 // Mail's page (/, and /index.html), the one Mail's ever opened at, answered here rather than straight from the files
 // (wrangler.jsonc's run_worker_first), so it can say who may frame it: InFlite's window (HUB_ORIGIN, whose /mail/ page
-// frames Mail, today/src/mailhost.js in this repo's root Worker) and no one else. Mail's own policy (public/_headers,
-// for every other file) with frame-ancestors the hub's address in place of 'none': put in place of the one the files
-// carry, never beside it, as two policies are both applied and the stricter 'none' would still refuse the frame. With no
-// hub address (or one that isn't an address), 'none', as before. The rest of _headers' rules for the page set here too,
-// so the page is the same whether or not the files' own headers came with it.
+// frames Mail, today/src/mailhost.js in this repo's root Worker: the hub's address, or more than one, a space between
+// each, as the site's and its staging hub's) and no one else. Mail's own policy (public/_headers, for every other file)
+// with frame-ancestors those addresses in place of 'none': put in place of the one the files carry, never beside it, as
+// two policies are both applied and the stricter 'none' would still refuse the frame. With no hub address, or anything
+// in it that isn't an address, 'none', as before. The rest of _headers' rules for the page set here too, so the page is
+// the same whether or not the files' own headers came with it.
 const PAGE = new Set(["/", "/index.html"]);
 const ORIGIN_RE = /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i;
 const MAIL_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; font-src 'self' data: https:; media-src 'self' https:; connect-src 'self'; worker-src 'self'; frame-src 'self' about: blob:; object-src 'none'; base-uri 'self'; form-action 'self'";
 function pagePolicy(env) {
-  const hub = typeof env.HUB_ORIGIN === "string" && ORIGIN_RE.test(env.HUB_ORIGIN) ? env.HUB_ORIGIN.toLowerCase() : null;
-  return `${MAIL_CSP}; frame-ancestors ${hub || "'none'"}`;
+  const hubs = typeof env.HUB_ORIGIN === "string" ? env.HUB_ORIGIN.trim().split(/\s+/).filter(Boolean) : [];
+  const ok = hubs.length > 0 && hubs.every((o) => ORIGIN_RE.test(o));
+  return `${MAIL_CSP}; frame-ancestors ${ok ? hubs.map((o) => o.toLowerCase()).join(" ") : "'none'"}`;
 }
 const PAGE_HEADERS = {
   "Cache-Control": "no-cache",
