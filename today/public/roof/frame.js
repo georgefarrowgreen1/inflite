@@ -102,7 +102,7 @@ export function createFrame(opts = {}) {
   const svcs = {};
   const svc = (app) => svcs[app] || (isOn(app) && REGISTRY[app]?.service
     ? (svcs[app] = Promise.resolve(opts.retired).catch(() => {}).then(() => import("./modules.js")).then((M) => M.loadService(app, F))
-      .then((s) => (s?.on?.("state", (d) => T(() => opts.serviceState?.(app, d?.state))), s), (e) => { delete svcs[app]; throw e; }))
+      .then((s) => (T(() => opts.serviceState?.(app, s.state)), s?.on?.("state", (d) => T(() => opts.serviceState?.(app, d?.state))), s), (e) => { delete svcs[app]; throw e; }))
     : Promise.reject(new Error(`${app}: no service here`)));
   const roofs = () => sess().apps;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
