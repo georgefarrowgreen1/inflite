@@ -123,6 +123,7 @@ export async function mount(root, fw) {
 
   const list = listView(listEl, ctx), reader = readerView(readerEl, ctx);
   const bootState = { first: true, started: null };
+  const hashCode = () => { try { return new URLSearchParams(String(win.location.hash || "").slice(1)).get("signin"); } catch (_) { return null; } };
   let onScreen = false, route = null, cold = false;
 
   // ---- the header, from one place
@@ -322,7 +323,12 @@ export async function mount(root, fw) {
       // (an iPad: the pane, the address the lens's)
       if (thread && store.get().layout === "pad") queueMicrotask(() => fw.nav.section(store.get().lens));
       if (r?.key === "settings") ctx.open.settings(r.arg || null);
-      if (r?.key === "signin" && r.arg) signinJs().then((m) => m.finishSignIn(ctx, r.arg)).then(() => { if (store.get().access !== "ok") start(); }, () => {});
+      // (the hand-back swapped at Mail, then Mail asked afresh once the first ask is in, whichever way it went: a first
+      // ask answered after the swap says the old gate, and only a fresh one brings Mail's list in)
+      // (the code read from the address as it is now, before the frame tidies it: the sign-in page puts its own hints
+      // after it, &f=…, which the router's arg can't hold)
+      const code = r?.key === "signin" ? r.arg || hashCode() : null;
+      if (code) signinJs().then((m) => m.finishSignIn(ctx, code)).then(() => Promise.resolve(bootState.started).catch(() => {})).then(() => start(), () => {});
       drawState();
       list.draw();
       reader.draw();
