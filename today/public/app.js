@@ -680,6 +680,8 @@ function cleanPrefs(p) {
 function drawCards(anim) {
   const box = $("#cards");
   if (!S.view) return;
+  // (a version 2 answer, Today First's day phase by phase, is drawn by /day.js; any other as the four cards, below)
+  if (S.answer?.v === 2) { drawDayNow(); drawKept(); return; }
   const shown = S.prefs.order.filter((k) => !S.prefs.hidden.includes(k));
   const was = new Map($$(".tcard", box).map((c) => [c.dataset.app, c.getBoundingClientRect().top]));
   const f = document.activeElement, inside = box.contains(f) ? f : null;
@@ -706,6 +708,15 @@ function drawCards(anim) {
   }
   drawKept();
 }
+// Today First's day (an answer with v: 2, from an account side that knows it), drawn by /day.js once it's loaded: only if
+// it's still the answer by then. (Not in sw.js's FILES yet, where batch S puts it: no account side answers v 2 before
+// batch T1, so nothing asks for it as Today opens until then. Once FILES has it, this is a plain import of the path,
+// which todaysw.test.mjs then checks is kept.)
+const DAY_JS = new URL("day.js", location.origin + "/").href;
+function drawDayNow() {
+  const answer = S.answer, root = $("#today") || $("#cards");
+  import(DAY_JS).then((m) => { if (S.answer === answer) m.drawDay(root, answer, { now: nowish }); }, () => {});
+}
 function drawKept() {
   const k = $("#kept"), old = S.kept && Date.now() - S.answerAt > 10 * MIN;
   k.hidden = !old;
@@ -716,7 +727,7 @@ async function refresh(only = null) {
   if (!S.view) return;
   const q = new URLSearchParams();
   if (only) q.set("only", only);
-  else q.set("with", "morning");
+  else { q.set("v", "2"); q.set("with", "morning"); }
   if (S.device) q.set("device", S.device);
   S.loadedAt = Date.now();
   try {
@@ -1066,7 +1077,7 @@ async function load() {
   const askCards = () => {
     asked = true;
     return devP.then((device) => {
-      const q = new URLSearchParams({ with: "morning" });
+      const q = new URLSearchParams({ v: "2", with: "morning" });
       if (device) q.set("device", device);
       S.loadedAt = Date.now();
       return call(`/api/today?${q}`).then(gotCards, () => {});
