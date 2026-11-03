@@ -4,7 +4,7 @@
 // read by CSS. Each builder takes plain data and returns an Element whose root carries its ifl-* class; the CSS is in
 // roof.css. The names and the order of their arguments are fixed (B0); options may only be added.
 //
-//   el(tag, attrs?, ...children) → Element
+//   el(tag, attrs, ...children) → Element (attrs an object, or null)
 //       attrs: { class, text (textContent), data: { k: v } → data-k, aria: { k: v } → aria-k, on: { evt: fn }
 //       (addEventListener), any other key → setAttribute (never "style", never on*) }; children: Node | string (a text
 //       node) | array | null/false (skipped). (html is never taken: there is no way to pass markup in.)
@@ -24,7 +24,7 @@
 //   sw(checked, onChange(bool), { label }) → label.ifl-switch around input[type=checkbox][role=switch]
 //   field({ type, value, placeholder, label, onInput(value), onEnter(value) }) → .ifl-field with its <input> (.input)
 //   tile({ app, name, line, href, mini: Node|null, chips: [{ text, href }] }) → a.ifl-tile[data-app] (a div with chips)
-//   mini(m) → Element for a Mini: { kind: "num-bars", num, bars, label } | { kind: "pct-spark", pct, spark? } | { kind: "num", num, label }
+//   mini(m) → Element for a Mini: { kind: "num-bars", num, bars, label } | { kind: "pct-spark", pct } (a percentage only, never amounts) | { kind: "num", num, label }
 //   avatar(name, { photo }) → .ifl-avatar.av-c1…8
 //   badge(n, { label }) → .ifl-badge
 //   empty({ title, body, acts }) → .ifl-empty;  error({ title, body, acts: [{ label, act, run, primary }] }) → .ifl-error
@@ -34,11 +34,10 @@ const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ESC[c]);
 const D = () => globalThis.document;
 const IFL = () => globalThis.IFL;
-const GLYPH_OF = { settings: "gear", places: "locate", chevron: "chev", close: "x" };
+const GLYPH_OF = { settings: "gear", places: "locate" };
 
 export function el(tag, attrs, ...kids) {
   const n = D().createElement(tag);
-  if (attrs && (typeof attrs !== "object" || attrs.nodeType || Array.isArray(attrs))) { kids.unshift(attrs); attrs = null; }
   for (const [k, v] of Object.entries(attrs || {})) {
     if (v == null || v === false) continue;
     if (k === "class") n.className = v;
@@ -46,7 +45,7 @@ export function el(tag, attrs, ...kids) {
     else if (k === "data") for (const [d, x] of Object.entries(v)) { if (x != null) n.dataset[d] = x; }
     else if (k === "aria") for (const [a, x] of Object.entries(v)) { if (x != null) n.setAttribute(`aria-${a}`, x); }
     else if (k === "on") for (const [e, f] of Object.entries(v)) n.addEventListener(e, f);
-    else if (k === "style" || k === "html" || /^on/i.test(k)) throw new Error(`ui.el: ${k} is never set`);
+    else if (/^(style|html|on.*)$/i.test(k)) throw new Error(`ui.el: never ${k}`);
     else n.setAttribute(k, v === true ? "" : v);
   }
   add(n, kids);
@@ -166,7 +165,7 @@ export function sw(checked, onChange, { label: l } = {}) {
 }
 
 export function field({ type = "text", value = "", placeholder = "", label: l, onInput, onEnter } = {}) {
-  const i = el("input", { type, placeholder, "aria-label": l, autocomplete: "off", spellcheck: "false" });
+  const i = el("input", { type, placeholder, "aria-label": l, autocomplete: "off" });
   i.value = value;
   if (onInput) i.addEventListener("input", () => onInput(i.value));
   if (onEnter) i.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); onEnter(i.value); } });
@@ -193,21 +192,10 @@ export function mini(m) {
   if (m.kind === "pct-spark") {
     const p = Number(m.pct);
     if (Number.isFinite(p)) { box.append(el("b", { class: "num", text: `${p > 0 ? "+" : ""}${p.toFixed(1)}%` })); box.dataset.tone = p >= 0 ? "pos" : "neg"; }
-    if (Array.isArray(m.spark) && m.spark.length > 1) box.append(spark(m.spark));
   }
   if (m.label) box.append(el("small", { text: m.label }));
   return box;
 }
-// a shape only, never labelled with amounts
-function spark(vals) {
-  const v = vals.map(Number).filter(Number.isFinite), lo = Math.min(...v), hi = Math.max(...v), r = hi - lo || 1;
-  const NS = "http://www.w3.org/2000/svg", s = D().createElementNS(NS, "svg"), p = D().createElementNS(NS, "path");
-  s.setAttribute("viewBox", "0 0 70 26"); s.setAttribute("class", "spark"); s.setAttribute("aria-hidden", "true");
-  p.setAttribute("d", v.map((x, i) => `${i ? "L" : "M"}${(i * 70 / (v.length - 1)).toFixed(1)} ${(24 - (x - lo) / r * 22).toFixed(1)}`).join(" "));
-  s.append(p);
-  return s;
-}
-
 export function avatar(name, { photo } = {}) {
   const s = String(name ?? "?");
   let h = 0;

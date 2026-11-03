@@ -14,7 +14,6 @@
 //   compactTitle (class ifh-compact); html.ifl-fill holds it compact (roof.css). --hd-h is published from a ResizeObserver.
 import { el, icon } from "./ui.js";
 
-const WORDS = { edit: "Edit" };
 export function createHeader(host, F, { me, onMe } = {}) {
   const IFL = globalThis.IFL;
   if (!host || !IFL?.header) return { el: host || null, set() {}, lens() {}, destroy() {} };
@@ -86,7 +85,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
       const b = el("button", { class: "ifh-act", type: "button", "aria-label": a.label, title: a.label, data: { act: a.icon } });
       const g = icon(a.icon);
       if (!a.word && g.firstChild) b.append(g);
-      else { b.dataset.word = ""; b.textContent = a.word || WORDS[a.icon] || a.label; }
+      else { b.dataset.word = ""; b.textContent = a.word || a.icon[0].toUpperCase() + a.icon.slice(1); }
       return b;
     }));
   }
@@ -157,7 +156,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
   document.fonts?.ready?.then(lens, () => {});
   let ro = null;
   if (globalThis.ResizeObserver) {
-    ro = new ResizeObserver(() => document.documentElement.style.setProperty("--hd-h", `${Math.round(hd.offsetHeight + (parseFloat(getComputedStyle(hd).marginBottom) || 0))}px`));
+    ro = new ResizeObserver(() => document.documentElement.style.setProperty("--hd-h", `${hd.offsetHeight}px`));
     ro.observe(hd);
   }
   return {

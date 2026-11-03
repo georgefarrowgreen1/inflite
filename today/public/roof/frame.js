@@ -63,7 +63,8 @@ import { createSend } from "./send.js";
 export const CONTRACT = 1;
 const TABN = { today: "Today", apps: "Apps", you: "You" };
 const TODAY = { kind: "tab", tab: "today", arg: null };
-const SS = () => { try { return sessionStorage; } catch (_) { return null; } };
+const T = (f, d) => { try { return f(); } catch (_) { return d; } };
+const ss = (k, v) => T(() => sessionStorage.setItem(k, v));
 const val = (x) => (typeof x === "function" ? x() : x);
 
 export function createFrame(opts = {}) {
@@ -80,31 +81,23 @@ export function createFrame(opts = {}) {
 
   const stamp = () => {
     const s = H.state && typeof H.state === "object" ? H.state : {};
-    try { H.replaceState({ ...s, ifl: { d: depth, k: key } }, "", L.href); } catch (_) {}
+    T(() => H.replaceState({ ...s, ifl: { d: depth, k: key } }, "", L.href));
   };
   const st0 = H.state?.ifl;
   if (st0 && Number.isInteger(st0.d)) { depth = st0.d; key = String(st0.k || newKey()); } else { key = newKey(); stamp(); }
-  try { H.scrollRestoration = "manual"; } catch (_) {}
+  T(() => { H.scrollRestoration = "manual"; });
+  const put = (p, push) => T(() => H[push ? "pushState" : "replaceState"]({ ifl: { d: depth, k: key } }, "", p));
   const curDepth = () => (Number.isInteger(H.state?.ifl?.d) ? H.state.ifl.d : depth);
   const here = () => parse(L.href, { roof: roofOn() }) || TODAY;
 
   // ---- the session, and lost() (D3): asks once, shared for 30 s; signs out only on a confirmed "signed out"
   let lostP = null, lostAt = 0;
-  const lost = () => {
-    if (lostP && Date.now() - lostAt < 30e3) return lostP;
-    lostAt = Date.now();
-    return (lostP = (async () => {
-      let signedIn = true;
-      try { signedIn = await opts.checkSession?.(); } catch (_) { signedIn = true; }
-      if (signedIn !== false) return false;
-      try { opts.lost?.(); } catch (e) { console.error(e); }
-      return true;
-    })());
-  };
+  const lost = () => lostP && Date.now() - lostAt < 30e3 ? lostP
+    : (lostAt = Date.now(), lostP = Promise.resolve().then(() => opts.checkSession?.()).catch(() => true).then((inn) => inn === false && (T(() => opts.lost?.()), true)));
 
   // D21: the page reloaded at its route, where you were kept the way the shared updater keeps it
   const reloadStale = () => {
-    try { SS()?.setItem("ifl-here:today", JSON.stringify({ at: opts.save?.() ?? null, t: Date.now() })); } catch (_) {}
+    ss("ifl-here:today", JSON.stringify({ at: T(() => opts.save?.()) ?? null, t: Date.now() }));
     L.reload();
   };
 
@@ -139,7 +132,7 @@ export function createFrame(opts = {}) {
       for (const a of Object.keys(mods)) unmount(a);
       placesOff?.(); placesOff = null;
       if (inApp) {
-        try { SS()?.setItem("ifl-roof-bounce", "1"); } catch (_) {}
+        ss("ifl-roof-bounce", "1");
         L.replace(L.pathname + L.hash);
       }
     },
@@ -162,8 +155,8 @@ export function createFrame(opts = {}) {
     go(path, o = {}) {
       if (gone) return;
       F.sheet.closeAll();
-      let u;
-      try { u = new URL(String(path), L.href); } catch (_) { return; }
+      const u = T(() => new URL(String(path), L.href));
+      if (!u) return;
       if (u.origin !== L.origin) return L.assign(u.href);
       const p = u.pathname + u.search + u.hash;
       const r = parse(p, { roof: roofOn() });
@@ -173,13 +166,10 @@ export function createFrame(opts = {}) {
       const zoom = o.zoomFrom && r.kind === "app" && !reduced() ? o.zoomFrom : null;
       const kind = o.kind || (zoom ? "zoom" : r.kind === "tab" && cur?.kind === "tab" ? "tab" : "push");
       leaveEntry();
-      if (o.replace) { try { H.replaceState({ ifl: { d: depth, k: key } }, "", p); } catch (_) {} }
-      else {
-        depth++; key = newKey(); routes.length = depth;
-        try { H.pushState({ ifl: { d: depth, k: key } }, "", p); } catch (_) {}
-      }
+      if (!o.replace) { depth++; key = newKey(); routes.length = depth; }
+      put(p, !o.replace);
       routes[depth] = r;
-      render(r, { kind, zoomFrom: o.zoomFrom || null, hint: o.zoomFrom ? hintOf(o.zoomFrom, u) : null, y: o.replace && shown?.id === idOf(r) ? scrollY : 0 });
+      render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom ? hintOf(o.zoomFrom, u) : null, y: o.replace && shown?.id === idOf(r) ? scrollY : 0 });
     },
     back() {
       const top = F.sheet.top();
@@ -196,7 +186,7 @@ export function createFrame(opts = {}) {
       ys.set(`${key}:${r0.section}`, scrollY);
       const p = format({ app, section: id, arg });
       const r = parse(p, { roof: true });
-      try { H.replaceState({ ifl: { d: depth, k: key } }, "", p); } catch (_) {}
+      put(p);
       routes[depth] = r;
       const ids = REGISTRY[app].sections.map((s) => s[0]);
       html.dataset.dir = ids.indexOf(id) < ids.indexOf(r0.section) ? "back" : "fwd";
@@ -238,12 +228,11 @@ export function createFrame(opts = {}) {
     };
   }
   // what the tapped card says, for the module's first paint (§2.3): { sky, temp, place }
-  function hintOf(card, u) {
-    const sky = /(?:^|\s)wx-sk-([\w-]+)/.exec(card.className || "")?.[1] || null;
-    const temp = card.querySelector?.(".wx-now .t")?.textContent?.trim() || null;
-    const place = u.searchParams.get("name") || card.querySelector?.(".tc-meta")?.textContent?.split(" · ")[0]?.trim() || null;
-    return { sky, temp, place };
-  }
+  const hintOf = (card, u) => ({
+    sky: /(?:^|\s)wx-sk-([\w-]+)/.exec(card.className)?.[1] || null,
+    temp: card.querySelector(".wx-now .t")?.textContent.trim() || null,
+    place: u.searchParams.get("name") || card.querySelector(".tc-meta")?.textContent.split(" · ")[0].trim() || null,
+  });
 
   // ---- showing a route
   function render(r, o = {}) {
@@ -309,7 +298,7 @@ export function createFrame(opts = {}) {
   function tidy(r) {
     const p = format({ app: r.app, section: r.section });
     if (p === L.pathname + L.search + L.hash && r.key === r.section) return;
-    try { H.replaceState({ ...(H.state || {}), ifl: { d: depth, k: key } }, "", p); } catch (_) {}
+    put(p);
     const t = parse(p, { roof: true }) || r;
     F.route = t; shown.route = t; routes[depth] = t;
     html.dataset.route = p;
@@ -432,9 +421,8 @@ export function createFrame(opts = {}) {
     if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const a = e.target.closest?.("a[href]");
     if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
-    let u;
-    try { u = new URL(a.href, L.href); } catch (_) { return; }
-    if (u.origin !== L.origin) return;
+    const u = T(() => new URL(a.href, L.href));
+    if (u?.origin !== L.origin) return;
     if ((u.pathname === "/" || u.pathname === "/index.html") && u.hash && !/^#(apps|you(=[\w-]*)?)?$/.test(u.hash)) return;
     const p = u.pathname + u.search + u.hash, r = parse(p, { roof: roofOn() });
     if (!r) return;
@@ -457,7 +445,7 @@ export function createFrame(opts = {}) {
   on(navigator.serviceWorker, "message", (e) => {
     const d = e.data;
     if (!d || d.ifl !== "route" || !ownPath(d.url)) return;
-    try { e.ports?.[0]?.postMessage({ ifl: "routed" }); } catch (_) {}
+    T(() => e.ports?.[0]?.postMessage({ ifl: "routed" }));
     F.nav.go(d.url, { from: "notification" });
   });
   let hiddenAt = 0;
@@ -469,7 +457,7 @@ export function createFrame(opts = {}) {
     emit("visible");
   });
   on(globalThis, "pagehide", () => {
-    try { SS()?.setItem("ifl-roof-y", JSON.stringify({ p: format(F.route), y: Math.round(scrollY) })); } catch (_) {}
+    ss("ifl-roof-y", JSON.stringify({ p: format(F.route), y: Math.round(scrollY) }));
   });
   on(globalThis, "pageshow", (e) => { if (e.persisted) emit("visible"); });
   const mq = matchMedia("(prefers-color-scheme: dark)"), themed = () => emit("theme", themeNow());
@@ -480,7 +468,7 @@ export function createFrame(opts = {}) {
     offs.push(() => mo.disconnect());
   }
   // edge-swipe Back, from the left 20 px, only on the Home Screen (D19)
-  const standalone = () => { try { return navigator.standalone === true || matchMedia("(display-mode: standalone)").matches; } catch (_) { return false; } };
+  const standalone = () => T(() => navigator.standalone === true || matchMedia("(display-mode: standalone)").matches, false);
   let sw0 = null;
   on(doc, "touchstart", (e) => {
     const t = e.touches[0];
@@ -496,18 +484,12 @@ export function createFrame(opts = {}) {
   const r0 = here();
   routes[depth] = r0;
   render(r0, { first: true });
-  let kept = null;
-  try { kept = JSON.parse(SS()?.getItem("ifl-roof-y") || "null"); SS()?.removeItem("ifl-roof-y"); } catch (_) {}
-  if (kept && kept.p === format(F.route) && kept.y > 0) {
-    let n = 0;
-    const tryY = () => {
-      if (gone || ++n > 90) return;
-      const room = html.scrollHeight - innerHeight;
-      if (room >= kept.y - 2 || n > 60) { scrollTo(0, kept.y); ys.set(key, kept.y); if (Math.abs(scrollY - kept.y) < 3) return; }
-      requestAnimationFrame(tryY);
-    };
-    requestAnimationFrame(() => requestAnimationFrame(tryY));
-  }
+  // (after first paint, and again each frame for a while as the screen fills in)
+  const kept = T(() => JSON.parse(sessionStorage.getItem("ifl-roof-y")), null), y0 = kept?.y;
+  T(() => sessionStorage.removeItem("ifl-roof-y"));
+  let n = 0;
+  const tryY = () => { scrollTo(0, y0); ys.set(key, y0); if (!gone && Math.abs(scrollY - y0) > 2 && ++n < 90) requestAnimationFrame(tryY); };
+  if (kept?.p === format(F.route) && y0 > 0) requestAnimationFrame(tryY);
   (globalThis.requestIdleCallback || ((f) => setTimeout(f, 1200)))(() => places());
   return F;
 }

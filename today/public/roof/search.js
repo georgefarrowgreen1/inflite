@@ -93,13 +93,6 @@ export function createSearch(F) {
     input.addEventListener("input", () => { clearTimeout(t); t = setTimeout(run, 80); });
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); list.querySelector("[role=option]")?.click(); }
-      else if (e.key === "ArrowDown") { e.preventDefault(); list.querySelector("[role=option]")?.focus(); }
-    });
-    list.addEventListener("keydown", (e) => {
-      const o = [...list.querySelectorAll("[role=option]")], i = o.indexOf(document.activeElement);
-      if (i < 0 || !/^Arrow(Up|Down)$/.test(e.key)) return;
-      e.preventDefault();
-      (e.key === "ArrowDown" ? o[i + 1] : o[i - 1] || input)?.focus();
     });
     clear.addEventListener("click", () => { input.value = ""; input.focus(); run(); });
     h = F.sheet.open({ sheet: "search", title: "Search everything", focus: input, body: ui.el("div", { class: "ifl-search" }, box, say, list), onClose: () => { h = null; gen++; clearTimeout(t); } });

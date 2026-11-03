@@ -57,7 +57,7 @@ function failed(app, F, root, n) {
   const R = REGISTRY[app], ui = F.ui, links = F.session.links || {};
   const own = () => {
     const base = links[app] || `${location.protocol}//${app}.${location.host.replace(/^next\./, "")}`;
-    location.assign(base.replace(/\/$/, "") + location.pathname.replace(new RegExp(`^${R.path.slice(0, -1)}`), "") + location.search + location.hash);
+    location.assign(base.replace(/\/$/, "") + location.pathname.slice(R.path.length - 1) + location.search + location.hash);
   };
   const again = n > 1
     ? { label: "Reload", act: "reload", primary: true, run: () => location.reload() }

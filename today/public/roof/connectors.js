@@ -2,7 +2,8 @@
 // provider). Words say only what each app really does today; nothing promised of a later stage.
 // Connector = { app, name, icon, href, shares: { cards?, search?, notifications?, actions?, screens? }, sections,
 //   aliases, files?, mini?(answer) → Mini | null, search?(q) → Entry[] }
-// Mini = { kind: "num-bars", num, bars, label } | { kind: "pct-spark", pct, spark? } (a shape, never amounts) | { kind: "num", num, label }
+// Mini = { kind: "num-bars", num, bars, label } | { kind: "pct-spark", pct } (a percentage, never amounts: Today's Markets card
+//   carries no intraday values yet, so no spark is drawn) | { kind: "num", num, label }
 // STATIC: the apps that aren't modules yet (chats, fitness, markets, mail), with hrefs to their hub pages.
 // connectorOf(app) → Promise<Connector>: Weather → its connector.js (only when hub && roof are on; else a static
 //   fallback without search or mini); the others → STATIC[app].
@@ -26,9 +27,7 @@ export const STATIC = Object.freeze({
     shares: { cards: "How your holdings are doing today", notifications: "Price alerts and the evening wrap", screens: "Today · Holdings · News, on its own page for now" },
     mini: (a) => {
       const c = a?.cards?.markets, p = Number(c?.pct);
-      if (!c || !c.traded || !Number.isFinite(p)) return null;
-      const spark = Array.isArray(c.spark) ? c.spark.map(Number).filter(Number.isFinite) : null;
-      return { kind: "pct-spark", pct: p, ...(spark?.length > 1 ? { spark } : {}) };
+      return c?.traded && Number.isFinite(p) ? { kind: "pct-spark", pct: p } : null;
     } },
   mail: { app: "mail", name: "Mail", icon: "mail", href: "/mail/", sections: [],
     shares: { notifications: "New mail, from Mail’s own notifications", screens: "Mail, framed in InFlite" } },

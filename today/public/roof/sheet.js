@@ -22,18 +22,14 @@ import { el, btn, icon } from "./ui.js";
 let n = 0;
 export function createSheets(F) {
   const open = [];
+  // (the keyboard up: an open sheet no taller than what's in sight)
+  const v = globalThis.visualViewport;
+  const fit = () => { for (const s of open) s.el.style.setProperty("--vvh", `${Math.round(v.height)}px`); };
   const sync = () => {
-    document.body.classList.toggle("sheet-up", open.length > 0);
-    vv(open.length > 0);
-  };
-  let fitting = false;
-  const fit = () => { const h = globalThis.visualViewport?.height || innerHeight; for (const s of open) s.el.style.setProperty("--vvh", `${Math.round(h)}px`); };
-  const vv = (on) => {
-    const v = globalThis.visualViewport;
-    if (!v || on === fitting) return;
-    fitting = on;
-    v[on ? "addEventListener" : "removeEventListener"]("resize", fit);
-    if (on) fit();
+    const up = open.length > 0;
+    document.body.classList.toggle("sheet-up", up);
+    v?.[up ? "addEventListener" : "removeEventListener"]("resize", fit);
+    if (up && v) fit();
   };
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -42,6 +38,7 @@ export function createSheets(F) {
     const was = document.activeElement;
     const stack = [];
     let shut = false;
+    const ac = new AbortController(), sig = { signal: ac.signal };
     const h = { el: d, body, close: () => close(true), now: () => close(false), push, pop, setBusy, closed: false };
     function done() {
       if (h.closed) return;
@@ -51,8 +48,7 @@ export function createSheets(F) {
       try { if (d.open) d.close(); } catch (_) {}
       const i = open.indexOf(h);
       if (i >= 0) open.splice(i, 1);
-      d.removeEventListener("cancel", cancel); d.removeEventListener("close", closed); d.removeEventListener("click", click); d.removeEventListener("keydown", trap);
-      head?.removeEventListener("pointerdown", grab); d.querySelector(".ifs-grab")?.removeEventListener("pointerdown", grab);
+      ac.abort();
       while (stack.length) pop(true);
       if (built) d.remove();
       sync();
@@ -80,14 +76,15 @@ export function createSheets(F) {
       if (e.button || e.target.closest("button")) return;
       const y0 = e.clientY, t0 = Date.now();
       let dy = 0;
-      const move = (m) => { dy = Math.max(0, m.clientY - y0); d.classList.add("dragging"); d.style.setProperty("--drag", `${dy}px`); };
+      const a = new AbortController(), o = { signal: a.signal };
       const up = () => {
-        removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
+        a.abort();
         d.classList.remove("dragging");
         if (dy > 120 || (dy > 40 && dy / (Date.now() - t0) > 0.6)) close(true);
         else d.style.removeProperty("--drag");
       };
-      addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
+      addEventListener("pointermove", (m) => { dy = Math.max(0, m.clientY - y0); d.classList.add("dragging"); d.style.setProperty("--drag", `${dy}px`); }, o);
+      addEventListener("pointerup", up, o); addEventListener("pointercancel", up, o);
     }
     // Tab and Shift-Tab go round the sheet, never out of it to the browser's own bar
     function trap(e) {
@@ -132,8 +129,7 @@ export function createSheets(F) {
       const back = el("button", { class: "ifs-btn ifs-back", type: "button", "aria-label": "Back", data: { back: "" } }, icon("back"));
       head.prepend(back);
     }
-    d.addEventListener("cancel", cancel); d.addEventListener("close", closed); d.addEventListener("click", click); d.addEventListener("keydown", trap);
-    head?.addEventListener("pointerdown", grab); d.querySelector(".ifs-grab")?.addEventListener("pointerdown", grab);
+    for (const [t, e, f] of [[d, "cancel", cancel], [d, "close", closed], [d, "click", click], [d, "keydown", trap], [head, "pointerdown", grab], [d.querySelector(".ifs-grab"), "pointerdown", grab]]) t?.addEventListener(e, f, sig);
     d.classList.remove("closing");
     if (!d.isConnected) document.body.append(d);
     try { d.showModal(); } catch (_) { d.setAttribute("open", ""); }
