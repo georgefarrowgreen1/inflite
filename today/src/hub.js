@@ -100,12 +100,15 @@ export async function hub(request, env, ctx) {
   // isn't ready); with it off (ROOF_OFF "1"), Weather's milestone-1 page is the hub's again, and the module's files are
   // not found, so a page that missed the change can't start the module either [RB6b]
   // The same for each module of stage 2 (Markets, Fitness), each by its own switch (opt-in; Weather's opt-out)
-  const a = read && (/^\/(weather|markets|fitness)(\/|$)/.exec(p)?.[1] || /^\/(weather|markets|fitness)(\/|$)/.exec(plainPath(p))?.[1]);
+  // And Chats (stage 3, by ROOF_CHATS): its document /chats/ the framework's page, but never with ?engine (milestone 1's
+  // engine, which Today frames) nor at /chats/in/ (Chat's own page, for signing in and keys: forwarded as before);
+  // /chats/sw.js its retiring worker; /chats (no slash) the hub's 301 below, as before. Off, /chats/roof/* not found
+  const a = read && (/^\/(weather|markets|fitness|chats)(\/|$)/.exec(p)?.[1] || /^\/(weather|markets|fitness|chats)(\/|$)/.exec(plainPath(p))?.[1]);
   if (a) {
     if (roofOn(env, a)) {
-      if (modOf(p) === a) return roofPage(request, env);
+      if (modOf(p, url.search) === a) return roofPage(request, env);
       if (p === `/${a}/sw.js`) return retireWorker(request, a);
-      if (p === `/${a}`) return new Response(null, { status: 301, headers: { Location: `${url.origin}/${a}/${url.search}`, ...SAFE } });
+      if (p === `/${a}` && a !== "chats") return new Response(null, { status: 301, headers: { Location: `${url.origin}/${a}/${url.search}`, ...SAFE } });
     } else if (filesOf(a).test(p) || filesOf(a).test(plainPath(p))) return refuse(404, SAID.gone);
   }
   if (!env?.HUB_KEY) return refuse(503, SAID.notReady);
