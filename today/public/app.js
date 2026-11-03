@@ -862,6 +862,59 @@ function forgetKept(except = null) {
     }
   } catch {}
 }
+// The apps' copies of you, kept at this address. At the hub, Chats and every app are pages of inflite.ai, so what each
+// keeps of you is kept here (§11.5): signing out of InFlite lets go of what each lets go of as you sign out of it on its
+// own (Markets' forget(), Fitness's and Weather's signOutHere, Chat's forget), so none of it is drawn for whoever opens
+// it next. Weather's places and settings are the phone's, as Weather's own Sign Out keeps them: only its copy of your
+// account goes. Each app's look (its appearance, theme) stays too. (todaykept.test.mjs reads each app's own sign-out
+// lists and checks every key in them is here.)
+const APP_KEPT = [
+  "markets:last", "markets:years", "markets:recent", "markets:newsRead", "markets:newsHide", "markets:newsSeen", "markets:plan",
+  "wx:acct",
+  "fitness:hk", "fitness:today-sent", "fitness:today-swaps", "fitness:meAt", "fitness:files", "fitness:morning", "fitness:sums",
+  "inflight-lock", "inflight-badges", "inflight-pushsub", "inflight-opened",
+];
+// (an app's IndexedDB store at this address, changed by fn, if the app keeps one here; never made here where it doesn't,
+// as there's nothing to let go of then. However it ends, within a few seconds: iOS can leave an open hanging)
+function inStore(name, store, fn) {
+  return new Promise((done) => {
+    let r = null;
+    const late = setTimeout(done, 2500), end = () => { clearTimeout(late); done(); };
+    try { r = indexedDB.open(name); } catch { return end(); }
+    r.onupgradeneeded = () => { try { r.transaction.abort(); } catch {} };
+    r.onerror = end; r.onblocked = end;
+    r.onsuccess = () => {
+      const db = r.result;
+      try {
+        const tx = db.transaction(store, "readwrite");
+        tx.oncomplete = tx.onerror = tx.onabort = () => { db.close(); end(); };
+        fn(tx.objectStore(store));
+      } catch { try { db.close(); } catch {} end(); }
+    };
+  });
+}
+// chat: Chat's sign-in on this phone too, when its own engine didn't sign out here (no engine, or no answer from it)
+async function forgetApps({ chat = true } = {}) {
+  try { for (const k of APP_KEPT) localStorage.removeItem(k); } catch {}
+  await Promise.all([
+    // Fitness's copies of your activities' files, and of you (me:last), as its own Sign Out clears them
+    inStore("fitness", "files", (s) => s.clear()),
+    // Chat's sign-in and key, and its kept copy of your chats, as its forget() lets them go (and your pinned chats, once
+    // the account keeps them too: pinsup); what you'd written and not sent stays, sealed, for when you're back in as you
+    // (forget(true), as the engine's signOut does)
+    chat ? inStore("inflight", "kv", (s) => {
+      const q = s.get("session");
+      q.onsuccess = () => {
+        const id = q.result?.me?.id;
+        s.delete("session");
+        if (!id) return;
+        s.delete(`cache:${id}`);
+        const up = s.get(`pinsup:${id}`);
+        up.onsuccess = () => { if (up.result) { s.delete(`pins:${id}`); s.delete(`pinsup:${id}`); } };
+      };
+    }) : null,
+  ]);
+}
 function keptFor(id) {
   const c = readJSON(CARDS_KEY(id));
   return c && c.id === id && c.answer && typeof c.answer === "object" ? c : null;
@@ -909,10 +962,15 @@ async function signOut() {
       await sub.unsubscribe().catch(() => {});
     }
   } catch {}
-  if (S.hub) await Promise.race([IFL.hub.chat().then((c) => c?.signOut?.()).catch(() => {}), new Promise((ok) => setTimeout(ok, 4000))]);
+  const chatOut = S.hub && await Promise.race([
+    IFL.hub.chat().then(async (c) => { if (typeof c?.signOut !== "function") return false; await c.signOut(); return true; }).catch(() => false),
+    new Promise((ok) => setTimeout(() => ok(false), 4000)),
+  ]);
   const auth = safe(S.links?.auth) || DEFAULT_LINKS.auth;
   await call("/api/logout", { method: "POST", body: {} }).catch(() => {});
   forgetKept();
+  // (and the apps' copies of you at this address: the hub's, so every app's)
+  await forgetApps({ chat: !chatOut });
   try { localStorage.removeItem("today:push"); } catch {}
   S.view = null;
   location.assign(`${auth}/#${new URLSearchParams({ signout: "today", back: `${location.origin}/` })}`);

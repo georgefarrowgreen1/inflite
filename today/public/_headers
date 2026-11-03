@@ -14,6 +14,8 @@
   Cache-Control: no-cache
 /theme.js
   Cache-Control: no-cache
+/fade.js
+  Cache-Control: no-cache
 /day.js
   Cache-Control: no-cache
 /day.css
