@@ -1,6 +1,7 @@
 // Mail's pictures viewer under the roof (One roof stage 4, s4/spec S4-D17, §2.2; app.js openViewer 5287–5680, pictures
-// only). Lazy, network only. One framework sheet, data-sheet=mail-viewer: the conversation's pictures, swiped through,
-// pinched or double-tapped to zoom, Share with navigator.share({ files }) where the browser offers it.
+// only). Lazy, kept offline (connector.lazy, s24-contracts §8). One framework sheet, data-sheet=mail-viewer: the
+// conversation's pictures, swiped through, pinched or double-tapped to zoom, Share with navigator.share({ files })
+// where the browser offers it.
 // Frozen: openViewer(ctx, files, i) → sheet Handle | null. files: [{ id, filename, type, size, url? }] (url: a blob: the
 //   reader already made for its gallery, left to the reader to revoke); only S4-D17's raster types are shown, the rest
 //   dropped. A picture is fetched by ctx.api.picture(id) (CORS, raster only on Mail's server too), re-typed as its own

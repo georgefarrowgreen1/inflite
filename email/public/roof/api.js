@@ -1,7 +1,8 @@
 // Mail's module: Mail's API, called straight from the page (One roof stage 4, spec S4-D2, §4.7; app.js realApi
 // 1144–1245). Credentialed CORS to Mail's own address: reads carry no custom header (simple requests, no preflight),
 // writes carry X-Inflite: 1 and go to a few fixed URLs. Never asked for here: a message's body (/api/messages/<id>),
-// logout, push, the old send with its payload, New or Delete Address. A query never goes in a URL: search and contact
+// logout, push, the old send with its payload, New or Delete Address, the address check (its GET puts what was typed
+// into a URL). A query never goes in a URL: search and contact
 // lookups are POST bodies (S4-D9).
 // MAIL: Mail's address beside this one (modules.js's rule: next.inflite.ai → email.inflite.ai; the test hub
 //   ifl.test:8788 → email.ifl.test:8788).
@@ -10,7 +11,7 @@
 //   switch off: a CORS refusal looks like this), so the page asks /api/hub again (C1).
 export const MAIL = `${location.protocol}//email.${location.host.replace(/^next\./, "")}`;
 
-export const METHODS = ["session", "me", "version", "counts", "settings", "handback", "threads", "search", "thread", "meta", "draft", "batch", "emptyTrash", "unsubInfo", "unsubscribe", "remove", "saveSettings", "checkAddress", "updateAddress", "findContacts", "saveDraft", "sendDraft", "sent", "picture", "fileUrl", "rawUrl"];
+export const METHODS = ["session", "me", "version", "counts", "settings", "handback", "threads", "search", "thread", "meta", "draft", "batch", "emptyTrash", "unsubInfo", "unsubscribe", "remove", "saveSettings", "updateAddress", "findContacts", "saveDraft", "sendDraft", "sent", "picture", "fileUrl", "rawUrl"];
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -106,7 +107,6 @@ export function createApi({ base = MAIL, onLost = null, onRefused = null } = {})
     unsubscribe: (id) => req("POST", `/api/unsubscribe/${enc(id)}`, {}),
     remove: (id) => req("DELETE", `/api/messages/${enc(id)}`),
     saveSettings: (patch) => req("PATCH", "/api/settings", patch),
-    checkAddress: (local) => req("GET", `/api/addresses/check?${qs({ local })}`),
     updateAddress: (email, patch) => req("PATCH", `/api/addresses/${enc(email)}`, patch),
     findContacts: (q) => req("POST", "/api/contacts/find", { q }),
     saveDraft: (draft, onProgress, opts = {}) => req("POST", "/api/drafts", draft, { upload: true, onProgress, ...opts }),

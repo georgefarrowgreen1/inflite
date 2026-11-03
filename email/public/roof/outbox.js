@@ -12,9 +12,18 @@
 //       files: [File | { ref, filename, type, size }]. Resolves once the draft is saved (or queued): compose closes on ok.
 //   retry(key), pending() → OutboxItem[], undo(key) → boolean
 //   keepUnsent(fields) → boolean (false over CAP or on QuotaExceededError: compose says FULL), unsent(), dropUnsent()
-//   track(fields) → off   (MM's addition) compose's live fields, () => fields | null, saved by flush() as a server draft
+//   track(fields, onSaved) → off   (MM's addition) an open compose: fields() → its live fields | null (nothing to keep),
+//       with files: [File | { ref }] when it has any (a draft's own files are { ref }: listed, so a save keeps them);
+//       flush() saves them as a server draft (with fields().draftId when it has one, else the id an earlier flush got)
+//       and hands the id back, onSaved(id), so compose's own save on closing updates that draft instead of making a
+//       second (compose sets its draftId from it). Unchanged since the last flush save: not saved again (so the flush
+//       of unmount, after sign-out, asks nothing).
 //   flush({ keepalive }) → Promise<{ lost }>   ≤ FLUSH_MS: sends waiting out their Undo go now, queued ones and an open
-//       compose are saved as server drafts; lost = what couldn't be
+//       compose are saved as server drafts; lost = what couldn't be. An untracked compose's mail:unsent copy is saved the
+//       same way and then dropped (so a second flush finds nothing).
+//   undo(key): the draft opened again in compose. A message without files: its fields (compose shows them at once, no
+//       files key). One with files: { draftId } alone, so compose asks Mail for the draft (api.draft) and keeps its
+//       files as Mail has them ({ ref }); never files: [] (a save with that id would drop them).
 //   destroy()
 // }
 // OutboxItem = { key, at, draft: { from, to, cc, bcc, subject, text, quote, draftId }, state: "waiting" | "sending" |
@@ -41,7 +50,7 @@ const b64 = (blob) => blob.arrayBuffer().then((buf) => {
 export function createOutbox(ctx) {
   const { store, api, fw } = ctx;
   const items = new Map();
-  const tracked = new Set();
+  const tracked = new Map();
   const offs = [];
   let dead = false;
   const toast = (text, o) => { try { return fw.toast(text, o) || null; } catch { return null; } };
@@ -105,7 +114,7 @@ export function createOutbox(ctx) {
     } catch (e) {
       return { ok: false, error: e.message || "Couldn’t send", offline: !e.status && !online() };
     }
-    const it = { key: keyOf(), at: Date.now(), draft: { ...d, draftId: saved?.id || d.draftId }, state: "waiting", timer: 0, handle: null };
+    const it = { key: keyOf(), at: Date.now(), draft: { ...d, draftId: saved?.id || d.draftId }, files: (files || []).length, state: "waiting", timer: 0, handle: null };
     items.set(it.key, it);
     mirror();
     it.handle = toast("Sending…", { action: { label: "Undo", run: () => undo(it.key) } });
@@ -120,7 +129,7 @@ export function createOutbox(ctx) {
     items.delete(key);
     mirror();
     try { it.handle?.close?.(); } catch {}
-    ctx.open?.compose?.({ ...it.draft, files: [] });
+    ctx.open?.compose?.(it.files && it.draft.draftId ? { draftId: it.draft.draftId } : { ...it.draft });
     return true;
   }
 
@@ -165,8 +174,8 @@ export function createOutbox(ctx) {
   }
   const unsent = () => { const u = local.get(STORAGE.unsent, null); return u && typeof u === "object" ? u : null; };
   const dropUnsent = () => local.drop(STORAGE.unsent);
-  function track(fn) {
-    tracked.add(fn);
+  function track(fn, onSaved) {
+    tracked.set(fn, { onSaved: typeof onSaved === "function" ? onSaved : null, id: null, sig: null });
     return () => tracked.delete(fn);
   }
 
@@ -177,10 +186,21 @@ export function createOutbox(ctx) {
       if (it.state === "waiting") jobs.push(go(it, { keepalive }));
       else if (it.state === "queued") jobs.push(api.saveDraft(await payload(it.draft, []), null, { keepalive }).then(() => { items.delete(it.key); }, () => { lost++; }));
     }
-    for (const fn of tracked) {
+    for (const [fn, t] of tracked) {
       let f = null;
       try { f = fn(); } catch {}
-      if (f) jobs.push(api.saveDraft(await payload(fieldsOf(f), []), null, { keepalive }).then(() => dropUnsent(), () => { lost++; }));
+      if (!f) continue;
+      const d = fieldsOf(f);
+      d.draftId ||= t.id;
+      const files = Array.isArray(f.files) ? f.files : [];
+      const sigOf = (id) => JSON.stringify([{ ...d, draftId: id }, files.map((x) => x?.ref || `${x?.name}:${x?.size}`)]);
+      if (sigOf(d.draftId) === t.sig) continue;
+      jobs.push(api.saveDraft(await payload(d, files), null, { keepalive }).then((r) => {
+        t.id = r?.id || d.draftId || null;
+        t.sig = sigOf(t.id);
+        dropUnsent();
+        if (t.id) try { t.onSaved?.(t.id); } catch {}
+      }, () => { lost++; }));
     }
     const u = !tracked.size && unsent();
     if (u && (u.subject || u.text || u.to?.length)) jobs.push(api.saveDraft(await payload(fieldsOf(u), []), null, { keepalive }).then(() => dropUnsent(), () => { lost++; }));

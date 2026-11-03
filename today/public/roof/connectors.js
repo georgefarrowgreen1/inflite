@@ -12,7 +12,8 @@
 //   (given F, Weather's connector file is asked for only while hub and roof are on).
 // openConnector(F, app): the connector sheet (dialog.ifl-sheet[data-sheet=connector]): the app's icon, "<App>’s
 //   connector", one line, a row per contract word the app fills, "Open <App>", and for Weather "Weather Settings" and
-//   "Weather Notifications".
+//   "Weather Notifications", for Markets "Markets Notifications" (/#you=notify), for Fitness while it's on "Fitness
+//   Settings" (/fitness/#settings).
 // connectorProvider(F, app) → off: the app's connector.search as a search provider, given { userId } (s24 §5, §6);
 //   registered by the frame for each app that's on, unless its module is mounted with a provider of its own. Weather's
 //   is Places (wx:places, on this device; it adds "Weather Settings"): placesProvider(F) = connectorProvider(F, "weather").
@@ -69,10 +70,14 @@ export async function openConnector(F, app) {
   if (!c) return null;
   const ui = F.ui, rows = WORDS.filter(([k]) => typeof c.shares?.[k] === "string").map(([k, l]) => ui.el("div", { class: "ifl-provides-row", data: { word: k } }, ui.el("b", { text: l }), ui.el("span", { text: c.shares[k] })));
   const acts = [{ label: `Open ${c.name}`, primary: true, href: c.href, act: "open" }];
+  const on = !!F.session?.apps?.[app];
   if (app === "weather") acts.push({ label: "Weather Settings", href: `${REGISTRY.weather.path}#settings`, act: "settings" }, { label: "Weather Notifications", href: "/#you=notify-weather", act: "notify" });
+  // (stage 2 §2.4: Markets' notifications are You's; Fitness Settings is the module's sheet, so only while it's on)
+  if (app === "markets") acts.push({ label: "Markets Notifications", href: "/#you=notify", act: "notify" });
+  if (app === "fitness" && on) acts.push({ label: "Fitness Settings", href: `${REGISTRY.fitness.path}#settings`, act: "settings" });
   return F.sheet.open({
     sheet: "connector", app: app === "chats" ? "chat" : app, title: `${c.name}’s connector`,
-    hero: { app: c.icon || app, name: `${c.name}’s connector`, line: c.name === "Weather" ? "Its own module, under one roof" : "An app beside InFlite" },
+    hero: { app: c.icon || app, name: `${c.name}’s connector`, line: app === "weather" || on ? "Its own module, under one roof" : "An app beside InFlite" },
     body: ui.el("div", { class: "ifl-connector" },
       ui.el("p", { class: "ifl-sub", text: `${c.name} keeps its own server and data. This is all it shares with InFlite:` }),
       ui.el("div", { class: "ifl-provides" }, rows)),

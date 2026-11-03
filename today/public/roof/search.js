@@ -42,10 +42,10 @@ export function collect(providers, q, update, { slow = SLOW } = {}) {
 function appsProvider(F) {
   let st = null;
   const on = (a) => !!F.session?.apps?.[a], has = (a) => F.session?.view?.apps?.[a] !== false;
-  const mod = (R) => ({ name: R.name, icon: R.app, href: R.path, links: R.sections.slice(1).map(([id, l]) => [l, R.path + "#" + id]) });
+  const mod = (R) => ({ app: R.app, name: R.name, icon: R.app, href: R.path, links: R.sections.slice(1).map(([id, l]) => [l, R.path + "#" + id]) });
   const load = () => (st ||= import("./connectors.js").then((c) => c.STATIC, () => ({}))).then((S) =>
     [...Object.values(REGISTRY).filter((R) => !S[R.app]).map(mod), ...Object.values(S).map((c) => (REGISTRY[c.app] && on(c.app) ? mod(REGISTRY[c.app]) : c))]
-      .flatMap((c) => [{ title: c.name, sub: "Open", icon: c.icon, href: c.href }, ...(has(c.icon) ? c.links || [] : []).map(([l, href]) => ({ title: `${c.name} · ${l}`, sub: c.name, icon: c.icon, href }))]));
+      .flatMap((c) => [{ title: c.name, sub: "Open", icon: c.icon, href: c.href }, ...(has(c.app) ? c.links || [] : []).map(([l, href]) => ({ title: `${c.name} · ${l}`, sub: c.name, icon: c.icon, href }))]));
   return {
     id: "apps", group: "Apps", order: 10,
     search: (q) => load().then((a) => { const s = q.trim().toLowerCase(); return s ? a.filter((e) => e.title.toLowerCase().includes(s)) : a; }),

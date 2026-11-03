@@ -5,10 +5,11 @@
 //   the filter, the address and the search, each with its ✕. Then what's being sent (the outbox, each with Undo or Try
 //   Again), the rows by day (none in Later), Updates as a digest, Load More; or the caught-up screen (the next back from
 //   Later, the newest Updates' senders), the empty words of each place (app.js emptyEl), a search's alternatives with
-//   their counts (POST, count), or "Couldn’t reach Mail · Try Again"; the gate and offline words are mail.js's.
+//   their counts (POST, count), or "Couldn’t reach Mail" with Try Again and Open Mail on Its Own; the gate and offline words are mail.js's.
 //   A row's tap: on a phone, the reader as a history entry (fw.nav.go("/mail/#thread=<id>"), S4-D6); on an iPad, the
 //   pane (store threadId). A draft's tap opens it in compose.
 import { threadRow, swipes } from "./rows.js";
+import { MAIL } from "./api.js";
 
 export function view(el, ctx) {
   const { store, fw, logic, actions } = ctx, ui = fw.ui;
@@ -115,18 +116,27 @@ export function view(el, ctx) {
     box.hidden = !s.outbox.length;
   }
 
+  // (Mail unreachable, or its switch off: Try Again, or Mail at its own address, in a new tab, spec §8)
+  function unreached(err) {
+    const e = ui.error({ title: "Couldn’t reach Mail", body: err, acts: [{ label: "Try Again", act: "retry", primary: true, run: () => actions.load() }, { label: "Open Mail on Its Own", act: "own", href: MAIL + "/" }] });
+    const a = e.querySelector('a[data-act="own"]');
+    if (a) { a.target = "_blank"; a.rel = "noopener"; }
+    return e;
+  }
+
   function drawRows(s) {
     const L = s.list;
     const filter = typed.trim() && typed.trim() !== s.query ? typed.trim().toLowerCase() : "";
     const list = filter ? L.rows.filter((t) => [t.subject, t.snippet, t.latest?.snippet, ...(t.people || []).flatMap((p) => [p.name, p.email])].some((x) => String(x || "").toLowerCase().includes(filter))) : L.rows;
-    const sig = JSON.stringify([s.layout, s.threadId, s.lens, s.query, filter, L.loading, L.err, list.length && list.map((t) => [t.id, t.date, t.unread, t.starred, t.snoozeUntil, t.done, t.trashed, t.count, t.subject, t.category])]);
+    // (the day too: "Today" and "Yesterday" are said again after midnight even if nothing else changed)
+    const sig = JSON.stringify([logic.startOfDay(Date.now()), s.layout, s.threadId, s.lens, s.query, filter, L.loading, L.err, list.length && list.map((t) => [t.id, t.date, t.unread, t.starred, t.snoozeUntil, t.done, t.trashed, t.count, t.subject, t.category])]);
     if (sig === shownSig) return;
     shownSig = sig;
     const kept = rows.contains(doc.activeElement) ? doc.activeElement.closest(".ml-row")?.dataset : null;
     if (!list.length) {
       rows.removeAttribute("role");
       if (L.loading) rows.replaceChildren(ui.skeleton("rows", 6));
-      else if (L.err) rows.replaceChildren(ui.error({ title: "Couldn’t reach Mail", body: L.err, acts: [{ label: "Try Again", act: "retry", primary: true, run: () => actions.load() }] }));
+      else if (L.err) rows.replaceChildren(unreached(L.err));
       else if (filter) rows.replaceChildren(ui.empty({ title: "Nothing loaded matches", body: "Press Return to search all your mail." }));
       else if (s.query) rows.replaceChildren(noResults(s));
       else if (s.lens === "people" && s.filter === "all" && !s.address && !s.box) rows.replaceChildren(caughtUp(s));

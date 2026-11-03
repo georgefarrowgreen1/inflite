@@ -1,6 +1,6 @@
 // Mail Settings under the roof (One roof stage 4, s4/spec S4-D11, §2.2; app.js openSettings 2288–2772, ported without
-// New Address, Delete Address and Send From). Lazy, network only. One framework sheet, data-sheet=mail-settings, its
-// pages pushed onto it.
+// New Address, Delete Address and Send From). Lazy, kept offline (connector.lazy, s24-contracts §8). One framework
+// sheet, data-sheet=mail-settings, its pages pushed onto it.
 // Frozen: openSettings(ctx, page) → sheet Handle. page: null (the first page), "signature", "unknown" (Unknown
 //   Addresses), or one of your addresses (its own page, [data-page=address]).
 // The first page: Addresses (each row → its page: Name, Signature, Sort Into, Colour), Unknown Addresses (Keep / Turn
