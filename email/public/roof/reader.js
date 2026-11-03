@@ -124,7 +124,7 @@ export function view(el, ctx) {
     const to = (m.to || []).map((p) => (!sent && p.email === m.mailbox ? "you" : logic.displayName(p))).join(", ");
     c.top.replaceChildren(ui.avatar(logic.displayName(m.from) || "?"), E("span", { class: "mr-who" },
       E("b", { text: open ? who : who.split(/\s+/)[0] }), E("small", { text: open ? (to ? `to ${to}` : m.from?.email || "") : m.snippet || "" })),
-      m.date ? E("span", { class: "mr-date", text: logic.fmtListDate?.(m.date) || "" }) : null);
+      E("span", { class: "mr-date", text: m.date ? logic.fmtListDate?.(m.date) || "" : "" }));
     c.when.textContent = open && m.date ? logic.fmtLongDate?.(m.date) || "" : "";
     if (!open) { dropFrame(m.id); c.body.replaceChildren(); c.files.replaceChildren(); c.banner.hidden = true; return; }
     if (!cur.frames.has(m.id)) {
@@ -175,12 +175,12 @@ export function view(el, ctx) {
   function paintHead(t) {
     const ps = (t.people || []).slice(0, 4).map((p) => (p.me ? "you" : (p.name || p.email || "").split(/[\s@]/)[0]));
     const who = ps.length > 1 ? `${ps.slice(0, -1).join(", ")} and ${ps[ps.length - 1]}` : ps[0] || "";
-    cur.head.replaceChildren(
+    cur.head.replaceChildren(...[
       E("h2", { class: "mr-subject", text: t.subject || "(No Subject)" }),
       E("p", { class: "mr-meta", text: [who && who[0].toUpperCase() + who.slice(1), t.count > 1 && `${t.count} messages`, t.trashed ? "In Trash" : t.done && "Done"].filter(Boolean).join(" · ") }),
       t.snoozeUntil ? E("p", { class: "mr-later" }, ctx.icon("later"), E("span", { text: `Comes back ${logic.fmtWhen?.(t.snoozeUntil) || ""}` }),
         ui.btn("Bring Back Now", { small: true, act: "unsnooze", run: () => ctx.actions.act([t.id], "unsnooze") })) : null,
-    );
+    ].filter(Boolean));
   }
   function acts(t) {
     const lead = t.trashed ? ["Restore", "restore"] : t.done ? ["Inbox", "inbox"] : ["Done", "done"];

@@ -77,7 +77,8 @@ export function openSettings(ctx, page = null) {
         ui.row({ lead: { icon: "bell" }, title: "Notifications", sub: "In You, with InFlite’s own", trail: "chevron", act: "notify", href: "/#you=notify-mail" })),
     );
     const own = root.querySelector("[data-act=own]");
-    if (own) { own.target = "_blank"; own.rel = "noopener"; }
+    own?.setAttribute("target", "_blank");
+    own?.setAttribute("rel", "noopener");
   }
 
   // ---- an address's own page

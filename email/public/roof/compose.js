@@ -149,16 +149,18 @@ export function openCompose(ctx, init = {}) {
     if (c.quoteOld) quoteEl.replaceChildren(el("p", { text: "This draft was started in Mail on its own. Its quoted text is added only when you send it there." }), ui.btn("Open Mail", { small: true, href: `${MAIL}/`, act: "open-mail" }));
     else if (c.quote) quoteEl.replaceChildren(el("b", { class: "mc-qk", text: "Quoted below" }), el("p", { class: "mc-qs", text: snippetOf() }));
     const a = quoteEl.querySelector("a");
-    if (a) { a.target = "_blank"; a.rel = "noopener"; }
+    a?.setAttribute("target", "_blank");
+    a?.setAttribute("rel", "noopener");
   };
   const more = el("div", { class: "mc-more" });
   more.hidden = true;
   more.append(ui.btn("Delete Draft", { destructive: true, small: true, act: "delete-draft", run: () => end("delete") }));
+  const moreBtn = ui.iconBtn("more", { label: "More", act: "more", run: () => { more.hidden = !more.hidden; } });
   const tools = el("div", { class: "mc-tools" },
     ui.btn("Cc/Bcc", { small: true, act: "cc", run: () => { ccRow.hidden = !ccRow.hidden; if (!ccRow.hidden) fields.cc.input.focus(); } }),
     ui.btn("Add Files", { small: true, act: "files", run: () => pick.click() }),
-    ui.iconBtn("more", { label: "More", act: "more", run: () => { more.hidden = !more.hidden; } }));
-  tools.lastChild.replaceChildren(ctx.icon("more"));
+    moreBtn);
+  moreBtn.replaceChildren(ctx.icon("more"));
   const body = el("div", { class: "mc" }, el("div", { class: "mc-head" }, tokens("to", "To"), from), sugg, ccRow, subject, text, filesEl, quoteEl, tools, more, pick);
   drawFiles(); drawQuote();
   ccRow.after(sugg);
