@@ -6,6 +6,7 @@
 #rest { gap: 14px; }
 #rest > .slabel, #waiting > .slabel, #coming > .slabel { margin-bottom: 0; }
 #waiting > .slabel, #coming > .slabel { margin-bottom: 8px; }
+#rest > .slabel, #waiting > .slabel, #coming > .slabel { margin-top: 18px; }
 #waiting > .group, #coming > .group { min-width: 0; }
 /* (the sections stand apart where the page lays them out, and in the four cards' own list before it does) */
 #cards > .day-sec + .day-sec:not([hidden]) { margin-top: 10px; }
