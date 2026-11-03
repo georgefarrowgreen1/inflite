@@ -831,8 +831,53 @@ const IFL = (() => {
     updates, offer, here, update: () => apply(true), updateReady: () => !!U.ready, hub };
 })();
 // ==== end of InFlite's menu ====
-  // (opened from the account's Notifications page to turn them on here: #notify, asked once Mail's open)
-  let ASK_NOTIFY = IFL.wantsAllow();
+  // Mail in InFlite's window (Today First): framed by the hub's /mail/ page (inflite.ai/mail/, its frame named
+  // ifl-mail), Mail stays at its own address, so its mail never shares the hub's origin. In the frame (html.embed): a
+  // hello to the hub as Mail opens (it answers the same); Back, in your photo's place, says back to Apps; Sign In keeps
+  // its word in this tab as ever and asks the hub to make the trip to the sign-in page (the code comes back into the
+  // frame's address); and nothing that's the window's own: no notification asked for, no badge on the icon, no fitting
+  // to the Home Screen. Messages go to the hub's address alone, and are heard only from the window holding the frame,
+  // at that address. (Anywhere else, at its own address, Mail is exactly as it was.)
+  const EMBED = (() => {
+    try {
+      return window.parent !== window && window.name === "ifl-mail";
+    } catch {
+      return false;
+    }
+  })();
+  // (the hub: this site's own address, Mail's with its email. taken off: email.inflite.ai → inflite.ai)
+  const HUB = location.origin.replace("//email.", "//");
+  let hubHeard = false;
+
+  // A word to the hub (only in the frame, and only to the hub's address: anywhere else it goes nowhere)
+  function toHub(msg) {
+    if (!EMBED) return false;
+    try {
+      window.parent.postMessage(msg, HUB);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // The hub's word, heard only from the window holding the frame, at the hub's address: its answer to hello. → taken
+  function fromHub(e) {
+    if (!EMBED || e.source !== window.parent || e.origin !== HUB) return false;
+    const d = e.data;
+    if (!d || typeof d !== "object" || d.ifl !== "hello" || d.v !== 1) return false;
+    hubHeard = true;
+    return true;
+  }
+
+  if (EMBED) {
+    document.documentElement.classList.add("embed");
+    addEventListener("message", fromHub);
+    toHub({ ifl: "hello", v: 1 });
+  }
+
+  // (opened from the account's Notifications page to turn them on here: #notify, asked once Mail's open; never in the
+  // hub's frame, where InFlite's own notifications are the window's)
+  let ASK_NOTIFY = IFL.wantsAllow() && !EMBED;
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
 
@@ -1357,8 +1402,9 @@ const IFL = (() => {
   // On the Home Screen, iOS can lay the page out shorter than the screen (the height a Safari toolbar would take), and
   // can change its mind on its own (after a while away, or the keyboard), so the tab bar sits high with a band under
   // it: there (an iPhone or iPad, filling the screen), Mail is always sized to the screen itself
+  // (not in the hub's frame, which is the size the hub's page gives it, never the screen's)
   let viewH = () => window.innerHeight;
-  if (navigator.standalone === true && screen.width && screen.height) {
+  if (navigator.standalone === true && screen.width && screen.height && !EMBED) {
     const root = document.documentElement;
     const behindBar = () => { if (!matchMedia("(orientation: portrait)").matches) return true; const p = document.createElement("div"); p.style.cssText = "position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none"; document.body.appendChild(p); const t = p.offsetHeight; p.remove(); return t > 0; };
     const fit = () => {
@@ -1895,11 +1941,14 @@ const IFL = (() => {
     const me = S.me || {};
     setKids(
       els.listNav,
-      h(
-        "button.gbtn.glass.profile",
-        { "aria-label": "Account", title: "Account", onclick: (e) => profileMenu(e.currentTarget) },
-        avatar({ name: me.displayName, email: me.defaultFrom, me: true }, "sm")
-      ),
+      // (in the hub's frame, Back to Apps in your photo's place: You and your apps are the hub's own there)
+      EMBED
+        ? h("button.gbtn.glass.hub-back", { type: "button", "aria-label": "Back to Apps", title: "Back to Apps", onclick: () => toHub({ ifl: "back" }) }, icon("chevronLeft"), h("span", "Apps"))
+        : h(
+            "button.gbtn.glass.profile",
+            { "aria-label": "Account", title: "Account", onclick: (e) => profileMenu(e.currentTarget) },
+            avatar({ name: me.displayName, email: me.defaultFrom, me: true }, "sm")
+          ),
       // (the title beside your photo, in the bar: it stays as the list scrolls)
       els.listTitle,
       h("div.spacer"),
@@ -2575,7 +2624,8 @@ const IFL = (() => {
     } catch {}
     if (DEMO) return toast("Demo mode — nothing to sign out of", { icon: "lock" });
     showGate("signin");
-    if (authOrigin() !== accountOrigin) location.assign(`${authOrigin()}/#${new URLSearchParams({ signout: "mail", back: `${location.origin}/` })}`);
+    // (the sign-in page is never framed: in the hub's frame, signed out here is all)
+    if (!EMBED && authOrigin() !== accountOrigin) location.assign(`${authOrigin()}/#${new URLSearchParams({ signout: "mail", back: `${location.origin}/` })}`);
   }
 
   // From the title: what shows (in People and Updates), then everything else the list can do
@@ -2604,6 +2654,9 @@ const IFL = (() => {
     } else {
       items.push("-", { label: S.counts.trash ? `Trash (${S.counts.trash})` : "Trash", icon: "trash", action: () => setView("trash") });
     }
+    // (in the hub's frame, where your photo is Back: Mail's own few from its menu, here instead)
+    if (EMBED)
+      items.push("-", { label: "Remote Images", checked: !!S.remoteImages, action: toggleRemoteImages }, { label: "Settings", icon: "sliders", action: () => openSettings() });
     showMenu(anchor, items);
   }
 
@@ -4264,6 +4317,8 @@ const IFL = (() => {
   function updateBadge() {
     const n = S.counts.inbox?.unread || 0;
     document.title = n ? `Mail (${n})` : "Mail";
+    // (not from the hub's frame: the icon's badge there is InFlite's, counted by its own worker)
+    if (EMBED) return;
     try {
       if (navigator.setAppBadge) n ? navigator.setAppBadge(n) : navigator.clearAppBadge();
     } catch {}
@@ -6494,14 +6549,19 @@ pre{white-space:pre-wrap}
       .replace(/\//g, "_")
       .replace(/=+$/, "");
 
+  // (in the hub's frame, the word kept just the same, in this tab, and the hub asked to make the trip, the whole window
+  // to the sign-in page, which is never framed: the code comes back to the hub's /mail/, which hands it to this frame.
+  // → whether it was asked)
   async function goToAccount() {
     const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
     const ask = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
     try {
       sessionStorage.setItem(VERIFIER_KEY, verifier);
     } catch {}
+    if (EMBED) return toHub({ ifl: "signin", ask });
     const back = `${location.origin}/`;
     location.assign(`${authOrigin()}/#${new URLSearchParams({ signin: "mail", ask, back })}`);
+    return true;
   }
 
   // Back from the account's page with a code: swapped for the site's sign-in. Returns the session, or null.
@@ -6560,8 +6620,11 @@ pre{white-space:pre-wrap}
         onclick: () => {
           go.disabled = true;
           if (access === "offline") startAgain();
-          else if (access === "passkey") location.assign(`${accountOrigin}/`);
+          // (the account's page is never framed: from the hub's frame, opened on its own)
+          else if (access === "passkey") EMBED ? window.open(`${accountOrigin}/`, "_blank", "noopener") : location.assign(`${accountOrigin}/`);
           else goToAccount();
+          // (in the hub's frame, the page stays: Sign In can be tapped again in a moment, should the hub not have gone)
+          if (EMBED && access !== "offline") setTimeout(() => (go.disabled = false), 4000);
         },
       },
       g.button
@@ -6610,7 +6673,7 @@ pre{white-space:pre-wrap}
     S.bodies.clear();
     S.expanded.clear();
     try {
-      navigator.clearAppBadge?.();
+      if (!EMBED) navigator.clearAppBadge?.();
     } catch {}
   }
 
