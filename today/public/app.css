@@ -118,11 +118,11 @@ html.boot #out, html.boot #in { visibility: hidden; }
 .section { margin: 0 0 26px; }
 .slabel { margin: 0 18px 8px; font: 600 13px/1.2 var(--font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-3); }
 .slabel:focus { outline: none; }
-:is(.section, .bsheet) .foot { margin: 8px 20px 0; font-size: 13px; line-height: 1.4; color: var(--text-3); }
-:is(.section, .bsheet) .foot a, :is(.section, .bsheet) .foot button { color: var(--tint-text); font-weight: 600; text-decoration: none; }
+:is(.section, .ifl-sheet) .foot { margin: 8px 20px 0; font-size: 13px; line-height: 1.4; color: var(--text-3); }
+:is(.section, .ifl-sheet) .foot a, :is(.section, .ifl-sheet) .foot button { color: var(--tint-text); font-weight: 600; text-decoration: none; }
 /* (a word to tap in a line of small print, Turn On Here: a finger's reach around it, as the header's buttons have) */
-:is(.section, .bsheet) .foot button { position: relative; }
-:is(.section, .bsheet) .foot button::after { content: ""; position: absolute; inset: -13px -6px; }
+:is(.section, .ifl-sheet) .foot button { position: relative; }
+:is(.section, .ifl-sheet) .foot button::after { content: ""; position: absolute; inset: -13px -6px; }
 .group { border-radius: var(--r-group); overflow: hidden; }
 .row { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 58px; padding: 10px 18px; text-align: left; color: var(--text); text-decoration: none; }
 button.row:active, a.row:active { background: var(--press); }
@@ -416,20 +416,10 @@ label.row:active { background: var(--press); }
 .switch:checked::before { transform: translateX(20px); }
 .switch:disabled { opacity: 0.45; cursor: default; }
 .mwhy { color: var(--text-2) !important; }
-.bsheet .mwhy { margin-top: 14px; }
-.bsheet .mgroup:first-of-type { margin-top: 4px; }
+.ifl-sheet .mwhy { margin-top: 14px; }
+.ifl-sheet .mgroup:first-of-type { margin-top: 4px; }
 
-/* ---- sheets from the foot ---- */
-.dimmer { position: fixed; inset: 0; z-index: 50; background: var(--dim); opacity: 0; pointer-events: none; transition: opacity 0.45s; }
-.dimmer.on { opacity: 1; pointer-events: auto; }
-.bsheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 51; max-width: 640px; max-height: calc(100vh - var(--top) - 24px); margin: 0 auto; overflow-y: auto; overscroll-behavior: contain;
-  border-radius: 38px 38px 0 0; padding: 14px max(18px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
-  background: var(--sheen), var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), 0 -20px 40px -20px rgba(0, 0, 0, 0.5);
-  transform: translateY(105%); transition: transform 0.6s var(--ease-glide), visibility 0s linear 0.6s; visibility: hidden; }
-.bsheet.on { transform: none; visibility: visible; transition: transform 0.6s var(--ease-glide), visibility 0s; }
-.bsheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.bsheet-head h2 { margin: 0; font: 700 22px/1.2 var(--font-d); }
-.bsheet h2:focus { outline: none; }
+/* ---- the page's own sheets: InFlite's sheet (roof.css styles the sheet itself; here, what's in Today's) ---- */
 .ifs-btn { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: inherit; background: rgba(120, 120, 128, 0.2); transition: transform 0.2s; position: relative; }
 .ifs-btn::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; }
 .ifs-btn svg { width: 18px; height: 18px; }
@@ -442,15 +432,16 @@ label.row:active { background: var(--press); }
 .mv:not(:disabled):active { background: var(--press); }
 .ed-row .switch { margin-left: 4px; }
 .sh-acts { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
-.bsheet .group { background: var(--glass-ctl); box-shadow: 0 0 0 0.5px var(--line); }
-.bsheet .row .tx b { font-size: 16px; }
-
-/* ---- a word after doing something ---- */
-.toast { position: fixed; left: 50%; bottom: calc(var(--ift-h) + 28px + env(safe-area-inset-bottom, 0px)); z-index: 60; transform: translate(-50%, 16px); opacity: 0; pointer-events: none;
-  max-width: calc(100vw - 32px); padding: 12px 18px; border-radius: 999px; font-size: 15px; font-weight: 600; color: var(--text);
-  background: var(--sheen), var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), var(--lift); transition: transform 0.45s var(--ease-spring), opacity 0.25s; }
-.toast.on { transform: translate(-50%, 0); opacity: 1; }
-
+.ifl-sheet .group { background: var(--glass-ctl); box-shadow: 0 0 0 0.5px var(--line); }
+.ifl-sheet .row .tx b { font-size: 16px; }
+/* Weather Notifications: each place's Rain and Warnings, pressed or not */
+#sh-wxnotify .you-h { margin: 18px 4px 8px; }
+#sh-wxnotify .you-h:first-child { margin-top: 4px; }
+.wxn-place { flex-wrap: wrap; }
+.wxn-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.wxn-chip { min-height: 44px; }
+.wxn-chip[aria-pressed="true"] { background: var(--acc-fill); color: var(--on-acc); box-shadow: none; }
+.wxn-chip:disabled { opacity: 0.6; }
 
 /* ---- signed out: InFlite's way in (where each part sits is the shared block's, at the foot), in Today's colours, with
    what InFlite is and its apps between the name and Sign in ---- */
@@ -482,24 +473,12 @@ label.row:active { background: var(--press); }
 .today-out .today-quiet { margin-top: 6px; }
 .today-out .today-quiet a { color: var(--text-2); font-weight: 500; }
 
-/* ---- Apps: a tile for each app, its line from the day, chips to its sections ---- */
-.apps-grid { display: grid; gap: 14px; }
-.atile { border-radius: var(--r-card); padding: 6px 6px 12px; display: grid; gap: 4px; }
-.atile-go { display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 8px 12px; border-radius: calc(var(--r-card) - 6px); color: var(--text); text-decoration: none; -webkit-tap-highlight-color: transparent; }
-.atile-go:active { background: var(--press, rgba(120, 120, 128, 0.14)); }
-.atile-go:focus-visible, .achip:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
-.atile-ic { flex: none; width: 52px; height: 52px; border-radius: 13px; box-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.15); }
-.atile-tx { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.atile-tx b { font: 600 19px/1.2 var(--font-d); }
-.atile-tx small { font-size: 15px; color: var(--text-2); overflow-wrap: anywhere; }
-.atile-go .chev { flex: none; display: grid; color: var(--text-3); }
-.atile-go .chev svg { width: 16px; height: 16px; }
-.achips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 0 78px; }
-.achip { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 999px; color: var(--tint-text); background: var(--glass-ctl); box-shadow: 0 0 0 0.5px var(--line);
-  font-size: 14.5px; font-weight: 600; text-decoration: none; position: relative; }
-.achip::after { content: ""; position: absolute; inset: -4px -2px; }
+/* ---- Apps: a tile for each app (the framework's .ifl-tile), its line from the day, its mini, chips to its sections ---- */
+.apps-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+@media (max-width: 340px) { .apps-grid { grid-template-columns: 1fr; } }
+
 .apps-note { margin: 18px 18px 0; font-size: 14px; line-height: 1.45; color: var(--text-2); text-align: center; }
-@media (max-width: 360px) { .achips { padding-left: 12px; } }
+
 
 /* ---- You: your account, rules, notifications, this phone, quiet hours, Chat, versions, Sign Out ---- */
 .you-sec { margin: 0 0 24px; }
@@ -522,8 +501,8 @@ label.row:active { background: var(--press); }
 .pill.small::after { content: ""; position: absolute; inset: -4px 0; }
 .you-out { display: grid; justify-items: center; margin: 8px 0 12px; }
 .you-signout { color: var(--warn); min-width: 160px; }
-.bsheet .ev-old { margin-top: 6px; font-weight: 600; color: var(--text-2); }
-.bsheet .dev .tx b { font-size: 16px; }
+.ifl-sheet .ev-old { margin-top: 6px; font-weight: 600; color: var(--text-2); }
+.ifl-sheet .dev .tx b { font-size: 16px; }
 
 /* ---- a page that isn't here (404.html) ---- */
 .nf { min-height: 100vh; min-height: 100svh; display: grid; place-items: center; padding: 24px 16px; }
@@ -550,7 +529,7 @@ label.row:active { background: var(--press); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition-duration: 0.01ms !important; } }
 @media (prefers-reduced-transparency: reduce) {
-  .glass, .bsheet, .toast { background: var(--solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .glass { background: var(--solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 /* ==== InFlite's menu, shared: from .tools/inflite/menu.css by node .tools/iflmenu.mjs (change it there) ==== */
