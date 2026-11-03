@@ -22,7 +22,12 @@ export function createActions(ctx) {
   const setList = (patch) => store.set({ list: { ...store.get().list, ...patch } });
 
   async function counts() {
-    try { store.set({ counts: logic.countsOf(await api.counts()), offline: false }); } catch (e) { if (!e.status) store.set({ offline: navigator.onLine === false }); }
+    try {
+      const was = JSON.stringify(store.get().counts), c = logic.countsOf(await api.counts());
+      store.set({ counts: c, offline: false });
+      // (Today's Mail card shows these numbers: asked for again on its next show)
+      if (was !== "null" && was !== JSON.stringify(c)) try { fw.changed?.(); } catch {}
+    } catch (e) { if (!e.status) store.set({ offline: navigator.onLine === false }); }
   }
 
   // → true once what Mail answered is what's shown

@@ -14,12 +14,18 @@ import { receiveEmail, retryPending, snippet } from "./receive.js";
 import { settings, updateSettings, listAddresses, createAddress, updateAddress, deleteAddress, addressOf, defaultAddress, localProblem } from "./addresses.js";
 import { listThreads, getThread, threadAction, counts, wakeSnoozed, unsubInfo, readAll } from "./threads.js";
 import { vapid, pushAll, pushEndpointOk, peopleUnread } from "./push.js";
+import { body } from "./body.js";
+import { hubOf } from "./hubgate.js";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    // (the body shell for InFlite's page, One roof stage 4: body.js answers every /body path, 404 while no hub is on)
+    if (url.pathname === "/body" || url.pathname.startsWith("/body/")) return body(request, env);
     if (PAGE.has(url.pathname)) return page(request, env);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    // (InFlite's page, by credentialed CORS while its switch is on: hubgate.js; null, as for any other caller, while off)
+    const hub = hubOf(request, env);
     // (Mail's notifications, as the account's Notifications page shows them: asked from there, with the account's sign-in)
     const cors = url.pathname === "/api/notify" && request.headers.get("Origin") === env.ACCOUNT_ORIGIN
       ? { "Access-Control-Allow-Origin": env.ACCOUNT_ORIGIN, "Access-Control-Allow-Credentials": "true", Vary: "Origin" } : null;
@@ -27,7 +33,7 @@ export default {
       return new Response(null, { status: 204, headers: { ...cors, "Access-Control-Allow-Methods": "GET, PATCH", "Access-Control-Allow-Headers": "Content-Type, X-Inflite", "Access-Control-Max-Age": "600" } });
     let res;
     try {
-      res = await api(request, env, ctx, url, !!cors);
+      res = await api(request, env, ctx, url, !!cors, hub);
     } catch (err) {
       if (!err.status || err.status >= 500) console.error(err);
       // (the words of errors Mail raised itself; never a database's)
@@ -118,7 +124,7 @@ const json = (data, status = 200, headers = {}) =>
 
 const EMAIL_RE = /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/;
 
-async function api(request, env, ctx, url, fromAccount = false) {
+async function api(request, env, ctx, url, fromAccount = false, hub = null) {
   const { pathname } = url;
   const method = request.method;
 

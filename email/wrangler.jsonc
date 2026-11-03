@@ -10,7 +10,9 @@
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/", "/index.html"]
+    // (and, for InFlite's page, One roof stage 4: /body and /body/* Mail's body shell, src/body.js; /roof/* the module's
+    // files, which must 404 when missing rather than fall back to the page)
+    "run_worker_first": ["/api/*", "/", "/index.html", "/body", "/body/*", "/roof/*"]
   },
 
   "routes": [{ "pattern": "email.inflite.ai", "custom_domain": true }],
