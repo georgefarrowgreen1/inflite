@@ -4,11 +4,12 @@
 // headers and its marker (<meta name="ifl-hub" content="/weather/">, which is what tells every page it's at the hub).
 //   isHubPath(pathname) → whether the hub answers it (today/src/index.js asks, before anything else)
 //   hub(request, env, ctx) → the answer
-//   forward(env, request, { app, path }) → the app's answer to one request, as the hub gives it back
+//   forward(env, request, { app, path, api }) → the app's answer to one request, as the hub gives it back
 //   hubPath(href, env, { from, here }) → an address on an app's host as it is at the hub (IFL.hub.go's twin)
 // The apps' hosts take what this Worker says of the browser (its address and where it is) only with its key
-// (X-Hub-Key, the HUB_KEY secret; MAIN's functions/_middleware.js checks it). Without the key nothing here is served
-// (503), and GET /api/hub says so to Today's page, which then links to each app's own address, as before.
+// (X-Hub-Key, the HUB_KEY secret; MAIN's functions/_middleware.js checks it against a Pages secret of its own). Without
+// the key here, or while the apps' hosts say they don't know it, nothing here is served (503), and GET /api/hub says
+// so to Today's page, which then links to each app's own address, as before (addendum A1).
 // Never the assets binding: Today's own files are the assets', and none of these paths are.
 import { accountCookie } from "./account.js";
 
@@ -52,22 +53,62 @@ const refuse = (status, error) => json({ error }, status);
 
 export const isHubPath = (p) => PAGE_RE.test(p) || API_RE.test(p) || p === "/api/hub";
 
-// whether the hub can serve: its key, and every app's address
-const ready = (env) => !!env?.HUB_KEY && APPS.every((a) => !!env[`${a}_ORIGIN`]);
+// Whether the whole chain works (addendum A1): this Worker's key and every app's address, and the apps' hosts taking
+// that key (theirs is a Pages secret of its own: without it, or with another, Chat's /_hub/ is not found there, and
+// nothing this Worker says of the browser is believed). Asked of Chat's host as the hub asks it anything (/_hub/version,
+// with the hub's headers), and kept in the isolate five minutes after a yes, one after a no.
+//   ok: it answered 200. refused: it said not found, a definite no (the key isn't theirs); never a moment's trouble
+//   there (no answer, a 5xx), so a blip at the apps' hosts never closes the hub for a minute.
+const KEEP_OK = 300e3, KEEP_NO = 60e3, PROBE_WAIT = 5000;
+let probed = null, asking = 0;
+// (for tests: forget what was found)
+export const forgetProbe = () => { probed = null; asking = 0; };
+const keyed = (env) => !!env?.HUB_KEY && APPS.every((a) => !!env[`${a}_ORIGIN`]);
+const probeTo = (env) => { try { return `${new URL(env.CHAT_VIA || env.CHAT_ORIGIN).origin}${PAGES["/chats/"].under}version`; } catch { return null; } };
+// (what was found, while it's fresh, and only for this key and this address of Chat's)
+const known = (env, t) => (probed && keyed(env) && probed.key === env.HUB_KEY && probed.to === probeTo(env) && t < probed.until ? probed : null);
+async function probe(env, request, t) {
+  const to = probeTo(env);
+  let status = 0;
+  try {
+    if (!to) throw new TypeError("no address for Chat");
+    const res = await fetch(to, { headers: hubHeaders(env, request, "CHAT"), redirect: "manual", signal: AbortSignal.timeout(PROBE_WAIT) });
+    status = res.status;
+    if (res.body) res.body.cancel().catch(() => {});
+  } catch (e) {
+    console.error("hub probe", e && e.message);
+  }
+  const ok = status === 200;
+  return (probed = { ok, refused: status === 404, until: t + (ok ? KEEP_OK : KEEP_NO), key: env.HUB_KEY, to });
+}
+async function ready(env, request) {
+  if (!keyed(env)) return false;
+  const t = Date.now();
+  return (known(env, t) || (await probe(env, request, t))).ok;
+}
 
 export async function hub(request, env, ctx) {
   const url = new URL(request.url), p = url.pathname, method = request.method, read = method === "GET" || method === "HEAD";
   // (Today's page asks once a visit whether the hub's there: until it is, it links to each app's own address)
-  if (p === "/api/hub") return read ? json({ ready: ready(env) }) : refuse(405, SAID.method);
+  if (p === "/api/hub") return read ? json({ ready: await ready(env, request) }) : refuse(405, SAID.method);
   if (!env?.HUB_KEY) return refuse(503, SAID.notReady);
+  // (nor while the apps' hosts have said they don't know its key: everyone here would be the hub's one address to them.
+  // What was found is /api/hub's; where nothing fresh is, it's asked beside this request, for the next)
+  const t = Date.now(), found = known(env, t);
+  if (found?.refused) return refuse(503, SAID.notReady);
+  if (!found && keyed(env) && ctx?.waitUntil && !(t - asking < PROBE_WAIT * 2)) {
+    asking = t;
+    ctx.waitUntil(probe(env, request, t).finally(() => { asking = 0; }));
+  }
 
   // ---- an app's API, at the same path as on its own host ----
   const api = Object.keys(APIS).find((k) => p.startsWith(k));
   if (api) {
-    const app = APIS[api];
+    const app = APIS[api], plain = plainPath(p);
     if (!METHODS.has(method)) return refuse(405, SAID.method);
-    // (the apps' server-to-server routes, however the address is written)
-    if (NEVER.test(p) || NEVER.test(plainPath(p))) return refuse(404, SAID.gone);
+    // (the apps' server-to-server routes, however the address is written; and none that, read as the app's host reads
+    // it, climbs out of this app's API)
+    if (NEVER.test(p) || NEVER.test(plain) || !plain.startsWith(api)) return refuse(404, SAID.gone);
     // Same-site pages elsewhere on inflite.ai carry the account's cookie too, so only this site's own pages are
     // answered: a GET from its own page, or one typed or opened from the Home Screen (none); anything else only from
     // its own page, saying so (Origin). (No Sec-Fetch-Site at all: a browser from before it, as api() takes them.)
@@ -75,35 +116,35 @@ export async function hub(request, env, ctx) {
     if (site && !(site === "same-origin" || (read && site === "none"))) return refuse(403, SAID.notHub);
     if (!read && request.headers.get("Origin") !== url.origin) return refuse(403, SAID.notHub);
     if (!env[`${app}_ORIGIN`]) return refuse(503, SAID.notReady);
-    return forward(env, request, { app, path: p + url.search });
+    return forward(env, request, { app, path: p + url.search, api: true });
   }
 
   // ---- an app's pages and files ----
-  const m = PAGE_RE.exec(p), prefix = `/${m[1]}/`, page = PAGES[prefix];
+  const m = PAGE_RE.exec(p);
+  if (!m) return refuse(404, SAID.gone);
+  const prefix = `/${m[1]}/`, page = PAGES[prefix], rest = p.slice(prefix.length);
   if (!read) return refuse(405, SAID.method);
   if (!env[`${page.app}_ORIGIN`]) return refuse(503, SAID.notReady);
   if (p === prefix.slice(0, -1)) return new Response(null, { status: 301, headers: { Location: `${url.origin}${prefix}${url.search}`, ...SAFE } });
+  // (an app's API is the hub's only at /api/…, through the checks above: never by way of a page's path, however written)
+  if (/^\/api(\/|$)/i.test(plainPath("/" + rest))) return refuse(404, SAID.gone);
   // (/weather/x is weather.'s /x, /chats/x Chat's /_hub/x; /<app>/version each one's own version, as its updater asks)
-  return forward(env, request, { app: page.app, path: (page.under || "/") + p.slice(prefix.length) + url.search });
+  return forward(env, request, { app: page.app, path: (page.under || "/") + rest + url.search, api: false });
 }
 
 // One request to the app, on the browser's behalf, and its answer as the hub gives it back. path: the path (and query)
-// at the app's host. Only an API request carries the account's cookie (and Chat's its bearer) and a body.
-export async function forward(env, request, { app, path }) {
-  const as = env[`${app}_ORIGIN`], via = env[`${app}_VIA`] || as, api = path.startsWith("/api/");
+// at the app's host. api: an API request, which only hub()'s API branch says, once its checks have passed: only that
+// carries the account's cookie (and Chat's its bearer) and a body, and only its answer sets the account's cookie.
+export async function forward(env, request, { app, path, api = false }) {
+  const as = env[`${app}_ORIGIN`], via = env[`${app}_VIA`] || as;
   const method = request.method, read = method === "GET" || method === "HEAD", url = new URL(request.url);
-  const h = new Headers({ Origin: new URL(as).origin, "Sec-Fetch-Site": "same-origin" });
-  for (const k of PASS) { const v = request.headers.get(k); if (v) h.set(k, v); }
+  const h = hubHeaders(env, request, app);
   if (api) {
     const cookie = accountCookie(request);
     if (cookie) h.set("Cookie", cookie);
     const auth = app === "CHAT" && request.headers.get("Authorization");
     if (auth) h.set("Authorization", auth);
   }
-  h.set("X-Hub-Key", env.HUB_KEY);
-  const ip = request.headers.get("CF-Connecting-IP");
-  if (ip) h.set("X-Hub-IP", ip);
-  h.set("X-Hub-Geo", geoOf(request.cf));
 
   // (a body only to an API, and no more of it than the app takes: by what the browser says it's sending, which is all
   // that's read of it; and where it doesn't say (sent in chunks), counted as it's read, and refused past the cap
@@ -176,6 +217,17 @@ export function hubPath(href, env, { from, here } = {}) {
   return href;
 }
 
+// (what every request to an app carries: spoken as the app, the browser's few headers, and the hub's key with what it
+// knows of the browser: its address as Cloudflare saw it, never as the browser said, and where it is)
+function hubHeaders(env, request, app) {
+  const h = new Headers({ Origin: new URL(env[`${app}_ORIGIN`]).origin, "Sec-Fetch-Site": "same-origin" });
+  for (const k of PASS) { const v = request.headers.get(k); if (v) h.set(k, v); }
+  h.set("X-Hub-Key", env.HUB_KEY);
+  const ip = request.headers.get("CF-Connecting-IP");
+  if (ip) h.set("X-Hub-IP", ip);
+  h.set("X-Hub-Geo", geoOf(request.cf));
+  return h;
+}
 // (where the browser is, for the app: Cloudflare's own few words on it, base64url JSON)
 function geoOf(cf) {
   const g = {};
@@ -203,8 +255,10 @@ async function upTo(stream, cap) {
   for (const p of parts) { out.set(p, at); at += p.byteLength; }
   return out;
 }
-// (an address as the app's host will read it: decoded, backslashes as slashes, one slash at a time)
+// (an address as the app's host will read it: decoded, backslashes as slashes, one slash at a time, and its . and ..
+// worked out, as MAIN's own functions/_middleware.js plainPath does; a ? or # decoded out of it kept in the path)
 function plainPath(p) {
   for (let i = 0; i < 4; i++) { let d; try { d = decodeURIComponent(p); } catch { break; } if (d === p) break; p = d; }
-  return p.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+  p = p.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+  try { return new URL(p.replace(/\?/g, "%3F").replace(/#/g, "%23"), "http://x").pathname.replace(/\/{2,}/g, "/"); } catch { return p; }
 }
