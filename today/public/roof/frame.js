@@ -151,17 +151,22 @@ export function createFrame(opts = {}) {
       } else if (el && shown) { el.hidden = true; el.inert = true; }
     },
     refresh() { const s = shown && screens[shown.id]; if (s) F.header.set(tabHead(s.spec, F.route)); },
-    // (the host has already changed what session() says; v is Weather's flag, apps the new map. Apps turned off are let
-    // go of, the shown one with D14's bounce once nothing is unsaved (s24 §7); apps turned on get their search provider)
-    setRoof() {
-      const now = sess().apps, was = lastApps;
+    // (v is Weather's flag (stage 1's argument, alone from a host before stages 2–4), apps the new map, each ANDed with
+    // hub; the host changes what session() says too. Apps turned off are let go of, the shown one with D14's bounce once
+    // nothing is unsaved (s24 §7); apps turned on get their search provider)
+    setRoof(v, apps) {
+      const s = sess(), now = apps && typeof apps === "object" ? appsOf({ ...s, apps }) : v === undefined ? s.apps : { ...lastApps, weather: !!(s.hub && v) }, was = lastApps;
       lastApps = now;
       const off = Object.keys(REGISTRY).filter((a) => was[a] && !now[a]);
       providers();
       if (!off.length) return;
-      const bounce = off.includes(shownMod()?.app);
-      for (const a of off) if (!bounce || a !== shownMod()?.app) unmount(a);
-      if (bounce) F.flush().then(() => safely(() => { ss("ifl-roof-bounce", "1"); put(L.pathname + L.hash); L.reload(); }));
+      const shownApp = shownMod()?.app, bounce = off.includes(shownApp);
+      for (const a of off) if (a !== shownApp) unmount(a);
+      if (!bounce) return;
+      const go = () => { unmount(shownApp); ss("ifl-roof-bounce", "1"); put(L.pathname + L.hash); L.reload(); };
+      // (nothing unsaved: at once, as stage 1 did; else what's unsaved saved first, and the bounce once it's done)
+      if (!F.busy()) { T(() => mods[shownApp]?.instance?.flush?.()); return go(); }
+      F.flush().then(() => safely(go));
     },
     forModule: (app) => modOf(app).fw,
     destroy() {
