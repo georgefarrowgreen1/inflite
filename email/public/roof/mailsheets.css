@@ -52,13 +52,12 @@
 .ifl-sheet[data-app=mail] [data-colour=grey] { --c: #6b7389; }
 
 /* ---- the pictures viewer (mail-viewer): tall, dark, a picture at a time */
-.ifl-sheet[data-app=mail][data-sheet=mail-viewer] { height: calc(100dvh - 24px); max-height: none; }
-.ifl-sheet[data-app=mail] .mv { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 60dvh; }
-.ifl-sheet[data-app=mail] .mv-stage { position: relative; flex: 1; overflow: hidden; border-radius: 18px; background: #000; touch-action: none; outline: none; }
-.ifl-sheet[data-app=mail] .mv-track { display: flex; height: 100%; transform: translateX(calc(var(--i, 0) * -100% + var(--dx, 0px))); transition: transform .4s var(--ease-glide, ease); }
+.ifl-sheet[data-app=mail] .mv { display: flex; flex-direction: column; gap: 8px; width: 100%; align-self: stretch; }
+.ifl-sheet[data-app=mail] .mv-stage { position: relative; width: 100%; height: min(68dvh, 720px); overflow: hidden; border-radius: 18px; background: #000; touch-action: none; outline: none; }
+.ifl-sheet[data-app=mail] .mv-track { display: flex; width: 100%; height: 100%; transform: translateX(calc(var(--i, 0) * -100% + var(--dx, 0px))); transition: transform .4s var(--ease-glide, ease); }
 .ifl-sheet[data-app=mail] .mv-track.still { transition: none; }
-.ifl-sheet[data-app=mail] .mv-slide { flex: 0 0 100%; display: grid; place-items: center; overflow: hidden; }
-.ifl-sheet[data-app=mail] .mv-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; transform: translate(var(--zx, 0), var(--zy, 0)) scale(var(--zs, 1)); transition: transform .25s var(--ease-glide, ease); }
+.ifl-sheet[data-app=mail] .mv-slide { flex: 0 0 100%; width: 100%; height: 100%; display: grid; place-items: center; overflow: hidden; }
+.ifl-sheet[data-app=mail] .mv-img { width: 100%; height: 100%; object-fit: contain; user-select: none; transform: translate(var(--zx, 0), var(--zy, 0)) scale(var(--zs, 1)); transition: transform .25s var(--ease-glide, ease); }
 .ifl-sheet[data-app=mail] .mv-slide.zoomed .mv-img { transition: none; }
 .ifl-sheet[data-app=mail] .mv-wait { width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .25); border-top-color: #fff; animation: mv-spin 1s linear infinite; }
 @keyframes mv-spin { to { transform: rotate(360deg); } }
