@@ -2,7 +2,8 @@
 // block's IFL.hub.tabs (a.ifl-tab[data-tab] with its glyphs; degraded, Chats is Chat's own address), so menu.css styles it
 // as on every hub page, plus a sliding pill (.ifl-tab-pill, aria-hidden) in menu.css's tab colour; roof.css turns off the
 // static pill under it.
-// createTabs(nav, F) → Tabs = { el, set(current), refresh(), destroy() }
+// createTabs(nav, F) → Tabs = { el, set(current), refresh(), destroy(), away(on), badge(app, n) } (away, badge: stage 3,
+//   S3-C4; B0's inert stubs, HOST's to fill)
 //   current: "today" | "apps" | "you" | "chats"; on a tab screen its tab has aria-current="page"; in an app (current
 //   "apps" with F.route an app route) Apps has aria-current="true" (the page is the app's).
 //   Taps: your own tab on a tab screen → to the top; Apps from inside an app → back, when the entry before is Apps,
@@ -10,7 +11,7 @@
 const TAB_SCREENS = ["today", "apps", "you"];
 export function createTabs(nav, F) {
   const IFL = globalThis.IFL;
-  if (!nav || !IFL?.hub) return { el: nav || null, set() {}, refresh() {}, destroy() {} };
+  if (!nav || !IFL?.hub) return { el: nav || null, set() {}, refresh() {}, destroy() {}, away() {}, badge() {} };
   let current = null, built = null;
   const pill = document.createElement("span");
   pill.className = "ifl-tab-pill"; pill.setAttribute("aria-hidden", "true");
@@ -58,5 +59,5 @@ export function createTabs(nav, F) {
   addEventListener("resize", place);
   document.fonts?.ready?.then(place, () => {});
   build();
-  return { el: nav, set, refresh: () => { build(); set(current); }, destroy() { nav.removeEventListener("click", click); removeEventListener("resize", place); } };
+  return { el: nav, set, away() {}, badge() {}, refresh: () => { build(); set(current); }, destroy() { nav.removeEventListener("click", click); removeEventListener("resize", place); } };
 }

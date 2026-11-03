@@ -2,7 +2,8 @@
 // framework lives in. Statically imported by Today's app.js, which makes it once it knows you're signed in.
 //
 // createFrame(opts) → F. opts (from app.js):
-//   { root: #in, header: #hd, views: #views, tabs: #tabs,
+//   { root: #in, header: #hd, views: #views, tabs: #tabs, retired: Promise (stage 3: old workers let go of, awaited
+//     before a service starts), serviceState: (app, state) => void (stage 3: each state patch of a service),
 //     session: () => ({ view, hub, roof, apps, links }),   // hub, roof: booleans (D14: roof = j.roof === true); apps:
 //                                                     // { [app]: boolean } (/api/hub's, s24 §2; none = { weather: roof })
 //     lost: signedOutNow, checkSession: () => Promise<boolean signedIn>, hubAgain: () => Promise<void> (D14 re-ask),
@@ -33,6 +34,10 @@
 //   F.refresh()                            the shown tab screen's header asked for again (its title, crumb, line, acts)
 //   F.hubAgain() → Promise                 opts.hubAgain (modules.js asks before loading a module)
 //   F.forModule(app) → fw                  §5.2, below
+//   F.service(app) → Promise<Facade>       stage 3 (S3-C3; B0's stub, HOST's to fill): the app's service (REGISTRY[app]
+//                                          .service), one per app in this page, made by modules.js loadService after
+//                                          opts.retired; its facade (Chats: IFLChat's seven keys). Refused while off
+//   F.releaseService(app, { terminate })   let go of it (terminate: the Worker ended; the next F.service makes a new one)
 //   F.destroy()                            sign-out: unmount modules, close sheets, hide the frame, let go of listeners
 //
 // fw = F.forModule(app) (§5.2), what a module gets in mount(root, fw):
@@ -56,6 +61,9 @@
 //   fw.theme() → "light" | "dark"; fw.motion() → "full" | "reduced"
 //   fw.zoomTarget(el)                      the module's hero is in: the frame drops the card's clone
 //   fw.fill(on)                            D20
+//   fw.service() → Promise<Service>        stage 3: this app's full service (Chats only; never the facade's host)
+//   fw.tabs.away(on), fw.tabs.badge(n)     stage 3 (S3-C4): the tab bar out of the way; this app's tab's count
+//   fw.on("push", fn)                      stage 3 (S3-C5): the root worker's { inflight: "sync", tag } as { app, tag }
 //   fw.lazy((q) => import("./x.js" + q)) → Promise; fw.stale() → boolean   every dynamic import in a module goes here;
 //     q is "" until an import of this app's failed, then "?retry=<n>"; /<app>/version asked beside it (≤ once a minute),
 //     and at once on a failure: a new build reloads at the route once nothing is unsaved (s24 §7)
@@ -91,6 +99,12 @@ export function createFrame(opts = {}) {
   const appsOf = (s) => { const o = {}; if (s.hub) for (const a of Object.keys(REGISTRY)) o[a] = !!(s.apps ? s.apps[a] : a === "weather" && s.roof); return o; };
   const sess = () => { const s = sess0(); return { ...s, apps: appsOf(s) }; };
   const isOn = (app) => !!sess().apps[app];
+  // (stage 3, S3-C3: each app's service, one promise per app; B0's stub, HOST's to fill)
+  const svcs = {};
+  const svc = (app) => svcs[app] || (isOn(app) && REGISTRY[app]?.service
+    ? (svcs[app] = Promise.resolve(opts.retired).catch(() => {}).then(() => import("./modules.js")).then((M) => M.loadService(app, F))
+      .then((s) => (T(() => opts.serviceState?.(app, s.state)), s?.on?.("state", (d) => T(() => opts.serviceState?.(app, d?.state))), s), (e) => { delete svcs[app]; throw e; }))
+    : Promise.reject(new Error(`${app}: no service here`)));
   const roofs = () => sess().apps;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const newKey = () => Math.random().toString(36).slice(2, 10);
@@ -188,8 +202,11 @@ export function createFrame(opts = {}) {
       F.flush().then(() => safely(go, 10e3, busy));
     },
     forModule: (app) => modOf(app).fw,
+    service: (app) => svc(app).then((s) => s.facade),
+    releaseService(app, o) { const p = svcs[app]; if (o?.terminate) delete svcs[app]; p?.then((s) => s.release?.(o), () => {}); },
     destroy() {
       if (gone) return;
+      for (const a of Object.keys(svcs)) F.releaseService(a, { terminate: true });
       unlater();
       for (const a of Object.keys(mods)) unmount(a);
       F.sheet.closeAll();
@@ -459,6 +476,8 @@ export function createFrame(opts = {}) {
         return p.catch((e) => { fails[app] = (fails[app] || 0) + 1; version(m, true); throw e; });
       },
       stale: () => stale,
+      service: () => svc(app),
+      tabs: { away: (v) => F.tabs.away?.(!!v), badge: (n) => F.tabs.badge?.(app, n) },
     };
   }
   const themeNow = () => /^(light|dark)$/.test(html.dataset.theme) ? html.dataset.theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
