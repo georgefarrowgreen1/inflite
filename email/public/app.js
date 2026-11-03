@@ -1029,13 +1029,15 @@ const IFL = (() => {
   return api;
 })();
 // ==== end of InFlite's menu ====
-  // Mail in InFlite's window (Today First): framed by the hub's /mail/ page (inflite.ai/mail/, its frame named
-  // ifl-mail), Mail stays at its own address, so its mail never shares the hub's origin. In the frame (html.embed): a
-  // hello to the hub as Mail opens (it answers the same); Back, in your photo's place, says back to Apps; Sign In keeps
-  // its word in this tab as ever and asks the hub to make the trip to the sign-in page (the code comes back into the
-  // frame's address); and nothing that's the window's own: no notification asked for, no badge on the icon, no fitting
-  // to the Home Screen. Messages go to the hub's address alone, and are heard only from the window holding the frame,
-  // at that address. (Anywhere else, at its own address, Mail is exactly as it was.)
+  // Mail in InFlite's window (Today First): framed by the hub's /mail/ page (inflite.ai/mail/, or the staging hub's,
+  // next.inflite.ai/mail/; its frame named ifl-mail), Mail stays at its own address, so its mail never shares the hub's
+  // origin. In the frame (html.embed): a hello to the hub as Mail opens (it answers the same, and from then on it's the
+  // hub Mail speaks to); the hub's bar keeps Back to Apps over Mail the whole time, so nothing's in your photo's place;
+  // Sign In keeps its word in this tab as ever and asks the hub to make the trip to the sign-in page (the code comes back
+  // into the frame's address), or, with no hub answering, opens Mail on its own to sign in there; and nothing that's the
+  // window's own: no notification asked for, no badge on the icon, no fitting to the Home Screen. Messages go to the
+  // hub's address alone, and are heard only from the window holding the frame, at that address. (Anywhere else, at its
+  // own address, Mail is exactly as it was.)
   const EMBED = (() => {
     try {
       return window.parent !== window && window.name === "ifl-mail";
@@ -1043,13 +1045,26 @@ const IFL = (() => {
       return false;
     }
   })();
-  // (the hub: this site's own address, Mail's with its email. taken off: email.inflite.ai → inflite.ai)
-  const HUB = location.origin.replace("//email.", "//");
+  // (the hub: this site's own address, Mail's with its email. taken off (email.inflite.ai → inflite.ai), or the staging
+  // hub beside it (next.inflite.ai), the two Mail's Worker lets frame its page, HUB_ORIGIN)
+  const SITE = location.origin.replace("//email.", "//");
+  const HUBS = [SITE, SITE.replace("//", "//next.")];
+  // (which of the two holds the frame: as the browser says, when it's one of them (location.ancestorOrigins, Safari's and
+  // Chromium's); else the one that answers the hello. Until it has, nothing but the hello is said)
+  let HUB = (() => {
+    try {
+      const at = location.ancestorOrigins?.[0];
+      return HUBS.includes(at) ? at : null;
+    } catch {
+      return null;
+    }
+  })();
   let hubHeard = false;
 
-  // A word to the hub (only in the frame, and only to the hub's address: anywhere else it goes nowhere)
+  // A word to the hub (only in the frame, only once the hub has answered, and only to its address: anywhere else it goes
+  // nowhere). → whether it was said
   function toHub(msg) {
-    if (!EMBED) return false;
+    if (!EMBED || !hubHeard || !HUB) return false;
     try {
       window.parent.postMessage(msg, HUB);
       return true;
@@ -1058,11 +1073,22 @@ const IFL = (() => {
     }
   }
 
-  // The hub's word, heard only from the window holding the frame, at the hub's address: its answer to hello. → taken
+  // The hello, to the hub's address, or to each of the two while it isn't known (one not holding the frame never gets
+  // it: the browser drops a message for another address)
+  function helloHub() {
+    for (const at of HUB ? [HUB] : HUBS)
+      try {
+        window.parent.postMessage({ ifl: "hello", v: 1 }, at);
+      } catch {}
+  }
+
+  // The hub's word, heard only from the window holding the frame, at the hub's address: its answer to hello, which fixes
+  // the hub as that address. → taken
   function fromHub(e) {
-    if (!EMBED || e.source !== window.parent || e.origin !== HUB) return false;
+    if (!EMBED || e.source !== window.parent || !HUBS.includes(e.origin) || (HUB && e.origin !== HUB)) return false;
     const d = e.data;
     if (!d || typeof d !== "object" || d.ifl !== "hello" || d.v !== 1) return false;
+    HUB = e.origin;
     hubHeard = true;
     return true;
   }
@@ -1070,7 +1096,7 @@ const IFL = (() => {
   if (EMBED) {
     document.documentElement.classList.add("embed");
     addEventListener("message", fromHub);
-    toHub({ ifl: "hello", v: 1 });
+    helloHub();
   }
 
   // (opened from the account's Notifications page to turn them on here: #notify, asked once Mail's open; never in the
@@ -2139,9 +2165,10 @@ const IFL = (() => {
     const me = S.me || {};
     setKids(
       els.listNav,
-      // (in the hub's frame, Back to Apps in your photo's place: You and your apps are the hub's own there)
+      // (in the hub's frame, nothing in your photo's place: You and your apps are the hub's there, and the hub's bar has
+      // Back to Apps over Mail the whole time; Mail's own few are in the title's menu)
       EMBED
-        ? h("button.gbtn.glass.hub-back", { type: "button", "aria-label": "Back to Apps", title: "Back to Apps", onclick: () => toHub({ ifl: "back" }) }, icon("chevronLeft"), h("span", "Apps"))
+        ? null
         : h(
             "button.gbtn.glass.profile",
             { "aria-label": "Account", title: "Account", onclick: (e) => profileMenu(e.currentTarget) },
@@ -2852,7 +2879,7 @@ const IFL = (() => {
     } else {
       items.push("-", { label: S.counts.trash ? `Trash (${S.counts.trash})` : "Trash", icon: "trash", action: () => setView("trash") });
     }
-    // (in the hub's frame, where your photo is Back: Mail's own few from its menu, here instead)
+    // (in the hub's frame, where your photo isn't: Mail's own few from its menu, here instead)
     if (EMBED)
       items.push("-", { label: "Remote Images", checked: !!S.remoteImages, action: toggleRemoteImages }, { label: "Settings", icon: "sliders", action: () => openSettings() });
     showMenu(anchor, items);
@@ -6749,8 +6776,10 @@ pre{white-space:pre-wrap}
 
   // (in the hub's frame, the word kept just the same, in this tab, and the hub asked to make the trip, the whole window
   // to the sign-in page, which is never framed: the code comes back to the hub's /mail/, which hands it to this frame.
-  // → whether it was asked)
+  // With no hub answering there, Mail on its own, in a window of its own, to sign in as ever: no word's made, as it
+  // couldn't go with it. → whether the trip was asked)
   async function goToAccount() {
+    if (EMBED && !hubHeard) return window.open(`${location.origin}/`, "_blank", "noopener"), false;
     const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
     const ask = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
     try {
