@@ -30,7 +30,7 @@ export function forwardHeaders(request, origin, { body = false, accept = "applic
 // answer in time (a slow account is the same as one that's down). headers: any more to send, set after the browser's
 // few (tests' X-Today-At, passed on only where this Worker's TEST_AT says so: today/src/index.js)
 export async function ask(env, request, { method = "GET", path, query = null, body = null, timeout = 8000, accept, headers = null } = {}) {
-  const origin = new URL(request.url).origin;
+  const origin = todayOrigin(env, request);
   const q = query && [...query.keys()].length ? `?${query}` : "";
   const h = forwardHeaders(request, origin, { body: body != null, accept });
   for (const [k, v] of Object.entries(headers || {})) h.set(k, v);
@@ -45,6 +45,15 @@ export async function ask(env, request, { method = "GET", path, query = null, bo
   } catch {
     return null;
   }
+}
+
+// Today's origin as the account knows it: TODAY_AS where this Worker stands in for the site at another address (the
+// staging hub at next.inflite.ai, spec §15.2, whose writes this Worker has checked come from its own page there), else
+// the address it was asked at. (A TODAY_AS that isn't an address is no address: the request's own, which the account
+// then refuses as it would have.)
+export function todayOrigin(env, request) {
+  if (env?.TODAY_AS) try { return new URL(env.TODAY_AS).origin; } catch {}
+  return new URL(request.url).origin;
 }
 
 // The account's Set-Cookie headers, each one, to pass back to the browser (sign-in, its renewal, sign-out)
