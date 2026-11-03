@@ -315,10 +315,12 @@ async function openIn(path) {
     // (a window of the framework (Today's page, at / or a module's /<app>/): told to route there in the page, One roof's
     // {ifl:"route"}; any other page of this site's: told to open it, as before. A window at /<app>/ that doesn't say
     // it's routed is the app's milestone-1 page there (its switch off, or its old worker not yet retired), which hears
-    // only an open, and isn't this worker's to send elsewhere: told to open it, as milestone 1 did, before any other way)
-    const at = pathOf(win.url);
-    if (await told(win, path, FRAMEWORK.includes(at) ? "route" : "open")) return;
-    if (ROOF_DOCS.includes(at) && (await told(win, path, "open"))) return;
+    // only an open, and isn't this worker's to send elsewhere: told to open it, as milestone 1 did, before any other way.
+    // So a module's page is told to route first only where the hub says that module is on (routes); dark, it's told to
+    // open at once, with no second's wait, and to route only if it doesn't say it's heard)
+    const at = pathOf(win.url), route = await routes(at);
+    if (await told(win, path, route ? "route" : "open")) return;
+    if (ROOF_DOCS.includes(at) && (await told(win, path, route ? "open" : "route"))) return;
   }
   // (an app's page, where the hub can't serve it just now (before its key, or rolled back): Today, which sends it to the
   // app's own address, as it did before the hub)
@@ -344,14 +346,33 @@ function told(win, url, kind = "open") {
 // (whether the hub's Worker can serve the apps' pages: its own word, GET /api/hub, as Today's page asks it (404 or 503:
 // no); no word in two seconds, or none at all (no network), taken as yes, so the page itself is tried)
 async function hubReady() {
+  const w = await askHub();
+  if (!w) return true;
+  return typeof w.j?.ready === "boolean" ? w.j.ready : w.status !== 404 && w.status !== 503;
+}
+// (the hub's word, { status, j }, or null for none in two seconds; the modules it says are on (apps) kept while this
+// worker runs, for routes)
+let hubApps = null;
+async function askHub() {
   try {
     const r = await Promise.race([fetch("/api/hub", { credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" } }), new Promise((ok) => setTimeout(() => ok(null), 2000))]);
-    if (!r) return true;
+    if (!r) return null;
     const j = r.ok ? await r.json().catch(() => null) : null;
-    return typeof j?.ready === "boolean" ? j.ready : r.status !== 404 && r.status !== 503;
+    if (j?.apps && typeof j.apps === "object") hubApps = j.apps;
+    return { status: r.status, j };
   } catch {
-    return true;
+    return null;
   }
+}
+// (whether a window at that path is the framework's, to be told to route: Today's page always; /weather/ as stage 1 did,
+// unless the hub's last word had Weather off (never asked for it); another module's page only when the hub, asked now
+// (its last word, where it gives none), says that module is on)
+async function routes(at) {
+  if (!ROOF_DOCS.includes(at)) return FRAMEWORK.includes(at);
+  const app = at.split("/")[1];
+  if (app === "weather") return hubApps?.weather !== false;
+  await askHub();
+  return hubApps?.[app] === true;
 }
 
 // The browser renewed this phone's subscription: the new one put in the old one's place, in every app's table that had
