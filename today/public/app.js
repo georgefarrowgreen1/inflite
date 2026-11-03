@@ -894,7 +894,9 @@ function askHub() {
 // back on; only an answer that says so now bounces or leaves (D14, D23), and no answer counts as ready with roof on
 async function hubReady() {
   const v = ss.get(HUB_KEY), r = ss.get(ROOF_KEY), a = keptApps();
-  const trusted = BOOT_APP ? v === "1" && a[BOOT_APP.app] === true : (v === "1" || v === "0") && (r === "1" || r === "0");
+  // (a bare ifl-roof with no ifl-roof-apps, a page's from before stages 2–4, is asked again: Chats is never decided on it,
+  // and so Chat's engine is never made before it's known whether Chats is in this page, S3-D12)
+  const trusted = BOOT_APP ? v === "1" && a[BOOT_APP.app] === true : (v === "1" || v === "0") && (r === "1" || r === "0") && ss.get(APPS_KEY) != null;
   if (trusted) {
     roofSaid = v === "1" && r === "1";
     appsSaid = v === "1" ? a : {};
@@ -926,19 +928,36 @@ function applyHub(state) {
   if (state === "unknown") return;
   if (state === "no" && S.hub) { S.hub = false; IFL.hub.degrade(ownLinks()); }
   const on = S.hub && roofSaid, apps = S.hub ? { ...appsSaid } : {};
+  chatsSay(apps);
   if (on !== S.roof || JSON.stringify(apps) !== JSON.stringify(S.apps)) { S.roof = on; S.apps = apps; F?.setRoof(on, apps); }
 }
 // (each module's own old worker at the hub, at scope /<app>/ from milestone 1: unregistered once its switch is known on,
-// so /<app>/ comes to this page, D10, S2-D14)
+// so /<app>/ comes to this page, D10, S2-D14. retiring: until they're let go of, which the frame waits for before it
+// starts a module's service (Chats' core: never under milestone 1's /chats/ worker, risk I11); 3 seconds at most)
 const retired = new Set();
+let retiring = Promise.resolve();
 function retireOld() {
   if (!navigator.serviceWorker?.getRegistrations) return;
   const go = Object.keys(appsSaid).filter((a) => appsSaid[a] && !retired.has(a));
   if (!go.length) return;
   for (const a of go) retired.add(a);
-  navigator.serviceWorker.getRegistrations().then((rs) => {
-    for (const r of rs) { try { const p = new URL(r.scope).pathname; if (go.some((a) => p === REGISTRY[a].path)) r.unregister().catch(() => {}); } catch {} }
-  }, () => {});
+  const gone = navigator.serviceWorker.getRegistrations().then((rs) => Promise.all(rs.map((r) => {
+    try { const p = new URL(r.scope).pathname; if (go.some((a) => p === REGISTRY[a].path)) return r.unregister().catch(() => {}); } catch {}
+  })), () => {});
+  retiring = Promise.all([retiring, gone]);
+}
+const retiredSoon = () => Promise.race([retiring, new Promise((ok) => setTimeout(ok, 3000))]);
+// Chats in this page (stage 3, S3-D6, S3-D12): decided once, as the page boots (the hub ready and Chats on). On, Today's
+// IFL.hub.chat() is the frame's Chats service's facade (IFLChat's seven keys, in every state; null where it can't be
+// had), never Chat's engine in a frame. Turned off later (the switch, or the hub degraded): the engine's way back (made
+// only if something asks again) and the frame lets go of the core (setRoof); turned on later: from the next page load,
+// the frame told it's off till then, so an engine and a core never live together
+const engineChat = IFL.hub.chat;
+let chatsHere = null;
+function chatsSay(apps) {
+  chatsHere = chatsHere === null ? !!apps.chats : chatsHere && !!apps.chats;
+  apps.chats = chatsHere;
+  IFL.hub.chat = chatsHere ? () => (F ? F.service("chats").catch(() => null) : Promise.resolve(null)) : engineChat;
 }
 const ownLinks = () => { const L = S.links || DEFAULT_LINKS; return { chat: L.chat, weather: L.weather, fitness: L.fitness, finance: L.finance, email: L.email || DEFAULT_LINKS.email }; };
 // (where Sign in comes back to: this screen, as its path and hash say, never its query)
@@ -952,6 +971,7 @@ function hubSays(state) {
   // it) unless this tab's kept answer says it's off: the root worker serves its kept / there too when the hub's own page
   // fails)
   S.apps = !S.hub ? {} : state === "unknown" ? { ...keptApps(), weather: true, [BOOT_APP.app]: BOOT_APP.app === "weather" || keptApp(BOOT_APP.app) !== false } : { ...appsSaid };
+  chatsSay(S.apps);
   if (!S.hub) IFL.hub.degrade(ownLinks());
   // (signed out: the way in's second way, Today's own, only beside Chats' trip)
   $("#alsoRow").hidden = !S.hub;
@@ -991,7 +1011,7 @@ function bootGone(state) {
 // A module's files asked for ahead (D2, s2 §4.6): its connector, then a modulepreload for each of its files. On a
 // module's boot, at once (beside /api/session) where the hub's known ready; else once Today's drawn, at idle, where the
 // app's been used here (USED's key kept), or as a link to it is touched
-const USED = { weather: "wx:places", markets: "markets:last", fitness: "fitness:meAt" };
+const USED = { weather: "wx:places", markets: "markets:last", fitness: "fitness:meAt", chats: "ifl-build:chat" };
 const preloaded = new Set();
 function preload(app) {
   if (preloaded.has(app)) return;
@@ -1164,13 +1184,16 @@ async function signOut() {
     IFL.hub.chat().then(async (c) => { if (typeof c?.signOut !== "function") return false; await c.signOut(); return true; }).catch(() => false),
     new Promise((ok) => setTimeout(() => ok(false), 4000)),
   ]);
+  // (Chats in this page: its core signed out and forgot (above), then ended, before Chat's store here is cleared too; 2
+  // seconds at most, as one still starting is ended all the same)
+  if (chatsHere) await Promise.race([F?.releaseService("chats", { terminate: true }), new Promise((ok) => setTimeout(ok, 2000))]);
   const auth = safe(S.links?.auth) || DEFAULT_LINKS.auth;
   await call("/api/logout", { method: "POST", body: {} }).catch(() => {});
   forgetKept();
   // (the frame let go of first: a module's own closing (Mail's unsent message) writes before its copies are wiped, never after)
   unframe();
   // (and the apps' copies of you at this address: the hub's, so every app's)
-  await forgetApps({ chat: !chatOut });
+  await forgetApps({ chat: chatsHere || !chatOut });
   try { localStorage.removeItem("today:push"); } catch {}
   S.view = null;
   location.assign(`${auth}/#${new URLSearchParams({ signout: "today", back: `${location.origin}/` })}`);
@@ -1233,7 +1256,7 @@ function signedIn(view, { offline = false } = {}) {
   forgetKept(CARDS_KEY(view.user.id));
   if (!offline) keepSession(view);
   appearance(view.user.appearance);
-  if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; if (was) you?.forgetYou?.(); }
+  if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; if (was) { you?.forgetYou?.(); F?.releaseService("chats", { terminate: true }); } }
   if (!S.morning || !("lines" in S.morning)) S.morning = view.morning || S.morning;
   $("#out").hidden = true;
   $("#in").hidden = false;
@@ -1246,7 +1269,8 @@ function signedIn(view, { offline = false } = {}) {
   drawCards();
   drawMorning();
   lift();
-  // (Chat's engine, made once the day's first drawn, when the page has a moment: for Waiting for You's words)
+  // (Chat's engine, made once the day's first drawn, when the page has a moment: for Waiting for You's words. With Chats
+  // in this page, its service instead: service.js and the core, not the Chats screen)
   if (S.hub && !offline) idle(() => { if (S.view) IFL.hub.chat(); });
   preloadSoon();
 }
@@ -1294,12 +1318,20 @@ const SCREENS = {
   apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Each one here, in this window", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
   you: { el: $("#you"), title: () => "You", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() {} },
 };
+// (a service's state, as it changes (the frame's opts.serviceState): Chats locked by its app lock, every word of Chat's
+// gone from Today at once, and none kept to draw again (S3-D14))
+function serviceState(app, state) {
+  if (app !== "chats" || state !== "locked") return;
+  for (const el of $$("#today .dw-words, #today .dw-chips, #today .dt-said")) { el.replaceChildren(); el.hidden = true; }
+  day?.forgetHeard?.();
+}
 function frame() {
   if (F) return F;
   F = createFrame({
     root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
     session: () => ({ view: S.view, hub: S.hub, roof: S.roof, apps: S.apps, links: S.links || DEFAULT_LINKS }),
     lost: () => signedOutNow(true), checkSession, hubAgain: () => hubAgain(30e3), save, changed: () => { cardsStale = true; },
+    retired: retiredSoon(), serviceState,
     onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
     today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you,
   });
@@ -1331,10 +1363,10 @@ function drawYouNow(arg = null) {
 const connectors = () => import("/roof/connectors.js");
 const appsCtx = () => ({ answer: S.answer, view: S.view, hub: S.hub, roof: S.roof, href: (app, section) => IFL.hub.href(app, section), icon: (app) => IFL.iconUrl(app), ui: F?.ui, connectors, frame: F });
 const youCtx = () => ({
-  view: S.view, hub: S.hub, roof: S.roof, call, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
+  view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, call, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
   kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
   sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, toMorning, openAccount, signOut, canPush, pushWhy,
-  chatSettings: () => location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`),
+  chatSettings: () => (chatsHere && F ? F.nav.go("/chats/#settings") : location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`)),
   openSheet, closeSheet, BUILD,
   frame: F, connectors, connector: (app) => connectors().then((m) => F && m.openConnector(F, app)), go: (path) => F?.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
   icon: (app) => { try { return IFL.iconUrl(app) || ""; } catch { return ""; } },
@@ -1990,7 +2022,7 @@ function worker() {
     const d = e.data || {};
     if (d.ifl === "signedout") return signedOutNow();
     if (d.inflight === "sync") {
-      if (S.hub) IFL.hub.chat().then((c) => c?.refresh?.()).catch(() => {});
+      if (S.hub && !chatsHere) IFL.hub.chat().then((c) => c?.refresh?.()).catch(() => {});
       clearTimeout(syncT);
       syncT = setTimeout(() => refresh(), 1500);
       return;
@@ -2096,6 +2128,9 @@ async function load() {
 const save = () => ({ y: Math.round(scrollY) });
 const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors"].map((f) => `/roof/${f}.js`);
 function start() {
+  // (Chat's sign-in trip and its emails' links come to /chats/ unchanged; with Chats the framework's here, Chat's own page
+  // at /chats/in/ does them, with the same hash, S3-D8)
+  if (/^\/chats\/(index\.html)?$/.test(location.pathname) && /^#(signin|verify=|invite=|reset=)/.test(location.hash)) return location.replace("/chats/in/" + location.hash);
   if (goFromHash()) return;
   wire();
   worker();
