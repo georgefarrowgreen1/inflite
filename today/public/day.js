@@ -11,10 +11,15 @@
 //   tickDay(root, answer, now) → nothing: passed Coming Up rows dropped, and at the answer's until, the next phase
 //   mergeWaiting(rows, said) → the server's Waiting rows, each with the engine's words only where they may go beside it
 //   dayLine(answer, now, phase?) → { text, html }: the header's line for the phase ("16:05 · your ride")
+//   comingAt(upcoming, now, phase, { dawn, tz }?) → the Coming Up rows still to come at now (in the evening, tonight's and
+//     tomorrow's first)
+//   stopDay(root) → nothing: nothing more timed or drawn here for root (the page has taken it back). The same happens by
+//     itself once the page takes root's data-phase off (drawing its own four cards there, or signed out)
 // ctx (all but now may be left out; the page hands in what it has):
 //   now      the time (a number), or a function giving it (the page's clock, never before the answer's own moment)
-//   hub      IFL.hub (else a page-wide IFL.hub, else none: off the hub, every link to the app's own address)
-//   links    the account's links (chat, weather, fitness, finance): the apps' own addresses, off the hub
+//   hub      IFL.hub, where the page has none on window (window.IFL.hub first: the same one, which the hub sets for
+//            Chat's engine, §8.2); with neither, off the hub: every link to the app's own address
+//   links    the account's links (chat, weather, fitness, finance, email): the apps' own addresses, off the hub
 //   prefs    { order, hidden }: Edit's order and hidden cards, for The Rest of Today (where root has none of the page's
 //            own cards already)
 //   call(path, { method, body })   the page's request helper (else one here: same origin, X-Inflite on a write)
@@ -27,7 +32,7 @@
 //   timers   false: nothing is timed here, the page calls tickDay itself (each minute, and at until). Otherwise the next
 //            boundary is drawn at its minute from here too (the page's own minute may come up to 59 s late); tickDay
 //            twice is as once
-import { CARD_KEYS, APP, esc, safe, hm, dayKey, dateLong, dateShort, wkShort, dayWord, G, av, cardHTML, applyVars, tick, sendButton, hubOf, onHub } from "/cards.js";
+import { CARD_KEYS, APP, esc, safe, safeOrigin, hm, dayKey, dateLong, dateShort, wkShort, dayWord, G, av, cardHTML, applyVars, tick, sendButton, hubOf, onHub } from "/cards.js";
 
 const MIN = 60e3;
 const PHASES = ["morning", "midday", "preride", "riding", "after", "evening"];
@@ -37,6 +42,10 @@ const BELOW = {
   morning: ["waiting", "coming", "rest"], midday: ["waiting", "coming", "rest"], preride: [], riding: [],
   after: ["coming", "rest"], evening: ["coming", "rest"],
 };
+// (a ride's phase with no top card of its own: the day's second ride (the answer's tops have the first ride's, and the
+// next answer the second's), or one the server left out. Then what's coming (the ride's row among it) and the rest of the
+// day, as after a ride, rather than a page with nothing on it)
+const RIDE = ["preride", "riding"], NO_TOP = ["coming", "rest"];
 const SECTIONS = ["top", "waiting", "coming", "rest"];
 const LABELS = { waiting: "Waiting for You", coming: "Coming Up", rest: "The Rest of Today" };
 const LINE = { midday: "what’s next", preride: "your ride", riding: "riding", after: "ride done", evening: "closed" };
@@ -44,7 +53,7 @@ const KINDS = ["plan", "weather", "ride", "done", "closed"];
 const TONES = ["up", "down", "warn", "good"];
 const ID = /^[\w-]{8,64}$/, PACKED = /^[A-Za-z0-9_-]{1,6000}$/;
 // (a hub path of each app's, and the account's link that's the app's own address)
-const APP_PATHS = [["/chats/", "chat"], ["/weather/", "weather"], ["/fitness/", "fitness"], ["/markets/", "finance"]];
+const APP_PATHS = [["/chats/", "chat"], ["/weather/", "weather"], ["/fitness/", "fitness"], ["/markets/", "finance"], ["/mail/", "email"]];
 
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const str = (v) => (typeof v === "string" ? v : "");
@@ -141,7 +150,7 @@ function ensureCss() {
 const DEFAULT_LINKS = () => {
   const live = /(^|\.)inflite\.ai$/.test(location.hostname);
   const at = (n) => (live ? `https://${n}.inflite.ai` : `${location.protocol}//${n}.${location.hostname}${location.port ? ":" + location.port : ""}`);
-  return { chat: at("chat"), weather: at("weather"), fitness: at("fitness"), finance: at("finance") };
+  return { chat: at("chat"), weather: at("weather"), fitness: at("fitness"), finance: at("finance"), email: at("email") };
 };
 const linksOf = (ctx) => (ctx?.links && typeof ctx.links === "object" && typeof ctx.links.chat === "string" ? ctx.links : DEFAULT_LINKS());
 // an address for a button or a row: at the hub, the hub's path (IFL.hub.go); off it (or with the hub not ready), a hub
@@ -154,7 +163,7 @@ function linkTo(h, ctx) {
   if (/^\/(?!\/)/.test(h)) {
     for (const [path, key] of APP_PATHS) {
       if (!h.startsWith(path) && h !== path.slice(0, -1)) continue;
-      const base = safe(linksOf(ctx)[key]);
+      const base = safeOrigin(linksOf(ctx)[key]) || safeOrigin(DEFAULT_LINKS()[key]);
       return base && safe(h) ? safe(`${base.replace(/\/+$/, "")}/${h.slice(path.length)}`) : null;
     }
   }
@@ -259,8 +268,10 @@ function waitingHtml(rows, st, now) {
     const who = g ? `${r.first} in ${g.name}` : r.first, n = num(r.n) || 1;
     const h = linkTo(`/chats/#open=${g ? g.id : r.id}`, st.ctx);
     const when = `${n > 1 ? `${n} messages, the last` : "Wrote"} ${dayWord(Math.min(r.at, now), now, tz)}at ${hm(r.at, tz)}`;
+    const inner = `${av(g ? { id: g.id, first: g.name } : { id: r.id, first: r.first })}<span class="tx"><b>${esc(who)}</b><small>${esc(when)}</small><span class="dw-words" hidden></span></span>`;
+    // (with no address to answer at, the row's there to read, not a link to nowhere)
     return `<div class="dw-row" data-wid="${esc(r.id)}" data-at="${r.at}">
-      <a class="row dw-main" href="${esc(h || "#")}" data-do="answer">${av(g ? { id: g.id, first: g.name } : { id: r.id, first: r.first })}<span class="tx"><b>${esc(who)}</b><small>${esc(when)}</small><span class="dw-words" hidden></span></span><span class="chev">${G.chev}</span></a>
+      ${h ? `<a class="row dw-main" href="${esc(h)}" data-do="answer">${inner}<span class="chev">${G.chev}</span></a>` : `<div class="row dw-main">${inner}</div>`}
       <div class="dw-chips" hidden></div>
     </div>`;
   }).join("")}</div>`;
@@ -292,6 +303,29 @@ function listen(root, st, rows) {
   const ask = named.filter((r) => !heardFor(r));
   const wrote = st.wrote;
   if (!ask.length && !wrote.length) return;
+  whenIdle(root, st, () => hear(root, st, hub, ask, wrote));
+}
+// (Chat's engine is the whole of Chat in a frame (its store, a sync, the decrypting): so it's asked at idle once the day's
+// drawn, never in the same moment as Today's first paint (§8.2), and only while the page is in sight. A day drawn out of
+// sight (a phase's minute come while the phone's locked) waits until it's seen; the words already heard are drawn at once)
+const IDLE_WAIT = 2000;
+function whenIdle(root, st, fn) {
+  if (st.hearing) return;
+  st.hearing = true;
+  const go = () => { st.hearing = false; if (live.get(root) === st) fn(); };
+  const idle = () => {
+    if (typeof requestIdleCallback === "function") return requestIdleCallback(go, { timeout: IDLE_WAIT });
+    setTimeout(go, IDLE_WAIT / 2)?.unref?.();
+  };
+  if (typeof document !== "undefined" && document.visibilityState === "hidden" && typeof document.addEventListener === "function") {
+    const seen = () => { if (document.visibilityState === "hidden") return; st.off?.(); if (live.get(root) === st) idle(); else st.hearing = false; };
+    document.addEventListener("visibilitychange", seen);
+    st.off = () => { st.off = null; document.removeEventListener?.("visibilitychange", seen); };
+    return;
+  }
+  idle();
+}
+function hear(root, st, hub, ask, wrote) {
   Promise.resolve(hub.chat()).then(async (c) => {
     if (!c || (c.state && c.state !== "ready")) return;
     if (ask.length && typeof c.waiting === "function") {
@@ -326,25 +360,44 @@ async function sinceAll(root, st, c) {
 }
 
 // ---------------------------------------------------------------- Coming Up
-// (still to come at now; in the evening, tomorrow's first thing alone)
-export function comingAt(upcoming, now, phase) {
+// (still to come at now, soonest first. In the evening, what's left of tonight (a call at 20:00, a pigeon landing) and
+// tomorrow's first thing (§7.3), and nothing after it: tomorrow starts at dawn, the next morning in the answer's
+// timeline, or without one at midnight where the answer's tz is)
+export function comingAt(upcoming, now, phase, { dawn = null, tz } = {}) {
   const rows = list(upcoming).filter((r) => num(r.at) != null && r.at > now && str(r.title)).sort((a, b) => a.at - b.at);
-  return phase === "evening" ? rows.slice(0, 1) : rows;
+  if (phase !== "evening") return rows;
+  const at = num(dawn), first = rows.findIndex(at != null ? (r) => r.at >= at : (r) => dayKey(r.at, tz) !== dayKey(now, tz));
+  return first < 0 ? rows : rows.slice(0, first + 1);
 }
+// (the next morning's start in the answer's timeline, after now)
+const dawnAfter = (answer, now) => list(answer.timeline).filter((x) => x.phase === "morning" && num(x.at) != null && x.at > now).sort((a, b) => a.at - b.at)[0]?.at ?? null;
 function comingHtml(rows, st, now) {
   const tz = str(st.answer.tz) || undefined, ctx = { ...st.ctx, links: linksOf(st.ctx) };
   return `<h2 class="slabel">${LABELS.coming}</h2><div class="group glass">${rows.map((r) => {
     const app = APP[r.app === "markets" || r.app === "chat" || r.app === "weather" || r.app === "fitness" ? r.app : ""];
     const h = linkTo(r.href, st.ctx), other = dayKey(r.at, tz) !== dayKey(now, tz);
     const send = sendButton(r, ctx, { label: "", glyph: G.bird, cls: "dc-send", aria: `Send to a friend: ${r.title}` });
+    const inner = `<span class="dc-tm">${esc(hm(r.at, tz))}${other ? `<small>${esc(wkShort(r.at, tz))}</small>` : ""}</span>${app ? `<img class="dc-ic" src="${app.icon}" alt="">` : `<span class="dc-ic"></span>`}<span class="tx"><b>${esc(r.title)}</b>${str(r.sub) ? `<small>${esc(r.sub)}</small>` : ""}</span>`;
     return `<div class="dc-row" data-due="${r.at}"${send ? " data-sends" : ""}>
-      <a class="row dc-main" href="${esc(h || "#")}"><span class="dc-tm">${esc(hm(r.at, tz))}${other ? `<small>${esc(wkShort(r.at, tz))}</small>` : ""}</span>${app ? `<img class="dc-ic" src="${app.icon}" alt="">` : `<span class="dc-ic"></span>`}<span class="tx"><b>${esc(r.title)}</b>${str(r.sub) ? `<small>${esc(r.sub)}</small>` : ""}</span></a>${send}
+      ${h ? `<a class="row dc-main" href="${esc(h)}">${inner}</a>` : `<div class="row dc-main">${inner}</div>`}${send}
     </div>`;
   }).join("")}</div>`;
 }
 
 // ---------------------------------------------------------------- drawing
 const live = new WeakMap();
+// (the page has taken root back since the day was drawn: its own four cards drawn there (an answer without v, a copy it
+// kept), or signed out, either way root's phase taken off. Then nothing more is timed, drawn or said in the header from
+// here: a day forgotten stays forgotten (§11.5))
+const taken = (root, st) => root.dataset.phase !== (st.phase || "");
+export function stopDay(root) {
+  const st = root ? live.get(root) : null;
+  if (!st) return;
+  clearTimeout(st.timer);
+  st.timer = 0;
+  st.off?.();
+  live.delete(root);
+}
 // (answers already asked again for, while planning: once more each, then as usual)
 let askedAt = -Infinity;
 // (the focus kept where it was as the day's drawn again: the same button or row, else the top card's title)
@@ -366,14 +419,15 @@ function paint(root, st, phase, now) {
   try { draw(root, st, phase, now); } finally { refocus(root, key); }
 }
 function draw(root, st, phase, now) {
-  const a = st.answer, s = sections(root), shows = BELOW[phase] || BELOW.midday;
+  const a = st.answer, s = sections(root);
   st.phase = phase;
   root.dataset.phase = phase || "";
-  drawTop(root, st, phase, now, s);
+  const top = drawTop(root, st, phase, now, s);
+  const shows = !top && RIDE.includes(phase) ? NO_TOP : BELOW[phase] || BELOW.midday;
   const w = shows.includes("waiting") ? waitingRows(a) : [];
   s.waiting.innerHTML = w.length ? waitingHtml(w, st, now) : "";
   s.waiting.hidden = !w.length;
-  const rows = shows.includes("coming") ? comingAt(a.upcoming, now, phase) : [];
+  const rows = shows.includes("coming") ? comingAt(a.upcoming, now, phase, { dawn: dawnAfter(a, now), tz: str(a.tz) || undefined }) : [];
   s.coming.innerHTML = rows.length ? comingHtml(rows, st, now) : "";
   s.coming.hidden = !rows.length;
   if (!s.rest.dataset.kept) {
@@ -403,6 +457,7 @@ function drawTop(root, st, phase, now, s = sections(root)) {
   st.wrote = top ? list(top.wrote).filter((w) => ID.test(str(w.id)) && str(w.first) && num(w.at) != null) : [];
   s.top.innerHTML = top ? topHtml(top, phase, st, now) : "";
   s.top.hidden = !top;
+  return top;
 }
 function writeLine(st, phase, now) {
   const { html, text } = dayLine(st.answer, now, phase);
@@ -420,6 +475,7 @@ export function drawDay(root, answer, ctx) {
   // (never an older answer over one asked for here since, which the page hasn't heard of)
   if (prev?.own && prev.answer !== answer && num(prev.answer.at) != null && num(answer.at) != null && answer.at < prev.answer.at) return;
   ensureCss();
+  prev?.off?.();
   const st = { answer, ctx: ctx && typeof ctx === "object" ? ctx : {}, base: Date.now(), timer: prev?.timer || 0, wrote: [], own: false };
   live.set(root, st);
   wire(root);
@@ -429,7 +485,7 @@ export function drawDay(root, answer, ctx) {
   // itself where it can ask (refresh), as §7.7 has it)
   if (answer.planning === true && st.ctx.timers !== false && typeof st.ctx.refresh !== "function" && Date.now() - askedAt > MIN) {
     askedAt = Date.now();
-    const t = setTimeout(() => { if (live.get(root) === st && root.isConnected) again(root, st); }, 5000);
+    const t = setTimeout(() => { if (live.get(root) === st && root.isConnected && !taken(root, st)) again(root, st); }, 5000);
     t?.unref?.();
   }
 }
@@ -456,9 +512,9 @@ function schedule(root, st) {
   const next = Math.min((Math.floor(now / MIN) + 1) * MIN, ...due);
   st.timer = setTimeout(() => {
     if (live.get(root) !== st) return;
-    if (!root.isConnected) { live.delete(root); return; }
+    if (!root.isConnected || taken(root, st)) return stopDay(root);
     tickDay(root, a, nowOf(st));
-    schedule(root, st);
+    if (live.get(root) === st) schedule(root, st);
   }, Math.max(100, next - now + 20));
   st.timer?.unref?.();
 }
@@ -470,6 +526,7 @@ export function tickDay(root, answer, now) {
     drawDay(root, answer, st ? { ...st.ctx, ...(num(now) != null && typeof st.ctx.now !== "function" ? { now } : {}) } : num(now) != null ? { now } : {});
     return;
   }
+  if (taken(root, st)) return stopDay(root);
   const t = num(now) ?? nowOf(st), phase = phaseAt(answer, t), s = sections(root);
   if (phase !== st.phase) {
     paint(root, st, phase, t);
@@ -530,13 +587,15 @@ async function sendTo(st, to) {
   if (c && (!c.state || c.state === "ready") && typeof c.sendTo === "function") {
     let r = null;
     try { r = await c.sendTo(to, words, packed); } catch {}
-    if (r?.ok) {
+    if (r?.ok === true && !r.why) {
       const say = str(r.say) || `Sent to ${str(t.sendTo?.first) || "your friend"}.`;
       if (typeof hub.sent === "function") hub.sent(say); else toast(st.ctx, say);
       return;
     }
-    // (the engine opened its own sheet: nothing more)
-    if (r && r.ok !== false) return;
+    // (the engine opened its own sheet, Leo chosen: nothing more. Refused (false, { ok: false }, or any { why }, as the
+    // hub reads a refusal), or nothing said: Chat's sheet, here)
+    const refused = !r || r.ok === false || (typeof r === "object" && r.why != null && r.why !== "");
+    if (!refused) return;
   }
   try { await hub.send(words, packed, { to }); } catch {}
 }
@@ -559,6 +618,9 @@ async function act(root, st, el) {
     toast(st.ctx, e.status === 501 ? "Today can’t do that just yet." : e.message || "That didn’t work. Try again.");
     if (e.status === 501 || (e.status >= 400 && e.status < 500 && e.status !== 429)) redrawTop(root, st);
     else el.disabled = false;
+    // (signed out meanwhile: the page told at once, by asking for the day, so its own way out of a 401 runs now, not at
+    // its next refresh minutes on)
+    if (e.status === 401 && typeof st.ctx.refresh === "function") Promise.resolve().then(() => st.ctx.refresh()).catch(() => {});
   }
 }
 function redrawTop(root, st) {
