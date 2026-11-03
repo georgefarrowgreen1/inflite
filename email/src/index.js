@@ -18,6 +18,7 @@ import { vapid, pushAll, pushEndpointOk, peopleUnread } from "./push.js";
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (PAGE.has(url.pathname)) return page(request, env);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
     // (Mail's notifications, as the account's Notifications page shows them: asked from there, with the account's sign-in)
     const cors = url.pathname === "/api/notify" && request.headers.get("Origin") === env.ACCOUNT_ORIGIN
@@ -75,6 +76,37 @@ class HttpError extends Error {
 }
 
 const SAFE = { "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'" };
+
+// Mail's page (/, and /index.html), the one Mail's ever opened at, answered here rather than straight from the files
+// (wrangler.jsonc's run_worker_first), so it can say who may frame it: InFlite's window (HUB_ORIGIN, whose /mail/ page
+// frames Mail, today/src/mailhost.js in this repo's root Worker) and no one else. Mail's own policy (public/_headers,
+// for every other file) with frame-ancestors the hub's address in place of 'none': put in place of the one the files
+// carry, never beside it, as two policies are both applied and the stricter 'none' would still refuse the frame. With no
+// hub address (or one that isn't an address), 'none', as before. The rest of _headers' rules for the page set here too,
+// so the page is the same whether or not the files' own headers came with it.
+const PAGE = new Set(["/", "/index.html"]);
+const ORIGIN_RE = /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i;
+const MAIL_CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; font-src 'self' data: https:; media-src 'self' https:; connect-src 'self'; worker-src 'self'; frame-src 'self' about: blob:; object-src 'none'; base-uri 'self'; form-action 'self'";
+function pagePolicy(env) {
+  const hub = typeof env.HUB_ORIGIN === "string" && ORIGIN_RE.test(env.HUB_ORIGIN) ? env.HUB_ORIGIN.toLowerCase() : null;
+  return `${MAIL_CSP}; frame-ancestors ${hub || "'none'"}`;
+}
+const PAGE_HEADERS = {
+  "Cache-Control": "no-cache",
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+};
+async function page(request, env) {
+  const res = await env.ASSETS.fetch(request);
+  const out = new Response(res.body, res);
+  for (const [k, v] of Object.entries(PAGE_HEADERS)) out.headers.set(k, v);
+  out.headers.set("Content-Security-Policy", pagePolicy(env));
+  out.headers.delete("X-Frame-Options");
+  return out;
+}
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
