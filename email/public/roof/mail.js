@@ -25,6 +25,9 @@
 //   open: { compose(init), later(ids), views(), rowMenu(t), unsub(t), settings(page), viewer(files, i), signin(),
 //           confirm(spec) }, outbox, touched() }
 //   touched(): the reader was touched (a body frame's note too): busy() for 30 s after. (MM's addition.)
+//   leave(id, nextId): actions.act's, as an action takes the open conversation out of the list (app.js leaveThread): a
+//     phone's reader goes back to the list (fw.nav.back(), or a cold one to the lens's address, replaced, kind "pop"); an
+//     iPad's pane opens nextId, else none. (MM's addition.)
 //   open.compose, open.settings, open.viewer and open.signin reach their lazy files only through fw.lazy.
 // The header is set from here alone, on lens, filter, address, box, counts, offline, threadId, thread, layout, list:
 //   title = the view with pick ▾ → open.views(); line "3 unread" | "All caught up" | "Couldn’t reach Mail · Try Again";
@@ -49,11 +52,13 @@ export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later",
 const LENS_IDS = SECTIONS.map((s) => s[0]);
 // (Mail's own rule for a phone, app.js:1993: narrow, or short and not wide)
 const PHONE = "(max-width: 699.98px), (max-height: 499.98px) and (max-width: 999.98px)";
+// (signin: Mail has no session here. fw.session.lost() is told first (S4-D12, D3): if InFlite's is gone too, InFlite
+// signs out and this never shows; if InFlite is still signed in, Mail alone needs signing in to, by the same hand-back)
 const GATE = {
-  signin: ["Sign in to read your mail", "Your session with Mail has ended.", true],
-  reauth: ["Confirm it’s you", "Mail asks again every 12 hours before it shows your mail.", true],
-  passkey: ["Mail needs a passkey", "Add a passkey to your account, then confirm it’s you.", true],
-  notadmin: ["Mail is George’s", "Mail on InFlite is only for the account that owns it.", false],
+  signin: ["You’re signed out of Mail", "Sign in to Mail to read your mail here.", "Sign In to Mail"],
+  reauth: ["Confirm it’s you", "Mail asks again every 12 hours before it shows your mail.", "Confirm It’s You"],
+  passkey: ["Mail needs a passkey", "Add a passkey to your account, then confirm it’s you.", "Confirm It’s You"],
+  notadmin: ["Mail is George’s", "Mail on InFlite is only for the account that owns it.", null],
 };
 const OFFLINE = ["Mail needs a connection", "Your mail is safe at Mail and will be here when you’re back online."];
 
@@ -77,6 +82,18 @@ export async function mount(root, fw) {
     signin: () => signinJs().then((m) => m.signIn(ctx)),
     confirm: (spec) => confirmSheet(ctx, spec),
   });
+  ctx.leave = (id, next) => {
+    const s = store.get();
+    if (s.threadId !== id) return;
+    if (s.layout === "phone") {
+      if (onScreen && route?.key === "thread") {
+        if (fw.nav.depth() > 0) fw.nav.back();
+        else fw.nav.go(SECTION_PATH(s.lens), { replace: true, kind: "pop" });
+      } else store.set({ threadId: null }, "leave");
+      return;
+    }
+    store.set({ threadId: next && logic.idOk(next) ? next : null }, "leave");
+  };
   ctx.actions = createActions(ctx);
   ctx.outbox = createOutbox(ctx);
   const { actions } = ctx;
@@ -151,7 +168,7 @@ export async function mount(root, fw) {
     listEl.hidden = !!gate || off || (s.layout === "phone" && !!s.threadId && route?.key === "thread");
     readerEl.hidden = !!gate || !s.threadId || (s.layout === "phone" && route?.key !== "thread");
     root.classList.toggle("ml-split", s.layout === "pad" && !gate && !off);
-    if (gate) stateEl.replaceChildren(ui.empty({ title: gate[0], body: gate[1], acts: gate[2] ? [{ label: "Confirm It’s You", primary: true, act: "signin", run: () => ctx.open.signin() }] : [] }));
+    if (gate) stateEl.replaceChildren(ui.empty({ title: gate[0], body: gate[1], acts: gate[2] ? [{ label: gate[2], primary: true, act: "signin", run: () => ctx.open.signin() }] : [] }));
     else if (off) stateEl.replaceChildren(ui.empty({ title: OFFLINE[0], body: OFFLINE[1], acts: [{ label: "Write", act: "compose", run: () => ctx.open.compose({}) }] }));
     else stateEl.replaceChildren();
   }
@@ -161,8 +178,11 @@ export async function mount(root, fw) {
   async function start() {
     try {
       const sess = await api.session();
-      store.set({ access: sess?.access || "signin" }, "session");
-      if (sess?.access !== "ok") return;
+      const access = sess?.access || "signin";
+      store.set({ access }, "session");
+      // (Mail's /api/session answers 200 { access: "signin" } when it has no session: InFlite asked whether it's gone)
+      if (access === "signin") { try { fw.session.lost(); } catch {} }
+      if (access !== "ok") return;
       const [me, counts, v] = await Promise.all([api.me(), api.counts(), api.version().catch(() => null), actions.load()]);
       store.set({ me, counts: logic.countsOf(counts), version: v?.v ?? null, offline: false }, "start");
     } catch (e) {
@@ -173,10 +193,11 @@ export async function mount(root, fw) {
 
   // ---- the poll: only while shown and the page visible (S4-D14)
   let timer = 0, polling = false;
-  async function poll() {
+  async function poll(back = false) {
     if (!onScreen || doc.visibilityState !== "visible" || polling || list.swiping?.()) return;
     const s = store.get();
-    if (s.access !== "ok") { if (s.access === null || s.offline) return start(); return; }
+    // (behind the gate: asked again as the page comes back, a check done in Mail's own tab meanwhile)
+    if (s.access !== "ok") { if (s.access === null || s.offline || (back && s.access !== "notadmin")) return start(); return; }
     polling = true;
     try {
       const { v } = await api.version();
@@ -194,7 +215,7 @@ export async function mount(root, fw) {
   }
   const startPoll = () => { clearInterval(timer); timer = setInterval(poll, 30000); };
   const stopPoll = () => { clearInterval(timer); timer = 0; };
-  offs.push(fw.on("visible", () => { if (onScreen) { poll(); startPoll(); } }));
+  offs.push(fw.on("visible", () => { if (onScreen) { poll(true); startPoll(); } }));
   offs.push(fw.on("hidden", () => stopPoll()));
   on(win, "online", () => { if (onScreen) poll(); });
 

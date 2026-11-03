@@ -12,6 +12,9 @@
 //   counts() → Promise                  /api/counts into the store (logic.countsOf)
 //   markAllRead(), emptyTrash()         from the Views sheet
 // }   (load, counts, markAllRead and emptyTrash are MM's additions to B0-b's two.)
+// An action that takes the open conversation (store threadId) out of the list shown, any but read, calls
+// ctx.leave(id, nextId) first (mail.js's: a phone goes back to the list, an iPad's pane opens the next row, else the one
+// before, else nothing).
 const INVERSE = { done: "inbox", trash: "restore", flag: "unflag", unflag: "flag", read: "unread", unread: "read" };
 const SAY = { done: "Done", inbox: "Back in Inbox", trash: "Moved to Trash", restore: "Restored", unsnooze: "Back in Inbox", flag: "Flagged", unflag: "Unflagged", read: "Marked as Read", unread: "Marked as Unread", delete: "Deleted" };
 
@@ -100,6 +103,15 @@ export function createActions(ctx) {
       return logic.inView(n, ask) || (action === "read" && r.id === s.threadId) ? [n] : [];
     });
     const thread = s.thread?.t && ids.includes(s.thread.t.id) && patch ? { ...s.thread, t: { ...s.thread.t, ...patch } } : s.thread;
+    // (the open conversation no longer where the list is: left first, as app.js's leaveThread; the next row, else the one
+    // before, for an iPad's pane)
+    const open = s.threadId && ids.includes(s.threadId) ? s.threadId : null;
+    const leaving = open && action !== "read" && (!patch || (at.has(open) ? !rows.some((r) => r.id === open) : !logic.inView({ ...(t0 || {}), ...patch }, ask)));
+    if (leaving) {
+      const i = at.has(open) ? at.get(open) : -1, rest = (k) => was.slice(k).find((r) => !ids.includes(r.id));
+      const next = i < 0 ? null : (rest(i + 1) || [...was.slice(0, i)].reverse().find((r) => !ids.includes(r.id)) || null);
+      try { ctx.leave?.(open, next?.id || null); } catch (e) { console.error(e); }
+    }
     store.set({ list: { ...s.list, rows }, thread }, action);
     // (Undo: the inverse, Later from Done back to Done)
     const back = action === "snooze" ? (wasDone ? "done" : "unsnooze") : INVERSE[action];
