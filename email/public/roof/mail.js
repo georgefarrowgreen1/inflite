@@ -33,7 +33,8 @@ import * as logic from "./logic.js";
 import { createActions } from "./actions.js";
 import { view as listView } from "./list.js";
 import { view as readerView } from "./reader.js";
-import { openViews, openLater, openRowMenu, openUnsub, confirm } from "./menus.js";
+// (menus.js's confirm under another name: a bare confirm( reads as the page's, which §5.1 forbids)
+import { openViews, openLater, openRowMenu, openUnsub, confirm as confirmSheet } from "./menus.js";
 import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
@@ -55,7 +56,7 @@ export async function mount(root, fw) {
     settings: (page) => fw.lazy(() => import("./mailsettings.js")).then((m) => m.openSettings(ctx, page)),
     viewer: (files, i) => fw.lazy(() => import("./viewer.js")).then((m) => m.openViewer(ctx, files, i)),
     signin: () => fw.lazy(() => import("./signin.js")).then((m) => m.signIn(ctx)),
-    confirm: (spec) => confirm(ctx, spec),
+    confirm: (spec) => confirmSheet(ctx, spec),
   });
   const doc = root.ownerDocument;
   const region = (cls, label) => { const el = doc.createElement("section"); el.className = cls; el.setAttribute("aria-label", label); root.append(el); return el; };
