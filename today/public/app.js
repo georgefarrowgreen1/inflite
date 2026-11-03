@@ -807,6 +807,8 @@ const S = {
   hub: false, // the hub's Worker can serve the apps here (GET /api/hub): else Today runs as it did before (degraded)
   roof: false, // and Weather is the framework's, in this page (GET /api/hub's roof === true, One roof D14); else
   //              /weather/ is milestone 1's page of the hub, a normal navigation
+  apps: {}, // each module's switch, as /api/hub's apps says ({ weather, markets, fitness, mail }: booleans; s24 §2),
+  //           ANDed with hub; a Worker from before says only roof: { weather: roof }
   dayLine: null, // the header's line, as the day (day.js) says it for its phase
   asked5: false, // the one fetch 5 seconds after an answer still being planned, made
   boundary: 0, // the until whose crossing has had its fetch put in hand
@@ -850,7 +852,7 @@ const missing = (e) => e?.status === 404 || e?.status === 501;
 // worker the kept / offline). And roof (D14): Weather in this page, read as j.roof === true (a Worker from before, or
 // none said: off, milestone 1's Weather page), kept beside it as ifl-roof ("1" | "0"; one without the other is asked
 // again)
-const HUB_KEY = "ifl-hub-ready", ROOF_KEY = "ifl-roof", BOUNCE_KEY = "ifl-roof-bounce";
+const HUB_KEY = "ifl-hub-ready", ROOF_KEY = "ifl-roof", BOUNCE_KEY = "ifl-roof-bounce", APPS_KEY = "ifl-roof-apps";
 const ss = {
   get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} },
@@ -859,21 +861,30 @@ const ss = {
 // (this document is a module's address: /weather/ or /weather/index.html, which the Worker answers with this page while
 // Weather is the framework's)
 const BOOT_APP = Object.values(REGISTRY).find((r) => location.pathname === r.path || location.pathname === r.path + "index.html") || null;
-let roofSaid = false, hubAt = 0;
-// (what /api/hub said, as it said it: kept, and Weather's old worker let go of as soon as roof's known on, signed in or not)
-function heard(state, roof) {
+let roofSaid = false, appsSaid = {}, hubAt = 0;
+// (each module's switch from an answer: its apps, booleans only; one from before says only roof, Weather's)
+const appsFrom = (a, roof) => { const o = {}; for (const k of Object.keys(REGISTRY)) o[k] = a && typeof a === "object" ? a[k] === true : k === "weather" && !!roof; return o; };
+const keptApps = () => { let a = null; try { a = JSON.parse(ss.get(APPS_KEY)); } catch {} return appsFrom(a, ss.get(ROOF_KEY) === "1"); };
+// (one module's kept switch: true, false, or null where nothing's kept for it)
+const keptApp = (app) => { let a = null; try { a = JSON.parse(ss.get(APPS_KEY)); } catch {} return a && typeof a === "object" && typeof a[app] === "boolean" ? a[app] : app === "weather" && ss.get(ROOF_KEY) ? ss.get(ROOF_KEY) === "1" : null; };
+// (what /api/hub said, as it said it: kept, and the old workers of the modules on let go of as soon as that's known,
+// signed in or not. The bounce marker goes only where this document's module is on (or it's no module's): a framework
+// served at an off module's path, from the worker's kept /, would otherwise bounce for ever)
+function heard(state, roof, apps = appsFrom(null, roof)) {
   roofSaid = state === "yes" && roof;
+  appsSaid = state === "yes" ? apps : {};
   if (state === "unknown") return;
   hubAt = Date.now();
   ss.set(HUB_KEY, state === "yes" ? "1" : "0");
   ss.set(ROOF_KEY, roof ? "1" : "0");
-  if (roofSaid) { retireWeather(); ss.del(BOUNCE_KEY); }
+  ss.set(APPS_KEY, JSON.stringify(apps));
+  if (state === "yes") { retireOld(); if (!BOOT_APP || apps[BOOT_APP.app]) ss.del(BOUNCE_KEY); }
 }
 function askHub() {
   return fetch("/api/hub", { credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" } }).then(async (r) => {
     const j = r.ok ? await r.json().catch(() => null) : null;
     const state = typeof j?.ready === "boolean" ? (j.ready ? "yes" : "no") : r.status === 404 || r.status === 503 ? "no" : "unknown";
-    heard(state, j?.roof === true);
+    heard(state, j?.roof === true, appsFrom(j?.apps, j?.roof === true));
     return state;
   }, () => "unknown");
 }
@@ -882,11 +893,12 @@ function askHub() {
 // because the Worker (or the root worker, offline) had roof on, so a kept no or roof off may be from before a switch
 // back on; only an answer that says so now bounces or leaves (D14, D23), and no answer counts as ready with roof on
 async function hubReady() {
-  const v = ss.get(HUB_KEY), r = ss.get(ROOF_KEY);
-  const trusted = BOOT_APP ? v === "1" && r === "1" : (v === "1" || v === "0") && (r === "1" || r === "0");
+  const v = ss.get(HUB_KEY), r = ss.get(ROOF_KEY), a = keptApps();
+  const trusted = BOOT_APP ? v === "1" && a[BOOT_APP.app] === true : (v === "1" || v === "0") && (r === "1" || r === "0");
   if (trusted) {
     roofSaid = v === "1" && r === "1";
-    if (roofSaid) retireWeather();
+    appsSaid = v === "1" ? a : {};
+    if (v === "1") retireOld();
     return v === "1" ? "yes" : "no";
   }
   const asked = askHub();
@@ -908,21 +920,24 @@ function hubAgain(within = 5 * MIN) {
   againP = askHub().then(applyHub).finally(() => { againP = null; });
   return againP;
 }
-// (an answer after the first: only ever down, the hub's explicit no degrading the page, roof off letting Weather go;
-// an unknown changes nothing)
+// (an answer after the first: the hub's explicit no degrading the page, each module as its switch now says (one turned
+// off let go of, one turned on found in-page from now); an unknown changes nothing)
 function applyHub(state) {
   if (state === "unknown") return;
   if (state === "no" && S.hub) { S.hub = false; IFL.hub.degrade(ownLinks()); }
-  const on = S.hub && roofSaid;
-  if (on !== S.roof) { S.roof = on; F?.setRoof(on); }
+  const on = S.hub && roofSaid, apps = S.hub ? { ...appsSaid } : {};
+  if (on !== S.roof || JSON.stringify(apps) !== JSON.stringify(S.apps)) { S.roof = on; S.apps = apps; F?.setRoof(on, apps); }
 }
-// (Weather's own worker, at scope /weather/ from milestone 1: unregistered, so /weather/ comes to this page, D10)
-let retired = false;
-function retireWeather() {
-  if (retired || !navigator.serviceWorker?.getRegistrations) return;
-  retired = true;
+// (each module's own old worker at the hub, at scope /<app>/ from milestone 1: unregistered once its switch is known on,
+// so /<app>/ comes to this page, D10, S2-D14)
+const retired = new Set();
+function retireOld() {
+  if (!navigator.serviceWorker?.getRegistrations) return;
+  const go = Object.keys(appsSaid).filter((a) => appsSaid[a] && !retired.has(a));
+  if (!go.length) return;
+  for (const a of go) retired.add(a);
   navigator.serviceWorker.getRegistrations().then((rs) => {
-    for (const r of rs) { try { if (new URL(r.scope).pathname === "/weather/") r.unregister().catch(() => {}); } catch {} }
+    for (const r of rs) { try { const p = new URL(r.scope).pathname; if (go.some((a) => p === REGISTRY[a].path)) r.unregister().catch(() => {}); } catch {} }
   }, () => {});
 }
 const ownLinks = () => { const L = S.links || DEFAULT_LINKS; return { chat: L.chat, weather: L.weather, fitness: L.fitness, finance: L.finance, email: L.email || DEFAULT_LINKS.email }; };
@@ -933,6 +948,8 @@ const said = new Promise((ok) => { saidOk = ok; });
 function hubSays(state) {
   S.hub = state === "yes" || (state === "unknown" && !!BOOT_APP);
   S.roof = S.hub && (state === "unknown" || roofSaid);
+  // (no answer at a module's address: that module on, as the Worker served this page for it, and Weather as stage 1 had it)
+  S.apps = !S.hub ? {} : state === "unknown" ? { ...keptApps(), weather: true, [BOOT_APP.app]: true } : { ...appsSaid };
   if (!S.hub) IFL.hub.degrade(ownLinks());
   // (signed out: the way in's second way, Today's own, only beside Chats' trip)
   $("#alsoRow").hidden = !S.hub;
@@ -955,8 +972,9 @@ function bootGone(state) {
     location.replace(IFL.hub.go(rest));
     return true;
   }
-  if (state === "yes" && !roofSaid) {
-    if (ss.get(BOUNCE_KEY) === "1") location.replace((safe(S.links?.weather) || DEFAULT_LINKS.weather) + rest.replace(/^\/weather/, ""));
+  if (state === "yes" && !appsSaid[BOOT_APP.app]) {
+    const ln = BOOT_APP.link || BOOT_APP.app;
+    if (ss.get(BOUNCE_KEY) === "1") location.replace((safe(S.links?.[ln]) || DEFAULT_LINKS[ln]) + rest.slice(BOOT_APP.path.length - 1));
     else {
       ss.set(BOUNCE_KEY, "1");
       // (the same address again, from the server: a reload where it's this one already, as a replace to it would only
@@ -968,28 +986,29 @@ function bootGone(state) {
   }
   return false;
 }
-// Weather's files asked for ahead (D2): its connector, then a modulepreload for each of its files. On a /weather/ boot,
-// at once (beside /api/session) where the hub's known ready; else once Today's drawn, at idle, where Weather's been used
-// here (wx:places), or as a link to it is touched
-let preloaded = false;
-function preloadWeather() {
-  if (preloaded) return;
-  preloaded = true;
-  import("/roof/modules.js").then((m) => m.preload("weather")).catch(() => {});
+// A module's files asked for ahead (D2, s2 §4.6): its connector, then a modulepreload for each of its files. On a
+// module's boot, at once (beside /api/session) where the hub's known ready; else once Today's drawn, at idle, where the
+// app's been used here (USED's key kept), or as a link to it is touched
+const USED = { weather: "wx:places", markets: "markets:last", fitness: "fitness:meAt" };
+const preloaded = new Set();
+function preload(app) {
+  if (preloaded.has(app)) return;
+  preloaded.add(app);
+  import("/roof/modules.js").then((m) => m.preload(app)).catch(() => {});
 }
 let armed = false;
 function preloadSoon() {
-  if (preloaded || armed || !S.hub || !S.roof) return;
-  let used = false;
-  try { used = localStorage.getItem("wx:places") != null; } catch {}
+  if (armed || !S.hub) return;
   armed = true;
-  if (used) return idle(() => { if (S.hub && S.roof) preloadWeather(); });
+  const on = (a) => S.hub && !!S.apps[a];
+  for (const a of Object.keys(REGISTRY)) {
+    let used = false;
+    try { used = !!USED[a] && localStorage.getItem(USED[a]) != null; } catch {}
+    if (used && on(a)) idle(() => { if (on(a)) preload(a); });
+  }
   const touched = (e) => {
-    const a = e.target?.closest?.('a[href^="/weather/"]');
-    if (!a || !S.hub || !S.roof) return;
-    document.removeEventListener("pointerdown", touched, true);
-    document.removeEventListener("focusin", touched, true);
-    preloadWeather();
+    const a = e.target?.closest?.("a[href^='/']"), app = a && Object.keys(REGISTRY).find((k) => a.getAttribute("href").startsWith(REGISTRY[k].path));
+    if (app && on(app)) preload(app);
   };
   document.addEventListener("pointerdown", touched, true);
   document.addEventListener("focusin", touched, true);
@@ -1039,11 +1058,14 @@ function forgetKept(except = null) {
 // account goes. Each app's look (its appearance, theme) stays too. (todaykept.test.mjs reads each app's own sign-out
 // lists and checks every key in them is here.)
 const APP_KEPT = [
+  "mail:replies", "mail:unsent", "mail:outbox", "mail:remote-images", "mail:lens",
   "markets:last", "markets:years", "markets:recent", "markets:newsRead", "markets:newsHide", "markets:newsSeen", "markets:plan",
   "wx:acct",
   "fitness:hk", "fitness:today-sent", "fitness:today-swaps", "fitness:meAt", "fitness:files", "fitness:morning", "fitness:sums",
   "inflight-lock", "inflight-badges", "inflight-pushsub", "inflight-opened",
 ];
+// (and what a module keeps for this tab only: Mail's sign-in word while its trip's under way)
+const APP_SESSION_KEPT = ["mail:signin-verifier"];
 // (an app's IndexedDB store at this address, changed by fn, if the app keeps one here; never made here where it doesn't,
 // as there's nothing to let go of then. However it ends, within a few seconds: iOS can leave an open hanging)
 function inStore(name, store, fn) {
@@ -1066,6 +1088,7 @@ function inStore(name, store, fn) {
 // chat: Chat's sign-in on this phone too, when its own engine didn't sign out here (no engine, or no answer from it)
 async function forgetApps({ chat = true } = {}) {
   try { for (const k of APP_KEPT) localStorage.removeItem(k); } catch {}
+  try { for (const k of APP_SESSION_KEPT) sessionStorage.removeItem(k); } catch {}
   await Promise.all([
     // Fitness's copies of your activities' files, and of you (me:last), as its own Sign Out clears them
     inStore("fitness", "files", (s) => s.clear()),
@@ -1125,6 +1148,9 @@ async function finishSignIn() {
 // sign-in and key on this phone gone too where its engine's here, the account's sign-in ended, your day forgotten here,
 // then the sign-in page says so and offers the way back (§11.5)
 async function signOut() {
+  // (first, what you wrote in a module saved to its app (C10, s24 §10); where something couldn't be, asked before going on)
+  const fl = await Promise.resolve(F?.flush?.()).catch(() => null);
+  if (fl?.lost > 0 && !(await anyway())) return;
   try {
     const sub = await currentSub();
     if (sub) {
@@ -1147,6 +1173,18 @@ async function signOut() {
   location.assign(`${auth}/#${new URLSearchParams({ signout: "today", back: `${location.origin}/` })}`);
 }
 
+// (Sign Out Anyway? → true to go on; Cancel, Escape or the cross → false)
+function anyway() {
+  if (!F) return Promise.resolve(true);
+  return new Promise((ok) => {
+    let yes = false, h = null;
+    h = F.sheet.open({ sheet: "confirm", title: "Sign Out Anyway?", app: "inflite",
+      body: F.ui.el("p", { class: "ifl-sub", text: "Something you wrote couldn’t be saved to its app. Sign Out Anyway?" }),
+      acts: [{ label: "Cancel", act: "cancel", run: () => h.close() }, { label: "Sign Out", act: "signout", destructive: true, primary: true, run: () => { yes = true; h.close(); } }],
+      onClose: () => ok(yes) });
+  });
+}
+
 // ---------------------------------------------------------------- the two states
 function lift() { document.documentElement.classList.remove("boot"); }
 function showOut(said = "") {
@@ -1164,6 +1202,8 @@ function showOut(said = "") {
 }
 // signed out, as it's found out: by the account's answer, a 401, or the service worker's word
 function signedOutNow() {
+  // (signed out elsewhere, confirmed: the apps' copies of you here go too; Chat's own engine signs itself out, S2-D10)
+  forgetApps({ chat: false }).catch(() => {});
   forgetKept();
   clearTimeout(prefsT); prefsT = 0;
   S.view = null; S.answer = null; S.morning = null; S.kept = false; S.dayLine = null; waitingAnswer = null;
@@ -1232,6 +1272,8 @@ function gotCards(answer) {
 // each of Today, Apps and You from its spec here: its header (crumb, title, line, acts) and what to do as it's shown.
 // Apps and You are drawn as they're first shown (apps.js and you.js, loaded then). Signed out, it's let go of (F.destroy)
 const on = (tab) => F?.route?.kind === "tab" && F.route.tab === tab;
+// (a module said its data changed, fw.changed(): Today's cards asked for again as Today's next shown, RI3)
+let cardsStale = false;
 // (Today's header: the date above its title, and the day's line under it: the phase's, else where the weather is)
 const crumbOf = () => dateLong(Date.now(), S.answer?.tz || browserTz());
 function lineOf() {
@@ -1241,7 +1283,7 @@ function lineOf() {
 }
 const EDIT = { icon: "edit", label: "Edit Today: hide and reorder cards", run: () => openEdit() };
 const SCREENS = {
-  today: { el: $("#today"), title: () => "Today", crumb: crumbOf, line: lineOf, acts: [EDIT], onShow() { drawLine(true); }, onHide() {} },
+  today: { el: $("#today"), title: () => "Today", crumb: crumbOf, line: lineOf, acts: [EDIT], onShow() { drawLine(true); if (cardsStale) { cardsStale = false; refresh(); } }, onHide() {} },
   apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Each one here, in this window", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
   you: { el: $("#you"), title: () => "You", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() {} },
 };
@@ -1249,8 +1291,8 @@ function frame() {
   if (F) return F;
   F = createFrame({
     root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
-    session: () => ({ view: S.view, hub: S.hub, roof: S.roof, links: S.links || DEFAULT_LINKS }),
-    lost: signedOutNow, checkSession, hubAgain: () => hubAgain(30e3), save,
+    session: () => ({ view: S.view, hub: S.hub, roof: S.roof, apps: S.apps, links: S.links || DEFAULT_LINKS }),
+    lost: signedOutNow, checkSession, hubAgain: () => hubAgain(30e3), save, changed: () => { cardsStale = true; },
     onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
     today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you,
   });
@@ -1402,7 +1444,7 @@ function openMenu(anchor) {
 }
 // (a screen of the framework's, from anywhere in the page: none where it's the one showing, so Back never meets a twin;
 // You at another of its own places, in its own entry)
-const here = (path) => { const r = parse(path, { roof: S.hub && S.roof }); return !!r && !!F?.route && format(r) === format(F.route); };
+const here = (path) => { const r = parse(path, { roof: S.hub ? S.apps : false }); return !!r && !!F?.route && format(r) === format(F.route); };
 function go(path) {
   if (!F || here(path)) return;
   F.nav.go(path, { replace: on("you") && parse(path)?.tab === "you" });
@@ -1981,7 +2023,7 @@ async function hubKnown() {
   const state = await hubAsked;
   if (bootGone(state)) return false;
   hubSays(state);
-  if (BOOT_APP && S.roof) preloadWeather();
+  if (BOOT_APP && S.apps[BOOT_APP.app]) preload(BOOT_APP.app);
   return true;
 }
 async function load() {
@@ -1989,7 +2031,7 @@ async function load() {
   S.asked5 = false;
   let view = null;
   // (a /weather/ boot: Weather's files asked for at once, beside the session, unless the hub's known not to serve them)
-  if (BOOT_APP && ss.get(HUB_KEY) !== "0" && ss.get(ROOF_KEY) !== "0") preloadWeather();
+  if (BOOT_APP && ss.get(HUB_KEY) !== "0" && keptApp(BOOT_APP.app) !== false) preload(BOOT_APP.app);
   if (new URLSearchParams(location.hash.slice(1)).get("signin")) {
     try {
       view = await finishSignIn();
