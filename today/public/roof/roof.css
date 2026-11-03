@@ -53,7 +53,282 @@
 :root[data-theme="light"], :root[data-theme="light"] [data-app] { --acc-wash: color-mix(in srgb, var(--acc) 13%, transparent); }
 /* ---- end of the token block ---- */
 
-/* ---- components (FW): ifl-card, ifl-label, ifl-list/ifl-row, ifl-chip, ifl-stats, ifl-btn, ifl-icon-btn, ifl-seg-sm,
-   ifl-switch, ifl-field, ifl-tile + mini, ifl-avatar, ifl-badge, ifl-empty, ifl-error, ifl-skeleton, the header,
-   switcher, tab pill, sheets, toast, screens, transitions, reduced transparency/motion, contrast, forced colours, safe
-   areas, landscape ---- */
+/* ---- the framework's own tokens (FW: added, never in place of the block above) ---- */
+:root { --acc-tint-bg: color-mix(in srgb, var(--acc) 16%, transparent); --ifl-lens: rgba(255, 255, 255, 0.16); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --acc-tint-bg: color-mix(in srgb, var(--acc) 22%, transparent); --ifl-lens: #fff; } }
+:root[data-theme="light"] { --acc-tint-bg: color-mix(in srgb, var(--acc) 22%, transparent); --ifl-lens: #fff; }
+
+/* ---- the frame: the app's wash over the sky (crossfaded with the screen inside a View Transition), screens ---- */
+body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(120% 55% at 10% -12%, var(--acc-tint-bg), transparent 62%); }
+.ifl-screen { position: relative; }
+.ifl-screen[data-app]:not([data-app="inflite"]) { max-width: 1180px; }
+.ifl-zoom-slot { position: absolute; z-index: 3; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); top: 4px; pointer-events: none; }
+.ifl-zoom-slot > * { margin: 0 !important; }
+.ifl-vt-zoom { view-transition-name: ifl-zoom; }
+html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none; }
+
+/* ---- the header (header.js): row 1 is the shared .ifh; the crumb, Back, the compact title and row 2 are the framework's ---- */
+.ifl-hd.ifh { grid-template-columns: auto minmax(112px, 1fr) auto; grid-template-rows: auto; view-transition-name: ifl-hd; --ifh-tint: var(--acc-ink);
+  height: calc(var(--ifh-pt0) + 90px - 42px * var(--p)); margin-bottom: calc(var(--ifh-mb, 0px) + 42px * var(--p)); }
+.ifl-hd.ifh.has-secs { grid-template-rows: auto auto; row-gap: 10px; height: calc(var(--ifh-pt0) + 140px - 42px * var(--p)); }
+html.ifl-fill .ifl-hd.ifh { --p: 1 !important; }
+.ifl-hd .ifl-back { width: 44px; min-width: 44px; height: 44px; padding: 0; border-radius: 50%; color: var(--acc-ink); }
+.ifl-hd .ifl-back .ifl-glyph, .ifl-hd .ifl-back svg { width: 22px; height: 22px; display: grid; place-items: center; }
+.ifl-hd .ifl-back svg { stroke-width: 2.4; }
+.ifh-crumb { display: flex; align-items: center; gap: 6px; min-width: 0; height: calc(18px * (1 - var(--p))); overflow: hidden; opacity: calc(1 - var(--p) * 1.6);
+  font-size: 13px; font-weight: 600; line-height: 18px; color: var(--text-3); white-space: nowrap; text-overflow: ellipsis; }
+.ifl-hd:not([data-app="inflite"]) .ifh-crumb { color: var(--acc-ink); }
+.ifh-crumb img { flex: none; width: 16px; height: 16px; border-radius: 4.5px; }
+.ifh-crumb[hidden] { display: none; }
+.ifh-ttl, .ifh-plain { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ifl-hd .ifh-pick { color: inherit; }
+.ifl-hd .ifh-act[data-word] { width: auto; min-width: 44px; padding: 0 12px !important; border-radius: 999px !important; font-size: 16px; font-weight: 600; }
+.ifl-hd .ifh-act .ifl-glyph { display: grid; place-items: center; }
+.ifl-row2 { grid-column: 1 / -1; min-width: 0; }
+.ifl-row2[hidden] { display: none; }
+@media (max-width: 360px) { .ifl-hd.ifh { column-gap: 8px; } }
+/* (an app's screen is wider than Today's column on a big screen: its header goes with it) */
+@media (min-width: 672px) { html[data-app]:not([data-app="inflite"]) #hd .ifl-hd.ifh { padding-left: max(16px, calc((100% - 1180px) / 2 + 16px)); padding-right: max(16px, calc((100% - 1180px) / 2 + 16px)); } }
+
+/* the section switcher: a track, the sections, a lens that slides to the chosen one (manual activation: header.js) */
+.ifl-segs { position: relative; display: flex; gap: 2px; padding: 4px; border-radius: var(--r-pill); background: var(--glass-ctl); overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; }
+.ifl-segs::-webkit-scrollbar { display: none; }
+.ifl-segs.over { -webkit-mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent); }
+.ifl-sec { position: relative; z-index: 1; flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: var(--r-pill);
+  font-size: 14.5px; font-weight: 600; color: var(--text-2); white-space: nowrap; transition: color var(--dur-fast); }
+.ifl-sec::after { content: ""; position: absolute; inset: -5px 0; }
+.ifl-sec[aria-selected="true"] { color: var(--acc-ink); }
+.ifl-sec:active { opacity: 0.6; }
+.ifl-sec:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: -2px; }
+.ifl-lens { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: var(--lw, 0); transform: translateX(var(--lx, 0)); border-radius: var(--r-pill);
+  background: var(--ifl-lens); box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.35); transition: transform var(--dur-base) var(--ease-glide), width var(--dur-base) var(--ease-glide); }
+.ifl-sec-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; background: var(--danger); }
+
+/* ---- the tab bar (tabs.js): menu.css's bar, with a pill that slides; its static pill off under it (D18) ---- */
+.ifl-tabs.has-pill .ifl-tab[aria-current] { background: none; color: var(--ifl-tab-on); }
+.ifl-tabs.has-pill .ifl-tab { position: relative; z-index: 1; }
+.ifl-tab-pill { position: absolute; z-index: 0; top: var(--ift-pad); bottom: var(--ift-pad); left: 0; width: var(--pw, 0); transform: translateX(var(--px, 0)); border-radius: 999px;
+  background: color-mix(in srgb, var(--ifl-tab-on) var(--ift-pill), transparent); transition: transform 0.38s var(--ease-glide), width 0.38s var(--ease-glide); pointer-events: none; }
+.ifl-tab-pill[hidden] { display: none; }
+.ifl-tabs.away { transform: translateY(150%); }
+
+/* ---- sheets (sheet.js) on <dialog>: the frozen markup, Weather's motion ---- */
+dialog.ifl-sheet { position: fixed; inset: auto 0 0; z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
+  max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 24px); overflow: hidden auto; overscroll-behavior: contain; display: none; flex-direction: column;
+  border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; color: var(--text); background: var(--sheen), var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), 0 -10px 40px rgba(0, 0, 0, 0.3);
+  transform: translateY(var(--drag, 0px)); animation: ifl-sheet-in var(--dur-sheet-in) var(--ease-glide); font: inherit; }
+dialog.ifl-sheet[open] { display: flex; }
+dialog.ifl-sheet::backdrop { background: var(--dim); animation: ifl-fade-in var(--dur-sheet-in) ease; }
+dialog.ifl-sheet.closing { animation: ifl-sheet-out var(--dur-sheet-out) var(--ease-in) forwards; }
+dialog.ifl-sheet.closing::backdrop { animation: ifl-fade-out var(--dur-sheet-out) ease forwards; }
+dialog.ifl-sheet.dragging { animation: none; transition: none; }
+@keyframes ifl-sheet-in { from { transform: translateY(100%); } }
+@keyframes ifl-sheet-out { to { transform: translateY(100%); } }
+@keyframes ifl-fade-in { from { opacity: 0; } }
+@keyframes ifl-fade-out { to { opacity: 0; } }
+@media (min-width: 700px) {
+  dialog.ifl-sheet { inset: 0; margin: auto; width: min(560px, calc(100% - 48px)); height: fit-content; border-radius: var(--r-sheet); padding-bottom: 24px; animation-name: ifl-sheet-pop; }
+  dialog.ifl-sheet.closing { animation-name: ifl-sheet-unpop; }
+  @keyframes ifl-sheet-pop { from { opacity: 0; transform: scale(0.94); } }
+  @keyframes ifl-sheet-unpop { to { opacity: 0; transform: scale(0.96); } }
+}
+.ifs-grab { flex: none; width: 40px; height: 5px; margin: 8px auto 2px; border-radius: 3px; background: var(--line); background: color-mix(in srgb, var(--text) 22%, transparent); touch-action: none; }
+.ifl-sheet .ifs-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 6px 0; touch-action: none; }
+.ifl-sheet .ifs-head h2 { flex: 1; min-width: 0; margin: 0; font: 700 22px/1.2 var(--font-d); letter-spacing: -0.2px; overflow-wrap: anywhere; }
+.ifl-sheet .ifs-head h2:focus { outline: none; }
+.ifl-sheet .ifs-head h2.vh { flex: 1; position: static !important; width: auto; height: auto; clip: auto; clip-path: none; visibility: hidden; }
+.ifl-sheet .ifs-btn .ifl-glyph { display: grid; place-items: center; width: 18px; height: 18px; }
+.ifl-sheet .ifs-btn svg { width: 18px; height: 18px; stroke-width: 2.4; }
+.ifl-sheet:not(.pushed) .ifs-back { display: none; }
+.ifl-sheet .ifs-body { flex: 1 1 auto; min-height: 0; }
+.ifl-sheet .ifs-hero img { width: 64px; height: 64px; border-radius: 15px; }
+.ifl-sheet .ifs-acts { position: sticky; bottom: calc(-28px - env(safe-area-inset-bottom, 0px)); z-index: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin: 12px calc(-1 * max(18px, env(safe-area-inset-left, 0px))) 0; padding: 12px max(18px, env(safe-area-inset-left, 0px)) 4px; background: linear-gradient(transparent, var(--glass-strong) 30%); }
+.ifl-sheet .ifs-acts .ifl-btn { flex: 1 1 auto; }
+.ifl-sheet[aria-busy] .ifs-body { opacity: 0.6; }
+.ifs-page { display: grid; gap: 12px; }
+body.sheet-up { overflow: hidden; }
+
+/* ---- the toast (toast.js): the shared note's look, an action when it has one ---- */
+.ifl-toast { max-width: calc(100vw - 32px); bottom: calc(var(--tabs-h) + 24px + env(safe-area-inset-bottom, 0px)); }
+.ifl-toast .ifm-note-tx b { overflow-wrap: anywhere; }
+.ifl-toast.has-act { pointer-events: auto; padding-right: 8px; }
+.ifl-toast-act { flex: none; min-height: 36px; padding: 0 14px; border-radius: 999px; font-weight: 600; color: var(--acc-ink); background: var(--acc-wash); position: relative; }
+.ifl-toast-act::after { content: ""; position: absolute; inset: -4px; }
+
+/* ---- components (ui.js) ---- */
+.ifl-glyph { display: inline-grid; place-items: center; flex: none; }
+.ifl-glyph svg { width: 1.2em; height: 1.2em; stroke-width: 2; }
+.ifl-appic { flex: none; border-radius: 22.5%; object-fit: cover; }
+.ifl-appic.s16 { width: 16px; height: 16px; } .ifl-appic.s24 { width: 24px; height: 24px; } .ifl-appic.s32 { width: 32px; height: 32px; }
+.ifl-appic.s40 { width: 40px; height: 40px; } .ifl-appic.s64 { width: 64px; height: 64px; }
+.ifl-card { position: relative; display: block; margin: 0 0 12px; padding: 16px 18px; border-radius: var(--r-card); color: var(--text); text-decoration: none; text-align: left; width: 100%;
+  background: var(--sheen), var(--glass); box-shadow: var(--edge), var(--lift); }
+.ifl-card.hero { border-radius: var(--r-hero); background: var(--sheen), linear-gradient(160deg, var(--acc-tint-bg), transparent 70%), var(--glass); }
+.ifl-card.list { padding: 4px 0; }
+.ifl-card.tappable { cursor: pointer; transition: transform var(--dur-press); }
+.ifl-card.tappable:active { transform: scale(0.98); }
+.ifl-card-t { margin: 0 0 6px; font: 600 17px/1.25 var(--font-d); }
+.ifl-label { margin: 18px 18px 8px; font: 600 13px/1.2 var(--font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-3); }
+.ifl-sheet .ifl-label, .ifl-group .ifl-label { color: var(--text-2); }
+.ifl-list { border-radius: var(--r-group); overflow: hidden; background: var(--sheen), var(--glass); box-shadow: var(--edge), var(--lift); }
+.ifl-sheet .ifl-list { background: var(--glass-ctl); box-shadow: none; }
+.ifl-row { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 54px; padding: 10px 18px; color: var(--text); text-decoration: none; text-align: left; }
+a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
+:is(a, button, label).ifl-row:active { background: var(--press); }
+.ifl-row:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: -2px; border-radius: var(--r-group); }
+.ifl-row + .ifl-row::before { content: ""; position: absolute; top: 0; left: 18px; right: 0; height: 0.5px; background: var(--line); }
+.ifl-row:has(> .ifl-lead) + .ifl-row::before, .ifl-row:has(> .ifl-lead) + .ifl-row:has(> .ifl-lead)::before { left: 64px; }
+.ifl-lead { flex: none; display: grid; place-items: center; }
+.ifl-lead.ic { width: 32px; height: 32px; border-radius: 9px; color: #fff; background: var(--acc-fill); }
+.ifl-lead.tm { width: 46px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.ifl-tx { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ifl-tx b { font-weight: 500; font-size: 17px; overflow-wrap: anywhere; }
+.ifl-tx small { font-size: 14px; color: var(--text-2); overflow-wrap: anywhere; }
+.ifl-val { flex: none; font-size: 15px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ifl-trail { flex: none; display: grid; place-items: center; color: var(--text-3); }
+.ifl-trail .ifl-glyph svg { width: 17px; height: 17px; stroke-width: 2.6; }
+.ifl-row[aria-current="true"] .ifl-trail, .ifl-row[aria-selected="true"] .ifl-trail { color: var(--acc-ink); }
+.ifl-results .ifl-row { padding: 8px 4px; min-height: 52px; }
+.ifl-results .ifl-tx b, .ifl-results .ifl-tx small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ifl-chip { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 11px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600; color: var(--acc-ink); background: var(--acc-wash); text-decoration: none; }
+.ifl-chip.action { min-height: 36px; padding: 0 14px; font-size: 14px; color: var(--text); background: var(--glass-ctl); cursor: pointer; }
+.ifl-chip.action::after { content: ""; position: absolute; inset: -4px 0; }
+.ifl-chip[data-tone="warn"] { color: var(--warn); } .ifl-chip[data-tone="bad"] { color: var(--danger); } .ifl-chip[data-tone="good"] { color: var(--good-text); }
+.ifl-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; margin: 12px 0 0; }
+.ifl-stat { margin: 0; padding: 9px 12px; border-radius: var(--r-well); background: var(--glass-ctl); }
+.ifl-stat dt { font-size: 12px; color: var(--text-2); }
+.ifl-stat dd { margin: 2px 0 0; font: 700 19px/1.2 var(--font-d); font-variant-numeric: tabular-nums; }
+.ifl-stat small { display: block; font-size: 12px; color: var(--text-3); }
+.ifl-stat[data-tone="pos"] dd, .ifl-stat[data-tone="good"] dd { color: var(--good-text); } .ifl-stat[data-tone="neg"] dd, .ifl-stat[data-tone="bad"] dd { color: var(--danger); }
+.ifl-stat[data-tone="warn"] dd { color: var(--warn); } .ifl-stat[data-tone="acc"] dd { color: var(--acc-ink); }
+.ifl-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 18px; border-radius: var(--r-pill);
+  font-size: 16px; font-weight: 600; color: var(--text); background: var(--glass-ctl); box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.25); text-decoration: none; cursor: pointer;
+  transition: transform var(--dur-press); }
+.ifl-btn:active { transform: scale(0.95); }
+.ifl-btn:disabled, .ifl-btn[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.ifl-btn[aria-busy="true"] { opacity: 0.7; }
+.ifl-btn.primary { color: var(--on-acc); background: var(--acc-fill); }
+.ifl-btn.small { min-height: 36px; padding: 0 14px; font-size: 15px; }
+.ifl-btn.small::after { content: ""; position: absolute; inset: -4px 0; }
+.ifl-btn.destructive { color: var(--danger); }
+.ifl-btn .ifl-glyph svg { width: 18px; height: 18px; }
+:is(.ifl-btn, .ifl-icon-btn, .ifl-chip):focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 2px; }
+.ifl-icon-btn { position: relative; flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--acc-ink); background: var(--glass-ctl); cursor: pointer; transition: transform var(--dur-press); }
+.ifl-icon-btn::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; }
+.ifl-icon-btn.filled { color: var(--on-acc); background: var(--acc-fill); }
+.ifl-icon-btn:active { transform: scale(0.92); }
+.ifl-icon-btn .ifl-glyph svg { width: 20px; height: 20px; }
+.ifl-seg-sm { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: var(--glass-ctl); }
+.ifl-seg-sm [role="radio"] { position: relative; min-height: 32px; padding: 0 13px; border-radius: var(--r-pill); font-size: 14px; font-weight: 600; color: var(--text-2); }
+.ifl-seg-sm [role="radio"]::after { content: ""; position: absolute; inset: -6px 0; }
+.ifl-seg-sm [role="radio"][aria-checked="true"] { color: var(--on-acc); background: var(--acc-fill); }
+.ifl-seg-sm [role="radio"]:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 1px; }
+.ifl-switch { display: inline-grid; }
+.ifl-field { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 14px; background: var(--field); }
+.ifl-field .ifl-glyph { color: var(--text-3); }
+.ifl-field input { flex: 1; min-width: 0; height: 44px; border: 0; background: none; outline: none; font-size: 16px; color: var(--text); }
+.ifl-field:focus-within { box-shadow: 0 0 0 2px var(--acc-ink); }
+.ifl-field input::-webkit-search-cancel-button { display: none; }
+.ifl-clear { position: relative; flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); background: var(--glass-ctl); }
+.ifl-clear::after { content: ""; position: absolute; inset: -8px; }
+.ifl-clear[hidden] { display: none; }
+.ifl-tile { position: relative; display: grid; gap: 8px; align-content: start; min-height: 128px; padding: 14px; border-radius: 22px; color: var(--text); text-decoration: none;
+  background: var(--sheen), var(--glass); box-shadow: var(--edge), var(--lift); transition: transform var(--dur-fast) var(--ease-out); }
+a.ifl-tile:active, .ifl-tile-main:active { transform: scale(0.97); }
+.ifl-tile-main { display: grid; gap: 8px; align-content: start; color: inherit; text-decoration: none; }
+.ifl-tile b { font-size: 16px; font-weight: 650; }
+.ifl-tile small { font-size: 13px; line-height: 1.35; color: var(--text-2); }
+.ifl-tile-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ifl-mini { display: flex; align-items: flex-end; gap: 8px; min-height: 30px; margin-top: auto; }
+.ifl-mini b.num { font: 700 24px/1 var(--font-d); font-variant-numeric: tabular-nums; }
+.ifl-mini[data-tone="pos"] b.num { color: var(--good-text); } .ifl-mini[data-tone="neg"] b.num { color: var(--danger); }
+.ifl-mini small { font-size: 12.5px; color: var(--text-2); }
+.ifl-mini .bars { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
+.ifl-mini .bars i { width: 6px; height: calc(4px + 22px * var(--h, 0)); border-radius: 3px; background: color-mix(in srgb, var(--c-weather) 35%, transparent); }
+.ifl-mini .bars i.w { background: var(--c-weather); }
+/* the Markets day's shape: an area under the line, clipped by --pts (0…1 values from connectors.js), never a figure */
+.ifl-mini .spark { display: block; width: 64px; height: 26px; color: var(--text-2); background: linear-gradient(currentColor, color-mix(in srgb, currentColor 20%, transparent)); clip-path: polygon(var(--pts)); }
+.ifl-mini[data-tone="pos"] .spark { color: var(--good-text); } .ifl-mini[data-tone="neg"] .spark { color: var(--danger); }
+.ifl-avatar { position: relative; flex: none; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 15px; }
+.ifl-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.av-c1 { background: linear-gradient(160deg, #5aa9ff, #2a6ae6); } .av-c2 { background: linear-gradient(160deg, #ff8f62, #d84a28); }
+.av-c3 { background: linear-gradient(160deg, #4fd27b, #1f8a49); } .av-c4 { background: linear-gradient(160deg, #a08cff, #5a4fe0); }
+.av-c5 { background: linear-gradient(160deg, #ffb340, #c66a00); } .av-c6 { background: linear-gradient(160deg, #4fd6c4, #0f7f75); }
+.av-c7 { background: linear-gradient(160deg, #ff6f9c, #c42d63); } .av-c8 { background: linear-gradient(160deg, #9aa3b8, #5b6379); }
+.ifl-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--on-acc); background: var(--acc-fill); }
+.ifl-empty, .ifl-error { display: grid; gap: 8px; justify-items: center; padding: 28px 20px; text-align: center; }
+.ifl-empty b, .ifl-error b { font: 600 18px/1.3 var(--font-d); }
+.ifl-empty p, .ifl-error p { margin: 0; max-width: 36ch; color: var(--text-2); font-size: 15px; }
+.ifl-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 8px; }
+.ifl-error { margin: 12px 0; border-radius: var(--r-card); background: var(--sheen), var(--glass); box-shadow: var(--edge), var(--lift); }
+.ifl-skeleton { display: grid; gap: 12px; margin-bottom: 12px; }
+.ifl-skeleton i { display: block; height: 84px; border-radius: var(--r-card); background: var(--glass); animation: ifl-pulse 1.4s ease-in-out infinite alternate; }
+.ifl-skeleton.hero i { height: 220px; border-radius: var(--r-hero); }
+.ifl-skeleton.rows i { height: 54px; border-radius: 14px; }
+.ifl-skeleton.tile i { height: 128px; border-radius: 22px; }
+@keyframes ifl-pulse { to { opacity: 0.5; } }
+.ifl-sub { margin: 0 0 12px; color: var(--text-2); font-size: 15px; }
+
+/* search (search.js) and the connector sheet (connectors.js) */
+.ifl-search { display: grid; gap: 4px; }
+.ifl-none { margin: 14px 4px 0; color: var(--text-2); }
+.ifl-none:empty { display: none; }
+.ifl-sr-group .ifl-label { margin: 16px 4px 2px; }
+.ifl-provides { display: grid; gap: 8px; margin: 4px 0 4px; }
+.ifl-provides-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--glass-ctl); font-size: 15px; }
+.ifl-provides-row b { font-size: 12px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--acc-ink); padding-top: 2px; }
+@media (max-width: 360px) { .ifl-provides-row { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+
+/* ---- transitions (§3.7): View Transitions by kind on html[data-vt]; CSS animations where there are none ---- */
+::view-transition-group(ifl-hd), ::view-transition-group(ifl-tabs) { animation: none; }
+::view-transition-old(ifl-hd), ::view-transition-new(ifl-hd) { animation: none; mix-blend-mode: normal; }
+html[data-vt="push"]::view-transition-old(root) { animation: 0.38s var(--ease-glide) both ifl-out-left; }
+html[data-vt="push"]::view-transition-new(root) { animation: 0.38s var(--ease-glide) both ifl-in-right; }
+html[data-vt="pop"]::view-transition-old(root) { animation: 0.38s var(--ease-glide) both ifl-out-right; }
+html[data-vt="pop"]::view-transition-new(root) { animation: 0.38s var(--ease-glide) both ifl-in-left; }
+html[data-vt="tab"]::view-transition-old(root), html[data-vt="fade"]::view-transition-old(root) { animation: 0.2s ease both ifl-fade-out; }
+html[data-vt="tab"]::view-transition-new(root), html[data-vt="fade"]::view-transition-new(root) { animation: 0.2s ease both ifl-fade-in; }
+html[data-vt="fade"]::view-transition-old(root), html[data-vt="fade"]::view-transition-new(root) { animation-duration: 0.15s; }
+html[data-vt="section"][data-dir="fwd"]::view-transition-new(root) { animation: 0.25s var(--ease-glide) both ifl-sec-in-r; }
+html[data-vt="section"][data-dir="back"]::view-transition-new(root) { animation: 0.25s var(--ease-glide) both ifl-sec-in-l; }
+html[data-vt="section"]::view-transition-old(root) { animation: 0.2s ease both ifl-fade-out; }
+html[data-vt="zoom"]::view-transition-group(ifl-zoom) { animation-duration: 0.42s; animation-timing-function: var(--ease-glide); }
+html[data-vt="zoom"]::view-transition-old(root) { animation: 0.3s ease both ifl-fade-out; }
+html[data-vt="zoom"]::view-transition-new(root) { animation: 0.36s ease both ifl-fade-in; }
+@keyframes ifl-in-right { from { opacity: 0; transform: translateX(28px); } }
+@keyframes ifl-in-left { from { opacity: 0; transform: translateX(-28px); } }
+@keyframes ifl-out-left { to { opacity: 0; transform: translateX(-28px); } }
+@keyframes ifl-out-right { to { opacity: 0; transform: translateX(28px); } }
+@keyframes ifl-sec-in-r { from { opacity: 0; transform: translateX(16px); } }
+@keyframes ifl-sec-in-l { from { opacity: 0; transform: translateX(-16px); } }
+.ifl-enter-push { animation: 0.38s var(--ease-glide) both ifl-in-right; }
+.ifl-enter-pop { animation: 0.38s var(--ease-glide) both ifl-in-left; }
+.ifl-enter-tab, .ifl-enter-fade { animation: 0.2s ease both ifl-fade-in; }
+.ifl-enter-fade { animation-duration: 0.15s; }
+html[data-dir="fwd"] .ifl-enter-section { animation: 0.25s var(--ease-glide) both ifl-sec-in-r; }
+html[data-dir="back"] .ifl-enter-section { animation: 0.25s var(--ease-glide) both ifl-sec-in-l; }
+
+/* ---- reduced motion, reduced transparency, more contrast, forced colours, a phone on its side ---- */
+@media (prefers-reduced-motion: reduce) {
+  .ifl-lens, .ifl-tab-pill { transition: none; }
+  .ifl-skeleton i { animation: none; }
+  dialog.ifl-sheet, dialog.ifl-sheet.closing { animation-name: ifl-fade-in; animation-duration: 0.15s; }
+  dialog.ifl-sheet.closing { animation-name: ifl-fade-out; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ifl-card, .ifl-list, .ifl-tile, dialog.ifl-sheet, .ifl-tabs, .ifl-toast, .ifl-error { background: var(--solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .ifl-hd.ifh::before { background: var(--solid); -webkit-backdrop-filter: none; backdrop-filter: none; -webkit-mask-image: none; mask-image: none; }
+}
+@media (prefers-contrast: more) {
+  :root { --text-2: color-mix(in srgb, var(--text) 90%, transparent); --text-3: color-mix(in srgb, var(--text) 80%, transparent); --line: color-mix(in srgb, var(--text) 30%, transparent); }
+  .ifl-card, .ifl-list, .ifl-tile, dialog.ifl-sheet, .ifl-segs { box-shadow: 0 0 0 1px var(--line); }
+}
+@media (forced-colors: active) {
+  .ifl-sec[aria-selected="true"], .ifl-tabs .ifl-tab[aria-current], .ifl-seg-sm [role="radio"][aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .ifl-lens, .ifl-tab-pill { display: none; }
+  .ifl-mini .spark { forced-color-adjust: none; background: CanvasText; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  :root { --tabs-h: 48px; }
+  .ifl-hd.ifh { --p: 1 !important; }
+}
