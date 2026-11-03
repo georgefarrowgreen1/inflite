@@ -866,11 +866,12 @@ function forgetKept(except = null) {
 // keeps of you is kept here (§11.5): signing out of InFlite lets go of what each lets go of as you sign out of it on its
 // own (Markets' forget(), Fitness's and Weather's signOutHere, Chat's forget), so none of it is drawn for whoever opens
 // it next. Weather's places and settings are the phone's, as Weather's own Sign Out keeps them: only its copy of your
-// account goes. Each app's look (its appearance, theme) stays too.
+// account goes. Each app's look (its appearance, theme) stays too. (todaykept.test.mjs reads each app's own sign-out
+// lists and checks every key in them is here.)
 const APP_KEPT = [
   "markets:last", "markets:years", "markets:recent", "markets:newsRead", "markets:newsHide", "markets:newsSeen", "markets:plan",
   "wx:acct",
-  "fitness:hk", "fitness:today-sent", "fitness:meAt", "fitness:files", "fitness:morning", "fitness:sums",
+  "fitness:hk", "fitness:today-sent", "fitness:today-swaps", "fitness:meAt", "fitness:files", "fitness:morning", "fitness:sums",
   "inflight-lock", "inflight-badges", "inflight-pushsub", "inflight-opened",
 ];
 // (an app's IndexedDB store at this address, changed by fn, if the app keeps one here; never made here where it doesn't,
@@ -898,11 +899,19 @@ async function forgetApps({ chat = true } = {}) {
   await Promise.all([
     // Fitness's copies of your activities' files, and of you (me:last), as its own Sign Out clears them
     inStore("fitness", "files", (s) => s.clear()),
-    // Chat's sign-in and key, and its kept copy of your chats, as its forget() lets them go; what you'd written and not
-    // sent stays, sealed, for when you're back in as you (forget(true), as the engine's signOut does)
+    // Chat's sign-in and key, and its kept copy of your chats, as its forget() lets them go (and your pinned chats, once
+    // the account keeps them too: pinsup); what you'd written and not sent stays, sealed, for when you're back in as you
+    // (forget(true), as the engine's signOut does)
     chat ? inStore("inflight", "kv", (s) => {
       const q = s.get("session");
-      q.onsuccess = () => { const id = q.result?.me?.id; s.delete("session"); if (id) s.delete(`cache:${id}`); };
+      q.onsuccess = () => {
+        const id = q.result?.me?.id;
+        s.delete("session");
+        if (!id) return;
+        s.delete(`cache:${id}`);
+        const up = s.get(`pinsup:${id}`);
+        up.onsuccess = () => { if (up.result) { s.delete(`pins:${id}`); s.delete(`pinsup:${id}`); } };
+      };
     }) : null,
   ]);
 }
