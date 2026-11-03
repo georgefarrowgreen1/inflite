@@ -96,6 +96,9 @@ export function mergeWaiting(rows, said) {
 const heard = new Map();
 const heardFor = (r) => { const h = heard.get(r.id); return h && h.serverAt === r.at && (h.said || Date.now() - h.tried < 2 * MIN) ? h : null; };
 const wroteHeard = new Map();
+// (Chats locked by its app lock, stage 3 S3-D14: every word heard let go of, so none is drawn again until it's unlocked
+// and asked afresh)
+export function forgetHeard() { heard.clear(); wroteHeard.clear(); }
 
 // ---------------------------------------------------------------- the header's line
 export function dayLine(answer, now, phase = phaseAt(answer, now)) {

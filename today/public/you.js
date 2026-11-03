@@ -40,7 +40,7 @@ export function forgetYou() { Y.rules = Y.notify = Y.devices = Y.sub = Y.shares 
 const CONNECTED = [["weather", "Weather"], ["chats", "Chats"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"]];
 const WORDS = [["cards", "Cards"], ["search", "Search"], ["notifications", "Notifications"], ["actions", "Actions"], ["screens", "Screens"]];
 // (kept for the roof as it was when they were worked out: Weather's words aren't the same with it off)
-const roofOf = (ctx) => !!(ctx.hub && ctx.roof);
+const roofOf = (ctx) => `${!!(ctx.hub && ctx.roof)}${!!ctx.chats}`;
 async function sharesOf(ctx) {
   const roof = roofOf(ctx);
   if ((Y.shares && Y.sharesRoof === roof) || typeof ctx.connectors !== "function") return;
@@ -160,7 +160,7 @@ function paint(root, ctx) {
     out.push(sec("youQuietSec", "Quiet Hours", body));
   }
   // Chat
-  out.push(sec("youChat", "Chat", `<button class="row go" type="button" id="youChatGo"><span class="tx"><b>Chat Settings</b><small>Show When I’m Typing, Pigeons, Names on the Lock Screen</small></span><span class="chev">${G.chev}</span></button>`));
+  out.push(sec("youChat", "Chat", `<button class="row go" type="button" id="youChatGo"><span class="tx"><b>Chat Settings</b><small>${ctx.chats ? "Pigeons, privacy and your loft" : "Show When I’m Typing, Pigeons, Names on the Lock Screen"}</small></span><span class="chev">${G.chev}</span></button>`));
   // InFlite: each app's version, as each last said it here
   const ver = APPS.map(([k, name]) => {
     let b = k === "today" ? ctx.BUILD : null;
