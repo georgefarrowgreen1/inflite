@@ -1184,8 +1184,9 @@ async function signOut() {
     IFL.hub.chat().then(async (c) => { if (typeof c?.signOut !== "function") return false; await c.signOut(); return true; }).catch(() => false),
     new Promise((ok) => setTimeout(() => ok(false), 4000)),
   ]);
-  // (Chats in this page: its core signed out and forgot (above), then ended, before Chat's store here is cleared too)
-  if (chatsHere) await F?.releaseService("chats", { terminate: true });
+  // (Chats in this page: its core signed out and forgot (above), then ended, before Chat's store here is cleared too; 2
+  // seconds at most, as one still starting is ended all the same)
+  if (chatsHere) await Promise.race([F?.releaseService("chats", { terminate: true }), new Promise((ok) => setTimeout(ok, 2000))]);
   const auth = safe(S.links?.auth) || DEFAULT_LINKS.auth;
   await call("/api/logout", { method: "POST", body: {} }).catch(() => {});
   forgetKept();
