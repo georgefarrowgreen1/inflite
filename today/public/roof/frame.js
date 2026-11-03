@@ -106,7 +106,12 @@ export function createFrame(opts = {}) {
     if (svcs[app]) return svcs[app];
     if (gone || !isOn(app) || !REGISTRY[app]?.service) return Promise.reject(new Error(`${app}: no service here`));
     const p = svcs[app] = Promise.resolve(opts.retired).catch(() => {}).then(() => (svcs[app] === p ? import("./modules.js") : Promise.reject(new Error("let go of")))).then((M) => M.loadService(app, F))
-      .then((s) => { const st = (d) => { if (svcs[app] !== p) return; T(() => opts.serviceState?.(app, d?.state)); found(app, s, /^(ready|offline)$/.test(d?.state)); }; s.on?.("state", st); st(s); return s; }, (e) => { if (svcs[app] === p) delete svcs[app]; throw e; });
+      .then((s) => {
+        const st = (d) => { if (svcs[app] !== p) return; T(() => opts.serviceState?.(app, d?.state)); found(app, s, /^(ready|offline)$/.test(d?.state)); };
+        // (its tab's count from the service's unread, on every screen, the module mounted or not: §2.5)
+        const tab = REGISTRY[app].tab, un = (x) => { if (tab && x?.topic === "unread" && svcs[app] === p) F.tabs.badge(tab, x.data); };
+        s.on?.("state", st); s.on?.("*", un); st(s); return s;
+      }, (e) => { if (svcs[app] === p) delete svcs[app]; throw e; });
     return p;
   };
   // (the frame's own search over a service (Chats' People and Messages, §2.4): while it's unlocked and signed in; gone as
@@ -216,7 +221,7 @@ export function createFrame(opts = {}) {
     },
     forModule: (app) => modOf(app).fw,
     service: (app) => svc(app).then((s) => s.facade),
-    releaseService(app, o) { const p = svcs[app]; if (o?.terminate) { delete svcs[app]; found(app); } return p?.then((s) => s.release?.(o), () => {}); },
+    releaseService(app, o) { const p = svcs[app]; if (o?.terminate) { delete svcs[app]; found(app); if (p && REGISTRY[app]?.tab) F.tabs.badge(REGISTRY[app].tab, 0); } return p?.then((s) => s.release?.(o), () => {}); },
     destroy() {
       if (gone) return;
       for (const a of Object.keys(svcs)) F.releaseService(a, { terminate: true });
