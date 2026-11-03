@@ -87,6 +87,8 @@ html.ifl-fill .ifl-hd.ifh { --p: 1 !important; }
 .ifl-row2 { grid-column: 1 / -1; min-width: 0; }
 .ifl-row2[hidden] { display: none; }
 @media (max-width: 360px) { .ifl-hd.ifh { column-gap: 8px; } }
+/* (an app's screen is wider than Today's column on a big screen: its header goes with it) */
+@media (min-width: 672px) { html[data-app]:not([data-app="inflite"]) #hd .ifl-hd.ifh { padding-left: max(16px, calc((100% - 1180px) / 2 + 16px)); padding-right: max(16px, calc((100% - 1180px) / 2 + 16px)); } }
 
 /* the section switcher: a track, the sections, a lens that slides to the chosen one (manual activation: header.js) */
 .ifl-segs { position: relative; display: flex; gap: 2px; padding: 4px; border-radius: var(--r-pill); background: var(--glass-ctl); overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; }
