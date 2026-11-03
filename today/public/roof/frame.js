@@ -3,9 +3,11 @@
 //
 // createFrame(opts) → F. opts (from app.js):
 //   { root: #in, header: #hd, views: #views, tabs: #tabs,
-//     session: () => ({ view, hub, roof, links }),   // hub, roof: booleans (D14: roof = j.roof === true); links: IFL's
+//     session: () => ({ view, hub, roof, apps, links }),   // hub, roof: booleans (D14: roof = j.roof === true); apps:
+//                                                     // { [app]: boolean } (/api/hub's, s24 §2; none = { weather: roof })
 //     lost: signedOutNow, checkSession: () => Promise<boolean signedIn>, hubAgain: () => Promise<void> (D14 re-ask),
 //     save: () => ({ y, … }) (D21's reload writes ifl-here:today from it), onMe: (button) => openMenu (D24),
+//     changed: () => void (a module said its data changed: fw.changed(), Today's cards asked again on their next show),
 //     me: () => Node (your photo), today: ScreenSpec, apps: ScreenSpec, you: ScreenSpec }
 //   ScreenSpec = { el, title(), crumb(), line(), acts: [{ icon, label, run }] (or a function giving them),
 //                  onShow(route), onHide() }
@@ -19,8 +21,10 @@
 //   F.nav.prev() → Route | null            the route of the entry before this one, as this page pushed it (§3.6)
 //   F.route                                the current Route
 //   F.header, F.tabs, F.sheet, F.toast, F.search, F.send, F.ui
-//   F.session                              { view, hub, roof, links, lost() → Promise<boolean> } (D3)
-//   F.setRoof(bool)                        D14, from app.js when /api/hub answers differently
+//   F.session                              { view, hub, roof, apps, links, lost() → Promise<boolean> } (D3); apps: each
+//                                          app's flag ANDed with hub ({} with the hub off)
+//   F.setRoof(roof, apps)                  D14 per app, from app.js when /api/hub answers differently (s24 §2, §7)
+//   F.flush() → Promise<{ lost }>          every mounted module's instance.flush(), 2 s each at most (s24 §4)
 //   F.restamp()                            re-writes a missing history.state.ifl (RI1)
 //   F.stale                                boolean, D21 (set by modules.js watchVersion)
 //   F.fill(on)                             D20 (html.ifl-fill)
@@ -37,17 +41,23 @@
 //   fw.header.set({ title, compactTitle, pick, line, acts, badges })   merged into what it set before; shown only while
 //     its screen shows (the frame fills back, crumb, sections and the section). pick: { label, run } | null;
 //     acts: [{ icon, label, run }] (data-act = icon); badges: { [sectionId]: n }
-//   fw.nav.go(path), fw.nav.back(), fw.nav.section(id, { arg }), fw.nav.href(key, arg) → router.format({ app, key, arg })
+//     sections: false hides the switcher; back: { label } says where Back goes (the action is always F.nav.back)
+//   fw.nav.go(path, { replace, kind }), fw.nav.back(), fw.nav.section(id, { arg }), fw.nav.href(key, arg) →
+//     router.format({ app, key, arg }), fw.nav.depth() → number (0: a cold screen)
 //   fw.sheet.open(spec) → Handle           sheet.js, accent = the app
 //   fw.toast(text, opts)
 //   fw.send({ words, packed, what }), fw.sendButton({ words, packed, what }) → Element
-//   fw.search.provide(provider) → off      replaces the Places provider while mounted
-//   fw.session = { user: { id, name }, lost() → Promise<boolean> }   true: signed out (confirmed); false: still in
+//   fw.search.provide(provider) → off      replaces this app's own connector provider while mounted (s24 §6)
+//   fw.changed()                           this app's data changed (Today's cards asked again)
+//   fw.session = { user: { id, name }, lost() → Promise<boolean>, hubAgain() → Promise }   lost: true signed out
+//     (confirmed), false still in; hubAgain: the module's API refused it, /api/hub asked again (s24 §2)
 //   fw.visible() → boolean; fw.on("visible" | "hidden" | "theme", fn) → off (let go of at unmount)
 //   fw.theme() → "light" | "dark"; fw.motion() → "full" | "reduced"
 //   fw.zoomTarget(el)                      the module's hero is in: the frame drops the card's clone
 //   fw.fill(on)                            D20
-//   fw.lazy(() => import(…)) → Promise; fw.stale() → boolean        D21: every dynamic import in a module goes here
+//   fw.lazy((q) => import("./x.js" + q)) → Promise; fw.stale() → boolean   every dynamic import in a module goes here;
+//     q is "" until an import of this app's failed, then "?retry=<n>"; /<app>/version asked beside it (≤ once a minute),
+//     and at once on a failure: a new build reloads at the route once nothing is unsaved (s24 §7)
 //
 // History state the frame writes: { ifl: { d: depth, k: key } }, kept with whatever else the entry holds. Scroll is
 // kept per entry and per app section in memory; sessionStorage["ifl-roof-y"] = { p: formatted route, y } on pagehide.
@@ -72,12 +82,16 @@ export function createFrame(opts = {}) {
   const offs = [], subs = {}, screens = {}, mods = {};
   const on = (t, ev, fn, o) => { if (!t) return; t.addEventListener(ev, fn, o); offs.push(() => t.removeEventListener(ev, fn, o)); };
   const emit = (ev, x) => { for (const f of [...(subs[ev] || [])]) try { f(x); } catch (e) { console.error(e); } };
-  const sess = () => ({ view: null, hub: false, roof: false, links: {}, ...(opts.session?.() || {}) });
-  const roofOn = () => { const s = sess(); return !!(s.hub && s.roof); };
+  const sess0 = () => ({ view: null, hub: false, roof: false, links: {}, ...(opts.session?.() || {}) });
+  // (each app's flag, ANDed with hub: a stage-1 host gives no apps, which is Weather's roof alone)
+  const appsOf = (s) => { const o = {}; if (s.hub) for (const a of Object.keys(REGISTRY)) o[a] = !!(s.apps ? s.apps[a] : a === "weather" && s.roof); return o; };
+  const sess = () => { const s = sess0(); return { ...s, apps: appsOf(s) }; };
+  const roofs = () => { const s = sess(); return s.hub ? s.apps : false; };
+  const isOn = (app) => !!sess().apps[app];
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const newKey = () => Math.random().toString(36).slice(2, 10);
   const ys = new Map(), backTo = new Map();
-  let depth = 0, key = "", routes = [], stale = false, gone = false, shown = null, lastRoof = roofOn(), placesOff = null;
+  let depth = 0, key = "", routes = [], stale = false, gone = false, shown = null, lastApps = sess().apps, lazyAt = {}, fails = {};
 
   const put = (p, push, s) => T(() => H[push ? "pushState" : "replaceState"]({ ...s, ifl: { d: depth, k: key } }, "", p));
   const stamp = () => put(L.href, 0, typeof H.state == "object" && H.state);
@@ -85,7 +99,7 @@ export function createFrame(opts = {}) {
   if (st0 && Number.isInteger(st0.d)) { depth = st0.d; key = String(st0.k || newKey()); } else { key = newKey(); stamp(); }
   H.scrollRestoration = "manual";
   const curDepth = () => (Number.isInteger(H.state?.ifl?.d) ? H.state.ifl.d : depth);
-  const here = () => parse(L.href, { roof: roofOn() }) || TODAY;
+  const here = () => parse(L.href, { roof: roofs() }) || TODAY;
 
   // ---- the session, and lost() (D3): asks once, shared for 30 s; signs out only on a confirmed "signed out"
   let lostP = null, lostAt = 0;
@@ -97,11 +111,28 @@ export function createFrame(opts = {}) {
     ss("ifl-here:today", JSON.stringify({ at: T(() => opts.save?.()) ?? null, t: Date.now() }));
     L.reload();
   };
+  // (a reload this page starts itself, once nothing is unsaved (C7): checked each second while it's busy, for up to
+  // `ms`; then at the next hidden, flushed first)
+  let later = 0;
+  const safely = (go, ms = 10e3) => {
+    clearInterval(later);
+    const t0 = Date.now(), tick = () => {
+      if (gone) return clearInterval(later);
+      if (!F.busy()) { clearInterval(later); return go(); }
+      if (Date.now() - t0 > ms) { clearInterval(later); const off = F.on("hidden", () => { off(); F.flush().then(() => !F.busy() && go()); }); }
+    };
+    later = setInterval(tick, 1000);
+    tick();
+  };
 
   const F = {
     route: null,
     ui, toast,
     get session() { return { ...sess(), lost }; },
+    flush() {
+      return Promise.all(Object.values(mods).map((m) => Promise.race([Promise.resolve().then(() => m.instance?.flush?.()).catch(() => null), new Promise((ok) => setTimeout(ok, 2000))])))
+        .then((a) => ({ lost: a.reduce((n, x) => n + (Number(x?.lost) || 0), 0) }));
+    },
     get stale() { return stale; },
     set stale(v) { stale = !!v; },
     on(ev, fn) { (subs[ev] ||= []).push(fn); return () => { subs[ev] = (subs[ev] || []).filter((f) => f !== fn); }; },
@@ -120,26 +151,25 @@ export function createFrame(opts = {}) {
       } else if (el && shown) { el.hidden = true; el.inert = true; }
     },
     refresh() { const s = shown && screens[shown.id]; if (s) F.header.set(tabHead(s.spec, F.route)); },
-    setRoof(v) {
-      v = !!v;
-      if (v === lastRoof) return;
-      lastRoof = v;
-      if (v) return places();
-      const inApp = shown?.id.startsWith("m:");
-      for (const a of Object.keys(mods)) unmount(a);
-      placesOff?.(); placesOff = null;
-      if (inApp) {
-        ss("ifl-roof-bounce", "1");
-        put(L.pathname + L.hash);
-        L.reload();
-      }
+    // (the host has already changed what session() says; v is Weather's flag, apps the new map. Apps turned off are let
+    // go of, the shown one with D14's bounce once nothing is unsaved (s24 §7); apps turned on get their search provider)
+    setRoof() {
+      const now = sess().apps, was = lastApps;
+      lastApps = now;
+      const off = Object.keys(REGISTRY).filter((a) => was[a] && !now[a]);
+      providers();
+      if (!off.length) return;
+      const bounce = off.includes(shownMod()?.app);
+      for (const a of off) if (!bounce || a !== shownMod()?.app) unmount(a);
+      if (bounce) F.flush().then(() => safely(() => { ss("ifl-roof-bounce", "1"); put(L.pathname + L.hash); L.reload(); }));
     },
     forModule: (app) => modOf(app).fw,
     destroy() {
       if (gone) return;
+      clearInterval(later);
       for (const a of Object.keys(mods)) unmount(a);
       F.sheet.closeAll();
-      placesOff?.();
+      for (const f of Object.values(provs)) f();
       for (const f of offs.splice(0)) f();
       F.header.destroy?.(); F.tabs.destroy?.();
       gone = true;
@@ -160,9 +190,9 @@ export function createFrame(opts = {}) {
       if (!u) return;
       if (u.origin !== L.origin) return /^https?:$/.test(u.protocol) && L.assign(u.href);
       const p = u.pathname + u.search + u.hash;
-      const r = parse(p, { roof: roofOn() });
+      const r = parse(p, { roof: roofs() });
       if (!r) return L.assign(globalThis.IFL?.hub?.go ? globalThis.IFL.hub.go(p) : p);
-      if (r.kind === "app" && stale && shown?.id !== "m:" + r.app) return L.assign(p);
+      if (r.kind === "app" && stale && shown?.id !== "m:" + r.app && !F.busy()) return L.assign(p);
       const cur = shown?.route;
       const zoom = o.zoomFrom && r.kind === "app" && !reduced() ? o.zoomFrom : null;
       const kind = o.kind || (zoom ? "zoom" : r.kind === "tab" && cur?.kind === "tab" ? "tab" : "push");
@@ -209,6 +239,8 @@ export function createFrame(opts = {}) {
   };
 
   const idOf = (r) => (r.kind === "app" ? "m:" + r.app : r.tab);
+  // (a change of a stay key in the same app, a reader opened or closed: a screen change for focus and scroll, C7)
+  const stays = (r, p) => r.kind === "app" && p?.kind === "app" && !!REGISTRY[r.app].stay?.some((k) => k === r.key || k === p.key) && (r.key !== p.key || r.arg !== p.arg);
   const shownMod = () => (shown?.id.startsWith("m:") ? mods[shown.id.slice(2)] : null);
   const labelOf = (r) => (r?.kind === "app" ? REGISTRY[r.app]?.name : TABN[r?.tab]) || null;
   function leaveEntry() {
@@ -224,8 +256,8 @@ export function createFrame(opts = {}) {
     const R = REGISTRY[r.app], h = mods[r.app]?.header || {}, d = curDepth();
     const to = d > 0 ? labelOf(routes[d - 1]) : "Apps";
     return {
-      ...h, back: { label: to ? `Back to ${to}` : "Back" }, crumb: { text: R.name, app: r.app }, title: h.title ?? R.name,
-      sections: R.sections, section: r.section, onSection: (id) => F.nav.section(r.app, id),
+      ...h, back: { label: h.back?.label || (to ? `Back to ${to}` : "Back") }, crumb: { text: R.name, app: r.app }, title: h.title ?? R.name,
+      sections: h.sections === false || h.sections === null ? null : R.sections, section: r.section, onSection: (id) => F.nav.section(r.app, id),
     };
   }
   // what the tapped card says, for the module's first paint (§2.3): { sky, temp, place }
@@ -239,7 +271,7 @@ export function createFrame(opts = {}) {
   function render(r, o = {}) {
     r ||= TODAY;
     const id = idOf(r), prev = shown, same = prev?.id === id;
-    if (r.kind === "app" && stale && prev && !same) return reloadStale();
+    if (r.kind === "app" && stale && prev && !same && !F.busy()) return reloadStale();
     const pop = o.kind === "pop", k = key;
     F.route = r;
     shown = { id, route: r };
@@ -254,10 +286,11 @@ export function createFrame(opts = {}) {
       if (!same || r.kind !== "app" || prev.route.section !== r.section) html.classList.remove("ifl-fill");
       html.dataset.app = r.kind === "app" ? r.app : "inflite";
       F.tabs.set(r.kind === "app" ? "apps" : r.tab);
-      const el = r.kind === "app" ? showApp(r, o) : showTab(r);
       const y = pop ? ys.get(r.kind === "app" ? `${k}:${r.section}` : k) ?? ys.get(k) ?? 0 : o.y || 0;
+      if (pop) o.popY = y;
+      const el = r.kind === "app" ? showApp(r, o) : showTab(r);
       if (!o.first) scrollTo(0, y);
-      if (!o.first && !same) {
+      if (!o.first && (!same || stays(r, prev.route))) {
         const f = pop ? backTo.get(k) : null;
         (f?.isConnected && !f.closest("[hidden]") ? f : doc.querySelector("#hd h1.ifh-name"))?.focus?.({ preventScroll: true });
       }
@@ -282,14 +315,15 @@ export function createFrame(opts = {}) {
     if (o.zoomFrom) clone(m, o.zoomFrom);
     if (!m.instance && !m.loading) {
       if (!m.root.firstChild) m.root.append(ui.skeleton("hero"), ui.skeleton("card", 3));
-      m.loading = import("./modules.js").then((M) => M.loadModule(r.app, F)).then(({ instance }) => { m.instance = instance; }, (e) => { console.error(e); }).finally(() => { m.loading = null; });
+      m.loading = import("./modules.js").then((M) => M.loadModule(r.app, F)).then(({ instance, m: M }) => { m.instance = instance; m.build = M?.BUILD; }, (e) => { console.error(e); }).finally(() => { m.loading = null; });
     }
     Promise.resolve(m.loading).then(() => {
       if (F.route !== r || !m.instance) return dropClone(m);
       return Promise.resolve(m.instance.show(r, o.hint || null)).then(() => {
         dropClone(m);
         if (F.route !== r) return;
-        if (o.y && Math.abs(scrollY - o.y) > 2) scrollTo(0, o.y);
+        const y = o.y || o.popY;
+        if (y && Math.abs(scrollY - y) > 2) scrollTo(0, y);
         tidy(r);
       });
     }).catch((e) => { console.error(e); dropClone(m); });
@@ -297,6 +331,7 @@ export function createFrame(opts = {}) {
   }
   // D6: once a deep link is shown, the address is the section's own (no query, no sheet key)
   function tidy(r) {
+    if (REGISTRY[r.app]?.stay?.includes(r.key)) return;
     const p = format({ app: r.app, section: r.section });
     if (p === L.pathname + L.search + L.hash && r.key === r.section) return;
     put(p);
@@ -360,6 +395,7 @@ export function createFrame(opts = {}) {
     for (const f of m.provs.splice(0)) f();
     m.el.remove();
     delete mods[app];
+    providers();
   }
   function makeFw(m) {
     const app = m.app, mine = () => shown?.id === "m:" + app;
@@ -367,8 +403,8 @@ export function createFrame(opts = {}) {
       contract: CONTRACT, app, screenEl: m.el, ui,
       header: { set(spec = {}) { m.header = { ...m.header, ...spec }; if (mine()) F.header.set(appHead(F.route)); } },
       nav: {
-        go: (path) => F.nav.go(path, { from: app }), back: () => F.nav.back(),
-        section: (id, o) => F.nav.section(app, id, o), href: (k, arg = null) => format({ app, key: k, arg }),
+        go: (path, o) => F.nav.go(path, { from: app, replace: !!o?.replace, kind: o?.kind }), back: () => F.nav.back(),
+        section: (id, o) => F.nav.section(app, id, o), href: (k, arg = null) => format({ app, key: k, arg }), depth: () => curDepth(),
       },
       sheet: { open: (spec) => F.sheet.open({ app, ...spec }) },
       toast: (text, o) => toast(text, { ...o, app }),
@@ -376,14 +412,15 @@ export function createFrame(opts = {}) {
       sendButton: (spec) => F.send.button(spec),
       search: {
         provide(p) {
-          placesOff?.(); placesOff = null;
+          provs[app]?.(); delete provs[app];
           const off = F.search.provide(p);
-          const drop = () => { off(); m.provs = m.provs.filter((f) => f !== drop); if (!Object.values(mods).some((x) => x.provs.length)) places(); };
+          const drop = () => { off(); m.provs = m.provs.filter((f) => f !== drop); providers(); };
           m.provs.push(drop);
           return drop;
         },
       },
-      session: { get user() { const u = sess().view?.user || {}; return { id: u.id ?? null, name: u.name ?? null }; }, lost },
+      changed: () => { T(() => opts.changed?.(app)); },
+      session: { get user() { const u = sess().view?.user || {}; return { id: u.id ?? null, name: u.name ?? null }; }, lost, hubAgain: () => F.hubAgain() },
       visible: () => doc.visibilityState === "visible",
       on(ev, fn) { const off = F.on(ev, fn); m.offs.push(off); return off; },
       theme: () => themeNow(),
@@ -391,21 +428,41 @@ export function createFrame(opts = {}) {
       zoomTarget: () => dropClone(m),
       fill(v) { if (mine()) F.fill(v); },
       lazy(fn) {
-        if (stale) { reloadStale(); return new Promise(() => {}); }
-        try { return Promise.resolve(fn()); } catch (e) { return Promise.reject(e); }
+        if (stale && !F.busy()) { reloadStale(); return new Promise(() => {}); }
+        if (Date.now() - (lazyAt[app] || 0) > 60e3) { lazyAt[app] = Date.now(); version(m); }
+        let p;
+        try { p = Promise.resolve(fn(fails[app] ? `?retry=${fails[app]}` : "")); } catch (e) { p = Promise.reject(e); }
+        return p.catch((e) => { fails[app] = (fails[app] || 0) + 1; version(m, true); throw e; });
       },
       stale: () => stale,
     };
   }
   const themeNow = () => /^(light|dark)$/.test(html.dataset.theme) ? html.dataset.theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  // the Places search provider, while hub and roof are on and no module has its own (§3.10)
-  function places() {
-    if (gone || placesOff || !roofOn() || Object.values(mods).some((m) => m.provs.length)) return;
-    placesOff = () => {};
-    import("./connectors.js").then((c) => {
-      if (gone || !roofOn() || Object.values(mods).some((m) => m.provs.length)) { placesOff = null; return; }
-      placesOff = c.placesProvider(F);
-    }, () => { placesOff = null; });
+  // /<app>/version, asked for fw.lazy (C7): a build other than the mounted one's makes the page stale; on a failed import,
+  // that reload at the route once nothing is unsaved
+  function version(m, failed) {
+    const b = m.build;
+    fetch(`${REGISTRY[m.app].path}version`, { cache: "no-store", credentials: "same-origin" }).then((r) => (r.ok ? r.json() : null)).then((j) => {
+      if (!j?.build || b == null || String(j.build) === String(b)) return;
+      stale = true;
+      if (failed) safely(reloadStale, 1 / 0);
+    }, () => {});
+  }
+  // the connectors' search providers: one for each app that's on and whose module (if mounted) has none of its own
+  // (Weather's is Places, s24 §6)
+  const provs = {};
+  function providers() {
+    if (gone) return;
+    const on = sess().apps;
+    for (const a of Object.keys(REGISTRY)) {
+      const want = on[a] && !mods[a]?.provs.length;
+      if (!want && provs[a]) { provs[a](); delete provs[a]; }
+      else if (want && !provs[a]) {
+        let off = null, dead = false;
+        provs[a] = () => { dead = true; off?.(); };
+        import("./connectors.js").then((c) => { if (!dead) off = c.connectorProvider(F, a); }, () => { if (provs[a] && !off) delete provs[a]; });
+      }
+    }
   }
 
   // ---- the pieces
@@ -425,7 +482,7 @@ export function createFrame(opts = {}) {
     const u = T(() => new URL(a.href, L.href));
     if (u?.origin !== L.origin) return;
     if ((u.pathname === "/" || u.pathname === "/index.html") && u.hash && !/^#(apps|you(=[\w-]*)?)?$/.test(u.hash)) return;
-    const p = u.pathname + u.search + u.hash, r = parse(p, { roof: roofOn() });
+    const p = u.pathname + u.search + u.hash, r = parse(p, { roof: roofs() });
     if (!r) return;
     e.preventDefault();
     const card = r.kind === "app" ? a.closest(".tcard") : null;
@@ -454,7 +511,7 @@ export function createFrame(opts = {}) {
     if (doc.visibilityState === "hidden") { hiddenAt = Date.now(); return emit("hidden"); }
     const away = hiddenAt ? Date.now() - hiddenAt : 0;
     hiddenAt = 0;
-    if (stale && away >= 60e3 && !F.sheet.top()) return reloadStale();
+    if (stale && away >= 60e3 && !F.busy()) return reloadStale();
     emit("visible");
   });
   on(globalThis, "pagehide", () => {
@@ -491,6 +548,6 @@ export function createFrame(opts = {}) {
   let n = 0;
   const tryY = () => { scrollTo(0, y0); ys.set(key, y0); if (!gone && Math.abs(scrollY - y0) > 2 && ++n < 90) requestAnimationFrame(tryY); };
   if (kept?.p === format(F.route) && y0 > 0) requestAnimationFrame(tryY);
-  (globalThis.requestIdleCallback || ((f) => setTimeout(f, 1200)))(() => places());
+  (globalThis.requestIdleCallback || ((f) => setTimeout(f, 1200)))(() => providers());
   return F;
 }
