@@ -2,8 +2,9 @@
 // sections, its files, and the Apps tile's mini. Final from B0-b (MM keeps it): the words, files and lazy are frozen.
 // No imports, ≤ 4 KB. No search export: Mail's search provider exists only while the module is mounted (S4-D9).
 //   files: the 12 files of the static import graph from mail.js and the 3 stylesheets (§4.4), kept for offline and
-//   modulepreloaded; lazy: the two lazy files the root worker also keeps for offline, never preloaded (C11). The other
-//   two lazy files, mailsettings.js and viewer.js, are network only (s4/spec §4.4: Mail's NET in s24-contracts §8 terms).
+//   modulepreloaded; lazy: the four lazy files (compose, signin, mailsettings, viewer), which the root worker also keeps
+//   for offline and which are never preloaded (C11). s24-contracts §8 overrides s4/spec §4.4 here: Mail's NET is none,
+//   so lazy is every fw.lazy target's static closure less files.
 export const CONNECTOR = 1;
 export const connector = {
   app: "mail", name: "Mail",
@@ -22,6 +23,6 @@ export const connector = {
     "/mail/roof/bodyframe.js", "/mail/roof/outbox.js",
     "/mail/roof/mail.css", "/mail/roof/reader.css", "/mail/roof/mailsheets.css",
   ],
-  lazy: ["/mail/roof/compose.js", "/mail/roof/signin.js"],
+  lazy: ["/mail/roof/compose.js", "/mail/roof/signin.js", "/mail/roof/mailsettings.js", "/mail/roof/viewer.js"],
   mini: (answer) => { const c = answer?.cards?.mail; const n = Number(c?.people); return c && Number.isFinite(n) ? { kind: "num", num: String(n), label: "From people" } : null; },
 };
