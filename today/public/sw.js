@@ -2,14 +2,17 @@
 // notifications shown here and tapped open in the one window, the Home Screen icon's badge, Chat's delivered tick, and a
 // copy of Today's own files for when there's no network (below). Today still always loads fresh: never any of your day
 // kept here (the page keeps its own copy, per account, and forgets it when you sign out). Chats and the apps beside it
-// (/chats/, /weather/, …) have workers of their own, for their own files only: none of them holds a subscription.
+// (/chats/, /fitness/, …) have workers of their own, for their own files only: none of them holds a subscription. Weather is
+// a module of Today's page now (One roof, spec §8.2, D10): its page at /weather/ is Today's, and its module's files are
+// kept here when the page asks, so it opens offline too.
 
 // ---- Today's own files, kept for when there's no network ----
 // Always from the network while there is one, each kept as it comes; only with no answer at all (or Today's host
 // failing) from what was kept last. So Today opens on a train, with the copy of your day the page kept. Only these
 // files: never the API, nor any page or file of Chats' or the apps'.
-const SHELL = "today-app-2";
-const FILES = ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg"];
+const SHELL = "today-app-3";
+const FILES = ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg",
+  "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();
   // (each kept as it comes, so one that isn't there doesn't keep the rest out; not waited on long: a worker that takes
@@ -22,6 +25,7 @@ self.addEventListener("install", (e) => {
 self.addEventListener("message", (e) => {
   if (e.data?.ifl === "renew") e.ports[0]?.postMessage({ ifl: "renewed" });
   else if (e.data?.ifl === "badge") e.waitUntil?.(badge());
+  else if (e.data?.ifl === "keep" && e.source && sameOrigin(e.source.url)) e.waitUntil?.(keep(e.data));
 });
 self.addEventListener("activate", (e) =>
   e.waitUntil(
@@ -34,9 +38,16 @@ self.addEventListener("activate", (e) =>
 self.addEventListener("fetch", (e) => {
   const r = e.request, u = new URL(r.url);
   if (r.method !== "GET" || u.origin !== self.location.origin || u.pathname.startsWith("/api/")) return;
-  // (Today's one page, at /: any other address is the 404 page, or a page of the hub's, from the network)
-  const key = r.mode === "navigate" ? (u.pathname === "/" || u.pathname === "/index.html" ? "/" : null) : FILES.includes(u.pathname) && !u.search ? u.pathname : null;
-  if (key) e.respondWith(fresh(e, key));
+  if (r.mode === "navigate") {
+    // (Today's one page, at /; the same page at /weather/, from the network, else the copy of / (never kept as /: what
+    // the hub sends for /weather/ may be Weather's milestone-1 page, with the roof off); any other address is the 404
+    // page, or a page of the hub's, from the network)
+    if (u.pathname === "/" || u.pathname === "/index.html") e.respondWith(fresh(e, "/"));
+    else if (ROOF_DOCS.includes(u.pathname)) e.respondWith(roofDoc(e));
+    return;
+  }
+  if (FILES.includes(u.pathname) && !u.search) e.respondWith(fresh(e, u.pathname));
+  else if (moduleFile(u)) e.respondWith(fromModule(e, u));
 });
 async function fresh(e, key) {
   const kept = () => caches.open(SHELL).then((c) => c.match(key)).catch(() => null);
@@ -57,6 +68,84 @@ async function fresh(e, key) {
     } catch {}
   } else if (res.status >= 500) return (await kept()) || res;
   return res;
+}
+
+// ---- Weather's module (One roof, spec §8.2): its page at /weather/, and its files kept when the page asks ----
+const ROOF_DOCS = ["/weather/", "/weather/index.html"];
+async function roofDoc(e) {
+  const kept = () => caches.open(SHELL).then((c) => c.match("/")).catch(() => null);
+  let res;
+  try {
+    res = await fetch(e.request);
+  } catch (err) {
+    const k = await kept();
+    if (k) return k;
+    throw err;
+  }
+  return res.status >= 500 ? (await kept()) || res : res;
+}
+// The module's files, as the page names them ({ ifl: "keep", app, build, files }, modules.js keepOffline, once a build):
+// for an app that is a module, a build as the apps number them, and at most 60 of that app's own files at plain paths
+// (no query, no vendor/, never its worker or version). Kept all or nothing, in roof-<app>-<build>: each one fetched afresh
+// and answered whole by this site, or that cache is let go and the one before kept; once it's whole, the app's other
+// builds' are let go.
+const KEEP_APPS = ["weather"], KEEP_MAX = 60;
+const keeping = new Map();
+function keepList(d) {
+  if (!d || !KEEP_APPS.includes(d.app) || typeof d.build !== "string" || !/^\d+\.\d{2}$/.test(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
+  const base = `/${d.app}/`, out = new Set();
+  for (const f of d.files) {
+    if (typeof f !== "string" || !f.startsWith(base) || !/^\/[\w./-]+$/.test(f) || /\/vendor\//.test(f) || f === base + "sw.js" || f === base + "version" || f.endsWith("/")) return null;
+    let u;
+    try { u = new URL(f, self.location.origin); } catch { return null; }
+    if (u.origin !== self.location.origin || u.pathname !== f) return null;
+    out.add(f);
+  }
+  return [...out];
+}
+function keep(d) {
+  const files = keepList(d);
+  if (!files) return Promise.resolve(false);
+  const name = `roof-${d.app}-${d.build}`;
+  if (keeping.has(name)) return keeping.get(name);
+  const job = (async () => {
+    try {
+      const got = await Promise.all(files.map(async (f) => {
+        const res = await fetch(f, { cache: "no-cache", credentials: "same-origin" });
+        if (!res.ok || res.type !== "basic") throw new Error("not kept");
+        return [f, res];
+      }));
+      const c = await caches.open(name);
+      for (const [f, res] of got) await c.put(f, res);
+    } catch {
+      await caches.delete(name).catch(() => {});
+      return false;
+    }
+    for (const k of await caches.keys()) if (k.startsWith(`roof-${d.app}-`) && k !== name) await caches.delete(k);
+    return true;
+  })().finally(() => keeping.delete(name));
+  keeping.set(name, job);
+  return job;
+}
+// (a file of Weather's at the hub, as the module loads it: from the network first, else the kept copy, where there's
+// no answer or the hub's failing; a 404 (the roof off) is the hub's word and passed on)
+const moduleFile = (u) => u.pathname.startsWith("/weather/") && !u.search && u.pathname !== "/weather/sw.js" && u.pathname !== "/weather/version" && !u.pathname.endsWith("/");
+async function fromModule(e, u) {
+  const kept = async () => {
+    try {
+      for (const k of await caches.keys()) if (k.startsWith("roof-weather-")) { const m = await (await caches.open(k)).match(u.pathname); if (m) return m; }
+    } catch {}
+    return null;
+  };
+  let res;
+  try {
+    res = await fetch(e.request);
+  } catch (err) {
+    const k = await kept();
+    if (k) return k;
+    throw err;
+  }
+  return res.status >= 500 ? (await kept()) || res : res;
 }
 
 // ---- notifications: every app's, here ----
@@ -165,7 +254,9 @@ async function openIn(path) {
   const win = wins.find((w) => w.focused) || wins.find((w) => w.visibilityState === "visible") || wins[0];
   if (win) {
     try { await win.focus(); } catch {}
-    if (await told(win, path)) return;
+    // (a window of the framework (Today's page, at / or /weather/): told to route there in the page, One roof's
+    // {ifl:"route"}; any other page of this site's: told to open it, as before)
+    if (await told(win, path, FRAMEWORK.includes(pathOf(win.url)) ? "route" : "open")) return;
   }
   // (an app's page, where the hub can't serve it just now (before its key, or rolled back): Today, which sends it to the
   // app's own address, as it did before the hub)
@@ -173,16 +264,19 @@ async function openIn(path) {
   if (win?.navigate) { try { if (await win.navigate(url)) return; } catch {} }
   await self.clients.openWindow(url);
 }
-// (the window told where: true once it says it's heard, within a second)
-function told(win, url) {
+const FRAMEWORK = ["/", "/index.html", "/weather/", "/weather/index.html"];
+const pathOf = (u) => { try { return new URL(u).pathname; } catch { return ""; } };
+// (the window told where: true once it says it's heard ({ifl:"opened"}, or {ifl:"routed"} for a route), within a second)
+function told(win, url, kind = "open") {
+  const heard = kind === "route" ? "routed" : "opened";
   return new Promise((ok) => {
     let ch = null;
     try { ch = new MessageChannel(); } catch {}
-    if (!ch) { win.postMessage({ ifl: "open", url }); return ok(true); }
+    if (!ch) { win.postMessage({ ifl: kind, url }); return ok(true); }
     const done = (v) => { clearTimeout(t); try { ch.port1.close(); } catch {} ok(v); };
     const t = setTimeout(() => done(false), HEARD);
-    ch.port1.onmessage = (e) => { if (e.data?.ifl === "opened") done(true); };
-    try { win.postMessage({ ifl: "open", url }, [ch.port2]); } catch { done(false); }
+    ch.port1.onmessage = (e) => { if (e.data?.ifl === heard) done(true); };
+    try { win.postMessage({ ifl: kind, url }, [ch.port2]); } catch { done(false); }
   });
 }
 // (whether the hub's Worker can serve the apps' pages: its own word, GET /api/hub, as Today's page asks it (404 or 503:
