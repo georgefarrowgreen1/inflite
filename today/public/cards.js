@@ -155,7 +155,7 @@ export function sendButton(card, ctx, { label = "Send to a friend", glyph = G.bi
   }
   return link ? `<a class="${esc(cls)}" href="${esc(link)}" data-send${said}>${glyph}${esc(label)}</a>` : "";
 }
-function sendPill(card, ctx, glyph = G.bird) { return sendButton(card, ctx, { glyph }); }
+function sendPill() { return ""; } // (Today shows no Send to a friend: each app has its own)
 // (one listener for every Send button at the hub, wherever it's drawn: the cards here and Today's day, day.js)
 let sendHub = null, sendWired = false;
 function wireSend() {
