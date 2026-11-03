@@ -19,7 +19,7 @@ const FILES = /^\/mail\/roof\//;
 const FILE = /^\/mail\/roof\/([\w-][\w.-]{0,79}\.(?:js|css))$/;
 const ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i;
 // (what a module file may be, by what it's called)
-const TYPES = { js: /^text\/javascript\b/i, css: /^text\/css\b/i };
+const TYPES = { js: /^(text|application)\/javascript\b/i, css: /^text\/css\b/i };
 const SAFE = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'", "Cross-Origin-Resource-Policy": "same-origin" };
 const said = (status, words, extra = {}) => new Response(words, { status, headers: { "Content-Type": "text/plain; charset=utf-8", ...SAFE, ...extra } });
 const originOf = (v) => (typeof v === "string" && ORIGIN.test(v) ? v.toLowerCase() : null);
