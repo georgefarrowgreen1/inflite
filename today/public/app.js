@@ -8,7 +8,7 @@
 // in (index.html's, there without a script too).
 import { CARD_KEYS, APP, esc, safe, hm, dateLong, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
 import { createFrame } from "/roof/frame.js";
-import { REGISTRY } from "/roof/router.js";
+import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
@@ -877,30 +877,44 @@ function askHub() {
     return state;
   }, () => "unknown");
 }
-// → "yes" | "no" | "unknown" (waited for 1.5 s at most, beside the session's own request)
+// → "yes" | "no" | "unknown" (waited for 1.5 s at most, beside the session's own request). On a /weather/ boot only a
+// kept yes with roof on is taken as it is: anything else kept is asked afresh, as this document is the framework only
+// because the Worker (or the root worker, offline) had roof on, so a kept no or roof off may be from before a switch
+// back on; only an answer that says so now bounces or leaves (D14, D23), and no answer counts as ready with roof on
 async function hubReady() {
   const v = ss.get(HUB_KEY), r = ss.get(ROOF_KEY);
-  if ((v === "1" || v === "0") && (r === "1" || r === "0")) {
+  const trusted = BOOT_APP ? v === "1" && r === "1" : (v === "1" || v === "0") && (r === "1" || r === "0");
+  if (trusted) {
     roofSaid = v === "1" && r === "1";
     if (roofSaid) retireWeather();
     return v === "1" ? "yes" : "no";
   }
-  return Promise.race([askHub(), new Promise((ok) => setTimeout(() => ok("unknown"), 1500))]);
+  const asked = askHub();
+  const state = await Promise.race([asked, new Promise((ok) => setTimeout(() => ok("unknown"), 1500))]);
+  // (no answer in time: the answer, once it's in, as an ask again's, after the page has gone by the unknown; so a
+  // /weather/ boot that went ahead is told roof's off by its own ask, the D14 bounce, not only by the next one)
+  if (state === "unknown") asked.then((late) => { if (late !== "unknown") said.then(() => setTimeout(() => applyHub(late))); });
+  return state;
 }
-// Asked again (D14): as the page comes back in sight and before Weather's module is loaded, at most every 5 minutes. A
-// change is the frame's (F.setRoof): Weather let go of, its links normal navigations, its screen sent to the hub's page
+// Asked again (D14): as the page comes back in sight, at most every 5 minutes (within 0: back from the bfcache), and
+// right before Weather's module is loaded, at most every 30 seconds (the frame's ask: once a page, as the module's
+// kept, but not twice at a /weather/ boot that's only just asked). A change is the frame's (F.setRoof): Weather let go
+// of, its links normal navigations, its screen sent to the hub's page
 let againAt = 0, againP = null;
-function hubAgain(force = false) {
+function hubAgain(within = 5 * MIN) {
   if (againP) return againP;
-  if (!force && Date.now() - Math.max(againAt, hubAt) < 5 * MIN) return Promise.resolve();
+  if (Date.now() - Math.max(againAt, hubAt) < within) return Promise.resolve();
   againAt = Date.now();
-  againP = askHub().then((state) => {
-    if (state === "unknown") return;
-    if (state === "no" && S.hub) { S.hub = false; IFL.hub.degrade(ownLinks()); }
-    const on = S.hub && roofSaid;
-    if (on !== S.roof) { S.roof = on; F?.setRoof(on); }
-  }).finally(() => { againP = null; });
+  againP = askHub().then(applyHub).finally(() => { againP = null; });
   return againP;
+}
+// (an answer after the first: only ever down, the hub's explicit no degrading the page, roof off letting Weather go;
+// an unknown changes nothing)
+function applyHub(state) {
+  if (state === "unknown") return;
+  if (state === "no" && S.hub) { S.hub = false; IFL.hub.degrade(ownLinks()); }
+  const on = S.hub && roofSaid;
+  if (on !== S.roof) { S.roof = on; F?.setRoof(on); }
 }
 // (Weather's own worker, at scope /weather/ from milestone 1: unregistered, so /weather/ comes to this page, D10)
 let retired = false;
@@ -914,12 +928,20 @@ function retireWeather() {
 const ownLinks = () => { const L = S.links || DEFAULT_LINKS; return { chat: L.chat, weather: L.weather, fitness: L.fitness, finance: L.finance, email: L.email || DEFAULT_LINKS.email }; };
 // (where Sign in comes back to: this screen, as its path and hash say, never its query)
 const thenHere = () => encodeURIComponent(location.pathname + location.hash);
+let saidOk = null;
+const said = new Promise((ok) => { saidOk = ok; });
 function hubSays(state) {
   S.hub = state === "yes" || (state === "unknown" && !!BOOT_APP);
   S.roof = S.hub && (state === "unknown" || roofSaid);
   if (!S.hub) IFL.hub.degrade(ownLinks());
   // (signed out: the way in's second way, Today's own, only beside Chats' trip)
   $("#alsoRow").hidden = !S.hub;
+  signinHref();
+  saidOk();
+}
+// (Sign in's address, as the click goes: written at boot and again whenever the way in's shown, as the screen may have
+// moved in the page since, RI15)
+function signinHref() {
   $("#signin").href = S.hub ? `/chats/#signin-start&then=${thenHere()}` : `${safe(S.links?.auth) || DEFAULT_LINKS.auth}/`;
 }
 // A /weather/ document that reached this page (D13, D14): with the hub explicitly not ready, Weather's own address (same
@@ -935,7 +957,13 @@ function bootGone(state) {
   }
   if (state === "yes" && !roofSaid) {
     if (ss.get(BOUNCE_KEY) === "1") location.replace((safe(S.links?.weather) || DEFAULT_LINKS.weather) + rest.replace(/^\/weather/, ""));
-    else { ss.set(BOUNCE_KEY, "1"); location.replace(location.pathname + location.hash); }
+    else {
+      ss.set(BOUNCE_KEY, "1");
+      // (the same address again, from the server: a reload where it's this one already, as a replace to it would only
+      // move to its hash)
+      const to = location.pathname + location.hash;
+      if (to === location.pathname + location.search + location.hash) location.reload(); else location.replace(to);
+    }
     return true;
   }
   return false;
@@ -1131,6 +1159,7 @@ function showOut(said = "") {
   $("#out").classList.toggle("said", !!said);
   const L = S.links || DEFAULT_LINKS;
   for (const a of $$(".today-apps a[data-app]")) { const h = safe(L[a.dataset.app]); if (h) a.href = `${h}/`; }
+  signinHref();
   lift();
 }
 // signed out, as it's found out: by the account's answer, a 401, or the service worker's word
@@ -1221,11 +1250,13 @@ function frame() {
   F = createFrame({
     root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
     session: () => ({ view: S.view, hub: S.hub, roof: S.roof, links: S.links || DEFAULT_LINKS }),
-    lost: signedOutNow, checkSession, hubAgain: () => hubAgain(), save,
+    lost: signedOutNow, checkSession, hubAgain: () => hubAgain(30e3), save,
     onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
     today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you,
   });
   for (const k of Object.keys(SCREENS)) F.screen(k, SCREENS[k]);
+  // (the page's own sheets' close button: the framework's cross, as every sheet it builds has; the ✕ is for no script)
+  for (const b of $$(".ifl-sheet .ifs-btn[data-close]")) b.replaceChildren(F.ui.icon("x"));
   provide();
   return F;
 }
@@ -1322,9 +1353,11 @@ function settingsHits(q) {
   if (!q || !S.view) return [];
   return SETTINGS.filter(([t, , sub]) => found(q, t, sub)).map(([title, id, sub]) => ({ title, sub, href: `/#you=${id}` }));
 }
+// (an entry for the screen already showing: the search closed, no navigation, so Back never meets a twin)
+const notHere = (list) => list.map((e) => (e.href && here(e.href) ? { title: e.title, sub: e.sub, icon: e.icon, avatar: e.avatar, run: () => {} } : e));
 function provide() {
-  F.search.provide({ id: "today", group: "Today", order: 20, search: (q) => todayHits(String(q || "").trim().toLowerCase()) });
-  F.search.provide({ id: "settings", group: "Settings", order: 40, search: (q) => settingsHits(String(q || "").trim().toLowerCase()) });
+  F.search.provide({ id: "today", group: "Today", order: 20, search: (q) => notHere(todayHits(String(q || "").trim().toLowerCase())) });
+  F.search.provide({ id: "settings", group: "Settings", order: 40, search: (q) => notHere(settingsHits(String(q || "").trim().toLowerCase())) });
 }
 
 // ---------------------------------------------------------------- the header, and InFlite's menu
@@ -1367,8 +1400,13 @@ function openMenu(anchor) {
     signOut,
   });
 }
-// (a screen of the framework's, from anywhere in the page)
-function go(path) { F?.nav.go(path); }
+// (a screen of the framework's, from anywhere in the page: none where it's the one showing, so Back never meets a twin;
+// You at another of its own places, in its own entry)
+const here = (path) => { const r = parse(path, { roof: S.hub && S.roof }); return !!r && !!F?.route && format(r) === format(F.route); };
+function go(path) {
+  if (!F || here(path)) return;
+  F.nav.go(path, { replace: on("you") && parse(path)?.tab === "you" });
+}
 // Your account, at the place asked for (open=…). From a Home Screen Today, whose sign-in the browser doesn't share, with
 // a code good for a minute that signs the account's page in too (as Markets does)
 function accountHref(open) {
@@ -1585,17 +1623,33 @@ async function sendPrefs() {
 // The page's own sheets (index.html: Morning, Every App's, Edit Today, Weather Notifications) are InFlite's sheet, opened
 // by the frame (F.sheet.openEl: a modal <dialog>, Escape and the close button, no history), one at a time; the toast
 // is the framework's (signed out, before the frame's made, its own)
+const handles = new Map(); // id → its handle, open or still shutting
 function openSheet(id, { onClose } = {}) {
   const s = document.getElementById(id);
   if (!s || !F) return null;
+  // (already open: kept as it is; still shutting (closed under 340 ms ago): shut at once, and opened afresh once the
+  // dialog's own close event has gone by (it comes a task later, and would shut the new one), rather than end shut with
+  // the closing one)
+  if (sheetOpen && sheetId === id && !s.classList.contains("closing")) return sheetOpen;
   if (sheetOpen) closeSheet();
+  const old = handles.get(id);
+  if (old) {
+    const wasOpen = s.open;
+    old.now(); handles.delete(id);
+    const again = () => { if (F && !handles.has(id) && !s.open) openSheet(id, { onClose }); };
+    if (wasOpen) s.addEventListener("close", () => setTimeout(again), { once: true });
+    else again();
+    return null;
+  }
   const h = F.sheet.openEl(s, {
     onClose: () => {
+      if (handles.get(id) === h) handles.delete(id);
       if (sheetOpen === h) { sheetOpen = null; sheetId = null; }
       if (id === "morning" && on("you")) drawYouNow();
       onClose?.();
     },
   });
+  handles.set(id, h);
   sheetOpen = h; sheetId = id;
   return h;
 }
@@ -1768,8 +1822,9 @@ async function deviceMoved() {
 function toMorning() {
   if (!S.view || $("#in").hidden) return;
   IFL.close(true);
-  closeSheet();
   drawMorning();
+  // (open already: only drawn again; any other sheet's shut by openSheet)
+  if (sheetId === "morning" && !$("#morning").classList.contains("closing")) return;
   openSheet("morning");
 }
 
@@ -1895,7 +1950,7 @@ function worker() {
       let u;
       try { u = new URL(d.open, location.origin); } catch { return; }
       if (u.origin !== location.origin) return;
-      if (u.hash === "#morning" && u.pathname === "/") { toMorning(); return; }
+      if (u.hash === "#morning" && u.pathname === "/") { if (F?.route?.kind === "app") F.nav.go("/"); toMorning(); return; }
       // (the framework's own screens in the page, as any route; anywhere else, gone there)
       if (F) { F.nav.go(u.pathname + u.search + u.hash, { from: "notification" }); refresh(); }
       else location.assign(u.href);
@@ -1926,6 +1981,7 @@ async function hubKnown() {
   const state = await hubAsked;
   if (bootGone(state)) return false;
   hubSays(state);
+  if (BOOT_APP && S.roof) preloadWeather();
   return true;
 }
 async function load() {
@@ -2005,7 +2061,7 @@ function start() {
     else if ($("#outSaid").textContent) load();
   });
   // (back from the browser's own cache of the page (bfcache): the day, and whether the hub serves Weather, asked again)
-  addEventListener("pageshow", (e) => { if (e.persisted && S.view) { back(); hubAgain(true); } });
+  addEventListener("pageshow", (e) => { if (e.persisted && S.view) { back(); hubAgain(0); } });
   addEventListener("online", () => { if (!S.view || S.kept) load(); });
 }
 start();

@@ -33,14 +33,17 @@ const and = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")
 
 // what You shows, as last asked (each null until asked; false where this account side hasn't it; sub: this phone's
 // subscription, as the browser has it)
-const Y = { rules: null, notify: null, devices: null, sub: null, shares: null };
+const Y = { rules: null, notify: null, devices: null, sub: null, shares: null, sharesRoof: null };
 let drawing = null;
 export function forgetYou() { Y.rules = Y.notify = Y.devices = Y.sub = Y.shares = null; drawing = null; }
 // (Connected Apps: each app, and the words of InFlite's connector contract its descriptor fills, and only those)
 const CONNECTED = [["weather", "Weather"], ["chats", "Chats"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"]];
 const WORDS = [["cards", "Cards"], ["search", "Search"], ["notifications", "Notifications"], ["actions", "Actions"], ["screens", "Screens"]];
+// (kept for the roof as it was when they were worked out: Weather's words aren't the same with it off)
+const roofOf = (ctx) => !!(ctx.hub && ctx.roof);
 async function sharesOf(ctx) {
-  if (Y.shares || typeof ctx.connectors !== "function") return;
+  const roof = roofOf(ctx);
+  if ((Y.shares && Y.sharesRoof === roof) || typeof ctx.connectors !== "function") return;
   const m = await ctx.connectors().catch(() => null);
   if (!m) return;
   const out = {};
@@ -49,7 +52,7 @@ async function sharesOf(ctx) {
     const s = c?.shares && typeof c.shares === "object" ? c.shares : null;
     out[app] = s ? WORDS.filter(([k]) => typeof s[k] === "string" && s[k]).map(([, w]) => w).join(" · ") : "";
   }
-  Y.shares = out;
+  Y.shares = out; Y.sharesRoof = roof;
 }
 
 // This Phone's switch: on where the account has this phone for Today's morning (td_push), as the account says: GET
@@ -122,7 +125,7 @@ function paint(root, ctx) {
   {
     const body = CONNECTED.filter(([app]) => app !== "mail" || admin).map(([app, name]) => {
       const src = typeof ctx.icon === "function" ? ctx.icon(app === "chats" ? "chat" : app) : "";
-      const words = Y.shares ? Y.shares[app] : null;
+      const words = Y.shares && Y.sharesRoof === roofOf(ctx) ? Y.shares[app] : null;
       return `<button class="row go conn" type="button" data-app="${app}" aria-label="${esc(`${name}’s connector${words ? `: ${words}` : ""}`)}"><span class="ic app">${src ? `<img src="${esc(src)}" alt="" width="28" height="28">` : ""}</span><span class="tx"><b>${esc(name)}</b><small>${esc(words ?? "")}</small></span><span class="chev">${G.chev}</span></button>`;
     }).join("");
     out.push(sec("youApps", "Connected Apps", body, "Each app keeps its own server and data. This is all it shares with InFlite."));
