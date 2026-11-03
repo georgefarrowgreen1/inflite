@@ -1,19 +1,21 @@
 // What each app shares with InFlite (One roof, spec §3.12, §6.1, D5). Loaded lazily (Apps, You, search, the Places
 // provider). Words say only what each app really does today; nothing promised of a later stage.
 // Connector = { app, name, icon, href, shares: { cards?, search?, notifications?, actions?, screens? }, sections,
-//   aliases, files?, mini?(answer) → Mini | null, search?(q) → Entry[] }
+//   aliases, files?, lazy?, mini?(answer) → Mini | null, search?(q, { userId }) → Entry[] } (v1; lazy and userId: s24 §5)
 // Mini = { kind: "num-bars", num, bars, label } | { kind: "pct-spark", pct, spark } (a percentage, never amounts; spark: the
 //   card's intraday values (cards.markets.spark.vals) made 0…1 here, so only the day's shape leaves, or null) | { kind: "num", num, label }
-// STATIC: the apps that aren't modules yet (chats, fitness, markets, mail), with hrefs to their hub pages.
-// connectorOf(app) → Promise<Connector>: Weather → its connector.js (only when hub && roof are on; else a static
-//   fallback without search or mini); the others → STATIC[app].
+// STATIC: the apps beside InFlite (chats) and the words of each module that's switched off (fitness, markets, mail), with
+//   hrefs to their hub pages and their minis.
+// connectorOf(app, F) → Promise<Connector>: a REGISTRY app that's on (F.session.apps[app]) → its connector.js (minis
+//   from STATIC where it has none); off, or its file failing → STATIC[app] (Weather: a fallback without search or mini).
 // miniOf(app, answer, F?) → Promise<Mini | null>: the connector's mini(answer), null where it has none or it throws
 //   (given F, Weather's connector file is asked for only while hub and roof are on).
 // openConnector(F, app): the connector sheet (dialog.ifl-sheet[data-sheet=connector]): the app's icon, "<App>’s
 //   connector", one line, a row per contract word the app fills, "Open <App>", and for Weather "Weather Settings" and
 //   "Weather Notifications".
-// placesProvider(F) → off: the Places search provider (Weather's connector.search over wx:places, on this device; it
-//   adds "Weather Settings"), registered by the frame while hub and roof are on and Weather isn't mounted.
+// connectorProvider(F, app) → off: the app's connector.search as a search provider, given { userId } (s24 §5, §6);
+//   registered by the frame for each app that's on, unless its module is mounted with a provider of its own. Weather's
+//   is Places (wx:places, on this device; it adds "Weather Settings"): placesProvider(F) = connectorProvider(F, "weather").
 import { REGISTRY } from "./router.js";
 
 export const WORDS = [["cards", "Cards"], ["search", "Search"], ["notifications", "Notifications"], ["actions", "Actions"], ["screens", "Screens"]];
@@ -41,18 +43,16 @@ const fallback = (app) => {
   return { app, name: R.name, icon: app, href: R.path, sections: R.sections, aliases: R.aliases,
     shares: { cards: "Today’s weather card, rain on your ride, warnings", notifications: "Rain alerts, warnings, the morning briefing and sunshine for your panels, through InFlite", screens: R.sections.map((s) => s[1]).join(" · ") } };
 };
-const roofOn = (F) => { const s = F?.session; return !!(s?.hub && s?.roof); };
 let F0 = null;
 export async function connectorOf(app, F = F0) {
-  if (STATIC[app]) return STATIC[app];
-  if (app === "chat") return STATIC.chats;
+  if (app === "chat") app = "chats";
   const R = REGISTRY[app];
-  if (!R) return null;
-  if (F && !roofOn(F)) return fallback(app);
+  if (!R) return STATIC[app] || null;
+  if (F ? !F.session?.apps?.[app] : STATIC[app]) return STATIC[app] || fallback(app);
   try {
     const m = await import(R.connector);
-    return { icon: app, href: R.path, ...m.connector };
-  } catch (_) { return fallback(app); }
+    return { icon: app, href: R.path, mini: STATIC[app]?.mini, ...m.connector };
+  } catch (_) { return STATIC[app] || fallback(app); }
 }
 
 export async function miniOf(app, answer, F = F0) {
@@ -80,17 +80,20 @@ export async function openConnector(F, app) {
   });
 }
 
-export function placesProvider(F) {
+const PROV = { weather: ["places", "Places", 20], markets: ["markets", "Markets", 30], fitness: ["fitness", "Fitness", 40], mail: ["mail", "Mail", 50] };
+export function connectorProvider(F, app) {
   F0 = F;
+  const [id, group, order] = PROV[app] || [app, REGISTRY[app]?.name || app, 60];
   let c = null, dead = false;
-  const ready = connectorOf("weather", F).then((x) => { c = x; });
+  const ready = connectorOf(app, F).then((x) => { c = x; });
   const off = F.search.provide({
-    id: "places", group: "Places", order: 20,
+    id, group, order,
     search: async (q) => {
       await ready;
       if (dead || typeof c?.search !== "function") return [];
-      return c.search(q);
+      return c.search(q, { userId: F.session?.view?.user?.id ?? null });
     },
   });
   return () => { dead = true; off(); };
 }
+export const placesProvider = (F) => connectorProvider(F, "weather");
