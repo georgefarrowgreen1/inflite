@@ -29,3 +29,7 @@ body { font: 17px/1.45 -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans
 .quote-toggle svg { width: 16px; height: 16px; fill: currentColor; }
 .note { margin: 0; height: 64px; padding: 0 20px; display: flex; align-items: center; color: var(--mail-quote); font-size: 15px; }
 @media (prefers-reduced-motion: reduce) { .quote-toggle { transition: none; } }
+
+/* (as InFlite's apps: no text picked up and copied, no callout, no double-tap zoom) */
+html { touch-action: manipulation; }
+body, body * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
