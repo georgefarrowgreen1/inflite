@@ -953,3 +953,15 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
   .ifl-in .ifl-cta { left: 50%; max-width: none; bottom: calc(44px + env(safe-area-inset-bottom, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
 }
 /* ==== end of InFlite's way in ==== */
+
+/* ---- swiping between an app's sections (swipe.js): the screen pans up and down by itself and hands a sideways drag to
+   the script; the section under the finger and the one coming in, moved by --sx; the one coming in shown from --sy;
+   a release settles with a spring ---- */
+main.ifl-screen[data-app]:is([data-app="weather"], [data-app="fitness"], [data-app="markets"]) > [role=tabpanel] { touch-action: pan-y; }
+.ifl-swiping main.ifl-screen:not([hidden]) { overflow-x: clip; }
+.ifl-swiping main.ifl-screen:not([hidden]) > [role=tabpanel] { position: relative; }
+.ifl-swiping section.ifl-sw-cur { transform: translate3d(var(--sx, 0px), 0, 0); will-change: transform; }
+.ifl-swiping section.ifl-sw-peek { display: var(--sw-d, block) !important; content-visibility: visible !important; position: absolute; left: 0; right: 0;
+  top: var(--sy, 0px); transform: translate3d(var(--sx, 0px), 0, 0); will-change: transform; pointer-events: none; }
+.ifl-sw-go section:is(.ifl-sw-cur, .ifl-sw-peek) { transition: transform 0.36s cubic-bezier(0.32, 0.72, 0, 1); }
+@media (prefers-reduced-motion: reduce) { .ifl-sw-go section:is(.ifl-sw-cur, .ifl-sw-peek) { transition-duration: 0.12s; } }

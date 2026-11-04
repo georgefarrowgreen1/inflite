@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.48";
+const BUILD = "1.49";
 // (what's new in it, said once it's in)
-const NEWS = "Settings rows read properly however long their values, and Apps says it in fewer words";
+const NEWS = "Swipe left or right to move between sections, as in a native app: the next one slides in with your finger";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1355,6 +1355,8 @@ function frame() {
     onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
     today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you,
   });
+  // (swiping between an app's sections, as a native app pages between its tabs: swipe.js; once, whichever frame is up)
+  if (!frame.swipe) frame.swipe = import("/swipe.js").then((m) => m.swipes({ get route() { return F?.route; }, nav: { section: (a, id) => F?.nav.section(a, id) } }), (e) => console.error(e));
   for (const k of Object.keys(SCREENS)) F.screen(k, SCREENS[k]);
   // (the page's own sheets' close button: the framework's cross, as every sheet it builds has; the ✕ is for no script)
   for (const b of $$(".ifl-sheet .ifs-btn[data-close]")) b.replaceChildren(F.ui.icon("x"));
@@ -2163,7 +2165,7 @@ function start() {
   worker();
   IFL.built("today", BUILD, NEWS);
   IFL.updates({ app: "today", build: BUILD, url: "/version", field: "build", busy: () => !!F?.busy() || !!sheetOpen, save,
-    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css"] });
+    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css"] });
   load();
   nextMinute();
   document.addEventListener("visibilitychange", () => {
