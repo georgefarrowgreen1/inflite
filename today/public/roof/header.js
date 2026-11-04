@@ -11,7 +11,7 @@
 //   (aria-hidden) recomputed on every set, on resize and once the fonts are in, and a count per section
 //   (.ifl-sec-badge; the tab's name then "Warnings, 2 in force").
 //   Compaction: --p from the shared block's IFL.watch/settle over the first 64 px; past half way the title shows
-//   compactTitle (class ifh-compact); html.ifl-fill holds it compact (roof.css). --hd-h is published from a ResizeObserver.
+//   compactTitle (class ifh-compact); html.ifl-fill (Radar) leaves it as it is. --hd-h is published from a ResizeObserver.
 import { el, icon } from "./ui.js";
 
 export function createHeader(host, F, { me, onMe } = {}) {
@@ -145,8 +145,9 @@ export function createHeader(host, F, { me, onMe } = {}) {
 
   // compact past half way (--p from the shared block), and the height published for screens that fill the window
   function compact() {
-    const fill = document.documentElement.classList.contains("ifl-fill");
-    const s = fill || (small ? scrollY > 8 : scrollY > 28); // (the shared block's own hysteresis: compact past 28px, back above 8px)
+    // (a screen that fills the window (Radar) keeps the header as it is: it never shrinks or grows on the way in or out)
+    if (document.documentElement.classList.contains("ifl-fill")) return;
+    const s = small ? scrollY > 8 : scrollY > 28; // (the shared block's own hysteresis: compact past 28px, back above 8px)
     if (s === small) return;
     small = s;
     hd.classList.toggle("ifh-compact", s);
