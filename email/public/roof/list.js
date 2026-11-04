@@ -71,7 +71,7 @@ export function view(el, ctx) {
     return { updates: ["No updates waiting", null], later: ["Nothing put off", null], done: ["Nothing done yet", null] }[s.lens] || ["Nothing here", null];
   };
   function caughtUp(s) {
-    const c = s.counts || {}, n = c.nextLater, ups = (c.updatesFrom || []).map((p) => logic.displayName(p).split(/\s+/)[0]).filter(Boolean);
+    const c = s.counts || {}, n = c.nextLater, ups = [...new Set((c.updatesFrom || []).map((p) => logic.displayName(p).trim()).filter(Boolean))].slice(0, 3);
     return ui.el("div", { class: "ml-caught" },
       ui.empty({ title: "All caught up", body: "Nothing from people is waiting." }),
       n?.at ? ui.row({ lead: { time: logic.fmtWhen(n.at) }, title: `${logic.displayName(n.from) || "A conversation"} is back from Later`, sub: n.subject || "", run: () => fw.nav.section("later"), label: `Later: ${logic.displayName(n.from) || "a conversation"}, back ${logic.fmtWhen(n.at)}` }) : null,

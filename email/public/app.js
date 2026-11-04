@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.52";
+  const BUILD = "1.53";
   // (what's new in it, said once it's in)
-  const NEWS = "If Mail is switched off in InFlite while you're writing, your words are saved as a draft";
+  const NEWS = "Inside InFlite, Mail's title says People or Updates as its tab does, and Newest in Updates names who it's from in full";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own

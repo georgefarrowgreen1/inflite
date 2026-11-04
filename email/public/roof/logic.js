@@ -175,7 +175,8 @@ export function viewTitle(s) {
   if (s.box === "drafts") return "Drafts";
   if (s.box === "trash") return "Trash";
   if (s.address) return s.address;
-  if (s.lens === "people" || s.lens === "updates") return FILTERS.find((f) => f.k === s.filter)?.label || "All Mail";
+  // (all of a lens: the lens's own name, People or Updates, as its tab says; a filter on it: the filter's, Unread, …)
+  if (s.lens === "people" || s.lens === "updates") { const f = FILTERS.find((x) => x.k === s.filter); return f && f.k !== "all" ? f.label : LENSES.find((l) => l.k === s.lens)?.label || "Mail"; }
   return LENSES.find((l) => l.k === s.lens)?.label || "Mail";
 }
 
