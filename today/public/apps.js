@@ -26,9 +26,11 @@ export function drawApps(root, ctx = {}) {
   const lines = answer?.v === 2 && answer.apps && typeof answer.apps === "object" ? answer.apps : {};
   const href = (app, section) => ctx.href?.(app, section) || `/${app}/${section ? "#" + section : ""}`;
   const shown = TILES.filter((t) => !t.only || t.only(ctx.view));
-  const make = (t, mini = null) => ui.tile({
-    // (the line or the mini, never both: the mini says the same, drawn)
-    app: t.app, name: t.name, line: mini ? null : typeof lines[t.app] === "string" && lines[t.app] ? lines[t.app] : t.what, href: href(t.app), mini,
+  // (every tile: its name with a line beneath, and on the right its mini's figure alone. Weather's line is its mini's
+  // words, "Rain from 08:00", so the temperature isn't said twice; the others keep their own line, "All caught up")
+  const lineOf = (t, m) => (m?.kind === "num-bars" && m.label ? m.label : typeof lines[t.app] === "string" && lines[t.app] ? lines[t.app] : t.what);
+  const make = (t, mini = null, m = null) => ui.tile({
+    app: t.app, name: t.name, line: lineOf(t, m), href: href(t.app), mini,
     chips: (t.on && switchedOn(ctx, t.app) ? t.on : t.chips).map(([text, s]) => ({ text, href: href(t.app, s) })),
   });
   const tiles = shown.map((t) => make(t));
@@ -45,7 +47,7 @@ export function drawApps(root, ctx = {}) {
     const mini = await Promise.resolve(m.miniOf(t.app, answer, ctx.frame)).catch(() => null);
     const was = tiles[i];
     if (!mini || n !== drawn || !was?.isConnected || was.contains(document.activeElement)) return;
-    const node = ui.mini(mini), now = node && make(t, node);
+    const node = ui.mini(mini), now = node && make(t, node, mini);
     if (now) { was.replaceWith(now); tiles[i] = now; }
   }))).catch(() => {});
 }
