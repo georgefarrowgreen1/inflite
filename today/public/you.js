@@ -34,6 +34,15 @@ function liveVersions(root, ctx) {
   Promise.all(Object.entries(LIVE_PATH).map(([k, p]) => fetch(`${p}version`, { cache: "no-store", credentials: "same-origin" })
     .then((r) => (r.ok ? r.json() : null)).then((j) => { if (j?.build) LIVE[k] = String(j.build); }, () => {}))).then(() => { if (root.isConnected) paint(root, ctx); });
 }
+// (each row's leading icon: a symbol on a colour, as Settings has, or the app's own icon)
+const sv = (d, w = 2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const GL = {
+  bell: G.bell, sun: G.sun, info: G.info,
+  moon: sv('<path d="M19.5 14.6A8 8 0 0 1 9.4 4.5a8 8 0 1 0 10.1 10.1z"/>'),
+  spark: sv('<path d="M12 3.5 13.9 8.6 19 10.5 13.9 12.4 12 17.5 10.1 12.4 5 10.5 10.1 8.6z"/><path d="m18.4 16.4.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>', 1.8),
+  apps: sv('<rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/>', 1.9),
+  every: sv('<path d="M4 7.5h16M4 12h16M4 16.5h10"/>'),
+};
 const NAMES = { chat: "Chat", weather: "Weather", fitness: "Fitness", markets: "Markets", today: "Today", mail: "Mail" };
 const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const hh = (h) => `${String(h).padStart(2, "0")}:00`;
@@ -93,36 +102,43 @@ export async function drawYou(root, ctx) {
 
 function paint(root, ctx) {
   const u = ctx.view.user || {}, admin = ctx.view.apps?.mail === true;
-  const sec = (id, title, body, foot = "") => body ? `<section class="you-sec" id="${id}"><h2 class="you-h">${esc(title)}</h2><div class="group glass">${body}</div>${foot ? `<p class="you-foot">${foot}</p>` : ""}</section>` : "";
-  const row = (k, b, small, end = "") => `<div class="row" data-k="${k}"><span class="tx"><b>${esc(b)}</b>${small ? `<small>${esc(small)}</small>` : ""}</span>${end}</div>`;
-  const go = (attrs, b, small, val = "") => `<button class="row go" type="button" ${attrs}><span class="tx"><b>${esc(b)}</b>${small ? `<small>${esc(small)}</small>` : ""}</span>${val ? `<span class="val">${esc(val)}</span>` : ""}<span class="chev">${G.chev}</span></button>`;
-  const sw = (attrs, b, small, on, aria, extra = "") => `<label class="row"${extra}><span class="tx"><b>${esc(b)}</b>${small ? `<small>${esc(small)}</small>` : ""}</span><input type="checkbox" class="switch" role="switch" ${attrs} ${on ? "checked" : ""} aria-label="${esc(aria)}"></label>`;
+  // (a section: its heading, one group, a line of small print under it; icons: its rows lead with an icon, the lines
+  // between them start where the words do)
+  const sec = (id, title, body, foot = "", icons = false) => body ? `<section class="you-sec" id="${id}">${title ? `<h2 class="you-h">${esc(title)}</h2>` : ""}<div class="group glass${icons ? " icons" : ""}">${body}</div>${foot ? `<p class="you-foot">${foot}</p>` : ""}</section>` : "";
+  const tx = (b, small) => `<span class="tx"><b>${esc(b)}</b>${small ? `<small>${esc(small)}</small>` : ""}</span>`;
+  const ic = (k, tone) => `<span class="ic ${tone}" aria-hidden="true">${GL[k]}</span>`;
+  const appIc = (app) => { const src = typeof ctx.icon === "function" ? ctx.icon(app) : ""; return `<span class="ic app" aria-hidden="true">${src ? `<img src="${esc(src)}" alt="" width="32" height="32">` : ""}</span>`; };
+  const row = (k, b, small, end = "", lead = "") => `<div class="row" data-k="${k}">${lead}${tx(b, small)}${end}</div>`;
+  const go = (attrs, b, small, val = "", lead = "") => `<button class="row go" type="button" ${attrs}>${lead}${tx(b, small)}${val ? `<span class="val">${esc(val)}</span>` : ""}<span class="chev">${G.chev}</span></button>`;
+  const sw = (attrs, b, small, on, aria, extra = "", lead = "") => `<label class="row"${extra}>${lead}${tx(b, small)}<input type="checkbox" class="switch" role="switch" ${attrs} ${on ? "checked" : ""} aria-label="${esc(aria)}"></label>`;
   const pick = (attrs, b, small, opts, on, aria, extra = "") => `<label class="row pick"${extra}><span class="tx"><b>${esc(b)}</b>${small ? `<small data-line>${esc(small)}</small>` : ""}</span><span class="val"><span>${esc((opts.find(([v]) => v === on) || opts[0])[1])}</span>${G.down}</span><select ${attrs} aria-label="${esc(aria)}">${opts.map(([v, l]) => `<option value="${v}" ${v === on ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
   const out = [];
-  // Account
+  // You: your picture and name, a tap from your account
   const photo = typeof ctx.photo === "function" ? ctx.photo(u) : esc([...String(u.first || u.name || "?")][0] || "?");
-  out.push(sec("youAccount", "Account", `<button class="row go" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Password, Passkeys and Devices</small></span><span class="chev">${G.chev}</span></button>`));
+  out.push(sec("youAccount", "", `<button class="row go you-me" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Password, Passkeys and Devices</small></span><span class="chev">${G.chev}</span></button>`));
   // Notifications: this phone, Today's morning, quiet hours
   const n = Y.notify;
   {
     const why = ctx.pushWhy?.(), rows = [];
-    rows.push(sw(`id="youPhone"${why ? " disabled" : ""}`, "On This Phone", why || "Today’s morning, and what you choose below", phoneOn(ctx), "Notifications on this phone", ` id="youPhoneRow"`));
+    let foot = "";
+    rows.push(sw(`id="youPhone"${why ? " disabled" : ""}`, "On This Phone", why || "Today’s morning and the apps below", phoneOn(ctx), "Notifications on this phone", ` id="youPhoneRow"`, ic("bell", "red")));
     const here = Array.isArray(Y.devices?.here) ? Y.devices.here : [];
     if (ctx.hub && ctx.view.hubPush === true && Y.devices !== false) {
-      rows.push(here.includes("pg_push") ? row("every", "Every App Notifies Here", "Chats, Weather and Markets as well as Today")
-        : go(`id="youEvery"`, "Get Every App’s Here", "Chats, Weather and Markets as well as Today"));
+      if (here.includes("pg_push")) foot = "Every app notifies here: Chats, Weather and Markets as well as Today.";
+      else rows.push(go(`id="youEvery"`, "Get Every App’s Here", "Chats, Weather and Markets as well as Today", "", ic("every", "blue")));
     }
     const t = (n && n.today) || ctx.morning || {};
-    rows.push(go(`id="youMorning"`, "Today’s Morning", "One notification, from all your apps", t.on ? clock(Number.isInteger(t.at) ? t.at : 420) : "Off"));
+    rows.push(go(`id="youMorning"`, "Today’s Morning", "One notification, from all your apps", t.on ? clock(Number.isInteger(t.at) ? t.at : 420) : "Off", ic("sun", "orange")));
     if (n) {
       const q = { on: false, from: 22, to: 7, ...(n.quiet || {}) };
       const hours = Array.from({ length: 24 }, (_, h) => [String(h), hh(h)]);
-      rows.push(sw(`id="youQuiet"`, "Quiet Hours", "Every app, but warnings", q.on, "Quiet hours"));
-      if (q.on) rows.push(pick(`id="youQfrom"`, "From", "", hours, String(q.from), "Quiet hours from", ` data-k="qfrom"`), pick(`id="youQto"`, "To", "", hours, String(q.to), "Quiet hours to", ` data-k="qto"`));
+      rows.push(sw(`id="youQuiet"`, "Quiet Hours", "Everything waits, except warnings", q.on, "Quiet hours", "", ic("moon", "indigo")));
+      if (q.on) rows.push(pick(`id="youQfrom"`, "From", "", hours, String(q.from), "Quiet hours from", ` data-k="qfrom"`).replace('class="row pick"', 'class="row pick sub"'),
+        pick(`id="youQto"`, "To", "", hours, String(q.to), "Quiet hours to", ` data-k="qto"`).replace('class="row pick"', 'class="row pick sub"'));
     }
-    out.push(sec("youNotify", "Notifications", rows.join("")));
+    out.push(sec("youNotify", "Notifications", rows.join(""), foot, true));
   }
-  // From each app
+  // From each app: its own icon, a switch where it's one, else a tap to its own sheet
   if (n !== false) {
     let body;
     if (!n) body = row("notify", "From Each App", "Getting them…");
@@ -132,17 +148,17 @@ function paint(root, ctx) {
       const rainOn = places.length > 0 && places.every((p) => p.rain);
       const mktOn = !(n.markets?.off === true), wrapOn = n.markets?.wrap !== false;
       body = [
-        sw(`data-k="chat"`, "Chats", "Who wrote, never the words", chatOn, "Chats notifications", ` data-app="chat"`),
-        go(`id="youWx" data-k="weather"`, "Weather", "Rain and warnings for your places", places.length ? (rainOn ? "On" : places.some((p) => p.rain) ? "Some" : "Off") : ""),
-        sw(`data-k="alerts"`, "Markets Alerts", "When a price you watch moves", mktOn, "Markets price alerts", ` data-app="markets"`),
-        sw(`data-k="wrap"`, "Evening Wrap", "How your holdings did, each weekday", wrapOn, "Markets: the Evening Wrap", ` data-app="markets"`),
+        sw(`data-k="chat"`, "Chats", "Who wrote, never the words", chatOn, "Chats notifications", ` data-app="chat"`, appIc("chat")),
+        go(`id="youWx" data-k="weather"`, "Weather", "Rain and warnings for your places", places.length ? (rainOn ? "On" : places.some((p) => p.rain) ? "Some" : "Off") : "", appIc("weather")),
+        sw(`data-k="alerts"`, "Markets", "When a price you watch moves", mktOn, "Markets price alerts", ` data-app="markets"`, appIc("markets")),
+        sw(`data-k="wrap"`, "Evening Wrap", "How your holdings did, each weekday", wrapOn, "Markets: the Evening Wrap", ` data-app="markets"`).replace('<label class="row"', '<label class="row sub"'),
         ctx.frame?.session?.apps?.fitness === true
-          ? `<a class="row go" href="${esc(ctx.href?.("fitness", "settings") || "/fitness/#settings")}" data-k="fitness" data-app="fitness"><span class="tx"><b>Fitness</b><small>In Today’s morning</small></span><span class="chev">${G.chev}</span></a>`
-          : row("fitness", "Fitness", "In Today’s morning"),
-        admin ? go(`id="youMail" data-k="mail" data-app="mail"`, "Mail", "Through InFlite, and which addresses") : "",
+          ? `<a class="row go" href="${esc(ctx.href?.("fitness", "settings") || "/fitness/#settings")}" data-k="fitness" data-app="fitness">${appIc("fitness")}${tx("Fitness", "In Today’s morning")}<span class="chev">${G.chev}</span></a>`
+          : row("fitness", "Fitness", "In Today’s morning", "", appIc("fitness")),
+        admin ? go(`id="youMail" data-k="mail" data-app="mail"`, "Mail", "Through InFlite, and which addresses", "", appIc("mail")) : "",
       ].join("");
     }
-    out.push(sec("youApps2", "From Each App", body));
+    out.push(sec("youApps2", "From Each App", body, "", !!n));
   }
   // Rules: what Today may do for you, each Do, Suggest or Quiet (the ones still to come left out)
   if (Y.rules !== false) {
@@ -163,8 +179,6 @@ function paint(root, ctx) {
   // Other devices
   const list = Array.isArray(Y.devices?.devices) ? Y.devices.devices : [];
   if (ctx.hub && Y.devices && list.length) out.push(sec("youDevices", "Other Devices", list.map(deviceRow).join("")));
-  // Chat
-  out.push(sec("youChat", "Chat", go(`id="youChatGo"`, "Chat Settings", ctx.chats ? "Pigeons, privacy and your loft" : "Typing, Pigeons, Names on the Lock Screen")));
   // About: each app's version as it is now (asked of each app as About opens), else as it last said it here
   const ver = APPS.filter(([k]) => k !== "mail" || admin).map(([k, name]) => {
     let b = k === "today" ? ctx.BUILD : LIVE[k] || null;
@@ -172,14 +186,15 @@ function paint(root, ctx) {
     return row(`v-${k}`, name, null, `<span class="val">${b ? `V${esc(b)}` : "—"}</span>`);
   }).join("");
   FOLDERS.versions = sec("youVersions", "About InFlite", ver);
-  // (the three as folders: one row each, its contents in a sheet of their own, as Settings does)
+  // General: the three folders (one row each, its contents in a sheet of their own, as Settings does) and Chat's settings
   const nRules = (Y.rules?.rules || []).filter((r) => !r.soon).length, nApps = CONNECTED.filter(([app]) => app !== "mail" || admin).length;
-  const folder = (k, b, small) => `<button class="row go" type="button" data-folder="${k}"><span class="tx"><b>${esc(b)}</b>${small ? `<small>${esc(small)}</small>` : ""}</span><span class="chev">${G.chev}</span></button>`;
-  out.push(sec("youMore", "More", [
-    Y.rules !== false ? folder("rules", "What Today Does for You", nRules ? `${nRules} ${nRules === 1 ? "rule" : "rules"}, each Do, Suggest or Quiet` : "Its rules") : "",
-    folder("apps", "Connected Apps", `${nApps} apps and what each shares`),
-    folder("versions", "About InFlite", ctx.BUILD ? `Today V${ctx.BUILD} and each app’s version` : "Each app’s version"),
-  ].join("")));
+  const folder = (k, b, small, lead) => `<button class="row go" type="button" data-folder="${k}">${lead}${tx(b, small)}<span class="chev">${G.chev}</span></button>`;
+  out.push(sec("youMore", "General", [
+    Y.rules !== false ? folder("rules", "What Today Does for You", nRules ? `${nRules} ${nRules === 1 ? "rule" : "rules"}, each Do, Suggest or Quiet` : "Its rules", ic("spark", "indigo")) : "",
+    folder("apps", "Connected Apps", `${nApps} apps and what each shares`, ic("apps", "blue")),
+    go(`id="youChatGo"`, "Chat Settings", ctx.chats ? "Pigeons, privacy and your loft" : "Typing, Pigeons, Names on the Lock Screen", "", appIc("chat")),
+    folder("versions", "About InFlite", ctx.BUILD ? `Today V${ctx.BUILD} and each app’s version` : "Each app’s version", ic("info", "grey")),
+  ].join(""), "", true));
   out.push(`<section class="you-sec you-out"><div class="group glass"><button class="row you-signout" type="button" id="youOut">Sign Out</button></div></section>`);
   root.innerHTML = out.join("");
   // (a folder open while You's drawn again: its contents drawn again too)

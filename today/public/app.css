@@ -21,7 +21,7 @@
   --blur: blur(28px) saturate(180%);
   --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 46%);
   --dim: rgba(0, 0, 0, 0.5);
-  --ifh-ink: var(--text); --ifh-ink-2: var(--text-2); --ifh-tint: var(--tint-text); --ifh-glass: rgba(255, 255, 255, 0.12); --ifh-band: rgba(10, 15, 38, 0.86);
+  --ifh-ink: var(--text); --ifh-ink-2: var(--text-2); --ifh-tint: var(--tint-text); --ifh-glass: rgba(255, 255, 255, 0.12); --ifh-band: rgba(10, 15, 38, 0.95);
   /* each app's own colour */
   --c-chat: #2b6fe6; --c-weather: #3a86f0; --c-fitness: #f0542e; --c-markets: #12a46a; --c-mail: #1aa58f; --c-account: #5b4fe0; --c-inflite: #2a6ae6;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1); --ease-glide: cubic-bezier(0.32, 0.72, 0, 1);
@@ -53,7 +53,7 @@
   --lift: 0 0 0 0.5px rgba(20, 30, 60, 0.08), 0 22px 44px -20px rgba(40, 50, 100, 0.28), 0 2px 6px rgba(40, 50, 100, 0.06);
   --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%);
   --dim: rgba(10, 14, 30, 0.32);
-  --ifh-glass: rgba(255, 255, 255, 0.58); --ifh-band: rgba(240, 242, 250, 0.9);
+  --ifh-glass: rgba(255, 255, 255, 0.58); --ifh-band: rgba(240, 242, 250, 0.95);
   --cloud-glass: #c3cee0; --solid: #f4f6fc;
   --in-glow: rgba(70, 120, 255, 0.28); --in-glow-2: rgba(70, 120, 255, 0.08); --in-icon-shadow: rgba(40, 50, 100, 0.35); --in-icon-edge: rgba(20, 30, 60, 0.08);
   --ifl-pill: rgba(255, 255, 255, 0.6); --ifl-pill-ink: rgba(20, 24, 50, 0.66); --ifl-pill-edge: 0 0 0 0.5px rgba(20, 24, 60, 0.1), 0 6px 18px -10px rgba(0, 0, 0, 0.3);
@@ -71,7 +71,7 @@
   --lift: 0 0 0 0.5px rgba(20, 30, 60, 0.08), 0 22px 44px -20px rgba(40, 50, 100, 0.28), 0 2px 6px rgba(40, 50, 100, 0.06);
   --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%);
   --dim: rgba(10, 14, 30, 0.32);
-  --ifh-glass: rgba(255, 255, 255, 0.58); --ifh-band: rgba(240, 242, 250, 0.9);
+  --ifh-glass: rgba(255, 255, 255, 0.58); --ifh-band: rgba(240, 242, 250, 0.95);
   --cloud-glass: #c3cee0; --solid: #f4f6fc;
   --in-glow: rgba(70, 120, 255, 0.28); --in-glow-2: rgba(70, 120, 255, 0.08); --in-icon-shadow: rgba(40, 50, 100, 0.35); --in-icon-edge: rgba(20, 30, 60, 0.08);
   --ifl-pill: rgba(255, 255, 255, 0.6); --ifl-pill-ink: rgba(20, 24, 50, 0.66); --ifl-pill-edge: 0 0 0 0.5px rgba(20, 24, 60, 0.1), 0 6px 18px -10px rgba(0, 0, 0, 0.3);
@@ -503,7 +503,18 @@ label.row:active { background: var(--press); }
 .you-h { margin: 0 18px 8px; font: 600 13px/1.2 var(--font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-2); }
 .you-foot { margin: 8px 18px 0; font-size: 13.5px; line-height: 1.4; color: var(--text-2); }
 .you-sec .row { min-height: 56px; }
-.you-sec .row + .row::before { left: 18px; }
+.you-sec .group:not(.icons) .row + .row::before { left: 18px; }
+/* (a group whose rows lead with an icon: the lines between them start where the words do; a row that belongs to the one
+   above it (Quiet Hours' times, Markets' Evening Wrap) set in to the words, without an icon of its own) */
+.you-sec .group.icons .row + .row::before { left: 64px; }
+.you-sec .row.sub { padding-left: 64px; min-height: 50px; }
+.you-sec .row.sub .tx b { font-size: 16px; }
+.you-sec .row .ic.app { border-radius: 8px; }
+.ic.red { background: linear-gradient(160deg, #ff7a6e, #e5372c); }
+/* (you, at the top: your picture and name, larger, a card of its own) */
+.you-sec .row.you-me { min-height: 82px; padding-block: 14px; gap: 14px; }
+.you-me .you-ph { width: 58px; height: 58px; font-size: 22px; }
+.you-me .tx b { font-size: 20px; font-weight: 600; letter-spacing: -0.2px; }
 .you-sec button.row { appearance: none; -webkit-appearance: none; border: 0; background: none; font: inherit; cursor: pointer; }
 .you-sec button.row:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; border-radius: var(--r-group); }
 .you-ph { position: relative; overflow: hidden; flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; background: linear-gradient(150deg, #8f7ff0, #5e48c8); }
@@ -712,12 +723,16 @@ img, svg, a { -webkit-user-drag: none; }
   align-items: center; column-gap: 12px; box-sizing: border-box; height: calc(var(--ifh-pt0) + 72px - 24px * var(--p)); margin: 0 0 calc(var(--ifh-mb, 0px) + 24px * var(--p));
   padding: calc(var(--ifh-pt0) - 4px * var(--p)) max(16px, env(safe-area-inset-right, 0px)) calc(14px - 6px * var(--p)) max(16px, env(safe-area-inset-left, 0px));
   color: var(--ifh-ink, inherit); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-.ifh::before { content: ""; position: absolute; inset: 0 0 -18px; z-index: -1; pointer-events: none; opacity: var(--p);
-  background: linear-gradient(to bottom, var(--ifh-band, rgba(240, 242, 250, 0.9)) 40%, transparent);
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent); mask-image: linear-gradient(to bottom, #000 62%, transparent); }
+/* (the band behind the header once the page has scrolled: solid the whole way down the header, so nothing reads through
+   behind its title, then fading out over the 16px below it) */
+.ifh::before { content: ""; position: absolute; inset: 0 0 -16px; z-index: -1; pointer-events: none; opacity: var(--p);
+  background: linear-gradient(to bottom, var(--ifh-band, rgba(240, 242, 250, 0.9)) calc(100% - 16px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent); }
 /* (at the top, no band at all: its glass isn't worked out, frame after frame, behind whatever's over the page) */
 .ifh:not(.ifh-up)::before { display: none; }
+/* (the blur on the header itself, not its band: a header with a view-transition-name is a backdrop root, so a blur on
+   anything inside it sees nothing of the page behind; on the header, it sees the page) */
+.ifh.ifh-up { -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); }
 .ifh button { appearance: none; -webkit-appearance: none; margin: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .ifh button:focus-visible { outline: 2px solid var(--ifh-tint, #2f6be6); outline-offset: 3px; }
 .ifh-me { position: relative; flex: none; width: calc(42px - 8px * var(--p)); height: calc(42px - 8px * var(--p)); padding: 0 !important; border-radius: 50% !important; overflow: hidden;

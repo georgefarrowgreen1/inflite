@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.57";
+  const BUILD = "1.58";
   // (what's new in it, said once it's in)
-  const NEWS = "Easier to read in light and dark: clearer secondary text, badges and buttons, shared across every app";
+  const NEWS = "The header stays clear as you scroll: nothing shows through behind the title";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
