@@ -285,15 +285,13 @@ export function createFrame(opts = {}) {
       const was = ys.get(`${key}:${id}`) || 0, y = scrollY > 28 ? Math.max(was, 29) : 0;
       F.route = r; shown.route = r;
       html.dataset.route = format(r);
-      transition("section", () => {
-        html.classList.remove("ifl-fill");
-        F.header.set(appHead(r));
-        m.root.setAttribute("aria-labelledby", `ifl-sec-${id}`);
-        scrollTo(0, y);
-        const sh = () => F.route === r && m.instance?.show(r, null);
-        Promise.resolve(m.instance ? sh() : m.loading?.then(sh)).then(() => { if (F.route === r && y) scrollTo(0, y); }, (e) => console.error(e));
-        return m.el;
-      });
+      // (not animated: the app stays on screen as it is, only what changes in it changes, as a segmented control does)
+      html.classList.remove("ifl-fill");
+      F.header.set(appHead(r));
+      m.root.setAttribute("aria-labelledby", `ifl-sec-${id}`);
+      scrollTo(0, y);
+      const sh = () => F.route === r && m.instance?.show(r, null);
+      Promise.resolve(m.instance ? sh() : m.loading?.then(sh)).then(() => { if (F.route === r && y) scrollTo(0, y); }, (e) => console.error(e));
       emit("route", r);
     },
     prev: () => routes[curDepth() - 1] || null,
@@ -422,9 +420,10 @@ export function createFrame(opts = {}) {
 
   // ---- transitions (§3.7): a View Transition where there is one, its kind on html[data-vt]; else a CSS animation
   function transition(kind, change, o = {}) {
-    if (!kind || o.ua) { change(); return; }
+    // (a section is never animated, nor faded for reduced motion)
+    if (!kind || o.ua || kind == "section") return void change();
     const k = reduced() ? "fade" : kind;
-    if (typeof doc.startViewTransition === "function" && k !== "section" && doc.visibilityState === "visible") {
+    if (typeof doc.startViewTransition === "function" && doc.visibilityState === "visible") {
       html.dataset.vt = k;
       const z = k === "zoom" ? o.zoomFrom : null;
       z?.classList.add("ifl-vt-zoom");
