@@ -10,10 +10,12 @@
   color-scheme: dark;
   --sky-a: #121a3c; --sky-b: #0a0f26; --sky-c: #05060e; --sky-top: #1b2860;
   --aura-1: rgba(80, 120, 255, 0.55); --aura-2: rgba(160, 90, 255, 0.4); --aura-3: rgba(40, 190, 230, 0.32);
-  --text: #f5f6fb; --text-2: rgba(235, 238, 250, 0.72); --text-3: rgba(235, 238, 250, 0.56);
+  --text: #f5f6fb; --text-2: rgba(235, 238, 250, 0.78); --text-3: rgba(235, 238, 250, 0.64);
+  /* (shared surfaces, the same in every app: a card set into a card; a count's badge, white on it at 4.5:1 or more) */
+  --inset: rgba(0, 0, 0, 0.22); --raised: rgba(245, 246, 251, 0.16); --badge: #d93025;
   --glass: rgba(34, 40, 66, 0.5); --glass-strong: rgba(28, 33, 56, 0.86); --glass-ctl: rgba(255, 255, 255, 0.1);
   --line: rgba(255, 255, 255, 0.1); --press: rgba(255, 255, 255, 0.07); --field: rgba(0, 0, 0, 0.24);
-  --tint: #5aa9ff; --tint-deep: #2a6ae6; --tint-text: #8cc2ff; --danger: #ff6a5f; --good: #4fdc8e; --good-text: #4fdc8e; --warn: #ffbd4a;
+  --tint: #5aa9ff; --tint-deep: #2a6ae6; --tint-text: #8cc2ff; --danger: #ff877e; --good: #4fdc8e; --good-text: #4fdc8e; --warn: #ffbd4a;
   --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.42), inset 0 -1px 0.5px rgba(255, 255, 255, 0.08), inset 0 0 22px rgba(255, 255, 255, 0.03);
   --lift: 0 0 0 0.5px rgba(0, 0, 0, 0.4), 0 22px 44px -18px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.16);
   --blur: blur(28px) saturate(180%);
@@ -42,7 +44,8 @@
   color-scheme: light;
   --sky-a: #e9eefc; --sky-b: #f3f0fb; --sky-c: #f7f8fc; --sky-top: #dde3fb;
   --aura-1: rgba(110, 150, 255, 0.42); --aura-2: rgba(200, 150, 255, 0.36); --aura-3: rgba(90, 210, 240, 0.3);
-  --text: #0d1020; --text-2: rgba(20, 24, 44, 0.66); --text-3: rgba(20, 24, 44, 0.62);
+  --text: #0d1020; --text-2: rgba(20, 24, 44, 0.7); --text-3: rgba(20, 24, 44, 0.66);
+  --inset: rgba(255, 255, 255, 0.7); --raised: #fff;
   --glass: rgba(255, 255, 255, 0.58); --glass-strong: rgba(250, 251, 255, 0.9); --glass-ctl: rgba(20, 30, 60, 0.06);
   --line: rgba(20, 24, 44, 0.09); --press: rgba(20, 24, 44, 0.05); --field: rgba(20, 30, 60, 0.06);
   --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --good-text: #167a42; --warn: #945600;
@@ -59,7 +62,8 @@
   color-scheme: light;
   --sky-a: #e9eefc; --sky-b: #f3f0fb; --sky-c: #f7f8fc; --sky-top: #dde3fb;
   --aura-1: rgba(110, 150, 255, 0.42); --aura-2: rgba(200, 150, 255, 0.36); --aura-3: rgba(90, 210, 240, 0.3);
-  --text: #0d1020; --text-2: rgba(20, 24, 44, 0.66); --text-3: rgba(20, 24, 44, 0.62);
+  --text: #0d1020; --text-2: rgba(20, 24, 44, 0.7); --text-3: rgba(20, 24, 44, 0.66);
+  --inset: rgba(255, 255, 255, 0.7); --raised: #fff;
   --glass: rgba(255, 255, 255, 0.58); --glass-strong: rgba(250, 251, 255, 0.9); --glass-ctl: rgba(20, 30, 60, 0.06);
   --line: rgba(20, 24, 44, 0.09); --press: rgba(20, 24, 44, 0.05); --field: rgba(20, 30, 60, 0.06);
   --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --good-text: #167a42; --warn: #945600;
@@ -148,10 +152,8 @@ button.row:active, a.row:active { background: var(--press); }
   background: var(--glass-ctl); box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.25), 0 0 0 0.5px var(--line); font-size: 15px; font-weight: 600; color: var(--text);
   transition: transform 0.45s var(--ease-spring), background-color 0.2s; text-decoration: none; }
 .pill:active { transform: scale(0.95); transition-duration: 0.1s; }
-.pill.primary { color: #fff; background: linear-gradient(180deg, #4b95ff, #2a6ae6); box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.35), 0 8px 18px -10px rgba(42, 106, 230, 0.8); }
+.pill.primary { color: #fff; background: linear-gradient(180deg, var(--tint-deep), color-mix(in srgb, var(--tint-deep) 82%, #000)); box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.35), 0 8px 18px -10px rgba(42, 106, 230, 0.8); }
 /* (in light, as the real apps draw it: the tint to its deep, as the paler blue leaves white words under 4.5:1) */
-@media (prefers-color-scheme: light) { :where(:root:not([data-theme="dark"])) .pill.primary { background: linear-gradient(180deg, var(--tint), var(--tint-deep)); } }
-:where(:root[data-theme="light"]) .pill.primary { background: linear-gradient(180deg, var(--tint), var(--tint-deep)); }
 .pill svg { width: 17px; height: 17px; }
 .pill:disabled { opacity: 0.5; cursor: default; }
 .bird-ic { fill: currentColor; stroke: none; }

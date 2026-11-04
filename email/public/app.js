@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.56";
+  const BUILD = "1.57";
   // (what's new in it, said once it's in)
-  const NEWS = "Switching between People, Updates, Later and Done shows that list at once, never an empty screen first";
+  const NEWS = "Easier to read in light and dark: clearer secondary text, badges and buttons, shared across every app";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own

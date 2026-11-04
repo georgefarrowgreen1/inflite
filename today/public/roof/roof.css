@@ -1,6 +1,8 @@
 /* InFlite's framework styles (One roof, spec §3.13, D18). Linked after app.css by index.html, so app.css's tokens
    (--text*, --glass*, --solid, --line, --press, --edge, --lift, --sheen, --blur, --r-card/-group/-hero, --danger,
-   --good, --good-text, --warn, --ease-out/-glide/-spring, --c-<app>) stay as they are; this adds the framework's.
+   --good, --good-text, --warn, --ease-out/-glide/-spring, --c-<app>, and the shared surfaces every app uses rather than
+   its own light and dark pairs: --inset (a card set into a card), --raised (the chosen one of a few), --badge (a count))
+   stay as they are; this adds the framework's.
    The token block is B0's and frozen: names and values exactly map-design §3.2 (accents) and §3.1 (the rest); FW may
    add tokens, never rename or change these. Dark first, light in both light blocks, as app.css. No inline styles
    anywhere: a figure a drawing needs is a custom property set by script.
@@ -39,7 +41,7 @@
   :root:not([data-theme="dark"])[data-app="weather"], :root:not([data-theme="dark"]) [data-app="weather"] { --acc: #2f7af0; --acc-ink: #1f63d6; }
   :root:not([data-theme="dark"])[data-app="fitness"], :root:not([data-theme="dark"]) [data-app="fitness"] { --acc: #e8532f; --acc-ink: #b93a1c; }
   :root:not([data-theme="dark"])[data-app="markets"], :root:not([data-theme="dark"]) [data-app="markets"] { --acc: #138a52; --acc-ink: #0a7a4d; }
-  :root:not([data-theme="dark"])[data-app="mail"], :root:not([data-theme="dark"]) [data-app="mail"] { --acc: #0f8f8a; --acc-ink: #0b7a76; }
+  :root:not([data-theme="dark"])[data-app="mail"], :root:not([data-theme="dark"]) [data-app="mail"] { --acc: #0f8f8a; --acc-ink: #096b67; }
   :root:not([data-theme="dark"]), :root:not([data-theme="dark"]) [data-app] { --acc-wash: color-mix(in srgb, var(--acc) 13%, transparent); }
 }
 :root[data-theme="light"] { --bar: rgba(250, 250, 253, 0.8); --acc: #5a4fe0; --acc-ink: #5a4fe0; }
@@ -49,7 +51,7 @@
 :root[data-theme="light"][data-app="weather"], :root[data-theme="light"] [data-app="weather"] { --acc: #2f7af0; --acc-ink: #1f63d6; }
 :root[data-theme="light"][data-app="fitness"], :root[data-theme="light"] [data-app="fitness"] { --acc: #e8532f; --acc-ink: #b93a1c; }
 :root[data-theme="light"][data-app="markets"], :root[data-theme="light"] [data-app="markets"] { --acc: #138a52; --acc-ink: #0a7a4d; }
-:root[data-theme="light"][data-app="mail"], :root[data-theme="light"] [data-app="mail"] { --acc: #0f8f8a; --acc-ink: #0b7a76; }
+:root[data-theme="light"][data-app="mail"], :root[data-theme="light"] [data-app="mail"] { --acc: #0f8f8a; --acc-ink: #096b67; }
 :root[data-theme="light"], :root[data-theme="light"] [data-app] { --acc-wash: color-mix(in srgb, var(--acc) 13%, transparent); }
 /* ---- end of the token block ---- */
 
@@ -103,7 +105,7 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 .ifl-sec:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: -2px; }
 .ifl-lens { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: var(--lw, 0); transform: translateX(var(--lx, 0)); border-radius: var(--r-pill);
   background: var(--ifl-lens); box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.35); transition: transform var(--dur-base) var(--ease-glide), width var(--dur-base) var(--ease-glide); }
-.ifl-sec-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; background: var(--danger); }
+.ifl-sec-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; background: var(--badge, var(--danger)); }
 
 /* ---- the tab bar (tabs.js): menu.css's bar, with a pill that slides; its static pill off under it (D18) ---- */
 .ifl-tabs.has-pill .ifl-tab[aria-current] { background: none; color: var(--ifl-tab-on); }
@@ -118,7 +120,7 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ifl-tabs.has-pill.chats { --ifl-tab-on: #9a90ff; } }
 :root[data-theme="dark"] .ifl-tabs.has-pill.chats { --ifl-tab-on: #9a90ff; }
 .ifl-tab-badge { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px;
-  display: grid; place-items: center; font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; background: var(--danger); pointer-events: none; }
+  display: grid; place-items: center; font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; background: var(--badge, var(--danger)); pointer-events: none; }
 
 /* ---- sheets (sheet.js) on <dialog>: the frozen markup, Weather's motion ---- */
 dialog.ifl-sheet { position: fixed; inset: auto 0 0; z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
