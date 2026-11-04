@@ -281,7 +281,8 @@ export function createFrame(opts = {}) {
       put(p);
       routes[depth] = r;
       html.dataset.dir = ids.indexOf(id) < ids.indexOf(r0.section) ? "back" : "fwd";
-      const y = ys.get(`${key}:${id}`) || 0;
+      // (the header as it is now, kept: compact stays compact, full stays full, so a section switch never grows or shrinks it)
+      const was = ys.get(`${key}:${id}`) || 0, y = scrollY > 28 ? Math.max(was, 29) : 0;
       F.route = r; shown.route = r;
       html.dataset.route = format(r);
       transition("section", () => {
