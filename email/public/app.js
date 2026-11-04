@@ -1134,6 +1134,46 @@ const IFL = (() => {
     helloHub();
   }
 
+  // What InFlite's Mail was writing when Mail's switch was turned off (One roof stage 4, §8): Mail's API answers no InFlite
+  // address from then on, so it couldn't be saved from there, and the hub's page that frames Mail hands it in from what
+  // InFlite's Mail keeps on the phone (its words, never files). Heard only from the window holding the frame, at the hub's
+  // address, once the hub has answered the hello; saved here as a draft (over the one it was, its files kept as Mail has
+  // them, each by its place), and the hub told, by the copy's time alone, so it lets its copy go. → a draft to save, or null
+  function unsentDraft(d) {
+    if (!d || typeof d !== "object") return null;
+    const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : "");
+    const list = (l) => (Array.isArray(l) ? l : []).filter((p) => p && typeof p.email === "string" && p.email).slice(0, 100).map((p) => ({ name: str(p.name, 200), email: p.email.slice(0, 320) }));
+    const refs = Array.isArray(d.references) ? d.references.filter((r) => typeof r === "string").join(" ") : d.references;
+    const draft = { from: str(d.from, 320), to: list(d.to), cc: list(d.cc), bcc: list(d.bcc), subject: str(d.subject, 998), text: str(d.text, 200000),
+      inReplyTo: str(d.inReplyTo, 998) || null, references: str(refs, 8000) || null, attachments: [] };
+    if (!draft.subject && !draft.text.trim() && !draft.to.length && !draft.cc.length && !draft.bcc.length) return null;
+    if (typeof d.draftId === "string" && /^[\w-]{1,64}$/.test(d.draftId)) Object.assign(draft, { id: d.draftId, attachments: Array.from({ length: 20 }, (_, i) => ({ i })) });
+    const q = d.quote;
+    if (q && typeof q === "object" && typeof q.of === "string" && /^[\w-]{1,64}$/.test(q.of)) draft.quote = { of: q.of, mode: str(q.mode, 20) || "reply" };
+    return draft;
+  }
+  const handedIn = new Set();
+  function fromHubUnsent(e) {
+    if (!EMBED || !hubHeard || e.source !== window.parent || e.origin !== HUB) return false;
+    const d = e.data;
+    if (!d || typeof d !== "object" || d.ifl !== "unsent" || d.v !== 1 || !Number.isFinite(d.at) || handedIn.has(d.at)) return false;
+    const draft = unsentDraft(d.draft), at = d.at;
+    if (!draft) return false;
+    handedIn.add(at);
+    api.saveDraft(draft).then(() => {
+      toHub({ ifl: "unsent", v: 1, at, saved: true });
+      try {
+        toast("Draft Saved", { icon: "drafts" });
+        if (S.me) {
+          refreshCounts();
+          loadList({ quiet: true });
+        }
+      } catch {}
+    }, () => handedIn.delete(at));
+    return true;
+  }
+  if (EMBED) addEventListener("message", fromHubUnsent);
+
   // (opened from the account's Notifications page to turn them on here: #notify, asked once Mail's open; never in the
   // hub's frame, where InFlite's own notifications are the window's)
   let ASK_NOTIFY = IFL.wantsAllow() && !EMBED;
