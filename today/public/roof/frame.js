@@ -424,7 +424,7 @@ export function createFrame(opts = {}) {
   function transition(kind, change, o = {}) {
     if (!kind || o.ua) { change(); return; }
     const k = reduced() ? "fade" : kind;
-    if (typeof doc.startViewTransition === "function" && doc.visibilityState === "visible") {
+    if (typeof doc.startViewTransition === "function" && k !== "section" && doc.visibilityState === "visible") {
       html.dataset.vt = k;
       const z = k === "zoom" ? o.zoomFrom : null;
       z?.classList.add("ifl-vt-zoom");
