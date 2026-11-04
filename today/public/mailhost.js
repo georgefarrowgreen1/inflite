@@ -6,7 +6,10 @@
 //   passed into Mail's address as Mail itself reads them (One roof stage 4, spec §2.3: the page Mail is while its switch
 //   is off); else Mail as it is.
 // - What Mail says, heard only from the frame itself and only from Mail's own address, and only these:
-//     { ifl: "hello", v: 1 }    Mail's in the frame: answered the same, so Mail knows it's InFlite's window it's in
+//     { ifl: "hello", v: 1 }    Mail's in the frame: answered the same, so Mail knows it's InFlite's window it's in;
+//                               then what InFlite's Mail was writing as its switch was turned off (mail:unsent, its
+//                               words), if any, handed in as { ifl: "unsent", v: 1, at, draft }, to Mail's address alone
+//     { ifl: "unsent", v: 1, at, saved: true }   Mail has saved it as a draft: this phone's copy let go, if it's still that one
 //     { ifl: "back" }           Mail's Back: to Apps (/#apps), never history's own back (Mail keeps history of its own)
 //     { ifl: "signin", ask }    Mail's Sign In, its word's hash (ask) kept as Mail keeps it: this whole window to the
 //                               sign-in page (data-auth), which comes back here, to /mail/#signin=<code>
@@ -71,14 +74,39 @@
     location.assign(APPS);
   }
 
-  // What Mail says from its frame. → what was done ("hello", "back", "signin"), or null for anything not taken
+  // (what InFlite's Mail was writing when Mail's switch was turned off, kept on this phone as mail:unsent, its words and
+  // never files (One roof stage 4, §8): Mail's API answers no InFlite address from then on, so it couldn't be saved from
+  // here. Handed to Mail in the frame, at Mail's address alone, once Mail's said hello; Mail saves it as a draft and says
+  // so by the copy's time, and this phone's copy goes, unless it's changed since. Never shown on this page)
+  const UNSENT = "mail:unsent";
+  const local = () => { try { return localStorage; } catch (_) { return null; } };
+  function unsent() {
+    let u = null;
+    try { u = JSON.parse(local()?.getItem(UNSENT) || "null"); } catch (_) { return null; }
+    if (!u || typeof u !== "object" || !Number.isFinite(u.at)) return null;
+    return u.subject || String(u.text || "").trim() || ["to", "cc", "bcc"].some((k) => Array.isArray(u[k]) && u[k].length) ? u : null;
+  }
+  function handIn(frame) {
+    const u = unsent();
+    if (!u) return;
+    const { from, to, cc, bcc, subject, text, inReplyTo, references, draftId, quote, quoteOld } = u;
+    const draft = { from, to, cc, bcc, subject, text, inReplyTo, references, draftId, ...(quote?.of && !quoteOld && { quote: { of: quote.of, mode: quote.mode } }) };
+    try { frame.contentWindow.postMessage({ ifl: "unsent", v: 1, at: u.at, draft }, MAIL); } catch (_) {}
+  }
+
+  // What Mail says from its frame. → what was done ("hello", "back", "signin", "unsent"), or null for anything not taken
   function heard(e, frame) {
     if (!frame || !MAIL || e.source !== frame.contentWindow || e.origin !== MAIL) return null;
     const d = e.data;
     if (!d || typeof d !== "object") return null;
     if (d.ifl === "hello" && d.v === 1) {
       try { frame.contentWindow.postMessage({ ifl: "hello", v: 1 }, MAIL); } catch (_) {}
+      handIn(frame);
       return "hello";
+    }
+    if (d.ifl === "unsent" && d.v === 1 && d.saved === true) {
+      if (unsent()?.at === d.at) try { local()?.removeItem(UNSENT); } catch (_) {}
+      return "unsent";
     }
     if (d.ifl === "back") return back(), "back";
     if (d.ifl === "signin" && AUTH && typeof d.ask === "string" && ASK.test(d.ask)) return location.assign(signInAt(d.ask)), "signin";
