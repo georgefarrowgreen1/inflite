@@ -473,8 +473,17 @@ function topFor(answer, phase, now) {
   const at = line.findLastIndex((x) => x.at <= now);
   return at > 0 && line.slice(0, at).some((x) => x.phase === phase) ? null : t;
 }
+// (a top card that says only what the Weather card below says, the weather and its figures, with nothing next, no one
+// who wrote and nothing to do: left out while that Weather card is on the page, so nothing's said twice)
+function onlyWeather(t, a, st) {
+  if (t.kind !== "weather" || texts(t.lines).length || list(t.wrote).length || list(t.buttons).some((b) => b.do !== "open" && b.do !== "sendto")) return false;
+  const prefs = st.ctx.prefs && typeof st.ctx.prefs === "object" ? st.ctx.prefs : {};
+  const hidden = Array.isArray(prefs.hidden) ? prefs.hidden : [];
+  return a.cards?.weather?.state === "ok" && !hidden.includes("weather");
+}
 function drawTop(root, st, phase, now, s = sections(root)) {
-  const top = topFor(st.answer, phase, now);
+  let top = topFor(st.answer, phase, now);
+  if (top && onlyWeather(top, st.answer, st)) top = null;
   st.wrote = top ? list(top.wrote).filter((w) => ID.test(str(w.id)) && str(w.first) && num(w.at) != null) : [];
   s.top.innerHTML = top ? topHtml(top, phase, st, now) : "";
   s.top.hidden = !top;
