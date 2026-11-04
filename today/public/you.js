@@ -24,7 +24,16 @@
 import { esc, G } from "/cards.js";
 
 const LEVELS = [["do", "Do"], ["suggest", "Suggest"], ["quiet", "Quiet"]];
-const APPS = [["today", "Today"], ["chat", "Chat"], ["weather", "Weather"], ["fitness", "Fitness"], ["markets", "Markets"]];
+const APPS = [["today", "Today"], ["chat", "Chat"], ["weather", "Weather"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"]];
+// (each app's version as its server says it now: asked as About opens, at most once a minute)
+const LIVE = {}, LIVE_PATH = { chat: "/chats/", weather: "/weather/", fitness: "/fitness/", markets: "/markets/", mail: "/mail/" };
+let liveAt = 0;
+function liveVersions(root, ctx) {
+  if (Date.now() - liveAt < 60e3) return;
+  liveAt = Date.now();
+  Promise.all(Object.entries(LIVE_PATH).map(([k, p]) => fetch(`${p}version`, { cache: "no-store", credentials: "same-origin" })
+    .then((r) => (r.ok ? r.json() : null)).then((j) => { if (j?.build) LIVE[k] = String(j.build); }, () => {}))).then(() => { if (root.isConnected) paint(root, ctx); });
+}
 const NAMES = { chat: "Chat", weather: "Weather", fitness: "Fitness", markets: "Markets", today: "Today", mail: "Mail" };
 const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const hh = (h) => `${String(h).padStart(2, "0")}:00`;
@@ -156,9 +165,9 @@ function paint(root, ctx) {
   if (ctx.hub && Y.devices && list.length) out.push(sec("youDevices", "Other Devices", list.map(deviceRow).join("")));
   // Chat
   out.push(sec("youChat", "Chat", go(`id="youChatGo"`, "Chat Settings", ctx.chats ? "Pigeons, privacy and your loft" : "Typing, Pigeons, Names on the Lock Screen")));
-  // About: each app's version, as each last said it here
-  const ver = APPS.map(([k, name]) => {
-    let b = k === "today" ? ctx.BUILD : null;
+  // About: each app's version as it is now (asked of each app as About opens), else as it last said it here
+  const ver = APPS.filter(([k]) => k !== "mail" || admin).map(([k, name]) => {
+    let b = k === "today" ? ctx.BUILD : LIVE[k] || null;
     try { b ||= localStorage.getItem(`ifl-build:${k}`); } catch {}
     return row(`v-${k}`, name, null, `<span class="val">${b ? `V${esc(b)}` : "—"}</span>`);
   }).join("");
@@ -198,6 +207,7 @@ function fillFolder(sheet, root, ctx) {
 function openFolder(k, root, ctx) {
   const sheet = document.getElementById("sh-youfolder");
   if (!sheet || !FOLDER_TITLE[k]) return;
+  if (k === "versions") liveVersions(root, ctx);
   sheet.dataset.folder = k;
   fillFolder(sheet, root, ctx);
   if (!sheet.open) ctx.openSheet("sh-youfolder");
