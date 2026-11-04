@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.26";
+const BUILD = "1.27";
 // (what's new in it, said once it's in)
-const NEWS = "You keeps your place when a setting can't be saved; the top card drops a line with nothing to tap";
+const NEWS = "Chats opens straight away: it gets ready in the background while you're on Today";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1028,6 +1028,9 @@ function preloadSoon() {
     try { used = !!USED[a] && localStorage.getItem(USED[a]) != null; } catch {}
     if (used && on(a)) idle(() => { if (on(a)) preload(a); });
   }
+  // (Chats, a tab of its own: its module fetched and its core started at idle once Today's drawn, used here before or
+  // not, so the tab opens on your chats at once, not on placeholder rows while the core starts and catches up)
+  if (on("chats")) idle(() => { if (!on("chats")) return; preload("chats"); IFL.hub.chat?.(); });
   const touched = (e) => {
     const a = e.target?.closest?.("a[href^='/']"), app = a && Object.keys(REGISTRY).find((k) => a.getAttribute("href").startsWith(REGISTRY[k].path));
     if (app && on(app)) preload(app);
