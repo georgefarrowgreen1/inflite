@@ -477,6 +477,13 @@ label.row:active { background: var(--press); }
 .apps-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 @media (max-width: 340px) { .apps-grid { grid-template-columns: 1fr; } }
 
+/* (tiles the same height in a row, their chips along the bottom in one line that scrolls if it must) */
+.apps-grid .ifl-tile { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+.apps-grid .ifl-tile-main { gap: 6px; }
+.apps-grid .ifl-tile-main .ifl-mini { margin-top: 6px; }
+.apps-grid .ifl-tile-chips { margin: auto -16px 0; padding: 2px 16px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent); }
+.apps-grid .ifl-tile-chips::-webkit-scrollbar { display: none; }
+.apps-grid .ifl-chip.action { flex: none; min-height: 32px; padding: 0 12px; font-size: 13.5px; }
 .apps-note { margin: 18px 18px 0; font-size: 14px; line-height: 1.45; color: var(--text-2); text-align: center; }
 
 

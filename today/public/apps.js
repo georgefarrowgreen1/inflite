@@ -9,8 +9,8 @@
 //   framework's connectors.js, frame: F (so Weather's connector is asked for only with hub and roof on) }) → nothing: the tiles drawn into root (#apps), their minis as each connector has them
 const TILES = [
   { app: "weather", name: "Weather", what: "A forecast that explains itself", chips: [["Radar", "radar"], ["Warnings", "warnings"]] },
-  { app: "fitness", name: "Fitness", what: "Your training, a day at a time", chips: [["Today", "today"], ["Activities", "activities"], ["Progress", "progress"]] },
-  { app: "markets", name: "Markets", what: "Your money, said simply", chips: [["Today", "today"], ["Holdings", "holdings"], ["News", "news"]] },
+  { app: "fitness", name: "Fitness", what: "Your training, a day at a time", chips: [["Activities", "activities"], ["Progress", "progress"]] },
+  { app: "markets", name: "Markets", what: "Your money, said simply", chips: [["Holdings", "holdings"], ["News", "news"]] },
   // (Mail's chips only while Mail's switch is on here, its lenses then the module's: s4/spec §2.5)
   { app: "mail", name: "Mail", what: "For you only", chips: [], only: (view) => view?.apps?.mail === true,
     on: [["People", "people"], ["Updates", "updates"], ["Later", "later"], ["Done", "done"]] },
@@ -27,7 +27,8 @@ export function drawApps(root, ctx = {}) {
   const href = (app, section) => ctx.href?.(app, section) || `/${app}/${section ? "#" + section : ""}`;
   const shown = TILES.filter((t) => !t.only || t.only(ctx.view));
   const make = (t, mini = null) => ui.tile({
-    app: t.app, name: t.name, line: typeof lines[t.app] === "string" && lines[t.app] ? lines[t.app] : t.what, href: href(t.app), mini,
+    // (the line or the mini, never both: the mini says the same, drawn)
+    app: t.app, name: t.name, line: mini ? null : typeof lines[t.app] === "string" && lines[t.app] ? lines[t.app] : t.what, href: href(t.app), mini,
     chips: (t.on && switchedOn(ctx, t.app) ? t.on : t.chips).map(([text, s]) => ({ text, href: href(t.app, s) })),
   });
   const tiles = shown.map((t) => make(t));
@@ -36,7 +37,7 @@ export function drawApps(root, ctx = {}) {
   grid.append(...tiles.filter(Boolean));
   const note = document.createElement("p");
   note.className = "apps-note";
-  note.textContent = "Their news reaches you on Today. Any card can be sent to a friend.";
+  note.textContent = "Their news reaches you on Today.";
   root.replaceChildren(grid, note);
   // (each tile's mini, once its connector says it: the tile drawn again with it, unless it's being used)
   if (!answer || typeof ctx.connectors !== "function") return;
