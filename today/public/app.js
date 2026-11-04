@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.31";
+const BUILD = "1.32";
 // (what's new in it, said once it's in)
-const NEWS = "Apps refined: every card has a line under its name, its figure neatly on the right";
+const NEWS = "Today's header no longer shows the date above the title";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1318,7 +1318,7 @@ function lineOf() {
 }
 const EDIT = { icon: "edit", label: "Edit Today: hide and reorder cards", run: () => openEdit() };
 const SCREENS = {
-  today: { el: $("#today"), title: () => "Today", crumb: crumbOf, line: lineOf, acts: [EDIT], onShow() { drawLine(true); if (cardsStale) { cardsStale = false; refresh(); } }, onHide() {} },
+  today: { el: $("#today"), title: () => "Today", crumb: () => "", line: lineOf, acts: [EDIT], onShow() { drawLine(true); if (cardsStale) { cardsStale = false; refresh(); } }, onHide() {} },
   apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Tap one to open it, or go straight to a part", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
   you: { el: $("#you"), title: () => "You", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() {} },
 };
