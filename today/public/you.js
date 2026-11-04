@@ -140,7 +140,7 @@ function paint(root, ctx) {
     const rules = (Y.rules?.rules || []).filter((r) => !r.soon);
     const body = !Y.rules ? row("rules", "Rules", "Getting them…") : rules.map((r) =>
       pick(`data-rulepick="${esc(r.rule)}"`, r.name, r.line || "", LEVELS, r.level, `${r.name}: Do, Suggest or Quiet`, ` data-rule="${esc(r.rule)}"`)).join("");
-    out.push(sec("youRules", "What Today Does for You", body, "Do: it acts and tells you. Suggest: it asks first. Quiet: it leaves it. Undo one and it drops a level; ten kept and it climbs."));
+    FOLDERS.rules = sec("youRules", "What Today Does for You", body, "Do: it acts and tells you. Suggest: it asks first. Quiet: it leaves it. Undo one and it drops a level; ten kept and it climbs.");
   }
   // Connected Apps
   {
@@ -149,7 +149,7 @@ function paint(root, ctx) {
       const words = Y.shares && Y.sharesRoof === roofOf(ctx) ? Y.shares[app] : null;
       return `<button class="row go conn" type="button" data-app="${app}" aria-label="${esc(`${name}’s connector${words ? `: ${words}` : ""}`)}"><span class="ic app">${src ? `<img src="${esc(src)}" alt="" width="28" height="28">` : ""}</span><span class="tx"><b>${esc(name)}</b><small>${esc(words ?? "")}</small></span><span class="chev">${G.chev}</span></button>`;
     }).join("");
-    out.push(sec("youApps", "Connected Apps", body, "Each app keeps its own server and data. This is all it shares with InFlite."));
+    FOLDERS.apps = sec("youApps", "Connected Apps", body, "Each app keeps its own server and data. This is all it shares with InFlite.");
   }
   // Other devices
   const list = Array.isArray(Y.devices?.devices) ? Y.devices.devices : [];
@@ -162,9 +162,20 @@ function paint(root, ctx) {
     try { b ||= localStorage.getItem(`ifl-build:${k}`); } catch {}
     return row(`v-${k}`, name, null, `<span class="val">${b ? `V${esc(b)}` : "—"}</span>`);
   }).join("");
-  out.push(sec("youVersions", "About InFlite", ver));
+  FOLDERS.versions = sec("youVersions", "About InFlite", ver);
+  // (the three as folders: one row each, its contents in a sheet of their own, as Settings does)
+  const nRules = (Y.rules?.rules || []).filter((r) => !r.soon).length, nApps = CONNECTED.filter(([app]) => app !== "mail" || admin).length;
+  const folder = (k, b, small) => `<button class="row go" type="button" data-folder="${k}"><span class="tx"><b>${esc(b)}</b>${small ? `<small>${esc(small)}</small>` : ""}</span><span class="chev">${G.chev}</span></button>`;
+  out.push(sec("youMore", "More", [
+    Y.rules !== false ? folder("rules", "What Today Does for You", nRules ? `${nRules} ${nRules === 1 ? "rule" : "rules"}, each Do, Suggest or Quiet` : "Its rules") : "",
+    folder("apps", "Connected Apps", `${nApps} apps and what each shares`),
+    folder("versions", "About InFlite", ctx.BUILD ? `Today V${ctx.BUILD} and each app’s version` : "Each app’s version"),
+  ].join("")));
   out.push(`<section class="you-sec you-out"><div class="group glass"><button class="row you-signout" type="button" id="youOut">Sign Out</button></div></section>`);
   root.innerHTML = out.join("");
+  // (a folder open while You's drawn again: its contents drawn again too)
+  const yf = document.getElementById("sh-youfolder");
+  if (yf?.open && yf.dataset.folder) fillFolder(yf, root, ctx);
   wire(root, ctx);
 }
 
@@ -174,9 +185,27 @@ function deviceRow(d) {
   return `<div class="row dev" data-dev="${esc(d.id)}"><span class="tx"><b>${esc(d.label || "Another device")}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span><button class="pill small" type="button" data-stop="${esc(d.id)}" aria-label="${esc(`Stop There: ${d.label || "another device"}`)}">Stop There</button></div>`;
 }
 
+const FOLDERS = { rules: "", apps: "", versions: "" };
+const FOLDER_TITLE = { rules: "What Today Does for You", apps: "Connected Apps", versions: "About InFlite" };
+function fillFolder(sheet, root, ctx) {
+  const k = sheet.dataset.folder, body = sheet.querySelector("#yfBody");
+  sheet.querySelector("#sh-youfolder-t").textContent = FOLDER_TITLE[k] || "";
+  // (the section as it is on You, its heading left out: the sheet's title says it)
+  body.innerHTML = FOLDERS[k] || "";
+  body.querySelector(".you-h")?.remove();
+  wire(body, ctx);
+}
+function openFolder(k, root, ctx) {
+  const sheet = document.getElementById("sh-youfolder");
+  if (!sheet || !FOLDER_TITLE[k]) return;
+  sheet.dataset.folder = k;
+  fillFolder(sheet, root, ctx);
+  if (!sheet.open) ctx.openSheet("sh-youfolder");
+}
 function wire(root, ctx) {
   const $ = (s) => root.querySelector(s);
   $("#youAcct")?.addEventListener("click", () => ctx.openAccount());
+  for (const b of root.querySelectorAll("[data-folder]")) b.addEventListener("click", () => openFolder(b.dataset.folder, document.getElementById("you") || root, ctx));
   $("#youMorning")?.addEventListener("click", () => ctx.toMorning());
   $("#youChatGo")?.addEventListener("click", () => ctx.chatSettings());
   $("#youOut")?.addEventListener("click", (e) => { e.currentTarget.disabled = true; ctx.signOut(); });
@@ -289,6 +318,7 @@ export async function goTo(root, ctx, id, drawn) {
   if (!root || !id) return;
   if (id === "notify-weather") return openWxNotify(root, ctx);
   if (id === "notify-mail") return openMailNotifyFrom(ctx);
+  if (id === "rules" || id === "apps" || id === "versions") { if (!FOLDERS[id]) await Promise.resolve(drawn).catch(() => {}); return openFolder(id, root, ctx); }
   const at = () => (id === "signout" ? root.querySelector(".you-out") : SECTIONS[id] ? root.querySelector(`#${SECTIONS[id]}`) : null);
   // (a section drawn only once its answer's in, Quiet Hours: waited for)
   if (!at()) await Promise.resolve(drawn).catch(() => {});

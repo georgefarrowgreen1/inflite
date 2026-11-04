@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.34";
+const BUILD = "1.35";
 // (what's new in it, said once it's in)
-const NEWS = "Feels more like an app: no text selecting or copying, and no pinch or double-tap zoom";
+const NEWS = "You is shorter: What Today Does for You, Connected Apps and About InFlite are now folders";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
