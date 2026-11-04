@@ -5,12 +5,15 @@
 // (/chats/, /fitness/, …) have workers of their own, for their own files only: none of them holds a subscription. Each app
 // that's a module of Today's page (One roof, spec §8.2, D10; stages 2–4, s24-contracts §8: Weather, Markets, Fitness,
 // Mail, by their switches) has its page at /<app>/ be Today's, and its module's files kept here when the page asks, so it
-// opens offline too.
+// opens offline too. Chats (stage 3) the same, by ROOF_CHATS.
 
 // The apps that can be modules (one list: s24 §8): name, and the host of its own address (an address there is made the
-// hub's path for a notification). Stage 3 adds chats.
-const MODS = { weather: { name: "Weather", host: "weather" }, markets: { name: "Markets", host: "finance" }, fitness: { name: "Fitness", host: "fitness" }, mail: { name: "Mail", host: "email" } };
+// hub's path for a notification). Stage 3 adds chats (Chat's pushes still say app "chat", below).
+const MODS = { weather: { name: "Weather", host: "weather" }, markets: { name: "Markets", host: "finance" }, fitness: { name: "Fitness", host: "fitness" }, mail: { name: "Mail", host: "email" }, chats: { name: "Chats", host: "chat" } };
 const MOD_APPS = Object.keys(MODS);
+// (Chats' exceptions, stage 3: /chats/?engine=1 is milestone 1's engine, framed by Today, and /chats/in/ Chat's own page
+// for signing in and keys; neither is ever the framework, nor answered here)
+const engineAt = (u) => u.pathname.startsWith("/chats/") && u.searchParams.has("engine");
 
 // ---- Today's own files, kept for when there's no network ----
 // Always from the network while there is one, each kept as it comes; only with no answer at all (or Today's host
@@ -50,7 +53,7 @@ self.addEventListener("fetch", (e) => {
     // /: what the hub sends there may be the app's milestone-1 page, with its switch off); any other address is the 404
     // page, or a page of the hub's, from the network)
     if (u.pathname === "/" || u.pathname === "/index.html") e.respondWith(fresh(e, "/"));
-    else if (ROOF_DOCS.includes(u.pathname)) e.respondWith(roofDoc(e));
+    else if (ROOF_DOCS.includes(u.pathname) && !engineAt(u)) e.respondWith(roofDoc(e));
     return;
   }
   if (FILES.includes(u.pathname) && !u.search) e.respondWith(fresh(e, u.pathname));
@@ -93,7 +96,8 @@ async function roofDoc(e) {
 }
 // The module's files, as the page names them ({ ifl: "keep", app, build, files }, modules.js keepOffline, once a build
 // per page): for an app that is a module, a build as the apps number them, and at most 60 of that app's own files at plain
-// paths (no query, no vendor/ nor a NET file, never its worker or version; files and lazy, C4). Kept all or nothing, in roof-<app>-<build>: a build already
+// paths (no query, no vendor/ nor a NET file, never its worker or version; files and lazy, C4; Chats' only its roof/* and its own
+// <name>.js or .css, never in/, tracker* or handover*). Kept all or nothing, in roof-<app>-<build>: a build already
 // kept whole is left as it is (nothing fetched: every open of the page asks again, offline too); otherwise each file is
 // fetched afresh and answered whole by this site before any is put, so one that fails leaves every kept copy as it was
 // (only a cache this ask made is let go, should putting fail); once it's whole, the app's older builds are let go. One
@@ -101,8 +105,9 @@ async function roofDoc(e) {
 // for a build older than one kept already.
 const KEEP_APPS = MOD_APPS, KEEP_MAX = 60;
 // (the files that are only ever the network's, never kept nor preloaded: s24 §8's NET, as roofcontract has it. Weather's
-// radar stack and rain files, Fitness's maps, share card, file formats and reader; and anyone's vendor/, above)
-const NET = { weather: /^\/weather\/(radar|radarmix|mapstyle|mapgl|mapleaf|rainmap|radarrain)\.js$/, fitness: /^\/fitness\/(map|mapstyle|share|formats|fit|reader)\.js$/ };
+// radar stack and rain files, Fitness's maps, share card, file formats and reader; Chats' flight sheets, QR scan and
+// their geodata and decoder, and crypto.js's Argon2; and anyone's vendor/, above)
+const NET = { weather: /^\/weather\/(radar|radarmix|mapstyle|mapgl|mapleaf|rainmap|radarrain)\.js$/, fitness: /^\/fitness\/(map|mapstyle|share|formats|fit|reader)\.js$/, chats: /^\/chats\/(roof\/flight|roof\/scan|moon|space|land|placegrid|places|countries|shapes|jsqr|argon2|argon2w)\.js$/ };
 const keeping = new Map(), keepQueue = new Map();
 function keepList(d) {
   if (!d || !KEEP_APPS.includes(d.app) || typeof d.build !== "string" || !/^\d+\.\d{2}$/.test(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
@@ -112,6 +117,7 @@ function keepList(d) {
     let u;
     try { u = new URL(f, self.location.origin); } catch { return null; }
     if (u.origin !== self.location.origin || u.pathname !== f) return null;
+    if (d.app === "chats" && !chatsFile(f)) return null;
     out.add(f);
   }
   return [...out];
@@ -169,10 +175,17 @@ async function whole(name, files) {
     return false;
   }
 }
+// (Chats' files that can be kept: its module's /chats/roof/*, and Chat's own files it imports, /chats/<name>.js or .css)
+const chatsFile = (p) => /^\/chats\/(roof\/[\w./-]+|[\w.-]+\.(js|css))$/.test(p) && !/^\/chats\/(sw\.js$|in\/|tracker|handover)/.test(p) && !p.endsWith("/");
 // (a file of a module's app at the hub, as the module loads it: from the network first, else the kept copy, where
-// there's no answer or the hub's failing; a 404 (its switch off) is the hub's word and passed on)
+// there's no answer or the hub's failing; a 404 (its switch off) is the hub's word and passed on. Chats' files are
+// loaded stamped, ?v=<12 hex> (MAIN's stampImports), or plain; the kept copy is by path, whichever)
 const modOf = (u) => MOD_APPS.find((a) => u.pathname.startsWith(`/${a}/`)) || null;
-const moduleFile = (u) => { const a = modOf(u); return !!a && !u.search && u.pathname !== `/${a}/sw.js` && u.pathname !== `/${a}/version` && !u.pathname.endsWith("/"); };
+const moduleFile = (u) => {
+  const a = modOf(u);
+  if (a === "chats") return (!u.search || /^\?v=[0-9a-f]{12}$/.test(u.search)) && chatsFile(u.pathname);
+  return !!a && !u.search && u.pathname !== `/${a}/sw.js` && u.pathname !== `/${a}/version` && !u.pathname.endsWith("/");
+};
 async function fromModule(e, u) {
   const prefix = `roof-${modOf(u)}-`;
   const kept = async () => {
@@ -319,7 +332,7 @@ async function openIn(path) {
     // only an open, and isn't this worker's to send elsewhere: told to open it, as milestone 1 did, before any other way.
     // So a module's page is told to route first only where the hub says that module is on (routes); dark, it's told to
     // open at once, with no second's wait, and to route only if it doesn't say it's heard)
-    const at = pathOf(win.url), route = await routes(at);
+    const at = frameAt(win.url), route = await routes(at);
     if (await told(win, path, route ? "route" : "open")) return;
     if (ROOF_DOCS.includes(at) && (await told(win, path, route ? "open" : "route"))) return;
   }
@@ -330,7 +343,8 @@ async function openIn(path) {
   await self.clients.openWindow(url);
 }
 const FRAMEWORK = ["/", "/index.html", ...ROOF_DOCS];
-const pathOf = (u) => { try { return new URL(u).pathname; } catch { return ""; } };
+// (a window's path, as the framework's: never an engine's)
+const frameAt = (u) => { try { const x = new URL(u); return engineAt(x) ? "" : x.pathname; } catch { return ""; } };
 // (the window told where: true once it says it's heard ({ifl:"opened"}, or {ifl:"routed"} for a route), within a second)
 function told(win, url, kind = "open") {
   const heard = kind === "route" ? "routed" : "opened";

@@ -3,14 +3,17 @@
 // loadModule(app, F) → Promise<{ m, instance }>: asks /api/hub again through app.js first (F.hubAgain, D14) and refuses
 //   unless F.session.apps[app] (each app's flag, ANDed with hub; s24 §2); import(REGISTRY[app].entry) within 12 s; m.CONTRACT === 1; each of
 //   REGISTRY[app].css linked and awaited (5 s at most; at once if already in); instance = await
-//   m.mount(root, F.forModule(app)); IFL.built(app, m.BUILD, m.NEWS) once it's in; then watchVersion and keepOffline. On a failure the screen shows ui.error: Try Again
+//   m.mount(root, F.forModule(app)); IFL.built(R.id || app, m.BUILD, m.NEWS) once it's in (Chats: "chat", its data id); then watchVersion and keepOffline. On a failure the screen shows ui.error: Try Again
 //   (data-act=retry: the entry asked for again, ?retry=<n>) and Open <App> on Its Own (data-act=own: the app's own
 //   address, links[R.link || app], same path, query and hash); after a second failure, Reload (data-act=reload), which is the real recovery
 //   (a failed dependency stays failed in the document's module map).
 // loadConnector(app) → Promise<Connector>: import(REGISTRY[app].connector) → its `connector` export.
-// preload(app): loadConnector(app), then a <link rel=modulepreload> per connector.files entry ending .js.
+// preload(app): loadConnector(app), then a <link rel=modulepreload> per connector.preload entry (else connector.files)
+//   ending .js (stage 3, S3-C1: Chats preloads only its entry and connector, as its graph's asked for under stamped URLs).
 // watchVersion(app, build, F): asks /<app>/version as the page becomes visible (at most every 10 minutes); a build
 //   other than this one sets F.stale (D21).
+// loadService(app, F) → Promise<Service> (stage 3, S3-C3): import(REGISTRY[app].service), then its startService({ path,
+//   ui: F.forModule(app), onStale }) (onStale: F.stale = true). Only the frame calls it, once per app (F.service).
 // keepOffline(app, build, files): { ifl: "keep", app, build, files } (absolute same-origin paths) to the root worker,
 //   once per build and list per page: connector.files after mount; files ∪ connector.lazy again only on the Home Screen,
 //   at idle, 10 s or more after the first show (C4, s24 §8). preload reads files only.
@@ -42,7 +45,7 @@ export async function loadModule(app, F) {
     root.replaceChildren();
     const instance = await m.mount(root, fw);
     if (!instance || typeof instance.show !== "function") throw new Error(`${app}: mount gave no instance`);
-    if (!built[app]) { built[app] = 1; try { globalThis.IFL?.built?.(app, m.BUILD, m.NEWS); } catch (_) {} }
+    if (!built[app]) { built[app] = 1; try { globalThis.IFL?.built?.(R.id || app, m.BUILD, m.NEWS); } catch (_) {} }
     tries[app] = 0;
     watchVersion(app, m.BUILD, F);
     loadConnector(app).then((c) => {
@@ -78,9 +81,16 @@ export async function loadConnector(app) {
   return m.connector;
 }
 
+export async function loadService(app, F) {
+  const R = REGISTRY[app];
+  if (!R?.service) throw new Error(`no service for ${app}`);
+  const m = await import(R.service);
+  return m.startService({ path: R.path, ui: F.forModule(app), onStale: () => { F.stale = true; } });
+}
+
 export function preload(app) {
   return loadConnector(app).then((c) => {
-    for (const f of c.files || []) {
+    for (const f of c.preload || c.files || []) {
       if (!/\.js$/.test(f)) continue;
       const href = abs(f);
       if (document.querySelector(`link[rel=modulepreload][href="${href}"]`)) continue;
