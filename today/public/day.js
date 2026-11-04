@@ -249,14 +249,12 @@ function topHtml(t, phase, st, now) {
   const wrote = list(t.wrote).filter((w) => ID.test(str(w.id)) && str(w.first));
   // (no Open or Send here: the rows say where each thing is, and each app has its own)
   const buttons = list(t.buttons).filter((b) => b.do !== "open" && b.do !== "sendto").map((b) => buttonHtml(b, t, st, now)).filter(Boolean);
-  const to = t.sendTo && ID.test(str(t.sendTo.id)) && str(t.sendTo.first) && str(t.sendTo.why) ? t.sendTo : null;
   return `<article class="tcard glass day-top" data-kind="${kind}" data-phase="${esc(phase)}" aria-labelledby="dt-h">
     ${str(t.chip) ? `<span class="dt-chip">${kind === "done" ? G.check : kind === "ride" ? G.ride : ""}${esc(t.chip)}</span>` : ""}
     <h2 class="tc-h dt-h" id="dt-h" tabindex="-1">${esc(t.title)}</h2>
     ${stats.length ? `<dl class="dt-stats">${stats.map((s) => `<div${TONES.includes(s.tone) ? ` class="dt-${s.tone}"` : ""}><dt>${esc(s.label)}</dt><dd>${esc(s.value)}</dd></div>`).join("")}</dl>` : ""}
     ${lines.length ? `<ul class="dt-rows">${lines.map(lineRow).join("")}</ul>` : ""}
     ${wrote.length ? `<div class="dt-wrote">${wrote.map((w) => `<p class="dt-said" data-wid="${esc(w.id)}" data-first="${esc(w.first)}" data-since="${num(w.at) ?? 0}" hidden></p>`).join("")}</div>` : ""}
-    ${to ? `<p class="dt-to">${esc(to.first)} · ${esc(to.why)}</p>` : ""}
     ${buttons.length ? `<div class="tc-foot">${buttons.join("")}</div>` : ""}
   </article>`;
 }

@@ -199,7 +199,7 @@ function wire(root, ctx) {
     const box = e.target, on = box.checked;
     box.disabled = true;
     try { Y.notify = await ctx.call("/api/notify", { method: "PATCH", body: body(on) }); }
-    catch (err) { box.checked = !on; box.disabled = false; if (err.status === 401) return; ctx.toast(err.message); return; }
+    catch (err) { box.checked = !on; box.disabled = false; if (err.status === 401) return; box.focus({ preventScroll: true }); ctx.toast(err.message); return; }
     if (root.isConnected) { paint(root, ctx); root.querySelector(sel)?.focus({ preventScroll: true }); }
   });
   flip('#youApps2 [data-k="chat"]', (on) => ({ chat: Object.fromEntries(Object.keys(Y.notify?.chat?.kinds || { messages: true }).map((k) => [k, on])) }));
