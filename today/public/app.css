@@ -960,6 +960,11 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 main.ifl-screen[data-app]:is([data-app="weather"], [data-app="fitness"], [data-app="markets"]) > [role=tabpanel] { touch-action: pan-y; }
 .ifl-swiping main.ifl-screen:not([hidden]) { overflow-x: clip; }
 .ifl-swiping main.ifl-screen:not([hidden]) > [role=tabpanel] { position: relative; }
+/* (not inherited: moving a section restyles that section alone, never everything inside it, frame after frame) */
+@property --sx { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --sy { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --sw-d { syntax: "*"; inherits: false; }
+section.ifl-sw-ready { will-change: transform; }
 .ifl-swiping section.ifl-sw-cur { transform: translate3d(var(--sx, 0px), 0, 0); will-change: transform; }
 .ifl-swiping section.ifl-sw-peek { display: var(--sw-d, block) !important; content-visibility: visible !important; position: absolute; left: 0; right: 0;
   top: var(--sy, 0px); transform: translate3d(var(--sx, 0px), 0, 0); will-change: transform; pointer-events: none; }

@@ -45,11 +45,16 @@ export function swipes(F) {
     const cur = i < 0 ? null : secOf(scr, r.section);
     if (!cur || ids.length < 2) return;
     st = { id: e.pointerId, x0: e.clientX, y0: e.clientY, ids, i, app: r.app, scr, panel, cur, lock: null, dx: 0, dir: 0, nb: null, nbId: null, v: [] };
+    // (the section readied to move from the touch itself, before the drag's known to be sideways: its layer's made in
+    // those few frames, not in the first frame of the swipe)
+    cur.classList.add("ifl-sw-ready");
+    // (what the swipe needs measured, measured now, before anything's changed: no layout forced as it begins)
+    st.top = Math.round(cur.getBoundingClientRect().top - panel.getBoundingClientRect().top);
+    st.disp = getComputedStyle(cur).display;
   }
   function begin() {
     html.classList.add("ifl-swiping");
     st.cur.classList.add("ifl-sw-cur");
-    st.disp = getComputedStyle(st.cur).display;
   }
   // (the section beside, on the side the finger's going: shown from where the switch will put it)
   function neighbour(dir) {
@@ -62,7 +67,7 @@ export function swipes(F) {
     if (!el) return;
     if (!el.childElementCount) st.panel.dispatchEvent(new CustomEvent("ifl-peek", { detail: id }));
     el.style.setProperty("--sw-d", st.disp || "block");
-    el.style.setProperty("--sy", `${st.cur.offsetTop + scrollY - targetY(st.app, id)}px`);
+    el.style.setProperty("--sy", `${st.top + scrollY - targetY(st.app, id)}px`);
     el.classList.add("ifl-sw-peek");
     st.nb = el; st.nbId = id;
   }
@@ -72,7 +77,7 @@ export function swipes(F) {
     if (!st.lock) {
       if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
       st.lock = Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";
-      if (st.lock === "y") { st = null; return; }
+      if (st.lock === "y") { st.cur.classList.remove("ifl-sw-ready"); st = null; return; }
       begin();
     }
     const dir = dx > 0 ? 1 : -1;
@@ -87,7 +92,7 @@ export function swipes(F) {
   function up(e, cancelled = false) {
     if (!st || e.pointerId !== st.id) return;
     const s = st;
-    if (s.lock !== "x") { st = null; return; }
+    if (s.lock !== "x") { s.cur.classList.remove("ifl-sw-ready"); st = null; return; }
     const W = innerWidth, [a, b] = [s.v[0], s.v[s.v.length - 1]], vel = a && b && b[0] > a[0] ? (b[1] - a[1]) / (b[0] - a[0]) : 0;
     const go = !cancelled && !!s.nb && (Math.abs(s.dx) > W / 3 || (Math.abs(vel) > 0.45 && Math.sign(vel) === s.dir));
     html.classList.add("ifl-sw-go");
@@ -100,7 +105,7 @@ export function swipes(F) {
       done = true;
       // (the switch first, then the preview let go, in the one task: nothing seen moves)
       if (go) F.nav.section(s.app, s.nbId);
-      for (const el of [s.cur, s.nb]) { if (!el) continue; el.classList.remove("ifl-sw-cur", "ifl-sw-peek"); for (const p of ["--sx", "--sy", "--sw-d"]) el.style.removeProperty(p); }
+      for (const el of [s.cur, s.nb]) { if (!el) continue; el.classList.remove("ifl-sw-cur", "ifl-sw-peek", "ifl-sw-ready"); for (const p of ["--sx", "--sy", "--sw-d"]) el.style.removeProperty(p); }
       html.classList.remove("ifl-swiping", "ifl-sw-go");
       if (st === s) st = null;
     };
