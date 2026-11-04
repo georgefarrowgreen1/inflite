@@ -67,7 +67,8 @@ export function createHeader(host, F, { me, onMe } = {}) {
   }
 
   function title(t, c) {
-    full.textContent = (small && c) || t || "";
+    const want = (small && c) || t || "";
+    if (full.textContent !== want) full.textContent = want;
     const box = cur.pick ? pick : plain;
     if (full.parentNode !== box) box.prepend(full);
     if (h1.firstChild !== box) h1.replaceChildren(box);
@@ -126,15 +127,17 @@ export function createHeader(host, F, { me, onMe } = {}) {
   function set(spec = {}) {
     cur = { ...spec };
     const onApp = !!spec.back;
+    // (only what's different is touched: the same header set again, as a screen and its module each do, changes nothing
+    // on screen, so nothing flickers as a section changes)
     back.hidden = !onApp; meB.hidden = onApp;
     if (onApp) back.setAttribute("aria-label", spec.back.label || "Back");
-    const c = spec.crumb;
-    crumb.replaceChildren(...(c?.app ? [icon(null, { app: c.app, size: 16 })] : []), c?.text || "");
+    const c = spec.crumb, ck = (c?.app || "") + (c?.text || "");
+    if (crumb.dataset.k !== ck) { crumb.dataset.k = ck; crumb.replaceChildren(...(c?.app ? [icon(null, { app: c.app, size: 16 })] : []), c?.text || ""); }
     crumb.hidden = !c?.text;
     hd.dataset.app = c?.app || "inflite";
     title(spec.title, spec.compactTitle);
     if (spec.line?.nodeType) line.replaceChildren(spec.line);
-    else line.textContent = spec.line || "";
+    else if (line.textContent !== (spec.line || "") || line.firstElementChild) line.textContent = spec.line || "";
     setActs(spec.acts);
     setSecs(spec.sections || null, spec.section, spec.badges);
     compact();
