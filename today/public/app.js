@@ -1466,10 +1466,10 @@ function photoNode(u) {
 let lineSaid = null;
 function drawLine(force = false) {
   if (!F || !on("today")) return;
-  const crumb = crumbOf(), line = lineOf(), said = `${crumb}\n${line}`;
+  const line = lineOf(), said = line;
   if (!force && said === lineSaid) return;
   lineSaid = said;
-  F.header.set({ back: null, crumb: { text: crumb }, title: "Today", line, pick: null, acts: SCREENS.today.acts, sections: null });
+  F.header.set({ back: null, crumb: null, title: "Today", line, pick: null, acts: SCREENS.today.acts, sections: null });
 }
 function openMenu(anchor) {
   if (!S.view) return;
