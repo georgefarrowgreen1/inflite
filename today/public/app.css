@@ -474,15 +474,21 @@ label.row:active { background: var(--press); }
 .today-out .today-quiet a { color: var(--text-2); font-weight: 500; }
 
 /* ---- Apps: a tile for each app (the framework's .ifl-tile), its line from the day, its mini, chips to its sections ---- */
-.apps-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
-@media (max-width: 340px) { .apps-grid { grid-template-columns: 1fr; } }
+.apps-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 720px) { .apps-grid { grid-template-columns: 1fr 1fr; } }
 
-/* (tiles the same height in a row, their chips along the bottom, wrapping onto a second line rather than sliding) */
-.apps-grid .ifl-tile { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
-.apps-grid .ifl-tile-main { gap: 6px; }
-.apps-grid .ifl-tile-main .ifl-mini { margin-top: 6px; }
-.apps-grid .ifl-tile-chips { margin-top: auto; flex-wrap: wrap; gap: 6px; }
-.apps-grid .ifl-chip.action { flex: none; min-height: 32px; padding: 0 12px; font-size: 13.5px; }
+/* (each app a wide card: its icon, name and line (or its live mini) on one row, its shortcuts in a row beneath) */
+.apps-grid .ifl-tile { display: grid; gap: 12px; min-height: 0; padding: 14px 16px; border-radius: 24px; }
+.apps-grid .ifl-tile-main { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; grid-auto-rows: auto; column-gap: 12px; row-gap: 1px; align-items: center; }
+.apps-grid .ifl-tile-main > :first-child { grid-row: 1 / span 2; width: 44px; height: 44px; }
+.apps-grid .ifl-tile-main > b { grid-column: 2; align-self: end; font-size: 17px; }
+.apps-grid .ifl-tile-main > small { grid-column: 2; align-self: start; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.apps-grid .ifl-tile-main > b:nth-last-child(1), .apps-grid .ifl-tile-main > b:has(+ .ifl-mini) { grid-row: 1 / span 2; align-self: center; }
+.apps-grid .ifl-tile-main > .ifl-mini { grid-column: 3; grid-row: 1 / span 2; margin: 0; align-items: center; justify-content: flex-end; text-align: right; }
+.apps-grid .ifl-tile-main > .ifl-mini small { max-width: 9em; line-height: 1.25; }
+.apps-grid .ifl-tile-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 56px; }
+.apps-grid .ifl-chip.action { flex: none; min-height: 30px; padding: 0 12px; font-size: 13.5px; }
+@media (max-width: 360px) { .apps-grid .ifl-tile-chips { padding-left: 0; } }
 .apps-note { margin: 18px 18px 0; font-size: 14px; line-height: 1.45; color: var(--text-2); text-align: center; }
 
 
