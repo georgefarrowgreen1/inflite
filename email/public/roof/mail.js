@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.53";
-export const NEWS = "Inside InFlite, Mail's title says People or Updates as its tab does, and Newest in Updates names who it's from in full";
+export const BUILD = "1.54";
+export const NEWS = "The header shrinks and grows smoothly as you scroll";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

@@ -143,7 +143,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
   // compact past half way (--p from the shared block), and the height published for screens that fill the window
   function compact() {
     const fill = document.documentElement.classList.contains("ifl-fill");
-    const s = fill || scrollY >= 32;
+    const s = fill || (small ? scrollY > 8 : scrollY > 28); // (the shared block's own hysteresis: compact past 28px, back above 8px)
     if (s === small) return;
     small = s;
     hd.classList.toggle("ifh-compact", s);
