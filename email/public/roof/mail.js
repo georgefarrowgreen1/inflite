@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.59";
-export const NEWS = "Switching between People, Updates, Later and Done is quicker: a list you've seen comes back as it was";
+export const BUILD = "1.60";
+export const NEWS = "Signing in on a computer at inflite.ai works: it no longer goes through Chat, which only opens on phones and iPads";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
