@@ -409,7 +409,7 @@ function fitness(c, ctx) {
   if (c.kind === "rest") {
     // (the rest day's reason, as Fitness gave it: the card's own why, as only a session has a session)
     const why = typeof c.why === "string" && c.why.trim() ? c.why : "";
-    return `${hd}${chip("Rest day", { cls: "rest", tile: "ft-s-rest", icon: G.heart })}<h3 class="tc-h">Rest, and let it sink in</h3>${why ? `<p class="ft-why">${esc(why)}</p>` : ""}${nextRow(c.next, c)}${foot(open, send)}`;
+    return `${hd}${chip("Rest day", { cls: "rest", tile: "ft-s-rest", icon: G.heart })}<h3 class="tc-h">Rest</h3>${why ? `<p class="ft-why">${esc(why)}</p>` : ""}${nextRow(c.next, c)}${foot(open, send)}`;
   }
   if (c.kind === "event") {
     return `${hd}${chip("Event day", { tile: "ft-s-ride", icon: G.flag })}<h3 class="tc-h">${esc(c.event?.name || s?.name || "Your event")}</h3>${foot(open, send)}`;
