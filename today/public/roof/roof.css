@@ -311,9 +311,8 @@ html[data-vt="tab"]::view-transition-old(root) { animation: var(--dur-tab) var(-
 html[data-vt="tab"]::view-transition-new(root) { animation: var(--dur-tab) var(--ease-ios) both ifl-tab-in; }
 html[data-vt="fade"]::view-transition-old(root) { animation: 0.22s ease both ifl-fade-out; }
 html[data-vt="fade"]::view-transition-new(root) { animation: 0.26s ease both ifl-fade-in; }
-html[data-vt="section"][data-dir="fwd"]::view-transition-new(root) { animation: 0.26s var(--ease-ios) both ifl-sec-slide-r; }
-html[data-vt="section"][data-dir="back"]::view-transition-new(root) { animation: 0.26s var(--ease-ios) both ifl-sec-slide-l; }
-html[data-vt="section"]::view-transition-old(root) { animation: 0.12s linear both ifl-fade-out; }
+/* (a section of the same app swapped at once, as a segmented control is: nothing animated over a heavy page) */
+html[data-vt="section"]::view-transition-new(root), html[data-vt="section"]::view-transition-old(root) { animation: none; }
 html[data-vt="zoom"]::view-transition-group(ifl-zoom) { animation-duration: 0.55s; animation-timing-function: var(--ease-spring, var(--ease-ios)); }
 html[data-vt="zoom"]::view-transition-old(root) { animation: 0.32s ease both ifl-tab-out; }
 html[data-vt="zoom"]::view-transition-new(root) { animation: 0.42s var(--ease-ios) both ifl-fade-in; }
@@ -337,8 +336,6 @@ html[data-vt="zoom"]::view-transition-new(root) { animation: 0.42s var(--ease-io
 .ifl-enter-pop { animation: var(--dur-push) var(--ease-ios) both ifl-in-left; }
 .ifl-enter-tab { animation: var(--dur-tab) var(--ease-ios) both ifl-tab-in; }
 .ifl-enter-fade { animation: 0.26s ease both ifl-fade-in; }
-html[data-dir="fwd"] .ifl-enter-section { animation: 0.26s var(--ease-ios) both ifl-sec-slide-r; }
-html[data-dir="back"] .ifl-enter-section { animation: 0.26s var(--ease-ios) both ifl-sec-slide-l; }
 /* (sheets rise with a spring, and a pressed card or row gives a little) */
 dialog.ifl-sheet { animation-timing-function: var(--ease-spring, var(--ease-ios)); }
 .tcard, .ifl-tile, .ifl-card { transition: transform 0.4s var(--ease-spring, var(--ease-ios)); }
