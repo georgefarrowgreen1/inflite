@@ -295,7 +295,7 @@ a.ifl-tile:active, .ifl-tile-main:active { transform: scale(0.97); }
 /* (the header's title and line change with the page: the old words gone quickly before the new come in, so the two
    never show over each other; its band and buttons stay put) */
 ::view-transition-old(ifl-hd) { animation: none; opacity: 0; }
-::view-transition-new(ifl-hd) { animation: 0.2s ease-out both ifl-fade-in; mix-blend-mode: normal; }
+::view-transition-new(ifl-hd) { animation: none; mix-blend-mode: normal; }
 /* (the group never morphs between a compact header and a full one: it takes the new one's place at once) */
 ::view-transition-group(ifl-hd) { animation: none; overflow: clip; }
 ::view-transition-image-pair(ifl-hd) { isolation: auto; }
@@ -311,9 +311,9 @@ html[data-vt="tab"]::view-transition-old(root) { animation: var(--dur-tab) var(-
 html[data-vt="tab"]::view-transition-new(root) { animation: var(--dur-tab) var(--ease-ios) both ifl-tab-in; }
 html[data-vt="fade"]::view-transition-old(root) { animation: 0.22s ease both ifl-fade-out; }
 html[data-vt="fade"]::view-transition-new(root) { animation: 0.26s ease both ifl-fade-in; }
-html[data-vt="section"][data-dir="fwd"]::view-transition-new(root) { animation: 0.4s var(--ease-ios) both ifl-sec-in-r; }
-html[data-vt="section"][data-dir="back"]::view-transition-new(root) { animation: 0.4s var(--ease-ios) both ifl-sec-in-l; }
-html[data-vt="section"]::view-transition-old(root) { animation: 0.24s ease both ifl-tab-out; }
+html[data-vt="section"][data-dir="fwd"]::view-transition-new(root) { animation: 0.26s var(--ease-ios) both ifl-sec-slide-r; }
+html[data-vt="section"][data-dir="back"]::view-transition-new(root) { animation: 0.26s var(--ease-ios) both ifl-sec-slide-l; }
+html[data-vt="section"]::view-transition-old(root) { animation: 0.12s linear both ifl-fade-out; }
 html[data-vt="zoom"]::view-transition-group(ifl-zoom) { animation-duration: 0.55s; animation-timing-function: var(--ease-spring, var(--ease-ios)); }
 html[data-vt="zoom"]::view-transition-old(root) { animation: 0.32s ease both ifl-tab-out; }
 html[data-vt="zoom"]::view-transition-new(root) { animation: 0.42s var(--ease-ios) both ifl-fade-in; }
@@ -327,6 +327,9 @@ html[data-vt="zoom"]::view-transition-new(root) { animation: 0.42s var(--ease-io
 @keyframes ifl-in-left { from { opacity: 0.4; transform: translateX(-30%); } }
 @keyframes ifl-out-left { to { opacity: 0; transform: translateX(-30%); } }
 @keyframes ifl-out-right { to { opacity: 0; transform: translateX(100%); } }
+/* (a section of the same app: a short slide, no blur, so what stays the same never looks redrawn) */
+@keyframes ifl-sec-slide-r { from { opacity: 0.4; transform: translateX(14px); } }
+@keyframes ifl-sec-slide-l { from { opacity: 0.4; transform: translateX(-14px); } }
 @keyframes ifl-sec-in-r { from { opacity: 0; transform: translateX(24px); filter: blur(4px); } }
 @keyframes ifl-sec-in-l { from { opacity: 0; transform: translateX(-24px); filter: blur(4px); } }
 /* (where there are no View Transitions: the page coming in, the same way) */
@@ -334,8 +337,8 @@ html[data-vt="zoom"]::view-transition-new(root) { animation: 0.42s var(--ease-io
 .ifl-enter-pop { animation: var(--dur-push) var(--ease-ios) both ifl-in-left; }
 .ifl-enter-tab { animation: var(--dur-tab) var(--ease-ios) both ifl-tab-in; }
 .ifl-enter-fade { animation: 0.26s ease both ifl-fade-in; }
-html[data-dir="fwd"] .ifl-enter-section { animation: 0.4s var(--ease-ios) both ifl-sec-in-r; }
-html[data-dir="back"] .ifl-enter-section { animation: 0.4s var(--ease-ios) both ifl-sec-in-l; }
+html[data-dir="fwd"] .ifl-enter-section { animation: 0.26s var(--ease-ios) both ifl-sec-slide-r; }
+html[data-dir="back"] .ifl-enter-section { animation: 0.26s var(--ease-ios) both ifl-sec-slide-l; }
 /* (sheets rise with a spring, and a pressed card or row gives a little) */
 dialog.ifl-sheet { animation-timing-function: var(--ease-spring, var(--ease-ios)); }
 .tcard, .ifl-tile, .ifl-card { transition: transform 0.4s var(--ease-spring, var(--ease-ios)); }
