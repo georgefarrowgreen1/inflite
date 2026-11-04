@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.58";
-export const NEWS = "The header stays clear as you scroll: nothing shows through behind the title";
+export const BUILD = "1.59";
+export const NEWS = "Switching between People, Updates, Later and Done is quicker: a list you've seen comes back as it was";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

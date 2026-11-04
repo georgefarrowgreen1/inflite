@@ -15,6 +15,9 @@ export function view(el, ctx) {
   const { store, fw, logic, actions } = ctx, ui = fw.ui;
   const doc = el.ownerDocument;
   let typed = "", shownSig = "";
+  // (the rows last built for each list, by what they show: a switch back to a place whose rows haven't changed puts the
+  // same rows back, none built again; the six most recent kept)
+  const built = new Map();
   const field = ui.field({ type: "search", placeholder: "Search Mail", label: "Search Mail",
     onInput: (v) => { typed = v; if (!v.trim() && store.get().query) search(""); else draw(); },
     onEnter: (v) => search(v) });
@@ -143,16 +146,22 @@ export function view(el, ctx) {
       else { const [t, b] = words(s); rows.replaceChildren(ui.empty({ title: t, body: b })); }
     } else {
       rows.setAttribute("role", "list");
-      const out = [];
-      let day = null;
-      for (const t of list) {
-        const d = s.lens === "later" && !s.query && !s.box ? null : logic.dayLabel(t.sort ?? t.date);
-        if (d && d !== day) out.push(ui.el("div", { class: "ml-day", role: "presentation", text: d }));
-        day = d;
-        const w = threadRow(t, ctx);
-        w.setAttribute("role", "listitem");
-        out.push(w);
+      let out = built.get(sig);
+      if (out) built.delete(sig);
+      else {
+        out = [];
+        let day = null;
+        for (const t of list) {
+          const d = s.lens === "later" && !s.query && !s.box ? null : logic.dayLabel(t.sort ?? t.date);
+          if (d && d !== day) out.push(ui.el("div", { class: "ml-day", role: "presentation", text: d }));
+          day = d;
+          const w = threadRow(t, ctx);
+          w.setAttribute("role", "listitem");
+          out.push(w);
+        }
       }
+      built.set(sig, out);
+      if (built.size > 6) built.delete(built.keys().next().value);
       rows.replaceChildren(...out);
     }
     if (kept) rows.querySelector(kept.thread ? `.ml-row[data-thread="${CSS.escape(kept.thread)}"]` : `.ml-row[data-draft="${CSS.escape(kept.draft || "")}"]`)?.focus({ preventScroll: true });
@@ -173,6 +182,7 @@ export function view(el, ctx) {
     hide() {},
     focusSearch() { field.input.focus(); },
     destroy() {
+      built.clear();
       for (const f of offs) f();
       offSwipe();
       io?.disconnect();
