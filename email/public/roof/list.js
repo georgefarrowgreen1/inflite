@@ -129,7 +129,7 @@ export function view(el, ctx) {
     const filter = typed.trim() && typed.trim() !== s.query ? typed.trim().toLowerCase() : "";
     const list = filter ? L.rows.filter((t) => [t.subject, t.snippet, t.latest?.snippet, ...(t.people || []).flatMap((p) => [p.name, p.email])].some((x) => String(x || "").toLowerCase().includes(filter))) : L.rows;
     // (the day too: "Today" and "Yesterday" are said again after midnight even if nothing else changed)
-    const sig = JSON.stringify([logic.startOfDay(Date.now()), s.layout, s.threadId, s.lens, s.query, filter, L.loading, L.err, list.length && list.map((t) => [t.id, t.date, t.unread, t.starred, t.snoozeUntil, t.done, t.trashed, t.count, t.subject, t.category])]);
+    const sig = JSON.stringify([logic.startOfDay(Date.now()), s.layout, s.threadId, s.lens, s.query, filter, list.length ? 0 : L.loading, L.err, list.length && list.map((t) => [t.id, t.date, t.unread, t.starred, t.snoozeUntil, t.done, t.trashed, t.count, t.subject, t.category])]);
     if (sig === shownSig) return;
     shownSig = sig;
     const kept = rows.contains(doc.activeElement) ? doc.activeElement.closest(".ml-row")?.dataset : null;

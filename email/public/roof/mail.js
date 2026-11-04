@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.55";
-export const NEWS = "Feels more like an app: no text selecting or copying, and no pinch or double-tap zoom";
+export const BUILD = "1.56";
+export const NEWS = "Switching between People, Updates, Later and Done shows that list at once, never an empty screen first";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

@@ -23,6 +23,7 @@ export function createActions(ctx) {
   let token = 0, edits = 0, acting = 0, again = false;
   const toast = (text, o) => { try { return fw.toast(text, o) || null; } catch { return null; } };
   const setList = (patch) => store.set({ list: { ...store.get().list, ...patch } });
+  const lastRows = new Map();
 
   async function counts() {
     try {
@@ -39,8 +40,11 @@ export function createActions(ctx) {
     if (more && (s0.list.loading || !s0.list.more)) return false;
     if (s0.access && s0.access !== "ok") return false;
     const my = ++token, e0 = edits;
-    if (!quiet) setList({ loading: true, err: more ? s0.list.err : null, rows: more ? s0.list.rows : [] });
-    const ask = logic.askOf(s0), last = s0.list.rows[s0.list.rows.length - 1];
+    const ask = logic.askOf(s0), seen = JSON.stringify(ask);
+    // (a view switched back to: the list it last had, shown at once while Mail's asked again, never an empty screen first;
+    // only for this page's memory, never kept anywhere)
+    if (!quiet) setList({ loading: true, err: more ? s0.list.err : null, rows: more ? s0.list.rows : lastRows.get(seen) || [] });
+    const last = s0.list.rows[s0.list.rows.length - 1];
     const before = more && last ? last.sort ?? last.date : undefined;
     try {
       const res = ask.q
@@ -63,6 +67,7 @@ export function createActions(ctx) {
         const older = quiet && oldest && res.hasMore ? s.list.rows.filter((t) => !t.draft && !fresh.has(t.id) && (t.sort ?? t.date) < (oldest.sort ?? oldest.date)) : [];
         rows = got.concat(older);
       }
+      if (!more) { lastRows.set(seen, rows.slice(0, 60)); if (lastRows.size > 12) lastRows.delete(lastRows.keys().next().value); }
       store.set({ list: { rows, more: s.box === "drafts" ? false : !!res.hasMore, loading: false, err: null }, updatedAt: Date.now(), offline: false });
       return true;
     } catch (e) {
