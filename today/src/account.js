@@ -33,6 +33,11 @@ export async function ask(env, request, { method = "GET", path, query = null, bo
   const origin = todayOrigin(env, request);
   const q = query && [...query.keys()].length ? `?${query}` : "";
   const h = forwardHeaders(request, origin, { body: body != null, accept });
+  // (the browser's address, believed only with the hub's key, as hub.js's requests carry it: a Worker's CF-Connecting-IP
+  // is the Worker's own once it reaches the account, so without this every sign-in back here, everyone's, would count
+  // against one address's tries, and each sign-in would be placed where the Worker ran)
+  const ip = request.headers.get("CF-Connecting-IP");
+  if (env.HUB_KEY && ip) { h.set("X-Hub-Key", env.HUB_KEY); h.set("X-Hub-IP", ip); h.set("X-Hub-Geo", geoOf(request.cf)); }
   for (const [k, v] of Object.entries(headers || {})) h.set(k, v);
   try {
     return await fetch(`${env.ACCOUNT_ORIGIN}/api/account/${path}${q}`, {
@@ -58,3 +63,13 @@ export function todayOrigin(env, request) {
 
 // The account's Set-Cookie headers, each one, to pass back to the browser (sign-in, its renewal, sign-out)
 export const setCookies = (res) => (res.headers.getSetCookie ? res.headers.getSetCookie() : [res.headers.get("Set-Cookie")].filter(Boolean));
+
+const GEO = ["country", "region", "city", "latitude", "longitude", "timezone"];
+// (where the browser is, for the app: Cloudflare's own few words on it, base64url JSON)
+export function geoOf(cf) {
+  const g = {};
+  for (const k of GEO) if (cf && (typeof cf[k] === "string" || typeof cf[k] === "number")) g[k] = cf[k];
+  let bin = "";
+  for (const b of new TextEncoder().encode(JSON.stringify(g))) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}

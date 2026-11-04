@@ -12,7 +12,7 @@
 // so to Today's page, which then links to each app's own address, as before (addendum A1).
 // Never the assets binding, except the framework's page for /weather/ (One roof, today/src/roof.js: a document at
 // /weather/ is InFlite's one page, while the roof is on): Today's own files are the assets', and none of these paths are.
-import { accountCookie } from "./account.js";
+import { accountCookie, geoOf } from "./account.js";
 import { roofOn, appsOn, modOf, filesOf, roofPage, retireWorker } from "./roof.js";
 
 // each hub path to the host that serves it: `app` names the vars (<APP>_ORIGIN, the origin spoken as: the app's public
@@ -32,7 +32,6 @@ const METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
 // (what of the browser's request goes on, besides the account's cookie and Chat's bearer)
 const PASS = ["Content-Type", "Accept", "If-None-Match", "If-Modified-Since", "Range", "User-Agent", "X-Home-Screen"];
 // (where the browser is, as Cloudflare's edge saw it: the few things the apps read of it, functions/_sites.js cfOf)
-const GEO = ["country", "region", "city", "latitude", "longitude", "timezone"];
 const PAGE_RE = /^\/(chats|weather|fitness|markets)(\/|$)/, API_RE = /^\/api\/(pigeon|weather|fitness|markets)\//;
 
 const SAID = {
@@ -249,14 +248,6 @@ function hubHeaders(env, request, app) {
   if (ip) h.set("X-Hub-IP", ip);
   h.set("X-Hub-Geo", geoOf(request.cf));
   return h;
-}
-// (where the browser is, for the app: Cloudflare's own few words on it, base64url JSON)
-function geoOf(cf) {
-  const g = {};
-  for (const k of GEO) if (cf && (typeof cf[k] === "string" || typeof cf[k] === "number")) g[k] = cf[k];
-  let bin = "";
-  for (const b of new TextEncoder().encode(JSON.stringify(g))) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 // (the two addresses of Cloudflare's Web Analytics beacon, out of a CSP: nothing here runs another site's script)
 const noBeacon = (csp) => csp.split(";").map((d) => d.split(/\s+/).filter((t) => !/^https:\/\/(static\.)?cloudflareinsights\.com(\/\S*)?$/i.test(t)).join(" ")).join(";");
