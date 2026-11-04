@@ -965,3 +965,13 @@ main.ifl-screen[data-app]:is([data-app="weather"], [data-app="fitness"], [data-a
   top: var(--sy, 0px); transform: translate3d(var(--sx, 0px), 0, 0); will-change: transform; pointer-events: none; }
 .ifl-sw-go section:is(.ifl-sw-cur, .ifl-sw-peek) { transition: transform 0.36s cubic-bezier(0.32, 0.72, 0, 1); }
 @media (prefers-reduced-motion: reduce) { .ifl-sw-go section:is(.ifl-sw-cur, .ifl-sw-peek) { transition-duration: 0.12s; } }
+
+/* ---- acting from a card: a reply typed on Chat's card, and today's session changed on Fitness's ---- */
+.tc-reply { margin-top: 12px; }
+.tc-reply-f { display: flex; align-items: center; gap: 8px; }
+.tc-reply-f input { flex: 1; min-width: 0; height: 42px; padding: 0 14px; border: 0; border-radius: 21px; font: inherit; font-size: 16px; color: var(--text); background: var(--field); box-shadow: inset 0 0 0 0.5px var(--line); }
+.tc-reply-f input:focus-visible { outline: 2px solid var(--tint); outline-offset: 1px; }
+.tc-reply-f .pill { flex: none; }
+.tc-reply-f .tc-reply-x { width: 42px; padding: 0; justify-content: center; }
+.tc-reply-f .tc-reply-x svg { width: 16px; height: 16px; }
+.tc-foot button.pill:disabled { opacity: 0.5; }

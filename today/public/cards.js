@@ -171,6 +171,8 @@ function wireSend() {
   });
 }
 const foot = (...xs) => { const s = xs.filter(Boolean).join(""); return s ? `<div class="tc-foot">${s}</div>` : ""; };
+// (a change to today's session from its card: rested, or moved to tomorrow, in Fitness's own plan: app.js plan)
+const planPill = (act, label, c) => (/^\d{4}-\d\d-\d\d$/.test(c.day || "") ? `<button class="pill" type="button" data-plan="${act}" data-day="${esc(c.day)}">${esc(label)}</button>` : "");
 const linkPill = (label, h, { primary = false, icon = "" } = {}) => `<a class="pill${primary ? " primary" : ""}" href="${href(h)}">${icon}${esc(label)}</a>`;
 
 // a card waiting for its answer: its head, and the shape of what's coming
@@ -336,10 +338,14 @@ function chat(c, ctx) {
   const s = pigeons ? c.streak : null, ends = num(s?.endsAt);
   const streak = s && num(s.n) && ends ? `<a class="pg-streak" href="${href(s.href)}"${ends <= now ? " hidden" : ""}>${G.flame}<span class="tx"><b>${s.n}-day flight streak with ${esc(firstOf(s.who))}</b><small data-ends="${ends}">${streakSaid(ends, now)}</small></span>${G.chev.replace("<svg", '<svg class="pg-chev"')}</a>` : "";
   const rows = [...inbound.map(inRow), ...unread.map(unRow)].join("");
+  // (a reply to whoever wrote last, typed here: app.js reply; Chats seals and sends it, nothing else keeps the words)
+  const last = unread.filter((u) => /^[\w-]{1,64}$/.test(String(u.who?.id || ""))).sort((a, b) => (num(b.last) || 0) - (num(a.last) || 0))[0];
+  const reply = last ? `<div class="tc-reply" data-reply="${esc(last.who.id)}" data-who="${esc(firstOf(last.who))}" data-open="${href(last.href)}"><button class="pill" type="button" data-reply-open>Reply to ${esc(firstOf(last.who))}</button></div>` : "";
   return `${head("chat", c, pigeons && inAir ? `${inAir} in the air` : "")}
     <h3 class="tc-h" data-pgtitle data-pigeons="${pigeons ? 1 : 0}" data-msgonly="${msgOnly ? 1 : 0}" data-unread="${unreadN}" data-who1="${esc(un1)}" data-more="${more}">${esc(title)}</h3>
     ${rows ? `<div class="pg-list">${rows}</div>` : ""}
     ${mine.length ? `<p class="pg-label">${pigeons ? "Yours in the air" : "Your letters on their way"}</p><div class="pg-list">${mine.map(myRow).join("")}</div>${more > 0 ? `<p class="pg-more">and ${more} more ${pigeons ? "in the air" : "on their way"}, in Chat</p>` : ""}` : ""}
+    ${reply}
     ${streak}
     ${foot(sendPill(c, ctx, pigeons ? G.bird : G.send))}`;
 }
@@ -423,7 +429,7 @@ function fitness(c, ctx) {
     ${profile(s.steps, `${s.name}: its shape, step by step`)}
     ${s.why ? `<p class="ft-why"><b>Why today:</b> ${esc(s.why)}</p>` : ""}
     ${bestBox(c.best, tz, now, sport)}
-    ${foot(linkPill("Details", c.href, { primary: true }), linkPill("Change", c.href), send)}`;
+    ${foot(linkPill("Details", c.href, { primary: true }), planPill("rest", "Rest Today", c), planPill("move", "Move to Tomorrow", c), send)}`;
 }
 
 // ---------------------------------------------------------------- Markets

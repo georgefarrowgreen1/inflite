@@ -29,6 +29,8 @@ const ROUTES = {
   // (Today First's: acts and their Undo, the rules they're done by, notifications and devices, from You)
   "POST /api/act": { path: "today/act", timeout: 8000 },
   "POST /api/act/undo": { path: "today/act/undo", timeout: 8000 },
+  // (today's session rested or moved to tomorrow from Today's Fitness card, in Fitness's own plan)
+  "POST /api/plan": { path: "today/plan", timeout: 8000 },
   "GET /api/rules": { path: "today/rules", timeout: 8000 },
   "PUT /api/rules": { path: "today/rules", timeout: 8000 },
   "GET /api/notify": { path: "today/notify", timeout: 8000 },

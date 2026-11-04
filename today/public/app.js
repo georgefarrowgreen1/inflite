@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.49";
+const BUILD = "1.50";
 // (what's new in it, said once it's in)
-const NEWS = "Swipe left or right to move between sections, as in a native app: the next one slides in with your finger";
+const NEWS = "Act from your cards: reply to a friend, or rest or move today's session, without opening the app";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1556,6 +1556,9 @@ function cleanPrefs(p, view = S.view) {
 // all the same.
 function drawCards(anim) {
   if (!S.view) return;
+  // (a reply being typed on Chat's card: the cards drawn again once it's sent or let go, so the words aren't lost)
+  const rf = document.querySelector("#today .tc-reply-f input");
+  if (rf && (rf.value.trim() || document.activeElement === rf)) { drawCards.later = true; return; }
   if (S.answer?.v === 2 && !S.kept) return drawDayNow(anim);
   drawFour(anim);
 }
@@ -1768,6 +1771,60 @@ function closeSheet() {
 }
 function toast(text, o) { return F ? F.toast(text, o) : roofToast(text, o); }
 
+// ---------------------------------------------------------------- acting from a card
+// Fitness: today's session rested, or moved to tomorrow, in Fitness's own plan (POST /api/plan), with Undo
+async function plan(b, undo = null) {
+  if (b?.disabled) return;
+  if (b) b.disabled = true;
+  try {
+    const r = await call("/api/plan", { method: "POST", body: undo ? { act: "undo", undo } : { act: b.dataset.plan, day: b.dataset.day } });
+    toast(String(r?.said || "Done."), r?.undo ? { action: { label: "Undo", run: () => plan(null, r.undo) }, app: "fitness" } : { app: "fitness" });
+    refresh("fitness");
+  } catch (e) {
+    if (b) b.disabled = false;
+    if (e.status !== 401) toast(e.message || "That didn’t work. Try again.");
+  }
+}
+// Chat: a reply typed on the card to whoever wrote last, sealed and sent by Chats (its service's reply, only from a tap);
+// where Chats can't send from here, the chat opened instead. The words are only ever in the field and then Chats's.
+let replySvc = null;
+function replyOpen(box) {
+  if (!box || box.querySelector("form")) return;
+  replySvc = IFL.hub?.chat ? Promise.resolve(IFL.hub.chat()).catch(() => null) : Promise.resolve(null);
+  const who = box.dataset.who || "them";
+  const f = document.createElement("form");
+  f.className = "tc-reply-f";
+  f.innerHTML = `<input type="text" maxlength="1000" autocomplete="off" enterkeyhint="send" required><button class="pill primary" type="submit">Send</button><button class="pill tc-reply-x" type="button" data-reply-x aria-label="Cancel">${G.x}</button>`;
+  const input = f.querySelector("input");
+  input.placeholder = `Reply to ${who}`;
+  input.setAttribute("aria-label", `Reply to ${who}`);
+  f.addEventListener("submit", (e) => { e.preventDefault(); replySend(box, f, input); });
+  box.querySelector("[data-reply-open]").hidden = true;
+  box.append(f);
+  input.focus();
+}
+function replyClose(box) {
+  box?.querySelector("form")?.remove();
+  const b = box?.querySelector("[data-reply-open]");
+  if (b) b.hidden = false;
+  if (drawCards.later) { drawCards.later = false; drawCards(); }
+}
+async function replySend(box, f, input) {
+  const text = input.value.trim(), who = box.dataset.who || "them";
+  if (!text || f.dataset.busy) return;
+  f.dataset.busy = "1";
+  for (const x of f.elements) x.disabled = true;
+  const svc = await replySvc;
+  let r = { ok: false, why: "engine" };
+  try { if (svc?.reply) r = await svc.reply(box.dataset.reply, text); } catch (_) {}
+  delete f.dataset.busy;
+  if (r?.ok) { input.value = ""; replyClose(box); toast(`Sent to ${who}`, { app: "chat" }); refresh("chat"); return; }
+  for (const x of f.elements) x.disabled = false;
+  if (r?.why === "tap") { toast("Tap Send again to send it."); return; }
+  const open = box.dataset.open;
+  toast(r?.why === "locked" ? "Chats is locked. Open it to unlock, then reply." : "Couldn’t send it from here.", open && open !== "#" ? { action: { label: "Open Chat", run: () => { location.href = open; } }, app: "chat" } : { app: "chat" });
+}
+
 // ---------------------------------------------------------------- the morning: one notification
 const NAMES = { weather: "Weather", fitness: "Fitness", chat: "Chat", markets: "Markets" };
 const LINES = [
@@ -1954,8 +2011,15 @@ function wire() {
   for (const b of $$(".ifs-btn:empty")) b.innerHTML = G.x;
   for (const c of $$(".row .chev:empty")) c.innerHTML = G.chev;
   $("#atChev").innerHTML = G.down;
-  // (Try Again on a card that couldn't load: that card alone, asked again)
+  // (acting from a card: today's session rested or moved, a reply to a friend; then Try Again on a card that couldn't load:
+  // that card alone, asked again)
   $("#today").addEventListener("click", (e) => {
+    const p = e.target.closest("[data-plan]");
+    if (p) return plan(p);
+    const ro = e.target.closest("[data-reply-open]");
+    if (ro) return replyOpen(ro.closest(".tc-reply"));
+    const rx = e.target.closest("[data-reply-x]");
+    if (rx) return replyClose(rx.closest(".tc-reply"));
     const r = e.target.closest("[data-retry]");
     if (!r) return;
     r.disabled = true;
