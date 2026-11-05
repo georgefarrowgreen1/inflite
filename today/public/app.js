@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.66";
+const BUILD = "1.67";
 // (what's new in it, said once it's in)
-const NEWS = "Sign in once on your phone and Chats is unlocked too: no separate Unlock Chats step after signing in with your password (or a passkey that can)";
+const NEWS = "Get Every App’s Notifications Here is remembered: tapped once on your phone, it stays on, and it’s set up again by itself if a new sign-in loses it";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1550,6 +1550,8 @@ async function finishSignIn() {
   const view = await call("/api/auth/handback", { method: "POST", body: { code, verifier } }).catch((e) => { unlockChats(null); throw e; });
   // (then Chats, by the same sign-in, beside Today coming in: unlockChats. Waited for only before going on to another page)
   chatsUnlock = unlockChats(view ? chat : null);
+  // (a new sign-in: whether every app's still here is asked at once, everyCheck)
+  try { localStorage.removeItem(EVERY_AT); } catch {}
   return view;
 }
 let chatsUnlock = null;
@@ -1583,6 +1585,7 @@ async function signOut() {
   // (and the apps' copies of you at this address: the hub's, so every app's)
   await forgetApps({ chat: chatsHere || !chatOut });
   try { localStorage.removeItem("today:push"); } catch {}
+  keepEvery(false);
   S.view = null;
   location.assign(`${auth}/#${new URLSearchParams({ signout: "today", back: `${location.origin}/` })}`);
 }
@@ -1757,7 +1760,7 @@ const appsCtx = () => ({ answer: S.answer, view: S.view, hub: S.hub, roof: S.roo
 const youCtx = () => ({
   view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, call, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
   kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
-  sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, toMorning, openAccount, signOut, canPush, pushWhy,
+  sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, everyAgain, toMorning, openAccount, signOut, canPush, pushWhy,
   chatSettings: () => (chatsHere && F ? F.nav.go("/chats/#settings") : location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`)),
   openSheet, closeSheet, BUILD,
   frame: F, connectors, connector: (app) => connectors().then((m) => F && m.openConnector(F, app)), go: (path) => F?.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
@@ -2329,6 +2332,7 @@ async function turnOff() {
   try {
     await call("/api/device", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch((e) => { if (missing(e)) return call("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }); throw e; });
     try { localStorage.removeItem("today:push"); } catch {}
+    keepEvery(false);
     if (S.morning && typeof S.morning === "object") S.morning = { ...S.morning, thisDevice: false };
     drawMorning();
     return true;
@@ -2343,7 +2347,33 @@ async function fanOut() {
   if (!sub) return null;
   const r = await postDevice(sub, { fan: true });
   await kept(sub);
+  keepEvery(true);
   return r;
+}
+// Get Every App's Notifications Here, remembered: once tapped on this phone, kept for the account until This Phone's
+// turned off or it signs out here. The apps' rows go with the sign-in that made them (one that ends takes Chat's with
+// it), so where the account's lost them they're sent again, quietly: never asked for, this phone's own subscription only
+const EVERY = "today:every", EVERY_AT = "today:every-at";
+function everyKept() { const id = S.view?.user?.id; try { return !!id && localStorage.getItem(EVERY) === id; } catch { return false; } }
+function keepEvery(on) { try { const id = S.view?.user?.id; if (on && id) localStorage.setItem(EVERY, id); else localStorage.removeItem(EVERY); } catch {} }
+// → the account's answer ({ ok, tables }), or null with nothing to send (not chosen here, no subscription, not allowed)
+async function everyAgain() {
+  if (!everyKept() || !canPush() || Notification.permission !== "granted") return null;
+  const sub = await currentSub();
+  if (!sub) return null;
+  const r = await postDevice(sub, { fan: true });
+  await kept(sub);
+  return r;
+}
+// (at launch, every six hours at most, and at once after a sign-in: the tables this phone's in asked; Chat's not among
+// them, everyAgain)
+async function everyCheck() {
+  if (!S.hub || S.view?.hubPush !== true || !S.device || !everyKept()) return;
+  let at = 0; try { at = Number(localStorage.getItem(EVERY_AT)) || 0; } catch {}
+  if (Date.now() - at < 6 * 3600e3) return;
+  try { localStorage.setItem(EVERY_AT, String(Date.now())); } catch {}
+  const d = await call(`/api/devices?device=${encodeURIComponent(S.device)}`).catch(() => null);
+  if (d?.fan === true && Array.isArray(d.here) && !d.here.includes("pg_push")) await everyAgain().catch(() => null);
 }
 // (the browser changed this device's subscription while Today was shut, and its worker couldn't say so: said now)
 async function deviceMoved() {
@@ -2593,7 +2623,7 @@ async function load() {
   wireLinks();
   if (!asked) askCards();
   fromHash();
-  devP.then(deviceMoved);
+  devP.then(deviceMoved).then(everyCheck).catch(() => {});
   const at = IFL.here("today");
   if (at?.y) requestAnimationFrame(() => scrollTo(0, at.y));
 }

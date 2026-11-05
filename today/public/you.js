@@ -53,7 +53,7 @@ const and = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")
 // subscription, as the browser has it)
 const Y = { rules: null, notify: null, devices: null, sub: null, shares: null, sharesRoof: null };
 let drawing = null;
-export function forgetYou() { Y.rules = Y.notify = Y.devices = Y.sub = Y.shares = null; drawing = null; }
+export function forgetYou() { Y.rules = Y.notify = Y.devices = Y.sub = Y.shares = null; Y.everyTried = Y.everyLost = false; drawing = null; }
 // (Connected Apps: each app, and the words of InFlite's connector contract its descriptor fills, and only those)
 const CONNECTED = [["weather", "Weather"], ["chats", "Chats"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"]];
 const WORDS = [["cards", "Cards"], ["search", "Search"], ["notifications", "Notifications"], ["actions", "Actions"], ["screens", "Screens"]];
@@ -98,6 +98,16 @@ export async function drawYou(root, ctx) {
   if (drawing !== run) return;
   Y.rules = rules; Y.notify = notify; Y.devices = devices && typeof devices === "object" ? { ...devices, asked: !!dev } : devices;
   paint(root, ctx);
+  // (Get Every App's Here, chosen on this phone, but not in Chat's table now (a sign-in that ended took it): sent again,
+  // quietly, once a visit; failing that, its row's back to tap)
+  if (Y.devices?.asked && Y.devices.fan === true && !Y.devices.here?.includes("pg_push") && ctx.everyKept?.() && !Y.everyTried) {
+    Y.everyTried = true;
+    const r = await ctx.everyAgain?.().catch(() => null);
+    if (drawing !== run) return;
+    if (r?.tables?.includes("pg_push")) Y.devices.here = [...new Set([...(Y.devices.here || []), ...r.tables])];
+    else Y.everyLost = true;
+    paint(root, ctx);
+  }
 }
 
 function paint(root, ctx) {
@@ -124,7 +134,8 @@ function paint(root, ctx) {
     rows.push(sw(`id="youPhone"${why ? " disabled" : ""}`, "On This Phone", why || "Today’s morning and the apps below", phoneOn(ctx), "Notifications on this phone", ` id="youPhoneRow"`, ic("bell", "red")));
     const here = Array.isArray(Y.devices?.here) ? Y.devices.here : [];
     if (ctx.hub && ctx.view.hubPush === true && Y.devices !== false) {
-      if (here.includes("pg_push")) foot = "Every app notifies here: Chats, Weather and Markets as well as Today.";
+      // (chosen here before, ctx.everyKept: shown as on, and sent again by drawYou if the account's lost it)
+      if (here.includes("pg_push") || (ctx.everyKept?.() && !Y.everyLost)) foot = "Every app notifies here: Chats, Weather and Markets as well as Today.";
       else rows.push(go(`id="youEvery"`, "Get Every App’s Here", "Chats, Weather and Markets as well as Today", "", ic("every", "blue")));
     }
     const t = (n && n.today) || ctx.morning || {};
@@ -330,6 +341,7 @@ function fillEvery(sheet, root, ctx) {
       // (the tables this phone's in now, as the account's answer names them)
       if (Y.devices) Object.assign(Y.devices, { here: [...new Set([...(Y.devices.asked ? Y.devices.here || [] : []), ...(r.tables || [])])], asked: true });
       Y.sub = await ctx.sub().catch(() => Y.sub);
+      Y.everyLost = false;
       ctx.closeSheet();
       ctx.toast(r.tables?.includes("pg_push") ? "Every app’s notifications come here now" : "Today’s come here; the others aren’t ready to yet");
       paint(root, ctx);
