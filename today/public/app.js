@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.62";
+const BUILD = "1.63";
 // (what's new in it, said once it's in)
-const NEWS = "Signed out, New here? and Sign In Without Chats no longer sit on top of each other under Sign in";
+const NEWS = "Signing in, already signed in to InFlite: straight back here, with no sign-in page on the way";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1456,7 +1456,10 @@ async function goToAccount(join = false) {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
   const ask = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   try { sessionStorage.setItem(VERIFIER_KEY, verifier); } catch {}
-  location.assign(`${await authOrigin()}/#${new URLSearchParams({ [join ? "join" : "signin"]: "today", ask, back: `${location.origin}/` })}`);
+  // (signing in, by the sign-in page's /go: signed in to the site already, the server sends you straight back with the
+  // code, with no page; signed out, it's on to the page. Making an account is the page's)
+  const q = new URLSearchParams({ [join ? "join" : "signin"]: "today", ask, back: `${location.origin}/` });
+  location.assign(join ? `${await authOrigin()}/#${q}` : `${await authOrigin()}/go?${q}`);
 }
 // Back from the sign-in page with a code: swapped for the account's sign-in. → the session view, or null
 async function finishSignIn() {
