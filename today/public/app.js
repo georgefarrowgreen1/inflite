@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.65";
+const BUILD = "1.66";
 // (what's new in it, said once it's in)
-const NEWS = "Sign in starts quicker: while it's on the screen, the connection to the sign-in page is made ahead, so tapping it doesn't wait";
+const NEWS = "Sign in once on your phone and Chats is unlocked too: no separate Unlock Chats step after signing in with your password (or a passkey that can)";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1471,19 +1471,88 @@ async function goToAccount(join = false) {
   try { sessionStorage.setItem(VERIFIER_KEY, verifier); } catch {}
   // (signing in, by the sign-in page's /go: signed in to the site already, the server sends you straight back with the
   // code, with no page; signed out, it's on to the page. Making an account is the page's)
-  const q = new URLSearchParams({ [join ? "join" : "signin"]: "today", ask, back: `${location.origin}/` });
+  const q = new URLSearchParams({ [join ? "join" : "signin"]: "today", ask, back: `${location.origin}/`, ...(join ? {} : await chatTrip()) });
   location.assign(join ? `${await authOrigin()}/#${q}` : `${await authOrigin()}/go?${q}`);
+}
+
+// ---- Chats, unlocked by the same sign-in ----
+// Chats needs Chat's key on the phone, which only what you sign in with opens (the password just typed, or a passkey
+// with its own copy of the key). So, on a phone where Chats runs beside Today, Today's trip asks for that too: a word for
+// a Chat sign-in and a key pair for the trip, made with Chat's own crypto (/chats/crypto.js handbackPair), the private
+// half kept in this tab; the sign-in page sends back a code for Chat with the key sealed to it (account/app.js
+// chatBack), and unlockChats opens it. Signed in already (the sign-in page's /go), or with a passkey that can't, there's
+// no code: Chats asks to be unlocked when it's opened, as before.
+const CHAT_TRIP = "inflite:chat-trip";
+// (Chats is for phones and iPads, as Chat has it (pigeon/theme.js): an iPad calls itself a Mac, but it's touched. At the
+// hub, whichever Chats it serves at /chats/ (the framework's, or Chat's own page) keeps its sign-in in the same place)
+function chatsOnThisDevice() {
+  const ua = navigator.userAgent || "", touched = navigator.maxTouchPoints > 1;
+  const mobile = /iPhone|iPod|iPad|Android|Mobile/.test(ua) || (/Macintosh/.test(ua) && touched) || (/Linux/.test(ua) && touched && matchMedia("(pointer: coarse)").matches);
+  return !!S.hub && mobile;
+}
+const chatCrypto = () => import("/chats/crypto.js");
+// → what the trip carries for Chats ({ chat, seal }), or nothing
+async function chatTrip() {
+  if (!chatsOnThisDevice()) return {};
+  try {
+    const { E2E } = await chatCrypto();
+    const t = await E2E.handbackPair();
+    sessionStorage.setItem(CHAT_TRIP, JSON.stringify({ word: t.word, pub: t.pub, priv: t.priv, at: Date.now() }));
+    return { chat: t.ask, seal: t.pub };
+  } catch { return {}; }
+}
+// Back with a code for Chat too: swapped, with the word this tab kept, for Chat's own sign-in (/api/pigeon/handback, as
+// Chat's page asks it, after Today's own swap, as Chat's takes over the sign-in both codes were made from), the key
+// opened with what the sign-in page sealed to this tab, and kept where Chats looks for it (IndexedDB inflight, "session":
+// pigeon/roof/core.js resume), so Chats opens unlocked. Any step that can't: nothing kept (a code no use here used up).
+async function unlockChats(code) {
+  let k = null;
+  try { k = JSON.parse(sessionStorage.getItem(CHAT_TRIP) || "null"); sessionStorage.removeItem(CHAT_TRIP); } catch {}
+  if (!code || !/^[A-Za-z0-9_-]{20,64}$/.test(code)) return false;
+  const swap = (verifier) => fetch("/api/pigeon/handback", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, verifier }) });
+  if (!k?.word || !(Date.now() - k.at < 30 * 60e3)) { swap("").catch(() => {}); return false; }
+  try {
+    const [{ E2E, fromB64url }, res] = await Promise.all([chatCrypto(), swap(k.word)]);
+    if (!res.ok) return false;
+    const r = await res.json();
+    const got = await E2E.unseal(k.priv, k.pub, r.box);
+    const { ecdh } = got.lock ? await E2E.unlock(await E2E.lockKeyOf(got.lock), r.vault) : await E2E.unlock(await E2E.fromSecret(fromB64url(got.prf)), r.pkVault);
+    return await keptForChats("session", { token: r.token, me: r.me, priv: await E2E.importPriv(ecdh), pub: { kty: "EC", crv: "P-256", x: ecdh.x, y: ecdh.y } });
+  } catch { return false; }
+}
+// (Chat's store on this phone, as Chat opens it: IndexedDB inflight, its one store kv)
+function keptForChats(key, value) {
+  return new Promise((ok) => {
+    try {
+      const o = indexedDB.open("inflight", 1);
+      o.onupgradeneeded = () => { if (!o.result.objectStoreNames.contains("kv")) o.result.createObjectStore("kv"); };
+      o.onerror = () => ok(false);
+      o.onsuccess = () => {
+        const db = o.result;
+        try {
+          const tx = db.transaction("kv", "readwrite");
+          tx.objectStore("kv").put(value, key);
+          tx.oncomplete = () => { db.close(); ok(true); };
+          tx.onerror = tx.onabort = () => { db.close(); ok(false); };
+        } catch { db.close(); ok(false); }
+      };
+    } catch { ok(false); }
+  });
 }
 // Back from the sign-in page with a code: swapped for the account's sign-in. → the session view, or null
 async function finishSignIn() {
-  const code = new URLSearchParams(location.hash.slice(1)).get("signin");
+  const code = new URLSearchParams(location.hash.slice(1)).get("signin"), chat = new URLSearchParams(location.hash.slice(1)).get("chat");
   if (!code) return null;
   try { history.replaceState(history.state, "", location.pathname + location.search); } catch {}
   let verifier = null;
   try { verifier = sessionStorage.getItem(VERIFIER_KEY); sessionStorage.removeItem(VERIFIER_KEY); } catch {}
-  if (!verifier) return null;
-  return call("/api/auth/handback", { method: "POST", body: { code, verifier } });
+  if (!verifier) { unlockChats(null); return null; }
+  const view = await call("/api/auth/handback", { method: "POST", body: { code, verifier } }).catch((e) => { unlockChats(null); throw e; });
+  // (then Chats, by the same sign-in, beside Today coming in: unlockChats. Waited for only before going on to another page)
+  chatsUnlock = unlockChats(view ? chat : null);
+  return view;
 }
+let chatsUnlock = null;
 
 // Signing out of InFlite (You, or the menu): this device's notifications stopped first (in every app's table), Chat's
 // sign-in and key on this phone gone too where its engine's here, the account's sign-in ended, your day forgotten here,
@@ -2475,6 +2544,9 @@ async function load() {
   if (new URLSearchParams(location.hash.slice(1)).get("signin") && BOOT_APP?.app !== "mail") {
     try {
       view = await finishSignIn();
+      // (going on to an app's page: Chats unlocked first, as this page won't be here to finish it; a few seconds at most)
+      if (view && chatsUnlock && (() => { try { return !!sessionStorage.getItem(THEN_KEY); } catch { return false; } })())
+        await Promise.race([chatsUnlock, new Promise((ok) => setTimeout(ok, 5000))]);
       if (view && thenAfter()) return;
     } catch (e) {
       sessionAsked = null;

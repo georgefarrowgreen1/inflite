@@ -4,12 +4,14 @@
 // passed on but the account's cookie and these few headers.
 import { appFetch } from "./apps.js";
 
-const COOKIE_RE = /(?:^|;\s*)((?:__Secure-)?account=[A-Za-z0-9_-]{20,100})(?=;|$)/g;
+// (and the mark that the browser has just changed its sign-in, ifl_rw=1, so the account asks its main database who's
+// signed in, not a copy near the visitor that may be a moment behind: georgefarrowgreen functions/_account.js markWrote)
+const COOKIE_RE = /(?:^|;\s*)((?:__Secure-)?account=[A-Za-z0-9_-]{20,100}|ifl_rw=1)(?=;|$)/g;
 
-// Only the account's cookie is passed on, never anything else the browser sent.
+// Only the account's cookie (and that mark) is passed on, never anything else the browser sent.
 export function accountCookie(request) {
   const found = [...(request.headers.get("Cookie") || "").matchAll(COOKIE_RE)].map((m) => m[1]);
-  return found.length ? found.join("; ") : null;
+  return found.some((c) => c !== "ifl_rw=1") ? found.join("; ") : null;      // (the mark alone: no one signed in)
 }
 
 // What goes with each request to the account: its cookie, the browser's own User-Agent and X-Home-Screen, the address
