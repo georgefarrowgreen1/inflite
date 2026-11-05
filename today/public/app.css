@@ -471,11 +471,6 @@ label.row:active { background: var(--press); }
 @media (max-height: 500px) and (orientation: landscape) { .today-apps { display: none; } }
 .today-out.said .today-apps { display: none; }
 
-/* the way in's second way, Today's own sign-in, quieter than the first: a line under New here? (the shared block hangs
-   each .ifl-new just under Sign in, so a second one would sit on the first), both lines kept inside the 55px under it */
-.today-out .ifl-new { line-height: 22px; }
-.today-out.ifl-in .today-quiet { top: calc(100% + 32px); margin: 0; }
-.today-out .today-quiet a { color: var(--text-2); font-weight: 500; }
 
 /* ---- Apps: a tile for each app (the framework's .ifl-tile), its line from the day, its mini, chips to its sections ---- */
 .apps-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }

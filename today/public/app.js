@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.63";
+const BUILD = "1.64";
 // (what's new in it, said once it's in)
-const NEWS = "Signing in, already signed in to InFlite: straight back here, with no sign-in page on the way";
+const NEWS = "Signing in from here no longer goes through Chats first: one sign-in, and Chats asks to unlock itself the first time you open it";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -494,8 +494,8 @@ const IFL = (() => {
   //                      way, chat.<site>/#share=…, as it always has)
   //   sent(say), closed()           the engine's word that it's sent (the frame put away, and "Sent to Pat. You’re still
   //                      here" said) or that its sheet's shut (put away)
-  //   signIn()           a signed-out app at the hub signs in through Chats (on a computer, Today's own trip, as Chat
-  //                      doesn't open there), and comes back here. → true; off the hub,
+  //   signIn()           a signed-out app at the hub signs in by Today's own trip (never waiting on Chat's key, which
+  //                      only Chats needs), and comes back here. → true; off the hub,
   //                      nothing done: false
   //   moved(app, { off })           an old Home Screen icon (off the hub, opened from the Home Screen, filling it: never
   //                      iOS's small browser, which a link from another Home Screen app opens): once, the card saying
@@ -652,12 +652,9 @@ const IFL = (() => {
     closed() { hide(); },
     signIn() {
       if (!hub.on || hub.degraded) return false;
-      // (on a computer, Today's own trip, and back here: Chat doesn't open on one (pigeon/theme.js), so its trip can't
-      // sign you in there. An iPad calls itself a Mac, but it's touched; a Mac never is)
-      const ua = navigator.userAgent || "", touched = navigator.maxTouchPoints > 1;
-      const computer = !(/iPhone|iPod|iPad|Android|Mobile/.test(ua) || (/Macintosh/.test(ua) && touched) || (/Linux/.test(ua) && touched && matchMedia("(pointer: coarse)").matches));
-      if (computer) { location.assign("/#signin-today&then=" + encodeURIComponent(location.pathname + location.hash)); return true; }
-      location.assign("/chats/#signin-start&then=" + encodeURIComponent(location.pathname + location.hash));
+      // (Today's own trip, on every device, and back here: no app but Chats needs Chat's key, and Chats asks to unlock
+      // itself the first time it's opened)
+      location.assign("/#signin-today&then=" + encodeURIComponent(location.pathname + location.hash));
       return true;
     },
     moved(app, { off } = {}) {
@@ -1241,7 +1238,6 @@ function chatsSay(apps) {
 }
 const ownLinks = () => { const L = S.links || DEFAULT_LINKS; return { chat: L.chat, weather: L.weather, fitness: L.fitness, finance: L.finance, email: L.email || DEFAULT_LINKS.email }; };
 // (where Sign in comes back to: this screen, as its path and hash say, never its query)
-const thenHere = () => encodeURIComponent(location.pathname + location.hash);
 let saidOk = null;
 const said = new Promise((ok) => { saidOk = ok; });
 function hubSays(state) {
@@ -1253,15 +1249,15 @@ function hubSays(state) {
   S.apps = !S.hub ? {} : state === "unknown" ? { ...keptApps(), weather: true, [BOOT_APP.app]: BOOT_APP.app === "weather" || keptApp(BOOT_APP.app) !== false } : { ...appsSaid };
   chatsSay(S.apps);
   if (!S.hub) IFL.hub.degrade(ownLinks());
-  // (signed out: the way in's second way, Today's own, only beside Chats' trip)
-  $("#alsoRow").hidden = !viaChats();
   signinHref();
   saidOk();
 }
+// (where Sign in comes back to: this screen's path and hash, never its query)
+const thenHere = () => encodeURIComponent(location.pathname + location.hash);
 // (Sign in's address, as the click goes: written at boot and again whenever the way in's shown, as the screen may have
 // moved in the page since, RI15)
 function signinHref() {
-  $("#signin").href = viaChats() ? `/chats/#signin-start&then=${thenHere()}` : `${safe(S.links?.auth) || DEFAULT_LINKS.auth}/`;
+  $("#signin").href = `/#signin-today&then=${thenHere()}`;
 }
 // A /weather/ document that reached this page (D13, D14): with the hub explicitly not ready, Weather's own address (same
 // path, query and hash); with roof off, milestone 1's page of the hub, asked for once (the marker, never a path or a
@@ -1420,20 +1416,12 @@ function keptFor(id) {
 }
 
 // ---------------------------------------------------------------- signing in
-// Chat first (the hub's): Sign in goes to Chats' own trip (/chats/#signin-start&then=/), which signs in Chats, Today and
-// every app at once and comes back here. Beside it, quietly, Today's own trip (Sign In Without Chats), which never
-// waits on Chat's key: InFlite's hand-back, as Mail does. Today sends you to InFlite's sign-in page (auth.inflite.ai) with
-// the hash of a word it keeps in this tab; the page sends you back with a code that's good once, and only with that word.
-// A Home Screen Today has its own cookie jar, so it signs in this way too. Where the hub can't serve Chats yet, Sign in is
-// Today's own trip.
+// Today's own trip, on every device: Sign in never waits on Chat's key (only Chats needs it, and asks to unlock itself
+// the first time it's opened: "Unlock Chats on this phone"). InFlite's hand-back, as Mail does: Today sends you to
+// InFlite's sign-in page (auth.inflite.ai, by its /go: signed in there already, straight back) with the hash of a word it
+// keeps in this tab; the page sends you back with a code that's good once, and only with that word. A Home Screen Today
+// has its own cookie jar, so it signs in this way too.
 const VERIFIER_KEY = "inflite:signin-verifier", THEN_KEY = "inflite:signin-then";
-// (a computer, as Chat has it (pigeon/theme.js): Chat doesn't open on one, so its trip can't sign you in there, and Sign
-// in is Today's own; an iPad, which calls itself a Mac, is touched, and a Mac never is)
-function onComputer() {
-  const ua = navigator.userAgent || "", touched = navigator.maxTouchPoints > 1;
-  return !(/iPhone|iPod|iPad|Android|Mobile/.test(ua) || (/Macintosh/.test(ua) && touched) || (/Linux/.test(ua) && touched && matchMedia("(pointer: coarse)").matches));
-}
-const viaChats = () => S.hub && !onComputer();
 // Today's own trip, from an app in this window (then: where to come back to, a path of this page's own)
 function signInHere(then) {
   try { if (typeof then === "string" && /^\/(?!\/)/.test(then) && then !== "/") sessionStorage.setItem(THEN_KEY, then); else sessionStorage.removeItem(THEN_KEY); } catch {}
@@ -2292,9 +2280,9 @@ function appearance(a) {
 
 // ---------------------------------------------------------------- what's tapped
 function wire() {
-  // (Sign in: Chats' trip, which signs in everything, where the hub serves Chats; else, and Sign In Without Chats, Today's own)
-  $("#signin").addEventListener("click", (e) => { e.preventDefault(); if (viaChats()) location.assign(`/chats/#signin-start&then=${thenHere()}`); else goToAccount(false); });
-  $("#signinToday").addEventListener("click", (e) => { e.preventDefault(); goToAccount(false); });
+  // (Sign in: Today's own trip, on every device)
+  // (and back to where you were: an app in this window, or a part of this page)
+  $("#signin").addEventListener("click", (e) => { e.preventDefault(); signInHere(location.pathname + location.hash); });
   $("#join").addEventListener("click", (e) => { e.preventDefault(); goToAccount(true); });
   for (const b of $$(".ifs-btn:empty")) b.innerHTML = G.x;
   for (const c of $$(".row .chev:empty")) c.innerHTML = G.chev;

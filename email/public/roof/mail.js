@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.65";
-export const NEWS = "If something touching this app isn’t working, a banner under its header says so, with a link to status.inflite.ai";
+export const BUILD = "1.66";
+export const NEWS = "Signing in from here no longer goes through Chats first: one sign-in, and Chats asks to unlock itself the first time you open it";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
