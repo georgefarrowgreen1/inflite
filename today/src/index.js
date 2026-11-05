@@ -73,6 +73,7 @@ export default {
       if (hubbed) return await hub(request, env, ctx);
       if (mail) return await mailPage(request, env);
       if (url.pathname === "/api/bugs") return await bugReport(request, env);
+      if (url.pathname === "/api/status-banner") return await statusBanner(request, env, url);
       return await api(request, env, url);
     } catch (err) {
       console.error(err);
@@ -85,6 +86,16 @@ export default {
 // A bug report, from the window the shared menu shows when something breaks here (Today, or a section of the hub): passed
 // on to the account's address, where every app's are kept (the georgefarrowgreen repo's functions/_bugs.js). From this
 // site's own pages only, a few kilobytes at most.
+// (status.inflite.ai's banner for the app open here, as the shared menu asks for it: the account's address answers,
+// the georgefarrowgreen repo's functions/_status.js; none where it can't be asked)
+async function statusBanner(request, env, url) {
+  if (request.method !== "GET") return refuse(405, "Today doesn’t do that.");
+  const query = new URLSearchParams({ app: String(url.searchParams.get("app") || "hub").replace(/[^a-z]/g, "").slice(0, 20) || "hub" });
+  const res = await ask(env, request, { path: "status-banner", query, timeout: 5000 });
+  const ok = res && res.ok;
+  return new Response(ok ? res.body : JSON.stringify({ banner: null }), { status: 200, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...SAFE } });
+}
+
 async function bugReport(request, env) {
   if (request.method !== "POST") return refuse(405, "Today doesn’t do that.");
   const site = request.headers.get("Sec-Fetch-Site");

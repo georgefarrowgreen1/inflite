@@ -34,6 +34,11 @@ export default {
     // (a bug report, from the window the shared menu shows when something breaks in Mail: passed on to the account's
     // address, where every app's are kept, the georgefarrowgreen repo's functions/_bugs.js; from Mail's own pages only)
     if (url.pathname === "/api/bugs") return bugReport(request, env);
+    // (status.inflite.ai's banner for Mail, as the shared menu asks for it: the account's address answers it)
+    if (url.pathname === "/api/status-banner" && request.method === "GET") {
+      const res = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/status-banner?app=mail`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5000) }).catch(() => null);
+      return res?.ok ? new Response(res.body, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }) : json({ banner: null }, 200, { "Cache-Control": "no-store" });
+    }
     // (InFlite's page, at a hub whose switch is on: hubgate.js)
     const hub = hubOf(request, env);
     if (hub && request.method === "OPTIONS") return preflight(hub);
