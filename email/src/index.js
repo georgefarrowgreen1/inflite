@@ -29,6 +29,9 @@ export default {
     // (the module InFlite's page runs Mail as, under the roof: its files, passed through at inflite.ai/mail/roof/)
     if (url.pathname.startsWith("/roof/")) return roofFile(request, env, url);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    // (a bug report, from the window the shared menu shows when something breaks in Mail: passed on to the account's
+    // address, where every app's are kept, the georgefarrowgreen repo's functions/_bugs.js; from Mail's own pages only)
+    if (url.pathname === "/api/bugs") return bugReport(request, env);
     // (InFlite's page, at a hub whose switch is on: hubgate.js)
     const hub = hubOf(request, env);
     if (hub && request.method === "OPTIONS") return preflight(hub);
@@ -1148,4 +1151,17 @@ async function saveDraft(env, body, view) {
     )
     .run();
   return json({ ok: true, id });
+}
+
+async function bugReport(request, env) {
+  const out = (status, error) => json({ error }, status);
+  if (request.method !== "POST") return out(405, "Not here.");
+  const site = request.headers.get("Sec-Fetch-Site");
+  if (site && site !== "same-origin") return out(403, "Not from here.");
+  const body = await request.text();
+  if (body.length > 12000) return out(413, "That report is too long.");
+  const headers = { "Content-Type": "application/json" };
+  const res = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/bugs`, { method: "POST", headers, body, signal: AbortSignal.timeout(8000) }).catch(() => null);
+  if (!res) return out(502, "The report couldn’t be sent just now.");
+  return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
 }

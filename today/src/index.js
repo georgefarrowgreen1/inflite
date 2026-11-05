@@ -72,6 +72,7 @@ export default {
     try {
       if (hubbed) return await hub(request, env, ctx);
       if (mail) return await mailPage(request, env);
+      if (url.pathname === "/api/bugs") return await bugReport(request, env);
       return await api(request, env, url);
     } catch (err) {
       console.error(err);
@@ -80,6 +81,20 @@ export default {
     }
   },
 };
+
+// A bug report, from the window the shared menu shows when something breaks here (Today, or a section of the hub): passed
+// on to the account's address, where every app's are kept (the georgefarrowgreen repo's functions/_bugs.js). From this
+// site's own pages only, a few kilobytes at most.
+async function bugReport(request, env) {
+  if (request.method !== "POST") return refuse(405, "Today doesn’t do that.");
+  const site = request.headers.get("Sec-Fetch-Site");
+  if (site && site !== "same-origin") return refuse(403, SAID.notToday);
+  const body = await request.text();
+  if (body.length > 12000) return refuse(413, "That’s too much to send.");
+  const res = await ask(env, request, { method: "POST", path: "bugs", body, timeout: 8000 });
+  if (!res) return refuse(502, "The report couldn’t be sent just now.");
+  return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json; charset=utf-8", ...SAFE } });
+}
 
 async function api(request, env, url) {
   const method = request.method, read = method === "GET" || method === "HEAD";
