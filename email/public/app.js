@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.60";
+  const BUILD = "1.61";
   // (what's new in it, said once it's in)
-  const NEWS = "Signing in on a computer at inflite.ai works: it no longer goes through Chat, which only opens on phones and iPads";
+  const NEWS = "Works again after the move to Workers: signing in and your apps reach your InFlite account directly";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own

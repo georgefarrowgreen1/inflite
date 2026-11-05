@@ -14,6 +14,7 @@
 // /weather/ is InFlite's one page, while the roof is on): Today's own files are the assets', and none of these paths are.
 import { accountCookie, geoOf } from "./account.js";
 import { roofOn, appsOn, modOf, filesOf, roofPage, retireWorker } from "./roof.js";
+import { appFetch } from "./apps.js";
 
 // each hub path to the host that serves it: `app` names the vars (<APP>_ORIGIN, the origin spoken as: the app's public
 // address; <APP>_VIA, where to connect, the same in production and a local pass-through in tests), `under` where its
@@ -73,7 +74,7 @@ async function probe(env, request, t) {
   let status = 0;
   try {
     if (!to) throw new TypeError("no address for Chat");
-    const res = await fetch(to, { headers: hubHeaders(env, request, "CHAT"), redirect: "manual", signal: AbortSignal.timeout(PROBE_WAIT) });
+    const res = await appFetch(env, to, { headers: hubHeaders(env, request, "CHAT"), redirect: "manual", signal: AbortSignal.timeout(PROBE_WAIT) });
     status = res.status;
     if (res.body) res.body.cancel().catch(() => {});
   } catch (e) {
@@ -180,7 +181,7 @@ export async function forward(env, request, { app, path, api = false }) {
   let res;
   try {
     // (written out, never resolved against the app's address: a path that starts // is still a path there)
-    res = await fetch(`${new URL(via).origin}${path}`, { method, headers: h, body, redirect: "manual" });
+    res = await appFetch(env, `${new URL(via).origin}${path}`, { method, headers: h, body, redirect: "manual" });
   } catch (e) {
     console.error("hub", app, e && e.message);
     return refuse(502, SAID.down);

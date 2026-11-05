@@ -21,6 +21,7 @@ const concat = (...a) => {
 };
 
 // Push services Mail will send to; any other host is refused, so the server can't be pointed at arbitrary URLs.
+import { appFetch } from "./apps.js";
 const PUSH_HOSTS = [
   /^fcm\.googleapis\.com$/,
   /^updates\.push\.services\.mozilla\.com$/,
@@ -159,7 +160,7 @@ export async function noticeInflite(env, { kind, threadId }) {
   if (!env.MAIL_KEY || !env.ACCOUNT_ORIGIN) return true;
   let said = null;
   try {
-    const r = await fetch(`${env.ACCOUNT_ORIGIN}/api/account/mail/notice`, {
+    const r = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/mail/notice`, {
       method: "POST",
       headers: { Authorization: `Bearer ${env.MAIL_KEY}`, "Content-Type": "application/json", "X-Inflite": "1" },
       body: JSON.stringify({ kind: kind === "later" ? "later" : "new", thread: String(threadId) }),

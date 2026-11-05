@@ -2,6 +2,7 @@
 // sends it here too; this Worker passes it to the account's address, which says who it is and whether they may open
 // Mail: the site's admin, with a passkey, that has confirmed it's them in the last 12 hours.
 // (The account side is functions/_mailapp.js in the georgefarrowgreen repo.)
+import { appFetch } from "./apps.js";
 
 const COOKIE_RE = /(?:^|;\s*)((?:__Secure-)?account=[A-Za-z0-9_-]{20,100})(?=;|$)/g;
 const CHECK_TTL = 10 * 1000;
@@ -36,7 +37,7 @@ export async function accountView(env, request) {
   const hit = checked.get(cookie);
   if (hit && Date.now() - hit.at < CHECK_TTL) return hit.view;
   // (not waited on for ever: a slow account's address is the same as one that's down)
-  const res = await fetch(`${env.ACCOUNT_ORIGIN}/api/account/mail/me`, { headers: forwardHeaders(request, cookie), signal: AbortSignal.timeout(8000) }).catch(() => null);
+  const res = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/mail/me`, { headers: forwardHeaders(request, cookie), signal: AbortSignal.timeout(8000) }).catch(() => null);
   if (!res?.ok) throw Object.assign(new Error("Couldn’t reach your inflite account. Try again in a moment."), { status: 502, publicMessage: "Couldn’t reach your inflite account. Try again in a moment." });
   const view = await res.json();
   if (checked.size > 200) checked.clear();
@@ -79,7 +80,7 @@ export function accessOf(view) {
 export async function passOn(env, request, path, body) {
   const headers = forwardHeaders(request, accountCookie(request));
   headers.set("Content-Type", "application/json");
-  const res = await fetch(`${env.ACCOUNT_ORIGIN}/api/account/mail/${path}`, { method: "POST", headers, body: JSON.stringify(body || {}) });
+  const res = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/mail/${path}`, { method: "POST", headers, body: JSON.stringify(body || {}) });
   let data = {};
   try {
     data = await res.json();

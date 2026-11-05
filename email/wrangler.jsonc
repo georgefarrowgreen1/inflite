@@ -24,6 +24,10 @@
   // Cloudflare Email Service (Email Sending).
   "send_email": [{ "name": "EMAIL" }],
 
+  // (the account's address asked through the inflite-apps Worker directly, not through a fetch, which skips the
+  // zone's Worker routes: src/apps.js)
+  "services": [{ "binding": "APPS", "service": "inflite-apps" }],
+
   // Signing in is the inflite account's; sent mail goes out under the account's name. HUB_ORIGIN: InFlite's window and
   // its staging hub (a space between them), whose /mail/ pages are the only pages that may frame Mail (Today First; the
   // root Worker's today/src/mailhost.js; the staging hub at next.inflite.ai is the root Worker's [env.next]).

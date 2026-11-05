@@ -30,6 +30,12 @@ MARKETS_ORIGIN = "https://finance.inflite.ai"
 MAIL_ORIGIN = "https://email.inflite.ai"
 AUTH_ORIGIN = "https://auth.inflite.ai"
 
+# (the apps' addresses asked through the inflite-apps Worker directly, not through a fetch, which skips the zone's
+# Worker routes: today/src/apps.js)
+[[services]]
+binding = "APPS"
+service = "inflite-apps"
+
 [version_metadata]
 binding = "CF_VERSION_METADATA"
 
@@ -58,6 +64,10 @@ MARKETS_ORIGIN = "https://finance.inflite.ai"
 MAIL_ORIGIN = "https://email.inflite.ai"
 AUTH_ORIGIN = "https://auth.inflite.ai"
 TODAY_AS = "https://inflite.ai"
+
+[[env.next.services]]
+binding = "APPS"
+service = "inflite-apps"
 
 [env.next.version_metadata]
 binding = "CF_VERSION_METADATA"

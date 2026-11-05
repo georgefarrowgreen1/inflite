@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.60";
-export const NEWS = "Signing in on a computer at inflite.ai works: it no longer goes through Chat, which only opens on phones and iPads";
+export const BUILD = "1.61";
+export const NEWS = "Works again after the move to Workers: signing in and your apps reach your InFlite account directly";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

@@ -18,6 +18,7 @@ import { listedOrigins, hubOf, hubHeaders, preflight, hubRefusal, hubNavigation,
 import { cleanQuote, quoteFrom, withQuote } from "./quote.js";
 import { keyOk, card, notice, searchParams } from "./connect.js";
 import { body } from "./body.js";
+import { appFetch } from "./apps.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -477,7 +478,7 @@ const publicUser = (v) =>
 // Your account's photo, from the account's address with your sign-in (where its page has it: the account's address only
 // answers /api/account/), kept for good by the browser under its ?v= (when it last changed)
 async function photo(env, request, url) {
-  const r = await fetch(`${env.ACCOUNT_ORIGIN}/api/account/me/photo?v=${encodeURIComponent(url.searchParams.get("v") || "")}`, {
+  const r = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/me/photo?v=${encodeURIComponent(url.searchParams.get("v") || "")}`, {
     headers: { Cookie: accountCookie(request), Accept: "image/*" },
   });
   const type = r.headers.get("Content-Type") || "";

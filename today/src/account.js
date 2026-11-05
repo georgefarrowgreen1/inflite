@@ -2,6 +2,7 @@
 // sends it here too; this Worker passes it on to the account's address, which answers everything Today shows. (The
 // account side is functions/_todayapp.js in the georgefarrowgreen repo: TODAY_ROUTES.) Nothing the browser sent is
 // passed on but the account's cookie and these few headers.
+import { appFetch } from "./apps.js";
 
 const COOKIE_RE = /(?:^|;\s*)((?:__Secure-)?account=[A-Za-z0-9_-]{20,100})(?=;|$)/g;
 
@@ -40,7 +41,7 @@ export async function ask(env, request, { method = "GET", path, query = null, bo
   if (env.HUB_KEY && ip) { h.set("X-Hub-Key", env.HUB_KEY); h.set("X-Hub-IP", ip); h.set("X-Hub-Geo", geoOf(request.cf)); }
   for (const [k, v] of Object.entries(headers || {})) h.set(k, v);
   try {
-    return await fetch(`${env.ACCOUNT_ORIGIN}/api/account/${path}${q}`, {
+    return await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/${path}${q}`, {
       method,
       headers: h,
       body: body ?? undefined,
