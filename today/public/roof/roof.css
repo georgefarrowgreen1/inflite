@@ -127,11 +127,13 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 /* ---- sheets (sheet.js) on <dialog>: the frozen markup, Weather's motion ---- */
 /* (--fix-gap: the shared menu's measure of how far iOS's Home Screen lays the page out short of the screen; what's
    fixed to the foot is taken down by it, to the screen's own bottom) */
-dialog.ifl-sheet { position: fixed; inset: auto 0 calc(0px - var(--fix-gap, 0px)); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
+dialog.ifl-sheet { position: fixed; inset: auto 0 var(--sheet-foot, calc(0px - var(--fix-gap, 0px))); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
   max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 24px); overflow: hidden auto; overscroll-behavior: contain; display: none; flex-direction: column;
   border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; color: var(--text); background: var(--sheen), var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), 0 -10px 40px rgba(0, 0, 0, 0.3);
   transform: translateY(var(--drag, 0px)); animation: ifl-sheet-in var(--dur-sheet-in) var(--ease-glide); font: inherit; }
 dialog.ifl-sheet[open] { display: flex; }
+/* (the keyboard up, the sheet on it (sheet.js --sheet-foot): no room kept for the home bar, which the keyboard covers) */
+dialog.ifl-sheet.ifs-kb { padding-bottom: 12px; border-radius: var(--r-sheet); }
 dialog.ifl-sheet::backdrop { background: var(--dim); animation: ifl-fade-in var(--dur-sheet-in) ease; }
 dialog.ifl-sheet.closing { animation: ifl-sheet-out var(--dur-sheet-out) var(--ease-in) forwards; }
 dialog.ifl-sheet.closing::backdrop { animation: ifl-fade-out var(--dur-sheet-out) ease forwards; }

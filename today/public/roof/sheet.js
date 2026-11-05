@@ -22,13 +22,18 @@ import { el, btn, icon } from "./ui.js";
 let n = 0;
 export function createSheets(F) {
   const open = [];
-  // (the keyboard up: an open sheet no taller than what's in sight)
+  // (the keyboard up: an open sheet no taller than what's in sight, and lifted above it. iOS lays the keyboard over the
+  // page, not the page above the keyboard, so a sheet fixed to the page's foot sat under it, its field out of sight: it's
+  // taken up by how much of the page the keyboard covers, the page's height less what's in sight and where that starts)
   const v = globalThis.visualViewport;
-  const fit = () => { for (const s of open) s.el.style.setProperty("--vvh", `${Math.round(v.height)}px`); };
+  const fit = () => {
+    const kb = Math.round(document.documentElement.clientHeight - v.height - v.offsetTop), up = kb > 40;
+    for (const { el } of open) { el.style.setProperty("--vvh", `${Math.round(v.height)}px`); el.style.setProperty("--sheet-foot", up ? `${kb}px` : ""); el.classList.toggle("ifs-kb", up); }
+  };
   const sync = () => {
     const up = open.length > 0;
     document.body.classList.toggle("sheet-up", up);
-    v?.[up ? "addEventListener" : "removeEventListener"]("resize", fit);
+    for (const e of ["resize", "scroll"]) v?.[up ? "addEventListener" : "removeEventListener"](e, fit);
     if (up && v) fit();
   };
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;

@@ -62,8 +62,8 @@ export function icon(name, { app, size = 24 } = {}) {
   if (app) {
     const i = el("img", { class: `ifl-appic s${size}`, alt: "", width: size, height: size, data: { app } });
     // (one the menu hasn't: no picture at all, never a broken one)
-    let u = ""; try { u = IFL()?.iconUrl(app) || ""; } catch (_) {}
-    if (u) i.src = u; else i.hidden = true;
+    try { i.src = IFL()?.iconUrl(app) || ""; } catch (_) {}
+    i.hidden = !i.getAttribute("src");
     return i;
   }
   const s = el("span", { class: "ifl-glyph", "aria-hidden": "true", data: { icon: name } });
