@@ -125,7 +125,9 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
   display: grid; place-items: center; font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; background: var(--badge, var(--danger)); pointer-events: none; }
 
 /* ---- sheets (sheet.js) on <dialog>: the frozen markup, Weather's motion ---- */
-dialog.ifl-sheet { position: fixed; inset: auto 0 0; z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
+/* (--fix-gap: the shared menu's measure of how far iOS's Home Screen lays the page out short of the screen; what's
+   fixed to the foot is taken down by it, to the screen's own bottom) */
+dialog.ifl-sheet { position: fixed; inset: auto 0 calc(0px - var(--fix-gap, 0px)); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
   max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 24px); overflow: hidden auto; overscroll-behavior: contain; display: none; flex-direction: column;
   border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; color: var(--text); background: var(--sheen), var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), 0 -10px 40px rgba(0, 0, 0, 0.3);
   transform: translateY(var(--drag, 0px)); animation: ifl-sheet-in var(--dur-sheet-in) var(--ease-glide); font: inherit; }
@@ -161,9 +163,9 @@ dialog.ifl-sheet.dragging { animation: none; transition: none; }
 body.sheet-up { overflow: hidden; }
 
 /* ---- the toast (toast.js): the shared note's look, an action when it has one ---- */
-.ifl-toast { max-width: calc(100vw - 32px); bottom: calc(var(--tabs-h) + 24px + env(safe-area-inset-bottom, 0px)); }
+.ifl-toast { max-width: calc(100vw - 32px); bottom: calc(var(--tabs-h) + 24px + env(safe-area-inset-bottom, 0px) - var(--fix-gap, 0px)); }
 /* (the bar away, a chat's composer in its place: above the composer, as it grows to a few lines; stage 3) */
-body:has(.ifl-tabs.away) .ifl-toast { bottom: calc(max(var(--tabs-h), 120px) + 16px + env(safe-area-inset-bottom, 0px)); }
+body:has(.ifl-tabs.away) .ifl-toast { bottom: calc(max(var(--tabs-h), 120px) + 16px + env(safe-area-inset-bottom, 0px) - var(--fix-gap, 0px)); }
 .ifl-toast .ifm-note-tx b { overflow-wrap: anywhere; }
 .ifl-toast.has-act { pointer-events: auto; padding-right: 8px; }
 .ifl-toast-act { flex: none; min-height: 36px; padding: 0 14px; border-radius: 999px; font-weight: 600; color: var(--acc-ink); background: var(--acc-wash); position: relative; }
