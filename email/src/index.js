@@ -25,6 +25,8 @@ export default {
     const url = new URL(request.url);
     // (the body shell for InFlite's page, One roof stage 4: body.js answers every /body path, 404 while no hub is on)
     if (url.pathname === "/body" || url.pathname.startsWith("/body/")) return body(request, env);
+    // (Mail's version as deployed, for anyone: status.inflite.ai's checks, as Today's /version; nothing of the mailbox's)
+    if (url.pathname === "/version" && request.method === "GET") return json({ app: "mail", build: await appBuild(env, request), min: null }, 200, { "Cache-Control": "no-store" });
     if (PAGE.has(url.pathname)) return page(request, env);
     // (the module InFlite's page runs Mail as, under the roof: its files, passed through at inflite.ai/mail/roof/)
     if (url.pathname.startsWith("/roof/")) return roofFile(request, env, url);

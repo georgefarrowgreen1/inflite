@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.63";
-export const NEWS = "A name half typed in To stays as you typed it when you move on, not a red chip";
+export const BUILD = "1.64";
+export const NEWS = "Mail shows as working on status.inflite.ai: its checks read its version without needing you signed in";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
