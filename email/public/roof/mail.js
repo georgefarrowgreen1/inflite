@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.68";
-export const NEWS = "Behind the scenes: right after you sign in, Mail always checks who you are with the main database, never a copy that may be a moment behind";
+export const BUILD = "1.69";
+export const NEWS = "Report a problem: once it’s sent, a link shows where it stands on the status page";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
