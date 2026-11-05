@@ -28,15 +28,19 @@ export function createSheets(F) {
   const v = globalThis.visualViewport;
   const fit = () => {
     const kb = Math.round(document.documentElement.clientHeight - v.height - v.offsetTop), up = kb > 40;
-    for (const { el } of open) { el.style.setProperty("--vvh", `${Math.round(v.height)}px`); el.style.setProperty("--sheet-foot", up ? `${kb}px` : ""); el.classList.toggle("ifs-kb", up); }
+    for (const { el } of open) { el.style.setProperty("--vvh", `${Math.round(v.height)}px`); el.style.setProperty("--vv-top", `${Math.round(v.offsetTop)}px`); el.style.setProperty("--sheet-foot", up ? `${kb}px` : ""); el.classList.toggle("ifs-kb", up); }
     // (and the tab bar out of sight while it's up: iOS's bar above the keyboard is see-through, and it showed through it)
     document.body.classList.toggle("kb-up", up && open.length > 0);
   };
+  let lateT = 0;
+  const later = () => { clearTimeout(lateT); fit(); lateT = setTimeout(fit, 400); };
   const sync = () => {
     const up = open.length > 0;
     document.body.classList.toggle("sheet-up", up);
     if (!up) document.body.classList.remove("kb-up");
-    for (const e of ["resize", "scroll"]) v?.[up ? "addEventListener" : "removeEventListener"](e, fit);
+    // (and again a moment after, and after a field's chosen or typed in: iOS raises its row of word suggestions after
+    // the keyboard, and doesn't always say so)
+    if (v) for (const [t, e] of [[v, "resize"], [v, "scroll"], [document, "focusin"], [document, "input"]]) t[up ? "addEventListener" : "removeEventListener"](e, later);
     if (up && v) fit();
   };
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;

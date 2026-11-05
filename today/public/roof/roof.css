@@ -135,6 +135,9 @@ dialog.ifl-sheet { position: fixed; inset: auto 0 var(--sheet-foot, calc(0px - v
 dialog.ifl-sheet[open] { display: flex; }
 /* (the keyboard up, the sheet on it (sheet.js --sheet-foot): no room kept for the home bar, which the keyboard covers) */
 dialog.ifl-sheet.ifs-kb { padding-bottom: 12px; border-radius: var(--r-sheet); }
+/* (and as tall as what's in sight, from the top of it down: what's typed and what it finds start at the top, where the
+   keyboard's bars, see-through and taller than iOS says, can't cover them) */
+@media (hover: none) { dialog.ifl-sheet.ifs-kb { top: calc(var(--vv-top, 0px) + max(env(safe-area-inset-top, 0px), 12px) + 6px); max-height: none; } }
 dialog.ifl-sheet::backdrop { background: var(--dim); animation: ifl-fade-in var(--dur-sheet-in) ease; }
 dialog.ifl-sheet.closing { animation: ifl-sheet-out var(--dur-sheet-out) var(--ease-in) forwards; }
 dialog.ifl-sheet.closing::backdrop { animation: ifl-fade-out var(--dur-sheet-out) ease forwards; }
