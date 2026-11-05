@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.61";
-export const NEWS = "Works again after the move to Workers: signing in and your apps reach your InFlite account directly";
+export const BUILD = "1.62";
+export const NEWS = "Icons back where they were missing at inflite.ai (Chats’ send and voice buttons, the Chats crumb, Info), the tab bar fully away in a chat, and your own view-once photos say who’s opened them";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

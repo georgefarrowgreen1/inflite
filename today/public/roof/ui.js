@@ -61,7 +61,9 @@ const add = (n, kids) => {
 export function icon(name, { app, size = 24 } = {}) {
   if (app) {
     const i = el("img", { class: `ifl-appic s${size}`, alt: "", width: size, height: size, data: { app } });
-    try { i.src = IFL()?.iconUrl(app) || ""; } catch (_) {}
+    // (one the menu hasn't: no picture at all, never a broken one)
+    let u = ""; try { u = IFL()?.iconUrl(app) || ""; } catch (_) {}
+    if (u) i.src = u; else i.hidden = true;
     return i;
   }
   const s = el("span", { class: "ifl-glyph", "aria-hidden": "true", data: { icon: name } });
