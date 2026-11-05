@@ -36,6 +36,11 @@ AUTH_ORIGIN = "https://auth.inflite.ai"
 binding = "APPS"
 service = "inflite-apps"
 
+# (and Mail's Worker, for Mail at the hub, /mail/: today/src/mailroof.js asks it directly when this is here)
+[[services]]
+binding = "MAIL"
+service = "inflite-email"
+
 [version_metadata]
 binding = "CF_VERSION_METADATA"
 
@@ -68,6 +73,10 @@ TODAY_AS = "https://inflite.ai"
 [[env.next.services]]
 binding = "APPS"
 service = "inflite-apps"
+
+[[env.next.services]]
+binding = "MAIL"
+service = "inflite-email"
 
 [env.next.version_metadata]
 binding = "CF_VERSION_METADATA"
