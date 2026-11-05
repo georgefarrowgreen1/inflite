@@ -138,11 +138,18 @@ export function openCompose(ctx, init = {}) {
       b.addEventListener("click", () => { c[key].splice(i, 1); draw(); changed(); });
       return b;
     }), input);
-    const commit = () => {
-      const parts = input.value.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
-      if (!parts.length) return false;
-      for (const s of parts) { const p = logic.parseAddress?.(s) || { name: "", email: s }; c[key].push({ name: p.name || "", email: p.email || s }); }
-      input.value = ""; draw(); changed(); clear();
+    // (all: at a comma, Return or Send, everything typed; on leaving the field, only whole addresses, so a name half
+    // typed stays as it was typed, not a red chip of a letter or two)
+    const commit = (all = true) => {
+      const parts = input.value.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean), left = [];
+      let made = 0;
+      for (const s of parts) {
+        const p = logic.parseAddress?.(s) || { name: "", email: s }, email = p.email || s;
+        if (!all && !EMAIL_RE.test(email)) { left.push(s); continue; }
+        c[key].push({ name: p.name || "", email }); made++;
+      }
+      if (!made) return false;
+      input.value = left.join(", "); draw(); changed(); clear();
       return true;
     };
     input.addEventListener("keydown", (e) => {
@@ -150,7 +157,7 @@ export function openCompose(ctx, init = {}) {
       else if (e.key === "Backspace" && !input.value && c[key].length) { c[key].pop(); draw(); changed(); }
     });
     input.addEventListener("input", () => { if (/[,;]/.test(input.value)) commit(); else suggest(key, input.value.trim()); });
-    input.addEventListener("blur", () => setTimeout(() => { if (!sugg.contains(document.activeElement)) commit(); }, 150));
+    input.addEventListener("blur", () => setTimeout(() => { if (!sugg.contains(document.activeElement)) commit(false); }, 150));
     draw();
     fields[key] = { input, draw, commit };
     return el("label", { class: "mc-row", data: { k: key } }, el("span", { class: "mc-k", text: `${label}:` }), box);

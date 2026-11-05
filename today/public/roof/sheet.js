@@ -29,10 +29,13 @@ export function createSheets(F) {
   const fit = () => {
     const kb = Math.round(document.documentElement.clientHeight - v.height - v.offsetTop), up = kb > 40;
     for (const { el } of open) { el.style.setProperty("--vvh", `${Math.round(v.height)}px`); el.style.setProperty("--sheet-foot", up ? `${kb}px` : ""); el.classList.toggle("ifs-kb", up); }
+    // (and the tab bar out of sight while it's up: iOS's bar above the keyboard is see-through, and it showed through it)
+    document.body.classList.toggle("kb-up", up && open.length > 0);
   };
   const sync = () => {
     const up = open.length > 0;
     document.body.classList.toggle("sheet-up", up);
+    if (!up) document.body.classList.remove("kb-up");
     for (const e of ["resize", "scroll"]) v?.[up ? "addEventListener" : "removeEventListener"](e, fit);
     if (up && v) fit();
   };

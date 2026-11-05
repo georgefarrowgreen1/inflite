@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.62";
+  const BUILD = "1.63";
   // (what's new in it, said once it's in)
-  const NEWS = "Something went wrong? A window with its own code to send straight to InFlite (and Report a Problem in the menu), drawn to the bottom of the screen on the Home Screen, icons back where they were missing";
+  const NEWS = "A name half typed in To stays as you typed it when you move on, not a red chip";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own

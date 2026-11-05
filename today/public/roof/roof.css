@@ -116,6 +116,7 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 /* (all the way past the bottom, and out of sight: it floats above the edge, by the home bar's gap, so half again its own
    height wasn't enough on a phone, and its top showed under a chat's composer) */
 .ifl-tabs.away { transform: translateY(calc(100% + 24px + env(safe-area-inset-bottom, 0px))); visibility: hidden; }
+body.kb-up .ifl-tabs { visibility: hidden; }
 /* stage 3: with Chats in the page the bar is InFlite's indigo on every screen, scoped to the bar so html[data-app]
    doesn't move it (S3-D16); a tab's count (tabs.js badge: Chats' unread, a number only) */
 .ifl-tabs.has-pill.chats { --ifl-tab-on: #5a4fe0; }

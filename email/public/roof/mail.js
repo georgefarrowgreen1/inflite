@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.62";
-export const NEWS = "Something went wrong? A window with its own code to send straight to InFlite (and Report a Problem in the menu), drawn to the bottom of the screen on the Home Screen, icons back where they were missing";
+export const BUILD = "1.63";
+export const NEWS = "A name half typed in To stays as you typed it when you move on, not a red chip";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
