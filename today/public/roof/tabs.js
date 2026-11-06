@@ -39,8 +39,10 @@ export function createTabs(nav, F, { me: meOf } = {}) {
   let railKey = null;
   const at = (e, o) => { for (const k in o) e.setAttribute(k, String(o[k])); };
   const mk = (tag, cls, text) => { const e = document.createElement(tag); e.className = cls; if (text != null) e.textContent = text; return e; };
+  // (Mail is the site admin's alone: listed only where the account's view says it's theirs, as Apps and You do)
+  const yours = (a) => a !== "mail" || F?.session?.view?.apps?.mail === true;
   function rail() {
-    const apps = RAIL_APPS.filter((a) => F?.session?.apps?.[a] && REGISTRY[a]);
+    const apps = RAIL_APPS.filter((a) => F?.session?.apps?.[a] && REGISTRY[a] && yours(a));
     const user = F?.session?.view?.user || {};
     const k = JSON.stringify([apps, user.name || "", !!IFL.hub.degraded]);
     if (k === railKey && nav.querySelector(".ifl-rail-brand")) return;

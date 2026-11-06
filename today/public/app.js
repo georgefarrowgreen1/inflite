@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.70";
+const BUILD = "1.71";
 // (what's new in it, said once it's in)
-const NEWS = "On a computer, in Safari: your day’s cards side by side again, none drawn over another";
+const NEWS = "Mail is listed only for the site’s admin: no longer in the side list on a computer, or in search, for anyone else";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
