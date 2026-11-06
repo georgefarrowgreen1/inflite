@@ -29,13 +29,14 @@
 //                  5 s after a planning answer
 //   line(text)     the header's line for the phase ("16:05 · your ride"), or null: the page's own (the morning's date)
 //                  (without it, written into #hd .ifh-line)
-//   sheet(spec)    the page's InFlite sheet (F.sheet.open), for Mail's trip and bookings (trip.js); without it a booking's
-//                  row goes to its email, and the trip card opens nothing
+//   sheet(spec)    the page's InFlite sheet (F.sheet.open), for Mail's trip, bookings, parcels and bills (trip.js,
+//                  mailday.js); without it a row from Mail goes to its email, and the trip card opens nothing
 //   timers   false: nothing is timed here, the page calls tickDay itself (each minute, and at until). Otherwise the next
 //            boundary is drawn at its minute from here too (the page's own minute may come up to 59 s late); tickDay
 //            twice is as once
 import { CARD_KEYS, APP, esc, safe, safeOrigin, hm, dayKey, dateLong, dateShort, wkShort, dayWord, G, av, cardHTML, applyVars, tick, sendButton, hubOf, onHub } from "/cards.js";
-import { tripOf, tripCardHtml, bookingRowParts, bookingOfRow, openTrip, openBooking, isGone } from "/trip.js";
+import { tripOf, tripCardHtml, bookingRowParts, bookingOfRow, openTrip, openBooking, isGone, redrawTrip } from "/trip.js";
+import { owedOf, paidOf, moneyOf, owedRowHtml, paidHtml, parcelOfRow, parcelRowHtml, openItem, openBills, itemOfRow } from "/mailday.js";
 
 const MIN = 60e3;
 const PHASES = ["morning", "midday", "preride", "riding", "after", "evening"];
@@ -281,8 +282,11 @@ const pctSaid = (p) => (num(p) == null ? "" : ` ${p >= 0 ? "+" : "−"}${Math.ab
 function waitingRows(answer) {
   return list(answer.waiting).filter((r) => ID.test(str(r.id)) && str(r.first) && num(r.at) != null);
 }
-function waitingHtml(rows, st, now) {
-  const tz = str(st.answer.tz) || undefined;
+// (Waiting for You: who's waiting, then Mail's (Mail on Your Day, stage 2: a bill to pay, a renewal, a trial ending, a
+// return's last day, mailday.js), then the quiet line of what paid itself this week)
+function waitingHtml(rows, st, now, owed = [], paid = null) {
+  const tz = str(st.answer.tz) || undefined, link = (h) => linkTo(h, st.ctx);
+  const mail = owed.map((r) => owedRowHtml(r, link)).join("") + (paid ? paidHtml(paid, !!moneyOf(st.answer) && typeof st.ctx.sheet === "function") : "");
   return `<h2 class="slabel">${LABELS.waiting}</h2><div class="group glass">${rows.map((r) => {
     const g = r.group && typeof r.group === "object" && ID.test(str(r.group.id)) && str(r.group.name) ? r.group : null;
     const who = g ? `${r.first} in ${g.name}` : r.first, n = num(r.n) || 1;
@@ -294,7 +298,7 @@ function waitingHtml(rows, st, now) {
       ${h ? `<a class="row dw-main" href="${esc(h)}" data-do="answer">${inner}<span class="chev">${G.chev}</span></a>` : `<div class="row dw-main">${inner}</div>`}
       <div class="dw-chips" hidden></div>
     </div>`;
-  }).join("")}</div>`;
+  }).join("")}${mail}</div>`;
 }
 // the engine's words, put beside the rows it may go beside (faded in), with the cards they asked about to send back
 function fillWaiting(root, st, merged) {
@@ -386,7 +390,8 @@ async function sinceAll(root, st, c) {
 // timeline, or without one at midnight where the answer's tz is)
 export function comingAt(upcoming, now, phase, { dawn = null, tz } = {}) {
   const late = (r) => r.late === true && (tz ? dayKey(r.at, tz) === dayKey(now, tz) : now < r.at + 86400000);
-  const rows = list(upcoming).filter((r) => num(r.at) != null && (r.at > now || late(r)) && str(r.title)).sort((a, b) => a.at - b.at);
+  // (a parcel's row stays until its window's end, until, though its at (the window's start) has come)
+  const rows = list(upcoming).filter((r) => num(r.at) != null && (r.at > now || (num(r.until) != null && r.until > now) || late(r)) && str(r.title)).sort((a, b) => a.at - b.at);
   if (phase !== "evening") return rows;
   const at = num(dawn), first = rows.findIndex(at != null ? (r) => r.at >= at : (r) => dayKey(r.at, tz) !== dayKey(now, tz));
   return first < 0 ? rows : rows.slice(0, first + 1);
@@ -395,7 +400,7 @@ export function comingAt(upcoming, now, phase, { dawn = null, tz } = {}) {
 const dawnAfter = (answer, now) => list(answer.timeline).filter((x) => x.phase === "morning" && num(x.at) != null && x.at > now).sort((a, b) => a.at - b.at)[0]?.at ?? null;
 // (when the tick takes a row away: at its time, but a ride not in yet (late: its at, the ride's start, has passed) stays
 // until the next morning, or a day on without a timeline; a new answer replaces it sooner, once the ride's in)
-const dueOf = (r, answer, now) => r.late === true ? dawnAfter(answer, now) ?? r.at + 86400000 : r.at;
+const dueOf = (r, answer, now) => r.late === true ? dawnAfter(answer, now) ?? r.at + 86400000 : num(r.until) ?? r.at;
 function comingHtml(rows, st, now) {
   const tz = str(st.answer.tz) || undefined, ctx = { ...st.ctx, links: linksOf(st.ctx) };
   return `<h2 class="slabel">${LABELS.coming}</h2><div class="group glass">${rows.map((r) => {
@@ -410,20 +415,24 @@ function comingHtml(rows, st, now) {
   }).join("")}</div>`;
 }
 
-// (a booking from Mail (Mail on Your Day, trip.js): its kind's glyph, "from Mail", and a tap opens its sheet (Open Email,
-// Weather There, Hide); a link to its email where there's no sheet. One hidden here isn't drawn)
+// (a booking or a parcel from Mail (Mail on Your Day, trip.js, mailday.js): Mail's teal icon with its envelope, what it
+// is, and the number that matters on the right (the time, or a parcel's window) with its day under it; a parcel with its
+// four-part bar. A tap opens its sheet; a link to its email where there's no sheet. One hidden here isn't drawn)
 function mailRowHtml(r, st, now, tz) {
+  const p = parcelOfRow(r);
+  if (p) return `<div class="dc-row dc-mail dc-parcel" data-due="${dueOf(r, st.answer, now)}">${parcelRowHtml(p, (h) => linkTo(h, st.ctx))}</div>`;
   const b = bookingOfRow(r);
   if (!b) return "";
-  const h = linkTo(r.href, st.ctx), other = dayKey(r.at, tz) !== dayKey(now, tz), parts = bookingRowParts(b);
-  const inner = `<span class="dc-tm">${esc(hm(r.at, tz))}${other ? `<small>${esc(wkShort(r.at, tz))}</small>` : ""}</span>${parts.glyph}<span class="tx"><b>${esc(r.title)}</b>${str(r.sub) ? `<small>${esc(r.sub)}</small>` : ""}${parts.from}</span>`;
+  const h = linkTo(r.href, st.ctx), parts = bookingRowParts(b);
+  const d = dayKey(r.at, tz), when = d === dayKey(now, tz) ? "today" : d === dayKey(now + 86400000, tz) ? "tomorrow" : wkShort(r.at, tz);
+  const inner = `<span class="dc-tm" aria-hidden="true"></span>${parts.glyph}<span class="tx"><b>${esc(r.title)}</b>${str(r.sub) ? `<small>${esc(r.sub)}</small>` : ""}</span><span class="ml-amt"><b>${esc(hm(r.at, tz))}</b><small>${esc(when)}</small></span>`;
   const attrs = `data-do="booking" data-bid="${esc(b.id)}" aria-haspopup="dialog"`;
   return `<div class="dc-row dc-mail" data-due="${dueOf(r, st.answer, now)}">
       ${h ? `<a class="row dc-main" href="${esc(h)}" ${attrs}>${inner}</a>` : `<button type="button" class="row dc-main" ${attrs}>${inner}</button>`}
     </div>`;
 }
-// (the rows of Mail's bookings hidden here, left out)
-const shownRows = (rows) => rows.filter((r) => r.app !== "mail" || !isGone(str(r.booking)));
+// (the rows of Mail's bookings and parcels hidden here, left out)
+const shownRows = (rows) => rows.filter((r) => r.app !== "mail" || !isGone(str(r.parcel) || str(r.booking)));
 // (what trip.js's sheets are given: the page's sheet, toast and requests, links as this page makes them, and the day
 // drawn again after a Hide or its Undo)
 function tripHelp(root, st) {
@@ -433,7 +442,9 @@ function tripHelp(root, st) {
     go: (h) => { if (onHub(st.ctx)) hubOf(st.ctx).go(h); },
     toast: (text, o) => toast(st.ctx, text, o),
     call: (path, o) => call(st.ctx, path, o),
-    redraw: () => { const now = live.get(root); if (now && root.isConnected) paint(root, now, now.phase, nowOf(now)); },
+    redraw: () => { const now = live.get(root); if (now && root.isConnected) paint(root, now, now.phase, nowOf(now)); redrawTrip(); },
+    trip: () => tripOf(live.get(root)?.answer || st.answer),
+    money: () => moneyOf(live.get(root)?.answer || st.answer),
     tz: str(st.answer.tz) || undefined,
     now: () => nowOf(st),
   };
@@ -480,8 +491,9 @@ function draw(root, st, phase, now) {
   const top = drawTop(root, st, phase, now, s);
   const shows = !top && RIDE.includes(phase) ? NO_TOP : BELOW[phase] || BELOW.midday;
   const w = shows.includes("waiting") ? waitingRows(a) : [];
-  s.waiting.innerHTML = w.length ? waitingHtml(w, st, now) : "";
-  s.waiting.hidden = !w.length;
+  const owed = shows.includes("waiting") ? owedOf(a) : [], paid = shows.includes("waiting") ? paidOf(a) : null;
+  s.waiting.innerHTML = w.length || owed.length || paid ? waitingHtml(w, st, now, owed, paid) : "";
+  s.waiting.hidden = !(w.length || owed.length || paid);
   const rows = shows.includes("coming") ? shownRows(comingAt(a.upcoming, now, phase, { dawn: dawnAfter(a, now), tz: str(a.tz) || undefined })) : [];
   s.coming.innerHTML = rows.length ? comingHtml(rows, st, now) : "";
   s.coming.hidden = !rows.length;
@@ -622,6 +634,16 @@ function wire(root) {
       return;
     }
     if (d === "undo" || d === "take" || d === "keep") { e.preventDefault(); act(root, st, el); return; }
+    if (d === "mailitem" || d === "bills") {
+      const h = tripHelp(root, st);
+      if (!h.sheet) { if (onHub(st.ctx) && el.getAttribute("href")) { try { hubOf(st.ctx).go(el.getAttribute("href")); } catch {} } return; }
+      e.preventDefault();
+      if (d === "bills") { openBills(moneyOf(st.answer), h); return; }
+      const pr = el.dataset.pid ? list(st.answer.upcoming).map(parcelOfRow).find((x) => x && x.id === el.dataset.pid) : null;
+      const ow = el.dataset.iid ? owedOf(st.answer).find((x) => x.item === el.dataset.iid) : null;
+      if (pr || ow) openItem(pr || itemOfRow(ow), h);
+      return;
+    }
     if (d === "trip" || d === "booking") {
       const h = tripHelp(root, st);
       if (d === "trip") { e.preventDefault(); openTrip(tripOf(st.answer), h); return; }
