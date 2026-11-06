@@ -4007,6 +4007,38 @@ textarea:focus-visible {
   font-weight: 600;
 }
 
+/* Mail on Your Day: the strip at the top of a conversation with a booking Mail spotted in it (parts/spot.js), as the
+   mock-up's "In Mail" view */
+.spot-slot:empty { display: none; }
+.spot-slot { display: grid; gap: 10px; padding: 0 12px 10px; }
+.spot {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 20px;
+  background: var(--sheen), var(--glass);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 55%, transparent), var(--edge), var(--lift);
+  transition: opacity 0.3s var(--ease);
+}
+.spot.gone { opacity: 0.6; }
+.spot.busy { opacity: 0.75; }
+.spot-top { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; align-items: center; }
+.spot-ic { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(160deg, #6fb2ff, #2a6ae6); color: #fff; }
+.spot-ic svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.spot-ic svg.fill { fill: currentColor; stroke: none; }
+.spot-tx { min-width: 0; }
+.spot-state { display: block; color: var(--good); font-weight: 700; font-size: 11.5px; letter-spacing: 0.4px; text-transform: uppercase; }
+.spot.gone .spot-state { color: var(--text-3); }
+.spot-tx b { display: block; font-size: 15px; overflow-wrap: anywhere; }
+.spot-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.spot-facts div { min-width: 0; padding: 6px 8px; border-radius: 12px; background: var(--field); color: var(--text-3); font-size: 12px; }
+.spot-facts b { display: block; color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.spot-how { color: var(--text-3); font-size: 12px; }
+.spot-btns { display: flex; gap: 8px; }
+.spot-btns .chip { flex: 1; min-height: 36px; }
+
 .menu-layer.center {
   display: grid;
   place-items: center;
@@ -5371,6 +5403,7 @@ button.set-row:active {
 .set-ic.indigo { background: linear-gradient(160deg, #8a86ff, #5a4fe0); }
 .set-ic.amber { background: linear-gradient(160deg, #ffc35a, #f08a1c); }
 .set-ic.red { background: linear-gradient(160deg, #ff7b70, #e5372c); }
+.set-ic.green { background: linear-gradient(160deg, #5be39a, #1f9d55); }
 
 .set-dot {
   flex: none;

@@ -42,6 +42,42 @@ const SCHEMA = [
     count INTEGER NOT NULL DEFAULT 0,
     last_used INTEGER NOT NULL DEFAULT 0
   )`,
+  // (Mail on Your Day: the bookings spotted in mail, one row per leg, by a stable id; and the senders and kinds said to be
+  // Wrong, not read for them again. spot.js)
+  `CREATE TABLE IF NOT EXISTS spots (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    sub TEXT,
+    facts TEXT,
+    start_at INTEGER NOT NULL,
+    end_at INTEGER,
+    tz TEXT,
+    place TEXT,
+    lat REAL,
+    lon REAL,
+    dest_lat REAL,
+    dest_lon REAL,
+    ref TEXT,
+    from_place TEXT,
+    to_place TEXT,
+    from_city TEXT,
+    city TEXT,
+    thread_id TEXT,
+    message_id TEXT,
+    sender TEXT,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    mail_date INTEGER NOT NULL DEFAULT 0,
+    created INTEGER NOT NULL,
+    updated INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_spots_thread ON spots(thread_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_spots_start ON spots(start_at)`,
+  // (every conversation a booking's been read from, for the strip in each: the row has the latest)
+  `CREATE TABLE IF NOT EXISTS spot_threads (spot_id TEXT NOT NULL, thread_id TEXT NOT NULL, PRIMARY KEY (thread_id, spot_id))`,
+  `CREATE TABLE IF NOT EXISTS spot_wrong (sender TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (sender, kind))`,
 ];
 
 // Columns and tables added since the first version: each run on its own, as ALTER TABLE fails once a column exists.
@@ -89,7 +125,7 @@ const MIGRATIONS = [
 ];
 
 // Bumped whenever SCHEMA or MIGRATIONS change, so a new isolate checks one row rather than running them all again.
-const SCHEMA_VERSION = "11";
+const SCHEMA_VERSION = "12";
 
 let ready;
 

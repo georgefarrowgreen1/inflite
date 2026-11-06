@@ -71,7 +71,7 @@ async function fresh(e, key) {
 // and isn't the one kept, its Mail's parts are fetched too (all again, if it's the same Mail changed), a few seconds on,
 // out of the way of Mail opening; those of any Mail but it and the one before it go. (The demo's only as it's used.)
 const PART = /^\/parts\/[\w-]+\.js$/;
-const PARTS = ["/parts/compose.js", "/parts/viewer.js", "/parts/search.js", "/parts/sheets.js"];
+const PARTS = ["/parts/compose.js", "/parts/viewer.js", "/parts/search.js", "/parts/sheets.js", "/parts/spot.js"];
 const PARTS_KEPT = "/parts/kept";
 const partKey = (path, b) => `${path}?b=${encodeURIComponent(b)}`;
 async function part(e, u) {
