@@ -1,21 +1,28 @@
 // Mail on Your Day on Today's page (stage 1: trips and bookings, the admin's alone, read from Mail by rules, no AI): the
 // trip card (a version 2 answer's trip: the account's functions/_todayday.js), drawn above Waiting for You; its day-by-day
-// view (the trip's bookings under each of its days, with the weather where it goes); Coming Up's rows from Mail ("from
-// Mail"); and the sheet a booking opens: Open Email (Mail's own address for its conversation), Weather There (Weather on
-// the place, that day) and Hide (gone from the page at once, with Undo while the toast's up; only then sent, POST
-// /api/mail/hide, which the account passes to Mail). Everything through esc(), nothing in an inline style.
-//   tripOf(answer) → the answer's trip with every field checked (and the bookings hidden here left out), or null
+// view (the trip's bookings under each of its days, with the weather where it goes); Coming Up's rows from Mail (Mail's
+// teal icon with a small envelope on it, the time on the right); and the sheet a booking opens: Open Email (Mail's own
+// address for its conversation), Weather There (Weather on the place, that day) and Hide (gone from the page at once,
+// with Undo while the toast's up; only then sent, POST /api/mail/hide, which the account passes to Mail). Stage 3: a
+// hidden booking stays in its day in the trip, faded, with Put Back (POST /api/mail/unhide, at once, Undo-free), and the
+// trip says how many are hidden; a repeating invite's sheet lists its next dates (one cancelled struck through, one moved
+// at its new time), and its Hide hides every date of it. Everything through esc(), nothing in an inline style.
+//   tripOf(answer) → the answer's trip with every field checked (the bookings hidden, by Mail or here, as hidden), or null
 //   tripCardHtml(trip, { now, tz }) → the card (a button, data-do="trip"), or ""
-//   tripDaysHtml(trip, { now, tz }) → the day-by-day list (each booking a button, data-do="booking" data-bid)
-//   bookingRowParts(row) → { glyph, from } for a Coming Up row of Mail's (its kind's glyph and "from Mail")
+//   tripDaysHtml(trip, { now, tz }) → the day-by-day list (each booking a button, data-do="booking" data-bid; each hidden
+//     one a row with Put Back, data-tv="back")
+//   mailIcon(glyph) → Mail's teal icon with its envelope; bookingRowParts(row) → { glyph } for a Coming Up row of Mail's;
+//   seriesHtml(booking, tz) → a repeating invite's next dates
 //   openTrip(trip, h) / openBooking(b, h): the sheets, through h.sheet (the page's InFlite sheet, F.sheet.open);
 //     h = { sheet, link(href) → address or null, go(href) (the hub's breadcrumb, as a link's left), toast(text, o),
-//     call(path, o), redraw(), tz, now() }
-//   isGone(id) → whether a booking's been hidden here (until the page is left)
+//     call(path, o), redraw(), trip() (the trip as it now stands), tz, now() }
+//   hideItem(id, h, { said }) → a booking, parcel or bill hidden here (and sent once Undo's time is up); isGone(id) →
+//     whether it's been hidden here (a repeating invite's date: any of its series), until the page is left
 import { esc, hm, dayKey, dateLong, wkShort, G } from "/cards.js";
 import { weatherIcon } from "/wxicons.js";
 
-const ID = /^[A-Za-z0-9_-]{1,64}$/;
+// (Mail's ids, and a repeating invite's dates: <series>~<yyyymmdd>)
+const ID = /^[A-Za-z0-9_~-]{1,64}$/;
 const KINDS = ["flight", "train", "bus", "hotel", "car", "restaurant", "event", "booking"];
 const TRAVEL = ["flight", "train", "bus"];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -35,19 +42,25 @@ export const KIND_GLYPH = {
   event: sv('<path d="M3 10a2 2 0 0 0 0 4v4h18v-4a2 2 0 0 1 0-4V6H3z"/><path d="M14 6v12" stroke-dasharray="2 2"/>'),
   booking: sv('<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'),
 };
-const GL = {
+export const GL = {
   mail: sv('<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3.5 7 8.5 6 8.5-6"/>'),
   hide: sv('<path d="M3 3l18 18M10.6 6.1A10 10 0 0 1 22 12s-1 2-3 3.8M6.6 6.6C3.9 8.3 2 12 2 12s3.6 7 10 7c1.7 0 3.2-.4 4.5-1.1"/>'),
 };
 const glyphOf = (kind) => KIND_GLYPH[kind] || KIND_GLYPH.booking;
+// (Mail's teal icon, with the small envelope that says it came from Mail, in place of a "from Mail" line)
+const VIA = '<i class="ml-via"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3.5 7 8.5 6 8.5-6"/></svg></i>';
+export const mailIcon = (glyph, cls = "") => `<span class="ml-ic${cls ? ` ${cls}` : ""}">${glyph}${VIA}</span>`;
 
 // ---------------------------------------------------------------- what's been hidden here, and Hide's Undo
 // (hidden at once on the page; sent once the toast's Undo has had its time, or as the page is left)
 const UNDO_MS = 7000;
 const gone = new Map();
-export const isGone = (id) => gone.has(id);
-function hideBooking(id, h) {
-  if (!ID.test(id) || gone.has(id)) return;
+// (the bookings put back here, from Mail's hidden: shown again until the page is left)
+const back = new Set();
+const seriesOf = (id) => (typeof id === "string" && id.includes("~") ? id.slice(0, id.indexOf("~")) : null);
+export const isGone = (id) => gone.has(id) || (!!seriesOf(id) && [...gone.keys()].some((k) => seriesOf(k) === seriesOf(id)));
+export function hideItem(id, h, { said = "Hidden" } = {}) {
+  if (!ID.test(id) || isGone(id)) return;
   const g = { sent: false, undone: false, timer: 0 };
   gone.set(id, g);
   h.redraw();
@@ -62,14 +75,28 @@ function hideBooking(id, h) {
       if (e?.status !== 401) h.toast(e?.message || "Couldn’t hide it just now. Try again in a moment.", { app: "mail" });
     });
   };
-  g.timer = setTimeout(g.send, UNDO_MS);
-  h.toast("Hidden from Your Day", { app: "mail", action: { label: "Undo", run: () => {
-    if (g.sent) { h.toast("It’s already off Your Day. Put it back from its email in Mail.", { app: "mail" }); return; }
+  g.undo = () => {
+    if (g.sent) return false;
     g.undone = true;
     clearTimeout(g.timer);
     gone.delete(id);
     h.redraw();
-  } } });
+    return true;
+  };
+  g.timer = setTimeout(g.send, UNDO_MS);
+  h.toast(said, { app: "mail", action: { label: "Undo", run: () => { if (!g.undo()) h.toast("Already hidden", { app: "mail" }); } } });
+}
+// Put Back: one hidden here whose Undo's still to come, undone; one hidden for good (here, or by Mail), put back in Mail
+// at once (POST /api/mail/unhide) and shown again; said where it can't be
+function putBack(id, h) {
+  const g = gone.get(id);
+  if (g?.undo?.()) return;
+  Promise.resolve().then(() => h.call("/api/mail/unhide", { method: "POST", body: { id } })).then(() => {
+    gone.delete(id);
+    back.add(id);
+    h.redraw();
+    h.toast("Back on Your Day", { app: "mail" });
+  }, (e) => { if (e?.status !== 401) h.toast(e?.message || "Couldn’t put it back just now. Try again in a moment.", { app: "mail" }); });
 }
 // (a Hide still waiting for its Undo's time as the page is left: sent then, so it isn't lost)
 if (typeof addEventListener === "function") {
@@ -90,17 +117,31 @@ function bookingOf(b) {
   if (!b || typeof b !== "object" || !ID.test(str(b.id)) || !KINDS.includes(b.kind) || !str(b.title).trim() || num(b.start) == null) return null;
   const place = b.place && typeof b.place === "object" && str(b.place.name) ? { name: str(b.place.name, 60) } : null;
   return { id: b.id, kind: b.kind, title: str(b.title, 80), sub: str(b.sub, 120), start: b.start, end: num(b.end), tz: zoneOk(b.tz) ? b.tz : null, place,
-    ref: str(b.ref, 24) || null, href: str(b.href, 400) || null, wx: str(b.wx, 400) || null };
+    ref: str(b.ref, 24) || null, href: str(b.href, 400) || null, wx: str(b.wx, 400) || null, ...seriesFields(b) };
+}
+// (a repeating invite's date: how it repeats, the series' next dates (at most 5: { start, cancelled, was }), and where
+// this one was moved from)
+function seriesFields(b) {
+  const repeat = str(b.repeat, 40).trim();
+  if (!repeat) return num(b.was) != null ? { was: b.was } : {};
+  const next = (Array.isArray(b.next) ? b.next : []).filter((n) => n && typeof n === "object" && num(n.start) != null).slice(0, 5)
+    .map((n) => ({ start: n.start, cancelled: n.cancelled === true, was: num(n.was) }));
+  return { repeat, next, ...(num(b.was) != null ? { was: b.was } : {}) };
 }
 export function tripOf(answer) {
   const t = answer?.trip;
   if (!t || typeof t !== "object" || !ID.test(str(t.id)) || !str(t.name).trim() || num(t.start) == null) return null;
-  const items = (Array.isArray(t.items) ? t.items : []).map(bookingOf).filter((b) => b && !gone.has(b.id)).sort((a, b) => a.start - b.start);
+  const all = (Array.isArray(t.items) ? t.items : []).map(bookingOf).filter(Boolean);
+  // (Mail's hidden, those put back here shown again, as bookings of no kind it said)
+  const was = (Array.isArray(t.hidden) ? t.hidden : []).filter((b) => b && ID.test(str(b.id)) && str(b.title).trim() && num(b.start) != null && !all.some((x) => x.id === b.id))
+    .slice(0, 10).map((b) => ({ id: b.id, kind: "booking", title: str(b.title, 80), sub: str(b.sub, 120), start: b.start, end: null, tz: null, place: null, ref: null, href: null, wx: null }));
+  const items = [...all, ...was.filter((b) => back.has(b.id))].filter((b) => !isGone(b.id)).sort((a, b) => a.start - b.start);
+  const hidden = [...all.filter((b) => isGone(b.id)), ...was.filter((b) => !back.has(b.id) && !items.some((x) => x.id === b.id))].sort((a, b) => a.start - b.start);
   if (!items.length) return null;
   const days = (Array.isArray(t.days) ? t.days : []).filter((d) => d && DAY.test(str(d.day))).slice(0, 21).map((d) => ({
     day: d.day, hi: str(d.hi, 12), lo: str(d.lo, 12), icon: /^[a-z-]{1,24}$/.test(str(d.icon)) ? d.icon : "", label: str(d.label, 40), said: str(d.said, 80) }));
   return { id: t.id, name: str(t.name, 60), start: t.start, end: num(t.end) ?? t.start, tz: zoneOk(t.tz) ? t.tz : null, apart: num(t.apart), href: str(t.href, 400) || null,
-    destination: str(t.destination?.name, 60) || str(t.name, 60), items, days };
+    destination: str(t.destination?.name, 60) || str(t.name, 60), items, hidden, days };
 }
 
 // ---------------------------------------------------------------- words
@@ -159,29 +200,32 @@ export function tripDaysHtml(trip, { now, tz } = {}) {
   const keyOf = (b) => dayKey(b.start, dz).split("/").reverse().join("-");
   const days = trip.days.length ? trip.days.map((d) => d.day) : [...new Set(trip.items.map(keyOf))];
   const byDay = new Map(days.map((d) => [d, []]));
-  for (const b of trip.items) {
+  // (each hidden one in its day too, faded, with Put Back)
+  for (const b of [...trip.items, ...(trip.hidden || []).map((x) => ({ ...x, hid: true }))].sort((a, b) => a.start - b.start)) {
     const k = keyOf(b);
     if (!byDay.has(k)) byDay.set(k, []);
     byDay.get(k).push(b);
   }
   const wxOf = new Map(trip.days.map((d) => [d.day, d]));
+  const row = (b) => b.hid
+    ? `<div class="row tv-row tv-hid" data-hid="${esc(b.id)}"><span class="bk-ic">${GL.hide}</span><span class="tx"><b>${esc(b.title)}</b><small>Hidden</small></span><button type="button" class="tv-back" data-tv="back" data-bid="${esc(b.id)}">Put Back</button></div>`
+    : `<button type="button" class="row tv-row" data-do="booking" data-bid="${esc(b.id)}">${mailIcon(glyphOf(b.kind), "bk-ic")}<span class="tx"><b>${esc(b.title)}</b>${b.sub ? `<small>${esc(b.sub)}</small>` : ""}</span><span class="tv-tm">${esc(hm(b.start, zoneFor(b, trip, z)))}</span></button>`;
   return `<div class="group glass tv-list">${[...byDay.keys()].sort().map((d) => {
     const w = wxOf.get(d), list = byDay.get(d);
     const said = w?.hi ? `${w.hi}${w.said ? ` ${w.said}` : ""}` : "";
     return `<h3 class="tv-day"><span>${esc(dayHead(d))}</span>${said ? `<span class="tv-wx">${w.icon ? weatherIcon(w.icon, 18, w.label) : ""}${esc(said)}</span>` : ""}</h3>${list.length
-      ? list.map((b) => `<button type="button" class="row tv-row" data-do="booking" data-bid="${esc(b.id)}"><span class="bk-ic">${glyphOf(b.kind)}</span><span class="tx"><b>${esc(b.title)}</b>${b.sub ? `<small>${esc(b.sub)}</small>` : ""}</span><span class="tv-tm">${esc(hm(b.start, zoneFor(b, trip, z)))}</span></button>`).join("")
-      : '<p class="tv-none">Nothing booked</p>'}`;
+      ? list.map(row).join("") : '<p class="tv-none">Nothing booked</p>'}`;
   }).join("")}</div>`;
 }
 
 // ---------------------------------------------------------------- Coming Up's rows from Mail
-export const bookingRowParts = (r) => ({ glyph: `<span class="dc-ic bk-ic">${glyphOf(r.kind)}</span>`, from: '<span class="dc-from"><i></i>from Mail</span>' });
+export const bookingRowParts = (r) => ({ glyph: mailIcon(glyphOf(r.kind), "dc-ic") });
 // (a Coming Up row of Mail's as a booking: its id from the row's, booking)
 export function bookingOfRow(r) {
   const id = ID.test(str(r?.booking)) ? r.booking : null;
   if (!id || num(r.at) == null || !str(r.title)) return null;
   return { id, kind: KINDS.includes(r.kind) ? r.kind : "booking", title: str(r.title, 80), sub: str(r.sub, 120), start: r.at, end: null, tz: null,
-    place: str(r.place) ? { name: str(r.place, 60) } : null, ref: str(r.ref, 24) || null, href: str(r.href, 400) || null, wx: str(r.wx, 400) || null };
+    place: str(r.place) ? { name: str(r.place, 60) } : null, ref: str(r.ref, 24) || null, href: str(r.href, 400) || null, wx: str(r.wx, 400) || null, ...seriesFields(r) };
 }
 
 // ---------------------------------------------------------------- the sheets
@@ -190,19 +234,32 @@ function html(s) {
   t.innerHTML = s;
   return t.content;
 }
-// (a booking's sheet, or page of the trip's: what and when, then Open Email, Weather There, Hide)
+// (a repeating invite's next dates: the day, the time (a moved one's new time, "moved"), Next and Off)
+export function seriesHtml(b, z) {
+  if (!b.repeat || !b.next?.length) return "";
+  const first = b.next.find((n) => !n.cancelled);
+  return `<div class="group glass bk-occ">${b.next.map((n) => {
+    const f = (o) => new Intl.DateTimeFormat("en-GB", { timeZone: z, ...o }).format(n.start), d = `${f({ weekday: "short" })} ${f({ month: "short" }).slice(0, 3)}`, day = f({ day: "numeric" });
+    const moved = n.was != null && !n.cancelled;
+    return `<div class="bk-o${n.cancelled ? " off" : ""}"><span class="bk-od"><small>${esc(d)}</small><b>${esc(day)}</b></span><span class="tx"><b>${esc(hm(n.start, z))}</b>${moved ? ' <span class="chg">moved</span>' : ""}${moved ? `<small>was ${esc(hm(n.was, z))}</small>` : ""}</span>${n.cancelled ? '<span class="bk-pill off">Off</span>' : n === first ? '<span class="bk-pill">Next</span>' : ""}</div>`;
+  }).join("")}</div>`;
+}
+// (a booking's sheet, or page of the trip's: what and when, then Open Email, Weather There, Hide; a repeating invite's
+// with its next dates)
 function bookingBody(b, trip, h) {
   const z = zoneFor(b, trip, h.tz), when = `${dateLong(b.start, z)} · ${hm(b.start, z)}${b.ref ? ` · ref ${b.ref}` : ""}`;
   const email = b.href ? h.link(b.href) : null, wx = b.wx ? h.link(b.wx) : null;
   const where = trip ? trip.destination : b.place?.name || "";
+  // (a repeating invite's sub, without how it repeats at its end: that's the line under it)
+  const tail = b.repeat ? ` · ${b.repeat}` : "", sub = !b.repeat ? b.sub : b.sub.endsWith(tail) ? b.sub.slice(0, -tail.length) : b.sub === b.repeat ? "" : b.sub;
   const box = html(`<div class="bk-sheet">
-    ${b.sub ? `<p class="bk-p">${esc(b.sub)}</p>` : ""}<p class="bk-when">${esc(when)}</p>
+    ${sub ? `<p class="bk-p">${esc(sub)}</p>` : ""}<p class="bk-when">${esc(b.repeat ? `${b.repeat.charAt(0).toUpperCase()}${b.repeat.slice(1)} · ${hm(b.start, z)}` : when)}</p>
+    ${seriesHtml(b, z)}
     <div class="bk-acts">
       ${email ? `<a class="bk-act go" href="${esc(email)}" data-bk="open">${GL.mail}<span>Open Email</span></a>` : ""}
       ${wx ? `<a class="bk-act" href="${esc(wx)}" data-bk="open">${G.sun}<span>${esc(where ? `Weather in ${where} That Day` : "Weather There That Day")}</span></a>` : ""}
-      <button type="button" class="bk-act" data-bk="hide">${GL.hide}<span>Hide From Your Day</span></button>
+      <button type="button" class="bk-act" data-bk="hide">${GL.hide}<span>Hide</span></button>
     </div>
-    <p class="bk-how">From the booking’s email, read by Mail.</p>
   </div>`);
   return box;
 }
@@ -211,7 +268,7 @@ function wireBooking(root, b, h, handle) {
     const el = e.target.closest?.("[data-bk]");
     if (!el) return;
     if (el.dataset.bk === "open") { try { h.go?.(el.getAttribute("href")); } catch {} return; }
-    if (el.dataset.bk === "hide") { e.preventDefault(); handle?.close(); hideBooking(b.id, h); }
+    if (el.dataset.bk === "hide") { e.preventDefault(); handle?.close(); hideItem(b.id, h); }
   });
 }
 export function openBooking(b, h) {
@@ -219,19 +276,48 @@ export function openBooking(b, h) {
   const handle = h.sheet({ sheet: "booking", title: b.title, app: "mail", body: (el, hd) => { el.append(bookingBody(b, null, h)); wireBooking(el, b, h, hd); } });
   return handle;
 }
+// (the trip's sheet: its dates and the time there, how many of its bookings are hidden, and its days; drawn again in
+// place after a Hide or a Put Back, from the trip as it now stands)
+let tripShown = null;
+function tripBody(trip, h) {
+  const z = h.tz || "Europe/London", n = trip.hidden?.length || 0;
+  const head = [datesSaid(trip, z), apartSaid(trip.apart)].filter(Boolean).join(" · ");
+  return html(`<p class="tv-head"><span>${esc(head)}</span>${n ? `<span class="tv-cnt">${n} hidden</span>` : ""}</p>${tripDaysHtml(trip, { now: h.now?.(), tz: z })}`);
+}
+export function redrawTrip() {
+  const s = tripShown;
+  if (!s || s.hd.closed || !s.el.isConnected) { tripShown = null; return; }
+  const trip = s.h.trip?.();
+  if (!trip) return;
+  s.trip = trip;
+  s.box.replaceChildren(tripBody(trip, s.h));
+}
 export function openTrip(trip, h) {
   if (!trip || typeof h?.sheet !== "function") return null;
-  const n = trip.days.length || 1, z = h.tz || "Europe/London";
-  const head = [datesSaid(trip, z), apartSaid(trip.apart)].filter(Boolean).join(" · ");
+  const n = trip.days.length || 1;
+  // (a Hide or a Put Back from inside it draws the day and the trip again)
+  const hh = { ...h, redraw: () => { h.redraw(); redrawTrip(); } };
   return h.sheet({ sheet: "trip", title: `${trip.name} · ${n} ${n === 1 ? "day" : "days"}`, app: "mail", body: (el, hd) => {
-    el.append(html(`<p class="tv-head">${esc(head)}</p>${tripDaysHtml(trip, { now: h.now?.(), tz: z })}`));
+    const box = document.createElement("div");
+    box.className = "tv-box";
+    box.append(tripBody(trip, hh));
+    el.append(box);
+    tripShown = { el, hd, h: hh, box, trip };
     el.addEventListener("click", (e) => {
-      const row = e.target.closest?.(".tv-row[data-bid]");
+      const pb = e.target.closest?.('[data-tv="back"]');
+      if (pb && !pb.closest(".ifs-page")) { e.preventDefault(); putBack(pb.dataset.bid, hh); return; }
+      const row = e.target.closest?.(".tv-row[data-do='booking'][data-bid]");
       if (!row || row.closest(".ifs-page")) return;
-      const b = trip.items.find((x) => x.id === row.dataset.bid);
+      const b = tripShown?.trip.items.find((x) => x.id === row.dataset.bid);
       if (!b) return;
-      const pg = hd.push({ page: "booking", title: b.title, body: bookingBody(b, trip, h) });
-      wireBooking(pg, b, h, hd);
+      const pg = hd.push({ page: "booking", title: b.title, body: bookingBody(b, tripShown.trip, hh) });
+      pg.addEventListener("click", (e2) => {
+        const el2 = e2.target.closest?.("[data-bk]");
+        if (!el2) return;
+        if (el2.dataset.bk === "open") { try { hh.go?.(el2.getAttribute("href")); } catch {} return; }
+        // (hidden from inside the trip: back to its days, where it stays, faded, with Put Back)
+        if (el2.dataset.bk === "hide") { e2.preventDefault(); hd.pop(); hideItem(b.id, hh); }
+      });
     });
   } });
 }

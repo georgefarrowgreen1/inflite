@@ -96,14 +96,55 @@
 .tp-day .wi, .tv-wx .wi { filter: drop-shadow(0 1px 1.5px rgba(10, 20, 50, 0.28)); }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) :is(.tp-day, .tv-wx) .wi { filter: drop-shadow(0 0 1px rgba(10, 20, 50, 0.55)) drop-shadow(0 1px 2px rgba(10, 20, 50, 0.3)); } }
 :root[data-theme="light"] :is(.tp-day, .tv-wx) .wi { filter: drop-shadow(0 0 1px rgba(10, 20, 50, 0.55)) drop-shadow(0 1px 2px rgba(10, 20, 50, 0.3)); }
-/* (Coming Up's rows from Mail: the booking's kind in Mail's colour, and "from Mail" under its words) */
+/* (rows from Mail: the thing's kind in Mail's teal, a small envelope on it that says it came from Mail, and the number that
+   matters on the right, its day under it) */
 .bk-ic { flex: none; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--c-mail); color: #fff; box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.35); }
 .bk-ic svg { width: 18px; height: 18px; }
-.dc-from { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-3); }
-.dc-from i { width: 8px; height: 8px; border-radius: 3px; background: var(--c-mail); }
-button.dc-main { font: inherit; }
+.ml-ic { position: relative; flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--c-mail); color: #fff; box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.35); }
+.ml-ic > svg { width: 20px; height: 20px; }
+.ml-ic.dc-ic, .ml-ic.bk-ic { width: 32px; height: 32px; border-radius: 9px; }
+.ml-ic.dc-ic > svg, .ml-ic.bk-ic > svg { width: 18px; height: 18px; }
+.ml-via { position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px; border-radius: 5px; display: grid; place-items: center; background: var(--glass-strong, #fff); color: var(--c-mail);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--text) 8%, transparent); }
+.ml-via svg { width: 10px; height: 10px; }
+.ml-amt { flex: none; display: grid; justify-items: end; gap: 1px; text-align: right; }
+.ml-amt b { font: 600 16px/1.2 var(--font); font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.ml-amt small { font-size: 12.5px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row .chg, .bk-p .chg, .ml-n .chg { display: inline-block; padding: 0 6px; border-radius: 7px; font-size: 12px; font-weight: 700; line-height: 1.5; background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); font-variant-numeric: tabular-nums; }
+button.dc-main, button.dm-main { font: inherit; }
+/* (Coming Up's: no time on the left, the number on the right; on a computer the left kept, so the icons stay on the
+   timeline's line with the others) */
+.dc-mail .dc-tm:empty { display: none; }
+@media (min-width: 1100px) { .day-side #coming .dc-mail .dc-tm:empty { display: grid; visibility: hidden; } }
+/* (a parcel's four-part bar: a part for each step done, the one it's at half filled) */
+.ml-track { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-top: 6px; }
+.ml-track i { height: 4px; border-radius: 2px; background: var(--glass-ctl); }
+.ml-track i.on { background: var(--c-mail); }
+.ml-track i.now { background: linear-gradient(90deg, var(--c-mail) 50%, var(--glass-ctl) 50%); }
+.ml-tracklab { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-top: 5px; font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+.ml-tracklab span:nth-child(2), .ml-tracklab span:nth-child(3) { text-align: center; }
+.ml-tracklab span:last-child { text-align: right; }
+.ml-tracklab span.on { color: var(--text-2); }
+.ml-hero { margin: 4px 0 12px; }
+.ml-hero .ml-track { margin-top: 0; }
+.ml-hero .ml-track i { height: 6px; border-radius: 3px; }
+/* (Waiting for You's rows from Mail, and the quiet line of what paid itself) */
+.dm-main { align-items: center; }
+.dm-quiet { display: block; width: 100%; margin: 0; padding: 11px 18px 13px 72px; border: 0; background: none; text-align: left; font: 600 14px/1.35 var(--font); color: var(--text-3); position: relative; }
+.dm-quiet::before { content: ""; position: absolute; top: 0; left: 72px; right: 0; height: 0.5px; background: var(--line); }
+.group > .dm-quiet:first-child::before { display: none; }
+button.dm-quiet { cursor: pointer; }
+button.dm-quiet:active { background: var(--press); }
+.dm-quiet:focus-visible, .dm-main:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; }
 /* (the trip, day by day, in its sheet) */
-.tv-head { margin: 0 4px 12px; font-size: 15px; color: var(--text-2); }
+.tv-head { display: flex; justify-content: space-between; gap: 10px; margin: 0 4px 12px; font-size: 15px; color: var(--text-2); }
+.tv-cnt { flex: none; font-size: 13.5px; font-weight: 600; color: var(--text-3); }
+/* (a booking hidden, still in its day: faded, with Put Back) */
+.tv-hid .bk-ic { background: transparent; color: var(--text-3); box-shadow: inset 0 0 0 1.5px var(--line); }
+.tv-hid .tx b, .tv-hid .tx small { color: var(--text-3); }
+.tv-back { flex: none; min-height: 36px; padding: 0 12px; border: 0; border-radius: 12px; background: var(--glass-ctl); color: var(--tint-text); font: 700 14px/1 var(--font); cursor: pointer; }
+.tv-back:active { filter: brightness(1.15); }
+.tv-back:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
 .tv-list { padding-bottom: 4px; }
 .tv-day { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0; padding: 14px 18px 4px; font: 700 12.5px/1.2 var(--font); letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-3); }
 .tv-wx { display: inline-flex; align-items: center; gap: 5px; text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 13.5px; color: var(--text-2); }
@@ -122,7 +163,38 @@ button.dc-main { font: inherit; }
 .bk-act.go svg { color: #fff; }
 .bk-act:active { filter: brightness(1.12); }
 .bk-act:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
-.bk-how { margin: 10px 4px 0; font-size: 13px; color: var(--text-3); }
+/* (a repeating invite's next dates) */
+.bk-occ { margin: 2px 0 12px; }
+.bk-o { position: relative; display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 16px; }
+.bk-o + .bk-o::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px; background: var(--line); }
+.bk-od { display: grid; justify-items: center; line-height: 1.1; }
+.bk-od small { font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-3); }
+.bk-od b { font: 700 20px/1.1 var(--font-d); font-variant-numeric: tabular-nums; }
+.bk-o .tx { display: block; min-width: 0; }
+.bk-o .tx b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.bk-o .tx small { display: block; font-size: 13px; color: var(--text-2); }
+.bk-o.off .tx b { text-decoration: line-through; opacity: 0.6; }
+.bk-o .chg { display: inline-block; padding: 0 6px; border-radius: 7px; font-size: 12px; font-weight: 700; line-height: 1.5; background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.bk-pill { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good-text); white-space: nowrap; }
+.bk-pill.off { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+/* (the Bills sheet: the month big, six months of bars, the split by kind; then its rows) */
+.ml-bills { display: grid; gap: 0; }
+.ml-bills > .slabel { margin: 18px 18px 8px; }
+.ml-big { display: grid; gap: 3px; padding: 14px 16px 16px; border-radius: var(--r-group); }
+.ml-big > small { font-size: 12px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-3); }
+.ml-big > b { font: 700 30px/1.15 var(--font-d); font-variant-numeric: tabular-nums; }
+.ml-n { font-size: 14px; color: var(--text-2); }
+.ml-bars { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; align-items: end; height: 56px; margin-top: 24px; }
+.ml-bars i { position: relative; display: block; height: var(--h, 50%); border-radius: 6px 6px 3px 3px; background: color-mix(in srgb, var(--c-mail) 50%, transparent); }
+.ml-bars i.now { background: var(--c-mail); }
+.ml-bars em { position: absolute; top: -19px; left: 50%; transform: translateX(-50%); font: 700 11.5px/1 var(--font); font-style: normal; color: var(--text); white-space: nowrap; }
+.ml-barlab { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-top: 4px; font-size: 11.5px; color: var(--text-3); text-align: center; }
+.ml-split { display: flex; gap: 3px; height: 8px; margin-top: 14px; }
+.ml-split i { flex: var(--share, 1) 1 0; min-width: 4px; border-radius: 4px; }
+.ml-cats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; }
+.ml-cats span { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ml-cats i { width: 8px; height: 8px; border-radius: 3px; }
+.t-mail { background: var(--c-mail); } .t-weather { background: var(--c-weather); } .t-trip { background: #6c5ce7; } .t-fitness { background: var(--c-fitness); } .t-markets { background: var(--c-markets); }
 
 /* ---- what Chat's engine says, faded in as it comes (about a second after the day's drawn) ---- */
 .dw-words.in, .dt-said.in { animation: day-in 0.6s var(--ease-out) both; }
