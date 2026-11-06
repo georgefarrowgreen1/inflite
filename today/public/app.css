@@ -496,6 +496,37 @@ label.row:active { background: var(--press); }
 
 /* ---- You: your account, rules, notifications, this phone, quiet hours, Chat, versions, Sign Out ---- */
 .you-sec { margin: 0 0 24px; }
+/* (You's two panes, on a computer only: on a phone the side and the main part are the one column, and the list of parts
+   and the folders' copies aren't shown) */
+.you-side, .you-main, .you-folds { display: contents; }
+.you-nav, .you-fold { display: none; }
+@media (min-width: 1100px) {
+  #you.view { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); column-gap: 32px; align-items: start; max-width: 1200px; }
+  .you-side { display: grid; gap: 14px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 76px); align-content: start; }
+  .you-side .you-sec { margin: 0; }
+  .you-side .you-sec .row.you-me { min-height: 72px; }
+  .you-side .you-me .you-ph { width: 48px; height: 48px; font-size: 19px; }
+  .you-side .you-me .tx b { font-size: 17px; }
+  .you-nav { display: block; padding: 6px; }
+  .you-nav .row.you-tab { min-height: 46px; padding: 6px 10px; gap: 12px; border-radius: 14px; appearance: none; -webkit-appearance: none; border: 0; background: none; font: inherit; cursor: pointer; width: 100%; }
+  .you-nav .row.you-tab + .row::before { display: none; }
+  .you-nav .row.you-tab .ic { width: 28px; height: 28px; border-radius: 8px; }
+  .you-nav .row.you-tab .ic svg { width: 16px; height: 16px; }
+  .you-nav .row.you-tab .tx b { font-size: 15px; font-weight: 550; }
+  .you-nav .row.you-tab:hover { background: var(--press); }
+  .you-nav .row.you-tab[aria-current] { background: color-mix(in srgb, var(--tint) 14%, transparent); }
+  .you-nav .row.you-tab[aria-current] .tx b { color: var(--tint-text); font-weight: 650; }
+  .you-nav .row.you-tab:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; }
+  .you-nav .you-tab-out { margin-top: 6px; }
+  .you-nav .you-tab-out .tx b { color: var(--danger); }
+  .you-main { display: block; min-width: 0; }
+  .you-folds { display: contents; }
+  .you-main .you-sec:not(.on) { display: none; }
+  .you-main .you-sec.on { display: block; margin: 0; animation: you-pane 0.22s var(--ease-out, ease) both; }
+  .you-main .you-sec.on > .you-h { margin: 6px 4px 16px; font: 700 28px/1.15 var(--font-d, var(--font)); letter-spacing: -0.4px; text-transform: none; color: var(--text); }
+  @keyframes you-pane { from { opacity: 0; transform: translateY(4px); } }
+}
+@media (min-width: 1100px) and (prefers-reduced-motion: reduce) { .you-main .you-sec.on { animation: none; } }
 #yfBody .you-sec { margin: 4px 0 8px; }
 .you-h { margin: 0 18px 8px; font: 600 13px/1.2 var(--font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-2); }
 .you-foot { margin: 8px 18px 0; font-size: 13.5px; line-height: 1.4; color: var(--text-2); }
@@ -543,6 +574,12 @@ label.row:active { background: var(--press); }
 /* ---- on an iPad or a computer: the header over the column ---- */
 @media (min-width: 672px) {
   #hd .ifh { padding-left: calc((100% - 640px) / 2 + 16px); padding-right: calc((100% - 640px) / 2 + 16px); }
+}
+/* (on a computer, beside the rail (roof.css): InFlite's screens wider, and the header over them; Apps in three) */
+@media (min-width: 1100px) {
+  #hd .ifh { padding-left: max(28px, calc((100% - 1200px) / 2 + 28px)); padding-right: max(28px, calc((100% - 1200px) / 2 + 28px)); }
+  .today-in .view { max-width: 1200px; padding-left: 28px; padding-right: 28px; }
+  .apps-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 .d-short { display: none; }
 @media (max-width: 360px) {

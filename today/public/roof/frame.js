@@ -539,7 +539,7 @@ export function createFrame(opts = {}) {
 
   // ---- the pieces
   F.header = createHeader(opts.header, F, { me: opts.me, onMe: opts.onMe });
-  F.tabs = createTabs(opts.tabs, F);
+  F.tabs = createTabs(opts.tabs, F, { me: opts.me });
   F.sheet = createSheets(F);
   F.search = createSearch(F);
   F.send = createSend(F);

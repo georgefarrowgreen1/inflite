@@ -76,3 +76,41 @@
   .dc-tm { width: 42px; font-size: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { .dw-words.in, .dt-said.in { animation: none; } }
+
+/* ---- on a computer (from 1100 px, beside the rail, roof.css): the top card across the top and The Rest of Today in two
+   columns, with Waiting for You and Coming Up in a column of their own on the right that stays in view; Coming Up a
+   timeline, from Now down. With nothing for that column (before and during a ride), one wider column ---- */
+.day-side { display: grid; min-width: 0; }
+@media (min-width: 1100px) {
+  #today.view { max-width: 1200px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); column-gap: 24px; align-items: start; }
+  #today.view > * { grid-column: 1; min-width: 0; }
+  #today.view > .day-side { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 64px); align-content: start; }
+  #today.view:not(:has(> .day-side > :not([hidden]))) { grid-template-columns: minmax(0, 1fr); max-width: 820px; }
+  #today.view:not(:has(> .day-side > :not([hidden]))) > .day-side { display: none; }
+  .day-side > #waiting > .slabel:first-child, .day-side > #waiting:not([hidden]) + #coming > .slabel { margin-top: 18px; }
+  .day-side > section:not([hidden]) + section > .slabel { margin-top: 22px; }
+  #today > .day-side > section:first-child:not([hidden]) > .slabel, #today > .day-side > section[hidden] + section > .slabel { margin-top: 4px; }
+  /* (The Rest of Today: two columns, each card whole; the weather across both where it leads) */
+  #rest { display: block; columns: 2; column-gap: 16px; }
+  #rest > * { break-inside: avoid; margin: 0 0 16px; }
+  #rest > .slabel { column-span: all; margin: 18px 18px 10px; }
+  #rest > .slabel + .wx { column-span: all; }
+  #today.view:not(:has(> .day-side > :not([hidden]))) #rest { columns: 1; }
+}
+/* (two columns of cards only where each is wide enough; below that, one beside Your Day) */
+@media (min-width: 1100px) and (max-width: 1359px) {
+  #rest { columns: 1; }
+}
+@media (min-width: 1100px) {
+  /* (Coming Up as a timeline: Now at its head, a line through the rows' icons, no rules between them) */
+  .day-side #coming > .group { position: relative; padding: 0 0 6px; }
+  .day-side #coming > .group::before { content: "Now"; display: flex; align-items: center; height: 40px; padding-left: 18px; font-size: 15px; font-weight: 700; color: var(--tint-text); }
+  .day-side #coming > .group::after { content: ""; position: absolute; z-index: 0; left: 86px; top: 15px; width: 10px; height: 10px; border-radius: 50%; background: var(--tint);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--tint) 22%, transparent); }
+  .day-side #coming .dc-row { z-index: 1; }
+  .day-side #coming .dc-row::after { content: ""; position: absolute; z-index: -1; left: 90px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+  .day-side #coming .dc-row:last-child::after { bottom: 50%; }
+  .day-side #coming .dc-row + .dc-row::before { display: none; }
+  .day-side #coming .dc-main { min-height: 54px; }
+  .day-side #coming .dc-ic { position: relative; z-index: 1; }
+}

@@ -177,7 +177,7 @@ function paint(root, ctx) {
     const body = !Y.rules ? row("rules", "Rules", "Getting them…") : rules.map((r) =>
       pick(`data-rulepick="${esc(r.rule)}"`, r.name, r.line || "", LEVELS, r.level, `${r.name}: Do, Suggest or Quiet`, ` data-rule="${esc(r.rule)}"`)).join("");
     FOLDERS.rules = sec("youRules", "What Today Does for You", body, "Do: it acts and tells you. Suggest: it asks first. Quiet: it leaves it. Undo one and it drops a level; ten kept and it climbs.");
-  }
+  } else FOLDERS.rules = "";
   // Connected Apps
   {
     const body = CONNECTED.filter(([app]) => app !== "mail" || admin).map(([app, name]) => {
@@ -207,7 +207,18 @@ function paint(root, ctx) {
     folder("versions", "About InFlite", ctx.BUILD ? `Today V${ctx.BUILD} and each app’s version` : "Each app’s version", ic("info", "grey")),
   ].join(""), "", true));
   out.push(`<section class="you-sec you-out"><div class="group glass"><button class="row you-signout" type="button" id="youOut">Sign Out</button></div></section>`);
-  root.innerHTML = out.join("");
+  // On a computer (from 1100 px, app.css) You is two panes: your account and a list of its parts on the left, the part
+  // you're on beside it (its folders too, in the pane rather than a sheet). On a phone the list and the folders' copies
+  // here aren't shown, and You is the one column it was.
+  const folds = ["rules", "apps", "versions"].map((k) => FOLDERS[k] && FOLDERS[k].replace(/^<section class="you-sec" id="(\w+)"/, `<section class="you-sec you-fold" id="$1-pane" data-fold="${k}"`)).join("");
+  const panes = PANES.filter(([id]) => out.some((h) => h.includes(`id="${id}"`)) || (id.endsWith("-pane") && folds.includes(`id="${id}"`)));
+  if (!panes.some(([id]) => id === pane)) pane = panes[0]?.[0] || "youNotify";
+  const tabs = panes.map(([id, label, k, tone]) => `<button class="row you-tab" type="button" data-pane="${id}"${id === pane ? ' aria-current="page"' : ""}>${ic(k, tone)}<span class="tx"><b>${esc(label)}</b></span></button>`).join("")
+    + `<button class="row you-tab" type="button" data-act="chat">${appIc("chat")}<span class="tx"><b>Chat Settings</b></span></button>`
+    + `<button class="row you-tab you-tab-out" type="button" data-act="out"><span class="tx"><b>Sign Out</b></span></button>`;
+  const nav = `<nav class="you-nav group glass icons" aria-label="Your account’s parts">${tabs}</nav>`;
+  root.innerHTML = `<div class="you-side">${out[0] || ""}${nav}</div><div class="you-main">${out.slice(1).join("")}<div class="you-folds">${folds}</div></div>`;
+  showPane(root, pane);
   // (a folder open while You's drawn again: its contents drawn again too)
   const yf = document.getElementById("sh-youfolder");
   if (yf?.open && yf.dataset.folder) fillFolder(yf, root, ctx);
@@ -221,6 +232,18 @@ function deviceRow(d) {
 }
 
 const FOLDERS = { rules: "", apps: "", versions: "" };
+// (You's two panes on a computer: each part's section, its name in the list and its icon; the one you're on)
+const PANES = [["youNotify", "Notifications", "bell", "red"], ["youApps2", "From Each App", "every", "blue"], ["youDevices", "Other Devices", "every", "grey"],
+  ["youRules-pane", "What Today Does for You", "spark", "indigo"], ["youApps-pane", "Connected Apps", "apps", "blue"], ["youVersions-pane", "About InFlite", "info", "grey"]];
+let pane = "youNotify";
+const twoPanes = () => matchMedia("(min-width: 1100px)").matches;
+function showPane(root, id) {
+  const main = root.querySelector(".you-main");
+  if (!main) return;
+  pane = id;
+  for (const s of main.querySelectorAll(".you-sec")) s.classList.toggle("on", s.id === id);
+  for (const b of root.querySelectorAll(".you-tab[data-pane]")) { if (b.dataset.pane === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }
+}
 const FOLDER_TITLE = { rules: "What Today Does for You", apps: "Connected Apps", versions: "About InFlite" };
 function fillFolder(sheet, root, ctx) {
   const k = sheet.dataset.folder, body = sheet.querySelector("#yfBody");
@@ -242,6 +265,13 @@ function wire(root, ctx) {
   const $ = (s) => root.querySelector(s);
   $("#youAcct")?.addEventListener("click", () => ctx.openAccount());
   for (const b of root.querySelectorAll("[data-folder]")) b.addEventListener("click", () => openFolder(b.dataset.folder, document.getElementById("you") || root, ctx));
+  for (const b of root.querySelectorAll(".you-tab")) b.addEventListener("click", () => {
+    if (b.dataset.act === "chat") return ctx.chatSettings();
+    if (b.dataset.act === "out") { b.disabled = true; return ctx.signOut(); }
+    if (b.dataset.pane === "youVersions-pane") liveVersions(root, ctx);
+    showPane(root, b.dataset.pane);
+    if (root.getBoundingClientRect().top < 0) scrollTo({ top: 0, behavior: "auto" });
+  });
   $("#youMorning")?.addEventListener("click", () => ctx.toMorning());
   $("#youChatGo")?.addEventListener("click", () => ctx.chatSettings());
   $("#youOut")?.addEventListener("click", (e) => { e.currentTarget.disabled = true; ctx.signOut(); });
@@ -355,6 +385,18 @@ export async function goTo(root, ctx, id, drawn) {
   if (!root || !id) return;
   if (id === "notify-weather") return openWxNotify(root, ctx);
   if (id === "notify-mail") return openMailNotifyFrom(ctx);
+  // (on a computer, the part in the right-hand pane: a folder's too, rather than its sheet)
+  if (twoPanes()) {
+    const to = { rules: "youRules-pane", apps: "youApps-pane", versions: "youVersions-pane", notify: "youApps2", quiet: "youNotify", phone: "youNotify" }[id];
+    if (to) {
+      await Promise.resolve(drawn).catch(() => {});
+      if (!root.querySelector(`#${to}`)) return;
+      if (to === "youVersions-pane") liveVersions(root, ctx);
+      showPane(root, to);
+      root.querySelector(`.you-tab[data-pane="${to}"]`)?.focus({ preventScroll: true });
+      return;
+    }
+  }
   if (id === "rules" || id === "apps" || id === "versions") { if (!FOLDERS[id]) await Promise.resolve(drawn).catch(() => {}); return openFolder(id, root, ctx); }
   const at = () => (id === "signout" ? root.querySelector(".you-out") : SECTIONS[id] ? root.querySelector(`#${SECTIONS[id]}`) : null);
   // (a section drawn only once its answer's in, Quiet Hours: waited for)
