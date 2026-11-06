@@ -2646,21 +2646,19 @@ async function load() {
     });
   };
   // Signed in here last time (and no sign-in just finished): who and the day in one trip (/api/boot: the account asked
-  // once, the sign-in looked up once), on this device's name if it's known within a moment; if it's known only after,
-  // the morning's own part (whether it comes to this device) asked again with it. Anyone else: who, alone, first.
+  // once, the sign-in looked up once), on this device's name (findDevice: at most 800 ms, as the cards were asked
+  // before). Anyone else: who, alone, first.
   const ks0 = view ? null : readJSON(KEPT);
   if (view) { sessionAsked = Promise.resolve(view); askCards(); }
   else if (ks0) {
     asked = true;
-    sessionAsked = Promise.race([devP, new Promise((ok) => setTimeout(() => ok(undefined), 150))]).then((device) => {
+    sessionAsked = devP.then((device) => {
       const q = new URLSearchParams({ v: "2", with: "morning" });
       if (device) q.set("device", device);
       S.loadedAt = Date.now();
       return call(`/api/boot?${q}`).then((r) => (r?.view && typeof r.view === "object" ? r : Promise.reject(Object.assign(new Error(""), { status: 502 })))).then((r) => {
         if (r.cards) gotCards(r.cards);
         else if (r.view.signedIn) askCards();
-        if (device === undefined && r.view.signedIn)
-          devP.then((d) => d && call(`/api/morning?${new URLSearchParams({ device: d })}`).then((m) => { if (m && S.view) { S.morning = m; drawMorning(); } }, () => {}));
         return r.view;
       }, (e) => {
         // (an account from before the way in in one trip (Today and the account go live apart), or any trouble but no
@@ -2670,13 +2668,6 @@ async function load() {
       });
     });
   } else sessionAsked = call("/api/session");
-  // (on a Home Screen Today, whose sign-in is its own: the copy kept here of your day drawn at once, while the account's
-  // asked, by the same rule as with no network (this account's, kept under 12 hours ago); the answer, when it comes,
-  // draws the day afresh, or signs you out)
-  let answered = false;
-  sessionAsked.then(() => { answered = true; }, () => { answered = true; });
-  if (ks0 && standalone() && ks0.view?.user?.id && ks0.id === ks0.view.user.id && Date.now() - ks0.at < 12 * 3600e3 && keptFor(ks0.id))
-    known().then((ok) => { if (ok && !answered && !S.view) signedIn(ks0.view, { offline: true }); }).catch(() => {});
   try {
     view = await sessionAsked;
   } catch (e) {
