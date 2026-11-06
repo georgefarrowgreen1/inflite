@@ -41,6 +41,8 @@ const ROUTES = {
   "DELETE /api/device": { path: "today/device", timeout: 8000 },
   "GET /api/devices": { path: "today/devices", timeout: 8000 },
   "DELETE /api/devices": { path: "today/devices", timeout: 8000 },
+  // (Mail on Your Day: a booking from Mail hidden, Today's Hide, once its Undo's had its time)
+  "POST /api/mail/hide": { path: "today/mail/hide", timeout: 8000 },
 };
 const PATHS = new Set(Object.keys(ROUTES).map((k) => k.split(" ")[1]));
 // (the only parts of an address passed on: never a push endpoint, which goes only in a body, as an address ends up in logs)

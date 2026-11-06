@@ -29,10 +29,13 @@
 //                  5 s after a planning answer
 //   line(text)     the header's line for the phase ("16:05 · your ride"), or null: the page's own (the morning's date)
 //                  (without it, written into #hd .ifh-line)
+//   sheet(spec)    the page's InFlite sheet (F.sheet.open), for Mail's trip and bookings (trip.js); without it a booking's
+//                  row goes to its email, and the trip card opens nothing
 //   timers   false: nothing is timed here, the page calls tickDay itself (each minute, and at until). Otherwise the next
 //            boundary is drawn at its minute from here too (the page's own minute may come up to 59 s late); tickDay
 //            twice is as once
 import { CARD_KEYS, APP, esc, safe, safeOrigin, hm, dayKey, dateLong, dateShort, wkShort, dayWord, G, av, cardHTML, applyVars, tick, sendButton, hubOf, onHub } from "/cards.js";
+import { tripOf, tripCardHtml, bookingRowParts, bookingOfRow, openTrip, openBooking, isGone } from "/trip.js";
 
 const MIN = 60e3;
 const PHASES = ["morning", "midday", "preride", "riding", "after", "evening"];
@@ -46,7 +49,8 @@ const BELOW = {
 // next answer the second's), or one the server left out. Then what's coming (the ride's row among it) and the rest of the
 // day, as after a ride, rather than a page with nothing on it)
 const RIDE = ["preride", "riding"], NO_TOP = ["coming", "rest"];
-const SECTIONS = ["top", "waiting", "coming", "rest"];
+// (Mail's trip, the admin's alone (trip.js), shows wherever Coming Up does, above Waiting for You)
+const SECTIONS = ["top", "trip", "waiting", "coming", "rest"];
 const LABELS = { waiting: "Waiting for You", coming: "Coming Up", rest: "The Rest of Today" };
 const LINE = { midday: "what’s next", preride: "your ride", riding: "riding", after: "ride done", evening: "closed" };
 const KINDS = ["plan", "weather", "ride", "done", "closed"];
@@ -395,6 +399,7 @@ const dueOf = (r, answer, now) => r.late === true ? dawnAfter(answer, now) ?? r.
 function comingHtml(rows, st, now) {
   const tz = str(st.answer.tz) || undefined, ctx = { ...st.ctx, links: linksOf(st.ctx) };
   return `<h2 class="slabel">${LABELS.coming}</h2><div class="group glass">${rows.map((r) => {
+    if (r.app === "mail") return mailRowHtml(r, st, now, tz);
     const app = APP[r.app === "markets" || r.app === "chat" || r.app === "weather" || r.app === "fitness" ? r.app : ""];
     const h = linkTo(r.href, st.ctx), other = dayKey(r.at, tz) !== dayKey(now, tz);
     const send = "";
@@ -403,6 +408,35 @@ function comingHtml(rows, st, now) {
       ${h ? `<a class="row dc-main" href="${esc(h)}">${inner}</a>` : `<div class="row dc-main">${inner}</div>`}${send}
     </div>`;
   }).join("")}</div>`;
+}
+
+// (a booking from Mail (Mail on Your Day, trip.js): its kind's glyph, "from Mail", and a tap opens its sheet (Open Email,
+// Weather There, Hide); a link to its email where there's no sheet. One hidden here isn't drawn)
+function mailRowHtml(r, st, now, tz) {
+  const b = bookingOfRow(r);
+  if (!b) return "";
+  const h = linkTo(r.href, st.ctx), other = dayKey(r.at, tz) !== dayKey(now, tz), parts = bookingRowParts(b);
+  const inner = `<span class="dc-tm">${esc(hm(r.at, tz))}${other ? `<small>${esc(wkShort(r.at, tz))}</small>` : ""}</span>${parts.glyph}<span class="tx"><b>${esc(r.title)}</b>${str(r.sub) ? `<small>${esc(r.sub)}</small>` : ""}${parts.from}</span>`;
+  const attrs = `data-do="booking" data-bid="${esc(b.id)}" aria-haspopup="dialog"`;
+  return `<div class="dc-row dc-mail" data-due="${dueOf(r, st.answer, now)}">
+      ${h ? `<a class="row dc-main" href="${esc(h)}" ${attrs}>${inner}</a>` : `<button type="button" class="row dc-main" ${attrs}>${inner}</button>`}
+    </div>`;
+}
+// (the rows of Mail's bookings hidden here, left out)
+const shownRows = (rows) => rows.filter((r) => r.app !== "mail" || !isGone(str(r.booking)));
+// (what trip.js's sheets are given: the page's sheet, toast and requests, links as this page makes them, and the day
+// drawn again after a Hide or its Undo)
+function tripHelp(root, st) {
+  return {
+    sheet: typeof st.ctx.sheet === "function" ? st.ctx.sheet : null,
+    link: (h) => linkTo(h, st.ctx),
+    go: (h) => { if (onHub(st.ctx)) hubOf(st.ctx).go(h); },
+    toast: (text, o) => toast(st.ctx, text, o),
+    call: (path, o) => call(st.ctx, path, o),
+    redraw: () => { const now = live.get(root); if (now && root.isConnected) paint(root, now, now.phase, nowOf(now)); },
+    tz: str(st.answer.tz) || undefined,
+    now: () => nowOf(st),
+  };
 }
 
 // ---------------------------------------------------------------- drawing
@@ -425,7 +459,7 @@ let askedAt = -Infinity;
 function focusKey(root) {
   const f = typeof document !== "undefined" ? document.activeElement : null;
   if (!f || f === root || !root.contains?.(f)) return null;
-  const sec = f.closest?.("#top, #waiting, #coming, #rest");
+  const sec = f.closest?.("#top, #trip, #waiting, #coming, #rest");
   if (!sec || sec.id === "rest") return null;
   const at = (k) => (f.getAttribute(k) != null ? `[${k}="${CSS.escape(f.getAttribute(k))}"]` : "");
   return { sec: sec.id, sel: `${f.tagName.toLowerCase()}${at("data-do")}${at("data-id")}${at("data-to")}${at("data-share")}${at("href")}` };
@@ -448,9 +482,13 @@ function draw(root, st, phase, now) {
   const w = shows.includes("waiting") ? waitingRows(a) : [];
   s.waiting.innerHTML = w.length ? waitingHtml(w, st, now) : "";
   s.waiting.hidden = !w.length;
-  const rows = shows.includes("coming") ? comingAt(a.upcoming, now, phase, { dawn: dawnAfter(a, now), tz: str(a.tz) || undefined }) : [];
+  const rows = shows.includes("coming") ? shownRows(comingAt(a.upcoming, now, phase, { dawn: dawnAfter(a, now), tz: str(a.tz) || undefined })) : [];
   s.coming.innerHTML = rows.length ? comingHtml(rows, st, now) : "";
   s.coming.hidden = !rows.length;
+  // (Mail's trip, wherever Coming Up shows: above Waiting for You)
+  const trip = shows.includes("coming") ? tripOf(a) : null;
+  s.trip.innerHTML = trip ? tripCardHtml(trip, { now, tz: str(a.tz) || undefined }) : "";
+  s.trip.hidden = !trip;
   if (!s.rest.dataset.kept) {
     const prefs = st.ctx.prefs && typeof st.ctx.prefs === "object" ? st.ctx.prefs : {};
     const order = (Array.isArray(prefs.order) ? prefs.order : CARD_KEYS).filter((k) => CARD_KEYS.includes(k));
@@ -584,6 +622,15 @@ function wire(root) {
       return;
     }
     if (d === "undo" || d === "take" || d === "keep") { e.preventDefault(); act(root, st, el); return; }
+    if (d === "trip" || d === "booking") {
+      const h = tripHelp(root, st);
+      if (d === "trip") { e.preventDefault(); openTrip(tripOf(st.answer), h); return; }
+      const r = list(st.answer.upcoming).find((x) => x.app === "mail" && x.booking === el.dataset.bid), b = r && bookingOfRow(r);
+      // (with no sheet to open, the row's a link to its email, as any link goes)
+      if (b && h.sheet) { e.preventDefault(); openBooking(b, h); }
+      else if (onHub(st.ctx) && el.getAttribute("href")) { try { hubOf(st.ctx).go(el.getAttribute("href")); } catch {} }
+      return;
+    }
     if (d === "sendto") { e.preventDefault(); sendTo(st, el.dataset.to); }
   });
   // (a long press on a Coming Up row that has a card: Send, as its button does)
@@ -679,8 +726,8 @@ async function call(ctx, path, { method = "GET", body } = {}) {
   if (!r.ok) throw Object.assign(new Error(data?.error || "Something went wrong. Try again."), { status: r.status });
   return data;
 }
-function toast(ctx, text) {
-  if (typeof ctx.toast === "function") return ctx.toast(text);
+function toast(ctx, text, o) {
+  if (typeof ctx.toast === "function") return o ? ctx.toast(text, o) : ctx.toast(text);
   let t = document.querySelector(".toast");
   if (!t) {
     t = document.createElement("div");

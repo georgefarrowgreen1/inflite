@@ -1987,7 +1987,7 @@ function letDayGo() {
 function drawFour(anim) {
   const box = $("#rest");
   letDayGo();
-  for (const id of ["#top", "#waiting", "#coming"]) $(id).replaceChildren();
+  for (const id of ["#top", "#trip", "#waiting", "#coming"]) $(id)?.replaceChildren();
   box.className = "cards";
   box.hidden = false;
   const shown = S.prefs.order.filter((k) => !S.prefs.hidden.includes(k));
@@ -2019,12 +2019,15 @@ function drawFour(anim) {
 // Today First's day, drawn by /day.js once it's loaded: only if it's still the answer by then. ctx: now() (the answer's
 // clock), hub (the page's own IFL.hub: the hub's paths and Chat's engine, or the apps' own addresses where it's degraded),
 // prefs (Edit's order and hidden cards, for The Rest of Today), links, tz, call(path, o) (the page's own requests, so a
-// 401 from Undo, Take or Keep signs the page out at once), toast(text), refresh() (the day asked again: after Undo, Take
+// 401 from Undo, Take or Keep signs the page out at once), toast(text, o), sheet(spec) (InFlite's sheet, for Mail's trip
+// and its bookings), refresh() (the day asked again: after Undo, Take
 // or Keep), line(text) (the header's line for the phase; null: the date), drawFour() (the four cards, as an answer
 // without v draws them), timers: false (nothing timed in day.js: the page's own minute, below, ticks it, and only while
 // it's signed in with this answer, so a day forgotten here stays forgotten)
 let day = null;
 const dayCtx = () => ({ now: nowish, hub: IFL.hub, prefs: S.prefs, links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), call, toast, refresh: () => refresh(),
+  // (InFlite's sheet, for Mail's trip and its bookings: day.js, trip.js)
+  sheet: (spec) => { if (!F) return null; IFL.close?.(true); closeSheet(); F.sheet.closeAll(); return F.sheet.open(spec); },
   line: (text) => { if (S.view) { S.dayLine = text == null ? null : String(text).slice(0, 120); drawLine(); } }, drawFour: () => drawFour(), timers: false });
 function drawDayNow() {
   const answer = S.answer;
