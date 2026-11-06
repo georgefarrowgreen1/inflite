@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.72";
-export const NEWS = "Spot parcels and bills too (turn them on in Settings); the strip shows inside Today; repeating invites give every date";
+export const BUILD = "1.73";
+export const NEWS = "Safer: unusual or hostile emails can no longer slow Mail down, get into your replies’ headers or into your conversations";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
