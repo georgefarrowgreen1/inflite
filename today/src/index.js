@@ -121,8 +121,19 @@ async function vitals(request, env, ctx) {
   if (request.method !== "POST") return none(405);
   const site = request.headers.get("Sec-Fetch-Site");
   if (site && site !== "same-origin") return none(403);
-  const body = await request.text();
-  if (body.length > 600) return none(413);
+  // (a few hundred bytes at most: more refused by what it says it is before it's read, and never read past)
+  if (!(Number(request.headers.get("Content-Length") || 0) <= 600)) return none(413);
+  let body = "";
+  if (request.body) {
+    const reader = request.body.getReader(), dec = new TextDecoder();
+    for (let n = 0; ;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if ((n += value.byteLength) > 600) { reader.cancel().catch(() => {}); return none(413); }
+      body += dec.decode(value, { stream: true });
+    }
+    body += dec.decode();
+  }
   const go = ask(env, request, { method: "POST", path: "vitals", body, timeout: 5000 }).catch(() => null);
   if (ctx?.waitUntil) ctx.waitUntil(go); else await go;
   return none();
