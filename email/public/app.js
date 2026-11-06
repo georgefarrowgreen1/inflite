@@ -297,9 +297,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.69";
+  const BUILD = "1.70";
   // (what's new in it, said once it's in)
-  const NEWS = "Report a problem: once it’s sent, a link shows where it stands on the status page";
+  const NEWS = "Opens quicker: your mail comes first, and writing, settings, search and the viewer load as they’re needed. It also measures how fast it is on your device, numbers only";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
