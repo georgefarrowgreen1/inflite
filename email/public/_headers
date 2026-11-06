@@ -20,6 +20,9 @@
 /roof/*
   Cache-Control: no-cache
 
+/parts/*
+  Cache-Control: no-cache
+
 /body/*
   Content-Security-Policy: frame-ancestors 'none'
 
