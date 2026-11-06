@@ -299,9 +299,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.71";
+  const BUILD = "1.72";
   // (what's new in it, said once it's in)
-  const NEWS = "Spot in your mail: trips and bookings read from the booking details in your email (no AI) and put on Today; turn it on in Settings";
+  const NEWS = "Spot parcels and bills too (turn them on in Settings); the strip shows inside Today; repeating invites give every date";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own

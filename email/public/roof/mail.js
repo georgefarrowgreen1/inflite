@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.71";
-export const NEWS = "Spot in your mail: trips and bookings read from the booking details in your email (no AI) and put on Today; turn it on in Settings";
+export const BUILD = "1.72";
+export const NEWS = "Spot parcels and bills too (turn them on in Settings); the strip shows inside Today; repeating invites give every date";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
