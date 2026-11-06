@@ -14,7 +14,8 @@
 //   other than this one sets F.stale (D21).
 // loadService(app, F) → Promise<Service> (stage 3, S3-C3): import(REGISTRY[app].service), then its startService({ path,
 //   ui: F.forModule(app), onStale }) (onStale: F.stale = true). Only the frame calls it, once per app (F.service).
-// keepOffline(app, build, files): { ifl: "keep", app, build, files } (absolute same-origin paths) to the root worker,
+// keepOffline(app, build, files): { ifl: "keep", app, build, files } (absolute same-origin paths) to the root worker
+//   (scope /, by its registration, whatever controls the page),
 //   once per build and list per page: connector.files after mount; files ∪ connector.lazy again only on the Home Screen,
 //   at idle, 10 s or more after the first show (C4, s24 §8). preload reads files only.
 import { REGISTRY } from "./router.js";
@@ -122,9 +123,11 @@ export function watchVersion(app, build, F) {
 }
 
 export function keepOffline(app, build, files) {
-  const k = `${app}:${build}:${files.length}`;
-  const c = navigator.serviceWorker?.controller;
-  if (kept[k] || !c) return;
+  const k = `${app}:${build}:${files.length}`, sw = navigator.serviceWorker;
+  if (kept[k] || !sw?.getRegistration) return;
   kept[k] = 1;
-  try { c.postMessage({ ifl: "keep", app, build, files: [...new Set(files.map(abs))] }); } catch (_) {}
+  // (to the root worker itself, by its registration, never to whatever controls this page: that may be an app's old
+  // worker still (Chat's at /chats/, retired, yet this document's until it's left), and the ask would go nowhere and the
+  // module not open offline. No root worker active yet (the site's first visit): asked again at the next mount)
+  sw.getRegistration("/").then((r) => r.active.postMessage({ ifl: "keep", app, build, files: [...new Set(files.map(abs))] })).catch(() => { delete kept[k]; });
 }
