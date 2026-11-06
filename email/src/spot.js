@@ -909,7 +909,12 @@ export async function setSpot(env, ctx, given, now = Date.now()) {
     let st = null;
     try { st = JSON.parse(was.back || "null"); } catch {}
     const kinds = [...new Set([...(st ? st.kinds || ["trips"] : []), ...turned])];
-    ops.push(setMeta(env, "spot_back", JSON.stringify({ from: now - 60 * DAY, until: now, at: 0, id: "", kinds, n: crypto.randomUUID() })));
+    // (and the kinds of one written meanwhile put with them, in the one statement: two switches turned on at once, each
+    // before the other's written, both read back)
+    ops.push(env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('spot_back', ?1) ON CONFLICT(k) DO UPDATE SET v = json_set(excluded.v, '$.kinds', json((SELECT json_group_array(value) FROM
+      (SELECT value FROM json_each(COALESCE(json_extract(meta.v, '$.kinds'), '["trips"]')) UNION ALL
+       SELECT value FROM json_each(excluded.v, '$.kinds') WHERE value NOT IN (SELECT value FROM json_each(COALESCE(json_extract(meta.v, '$.kinds'), '["trips"]')))))))`)
+      .bind(JSON.stringify({ from: now - 60 * DAY, until: now, at: 0, id: "", kinds, n: crypto.randomUUID() })));
   }
   const off = keys.filter((k) => !given[k]);
   if (off.includes("trips")) ops.push(env.DB.prepare(`DELETE FROM spots WHERE hidden = 0`), env.DB.prepare(`DELETE FROM spot_occ WHERE series_id NOT IN (SELECT id FROM spots)`));
