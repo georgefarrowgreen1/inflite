@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.70";
-export const NEWS = "Opens quicker: your mail comes first, and writing, settings, search and the viewer load as they’re needed. It also measures how fast it is on your device, numbers only";
+export const BUILD = "1.71";
+export const NEWS = "Spot in your mail: trips and bookings read from the booking details in your email (no AI) and put on Today; turn it on in Settings";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
