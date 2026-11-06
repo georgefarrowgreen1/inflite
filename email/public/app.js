@@ -1628,413 +1628,6 @@ const IFL = (() => {
     };
   }
 
-  function demoApi() {
-    const now = Date.now();
-    const min = 60000;
-    const hr = 60 * min;
-    const ME = { name: "George Farrow-Green", email: "hello@inflite.ai" };
-    const P = {
-      maya: { name: "Maya Chen", email: "maya@studio-north.co" },
-      leo: { name: "Leo Martins", email: "leo.martins@fastmail.com" },
-      priya: { name: "Priya Shah", email: "priya@lumen.vc" },
-      cf: { name: "Cloudflare", email: "noreply@notify.cloudflare.com" },
-      alex: { name: "Alex Rivera", email: "alex@rivera.photo" },
-      sam: { name: "Sam Okafor", email: "sam@okafor.dev" },
-      nw: { name: "Northwind Airlines", email: "trips@northwind-air.example" },
-      byte: { name: "The Weekly Byte", email: "editor@weeklybyte.example" },
-      parcel: { name: "Parcel & Co", email: "updates@parcel.example" },
-      jo: { name: "Jo Whitfield", email: "jo@whitfield.studio" },
-    };
-    const card = (title, body, cta) => `
-      <div style="background:#f4f5f8;padding:28px 12px;font-family:-apple-system,Helvetica,Arial,sans-serif">
-        <table role="presentation" width="100%" style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;overflow:hidden">
-          <tr><td style="background:linear-gradient(135deg,#f6821f,#fbad41);height:6px"></td></tr>
-          <tr><td style="padding:28px 28px 8px"><h1 style="margin:0;font-size:22px;color:#111">${title}</h1></td></tr>
-          <tr><td style="padding:8px 28px 8px;color:#444;font-size:15px;line-height:1.55">${body}</td></tr>
-          ${cta ? `<tr><td style="padding:12px 28px 30px"><a href="https://dash.cloudflare.com" style="display:inline-block;background:#0a84ff;color:#fff;text-decoration:none;padding:12px 20px;border-radius:12px;font-weight:600">${cta}</a></td></tr>` : ""}
-        </table>
-      </div>`;
-    let seq = 0;
-    const mk = (folder, from, subject, text, ago, extra = {}) => ({
-      id: `demo-${++seq}`,
-      folder,
-      threadId: `t-${seq}`,
-      mailbox: extra.mailbox || ME.email,
-      category: extra.category || "people",
-      snoozeUntil: null,
-      from,
-      to: extra.to || [ME],
-      cc: extra.cc || [],
-      bcc: [],
-      subject,
-      snippet: (text || htmlToText((extra.html || "").split(/<blockquote/i)[0])).replace(/\s+/g, " ").slice(0, 200),
-      text,
-      html: extra.html || "",
-      date: now - ago,
-      unread: !!extra.unread,
-      starred: !!extra.starred,
-      hasAttachments: !!extra.attachments?.length,
-      attachments: extra.attachments || [],
-      messageId: `demo-${seq}@inflite.ai`,
-      references: null,
-      replyTo: null,
-      compose: extra.compose || null,
-    });
-    const swatch = (c1, c2) =>
-      `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="400" height="300" fill="url(#g)"/></svg>`)}`;
-
-    // (a small PDF, made here, so the demo's viewer has one to show)
-    const demoPdf = (() => {
-      try {
-        const text = "BT /F1 28 Tf 60 720 Td (October investor update) Tj /F1 14 Tf 0 -40 Td (Activation up 41% month on month.) Tj ET";
-        const objs = [
-          "<< /Type /Catalog /Pages 2 0 R >>",
-          "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-          "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
-          `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
-          "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        ];
-        let pdf = "%PDF-1.4\n";
-        const at = objs.map((o, i) => {
-          const n = pdf.length;
-          pdf += `${i + 1} 0 obj\n${o}\nendobj\n`;
-          return n;
-        });
-        const x = pdf.length;
-        pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${at.map((n) => `${String(n).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${x}\n%%EOF`;
-        return URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
-      } catch {
-        return "#";
-      }
-    })();
-
-    const msgs = [
-      mk("inbox", P.maya, "Liquid Glass explorations — round 2", "Hi George,\n\nAttached are the updated explorations for the mail client. I pushed the glass a little further on the toolbar and softened the rim highlight so it reads better over photos.\n\nThe sidebar on iPad now floats with a 10pt inset, which feels much closer to the system apps. Let me know what you think before Thursday's review.\n\nMaya", 6 * min, {
-        unread: true,
-        starred: true,
-        attachments: [
-          { id: "a1", filename: "Toolbar-v2.png", type: "image/png", size: 842113, url: swatch("#6fb1ff", "#6a3bff") },
-          { id: "a2", filename: "Sidebar-iPad.png", type: "image/png", size: 1210331, url: swatch("#19d3c5", "#3a7bff") },
-        ],
-      }),
-      mk("inbox", P.cf, "inflite.ai is ready for Email Sending", "", 38 * min, {
-        unread: true,
-        category: "updates",
-        html: card(
-          "Your domain is verified",
-          "<p>Good news — <b>inflite.ai</b> passed DNS verification and can now send email through Cloudflare Email Service.</p><p>Bind <code>send_email</code> in your Worker to start sending. Your daily quota is <b>1,000 messages</b> while the service is in beta.</p>",
-          "Open dashboard"
-        ),
-      }),
-      mk("inbox", P.leo, "Re: Dinner Friday?", "", 2 * hr, {
-        unread: true,
-        html: '<div dir="ltr">Brilliant, booked for six at 8. See you there!</div><div dir="ltr"><br></div><div dir="ltr">Leo</div><div dir="ltr"><br><blockquote type="cite">On 27 Oct 2026, at 18:02, George Farrow-Green &lt;hello@inflite.ai&gt; wrote:<br><br></blockquote></div><blockquote type="cite"><div dir="ltr">Count me in! Can you book for six?</div><div dir="ltr"><br><blockquote type="cite">On 27 Oct 2026, at 17:40, Leo Martins wrote:<br><br>A few of us are going to that new place on Columbia Road on Friday around 8. Fancy it?</blockquote></div></blockquote>',
-      }),
-      mk("sent", ME, "Re: Dinner Friday?", "Count me in! Can you book for six?", 3 * hr, { to: [P.leo] }),
-      mk("inbox", P.priya, "Re: Investor update draft", "This reads really well. Two small notes:\n\n1. Lead with the activation numbers — they're the headline.\n2. The roadmap slide can go in the appendix.\n\nHappy to jump on a call tomorrow if useful.\n\nPriya\n\n> On Monday, George wrote:\n> Here's the first draft of the October update…", 5 * hr, {
-        starred: true,
-        attachments: [
-          { id: "a6", filename: "October-update-notes.pdf", type: "application/pdf", size: 184320, url: demoPdf },
-          { id: "a7", filename: "Roadmap-appendix.docx", type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 48211, url: "#" },
-        ],
-      }),
-      mk("inbox", P.alex, "Photos from the weekend", "Here are a few favourites from Saturday. Full gallery link to follow once I've finished the edit!", 22 * hr, {
-        attachments: [
-          { id: "a3", filename: "IMG_2041.jpg", type: "image/jpeg", size: 3204112, url: swatch("#ff9a8b", "#ff6a88") },
-          { id: "a4", filename: "IMG_2058.jpg", type: "image/jpeg", size: 2876433, url: swatch("#fbc2eb", "#a6c1ee") },
-          { id: "a5", filename: "IMG_2077.jpg", type: "image/jpeg", size: 3011876, url: swatch("#84fab0", "#8fd3f4") },
-        ],
-      }),
-      mk("inbox", P.nw, "Your trip to Lisbon is confirmed", "", 26 * hr, {
-        category: "updates",
-        html: `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px 16px">
-          <div style="font-size:13px;letter-spacing:.08em;color:#0a84ff;font-weight:700">BOOKING CONFIRMED</div>
-          <h1 style="font-size:26px;margin:6px 0 18px">London → Lisbon</h1>
-          <table width="100%" style="border-collapse:collapse;font-size:15px">
-            <tr><td style="padding:10px 0;color:#666">Flight</td><td style="text-align:right;font-weight:600">NW 482</td></tr>
-            <tr><td style="padding:10px 0;color:#666;border-top:1px solid #eee">Departs</td><td style="text-align:right;border-top:1px solid #eee">Fri 14 Nov · 07:40 LHR</td></tr>
-            <tr><td style="padding:10px 0;color:#666;border-top:1px solid #eee">Arrives</td><td style="text-align:right;border-top:1px solid #eee">10:25 LIS</td></tr>
-            <tr><td style="padding:10px 0;color:#666;border-top:1px solid #eee">Seat</td><td style="text-align:right;border-top:1px solid #eee">14A</td></tr>
-          </table>
-          <p style="color:#666;font-size:13px;margin-top:22px">Check-in opens 24 hours before departure.</p></div>`,
-      }),
-      mk("inbox", P.sam, "Quick question about the API", "Hey George — is the /messages endpoint paginated by cursor or offset? Want to make sure the sync job doesn't double-count.\n\nCheers,\nSam", 2 * dayMs + 3 * hr, { mailbox: "support@inflite.ai", unread: true }),
-      mk("inbox", P.byte, "Issue #142: The quiet return of the web app", "", 3 * dayMs, {
-        category: "updates",
-        unread: true,
-        html: `<div style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:24px 18px;color:#222">
-          <div style="font-family:-apple-system,Helvetica,sans-serif;font-size:12px;letter-spacing:.12em;color:#888">THE WEEKLY BYTE · ISSUE 142</div>
-          <h1 style="font-size:30px;line-height:1.15;margin:10px 0 14px">The quiet return of the web app</h1>
-          <p style="font-size:17px;line-height:1.6">Home-screen web apps have grown up. With edge runtimes doing the heavy lifting, a single HTML file can feel as native as anything in the App Store…</p>
-          <p style="font-size:17px;line-height:1.6">This week: why the best new tools ship as URLs first, and what that means for the rest of us.</p></div>`,
-      }),
-      mk("inbox", P.parcel, "Your parcel is out for delivery", "Good news! Your parcel is with our driver and will arrive today between 13:00 and 15:00.", 4 * dayMs, { category: "updates" }),
-      mk("sent", { name: ME.name, email: "support@inflite.ai" }, "Re: Quick question about the API", "Cursor-based — pass the date of the last message as `before`. Shout if anything looks off.\n\nG", 2 * dayMs, { to: [P.sam], mailbox: "support@inflite.ai" }),
-      mk("sent", ME, "Investor update draft", "Hi Priya,\n\nHere's the first draft of the October update. Would love your eyes on it before it goes out.\n\nThanks,\nGeorge", 3 * dayMs, { to: [P.priya] }),
-      mk("drafts", ME, "Thursday review agenda", "1. Toolbar glass\n2. iPad sidebar\n3. Compose sheet motion", 1 * hr, {
-        to: [P.maya],
-        compose: { from: ME.email, to: [P.maya], cc: [], bcc: [], subject: "Thursday review agenda", text: "1. Toolbar glass\n2. iPad sidebar\n3. Compose sheet motion" },
-      }),
-      mk("archive", P.jo, "Brand guidelines v3", "Final guidelines attached — thanks for all the feedback!", 9 * dayMs),
-      mk("trash", P.parcel, "Rate your delivery", "How did we do? Tap a star to rate your delivery.", 6 * dayMs, { category: "updates" }),
-    ];
-    // (Priya's reply and the message it answers are one conversation)
-    const priya = msgs.find((x) => x.subject === "Re: Investor update draft"), sentDraft = msgs.find((x) => x.subject === "Investor update draft");
-    if (priya && sentDraft) priya.threadId = sentDraft.threadId;
-    const leoIn = msgs.find((x) => x.folder === "inbox" && x.subject === "Re: Dinner Friday?"), leoOut = msgs.find((x) => x.folder === "sent" && x.subject === "Re: Dinner Friday?");
-    if (leoIn && leoOut) leoIn.threadId = leoOut.threadId;
-    const samIn = msgs.find((x) => x.subject === "Quick question about the API"), samOut = msgs.find((x) => x.subject === "Re: Quick question about the API");
-    if (samIn && samOut) samOut.threadId = samIn.threadId;
-    const contacts = Object.values(P);
-    const delay = () => wait(140 + Math.random() * 160);
-    const summary = ({ text, html, attachments, compose, ...m }) => m;
-
-    // The server's conversations (src/threads.js), worked out here from the messages above
-    const cleanSubject = (s) => (s || "").replace(/^((re|fwd?)\s*:\s*)+/i, "").trim();
-    function threadOf(tid, ms) {
-      ms = ms.slice().sort((a, b) => b.date - a.date);
-      const latest = ms[0], incoming = ms.find((m) => m.folder !== "sent") || latest, people = [];
-      for (const m of ms) {
-        const who = m.folder === "sent" ? { name: "You", email: m.from.email, me: true } : m.from;
-        if (!people.some((p) => p.email === who.email && !!p.me === !!who.me)) people.push(who);
-      }
-      const now = Date.now(), snooze = Math.max(0, ...ms.map((m) => m.snoozeUntil || 0));
-      return {
-        id: tid,
-        subject: cleanSubject(latest.subject) || "(No Subject)",
-        latest: summary(latest),
-        from: incoming.from,
-        people,
-        count: ms.length,
-        unread: ms.filter((m) => m.folder === "inbox" && m.unread).length,
-        starred: ms.some((m) => m.starred),
-        hasAttachments: ms.some((m) => m.hasAttachments),
-        category: ms.some((m) => m.category === "people") ? "people" : "updates",
-        done: !ms.some((m) => m.folder === "inbox"),
-        trashed: latest.folder === "trash",
-        snoozeUntil: snooze > now ? snooze : null,
-        mailbox: incoming.mailbox,
-        canUnsub: incoming.category === "updates" && /byte|github|stripe|parcel|cloudflare/i.test(incoming.from.email || ""),
-        date: latest.date,
-        messages: ms.map(summary),
-      };
-    }
-    function allThreads(trash) {
-      const map = new Map();
-      for (const m of msgs) {
-        if (m.folder === "drafts" || (trash ? m.folder !== "trash" : m.folder === "trash")) continue;
-        if (!map.has(m.threadId)) map.set(m.threadId, []);
-        map.get(m.threadId).push(m);
-      }
-      return [...map].map(([tid, ms]) => threadOf(tid, ms)).sort((a, b) => b.date - a.date);
-    }
-    function matches(m, q) {
-      return q.split(/\s+/).filter(Boolean).every((t) => {
-        const [op, ...rest] = t.split(":"), v = rest.join(":").toLowerCase();
-        if (!rest.length) return [m.subject, m.snippet, m.from.name, m.from.email, ...m.to.map((x) => x.email), ...(m.attachments || []).map((a) => a.filename)].join(" ").toLowerCase().includes(t.toLowerCase());
-        if (op === "from") return (m.from.name + m.from.email).toLowerCase().includes(v);
-        if (op === "to") return [m.mailbox, ...m.to.map((x) => x.email + x.name)].join(" ").toLowerCase().includes(v);
-        if (op === "file") return (m.attachments || []).some((a) => a.filename.toLowerCase().includes(v));
-        if (op === "has")
-          return /^(image|photo)/.test(v)
-            ? (m.attachments || []).some((a) => /^image\//.test(a.type))
-            : /^pdf/.test(v)
-              ? (m.attachments || []).some((a) => a.type === "application/pdf")
-              : m.hasAttachments;
-        if (op === "is") return v === "unread" ? m.unread : v === "flagged" ? m.starred : v === "done" ? m.folder === "archive" : true;
-        if (op === "after" || op === "before") {
-          const t = Date.parse(v);
-          return !Number.isFinite(t) || (op === "after" ? m.date >= t : m.date < t);
-        }
-        return true;
-      });
-    }
-    const threadMsgs = (id) => msgs.filter((m) => m.threadId === id && m.folder !== "drafts");
-    const demoSet = {
-      domain: "inflite.ai",
-      catchall: "keep",
-      signature: "",
-      colors: ["blue", "green", "orange", "pink", "purple", "teal", "grey"],
-      addresses: [
-        { email: "hello@inflite.ai", name: ME.name, color: "blue", category: null, notify: true, isDefault: true, count: 214, signature: "" },
-        { email: "support@inflite.ai", name: "inflite Support", color: "green", category: "updates", notify: false, isDefault: false, count: 38, signature: "The InFlite team\nsupport@inflite.ai" },
-      ],
-    };
-    return {
-      async session() {
-        return { access: "ok", accountOrigin: "", user: { name: ME.name, handle: "george", email: ME.email, admin: true } };
-      },
-      async logout() {
-        return { ok: true };
-      },
-      async me() {
-        const def = demoSet.addresses.find((a) => a.isDefault)?.email || ME.email;
-        return { displayName: ME.name, domain: "inflite.ai", defaultFrom: def, identities: demoSet.addresses.map((a) => a.email), addresses: demoSet.addresses, signature: demoSet.signature };
-      },
-      async settings() {
-        await delay();
-        return JSON.parse(JSON.stringify(demoSet));
-      },
-      async saveSettings(patch) {
-        Object.assign(demoSet, patch);
-        return this.settings();
-      },
-      async checkAddress(local) {
-        const l = String(local || "").toLowerCase();
-        const bad = !/^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/.test(l) ? "Use letters, numbers, dots, dashes or underscores, starting and ending with a letter or number." : null;
-        const taken = !bad && demoSet.addresses.some((a) => a.email === `${l}@inflite.ai`);
-        return { ok: !bad && !taken, problem: bad || (taken ? "That’s already one of your addresses." : null) };
-      },
-      async createAddress(b) {
-        const c = await this.checkAddress(b.local);
-        if (!c.ok) throw new ApiError(400, c.problem);
-        const a = { email: `${b.local.toLowerCase()}@inflite.ai`, name: b.name || "", color: b.color || "blue", category: b.category ?? null, notify: b.notify !== false, isDefault: false, count: 0 };
-        demoSet.addresses.push(a);
-        return a;
-      },
-      async updateAddress(email, patch) {
-        const a = demoSet.addresses.find((x) => x.email === email);
-        if (patch.isDefault) demoSet.addresses.forEach((x) => (x.isDefault = x === a));
-        const { isDefault, ...rest } = patch;
-        Object.assign(a, rest);
-        return { ...a };
-      },
-      async deleteAddress(email) {
-        demoSet.addresses = demoSet.addresses.filter((a) => a.email !== email);
-        return { ok: true };
-      },
-      async version() {
-        return { v: String(Date.now()), build: null };
-      },
-      async unsubInfo(id) {
-        const t = threadOf(id, threadMsgs(id));
-        const all = msgs.filter((m) => m.from.email === t.from.email);
-        return { sender: t.from, opened: all.filter((m) => !m.unread).length, of: all.length, how: "oneclick" };
-      },
-      async unsubscribe(id) {
-        await delay();
-        const from = threadOf(id, threadMsgs(id)).from.email;
-        for (const m of msgs) if (m.from.email === from && m.folder === "inbox") m.folder = "archive";
-        return { ok: true };
-      },
-      async counts() {
-        const out = { people: { threads: 0, unread: 0 }, updates: { threads: 0, unread: 0 }, flagged: 0, snoozed: 0 };
-        for (const t of allThreads()) {
-          if (!t.done && t.snoozeUntil) out.snoozed++;
-          else if (!t.done) {
-            out[t.category].threads++;
-            if (t.unread) out[t.category].unread++;
-          }
-          if (t.starred) out.flagged++;
-        }
-        out.trash = allThreads(true).length;
-        out.drafts = msgs.filter((m) => m.folder === "drafts").length;
-        const addr = new Map();
-        for (const m of msgs) if (["inbox", "archive"].includes(m.folder)) addr.set(m.mailbox, (addr.get(m.mailbox) || 0) + (m.folder === "inbox" && m.unread ? 1 : 0));
-        out.addresses = [...addr].map(([address, unread]) => ({ address, unread }));
-        out.inbox = { unread: out.people.unread };
-        const later = allThreads().filter((t) => !t.done && t.snoozeUntil).sort((a, b) => a.snoozeUntil - b.snoozeUntil)[0];
-        if (later) out.nextLater = { id: later.id, at: later.snoozeUntil, from: later.from, subject: later.subject };
-        out.updatesFrom = allThreads().filter((t) => !t.done && !t.snoozeUntil && t.category === "updates").slice(0, 4).map((t) => t.from);
-        return out;
-      },
-      async count(q) {
-        return { count: (await this.threads({ view: "all", q })).threads.length };
-      },
-      async threads({ view, category, address, q }) {
-        await delay();
-        let list;
-        // (in:trash: the search made in the Trash)
-        const inTrash = /(^|\s)in:trash(?=\s|$)/i.test(q || "");
-        q = (q || "").replace(/(^|\s)in:\S+/gi, " ").trim();
-        if (inTrash) list = allThreads(true).filter((t) => !q || threadMsgs(t.id).some((m) => matches(m, q)));
-        else if (q) list = allThreads().filter((t) => threadMsgs(t.id).some((m) => matches(m, q)));
-        else if (view === "trash") list = allThreads(true);
-        else {
-          list = allThreads().filter((t) =>
-            view === "unread" ? t.unread && !t.done && !t.snoozeUntil : view === "flagged" ? t.starred : view === "attachments" ? t.hasAttachments : view === "done" ? t.done : view === "later" ? !t.done && t.snoozeUntil : !t.done && !t.snoozeUntil
-          );
-          if (category) list = list.filter((t) => t.category === category);
-        }
-        if (address) list = list.filter((t) => threadMsgs(t.id).some((m) => m.mailbox === address));
-        const drafts = view === "all" && category !== "updates" && !q && !address ? msgs.filter((m) => m.folder === "drafts").map(summary) : [];
-        return { threads: list.map(({ messages, ...t }) => t), drafts, hasMore: false };
-      },
-      async thread(id) {
-        await delay();
-        const ms = threadMsgs(id);
-        const live = ms.filter((m) => m.folder !== "trash");
-        if (!ms.length) throw new ApiError(404, "Conversation not found");
-        return threadOf(id, live.length ? live : ms);
-      },
-      async threadAction(id, { action, category, sender, until }) {
-        const ms = threadMsgs(id), latestIn = ms.filter((m) => ["inbox", "archive"].includes(m.folder)).sort((a, b) => b.date - a.date)[0];
-        if (action === "snooze" && !ms.some((m) => m.folder === "inbox")) for (const m of ms) if (m.folder === "archive") m.folder = "inbox";
-        for (const m of ms) {
-          if (action === "done" && m.folder === "inbox") Object.assign(m, { folder: "archive", snoozeUntil: null });
-          if (action === "inbox" && m.folder === "archive") m.folder = "inbox";
-          if (action === "read") m.unread = false;
-          if (action === "unflag") m.starred = false;
-          if (action === "trash" && m.folder !== "trash") Object.assign(m, { prevFolder: m.folder, folder: "trash", snoozeUntil: null });
-          if (action === "restore" && m.folder === "trash") Object.assign(m, { folder: m.prevFolder || "inbox", prevFolder: null });
-          if (action === "category") m.category = category;
-          if (action === "snooze") m.snoozeUntil = m.folder === "inbox" ? until : m.snoozeUntil;
-          if (action === "unsnooze") m.snoozeUntil = null;
-        }
-        if (action === "unread" && latestIn) latestIn.unread = true;
-        if (action === "flag") ms.sort((a, b) => b.date - a.date)[0].starred = true;
-        if (action === "category" && sender && latestIn) for (const m of msgs) if (m.from.email === latestIn.from.email) m.category = category;
-        if (action === "delete") for (const m of ms) msgs.splice(msgs.indexOf(m), 1);
-        return { ok: true };
-      },
-      async threadBatch({ ids, every, ...body }) {
-        for (const id of ids || (await this.threads(every)).threads.map((t) => t.id)) await this.threadAction(id, body);
-        return { ok: true };
-      },
-      async emptyTrash() {
-        for (const m of msgs.filter((x) => x.folder === "trash")) msgs.splice(msgs.indexOf(m), 1);
-        return { ok: true };
-      },
-      async message(id) {
-        await delay();
-        const m = msgs.find((x) => x.id === id);
-        if (!m) throw new ApiError(404, "Message not found");
-        return { ...m };
-      },
-      async remove(id) {
-        const i = msgs.findIndex((x) => x.id === id);
-        if (i >= 0) msgs.splice(i, 1);
-        return { ok: true };
-      },
-      async contacts(q) {
-        const s = (q || "").toLowerCase();
-        return { contacts: contacts.filter((c) => (c.name + c.email).toLowerCase().includes(s)).slice(0, 6) };
-      },
-      async send(p) {
-        await wait(600);
-        const parent = p.inReplyTo && msgs.find((x) => x.messageId === p.inReplyTo);
-        const m = mk("sent", { name: ME.name, email: p.from }, p.subject, p.text, 0, { to: p.to, cc: p.cc, html: p.html });
-        if (parent) {
-          m.threadId = parent.threadId;
-          for (const x of msgs) if (x.threadId === parent.threadId) x.unread = false;
-        }
-        msgs.unshift(m);
-        if (p.draftId) await this.remove(p.draftId);
-        return { ok: true, id: m.id };
-      },
-      async saveDraft(d) {
-        let m = d.id && msgs.find((x) => x.id === d.id);
-        if (!m) {
-          m = mk("drafts", ME, d.subject, d.text, 0, { to: d.to });
-          msgs.unshift(m);
-        }
-        Object.assign(m, { subject: d.subject, text: d.text, to: d.to, snippet: d.text.slice(0, 200), date: Date.now(), compose: d });
-        return { ok: true, id: m.id };
-      },
-      rawUrl: () => "#",
-    };
-  }
-
   const STANDALONE = (() => {
     try {
       return navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
@@ -2075,7 +1668,8 @@ const IFL = (() => {
     });
   }
 
-  const api = DEMO ? demoApi() : realApi();
+  // (the demo's, made up in memory, put in as it opens: start(), parts/demo.js)
+  const api = DEMO ? {} : realApi();
 
   // The look, as the account has it (its page's Appearance, for every app on the site): Automatic, Light or Dark, kept
   // in this browser too, so theme.js has it for the first frame next time
@@ -2597,7 +2191,7 @@ const IFL = (() => {
       // (the title beside your photo, in the bar: it stays as the list scrolls)
       els.listTitle,
       h("div.spacer"),
-      gbtn("compose", "New Message", () => openCompose())
+      gbtn("compose", "New Message", () => openCompose(), { onpointerdown: () => part("compose").catch(() => {}) })
     );
     renderDetailChrome();
   }
@@ -2607,6 +2201,8 @@ const IFL = (() => {
   // You, your apps and Mail's own few, from your photo: InFlite's menu, the same in every app (its copy, below BUILD)
   function profileMenu(anchor) {
     closeMenu(true);
+    // (Settings and Notifications a tap away: their sheets asked for while nothing else is going on)
+    warmPart("sheets");
     const me = S.me || {};
     const name = (me.account || {}).name || me.displayName || "";
     IFL.menu(anchor, {
@@ -2659,7 +2255,8 @@ const IFL = (() => {
 
   // ---------------------------------------------------------------------------
   // Settings: your addresses on the domain (each one's name, colour, where its mail goes, whether it notifies, the
-  // default), what happens to mail to any other address, and your signature. A sheet of pages, as iOS Settings has it.
+  // default), what happens to mail to any other address, and your signature. A sheet of pages, as iOS Settings has it
+  // (parts/sheets.js, loaded as it's first opened; the profile menu, opened, asks for it ahead).
   // ---------------------------------------------------------------------------
 
   const ADDR_COLORS = { blue: "#2f6cf0", green: "#1fa75a", orange: "#f08a1c", pink: "#e8457f", purple: "#8a5cf0", teal: "#1b9e9a", grey: "#6b7389" };
@@ -2672,486 +2269,7 @@ const IFL = (() => {
   // (at: a page to open it at, over its first: "signature")
   function openSettings(at) {
     if (setState || sheetState) return;
-    closeMenu(true);
-    let data = null;
-    let failed = null;
-    const stack = [];
-    const appEl = document.getElementById("app");
-    const opener = document.activeElement;
-    const scrim = h("div.sheet-scrim", { onclick: () => S.layout === "pad" && close() });
-    const pages = h("div.set-pages");
-    const sheet = h("div.sheet.set-sheet", { role: "dialog", "aria-modal": "true", "aria-label": "Mail Settings" }, h("div.sheet-grabber"), pages);
-
-    const load = async () => {
-      try {
-        data = await api.settings();
-        failed = null;
-      } catch (err) {
-        failed = err.message;
-      }
-      redraw();
-      // (opened at the signature: its page, once what it shows has come)
-      if (at === "signature" && data && stack.length === 1) push(signatureView);
-      at = null;
-    };
-    // (the rest of Mail told: the From menu, colours and signature)
-    const refreshMe = () =>
-      api
-        .me()
-        .then((me) => {
-          S.me = { ...S.me, ...me };
-        })
-        .catch(() => {});
-
-    // A page: its bar (back, title, an action) and what scrolls under it
-    let current = null;
-    function draw(dir) {
-      const view = stack[stack.length - 1];
-      const v = view();
-      const page = h(
-        "div.set-page",
-        h("div.set-bar", h("div.set-l", v.left || null), h("div.set-t", v.title || ""), h("div.set-r", v.right || null)),
-        h("div.set-scroll", v.body)
-      );
-      if (current && dir) {
-        const old = current;
-        page.classList.add(dir === "in" ? "from-right" : "from-left");
-        old.classList.add(dir === "in" ? "to-left" : "to-right");
-        pages.append(page);
-        page.offsetHeight;
-        page.classList.remove("from-right", "from-left");
-        setTimeout(() => old.remove(), 420);
-      } else {
-        current?.remove();
-        pages.append(page);
-      }
-      current = page;
-      // (a new address: its field, so the keyboard comes up within the tap; else the page's first control)
-      if (dir) (page.querySelector(".set-local") || page.querySelector(".set-bar button, .set-scroll button"))?.focus({ preventScroll: true });
-    }
-    // (a page's controls, in order: the focus kept on the same one when it's drawn again, as what it shows comes)
-    const controls = (page) => [...page.querySelectorAll("button, input, textarea")];
-    function redraw() {
-      if (!setState) return;
-      const keep = current?.querySelector(".set-scroll")?.scrollTop || 0;
-      const focusKey = document.activeElement?.dataset?.k;
-      const at = current ? controls(current).indexOf(document.activeElement) : -1;
-      draw(null);
-      current.querySelector(".set-scroll").scrollTop = keep;
-      const f = (focusKey && current.querySelector(`[data-k="${focusKey}"]`)) || (at >= 0 && controls(current)[at]);
-      if (f) {
-        f.focus({ preventScroll: true });
-        try {
-          f.setSelectionRange(f.value.length, f.value.length);
-        } catch {}
-      }
-    }
-    const push = (view) => (stack.push(view), draw("in"));
-    const pop = () => {
-      if (stack.length > 1) stack.pop(), draw("out");
-      else close();
-    };
-
-    // (InFlite's Settings sheet, the same in every app: a round ‹ back on a page inside, a round ✕ to close on every one)
-    const backBtn = (label) => h("button.ifs-btn", { type: "button", "aria-label": `Back to ${label}`, onclick: pop }, icon("chevronLeft"));
-    const closeBtn = () => h("button.ifs-btn", { type: "button", "aria-label": "Close", onclick: close }, icon("x"));
-    const group = (...rows) => h("div.set-group", rows);
-    const k = (text) => h("div.set-k", text);
-    const hint = (text) => h("p.set-hint", text);
-    const dot = (color) => h("span.set-dot", { style: { background: ADDR_COLORS[color] || ADDR_COLORS.blue } });
-    function row({ ic, tint, lead, title, sub, value, onclick, end, cls }) {
-      return h(
-        onclick ? "button.set-row" : "div.set-row",
-        { type: onclick ? "button" : null, onclick, class: cls || null },
-        ic ? h(`span.set-ic.${tint}`, icon(ic)) : lead || null,
-        h("span.set-tx", h("b", title), sub ? h("small", sub) : null),
-        value != null ? h("span.set-val", value) : null,
-        end !== undefined ? end : onclick ? icon("chevronRight", "set-chev") : null
-      );
-    }
-    function swOf(on, label, onchange) {
-      const b = h("button.switch", { type: "button", role: "switch", "aria-checked": String(!!on), "aria-label": label });
-      b.addEventListener("click", () => {
-        const v = b.getAttribute("aria-checked") !== "true";
-        b.setAttribute("aria-checked", String(v));
-        onchange(v);
-      });
-      return b;
-    }
-    // (Mail decides, or always People, or always Updates)
-    function segOf(value, onpick) {
-      const opts = [
-        [null, "Auto"],
-        ["people", "People"],
-        ["updates", "Updates"],
-      ];
-      return h(
-        "div.set-seg",
-        { role: "radiogroup", "aria-label": "Sort into" },
-        opts.map(([v, label]) =>
-          h(
-            "button",
-            { type: "button", role: "radio", "aria-checked": String(value === v), class: value === v ? "on" : null, onclick: () => value !== v && onpick(v) },
-            label
-          )
-        )
-      );
-    }
-    function swatches(value, onpick) {
-      return h(
-        "div.set-swatches",
-        { role: "radiogroup", "aria-label": "Colour" },
-        Object.entries(ADDR_COLORS).map(([name, hex]) =>
-          h("button.set-swatch", {
-            type: "button",
-            role: "radio",
-            "aria-label": name[0].toUpperCase() + name.slice(1),
-            "aria-checked": String(value === name),
-            class: value === name ? "on" : null,
-            style: `--c: ${hex}`,
-            onclick: () => value !== name && onpick(name),
-          })
-        )
-      );
-    }
-    const arrivesSaid = (a) =>
-      [a.name || S.me?.displayName || null, a.category === "updates" ? "to Updates" : a.category === "people" ? "to People" : null, a.notify ? null : "no notifications"]
-        .filter(Boolean)
-        .join(" · ") || "As Mail sorts it";
-
-    // The first page: the addresses, other addresses, the signature
-    function mainView() {
-      const done = closeBtn();
-      if (!data)
-        return {
-          title: "Settings",
-          right: done,
-          body: failed ? group(row({ title: "Couldn’t load Settings", sub: failed, onclick: load, end: null })) : h("div.load-more", h("div.spinner")),
-        };
-      const catchBtn = row({
-        ic: "shield",
-        tint: "indigo",
-        title: "Mail to other addresses",
-        sub: `Anything else @${data.domain}`,
-        value: data.catchall === "reject" ? "Turn Away" : "Keep",
-        end: icon("chevronDown", "set-chev"),
-        onclick: (e) =>
-          showMenu(
-            e.currentTarget,
-            [
-              { label: "Keep", sub: "It arrives in Mail, as now", checked: data.catchall !== "reject", action: () => saveSettings({ catchall: "keep" }) },
-              { label: "Turn Away", sub: "Its sender hears it doesn’t exist", checked: data.catchall === "reject", action: () => saveSettings({ catchall: "reject" }) },
-            ],
-            { title: "Mail to Other Addresses", dropdown: true }
-          ),
-      });
-      return {
-        title: "Settings",
-        right: done,
-        body: [
-          h("div.set-head", h("img", { src: "/icon-180.png", alt: "", width: 64, height: 64 }), h("b", "Mail"), h("span", "Your addresses and how mail arrives")),
-          k("Addresses"),
-          group(
-            data.addresses.map((a) =>
-              row({
-                lead: dot(a.color),
-                title: [a.email, a.isDefault ? h("span.set-badge", "Default") : null],
-                sub: arrivesSaid(a),
-                onclick: () => push(() => addressView(a.email)),
-              })
-            ),
-            h("button.set-row.set-add", { type: "button", onclick: () => push(newView()) }, h("span.set-plus", "+"), h("span.set-tx", h("b", "New Address")))
-          ),
-          k("Receiving"),
-          group(catchBtn),
-          k("Sending"),
-          group(
-            row({
-              ic: "pen",
-              tint: "amber",
-              title: "Signature",
-              sub: data.signature ? data.signature.split("\n")[0] : "None, for every address",
-              onclick: () => push(signatureView),
-            })
-          ),
-        ],
-      };
-    }
-
-    async function saveSettings(patch) {
-      const was = data;
-      data = { ...data, ...patch };
-      redraw();
-      try {
-        data = await api.saveSettings(patch);
-        refreshMe();
-      } catch (err) {
-        data = was;
-        toast(err.message, { error: true });
-      }
-      redraw();
-    }
-
-    async function saveAddress(email, patch) {
-      const i = data.addresses.findIndex((a) => a.email === email);
-      if (i < 0) return;
-      const was = data.addresses[i];
-      data.addresses[i] = { ...was, ...patch };
-      if (patch.isDefault) data.addresses.forEach((a, j) => (a.isDefault = j === i));
-      redraw();
-      try {
-        const got = await api.updateAddress(email, patch);
-        data.addresses[i] = { ...data.addresses[i], ...got };
-        refreshMe();
-      } catch (err) {
-        data.addresses[i] = was;
-        toast(err.message, { error: true });
-      }
-      redraw();
-    }
-
-    // An address's own page
-    function addressView(email) {
-      const a = data?.addresses.find((x) => x.email === email);
-      if (!a) return { title: "", left: backBtn("Settings"), right: closeBtn(), body: hint("That address has gone.") };
-      const nameInput = h("input.set-input", {
-        type: "text",
-        value: a.name,
-        placeholder: S.me?.displayName || "Name",
-        "data-k": "name",
-        autocomplete: "off",
-        enterkeyhint: "done",
-        "aria-label": "Name",
-        onkeydown: (e) => e.key === "Enter" && e.currentTarget.blur(),
-        onchange: (e) => saveAddress(email, { name: e.currentTarget.value.trim() }),
-      });
-      return {
-        title: `${email.split("@")[0]}@`,
-        left: backBtn("Settings"),
-        right: closeBtn(),
-        body: [
-          h(
-            "div.set-head",
-            h("span.set-big", { style: { background: ADDR_COLORS[a.color] } }, icon("at")),
-            h("b", email),
-            h("span", a.count ? `${a.count.toLocaleString(locale)} message${a.count === 1 ? "" : "s"}` : "No mail yet")
-          ),
-          group(h("label.set-field", h("span.set-fl", "Name"), nameInput)),
-          hint("The name people see on mail from this address."),
-          k("Signature"),
-          group(
-            h("textarea.set-sig", {
-              rows: 4,
-              placeholder: data.signature ? `As every address’s: ${data.signature.split("\n")[0]}` : "None",
-              "data-k": "asig",
-              "aria-label": `Signature for ${email}`,
-              onchange: (e) => saveAddress(email, { signature: e.currentTarget.value }),
-              value: a.signature || "",
-            })
-          ),
-          hint("Under new messages and replies from this address. Left empty, it has the signature for every address."),
-          k("Arrives in"),
-          group(row({ ic: "inbox", tint: "blue", title: "Sort into", end: segOf(a.category, (v) => saveAddress(email, { category: v })) })),
-          hint("Whether new mail to it notifies you is set in your account, under Notifications."),
-          k("Colour"),
-          group(h("div.set-row.plain", swatches(a.color, (v) => saveAddress(email, { color: v })))),
-          a.isDefault
-            ? hint("New messages are sent from this address.")
-            : [
-                group(row({ ic: "star", tint: "amber", title: "Make Default", sub: "Where new messages are sent from", onclick: () => saveAddress(email, { isDefault: true }), end: null })),
-                group(
-                  h(
-                    "button.set-row.set-danger",
-                    {
-                      type: "button",
-                      onclick: async (e) => {
-                        const ok = await confirmMenu(e.currentTarget, `Delete ${email}? Its mail stays in Mail.`, "Delete Address", { destructive: true });
-                        if (!ok) return;
-                        try {
-                          await api.deleteAddress(email);
-                          data.addresses = data.addresses.filter((x) => x.email !== email);
-                          refreshMe();
-                          pop();
-                          toast("Address Deleted", { icon: "trash" });
-                        } catch (err) {
-                          toast(err.message, { error: true });
-                        }
-                      },
-                    },
-                    "Delete Address"
-                  )
-                ),
-                hint(data.catchall === "reject" ? "Once it’s deleted, new mail to it is turned away." : "Once it’s deleted, new mail to it still arrives, as mail to other addresses."),
-              ],
-        ],
-      };
-    }
-
-    // A new address: what's before the @ (checked as it's typed), its name, where its mail goes, its colour
-    function newView() {
-      const n = { local: "", name: "", category: null, notify: true, color: Object.keys(ADDR_COLORS)[data.addresses.length % 7], check: null, busy: false };
-      let checkToken = 0;
-      // (what the check found, said in place, so the field being typed in isn't drawn again)
-      const showCheck = () => {
-        if (n.saidEl) {
-          n.saidEl.className = `set-avail${n.check ? (n.check.ok ? " ok" : " bad") : ""}`;
-          setKids(n.saidEl, n.check ? (n.check.ok ? [icon("check"), "Available"] : n.check.problem) : "");
-        }
-        if (n.createBtn) n.createBtn.disabled = !n.check?.ok || n.busy;
-        if (n.hintEl) n.hintEl.textContent = n.local ? `Mail to ${n.local.toLowerCase()}@${data.domain} arrives straight away, and you can send from it.` : "Mail to it arrives straight away, and you can send from it.";
-      };
-      const check = debounce(async () => {
-        const t = ++checkToken;
-        const local = n.local.trim().toLowerCase();
-        if (!local) return ((n.check = null), showCheck());
-        try {
-          const r = await api.checkAddress(local);
-          if (t === checkToken) ((n.check = r), showCheck());
-        } catch {}
-      }, 250);
-      const create = async () => {
-        if (!n.check?.ok || n.busy) return;
-        n.busy = true;
-        redraw();
-        try {
-          const a = await api.createAddress({ local: n.local.trim().toLowerCase(), name: n.name.trim(), category: n.category, notify: n.notify, color: n.color });
-          data.addresses.push(a);
-          refreshMe();
-          pop();
-          toast(`${a.email} Created`, { icon: "check" });
-        } catch (err) {
-          n.busy = false;
-          toast(err.message, { error: true });
-          redraw();
-        }
-      };
-      return () => {
-        const localInput = h("input.set-local", {
-          type: "text",
-          value: n.local,
-          placeholder: "name",
-          "data-k": "local",
-          autocomplete: "off",
-          autocapitalize: "off",
-          autocorrect: "off",
-          spellcheck: "false",
-          inputmode: "email",
-          enterkeyhint: "next",
-          "aria-label": `Address, before @${data.domain}`,
-          size: Math.max(4, n.local.length + 1),
-          oninput: (e) => {
-            e.currentTarget.size = Math.max(4, e.currentTarget.value.length + 1);
-            n.local = e.currentTarget.value.replace(/\s+/g, "");
-            n.check = null;
-            showCheck();
-            check();
-          },
-        });
-        const said = h(
-          "div.set-avail",
-          { class: n.check ? (n.check.ok ? "ok" : "bad") : null, "aria-live": "polite" },
-          n.check ? (n.check.ok ? [icon("check"), "Available"] : n.check.problem) : ""
-        );
-        const createBtn = h("button.set-link.strong", { type: "button", disabled: !n.check?.ok || n.busy, onclick: create }, n.busy ? "Creating…" : "Create");
-        n.saidEl = said;
-        n.createBtn = createBtn;
-        return {
-          title: "New Address",
-          left: h("button.set-link", { type: "button", onclick: pop }, "Cancel"),
-          right: createBtn,
-          body: [
-            group(h("label.set-addr", localInput, h("span.set-dom", `@${data.domain}`))),
-            said,
-            k("Shown as"),
-            group(
-              h(
-                "label.set-field",
-                h("span.set-fl", "Name"),
-                h("input.set-input", {
-                  type: "text",
-                  value: n.name,
-                  placeholder: S.me?.displayName || "Name",
-                  "data-k": "nname",
-                  autocomplete: "off",
-                  "aria-label": "Name",
-                  oninput: (e) => (n.name = e.currentTarget.value),
-                })
-              )
-            ),
-            k("Arrives in"),
-            group(row({ ic: "inbox", tint: "blue", title: "Sort into", end: segOf(n.category, (v) => ((n.category = v), redraw())) })),
-            k("Colour"),
-            group(h("div.set-row.plain", swatches(n.color, (v) => ((n.color = v), redraw())))),
-            (n.hintEl = hint(n.local ? `Mail to ${n.local.toLowerCase()}@${data.domain} arrives straight away, and you can send from it.` : "Mail to it arrives straight away, and you can send from it.")),
-          ],
-        };
-      };
-    }
-
-    // The signature: added under new messages and replies
-    function signatureView() {
-      let t = null;
-      const area = h("textarea.set-sig", {
-        rows: 6,
-        placeholder: "Your signature",
-        "data-k": "sig",
-        "aria-label": "Signature",
-        oninput: () => {
-          clearTimeout(t);
-          t = setTimeout(() => saveSig(area.value), 700);
-        },
-        onblur: () => (clearTimeout(t), saveSig(area.value)),
-      });
-      area.value = data.signature;
-      const saveSig = async (v) => {
-        if (v === data.signature) return;
-        data.signature = v;
-        try {
-          await api.saveSettings({ signature: v });
-          refreshMe();
-        } catch (err) {
-          toast(err.message, { error: true });
-        }
-      };
-      return { title: "Signature", left: backBtn("Settings"), right: closeBtn(), body: [group(area), hint("Added under new messages and replies, from every address that hasn’t one of its own.")] };
-    }
-
-    function close() {
-      if (!setState) return;
-      setState = null;
-      document.activeElement?.blur?.();
-      if (appEl) appEl.inert = false;
-      document.body.classList.remove("sheet-open");
-      scrim.classList.remove("open");
-      sheet.classList.remove("open");
-      setTimeout(() => (scrim.remove(), sheet.remove()), 650);
-      // (back where it was opened from: your photo, mostly, where InFlite's menu leaves it as it closes; that drawn
-      // again meanwhile, or opened with nothing in focus (from the account page), your photo still)
-      const back = opener?.isConnected && opener !== document.body ? opener : els.listNav?.querySelector(".profile");
-      back?.focus?.({ preventScroll: true });
-    }
-
-    sheet.addEventListener("keydown", (e) => {
-      if (e.key !== "Tab") return;
-      const f = [...sheet.querySelectorAll(".set-page:last-child button:not(:disabled), .set-page:last-child input, .set-page:last-child textarea")].filter((x) => x.offsetParent);
-      if (!f.length) return;
-      if (e.shiftKey && document.activeElement === f[0]) (e.preventDefault(), f[f.length - 1].focus());
-      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) (e.preventDefault(), f[0].focus());
-    });
-
-    setState = { back: () => (menuState ? closeMenu() : pop()), close };
-    stack.push(mainView);
-    if (appEl) appEl.inert = true;
-    document.body.append(scrim, sheet);
-    draw(null);
-    // (the focus in it, on its first control, so VoiceOver and the keyboard start there rather than behind it, where
-    // nothing can be reached now)
-    current.querySelector(".set-bar button, .set-scroll button")?.focus({ preventScroll: true });
-    sheet.offsetHeight;
-    document.body.classList.add("sheet-open");
-    scrim.classList.add("open");
-    sheet.classList.add("open");
-    load();
+    return fromPart("sheets", "openSettings")(at);
   }
 
   // ---------------------------------------------------------------------------
@@ -3173,60 +2291,19 @@ const IFL = (() => {
     } catch {}
   }
 
-  const keyBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
-
   // Notifications on this device, asked for here: the sheet every app has, whose tap turns them on (where this browser
-  // can't have them, or it's the demo, said why instead)
+  // can't have them, or it's the demo, said why instead). What turns them on (parts/sheets.js) is here before the sheet
+  // is, so its tap asks the browser at once, while the tap still counts as one
   function askNotify() {
     if (S.pushOn) return toast("Notifications are already on on this device", { icon: "bell" });
     if (!PUSH_OK || DEMO) return togglePush();
-    IFL.allow("mail", "Mail tells you of new mail from people. What it tells you is set in your account.", async () => (await togglePush(), !!S.pushOn));
+    part("sheets").then(
+      () => IFL.allow("mail", "Mail tells you of new mail from people. What it tells you is set in your account.", async () => (await togglePush(), !!S.pushOn)),
+      partFailed
+    );
   }
-
-  async function togglePush() {
-    if (DEMO) return toast("Demo mode — notifications need the real Mail", { icon: "bell" });
-    if (!PUSH_OK) {
-      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      return toast(ios && !STANDALONE ? "Add Mail to your Home Screen to get notifications" : "This browser can’t show notifications", { icon: "bell", duration: 4200 });
-    }
-    if (S.pushOn) {
-      S.pushOn = false;
-      try {
-        const sub = await (swReg || (await navigator.serviceWorker.ready)).pushManager.getSubscription();
-        if (sub) {
-          await api.pushUnsubscribe(sub.endpoint).catch(() => {});
-          await sub.unsubscribe();
-        }
-      } catch {}
-      return toast("Notifications Off", { icon: "bell" });
-    }
-    // (asked first, while the tap still counts as one)
-    const perm = await Notification.requestPermission();
-    if (perm !== "granted")
-      return toast(perm === "denied" ? "Notifications are blocked for Mail in Settings" : "Notifications stay off", { icon: "bell", duration: 4200 });
-    try {
-      const reg = swReg || (await navigator.serviceWorker.register("/sw.js"));
-      swReg = reg;
-      await navigator.serviceWorker.ready;
-      const { key } = await api.pushKey();
-      let sub = await reg.pushManager.getSubscription();
-      if (sub && keyOf(sub) !== key) {
-        await sub.unsubscribe();
-        sub = null;
-      }
-      sub ||= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
-      await api.pushSubscribe(sub.toJSON());
-      S.pushOn = true;
-      toast("Notifications On: new mail from people", { icon: "bell" });
-    } catch (err) {
-      toast(err.message || "Couldn’t turn notifications on", { error: true });
-    }
-  }
-
-  function keyOf(sub) {
-    const k = sub.options?.applicationServerKey;
-    if (!k) return null;
-    return btoa(String.fromCharCode(...new Uint8Array(k))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  function togglePush() {
+    return fromPart("sheets", "togglePush")();
   }
 
   // A notification tapped: its conversation
@@ -3300,6 +2377,7 @@ const IFL = (() => {
       items.push("-", { label: S.counts.trash ? `Trash (${S.counts.trash})` : "Trash", icon: "trash", action: () => setView("trash") });
     }
     // (in the hub's frame, where your photo isn't: Mail's own few from its menu, here instead)
+    if (EMBED) warmPart("sheets");
     if (EMBED)
       items.push("-", { label: "Remote Images", checked: !!S.remoteImages, action: toggleRemoteImages }, { label: "Settings", icon: "sliders", action: () => openSettings() });
     showMenu(anchor, items);
@@ -3439,329 +2517,32 @@ const IFL = (() => {
     refocus(kept, els.listTitle, els.listSubtitle, els.tabs);
   }
 
-  // Search's filters, beside what's typed: who it's from, when, with files, unread. Each kept here and put into the
-  // search as the operators it understands (from:, after:/before:, has:attachment, is:unread); the field holds only
-  // what's typed (where those operators still work, typed by hand)
-  const SF = { from: null, to: null, date: null, files: false, unread: false, trash: false, open: null };
-  const DATES = [
-    ["today", "Today"],
-    ["week", "This week"],
-    ["month", "This month"],
-    ["older", "Older"],
-  ];
-  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  function dateOp(k) {
-    const d = new Date();
-    if (k === "today") return `after:${ymd(d)}`;
-    if (k === "week") return `after:${ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() - 6))}`;
-    const first = ymd(new Date(d.getFullYear(), d.getMonth(), 1));
-    return k === "month" ? `after:${first}` : k === "older" ? `before:${first}` : "";
-  }
-  const filtersQuery = () =>
-    [SF.from && `from:${SF.from.email}`, SF.to && `to:${SF.to.email}`, SF.date && dateOp(SF.date), SF.files && "has:attachment", SF.unread && "is:unread", SF.trash && "in:trash"]
-      .filter(Boolean)
-      .join(" ");
-  const fullQuery = () => [els.searchInput?.value.trim(), filtersQuery()].filter(Boolean).join(" ");
-  const sfAny = () => !!(SF.from || SF.to || SF.date || SF.files || SF.unread || SF.trash);
-  function clearFilters() {
-    Object.assign(SF, { from: null, to: null, date: null, files: false, unread: false, trash: false, open: null });
-  }
-  // (a recent search, said in words: its filters by their names, then what was typed)
-  function sayQuery(q) {
-    const words = [];
-    const rest = q.replace(/\b(from|to|has|is|in|before|after):("[^"]*"|\S+)/gi, (t, op, v) => {
-      op = op.toLowerCase();
-      if (op === "from") words.push(`From ${nameOf(v)}`);
-      else if (op === "to") words.push(`To ${nameOf(v)}`);
-      else if (op === "in" && /^trash$/i.test(v)) words.push("In Trash");
-      else if (op === "has" && /^attach/i.test(v)) words.push("Files");
-      else if (op === "is" && /^unread$/i.test(v)) words.push("Unread");
-      else if (op === "after" || op === "before") {
-        // (one of Date's answers, by its name, while it's still the same day, week or month; else the day it's from)
-        const k = DATES.find(([d]) => dateOp(d) === t)?.[0];
-        words.push(k ? DATES.find(([d]) => d === k)[1] : `${op === "before" ? "Before" : "Since"} ${new Date(v).toLocaleDateString(locale, { day: "numeric", month: "short" })}`);
-      }
-      else return t;
-      return "";
-    });
-    return [...words, rest.trim()].filter(Boolean).join(" · ");
-  }
-  // (someone's first name, if they're among the people you hear from, else their address before the @)
-  function nameOf(email) {
-    const p = sfPeople.find((x) => x.email === email);
-    return p?.name ? p.name.split(/\s+/)[0] : String(email).split("@")[0];
-  }
-  // (a recent search put back: its filters as filters, the rest typed)
-  function restoreQuery(q) {
-    clearFilters();
-    const today = dateOp("today"), week = dateOp("week"), month = dateOp("month"), older = dateOp("older");
-    const rest = q.replace(/\b(from|to|has|is|in|before|after):("[^"]*"|\S+)/gi, (t, op, v) => {
-      op = op.toLowerCase();
-      if (op === "from") SF.from = { email: v, name: sfPeople.find((x) => x.email === v)?.name || "" };
-      else if (op === "to") SF.to = { email: v, name: sfPeople.find((x) => x.email === v)?.name || "" };
-      else if (op === "in" && /^trash$/i.test(v)) SF.trash = true;
-      else if (op === "has" && /^attach/i.test(v)) SF.files = true;
-      else if (op === "is" && /^unread$/i.test(v)) SF.unread = true;
-      else if (t === today) SF.date = "today";
-      else if (t === week) SF.date = "week";
-      else if (t === month) SF.date = "month";
-      else if (t === older) SF.date = "older";
-      else return t;
-      return "";
-    });
-    return rest.replace(/\s{2,}/g, " ").trim();
-  }
-  // The people you hear from most, for From (asked for once, as search first opens)
-  let sfPeople = [];
-  let sfAsked = false;
-  function askPeople() {
-    if (sfAsked) return;
-    sfAsked = true;
-    api
-      .contacts("")
-      .then(({ contacts }) => {
-        sfPeople = (contacts || []).filter((p) => p.email && !mine(p.email)).slice(0, 5);
-        renderSearchHelp();
-      })
-      .catch(() => (sfAsked = false));
-  }
-  // A filter changed: the search again, at once
-  function filtersChanged() {
-    renderSearchHelp();
-    runSearch(fullQuery());
-  }
-
-  // Recent searches, kept in this browser (a convenience: nothing is lost without them)
-  const RECENT_KEY = "mail:recent-searches";
-  function recentSearches() {
-    try {
-      const v = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
-      return Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, 8) : [];
-    } catch {
-      return [];
-    }
-  }
-  function keepRecent(list) {
-    try {
-      if (list.length) localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 8)));
-      else localStorage.removeItem(RECENT_KEY);
-    } catch {}
-  }
-  function rememberSearch(q) {
-    q = (q || "").trim().replace(/\s+/g, " ");
-    if (q.length < 2) return;
-    keepRecent([q, ...recentSearches().filter((x) => x.toLowerCase() !== q.toLowerCase())]);
-  }
-
-  // What's being typed now: the last word, and the operator it's for (from: or to:), if any
-  function typingToken(q) {
-    if (!q || /\s$/.test(q)) return null;
-    const word = q.split(/\s+/).pop();
-    const m = /^(from|to):(.*)$/i.exec(word);
-    if (m) return { word, op: m[1].toLowerCase(), value: m[2].replace(/^"/, "") };
-    if (word.includes(":")) return null;
-    return { word, op: null, value: word.replace(/^"/, "") };
-  }
-
-  // People suggested as you type a name (from those you've written to or heard from)
-  const suggest = { q: null, people: [] };
-  const suggestSoon = debounce(async (q) => {
-    const tok = typingToken(q);
-    if (!tok || tok.value.length < (tok.op ? 1 : 2)) {
-      if (suggest.people.length) (suggest.people = []), renderSearchHelp();
-      return;
-    }
-    try {
-      const { contacts } = await api.contacts(tok.value);
-      if (els.searchInput.value !== q) return;
-      suggest.q = q;
-      suggest.people = (contacts || []).slice(0, 4);
-      renderSearchHelp();
-    } catch {}
-  }, 140);
-
-  function replaceTyping(q, tok, by) {
-    return `${q.slice(0, q.length - tok.word.length)}${by} `;
-  }
-
-  // While searching: the filters (From and Date opening their choices just under them), then recent searches (before
-  // anything's chosen or typed), or people and files for what's being typed
+  // Search, past its field (parts/search.js: its filters, recent searches, suggestions as you type, a search said in
+  // words, and one that finds nothing), asked for as search opens, or is touched, and drawn once it's here; till then
+  // the search is what's typed, as it is with no filters on
+  const searchPart = () => PARTS.search?.mod;
   function renderSearchHelp() {
-    const who = SF.from ? nameOf(SF.from.email) : SF.to ? `To ${nameOf(SF.to.email)}` : "";
-    if (els.searchTag) {
-      els.searchTag.textContent = who;
-      els.searchTag.hidden = !who;
-      els.searchInput.placeholder = who ? "Search" : "Search mail";
-    }
-    els.searchHelp.hidden = !S.searching;
-    if (!S.searching) return;
-    askPeople();
-    const q = els.searchInput.value;
-    const tok = typingToken(q);
-    const recent = q.trim() || sfAny() ? [] : recentSearches();
-    const people = tok && suggest.q === q ? suggest.people : [];
-    const keep = (e) => e.preventDefault();
-    const toggleOpen = (k) => {
-      SF.open = SF.open === k ? null : k;
-      renderSearchHelp();
-    };
-    // the filters: the ones on first, blue, named, with an × to take them off
-    const chip = (k, on, label, onclick, menu) =>
-      h(
-        "button.sf",
-        {
-          type: "button",
-          class: [on && "on", SF.open === k && "open"].filter(Boolean).join(" ") || null,
-          "aria-pressed": menu ? null : String(!!on),
-          "aria-expanded": menu ? String(SF.open === k) : null,
-          onpointerdown: keep,
-          onclick,
-        },
-        h("span", label),
-        on ? h("span.sf-x", { "aria-hidden": "true" }, icon("x")) : menu ? icon("chevronDown", "sf-dd") : null
-      );
-    const chips = [
-      [!!SF.from, chip("from", !!SF.from, SF.from ? nameOf(SF.from.email) : "From", () => (SF.from ? ((SF.from = null), (SF.open = null), filtersChanged()) : toggleOpen("from")), true)],
-      [!!SF.date, chip("date", !!SF.date, SF.date ? DATES.find(([k]) => k === SF.date)[1] : "Date", () => (SF.date ? ((SF.date = null), (SF.open = null), filtersChanged()) : toggleOpen("date")), true)],
-      [SF.files, chip("files", SF.files, "Files", () => ((SF.files = !SF.files), filtersChanged()))],
-      [SF.unread, chip("unread", SF.unread, "Unread", () => ((SF.unread = !SF.unread), filtersChanged()))],
-      // (To and In Trash: shown only while they're on, as the searches offered beside one that finds nothing put them on)
-      SF.to && [true, chip("to", true, `To ${nameOf(SF.to.email)}`, () => ((SF.to = null), filtersChanged()))],
-      SF.trash && [true, chip("trash", true, "In Trash", () => ((SF.trash = false), filtersChanged()))],
-    ].filter(Boolean);
-    chips.sort((x, y) => Number(y[0]) - Number(x[0]));
-    setKids(
-      els.searchHelp,
-      h("div.sf-row", { role: "group", "aria-label": "Filters" }, chips.map((c) => c[1])),
-      SF.open === "from"
-        ? h(
-            "div.sf-strip.people",
-            sfPeople.length
-              ? sfPeople.map((p) =>
-                  h(
-                    "button.sf-person",
-                    {
-                      type: "button",
-                      "aria-label": `From ${p.name || p.email}`,
-                      onpointerdown: keep,
-                      onclick: () => {
-                        SF.from = { email: p.email, name: p.name || "" };
-                        SF.open = null;
-                        filtersChanged();
-                      },
-                    },
-                    avatar(p, "sf-av"),
-                    h("span", (p.name || p.email.split("@")[0]).split(/\s+/)[0])
-                  )
-                )
-              : h("p.sf-none", "Type a name in Search to find who it’s from.")
-          )
-        : null,
-      SF.open === "date"
-        ? h(
-            "div.sf-strip.dates",
-            { role: "radiogroup", "aria-label": "Date" },
-            DATES.map(([k, label]) =>
-              h(
-                "button",
-                {
-                  type: "button",
-                  role: "radio",
-                  "aria-checked": String(SF.date === k),
-                  onpointerdown: keep,
-                  onclick: () => {
-                    SF.date = k;
-                    SF.open = null;
-                    filtersChanged();
-                  },
-                },
-                label
-              )
-            )
-          )
-        : null,
-      recent.length
-        ? h(
-            "div.s-section",
-            h("div.s-head", h("span", "Recent"), h("button.s-clear", { type: "button", onpointerdown: keep, onclick: () => (keepRecent([]), renderSearchHelp()) }, "Clear")),
-            h(
-              "div.s-list",
-              recent.map((r) =>
-                h(
-                  "div.s-item",
-                  h(
-                    "button.s-main",
-                    {
-                      type: "button",
-                      onpointerdown: keep,
-                      onclick: () => {
-                        els.searchInput.value = restoreQuery(r);
-                        els.searchInput.focus();
-                        filtersChanged();
-                      },
-                    },
-                    icon("clock"),
-                    h("span.s-text", sayQuery(r))
-                  ),
-                  h(
-                    "button.s-x",
-                    { type: "button", "aria-label": `Remove ${sayQuery(r)}`, onpointerdown: keep, onclick: () => (keepRecent(recentSearches().filter((x) => x !== r)), renderSearchHelp()) },
-                    icon("x")
-                  )
-                )
-              )
-            )
-          )
-        : null,
-      people.length || (tok && !tok.op && tok.value.length >= 2)
-        ? h(
-            "div.s-section",
-            h(
-              "div.s-list",
-              people.map((p) => {
-                const op = tok.op || "from";
-                return h(
-                  "div.s-item",
-                  h(
-                    "button.s-main",
-                    {
-                      type: "button",
-                      onpointerdown: keep,
-                      onclick: () =>
-                        // (From someone: the filter; To someone: typed, as to: has no filter of its own)
-                        op === "from"
-                          ? ((els.searchInput.value = q.slice(0, q.length - tok.word.length).trimEnd()), (SF.from = { email: p.email, name: p.name || "" }), els.searchInput.focus(), filtersChanged())
-                          : editQuery(replaceTyping(q, tok, `to:${p.email}`)),
-                    },
-                    avatar({ name: p.name, email: p.email }, "s-av"),
-                    h("span.s-text", h("b", p.name || p.email), p.name ? h("span.s-sub", p.email) : null),
-                    h("span.s-op", op === "to" ? "To" : "From")
-                  )
-                );
-              }),
-              tok && !tok.op && tok.value.length >= 2
-                ? h(
-                    "div.s-item",
-                    h(
-                      "button.s-main",
-                      { type: "button", onpointerdown: keep, onclick: () => editQuery(replaceTyping(q, tok, `file:${tok.value}`)) },
-                      h("span.s-ic", icon("clip")),
-                      h("span.s-text", h("b", `Files named “${tok.value}”`))
-                    )
-                  )
-                : null
-            )
-          )
-        : null
-    );
+    const s = searchPart();
+    if (s) return s.renderSearchHelp();
+    if (els.searchHelp) els.searchHelp.hidden = true;
+    if (S.searching)
+      part("search").then(() => {
+        renderListChrome();
+        // (a search that found nothing, said again in full)
+        if (S.query && !S.threads.length && !S.loading) renderRows();
+      }, () => {});
   }
-
-  function editQuery(v) {
-    els.searchInput.value = v.replace(/\s{2,}/g, " ").replace(/^\s+/, "");
-    els.searchInput.focus();
-    renderSearchHelp();
-    runSearch(fullQuery());
+  const fullQuery = () => (searchPart() ? searchPart().fullQuery() : els.searchInput?.value.trim() || "");
+  const clearFilters = () => searchPart()?.clearFilters();
+  const sayQuery = (q) => (searchPart() ? searchPart().sayQuery(q) : q);
+  const rememberSearch = (q) => fromPart("search", "rememberSearch", { quiet: true })(q);
+  const suggestSoon = (q) => fromPart("search", "suggestSoon", { quiet: true })(q);
+  function emptySearch() {
+    if (searchPart()) return searchPart().emptySearch();
+    return h("div.empty.content-in.e-search", icon("search"), h("b", "No Results"), `Nothing matches “${S.query}”.`);
   }
+  // (recent searches, kept in this browser: forgotten as you sign out)
+  const RECENT_KEY = "mail:recent-searches";
 
   // The foot of the list: the tabs (People, Updates, Later, Done), and search beside them, which opens into a field
   // while the tabs fold down to the one you're on (as iOS 26 apps have it)
@@ -3794,6 +2575,7 @@ const IFL = (() => {
     els.searchCap = h(
       "div.search.glass",
       {
+        onpointerdown: () => part("search").catch(() => {}),
         onclick: (e) => {
           if (e.target.closest(".search-x")) return;
           // (opened and focused within the tap, so the keyboard comes up on iPhone)
@@ -4071,85 +2853,6 @@ const IFL = (() => {
     store.set("swipeHint", true);
     const el = els.rows?.querySelector(".swipe-hint");
     el?.parentElement?.removeChild(el);
-  }
-
-  // A search that finds nothing: said in words (whose, when it's someone's), the searches beside it that do find
-  // something, each with how many (asked for together, once for each search, only those that find any shown), and
-  // Clear filters
-  const alts = { q: null, list: [], box: null };
-  function searchAlts() {
-    const typed = els.searchInput?.value.trim() || "";
-    const out = [];
-    if (SF.from) {
-      const first = nameOf(SF.from.email);
-      if (typed || SF.to || SF.date || SF.files || SF.unread) out.push({ icon: "person", color: "blue", label: `Everything from ${first}`, sub: "Without the other filters", patch: { to: null, date: null, files: false, unread: false }, typed: "" });
-      out.push({ icon: "sent", color: "blue", label: `Sent to ${first}`, sub: "From you, to this address", patch: { from: null, to: SF.from } });
-      if (SF.from.name) out.push({ icon: "search", color: "purple", label: `Mentioning “${first}”`, sub: "Anywhere in the mail", patch: { from: null }, typed: [typed, first].filter(Boolean).join(" ") });
-      if (!SF.trash) out.push({ icon: "trash", color: "red", label: `From ${first}, in Trash`, patch: { trash: true } });
-    } else {
-      if (!SF.trash) out.push({ icon: "trash", color: "red", label: "In Trash", sub: "Deleted mail isn’t searched otherwise", patch: { trash: true } });
-      if (typed && sfAny()) out.push({ icon: "search", color: "purple", label: `Just “${typed}”`, sub: "Without the filters", patch: { to: null, date: null, files: false, unread: false, trash: false } });
-    }
-    if (SF.trash) out.push({ icon: "inbox", color: "blue", label: "Not in Trash", sub: "Everywhere else", patch: { trash: false } });
-    // (each one's search, as it would be with it applied)
-    for (const a of out) {
-      const keep = { ...SF };
-      Object.assign(SF, a.patch);
-      a.q = [a.typed ?? typed, filtersQuery()].filter(Boolean).join(" ");
-      Object.assign(SF, keep);
-    }
-    return out;
-  }
-  function useAlt(a) {
-    Object.assign(SF, a.patch, { open: null });
-    if (a.typed != null) els.searchInput.value = a.typed;
-    filtersChanged();
-  }
-  function drawAlts() {
-    if (!alts.box?.isConnected) return;
-    const found = alts.list.filter((a) => a.n > 0);
-    setKids(
-      alts.box,
-      found.length ? h("div.e-k", "Try instead") : null,
-      found.length
-        ? h(
-            "div.e-grp",
-            found.map((a) =>
-              h(
-                "button.e-alt",
-                { type: "button", "aria-label": `${a.label}: ${a.n} conversation${a.n === 1 ? "" : "s"}`, onclick: () => useAlt(a) },
-                h(`span.e-ic.${a.color}`, icon(a.icon)),
-                h("span.e-l", a.label, a.sub ? h("small", a.sub) : null),
-                h("span.e-n", a.n > 998 ? "999+" : String(a.n)),
-                icon("chevronRight", "e-chev")
-              )
-            )
-          )
-        : null,
-      sfAny() ? h("button.e-clear", { type: "button", onclick: () => (clearFilters(), filtersChanged()) }, "Clear filters") : null
-    );
-  }
-  function emptySearch() {
-    const typed = els.searchInput?.value.trim() || "";
-    const onlyWho = SF.from && !typed && !SF.to && !SF.date && !SF.files && !SF.unread && !SF.trash;
-    const head = SF.from
-      ? h("div.e-who", avatar({ name: SF.from.name, email: SF.from.email }, "e-av"), h("span.e-badge", icon("search")))
-      : icon("search");
-    alts.box = h("div.e-alts");
-    if (alts.q !== S.query) {
-      const q = (alts.q = S.query);
-      alts.list = searchAlts();
-      Promise.all(alts.list.map((a) => api.count(a.q).then((r) => (a.n = r.count), () => (a.n = 0)))).then(() => alts.q === q && drawAlts());
-    }
-    const el = h(
-      "div.empty.content-in.e-search",
-      head,
-      h("b", onlyWho ? `Nothing from ${nameOf(SF.from.email)}` : "No Results"),
-      onlyWho ? `No mail from ${SF.from.email}.` : `Nothing matches “${sayQuery(S.query)}”.`,
-      alts.box
-    );
-    queueMicrotask(drawAlts);
-    return el;
   }
 
   function emptyEl() {
@@ -4650,63 +3353,9 @@ const IFL = (() => {
     closeOpenSwipe();
   }
 
-  // Unsubscribe, asked first, with how often you actually open them
-  async function unsubSheet(t) {
-    closeMenu(true);
-    let info;
-    try {
-      info = await api.unsubInfo(t.id);
-    } catch (err) {
-      return toast(err.message, { error: true });
-    }
-    const who = displayName(info.sender) || info.sender.email;
-    const layer = h("div.menu-layer.center.unsub-layer");
-    const close = () => closeMenu();
-    // (their page: opened by the tap itself, a link, as one opened once Mail's answered can be blocked as a pop-up. Asked
-    // of Mail first, and its page then turned away, the toast has it to open instead)
-    const finish = (url) => {
-      const w = url && window.open(url, "_blank");
-      if (w) w.opener = null;
-      toast(`Finish on ${who}'s page`, w || !url ? { icon: "news" } : { icon: "news", actionLabel: "Open", duration: 10000, action: () => window.open(url, "_blank", "noopener") });
-    };
-    const go = info.page
-      ? h("a.pbtn.danger-btn", { href: info.page, target: "_blank", rel: "noopener noreferrer", onclick: () => (close(), finish()) }, "Unsubscribe")
-      : h("button.pbtn.danger-btn", { type: "button" }, "Unsubscribe");
-    if (!info.page) go.addEventListener("click", async () => {
-      go.disabled = true;
-      go.textContent = "Unsubscribing…";
-      try {
-        const r = await api.unsubscribe(t.id);
-        close();
-        if (r.open) return finish(r.open);
-        toast(`Unsubscribed from ${who}`, { icon: "check" });
-        refreshCounts();
-        loadList({ quiet: true });
-      } catch (err) {
-        go.disabled = false;
-        go.textContent = "Unsubscribe";
-        toast(err.message, { error: true });
-      }
-    });
-    const card = h(
-      "div.menu.unsub-card",
-      { role: "dialog", "aria-label": `Unsubscribe from ${who}` },
-      avatar(info.sender, "unsub-av"),
-      h("h3", `Unsubscribe from ${who}?`),
-      h(
-        "p",
-        info.of > 1 ? `You've opened ${info.opened} of their last ${info.of} emails. ` : "",
-        info.how === "page" ? "Mail will open their page to finish." : info.how === "mail" && info.to ? `Mail will email ${info.to} to ask them to stop, and move what's here to Done.` : "Mail will ask them to stop, and move what's here to Done."
-      ),
-      go,
-      h("button.pbtn.quiet-btn", { type: "button", onclick: close }, "Cancel")
-    );
-    layer.addEventListener("pointerdown", (e) => e.target === layer && close());
-    layer.append(card);
-    document.body.append(layer);
-    menuState = { layer, menu: card, opener: document.activeElement };
-    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add("open")));
-    go.focus({ preventScroll: true });
+  // Unsubscribe, asked first, with how often you actually open them (parts/sheets.js)
+  function unsubSheet(t) {
+    return fromPart("sheets", "unsubSheet")(t);
   }
 
   // Pressed and held: the row lifts out of the list, the rest dims, and its menu opens under it
@@ -5038,6 +3687,8 @@ const IFL = (() => {
       if (had && document.activeElement === document.body) els.detailScroll.querySelector(".conv-head")?.focus({ preventScroll: true, focusVisible: ring });
       scrollToNewest();
       if (full.unread) act(id, "read", {}, { quiet: true });
+      // (a reply's likely now: the compose sheet, which sends it, asked for while nothing else is going on)
+      warmPart("compose");
     } catch (err) {
       if (token === S.detailToken) {
         S.thread = { ...S.thread, loading: false, failed: err.message || "Couldn't open it." };
@@ -5619,6 +4270,8 @@ pre{white-space:pre-wrap}
   function attachmentsEl(list) {
     const pics = list.filter((a) => kindOf(a) === "image");
     const files = list.filter((a) => kindOf(a) !== "image");
+    // (something here the viewer opens: the viewer asked for while nothing else is going on, so the tap doesn't wait)
+    if (list.some(kindOf)) warmPart("viewer");
     const shown = pics.slice(0, 6);
     return h(
       "div.attachments",
@@ -5657,417 +4310,61 @@ pre{white-space:pre-wrap}
   }
 
   // ---------------------------------------------------------------------------
-  // The viewer: a conversation's pictures, PDFs and videos, full screen, swiped through, pinched to zoom
+  // The viewer: a conversation's pictures, PDFs and videos, full screen, swiped through, pinched to zoom (parts/viewer.js)
   // ---------------------------------------------------------------------------
 
+  // (the viewer open: { close, el })
   let viewer = null;
-
-  // (everything in the conversation that opens here, oldest first, as it reads)
-  function conversationMedia() {
-    const out = [];
-    for (const m of [...(S.thread?.messages || [])].reverse()) for (const a of S.bodies.get(m.id)?.attachments || []) if (kindOf(a)) out.push(a);
-    return out;
-  }
-
   function openViewer(a, from) {
-    if (viewer) return;
-    let items = conversationMedia();
-    if (!items.some((x) => x.id === a.id)) items = [a];
-    let index = items.findIndex((x) => x.id === a.id);
-    const appEl = document.getElementById("app");
-    const opener = from || document.activeElement;
-
-    const titleEl = h("div.v-name");
-    const countEl = h("div.v-count");
-    const track = h("div.v-track");
-    const slides = items.map((x) => h("div.v-slide", { class: `k-${kindOf(x)}`, "data-id": x.id }));
-    track.append(...slides);
-    const thumbs =
-      items.length > 1
-        ? h(
-            "div.v-thumbs",
-            { role: "tablist", "aria-label": "Files" },
-            items.map((x, i) =>
-              h(
-                "button.v-thumb",
-                { type: "button", role: "tab", "aria-label": x.filename, onclick: () => go(i) },
-                kindOf(x) === "image" ? h("img", { src: x.url, alt: "", loading: "lazy" }) : h("span", kindOf(x) === "pdf" ? "PDF" : icon("play"))
-              )
-            )
-          )
-        : null;
-    const prev = items.length > 1 ? h("button.v-arrow.prev.glass", { type: "button", "aria-label": "Previous", onclick: () => go(index - 1) }, icon("chevronLeft")) : null;
-    const next = items.length > 1 ? h("button.v-arrow.next.glass", { type: "button", "aria-label": "Next", onclick: () => go(index + 1) }, icon("chevronRight")) : null;
-    const closeBtn = h("button.gbtn.glass.v-close", { type: "button", "aria-label": "Close", onclick: () => close() }, icon("x"));
-    const shareBtn = h("button.gbtn.glass", { type: "button", "aria-label": "Share or Save", onclick: () => share(items[index]) }, icon("share"));
-    const bg = h("div.v-bg");
-    const stage = h("div.v-stage", track, prev, next);
-    const el = h(
-      "div.viewer",
-      { role: "dialog", "aria-modal": "true", "aria-label": "Attachments" },
-      bg,
-      stage,
-      h("div.v-bar", closeBtn, h("div.v-title", titleEl, countEl), shareBtn),
-      thumbs
-    );
-    document.body.append(el);
-    if (appEl) appEl.inert = true;
-
-    // The file shown, had as it's shown (from what its slide has just loaded), so Share hands it over within the tap:
-    // iOS lets a tap share only for a moment, and a file still coming over mobile data would outlast it. One at a time;
-    // a video (not loaded to be shown, only its first moments) only once it's asked for
-    let kept = null;
-    function ready(x, asked) {
-      if (!navigator.canShare || !navigator.share) return null;
-      if (kept?.x === x) return kept.p;
-      if (!asked && kindOf(x) === "video") return null;
-      const k = (kept = { x, file: null });
-      // (a data: address, the demo's, made here rather than fetched: the page's own rules don't let fetch read one)
-      k.p = (x.url.startsWith("data:") ? Promise.resolve().then(() => dataBlob(x.url)) : fetch(x.url, { credentials: "same-origin" })
-        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("Couldn’t get that file.")))))
-        .then((blob) => (k.file = new File([blob], x.filename || "attachment", { type: x.type || blob.type })));
-      k.p.catch(() => kept === k && (kept = null));
-      return k.p;
-    }
-
-    // each slide's content, made when it's near (so a long gallery doesn't load every file at once)
-    const zoom = items.map(() => ({ s: 1, x: 0, y: 0 }));
-    function fill(i) {
-      const slide = slides[i];
-      if (!slide || slide.firstChild) return;
-      const x = items[i];
-      const kind = kindOf(x);
-      if (kind === "image") slide.append(h("img.v-img", { src: x.url, alt: x.filename, draggable: "false", decoding: "async" }));
-      else if (kind === "video") slide.append(h("video.v-video", { src: x.url, controls: true, playsinline: true, preload: "metadata" }));
-      else
-        slide.append(
-          h("iframe.v-pdf", { src: x.url, title: x.filename, onload: (e) => (e.currentTarget.dataset.loaded = "1") }),
-          h("a.v-open.glass", { href: x.url, target: "_blank", rel: "noopener" }, "Open in Browser", icon("arrowRight"))
-        );
-    }
-
-    function apply(i, animate) {
-      const img = slides[i]?.querySelector(".v-img");
-      if (!img) return;
-      const z = zoom[i];
-      img.style.transition = animate ? "transform 0.35s var(--ease)" : "none";
-      img.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.s})`;
-      slides[i].classList.toggle("zoomed", z.s > 1.01);
-    }
-
-    function place(animate, dx = 0) {
-      track.style.transition = animate ? "transform 0.42s var(--ease)" : "none";
-      track.style.transform = `translateX(calc(${-index * 100}% + ${dx}px))`;
-    }
-
-    function go(i, { animate = true } = {}) {
-      i = Math.max(0, Math.min(items.length - 1, i));
-      if (i !== index) {
-        // (left as it was: unzoomed, a video paused)
-        zoom[index] = { s: 1, x: 0, y: 0 };
-        apply(index, false);
-        slides[index].querySelector("video")?.pause();
-      }
-      index = i;
-      [i - 1, i, i + 1].forEach(fill);
-      place(animate);
-      const x = items[i];
-      // (once what the slide shows has come, so it's had from there rather than fetched a second time)
-      const media = slides[i].querySelector(".v-img, .v-pdf");
-      if (media && !(media.complete || media.dataset.loaded)) media.addEventListener("load", () => index === i && ready(x), { once: true });
-      else ready(x);
-      titleEl.textContent = x.filename;
-      countEl.textContent = items.length > 1 ? `${i + 1} of ${items.length}` : fmtSize(x.size);
-      slides.forEach((sl, j) => sl.setAttribute("aria-hidden", String(j !== i)));
-      thumbs?.querySelectorAll(".v-thumb").forEach((t, j) => {
-        t.classList.toggle("on", j === i);
-        t.setAttribute("aria-selected", String(j === i));
-      });
-      thumbs?.children[i]?.scrollIntoView({ inline: "center", block: "nearest", behavior: animate ? "smooth" : "auto" });
-      if (prev) prev.disabled = i === 0;
-      if (next) next.disabled = i === items.length - 1;
-      // (an arrow gone at the end: the focus not lost with it)
-      if (document.activeElement?.disabled) (i === 0 ? next : prev)?.focus({ preventScroll: true });
-    }
-
-    // Opening: from the picture tapped, growing into place
-    go(index, { animate: false });
-    el.classList.add("opening");
-    const firstImg = slides[index].querySelector(".v-img");
-    const fromImg = from?.querySelector?.("img");
-    const grow = () => {
-      el.classList.remove("opening");
-      el.classList.add("open");
-      if (!firstImg || !fromImg || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      const a = fromImg.getBoundingClientRect();
-      const b = contained(firstImg);
-      if (!b || !a.width) return;
-      firstImg.animate(
-        [
-          { transform: `translate(${a.left + a.width / 2 - (b.left + b.width / 2)}px, ${a.top + a.height / 2 - (b.top + b.height / 2)}px) scale(${Math.max(a.width / b.width, a.height / b.height)})`, clipPath: clipFor(a, b) },
-          { transform: "none", clipPath: "inset(0 round 0)" },
-        ],
-        { duration: 420, easing: "cubic-bezier(0.32, 0.72, 0, 1)" }
-      );
-    };
-    if (firstImg && !firstImg.complete) firstImg.decode().then(grow, grow);
-    else requestAnimationFrame(grow);
-    closeBtn.focus({ preventScroll: true });
-
-    // the picture's box as shown (contained in its slide), for growing from and shrinking back to the thumbnail
-    function contained(img) {
-      const r = img.getBoundingClientRect();
-      if (!img.naturalWidth || !r.width) return null;
-      const k = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight);
-      const w = img.naturalWidth * k;
-      const hh = img.naturalHeight * k;
-      return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - hh) / 2, width: w, height: hh };
-    }
-    // (cropped to the thumbnail's square while it grows, as Photos does)
-    function clipFor(a, b) {
-      const s = Math.max(a.width / b.width, a.height / b.height);
-      const cw = (b.width * s - a.width) / 2 / s;
-      const ch = (b.height * s - a.height) / 2 / s;
-      return `inset(${ch}px ${cw}px round ${12 / s}px)`;
-    }
-
-    function close() {
-      if (!viewer) return;
-      viewer = null;
-      document.removeEventListener("keydown", onKey, true);
-      slides.forEach((sl) => sl.querySelector("video")?.pause());
-      el.classList.remove("open");
-      el.classList.add("closing");
-      if (appEl) appEl.inert = false;
-      // (back into its thumbnail, when the one open is the one tapped and it's still on screen)
-      const img = slides[index].querySelector(".v-img");
-      const thumb = items[index].id === a.id ? fromImg : null;
-      const tr = thumb?.isConnected && thumb.getBoundingClientRect();
-      const b = img && contained(img);
-      // (shrinking back into its thumbnail, unless motion's turned down: then it simply fades)
-      if (tr && tr.width && b && zoom[index].s <= 1.01 && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        const z = zoom[index];
-        img.style.transition = "none";
-        img.animate(
-          [
-            { transform: `translate(${z.x}px, ${z.y}px) scale(${z.s})` },
-            { transform: `translate(${tr.left + tr.width / 2 - (b.left + b.width / 2)}px, ${tr.top + tr.height / 2 - (b.top + b.height / 2)}px) scale(${Math.max(tr.width / b.width, tr.height / b.height)})`, clipPath: clipFor(tr, b) },
-          ],
-          { duration: 360, easing: "cubic-bezier(0.32, 0.72, 0, 1)", fill: "forwards" }
-        );
-      }
-      setTimeout(() => el.remove(), 380);
-      if (opener?.isConnected) opener.focus?.({ preventScroll: true });
-    }
-
-    async function share(x) {
-      try {
-        if (navigator.canShare && navigator.share) {
-          const file = kept?.x === x && kept.file ? kept.file : await ready(x, true);
-          if (navigator.canShare({ files: [file] })) {
-            try {
-              return await navigator.share({ files: [file] });
-            } catch (err) {
-              // (it took longer to come than the tap lasts: it's here now, a tap away)
-              if (err?.name !== "NotAllowedError") throw err;
-              return toast("Ready to Share", { icon: "share", actionLabel: "Share", duration: 8000, action: () => navigator.share({ files: [file] }).catch(() => {}) });
-            }
-          }
-        }
-        const link = h("a", { href: downloadUrl(x.url), download: x.filename || "" });
-        document.body.append(link);
-        link.click();
-        link.remove();
-      } catch (err) {
-        if (err?.name !== "AbortError") toast(err.message || "Couldn't share that file.", { error: true });
-      }
-    }
-
-    function onKey(e) {
-      if (e.key === "Escape") close();
-      else if (e.key === "ArrowLeft") go(index - 1);
-      else if (e.key === "ArrowRight") go(index + 1);
-      else if (e.key === "Tab") {
-        // (kept within the viewer)
-        const f = [...el.querySelectorAll("button:not(:disabled), a[href], video, iframe")].filter((n) => n.offsetParent);
-        const i = f.indexOf(document.activeElement);
-        e.preventDefault();
-        f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length]?.focus();
-      } else {
-        // (and nothing behind it answers a key while it's open)
-        e.stopPropagation();
-        return;
-      }
-      e.stopPropagation();
-      if (e.key !== "Tab") e.preventDefault();
-    }
-    document.addEventListener("keydown", onKey, true);
-
-    // Gestures: swipe across for the next, down to close; pinch or double-tap a picture to zoom, then drag it about
-    const pts = new Map();
-    let g = null;
-    let lastTap = 0;
-    const W = () => stage.clientWidth;
-    function clampZoom(i) {
-      const img = slides[i].querySelector(".v-img");
-      const b = img && contained(img);
-      const z = zoom[i];
-      if (!b) return;
-      const mx = Math.max(0, (b.width * z.s - W()) / 2);
-      const my = Math.max(0, (b.height * z.s - stage.clientHeight) / 2);
-      z.x = Math.max(-mx, Math.min(mx, z.x));
-      z.y = Math.max(-my, Math.min(my, z.y));
-    }
-    stage.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("button, a, video, iframe")) return;
-      stage.setPointerCapture(e.pointerId);
-      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      const z = zoom[index];
-      if (pts.size === 2 && kindOf(items[index]) === "image") {
-        const [p, q] = [...pts.values()];
-        g = { mode: "pinch", d: Math.hypot(p.x - q.x, p.y - q.y), s: z.s, x: z.x, y: z.y, cx: (p.x + q.x) / 2, cy: (p.y + q.y) / 2 };
-        place(true);
-        return;
-      }
-      if (pts.size === 1) g = { mode: null, x0: e.clientX, y0: e.clientY, t0: performance.now(), zx: z.x, zy: z.y };
-    });
-    stage.addEventListener("pointermove", (e) => {
-      if (!pts.has(e.pointerId) || !g) return;
-      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      const z = zoom[index];
-      if (g.mode === "pinch") {
-        if (pts.size < 2) return;
-        const [p, q] = [...pts.values()];
-        const s = Math.max(1, Math.min(5, (g.s * Math.hypot(p.x - q.x, p.y - q.y)) / g.d));
-        // (about the point between the fingers)
-        const r = stage.getBoundingClientRect();
-        const ox = g.cx - r.left - r.width / 2;
-        const oy = g.cy - r.top - r.height / 2;
-        const mx = (p.x + q.x) / 2 - g.cx;
-        const my = (p.y + q.y) / 2 - g.cy;
-        z.s = s;
-        z.x = ox - ((ox - g.x) * s) / g.s + mx;
-        z.y = oy - ((oy - g.y) * s) / g.s + my;
-        apply(index, false);
-        return;
-      }
-      const dx = e.clientX - g.x0;
-      const dy = e.clientY - g.y0;
-      if (!g.mode) {
-        if (Math.hypot(dx, dy) < 8) return;
-        g.mode = z.s > 1.01 ? "pan" : Math.abs(dx) > Math.abs(dy) ? "swipe" : dy > 0 ? "dismiss" : "none";
-      }
-      if (g.mode === "pan") {
-        z.x = g.zx + dx;
-        z.y = g.zy + dy;
-        clampZoom(index);
-        apply(index, false);
-      } else if (g.mode === "swipe") {
-        // (resisting past the ends)
-        const edge = (index === 0 && dx > 0) || (index === items.length - 1 && dx < 0);
-        place(false, edge ? dx / 3 : dx);
-      } else if (g.mode === "dismiss") {
-        const k = Math.min(1, dy / 400);
-        slides[index].style.transition = "none";
-        slides[index].style.transform = `translate(${dx * 0.5}px, ${dy}px) scale(${1 - k * 0.25})`;
-        bg.style.opacity = String(1 - k);
-        el.classList.add("dragging");
-      }
-    });
-    const end = (e) => {
-      if (!pts.has(e.pointerId)) return;
-      pts.delete(e.pointerId);
-      if (!g) return;
-      const z = zoom[index];
-      if (g.mode === "pinch") {
-        if (pts.size) {
-          // (one finger left on: carry on as a drag from here)
-          const [p] = [...pts.values()];
-          g = { mode: z.s > 1.01 ? "pan" : "none", x0: p.x, y0: p.y, t0: performance.now(), zx: z.x, zy: z.y };
-          return;
-        }
-        if (z.s < 1.05) zoom[index] = { s: 1, x: 0, y: 0 };
-        else clampZoom(index);
-        apply(index, true);
-        g = null;
-        return;
-      }
-      const dx = e.clientX - g.x0;
-      const dy = e.clientY - g.y0;
-      const dt = Math.max(1, performance.now() - g.t0);
-      if (!g.mode) {
-        // a tap: twice, quickly, zooms a picture in (to where it was tapped) or back out; once shows or hides the bars
-        const now = performance.now();
-        if (now - lastTap < 300 && kindOf(items[index]) === "image") {
-          lastTap = 0;
-          clearTimeout(viewer?.tapTimer);
-          if (z.s > 1.01) zoom[index] = { s: 1, x: 0, y: 0 };
-          else {
-            const r = stage.getBoundingClientRect();
-            const s = 2.5;
-            zoom[index] = { s, x: -(e.clientX - r.left - r.width / 2) * (s - 1), y: -(e.clientY - r.top - r.height / 2) * (s - 1) };
-            clampZoom(index);
-          }
-          apply(index, true);
-        } else {
-          lastTap = now;
-          if (viewer) viewer.tapTimer = setTimeout(() => el.classList.toggle("bare"), 280);
-        }
-      } else if (g.mode === "swipe") {
-        const fast = Math.abs(dx) / dt > 0.5;
-        if (Math.abs(dx) > W() * 0.2 || fast) go(index + (dx < 0 ? 1 : -1));
-        else place(true);
-      } else if (g.mode === "dismiss") {
-        el.classList.remove("dragging");
-        if (dy > 120 || dy / dt > 0.6) {
-          slides[index].style.transition = "transform 0.3s var(--ease), opacity 0.3s";
-          slides[index].style.transform = `translate(${dx * 0.5}px, ${dy + 200}px) scale(0.7)`;
-          slides[index].style.opacity = "0";
-          bg.style.transition = "opacity 0.3s";
-          bg.style.opacity = "0";
-          close();
-        } else {
-          slides[index].style.transition = "transform 0.4s var(--ease)";
-          slides[index].style.transform = "";
-          bg.style.transition = "opacity 0.4s";
-          bg.style.opacity = "";
-        }
-      }
-      g = null;
-    };
-    stage.addEventListener("pointerup", end);
-    stage.addEventListener("pointercancel", end);
-    // (a mouse or trackpad: scrolled sideways, the next; with ctrl (a pinch on a trackpad), zoomed)
-    stage.addEventListener(
-      "wheel",
-      (e) => {
-        if (kindOf(items[index]) !== "image") return;
-        e.preventDefault();
-        if (e.ctrlKey) {
-          const z = zoom[index];
-          z.s = Math.max(1, Math.min(5, z.s * Math.exp(-e.deltaY / 100)));
-          if (z.s <= 1.01) zoom[index] = { s: 1, x: 0, y: 0 };
-          else clampZoom(index);
-          apply(index, false);
-        } else if (zoom[index].s > 1.01) {
-          zoom[index].x -= e.deltaX;
-          zoom[index].y -= e.deltaY;
-          clampZoom(index);
-          apply(index, false);
-        }
-      },
-      { passive: false }
-    );
-
-    viewer = { close, el };
+    return fromPart("viewer", "openViewer")(a, from);
   }
 
   // ---------------------------------------------------------------------------
-  // Compose
+  // Compose: the sheet, its files and sending them are parts/compose.js, loaded the first time it's needed (asked for
+  // ahead as a conversation opens, or New Message is touched); the reply drafted, the outbox and what's on its way here
   // ---------------------------------------------------------------------------
 
+  // (the compose sheet open: { c, dirty, close, saveDraft, deleteDraft, … })
   let sheetState = null;
-  let sheetOpener = null;
+
+  // The sheet's fields take the focus within the tap that opens it, so the keyboard comes up on iPhone: a tap before it's
+  // here holds the keyboard up meanwhile, in a field of its own that the sheet's own takes over from (holdKeyboard)
+  function openCompose(init) {
+    if (PARTS.compose?.mod) return PARTS.compose.mod.openCompose(init);
+    if (sheetState) return;
+    const held = holdKeyboard();
+    return part("compose")
+      .then((m) => m.openCompose(init), partFailed)
+      .finally(() => held && (held.el.remove(), (keyHeld = null)));
+  }
+  const openDraft = (id) => fromPart("compose", "openDraft")(id);
+  const requestCloseCompose = () => fromPart("compose", "requestCloseCompose")();
+  const runSend = (job, o) => fromPart("compose", "runSend")(job, o);
+  // (a reply from the foot of a conversation: if what sends it can't be had, it's kept, as a message that didn't go is,
+  // and offered again as Mail next opens)
+  function queueSend(c, o) {
+    if (PARTS.compose?.mod) return PARTS.compose.mod.queueSend(c, o);
+    part("compose").then((m) => m.queueSend(c, o), (err) => (keepUnsent(c), partFailed(err)));
+  }
+  // What the outbox kept from before, offered (parts/compose.js), only if it kept anything. → whether anything was said
+  async function offerOutbox() {
+    if (!(await outbox.all()).length) return false;
+    return fromPart("compose", "offerOutbox", { quiet: true })();
+  }
+
+  // (a field holding the keyboard up for a part on its way, on a touch screen, and what had the focus before it: the
+  // part's sheet gives the focus back there as it closes, as it would have without it)
+  let keyHeld = null;
+  function holdKeyboard() {
+    if (!matchMedia("(pointer: coarse)").matches) return null;
+    const el = h("input.kb-hold", { type: "text", tabindex: "-1", "aria-hidden": "true", autocomplete: "off",
+      style: { position: "fixed", top: "0", left: "0", width: "1px", height: "1px", opacity: "0", border: "0", padding: "0", fontSize: "16px", pointerEvents: "none" } });
+    keyHeld = { el, from: document.activeElement };
+    document.body.append(el);
+    el.focus({ preventScroll: true });
+    return keyHeld;
+  }
+  const focusedBefore = () => (keyHeld && document.activeElement === keyHeld.el ? keyHeld.from : document.activeElement);
 
   function mine(email) {
     const e = (email || "").toLowerCase();
@@ -6129,17 +4426,6 @@ pre{white-space:pre-wrap}
     };
   }
 
-  // An attached file's contents: the file picked, or kept with a draft; one forwarded, from Mail's own copy. One that
-  // can't be had is said, never left out (a message or a draft would otherwise go, or be saved over, without it)
-  async function attachmentBlob(a) {
-    if (a.file) return a.file;
-    if (!a.url) return null;
-    // (a data: address, made here: the page's own rules, connect-src, don't let fetch read one)
-    if (a.url.startsWith("data:")) return dataBlob(a.url);
-    const r = await fetch(a.url, { credentials: "same-origin" }).catch(() => null);
-    if (!r?.ok) throw new ApiError(r?.status || 0, `Couldn’t attach “${a.filename}”.${r ? "" : " Try again in a moment."}`);
-    return r.blob();
-  }
   function dataBlob(url) {
     const i = url.indexOf(","), head = url.slice(5, i), body = url.slice(i + 1), b64 = /;base64$/i.test(head);
     const type = head.replace(/;base64$/i, "") || "application/octet-stream";
@@ -6147,32 +4433,6 @@ pre{white-space:pre-wrap}
     const bin = atob(body), bytes = new Uint8Array(bin.length);
     for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
     return new Blob([bytes], { type });
-  }
-
-  // A draft's attachments kept with it (as data, since the files picked won't be there next time)
-  async function draftAttachments(list) {
-    const out = [];
-    for (const a of list || []) {
-      const blob = await attachmentBlob(a);
-      if (blob) out.push({ filename: a.filename, type: a.type || blob.type, size: blob.size, content: await fileToBase64(blob) });
-    }
-    return out;
-  }
-
-  async function openDraft(id) {
-    try {
-      const msg = await api.message(id);
-      const c = msg.compose || { to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.text };
-      // (the files kept with it, as files again: sent or saved as if just picked)
-      c.attachments = (c.attachments || []).map((a) => {
-        if (!a.content) return a;
-        const file = dataBlob(`data:${a.type || "application/octet-stream"};base64,${a.content}`);
-        return { filename: a.filename, type: a.type, size: a.size || file.size, file, preview: /^image\//.test(a.type) ? URL.createObjectURL(file) : null };
-      });
-      openCompose({ ...c, draftId: id });
-    } catch (err) {
-      toast(err.message, { error: true });
-    }
   }
 
   // A message being written, kept on this device every couple of seconds (its words and who it's to, not its attachments),
@@ -6236,634 +4496,6 @@ pre{white-space:pre-wrap}
     };
   })();
 
-  // What the outbox kept from before (Mail closed, or put away and closed by iOS, before a message's answer came): those
-  // that went after all, let go (Mail's asked); those that were on their way, as messages that didn't send (the dot sends
-  // them again); those being changed, to open. Never one another Mail window has, sending it or waiting out its Undo
-  // (take). → whether anything was said
-  async function offerOutbox() {
-    const known = new Set([...pendingSends, ...S.failedSends, ...heldSends].map((j) => j.id));
-    const kept = [];
-    for (const r of await outbox.all()) {
-      if (!r?.id || !r.c || known.has(r.id)) continue;
-      if (Date.now() - r.at > 14 * 864e5) outbox.drop(r.id);
-      else if (await take(r)) kept.push(r);
-    }
-    const went = new Set(kept.length ? (await api.sent(kept.map((r) => r.id)).catch(() => null))?.sent || [] : []);
-    const jobs = [];
-    for (const r of kept) {
-      if (went.has(r.id)) { outbox.drop(r.id); letGo(r); continue; }
-      const attachments = (r.c.attachments || []).map((a) => ({ ...a, preview: a.file && /^image\//.test(a.type) ? URL.createObjectURL(a.file) : null }));
-      jobs.push({ id: r.id, at: r.at, edit: r.edit, kept: true, cancelled: false, timer: null, letGo: r.letGo, c: { ...r.c, attachments } });
-    }
-    const toSend = jobs.filter((j) => !j.edit), toEdit = jobs.find((j) => j.edit);
-    // (those to open, let go: offered, not kept here, so another window, or next time, offers them too)
-    for (const j of jobs) if (j.edit) letGo(j);
-    if (toSend.length) {
-      S.failedSends.push(...toSend);
-      renderListChrome();
-    }
-    if (toEdit) {
-      const s = toEdit.c.subject;
-      toast(s ? `“${s.slice(0, 40)}” wasn’t sent` : "A message wasn’t sent", { icon: "drafts", actionLabel: "Open", duration: 9000, action: () => bringBack(toEdit) });
-    } else if (toSend.length) {
-      toast(`${toSend.length === 1 ? "A message" : `${toSend.length} messages`} didn’t send`, { icon: "sent", actionLabel: "Try Again", duration: 9000, action: retryFailed });
-    }
-    return jobs.length > 0;
-  }
-
-  function openCompose(init = {}) {
-    if (sheetState) return;
-    closeMenu(true);
-    const c = {
-      mode: init.mode || "new",
-      from: init.from || S.me?.defaultFrom || "",
-      to: (init.to || []).map((p) => ({ ...p })),
-      cc: (init.cc || []).map((p) => ({ ...p })),
-      bcc: (init.bcc || []).map((p) => ({ ...p })),
-      subject: init.subject || "",
-      text: init.text || "",
-      quote: init.quote || null,
-      inReplyTo: init.inReplyTo || null,
-      references: init.references || null,
-      threadId: init.threadId || null,
-      attachments: init.attachments || [],
-      draftId: init.draftId || null,
-      showCc: !!((init.cc && init.cc.length) || (init.bcc && init.bcc.length)),
-    };
-    // (the signature for the address it's from, under a new message or reply, as Settings has it; kept as c.sig, so a
-    // change of address changes it too, while it's as it was put in)
-    c.sig = !init.draftId && !c.text ? sigFor(c.from) : "";
-    if (c.sig) c.text = `\n\n${c.sig}`;
-    const snapshot = JSON.stringify([c.to, c.cc, c.bcc, c.subject, c.text, c.attachments.length]);
-
-    const scrim = h("div.sheet-scrim");
-    const titleEl = h("h2");
-    const sendBtn = h(
-      "button.gbtn.glass.tinted",
-      { "aria-label": "Send", title: "Send", onclick: () => doSend() },
-      icon("arrowUp")
-    );
-    const closeBtn = h("button.gbtn.glass", { "aria-label": "Close", title: "Close", onclick: () => requestCloseCompose() }, icon("x"));
-    const head = h("div.sheet-head", closeBtn, titleEl, sendBtn);
-
-    const fileInput = h("input", {
-      type: "file",
-      multiple: true,
-      style: { display: "none" },
-      onchange: () => addFiles(fileInput.files),
-    });
-
-    const fields = {};
-    const suggestBox = h("div");
-
-    function tokenField(key, label, extra = null) {
-      const tokens = h("div.tokens");
-      const input = h("input", {
-        type: "email",
-        inputmode: "email",
-        autocomplete: "off",
-        autocapitalize: "off",
-        autocorrect: "off",
-        spellcheck: "false",
-        enterkeyhint: "next",
-        "aria-label": label,
-      });
-      const field = h("div.field", { "data-k": key }, h("label", `${label}:`), tokens, extra);
-      field.addEventListener("click", (e) => {
-        if (e.target === field || e.target === tokens) input.focus();
-      });
-      const draw = () => {
-        setKids(tokens, 
-          ...c[key].map((p, i) =>
-            h(
-              "button.token",
-              {
-                type: "button",
-                class: EMAIL_RE.test(p.email) ? null : "invalid",
-                title: p.email,
-                onclick: (e) => {
-                  e.currentTarget.classList.toggle("focused");
-                  showMenu(e.currentTarget, [
-                    { label: p.email, disabled: true },
-                    "-",
-                    {
-                      label: "Remove",
-                      icon: "x",
-                      destructive: true,
-                      action: () => {
-                        c[key].splice(i, 1);
-                        draw();
-                        update();
-                      },
-                    },
-                  ]);
-                },
-              },
-              avatar(p, "tok-av"),
-              h("span.tok-n", p.name || p.email)
-            )
-          ),
-          input
-        );
-      };
-      const commit = () => {
-        const parts = input.value.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
-        if (!parts.length) return false;
-        for (const p of parts) c[key].push(parseAddress(p));
-        input.value = "";
-        draw();
-        update();
-        return true;
-      };
-      input.addEventListener("keydown", (e) => {
-        if (suggestState.items.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-          e.preventDefault();
-          suggestState.hl = (suggestState.hl + (e.key === "ArrowDown" ? 1 : -1) + suggestState.items.length) % suggestState.items.length;
-          drawSuggest();
-          return;
-        }
-        if (e.key === "Enter" && suggestState.items.length && suggestState.hl >= 0) {
-          e.preventDefault();
-          pickSuggestion(suggestState.items[suggestState.hl]);
-          return;
-        }
-        if (e.key === "Enter" || e.key === "," || e.key === ";" || (e.key === "Tab" && input.value.trim())) {
-          if (commit()) e.preventDefault();
-          else if (e.key === "Enter") {
-            e.preventDefault();
-            focusNext(key);
-          }
-          clearSuggest();
-        } else if (e.key === "Backspace" && !input.value && c[key].length) {
-          c[key].pop();
-          draw();
-          update();
-        }
-      });
-      input.addEventListener("input", () => {
-        if (/[,;]/.test(input.value)) {
-          commit();
-          clearSuggest();
-        } else (suggest(key, input), update());
-      });
-      input.addEventListener("blur", () =>
-        setTimeout(() => {
-          if (document.activeElement?.closest?.(".suggestions")) return;
-          commit();
-          if (suggestState.key === key) clearSuggest();
-        }, 120)
-      );
-      input.addEventListener("paste", () => setTimeout(commit, 0));
-      draw();
-      fields[key] = { field, input, draw, commit };
-      return field;
-    }
-
-    const suggestState = { key: null, items: [], hl: -1, input: null };
-    const suggestFetch = debounce(async (q, key) => {
-      try {
-        const { contacts } = await api.contacts(q);
-        if (suggestState.key !== key || suggestState.input?.value.trim() !== q) return;
-        const taken = new Set([...c.to, ...c.cc, ...c.bcc].map((p) => p.email.toLowerCase()));
-        suggestState.items = contacts.filter((x) => !taken.has(x.email.toLowerCase())).slice(0, 5);
-        suggestState.hl = suggestState.items.length ? 0 : -1;
-        drawSuggest();
-      } catch {}
-    }, 140);
-
-    function suggest(key, input) {
-      const q = input.value.trim();
-      suggestState.key = key;
-      suggestState.input = input;
-      if (q.length < 1) return clearSuggest();
-      suggestFetch(q, key);
-    }
-
-    function clearSuggest() {
-      suggestState.items = [];
-      suggestState.hl = -1;
-      drawSuggest();
-    }
-
-    function pickSuggestion(p) {
-      const key = suggestState.key;
-      c[key].push({ name: p.name || "", email: p.email });
-      suggestState.input.value = "";
-      fields[key].draw();
-      clearSuggest();
-      update();
-      fields[key].input.focus();
-    }
-
-    function drawSuggest() {
-      const target = suggestState.key && fields[suggestState.key]?.field;
-      if (!suggestState.items.length || !target) {
-        setKids(suggestBox);
-        return;
-      }
-      if (suggestBox.previousSibling !== target) target.after(suggestBox);
-      setKids(suggestBox, 
-        h(
-          "div.suggestions",
-          suggestState.items.map((p, i) =>
-            h(
-              "button.suggestion",
-              {
-                type: "button",
-                class: i === suggestState.hl ? "hl" : null,
-                onpointerdown: (e) => e.preventDefault(),
-                onclick: () => pickSuggestion(p),
-              },
-              avatar(p),
-              h("div", h("b", marked(p.name || p.email, suggestState.input?.value.trim())), p.name ? h("span", marked(p.email, suggestState.input?.value.trim())) : null)
-            )
-          )
-        )
-      );
-    }
-
-    // (the letters typed, picked out in what they matched)
-    function marked(text, q) {
-      const i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
-      return i < 0 ? text : [text.slice(0, i), h("mark", text.slice(i, i + q.length)), text.slice(i + q.length)];
-    }
-
-    function focusNext(key) {
-      if (key === "to" && c.showCc) fields.cc.input.focus();
-      else if (key === "cc") fields.bcc.input.focus();
-      else subjectInput.focus();
-    }
-
-    const ccRow = h("div");
-    function drawCcRow() {
-      setKids(ccRow, c.showCc ? [tokenField("cc", "Cc"), tokenField("bcc", "Bcc")] : null);
-      ccBtn.classList.toggle("on", c.showCc);
-      ccBtn.setAttribute("aria-pressed", String(c.showCc));
-    }
-
-    // Who it's from: a small chip at the end of the To line, the addresses behind it
-    const fromBtn = h("button.from-chip", {
-      type: "button",
-      "aria-haspopup": "menu",
-      "aria-expanded": "false",
-      onclick: () =>
-        menuState?.opener === fromBtn
-          ? closeMenu()
-          : showMenu(
-          fromBtn,
-          (S.me?.identities || [c.from]).map((addr) => ({
-            label: addr,
-            checked: addr === c.from,
-            dot: addrColor(addr),
-            action: () => {
-              swapSig(addr);
-              c.from = addr;
-              drawFrom();
-              update();
-            },
-          })),
-          { title: "Send From", dropdown: true }
-        ),
-    });
-    // (another address: its signature in place of the last one's, if that's still there as it was put in)
-    function swapSig(addr) {
-      const next = sigFor(addr);
-      if (next === c.sig) return;
-      const was = c.sig ? `\n\n${c.sig}` : "";
-      if (was && !c.text.endsWith(was)) return;
-      c.text = (was ? c.text.slice(0, -was.length) : c.text.trimEnd()) + (next ? `\n\n${next}` : "");
-      c.sig = next;
-      textArea.value = c.text;
-      autoGrow();
-    }
-
-    function drawFrom() {
-      fromBtn.setAttribute("aria-label", `From ${c.from}`);
-      fromBtn.title = `From ${c.from}`;
-      // (your photo; and the address, when it isn't the one new mail goes from: a reply from the one the mail came to,
-      // say, as the reply at a conversation's foot says it)
-      const other = S.me?.defaultFrom && c.from && c.from.toLowerCase() !== S.me.defaultFrom.toLowerCase();
-      setKids(fromBtn, avatar({ name: S.me?.displayName, email: c.from, me: true }, "from-av"), other ? h("span", `${c.from.split("@")[0]}@`) : null, icon("chevronDown"));
-    }
-    drawFrom();
-
-    const subjectInput = h("input.c-subject", {
-      type: "text",
-      value: c.subject,
-      placeholder: "Subject",
-      autocomplete: "off",
-      enterkeyhint: "next",
-      "aria-label": "Subject",
-      oninput: () => {
-        c.subject = subjectInput.value;
-        update();
-      },
-      onkeydown: (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          textArea.focus();
-        }
-      },
-    });
-
-    const textArea = h("textarea.compose-text", {
-      "aria-label": "Message",
-      placeholder: "Message",
-      oninput: () => {
-        c.text = textArea.value;
-        autoGrow();
-        update();
-      },
-    });
-    textArea.value = c.text;
-    const autoGrow = () => {
-      textArea.style.height = "auto";
-      textArea.style.height = `${Math.max(c.attachments.length ? 120 : 220, textArea.scrollHeight)}px`;
-    };
-
-    const attsEl = h("div.compose-atts");
-    function drawAtts() {
-      setKids(
-        attsEl,
-        ...c.attachments.map((a, i) => {
-          const img = /^image\//.test(a.type) && (a.preview || a.url);
-          const ext = extOf(a.filename);
-          return h(
-            "div.c-att",
-            { title: `${a.filename}, ${fmtSize(a.size)}`, class: img ? "pic" : null },
-            img ? h("img", { src: a.preview || a.url, alt: "" }) : [h("b", ext && ext.length <= 4 ? ext : icon("doc")), h("span.c-att-n", a.filename)],
-            h(
-              "button.c-att-x",
-              {
-                type: "button",
-                "aria-label": `Remove ${a.filename}`,
-                onclick: () => {
-                  if (a.preview) URL.revokeObjectURL(a.preview);
-                  c.attachments.splice(i, 1);
-                  drawAtts();
-                  update();
-                },
-              },
-              icon("x")
-            )
-          );
-        })
-      );
-    }
-
-    const MAX_ATTACH = 20 * 1024 * 1024;
-    function addFiles(files) {
-      for (const f of files) {
-        const total = c.attachments.reduce((n, a) => n + (a.size || 0), 0);
-        if (total + f.size > MAX_ATTACH) {
-          toast("Attachments are limited to 20 MB", { error: true });
-          break;
-        }
-        c.attachments.push({
-          filename: f.name,
-          type: f.type || "application/octet-stream",
-          size: f.size,
-          file: f,
-          preview: /^image\//.test(f.type) ? URL.createObjectURL(f) : null,
-        });
-      }
-      fileInput.value = "";
-      drawAtts();
-      update();
-      autoGrow();
-    }
-
-    const quoteEl = c.quote
-      ? h(
-          "div.compose-quote",
-          h("div.qh", c.quote.header.split("\n")[0]),
-          (c.quote.text || htmlToText(c.quote.html)).slice(0, 2000)
-        )
-      : null;
-
-    const hint = h("span.hint");
-    const ccBtn = h(
-      "button.c-tool.c-cc",
-      {
-        type: "button",
-        onpointerdown: (e) => e.preventDefault(),
-        onclick: () => {
-          c.showCc = !c.showCc;
-          drawCcRow();
-          if (c.showCc) fields.cc.input.focus();
-        },
-      },
-      "Cc/Bcc"
-    );
-    const body = h(
-      "div.sheet-body",
-      tokenField("to", "To", fromBtn),
-      ccRow,
-      subjectInput,
-      textArea,
-      attsEl,
-      quoteEl
-    );
-    drawCcRow();
-    drawAtts();
-
-    // The toolbar on the keyboard: Cc/Bcc, Photos, Camera, Files; the size of what's attached; the keyboard away
-    const photoInput = h("input", { type: "file", multiple: true, accept: "image/*,video/*", style: { display: "none" }, onchange: () => (addFiles(photoInput.files), (photoInput.value = "")) });
-    const cameraInput = h("input", { type: "file", accept: "image/*", capture: "environment", style: { display: "none" }, onchange: () => (addFiles(cameraInput.files), (cameraInput.value = "")) });
-    const tool = (name, label, onclick, cls = "") => h(`button.c-tool${cls}`, { type: "button", "aria-label": label, title: label, onpointerdown: (e) => e.preventDefault(), onclick }, icon(name));
-    const accessory = h(
-      "div.compose-accessory",
-      h(
-        "div.c-bar.glass",
-        ccBtn,
-        h("span.c-sep"),
-        tool("photo", "Photos", () => photoInput.click()),
-        S.layout === "phone" ? tool("camera", "Camera", () => cameraInput.click()) : null,
-        tool("clip", "Files", () => fileInput.click()),
-        hint,
-        tool("chevronDown", "Hide Keyboard", () => document.activeElement?.blur?.(), ".c-kb")
-      ),
-      fileInput,
-      photoInput,
-      cameraInput
-    );
-
-    const sheet = h(
-      "div.sheet",
-      { role: "dialog", "aria-modal": "true", "aria-label": "New Message" },
-      h("div.sheet-grabber"),
-      head,
-      body,
-      accessory
-    );
-
-    // Drag files onto the sheet (iPad)
-    sheet.addEventListener("dragover", (e) => e.preventDefault());
-    sheet.addEventListener("drop", (e) => {
-      e.preventDefault();
-      if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
-    });
-
-    function dirty() {
-      return JSON.stringify([c.to, c.cc, c.bcc, c.subject, c.text, c.attachments.length]) !== snapshot;
-    }
-
-    function update() {
-      titleEl.textContent = c.subject.trim() || (c.mode === "forward" ? "Forward" : c.mode.startsWith("reply") ? "Reply" : "New Message");
-      const all = [...c.to, ...c.cc, ...c.bcc];
-      // (an address typed but not yet made a name counts: Send takes it as it is, and says if it isn't one (doSend))
-      const typed = ["to", "cc", "bcc"].some((k) => fields[k]?.input.value.trim());
-      sendBtn.disabled = (!all.length && !typed) || all.some((p) => !EMAIL_RE.test(p.email));
-      const size = c.attachments.reduce((n, a) => n + (a.size || 0), 0);
-      hint.textContent = size ? fmtSize(size) : "";
-    }
-
-    async function doSend() {
-      // (what's typed and not yet a name, made one, as Return would: shown as it's taken, red if it isn't an address)
-      for (const k of ["to", "cc", "bcc"]) fields[k]?.commit();
-      const all = [...c.to, ...c.cc, ...c.bcc];
-      const bad = all.find((p) => !EMAIL_RE.test(p.email));
-      if (!all.length || bad) {
-        toast(bad ? `“${bad.email}” isn't a valid address` : "Add a recipient", { error: true });
-        return;
-      }
-      if (!c.subject.trim()) {
-        const ok = await confirmMenu(sendBtn, "This message has no subject.", "Send Anyway");
-        if (!ok) return subjectInput.focus();
-      }
-      closeSheet("sending");
-      queueSend(c, { sheet: true });
-    }
-
-    function closeSheet(mode) {
-      const st = sheetState;
-      if (!st) return;
-      sheetState = null;
-      clearInterval(st.keepT);
-      // (nothing written: no copy kept; sent, its copy's the outbox's once it has it (queueSend); thrown away or saved,
-      // its own action forgets it once it's done)
-      if (mode !== "sending" && !st.dirty()) forgetUnsent();
-      document.activeElement?.blur?.();
-      const appEl = document.getElementById("app");
-      if (appEl) appEl.inert = false;
-      if (sheetOpener?.isConnected) sheetOpener.focus({ preventScroll: true });
-      sheetOpener = null;
-      document.body.classList.remove("sheet-open");
-      scrim.classList.remove("open");
-      if (mode === "sending") sheet.classList.add("sending");
-      sheet.classList.remove("open");
-      setTimeout(() => {
-        scrim.remove();
-        sheet.remove();
-        // (a message brought back while this one was open (bringBack): now it can be)
-        if (!sheetState && heldSends.length) bringBack(heldSends.shift());
-      }, 650);
-    }
-
-    // Drag the sheet down to dismiss (iPhone)
-    let drag = null;
-    head.addEventListener("pointerdown", (e) => {
-      if (S.layout !== "phone" || e.target.closest("button")) return;
-      drag = { y0: e.clientY, dy: 0, t: performance.now(), id: e.pointerId };
-      head.setPointerCapture(e.pointerId);
-      sheet.classList.add("dragging");
-    });
-    head.addEventListener("pointermove", (e) => {
-      if (!drag) return;
-      drag.dy = Math.max(0, e.clientY - drag.y0);
-      const resist = drag.dy > 0 && dirty() ? drag.dy * 0.5 : drag.dy;
-      sheet.style.transform = `translateY(${resist}px)`;
-    });
-    const endDrag = () => {
-      if (!drag) return;
-      const { dy, t } = drag;
-      drag = null;
-      sheet.classList.remove("dragging");
-      sheet.style.transform = "";
-      const v = dy / Math.max(1, performance.now() - t);
-      if (dy > 140 || v > 0.8) requestCloseCompose();
-    };
-    head.addEventListener("pointerup", endDrag);
-    head.addEventListener("pointercancel", endDrag);
-
-    sheetState = {
-      c,
-      dirty,
-      closeBtn,
-      close: closeSheet,
-      keepT: setInterval(() => { if (dirty()) keepUnsent(c); }, 2000),
-      saveDraft: async () => {
-        keepUnsent(c);
-        closeSheet();
-        try {
-          await api.saveDraft({
-            id: c.draftId,
-            from: c.from,
-            to: c.to,
-            cc: c.cc,
-            bcc: c.bcc,
-            subject: c.subject,
-            text: c.text,
-            inReplyTo: c.inReplyTo,
-            references: c.references,
-            quote: c.quote,
-            attachments: await draftAttachments(c.attachments),
-          });
-          forgetUnsent();
-          toast("Draft Saved", { icon: "drafts" });
-          refreshCounts();
-          loadList({ quiet: true });
-        } catch (err) {
-          // (not saved: it's still on this device, and opens again from here)
-          toast(`${err.message} It’s kept on this device.`, { error: true, actionLabel: "Open", duration: 8000, action: () => { forgetUnsent(); openCompose({ ...c }); } });
-        }
-      },
-      deleteDraft: async () => {
-        forgetUnsent();
-        closeSheet();
-        if (c.draftId) {
-          try {
-            await api.remove(c.draftId);
-            refreshCounts();
-            loadList({ quiet: true });
-          } catch {}
-        }
-      },
-    };
-
-    update();
-    // (the sheet holds the focus while it's up: what's behind it can't be reached, and it goes back where it was after)
-    const opener = document.activeElement;
-    const appEl = document.getElementById("app");
-    if (appEl) appEl.inert = true;
-    sheet.addEventListener("keydown", (e) => {
-      if (e.key !== "Tab") return;
-      const f = [...sheet.querySelectorAll("button:not(:disabled),input,textarea,[tabindex]:not([tabindex='-1'])")].filter((x) => x.offsetParent);
-      if (!f.length) return;
-      if (e.shiftKey && document.activeElement === f[0]) (e.preventDefault(), f[f.length - 1].focus());
-      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) (e.preventDefault(), f[0].focus());
-    });
-    sheetOpener = opener;
-    document.body.append(scrim, sheet);
-    scrim.addEventListener("click", () => S.layout === "pad" && requestCloseCompose());
-    sheet.offsetHeight;
-    document.body.classList.add("sheet-open");
-    scrim.classList.add("open");
-    sheet.classList.add("open");
-    requestAnimationFrame(autoGrow);
-
-    // Focus synchronously so iOS raises the keyboard within the tap.
-    if (c.mode === "new" && !c.to.length) fields.to.input.focus({ preventScroll: true });
-    else if (c.mode !== "new" || c.draftId) {
-      if (!c.to.length) fields.to.input.focus({ preventScroll: true });
-      else {
-        textArea.focus({ preventScroll: true });
-        try {
-          textArea.setSelectionRange(0, 0);
-        } catch {}
-      }
-    }
-  }
 
   function confirmMenu(anchor, title, label, { destructive } = {}) {
     return new Promise((resolve) => {
@@ -6885,167 +4517,11 @@ pre{white-space:pre-wrap}
     });
   }
 
-  function requestCloseCompose() {
-    const st = sheetState;
-    if (!st) return;
-    if (!st.dirty()) {
-      if (st.c.draftId) return st.close();
-      return st.close();
-    }
-    showMenu(st.closeBtn, [
-      { label: "Delete Draft", icon: "trash", destructive: true, action: st.deleteDraft },
-      { label: "Save Draft", icon: "drafts", action: st.saveDraft },
-    ]);
-  }
 
   // Sending waits a few seconds so it can be undone. Each message is a job, in pendingSends from then till Mail has it,
   // and in the outbox; its id is its name there and to Mail, the same each time it's asked to go, so one asked again
   // (its answer lost, say) is never sent twice (index.js send)
   const pendingSends = new Set();
-  // (brought back while another message was open: each opens once that one's closed)
-  const heldSends = [];
-  const jobId = () => crypto.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-  // A job's this window's alone while it's sending it, or keeping it for the dot or to open (pendingSends,
-  // S.failedSends, heldSends), by a lock in its name: so another Mail window opened meanwhile doesn't offer it as one
-  // that didn't send (offerOutbox). → whether this window has it now (where the browser has no locks, always)
-  const take = (job) =>
-    new Promise((got) => {
-      if (!navigator.locks?.request) return got(true);
-      navigator.locks
-        .request(`mail-send:${job.id}`, { ifAvailable: true }, (lock) => {
-          got(!!lock);
-          return lock && !job.gone ? new Promise((done) => (job.letGo = done)) : null;
-        })
-        .catch(() => got(true));
-    });
-  // (let go once it's sent, back in the sheet, or Mail's said it's to be changed)
-  const letGo = (job) => {
-    job.gone = true;
-    job.letGo?.();
-  };
-
-  // sheet: from the compose sheet, whose own copy on this device the outbox's now takes over from
-  function queueSend(c, { sheet = false } = {}) {
-    const job = { id: jobId(), at: Date.now(), c, sheet, cancelled: false, timer: null };
-    pendingSends.add(job);
-    take(job);
-    outbox.keep(job).then((ok) => {
-      job.kept = !!ok;
-      if (sheet) ok ? forgetUnsent() : keepUnsent(c);
-    });
-    // (longer to undo, for those who'd take longer to reach Undo: undoFor)
-    const wait = undoFor();
-    toast("Sending…", {
-      icon: "sent",
-      actionLabel: "Undo",
-      duration: wait + 200,
-      action: () => {
-        if (job.started) return toast("Too late to undo: it’s on its way", { icon: "sent" });
-        job.cancelled = true;
-        clearTimeout(job.timer);
-        pendingSends.delete(job);
-        bringBack(job);
-      },
-    });
-    job.timer = setTimeout(() => runSend(job), wait);
-  }
-
-  // A message back in the sheet to be changed (Undo, or Edit on one that didn't send): out of the outbox, the sheet's
-  // own copy kept from the start. With another message open, it opens once that's closed, kept meanwhile (and offered
-  // as Mail next opens, should Mail close first)
-  function bringBack(job) {
-    S.failedSends = S.failedSends.filter((j) => j !== job);
-    renderListChrome();
-    if (sheetState) {
-      job.edit = true;
-      if (!heldSends.includes(job)) heldSends.push(job);
-      // (this window's again while it waits, if it had let it go: one Mail refused, or offered to open)
-      if (job.gone) ((job.gone = false), take(job));
-      outbox.keep(job);
-      return toast("It opens again once you’ve closed this one", { icon: "drafts" });
-    }
-    outbox.drop(job.id);
-    letGo(job);
-    keepUnsent(job.c);
-    openCompose(job.c);
-  }
-
-  async function buildPayload(c) {
-    let text = c.text;
-    let html = `<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45;color:#1c1c1e">${textToHtml(c.text)}</div>`;
-    if (c.quote) {
-      const qText = c.quote.text || htmlToText(c.quote.html);
-      text += `\n\n${c.quote.header}\n\n${c.quote.forward ? qText : qText.split("\n").map((l) => `> ${l}`).join("\n")}`;
-      // (pictures shown from Mail's own attachments are Mail's links, no use to anyone else: they're left out)
-      const qHtml = c.quote.html ? bodyInner(c.quote.html).replace(/<img\b[^>]*\bsrc\s*=\s*["']?\/api\/attachments\/[^>]*>/gi, "") : textToHtml(c.quote.text);
-      html += `<br><div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#6e6e73;font-size:14px">${textToHtml(c.quote.header)}</div><blockquote type="cite" style="margin:10px 0 0;padding:0 0 0 12px;border-left:2px solid #c7c7cc">${qHtml}</blockquote>`;
-    }
-    const attachments = [];
-    for (const a of c.attachments) {
-      const blob = await attachmentBlob(a);
-      if (!blob) continue;
-      attachments.push({ filename: a.filename, type: a.type, content: await fileToBase64(blob) });
-    }
-    return {
-      from: c.from,
-      to: c.to,
-      cc: c.cc,
-      bcc: c.bcc,
-      subject: c.subject,
-      text,
-      html,
-      inReplyTo: c.inReplyTo,
-      references: c.references,
-      attachments,
-      draftId: c.draftId,
-    };
-  }
-
-  async function runSend(job, { keepalive } = {}) {
-    if (job.cancelled || job.started) return;
-    job.started = true;
-    // (on its way till Mail answers: the updater waits for it)
-    pendingSends.add(job);
-    try {
-      const payload = await buildPayload(job.c);
-      await api.send({ ...payload, key: job.id }, { keepalive });
-      toast("Message Sent", { icon: "check" });
-      outbox.drop(job.id);
-      letGo(job);
-      if (job.sheet && !job.kept) forgetUnsent();
-      S.failedSends = S.failedSends.filter((j) => j !== job);
-      refreshCounts();
-      loadList({ quiet: true });
-      // (a reply shows in its conversation, if that's the one open: not in another gone to meanwhile)
-      if (job.c.inReplyTo && job.c.threadId && S.thread?.id === job.c.threadId) openThread(S.thread.id, { fromNav: true });
-    } catch (err) {
-      // (kept for the dot to offer again, as it is in the outbox for next time, unless Mail said it's the message itself
-      // that's wrong: that's to be changed (Edit), and offered to open next time. Signed out, it's sent again once you're
-      // back. Where the outbox couldn't keep it, the one copy this device keeps, as before)
-      if (!job.kept) keepUnsent(job.c);
-      const refused = err.status >= 400 && err.status < 500 && err.status !== 401;
-      if (refused) {
-        job.edit = true;
-        if (job.kept) outbox.keep(job);
-        letGo(job);
-      } else {
-        S.failedSends.push(job);
-        renderListChrome();
-      }
-      // (no answer, or none that says whether it went (the connection lost, Mail failing, or still sending it from the
-      // time before): asked again as itself, from Try Again. Not Edit, which would make it another message, sent twice if
-      // the first did go. Edit only where Mail refused it, or it never left here: a file that couldn't be read, say)
-      const again = !refused && err.status !== undefined;
-      toast(err.message || "Couldn't send", {
-        error: true,
-        actionLabel: again ? "Try Again" : "Edit",
-        duration: 8000,
-        action: again ? retryFailed : () => bringBack(job),
-      });
-    } finally {
-      pendingSends.delete(job);
-    }
-  }
 
   // Don't lose a queued message if the app is closed or put away during the undo window: it goes at once (iOS often only
   // suspends a Home Screen app as it's put away, with no pagehide; it's in the outbox meanwhile either way)
@@ -7363,6 +4839,84 @@ pre{white-space:pre-wrap}
   }
 
   // ---------------------------------------------------------------------------
+  // Mail's later parts: each a module of its own (public/parts/), loaded the first time it's needed
+  // ---------------------------------------------------------------------------
+
+  // What Mail opens to (signing in, the list, a conversation read, Done and Later) is this file; what's used later comes
+  // as it's wanted: the compose sheet, the viewer, search's help, Settings and the sheets used now and then, and the
+  // demo's made-up mail. Each is asked for as this Mail's own, /parts/<name>.js?b=<BUILD>, never another Mail's: Mail's
+  // Worker turns away a part asked for by a Mail that isn't the one deployed (a new one deployed while this one's open:
+  // put in then, partFailed), and Mail's service worker keeps each Mail's parts by its build, fetched as it keeps that
+  // Mail's app.js, so a part opens offline once Mail has opened online (sw.js). Where one's likely soon (the reply once
+  // a conversation's open, the viewer once there's a picture to see), it's asked for while nothing else is going on, or
+  // as what opens it is touched, so the tap doesn't wait for it.
+  const PARTS = {};
+  let partTries = 0;
+  function part(name) {
+    const p = (PARTS[name] ||= { mod: null, loading: null });
+    if (p.mod) return Promise.resolve(p.mod);
+    // (asked again after it couldn't be had, by another address: a browser can keep a module that failed as failed)
+    return (p.loading ||= import(`/parts/${name}.js?b=${encodeURIComponent(BUILD)}${partTries ? `&r=${partTries}` : ""}`).then(
+      (m) => (p.mod = m.default(partsContext())),
+      (err) => {
+        p.loading = null;
+        partTries++;
+        throw err;
+      }
+    ));
+  }
+  // (one of a part's functions: at once where the part's here, as a tap needs it (a field focused, so the keyboard comes
+  // up; notifications asked for, while the tap still counts as one); else once it's come. quiet: nothing said if it
+  // can't be had, for what Mail does by itself)
+  const fromPart = (name, fn, { quiet } = {}) => (...args) => {
+    const p = PARTS[name];
+    if (p?.mod) return p.mod[fn](...args);
+    return part(name).then((m) => m[fn](...args), (err) => (quiet ? undefined : partFailed(err)));
+  };
+  // (asked for while nothing else is going on)
+  function warmPart(name) {
+    if (PARTS[name]?.mod || PARTS[name]?.loading) return;
+    const go = () => part(name).catch(() => {});
+    if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 2500 });
+    else setTimeout(go, 1200);
+  }
+  // A part that couldn't be had: offline, with none kept, said as anything else that needs Mail is; this Mail no longer
+  // the one deployed, the new one put in now, where you are kept (IFL.updates); else, as when Mail can't be reached
+  async function partFailed() {
+    if (navigator.onLine === false) return toast("You’re offline.", { error: true });
+    const v = await api.version().catch(() => null);
+    if (v?.app && v.app !== BUILD) {
+      IFL.offer(v.app, v.min);
+      if (IFL.updateReady()) return IFL.update();
+    }
+    toast("Couldn’t reach Mail. Try again in a moment.", { error: true });
+  }
+
+  // What a part uses of Mail's own: given once, as the first is loaded. What changes as Mail goes (a menu open, a sheet,
+  // the viewer) read, and set, through it as it is now
+  let partsCtx = null;
+  function partsContext() {
+    return (partsCtx ||= {
+      icon, h, setKids, avatar, displayName, locale, debounce, wait, dayMs, fmtSize, extOf, kindOf, downloadUrl,
+      textToHtml, htmlToText, bodyInner, parseAddress, EMAIL_RE, fileToBase64, dataBlob,
+      IFL, DEMO, STANDALONE, PUSH_OK, ApiError, api, S, els, ADDR_COLORS, RECENT_KEY,
+      showMenu, closeMenu, confirmMenu, undoFor, toast, sigFor, addrColor, mine, focusedBefore,
+      renderListChrome, loadList, refreshCounts, openThread, retryFailed, runSearch,
+      keepUnsent, forgetUnsent, outbox, pendingSends,
+      get menuState() { return menuState; },
+      set menuState(v) { menuState = v; },
+      get sheetState() { return sheetState; },
+      set sheetState(v) { sheetState = v; },
+      get setState() { return setState; },
+      set setState(v) { setState = v; },
+      get swReg() { return swReg; },
+      set swReg(v) { swReg = v; },
+      get viewer() { return viewer; },
+      set viewer(v) { viewer = v; },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // Boot
   // ---------------------------------------------------------------------------
 
@@ -7470,6 +5024,8 @@ pre{white-space:pre-wrap}
   async function start() {
     let s;
     try {
+      // (the demo's mail, made up, put in first: parts/demo.js)
+      if (DEMO && !api.session) Object.assign(api, (await part("demo")).demoApi());
       let error = null;
       try {
         s = await finishSignIn();

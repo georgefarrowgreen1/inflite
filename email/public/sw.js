@@ -12,8 +12,9 @@ const SHELL = "mail-app-2";
 const FILES = ["/", "/app.js", "/app.css", "/theme.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();
-  // (not waited on long: a worker that takes over late holds the updater up)
-  e.waitUntil(Promise.race([caches.open(SHELL).then((c) => c.addAll(FILES)).catch(() => {}), new Promise((ok) => setTimeout(ok, 8000))]));
+  // (not waited on long: a worker that takes over late holds the updater up. The parts of the Mail just kept, after it)
+  const kept = caches.open(SHELL).then((c) => c.addAll(FILES).then(() => c.match("/app.js"))).then((r) => r && r.text()).then((t) => t && keepParts(t, 0)).catch(() => {});
+  e.waitUntil(Promise.race([kept, new Promise((ok) => setTimeout(ok, 8000))]));
 });
 // (the updater every app shares, about to load a new version: Mail's files are fetched afresh by the page itself, past
 // the browser's copy, through here and kept as they come, so there's nothing more for this worker to do: IFL.updates)
@@ -29,6 +30,8 @@ self.addEventListener("activate", (e) =>
 self.addEventListener("fetch", (e) => {
   const r = e.request, u = new URL(r.url);
   if (r.method !== "GET" || u.origin !== self.location.origin || u.pathname.startsWith("/api/")) return;
+  // (a part of Mail's page, asked for as its Mail's: below)
+  if (PART.test(u.pathname) && u.searchParams.get("b")) return e.respondWith(part(e, u));
   // (Mail's one page, at / or /index.html, is kept as "/"; any other page opened here, a message's frame at /body/ (on
   // InFlite's page, One roof) or a file at /api/, is the network's alone: never kept in its place, never answered with it)
   const key = r.mode === "navigate" ? (u.pathname === "/" || u.pathname === "/index.html" ? "/" : null) : FILES.includes(u.pathname) && !u.search ? u.pathname : null;
@@ -46,14 +49,73 @@ async function fresh(e, key) {
   }
   if (res.ok && res.type === "basic") {
     const copy = res.clone();
+    // (Mail's script, as it comes: its Mail's parts kept with it, below)
+    const script = key === "/app.js" ? res.clone() : null;
     const keep = caches.open(SHELL).then((c) => c.put(key, copy)).catch(() => {});
     // (waited for where the browser lets a fetch's event be, this late; where it won't, it's kept all the same, and the
     // page still comes: never a page that fails to load for want of a copy)
     try {
       e.waitUntil(keep);
+      if (script) e.waitUntil(script.text().then((t) => keepParts(t, 6000)).catch(() => {}));
     } catch {}
   } else if (res.status >= 500) return (await kept()) || res;
   return res;
+}
+
+// ---- Mail's later parts, kept by the Mail they're for ----
+// Mail's page loads what's used later (the compose sheet, the viewer, search's help, Settings and the sheets used now
+// and then) the first time it's needed, as /parts/<name>.js?b=<its BUILD> (app.js part()). Each is kept here under that
+// address, apart from any other Mail's, and given from here first: so a page is only ever given its own Mail's parts
+// (one still open as a new Mail's deployed, its own, kept; Mail's Worker turns it away from the new ones), and a part
+// opens offline once Mail has opened online. They're kept as Mail's script is: each time app.js comes from the network
+// and isn't the one kept, its Mail's parts are fetched too (all again, if it's the same Mail changed), a few seconds on,
+// out of the way of Mail opening; those of any Mail but it and the one before it go. (The demo's only as it's used.)
+const PART = /^\/parts\/[\w-]+\.js$/;
+const PARTS = ["/parts/compose.js", "/parts/viewer.js", "/parts/search.js", "/parts/sheets.js"];
+const PARTS_KEPT = "/parts/kept";
+const partKey = (path, b) => `${path}?b=${encodeURIComponent(b)}`;
+async function part(e, u) {
+  const key = partKey(u.pathname, u.searchParams.get("b"));
+  const c = await caches.open(SHELL).catch(() => null);
+  const kept = await c?.match(key).catch(() => null);
+  if (kept) return kept;
+  const res = await fetch(e.request);
+  if (res.ok && res.type === "basic" && c) {
+    const copy = res.clone();
+    try {
+      e.waitUntil(c.put(key, copy).catch(() => {}));
+    } catch {}
+  }
+  return res;
+}
+// (a short sum of a file, to tell it's changed)
+const sum = (t) => {
+  let x = 2166136261;
+  for (let i = 0; i < t.length; i++) x = Math.imul(x ^ t.charCodeAt(i), 16777619);
+  return (x >>> 0).toString(36) + t.length.toString(36);
+};
+async function keepParts(script, after) {
+  const b = /\bconst BUILD = "([\d.]+)"/.exec(script)?.[1];
+  if (!b) return;
+  const c = await caches.open(SHELL);
+  const was = await c.match(PARTS_KEPT).then((r) => (r ? r.json() : {})).catch(() => ({}));
+  const h = sum(script), again = was.b === b && was.h !== h;
+  const missing = [];
+  for (const p of PARTS) if (again || !(await c.match(partKey(p, b)))) missing.push(p);
+  if (!missing.length && was.b === b) return;
+  if (after) await new Promise((ok) => setTimeout(ok, after));
+  for (const p of missing) {
+    const r = await fetch(partKey(p, b), { cache: "no-cache", credentials: "same-origin" }).catch(() => null);
+    // (turned away: another Mail's deployed since, whose script brings its own)
+    if (r?.status === 409) return;
+    if (r?.ok && r.type === "basic") await c.put(partKey(p, b), r);
+  }
+  const prev = was.b && was.b !== b ? was.b : was.prev || null;
+  await c.put(PARTS_KEPT, new Response(JSON.stringify({ b, h, prev }), { headers: { "Content-Type": "application/json" } }));
+  for (const k of await c.keys()) {
+    const u = new URL(k.url);
+    if (PART.test(u.pathname) && ![b, prev].includes(u.searchParams.get("b"))) await c.delete(k);
+  }
 }
 
 // The browser renewed this device's subscription: the new one kept in its place, so notices carry on without Mail

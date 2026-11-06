@@ -30,6 +30,8 @@ export default {
     if (PAGE.has(url.pathname)) return page(request, env);
     // (the module InFlite's page runs Mail as, under the roof: its files, passed through at inflite.ai/mail/roof/)
     if (url.pathname.startsWith("/roof/")) return roofFile(request, env, url);
+    // (Mail's page's later parts, each loaded the first time it's needed: never one for another Mail than the page's)
+    if (url.pathname.startsWith("/parts/")) return partFile(request, env, url);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
     // (a bug report, from the window the shared menu shows when something breaks in Mail: passed on to the account's
     // address, where every app's are kept, the georgefarrowgreen repo's functions/_bugs.js; from Mail's own pages only)
@@ -466,6 +468,30 @@ async function roofFile(request, env, url) {
   out.headers.set("X-Content-Type-Options", "nosniff");
   return out;
 }
+// Mail's page's later parts (public/parts/: the compose sheet, the viewer, search's help, the sheets used now and then,
+// the demo), each loaded by the page the first time it's needed, as /parts/<name>.js?b=<the page's BUILD>: a part for
+// the Mail deployed, and only for a page that's that Mail. A page whose BUILD isn't the one deployed (a new Mail
+// deployed while it was open) is turned away (409), so it never runs a new part over its old self: its service worker
+// has its own kept (sw.js), or the new Mail's put in (app.js partFailed). As the module's files: there as they are,
+// asked again each time (no-cache), never Mail's page in their place.
+const PART_FILE = /^\/parts\/\w[\w-]*\.js$/;
+async function partFile(request, env, url) {
+  const none = (status = 404) => new Response(status === 409 ? "Not this Mail’s" : "Not found", { status, headers: { "Cache-Control": "no-store", ...SAFE } });
+  if ((request.method !== "GET" && request.method !== "HEAD") || !PART_FILE.test(url.pathname)) return none();
+  const b = url.searchParams.get("b");
+  if (b) {
+    const now = await appBuild(env, request);
+    if (now && b !== now) return none(409);
+  }
+  const res = await env.ASSETS.fetch(request);
+  const ok = res.status === 304 || (res.status === 200 && /^(text|application)\/javascript\b/i.test(res.headers.get("Content-Type") || ""));
+  if (!ok) return none();
+  const out = new Response(res.body, res);
+  out.headers.set("Cache-Control", "no-cache");
+  out.headers.set("X-Content-Type-Options", "nosniff");
+  return out;
+}
+
 let roofBuildCache = null;
 async function roofBuild(env, request) {
   const key = buildOf(env) || "dev";

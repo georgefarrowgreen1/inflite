@@ -46,7 +46,10 @@ Cloudflare Email Sending.
   Web Push with a VAPID key Mail makes for itself and keeps in D1; nothing to configure.
 - **App:** a static web app in `public/`, installable to the home screen, in the look of the other
   inflite apps: the stream on iPhone with conversations pushed over it (and an edge-swipe back), the
-  two side by side on iPad and Mac, swipe actions, undo send, drafts and keyboard shortcuts.
+  two side by side on iPad and Mac, swipe actions, undo send, drafts and keyboard shortcuts. What Mail opens to (signing
+  in, the list, a conversation read) is `public/app.js`; what's used later (the compose sheet, the viewer, search's help,
+  Settings and the sheets used now and then, the demo) is a module of its own in `public/parts/`, loaded the first time
+  it's needed, for the Mail deployed only (`src/index.js` partFile), and kept by the service worker for offline (`sw.js`).
 
 Try the interface without a backend by adding `?demo` to the URL.
 
