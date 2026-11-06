@@ -262,6 +262,12 @@ export function rowToSummary(r) {
   };
 }
 
+// (a list's: a few of who it was to, all of them once it's opened, never fifty of each on every row of a page)
+export function rowToBrief(r) {
+  const s = rowToSummary(r);
+  return { ...s, to: s.to.slice(0, 5), cc: s.cc.slice(0, 5) };
+}
+
 export function rowToMessage(r) {
   return {
     ...rowToSummary(r),
@@ -298,8 +304,8 @@ export async function upsertContacts(env, people) {
 }
 
 // Finds the thread a message belongs to from its In-Reply-To / References. For mail that's come in (from: who it's
-// from, subject: its subject), a message it names counts only if it's plausibly the same conversation: one you sent,
-// one this sender was part of, or one with the same subject. A message's ID is no secret (anyone on a thread or a
+// from, subject: its subject), a message it names counts only if it's plausibly the same conversation: one this
+// sender sent, or was sent or part of, or one with the same subject. A message's ID is no secret (anyone on a thread or a
 // list sees it), so naming one alone mustn't put a stranger's mail into a private conversation.
 const bareSubject = (s) => (s || "").replace(/^((re|fwd?|aw|sv)\s*:\s*)+/i, "").trim().toLowerCase();
 export async function findThread(env, inReplyTo, references, from = null, subject = null) {
@@ -309,20 +315,29 @@ export async function findThread(env, inReplyTo, references, from = null, subjec
   if (!ids.length) return null;
   const placeholders = ids.map((_, i) => `?${i + 1}`).join(",");
   const { results } = await env.DB.prepare(
-    `SELECT thread_id, folder, from_email, to_json, cc_json, subject FROM messages WHERE message_id IN (${placeholders}) LIMIT 20`
+    `SELECT thread_id, folder, from_email, to_json, cc_json, bcc_json, subject FROM messages WHERE message_id IN (${placeholders}) LIMIT 20`
   )
     .bind(...ids)
     .all();
   if (from === null) return results[0]?.thread_id || null;
   const who = String(from || "").toLowerCase(), about = bareSubject(subject);
   const part = (json) => { try { return JSON.parse(json || "[]").some((a) => String(a?.email || "").toLowerCase() === who); } catch { return false; } };
-  // (the likeliest first, where an ID is on more than one: the sender's own message, then one you sent, then one they
-  // were part of, then one on the same subject)
-  const rank = (m) => (who && String(m.from_email || "").toLowerCase() === who ? 4 : m.folder === "sent" ? 3 : who && (part(m.to_json) || part(m.cc_json)) ? 2 : about && bareSubject(m.subject) === about ? 1 : 0);
+  const same = (m) => about && bareSubject(m.subject) === about;
+  // (the likeliest first, where an ID is on more than one: the sender's own message, then one you sent them (or on the
+  // same subject: a sent message's ID names no one, and anyone it went to can pass it on), then one they were part of,
+  // then one on the same subject)
+  const rank = (m) =>
+    who && String(m.from_email || "").toLowerCase() === who ? 4
+    : m.folder === "sent" && ((who && (part(m.to_json) || part(m.cc_json) || part(m.bcc_json))) || same(m)) ? 3
+    : who && (part(m.to_json) || part(m.cc_json)) ? 2
+    : same(m) ? 1
+    : 0;
   const best = results.map((m) => [rank(m), m]).filter(([r]) => r > 0).sort((x, y) => y[0] - x[0])[0];
   return best?.[1].thread_id || null;
 }
 
+// (printable characters alone, never a space or a line break: an ID goes back out in a reply's In-Reply-To and
+// References, and one encoded as a word (=?utf-8?Q?…=0D=0A…?=) comes decoded, line breaks and all, as a header of its own)
 export function cleanMessageId(id) {
-  return (id || "").trim().replace(/^<|>$/g, "");
+  return (id || "").trim().replace(/^<|>$/g, "").replace(/[^\x21-\x7e]/g, "");
 }

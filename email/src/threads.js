@@ -1,4 +1,4 @@
-import { rowToSummary, bumpVersion } from "./db.js";
+import { rowToSummary, rowToBrief, bumpVersion } from "./db.js";
 
 // One stream of conversations rather than folders. Later hides a conversation until a time; when it comes it's back at the
 // top of the stream, unread (wakeSnoozed, every few minutes by the scheduler, with a notice; until then a conversation
@@ -201,7 +201,7 @@ async function threadsFrom(env, groups, where, now) {
     return {
       id: g.thread_id,
       subject: cleanSubject(latest?.subject) || "(No Subject)",
-      latest: latest ? rowToSummary(latest) : null,
+      latest: latest ? rowToBrief(latest) : null,
       // (its newest message, whose frame InFlite's reader starts on the tap, beside asking for the conversation)
       latestId: latest?.id || null,
       from: incoming ? { name: incoming.from_name || "", email: incoming.from_email || "" } : null,

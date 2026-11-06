@@ -7,8 +7,9 @@ import { spotStored } from "./spot.js";
 
 // Handles mail delivered by Cloudflare Email Routing. Nothing that arrives is lost: the original is kept first, and if
 // reading it fails (twice: a database that's briefly not answering shouldn't make good mail unreadable) it still shows in
-// the stream (with the original to download), and goes to FORWARD_TO if that's set. With the database not answering at
-// all, a note of it is kept beside the original (pending/), and the scheduled run reads it in once it is (retryPending).
+// the stream (with the original to download), and goes to FORWARD_TO if that's set. A note of it is kept beside the
+// original (pending/) until it's in: with the database not answering at all, or the run stopped partway (out of time,
+// say), the scheduled run reads it in from there (retryPending).
 export async function receiveEmail(message, env, ctx) {
   // (to an address that isn't one of yours, with Settings set to turn those away: refused, so its sender hears)
   let arrival = { address: null, reject: false };
@@ -25,12 +26,15 @@ export async function receiveEmail(message, env, ctx) {
   const id = crypto.randomUUID();
   const raw = await new Response(message.raw).arrayBuffer();
   await env.MAIL.put(`raw/${id}.eml`, raw, { httpMetadata: { contentType: "message/rfc822" } });
+  // (coming: from a run that may still be going, which retryPending leaves to it a while)
+  await keepNote(env, id, { to: message.to || "", from: message.from || "", at: Date.now(), coming: true });
+  const done = () => env.MAIL.delete(`pending/${id}`).catch(() => {});
   let err;
   for (let tries = 0; tries < 2; tries++) {
     try {
       await ensureSchema(env);
       await store(message, env, ctx, id, raw, arrival.address);
-      return;
+      return done();
     } catch (e) {
       err = e;
       if (!tries) await new Promise((ok) => setTimeout(ok, 1000));
@@ -40,19 +44,22 @@ export async function receiveEmail(message, env, ctx) {
   if (env.FORWARD_TO) ctx.waitUntil(message.forward(env.FORWARD_TO).catch((e) => console.error("forward", e)));
   try {
     await keepUnread(env, message, id, raw.byteLength);
+    await done();
   } catch (e) {
     console.error("couldn't keep it either; the original is at", `raw/${id}.eml`, e);
     // (to be read in later, from the original; failing that too, the delivery fails, so it's never taken as delivered
     // with nothing to show for it)
-    await env.MAIL.put(`pending/${id}`, JSON.stringify({ to: message.to || "", from: message.from || "", at: Date.now() }), {
-      httpMetadata: { contentType: "application/json" },
-    });
+    await keepNote(env, id, { to: message.to || "", from: message.from || "", at: Date.now() });
   }
 }
+
+const keepNote = (env, id, note) => env.MAIL.put(`pending/${id}`, JSON.stringify(note), { httpMetadata: { contentType: "application/json" } });
 
 // (one that couldn't be read, in the stream as such, with its original to download; an open Mail shows it, as it shows
 // any that's come)
 async function keepUnread(env, message, id, size) {
+  // (and whatever a reading stopped partway kept of it: its files are named by its id, store)
+  await env.MAIL.delete([`body/${id}.json`, ...Array.from({ length: 30 }, (_, i) => `att/${id}-${i}`)]).catch(() => {});
   await env.DB.prepare(
     `INSERT INTO messages (id, folder, thread_id, mailbox, from_name, from_email, to_json, cc_json, subject, snippet, date,
        unread, has_attachments, size, category)
@@ -64,8 +71,9 @@ async function keepUnread(env, message, id, size) {
   await bumpVersion(env).catch(() => {});
 }
 
-// Mail kept while the database wasn't answering (a note under pending/ beside each original), read in now: each as it
-// would have been as it came (its address's settings, People or Updates, its conversation, a notice for mail from people)
+// Mail kept while the database wasn't answering, or whose run stopped partway (a note under pending/ beside each
+// original), read in now: each as it would have been as it came (its address's settings, People or Updates, its
+// conversation, a notice for mail from people)
 export async function retryPending(env, ctx) {
   const { objects } = await env.MAIL.list({ prefix: "pending/", limit: 25 });
   if (!objects.length) return;
@@ -78,16 +86,24 @@ export async function retryPending(env, ctx) {
         env.MAIL.get(`raw/${id}.eml`),
         env.DB.prepare(`SELECT id FROM messages WHERE id = ?1`).bind(id).first(),
       ]);
+      // (one whose run may still be going: left to it for ten minutes)
+      if (note?.coming && Date.now() - (Number(note.at) || 0) < 10 * 60e3) continue;
       // (already in, or nothing left to read in)
       if (!row && orig) {
         const raw = await orig.arrayBuffer();
         const { address } = await arrivalFor(env, note?.to);
         const message = { to: note?.to || "", from: note?.from || "", rawSize: raw.byteLength };
-        // (one that still can't be read, with the database answering now: shown as one that couldn't be)
-        await store(message, env, ctx, id, raw, address).catch((err) => {
-          console.error("couldn't read a kept message", id, err);
-          return keepUnread(env, message, id, raw.byteLength);
-        });
+        const tries = Number(note?.tries) || 0;
+        // (one whose reading has stopped the run twice already, out of time say: not read a third time, but shown as
+        // one that couldn't be, as is one that still can't be read with the database answering now)
+        if (tries >= 2) await keepUnread(env, message, id, raw.byteLength);
+        else {
+          await keepNote(env, id, { ...note, tries: tries + 1 });
+          await store(message, env, ctx, id, raw, address).catch((err) => {
+            console.error("couldn't read a kept message", id, err);
+            return keepUnread(env, message, id, raw.byteLength);
+          });
+        }
       }
       await env.MAIL.delete(o.key);
     } catch (err) {
@@ -96,12 +112,21 @@ export async function retryPending(env, ctx) {
   }
 }
 
+// (64 KB of headers at most: one with more (a To of thousands, say, which takes seconds to read) is shown as one that
+// couldn't be read, its original there to download)
+const READ_LIMITS = { maxHeadersSize: 64 * 1024 };
+// (one line, of so many characters at most: what's decoded of a header can carry line breaks of its own)
+const line = (v, n = 998) => String(v || "").replace(/[\x00-\x1f\x7f]+/g, " ").slice(0, n);
+
 async function store(message, env, ctx, id, raw, address) {
-  const email = await PostalMime.parse(raw);
+  const email = await PostalMime.parse(raw, READ_LIMITS);
+  email.subject = line(email.subject);
+  email.references = line(email.references, 20000);
   const from = mailbox(email.from) || { name: "", email: message.from || "" };
   from.email ||= message.from || "";
-  const to = addresses(email.to);
-  const cc = addresses(email.cc);
+  // (fifty of each kept at most, their names 200 characters; any more are in the original)
+  const to = addresses(email.to).slice(0, 50);
+  const cc = addresses(email.cc).slice(0, 50);
   const replyTo = addresses(email.replyTo)[0]?.email || null;
   const messageId = cleanMessageId(email.messageId) || `${id}@${env.DOMAIN}`;
   const to1 = (message.to || "").toLowerCase();
@@ -137,11 +162,12 @@ async function store(message, env, ctx, id, raw, address) {
   const category = await classify(env, email, from.email, !!existingThread, address?.category);
   const date = parseDate(email.date);
 
-  // (at most 30 parts kept apart; any more stay in the original)
-  const attachments = (email.attachments || []).slice(0, 30).map((a) => ({
-    id: crypto.randomUUID(),
-    filename: a.filename || "attachment",
-    type: a.mimeType || "application/octet-stream",
+  // (at most 30 parts kept apart; any more stay in the original. Each named by the message's id and its place, so a
+  // reading stopped partway and read again later writes over what it kept, never leaving it beside: keepUnread)
+  const attachments = (email.attachments || []).slice(0, 30).map((a, i) => ({
+    id: `${id}-${i}`,
+    filename: line(a.filename, 255) || "attachment",
+    type: line(a.mimeType, 255) || "application/octet-stream",
     content: a.content,
     size: byteLength(a.content),
     contentId: cleanMessageId(a.contentId) || null,
@@ -282,8 +308,8 @@ async function classify(env, email, fromEmail, inConversation, addressCategory) 
 
 function mailbox(a) {
   if (!a) return null;
-  if (a.group) return a.group[0] ? { name: a.group[0].name || "", email: a.group[0].address } : null;
-  return a.address ? { name: a.name || "", email: a.address } : null;
+  if (a.group) return a.group[0] ? mailbox(a.group[0]) : null;
+  return a.address ? { name: line(a.name, 200), email: line(a.address, 320) } : null;
 }
 
 function addresses(list) {
@@ -301,15 +327,16 @@ function byteLength(c) {
   return c?.byteLength || 0;
 }
 
+// (each pattern here goes over the page once: none scans on from every "<" to the end, as one would, thousands of times
+// over, for a page of tags that never close. A tag left open at the end goes with the rest of the page)
 export function snippet(text, html) {
   let s = text || "";
   if (!s && html) {
-    s = html
+    s = withoutBlocks(html.slice(0, 100_000)
       // (stop where the quoted reply starts)
-      .split(/<blockquote|<div[^>]*class="?gmail_quote|<div[^>]*id="?divRplyFwdMsg/i)[0]
-      .replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, " ")
-      .replace(/<(br|\/p|\/div)[^>]*>/gi, "\n")
-      .replace(/<[^>]+>/g, " ")
+      .split(/<blockquote|<div[^<>]*class="?gmail_quote|<div[^<>]*id="?divRplyFwdMsg/i)[0])
+      .replace(/<(br|\/p|\/div)[^>]*(>|$)/gi, "\n")
+      .replace(/<[^>]+(>|$)/g, " ")
       .replace(/&nbsp;/g, " ")
       .replace(/&amp;/g, "&")
       .replace(/&lt;/g, "<")
@@ -325,4 +352,24 @@ export function snippet(text, html) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 240);
+}
+
+// (what's in a <style>, <script> or <head>, left out: each one's end looked for once from where it starts, and a kind
+// that's found with no end isn't looked for again)
+function withoutBlocks(html) {
+  const open = /<(style|script|head)/gi, ended = new Set();
+  let out = "", at = 0;
+  for (let m; (m = open.exec(html)); ) {
+    const tag = m[1].toLowerCase();
+    if (ended.has(tag)) continue;
+    const end = new RegExp(`</${tag}>`, "gi");
+    end.lastIndex = open.lastIndex;
+    if (!end.exec(html)) {
+      ended.add(tag);
+      continue;
+    }
+    out += html.slice(at, m.index) + " ";
+    at = open.lastIndex = end.lastIndex;
+  }
+  return out + html.slice(at);
 }

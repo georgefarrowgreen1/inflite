@@ -4,7 +4,7 @@ import {
   mailVersion,
   ensureSchema,
   FOLDERS,
-  rowToSummary,
+  rowToBrief,
   rowToMessage,
   upsertContacts,
   findThread,
@@ -661,7 +661,7 @@ async function listMessages(env, url) {
     .bind(...params)
     .all();
   const hasMore = results.length > limit;
-  return json({ messages: results.slice(0, limit).map(rowToSummary), hasMore });
+  return json({ messages: results.slice(0, limit).map(rowToBrief), hasMore });
 }
 
 async function getMessage(env, id) {
@@ -889,10 +889,14 @@ async function contacts(env, url) {
   return json({ contacts: results });
 }
 
+// (one line: whatever's asked for, nothing of a message's headers has a line break of its own, which would start another
+// header, a Bcc say)
+const flat = (v) => String(v ?? "").replace(/[\x00-\x1f\x7f]+/g, " ");
+
 function normalizeRecipients(list) {
   return (Array.isArray(list) ? list : [])
     .map((r) => (typeof r === "string" ? { email: r, name: "" } : { email: r?.email || "", name: r?.name || "" }))
-    .map((r) => ({ email: r.email.trim(), name: r.name.trim() }))
+    .map((r) => ({ email: String(r.email).trim(), name: flat(r.name).trim() }))
     .filter((r) => r.email);
 }
 
@@ -925,7 +929,7 @@ async function send(env, ctx, body, view) {
   const size = (Array.isArray(body.attachments) ? body.attachments : []).reduce((n, a) => n + String(a?.content || "").length * 0.75, 0);
   if (size > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
   const from = checkFrom(env, body.from || (await defaultAddress(env)));
-  const name = await nameFor(env, view, from);
+  const name = flat(await nameFor(env, view, from)).trim();
   const to = normalizeRecipients(body.to);
   const cc = normalizeRecipients(body.cc);
   const bcc = normalizeRecipients(body.bcc);
@@ -935,7 +939,7 @@ async function send(env, ctx, body, view) {
   const bad = all.find((r) => !EMAIL_RE.test(r.email));
   if (bad) throw new HttpError(400, `“${bad.email}” isn't a valid email address.`);
 
-  const subject = String(body.subject || "").slice(0, 998);
+  const subject = flat(body.subject || "").slice(0, 998);
   let text = String(body.text || "");
   let html = body.html ? String(body.html) : undefined;
   // (quoted here, from Mail's own copy, when the page has none: InFlite's never has the original's body, S4-D4)
@@ -959,6 +963,7 @@ async function send(env, ctx, body, view) {
   const headers = {};
   if (inReplyTo) headers["In-Reply-To"] = `<${inReplyTo}>`;
   if (references.length) headers["References"] = references.map((r) => `<${r}>`).join(" ");
+  for (const k in headers) headers[k] = flat(headers[k]);
 
   const message = {
     from: name ? { email: from, name } : from,
@@ -1101,10 +1106,10 @@ async function filesOut(env, list) {
     if (row) {
       const obj = await env.MAIL.get(`att/${row.ref}`);
       if (!obj) throw gone(a, row);
-      out.push({ id: crypto.randomUUID(), filename: String(a.filename || row.filename || "attachment"), type: String(row.type || "application/octet-stream"), bytes: new Uint8Array(await obj.arrayBuffer()) });
+      out.push({ id: crypto.randomUUID(), filename: flat(a.filename || row.filename || "attachment"), type: flat(row.type || "application/octet-stream"), bytes: new Uint8Array(await obj.arrayBuffer()) });
       continue;
     }
-    out.push({ id: crypto.randomUUID(), filename: String(a?.filename || "attachment"), type: String(a?.type || "application/octet-stream"), bytes: base64ToBytes(String(a?.content || "")) });
+    out.push({ id: crypto.randomUUID(), filename: flat(a?.filename || "attachment"), type: flat(a?.type || "application/octet-stream"), bytes: base64ToBytes(String(a?.content || "")) });
   }
   return out;
 }
@@ -1221,9 +1226,9 @@ async function vitals(request, env, ctx) {
   if (request.method !== "POST") return none(405);
   const site = request.headers.get("Sec-Fetch-Site");
   if (site && site !== "same-origin") return none(403);
-  const body = await request.text();
-  if (body.length > 600) return none(413);
-  const go = appFetch(env, `${env.ACCOUNT_ORIGIN}/api/vitals`, { method: "POST", headers: { "Content-Type": "text/plain" }, body, signal: AbortSignal.timeout(5000) }).catch(() => null);
+  const body = await bodyUpTo(request, 600);
+  if (body === null) return none(413);
+  const go = appFetch(env, `${env.ACCOUNT_ORIGIN}/api/vitals`, { method: "POST", headers: whose(request, env, { "Content-Type": "text/plain" }), body, signal: AbortSignal.timeout(5000) }).catch(() => null);
   if (ctx?.waitUntil) ctx.waitUntil(go); else await go;
   return none();
 }
@@ -1233,10 +1238,38 @@ async function bugReport(request, env) {
   if (request.method !== "POST") return out(405, "Not here.");
   const site = request.headers.get("Sec-Fetch-Site");
   if (site && site !== "same-origin") return out(403, "Not from here.");
-  const body = await request.text();
-  if (body.length > 12000) return out(413, "That report is too long.");
-  const headers = { "Content-Type": "application/json" };
+  const body = await bodyUpTo(request, 3 * 12000);
+  if (body === null || body.length > 12000) return out(413, "That report is too long.");
+  const headers = whose(request, env, { "Content-Type": "application/json" });
   const res = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/bugs`, { method: "POST", headers, body, signal: AbortSignal.timeout(8000) }).catch(() => null);
   if (!res) return out(502, "The report couldn’t be sent just now.");
   return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
+// (what's passed on says whose it is: the browser's address, as auth.js's forwardHeaders passes it, and with the hub's
+// key where Mail has one, as Today's ask() does, which the account believes of a Worker. Else everyone's Mail would be
+// counted against one address's limits)
+function whose(request, env, headers) {
+  const ip = request.headers.get("CF-Connecting-IP");
+  if (ip) headers["CF-Connecting-IP"] = ip;
+  if (ip && env.HUB_KEY) Object.assign(headers, { "X-Hub-Key": env.HUB_KEY, "X-Hub-IP": ip });
+  return headers;
+}
+
+// (a body of max bytes at most, or null: one that says it's longer refused before any of it's read, and one that doesn't
+// say read no further than that)
+async function bodyUpTo(request, max) {
+  if (Number(request.headers.get("Content-Length")) > max) return null;
+  if (!request.body) return "";
+  const reader = request.body.getReader(), parts = [];
+  for (let n = 0; ; ) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if ((n += value.byteLength) > max) {
+      reader.cancel().catch(() => {});
+      return null;
+    }
+    parts.push(value);
+  }
+  return new TextDecoder().decode(await new Blob(parts).arrayBuffer());
 }
