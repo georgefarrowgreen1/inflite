@@ -207,15 +207,16 @@ export function monthly(hist, t) {
   if (!per) per = last.kind === "renewal" ? "y" : "m";
   return Math.round(last.pence / ({ m: 1, q: 3, h: 6, y: 12 }[per] || 1));
 }
-// The card's money: { month, n, months: [6, oldest first], cats: [{ name, pence }], paidSelf: { n, pence } }
-export function moneyOf(rows, paid, now, zone) {
+// The card's money: { month, n, months: [6, oldest first; null for a month that began before bills were known (since)],
+// cats: [{ name, pence }], paidSelf: { n, pence } }
+export function moneyOf(rows, paid, now, zone, since = 0) {
   const by = new Map();
   for (const r of rows) { if (!by.has(r.sender_key)) by.set(r.sender_key, []); by.get(r.sender_key).push({ at: r.at, pence: r.pence, kind: r.kind, per: r.per, cat: r.cat }); }
   for (const h of by.values()) h.sort((a, b) => a.at - b.at);
   const w = wallDay(now, zone);
   // (this month's: as of now, with what's come in already for the next 14 days)
   const ends = [5, 4, 3, 2, 1, 0].map((k) => (k === 0 ? now + 14 * DAY : zonedMs(w.y, w.mo - k + 1, 1, 0, 0, 0, zone) - 1));
-  const months = ends.map((t) => [...by.values()].reduce((s, h) => s + monthly(h, t), 0));
+  const months = ends.map((t, i) => (i < 5 && zonedMs(w.y, w.mo - (5 - i), 1, 0, 0, 0, zone) < since ? null : [...by.values()].reduce((s, h) => s + monthly(h, t), 0)));
   const cats = new Map();
   let n = 0;
   for (const h of by.values()) {
@@ -281,7 +282,7 @@ const billOut = (r, hist) => {
 
 // For Today's card: bills not taken off that are due (a renewal renewing, a trial ending) within the next 14 days, or
 // within 7 for one that pays itself; soonest first, 20 at most. And money: what a month of them all comes to
-export async function billsCard(env, now = Date.now(), zone = "Europe/London") {
+export async function billsCard(env, now = Date.now(), zone = "Europe/London", since = 0) {
   const w = wallDay(now, zone), today = zonedMs(w.y, w.mo, w.d, 0, 0, 0, zone);
   const [{ results }, { results: hist }, { results: paid }] = await Promise.all([
     env.DB.prepare(`SELECT * FROM bills WHERE hidden = 0 AND due_at >= ?1 AND due_at <= ?2 AND (auto = 0 OR due_at <= ?3) ORDER BY due_at, id LIMIT 20`).bind(today, now + 14 * DAY, now + 7 * DAY).all(),
@@ -289,7 +290,7 @@ export async function billsCard(env, now = Date.now(), zone = "Europe/London") {
     env.DB.prepare(`SELECT amount FROM bills WHERE hidden = 0 AND auto = 1 AND kind != 'trial' AND due_at >= ?1 AND due_at <= ?2`).bind(now - 7 * DAY, now).all(),
   ]);
   const by = await historyOf(env, [...new Set(results.map((r) => r.sender_key))]);
-  return { bills: results.map((r) => billOut(r, by.get(r.sender_key))), money: moneyOf(hist, paid, now, zone) };
+  return { bills: results.map((r) => billOut(r, by.get(r.sender_key))), money: moneyOf(hist, paid, now, zone, since) };
 }
 // For the strip: a conversation's bills (taken off ones too, said so)
 export async function threadBills(env, threadId) {

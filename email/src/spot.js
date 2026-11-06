@@ -850,6 +850,8 @@ export async function setSpot(env, ctx, given, now = Date.now()) {
   const ops = keys.map((k) => setMeta(env, SWITCH[k], given[k] ? "1" : "0"));
   if (okZone(given.tz)) ops.push(setMeta(env, "spot_tz", given.tz));
   const turned = keys.filter((k) => given[k] && !was[k]);
+  // (bills known from the read-back's start: the months before it are left unknown, not counted as nothing)
+  if (turned.includes("bills")) ops.push(setMeta(env, "bills_since", String(now - 60 * DAY)));
   if (turned.length) {
     let st = null;
     try { st = JSON.parse(was.back || "null"); } catch {}
@@ -977,7 +979,7 @@ export async function spotCard(env, now = Date.now()) {
   const part = (what, fn) => fn().catch((err) => (console.error(`card: ${what}`, err), null));
   if (on.trips) Object.assign(out, await part("bookings", () => aheadOf(env, now)));
   if (on.parcels) { const p = await part("parcels", () => parcelsCard(env, now)); if (p) out.parcels = p; }
-  if (on.bills) Object.assign(out, await part("bills", async () => billsCard(env, now, await zoneOf(env))));
+  if (on.bills) Object.assign(out, await part("bills", async () => billsCard(env, now, await zoneOf(env), Number(await meta(env, "bills_since")) || 0)));
   return out;
 }
 
