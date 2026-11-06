@@ -1,6 +1,7 @@
 // Mail's module: its own few glyphs (One roof stage 4, spec §4.1, BI12), app.js's ICONS (11–69) as constant path data,
 // drawn by createElementNS: never markup. icon(name) → SVGElement (aria-hidden, currentColor, data-icon); an unknown
-// name gives an empty svg. NAMES: the frozen nine (B0-b); inbox, read and unread are added for the row menu and swipes.
+// name gives an empty svg. NAMES: the frozen nine (B0-b); inbox, read and unread are added for the row menu and swipes,
+// and k-<kind> for Mail on Your Day's strip (reader.js).
 const NS = "http://www.w3.org/2000/svg";
 const dot = (x, y, r) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
 // [stroked paths, filled paths]
@@ -17,6 +18,19 @@ const P = {
   inbox: [["M3.5 13.5h4.6l1.4 2.5h5l1.4-2.5h4.6", "M6.2 5h11.6a1 1 0 0 1 .95.68L21 13v4.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5V13l2.25-7.32A1 1 0 0 1 6.2 5z"]],
   read: [["M3 10.5 12 4l9 6.5V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", "m3.5 11 8.5 6 8.5-6"]],
   unread: [["M14 5H5.5A2.5 2.5 0 0 0 3 7.5v9A2.5 2.5 0 0 0 5.5 19h13a2.5 2.5 0 0 0 2.5-2.5V11", "m3.5 7.5 8.5 6 3-2.1"], [dot(19, 5.5, 2.6)]],
+  // (Mail on Your Day's strip: what was spotted, by kind, as parts/spot.js draws them on Mail's own page)
+  "k-flight": [[], ["M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"]],
+  "k-train": [["M9 3h6a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z", "M6 10h12M9 20l-2 2M15 20l2 2"]],
+  "k-bus": [["M7.5 3h9A2.5 2.5 0 0 1 19 5.5v9a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 14.5v-9A2.5 2.5 0 0 1 7.5 3z", "M5 10h14M8 20v-3M16 20v-3"]],
+  "k-hotel": [["M3 19V6M3 15h18v4M21 15v-3a3 3 0 0 0-3-3h-7v6", dot(7, 11, 2)]],
+  "k-car": [["M5 16V12l2-5h10l2 5v4M5 16h14M5 16v2M19 16v2"]],
+  "k-restaurant": [["M7 3v8a2 2 0 0 0 2 2v8M5 3v5M9 3v5M17 21V3c-2 1.5-3 4-3 7h3"]],
+  "k-event": [["M4 10a2 2 0 0 0 0 4v4h16v-4a2 2 0 0 1 0-4V6H4z", "M14 8v12"]],
+  "k-booking": [["M6.5 5h11A2.5 2.5 0 0 1 20 7.5v10a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-10A2.5 2.5 0 0 1 6.5 5z", "M4 10h16M9 3v4M15 3v4"]],
+  "k-parcel": [["M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z", "M3 7.5 12 12l9-4.5M12 12v9"]],
+  "k-bill": [["M6 3h12v18l-3-2-3 2-3-2-3 2z", "M9 8h6M9 12h6"]],
+  "k-renewal": [["M20 11a8 8 0 0 0-14.6-4.5M4 13a8 8 0 0 0 14.6 4.5", "M5 3v4h4M19 21v-4h-4"]],
+  "k-trial": [[dot(12, 13, 8), "M12 9v4l2.5 2.5M9 2h6"]],
 };
 export const NAMES = ["done", "reply", "reply-all", "forward", "flag", "trash", "attachment", "more", "later"];
 

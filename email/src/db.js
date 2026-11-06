@@ -78,6 +78,83 @@ const SCHEMA = [
   // (every conversation a booking's been read from, for the strip in each: the row has the latest)
   `CREATE TABLE IF NOT EXISTS spot_threads (spot_id TEXT NOT NULL, thread_id TEXT NOT NULL, PRIMARY KEY (thread_id, spot_id))`,
   `CREATE TABLE IF NOT EXISTS spot_wrong (sender TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (sender, kind))`,
+  // (Mail on Your Day, stage 3: one date of a repeating invite moved or cancelled by a later email, by its series (spots.id)
+  // and the moment it was. spot.js)
+  `CREATE TABLE IF NOT EXISTS spot_occ (
+    series_id TEXT NOT NULL,
+    rid INTEGER NOT NULL,
+    start_at INTEGER,
+    end_at INTEGER,
+    cancelled INTEGER NOT NULL DEFAULT 0,
+    title TEXT,
+    sub TEXT,
+    thread_id TEXT,
+    message_id TEXT,
+    mail_date INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (series_id, rid)
+  )`,
+  // (Mail on Your Day, stage 2: parcels, one row a parcel, joined across its emails by tracking number or order. parcels.js)
+  `CREATE TABLE IF NOT EXISTS parcels (
+    id TEXT PRIMARY KEY,
+    shop TEXT,
+    carrier TEXT,
+    carrier_key TEXT,
+    base TEXT,
+    stage INTEGER NOT NULL DEFAULT 0,
+    win_from INTEGER,
+    win_to INTEGER,
+    due_at INTEGER,
+    delivered_at INTEGER,
+    note TEXT,
+    ref TEXT,
+    order_no TEXT,
+    ordered_at INTEGER,
+    return_by INTEGER,
+    thread_id TEXT,
+    message_id TEXT,
+    sender TEXT,
+    source TEXT NOT NULL,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    mail_date INTEGER NOT NULL DEFAULT 0,
+    created INTEGER NOT NULL,
+    updated INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_parcels_ref ON parcels(ref)`,
+  `CREATE INDEX IF NOT EXISTS idx_parcels_order ON parcels(order_no)`,
+  // (and bills, one row a bill by its sender, kind, account and day; each sender's amounts, 13 months of them. bills.js)
+  `CREATE TABLE IF NOT EXISTS bills (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    sender_key TEXT NOT NULL,
+    sender_name TEXT NOT NULL,
+    cat TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    due_at INTEGER,
+    auto INTEGER NOT NULL DEFAULT 0,
+    was INTEGER,
+    per TEXT,
+    account TEXT,
+    thread_id TEXT,
+    message_id TEXT,
+    sender TEXT,
+    source TEXT NOT NULL,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    mail_date INTEGER NOT NULL DEFAULT 0,
+    created INTEGER NOT NULL,
+    updated INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_bills_due ON bills(due_at)`,
+  `CREATE TABLE IF NOT EXISTS bill_history (
+    sender_key TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    pence INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    per TEXT,
+    cat TEXT,
+    name TEXT,
+    mail_date INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (sender_key, at)
+  )`,
 ];
 
 // Columns and tables added since the first version: each run on its own, as ALTER TABLE fails once a column exists.
@@ -122,10 +199,13 @@ const MIGRATIONS = [
   // (the rest of your addresses one message came to, as a list (",a@…,b@…,"), kept once rather than as another
   // conversation: receive.js store)
   `ALTER TABLE messages ADD COLUMN also_to TEXT`,
+  // (Mail on Your Day, stage 3: a repeating invite's rule, and its last date (null for one with no end). spot.js)
+  `ALTER TABLE spots ADD COLUMN rule TEXT`,
+  `ALTER TABLE spots ADD COLUMN last_at INTEGER`,
 ];
 
 // Bumped whenever SCHEMA or MIGRATIONS change, so a new isolate checks one row rather than running them all again.
-const SCHEMA_VERSION = "12";
+const SCHEMA_VERSION = "13";
 
 let ready;
 

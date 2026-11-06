@@ -4007,8 +4007,8 @@ textarea:focus-visible {
   font-weight: 600;
 }
 
-/* Mail on Your Day: the strip at the top of a conversation with a booking Mail spotted in it (parts/spot.js), as the
-   mock-up's "In Mail" view */
+/* Mail on Your Day: the strip at the top of a conversation with a booking, a parcel or a bill Mail spotted in it
+   (parts/spot.js), as the mock-ups' "In Mail" view */
 .spot-slot:empty { display: none; }
 .spot-slot { display: grid; gap: 10px; padding: 0 12px 10px; }
 .spot {
@@ -4038,6 +4038,25 @@ textarea:focus-visible {
 .spot-how { color: var(--text-3); font-size: 12px; }
 .spot-btns { display: flex; gap: 8px; }
 .spot-btns .chip { flex: 1; min-height: 36px; }
+/* (a parcel's four-part bar, Ordered to Delivered; its courier's own tracking page) */
+.spot-track { color: var(--tint-text); text-decoration: none; }
+.spot-bar { display: grid; gap: 4px; }
+.spot-steps, .spot-steplabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.spot-steps i { height: 4px; border-radius: 2px; background: var(--field); }
+.spot-steps i.on { background: var(--tint); }
+.spot-steps i.now { background: linear-gradient(90deg, var(--tint) 50%, var(--field) 50%); }
+.spot-steplabs { color: var(--text-3); font-size: 10.5px; font-weight: 600; }
+.spot-steplabs span.on { color: var(--text-2); }
+.spot-steplabs span:nth-child(2), .spot-steplabs span:nth-child(3) { text-align: center; }
+.spot-steplabs span:last-child { text-align: right; }
+/* (a bill's last six from its sender, the newest marked when it's more than the usual) */
+.spot-spark { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 12px; align-items: end; padding: 9px 11px; border-radius: 14px; background: var(--field); }
+.spot-spark small { display: block; color: var(--text-3); font-size: 12px; font-weight: 600; }
+.spot-spark b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.spot-chg { display: inline-block; padding: 1px 6px; border-radius: 7px; background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); font-size: 11.5px; font-weight: 700; }
+.spot-bars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; align-items: end; height: 34px; }
+.spot-bars i { display: block; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--text-3) 45%, transparent); }
+.spot-bars i.now { background: var(--warn); }
 
 .menu-layer.center {
   display: grid;

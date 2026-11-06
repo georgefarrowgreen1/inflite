@@ -11,7 +11,14 @@
 // adding another; an older email never undoes a newer one (mail_date). Kept only while the switch in Mail's Settings is
 // on ("Spot in your mail" → "Trips and bookings", meta spot_trips): turned on, the last 60 days are read back, a few
 // emails at a time (readBack, from the switch and the scheduled run), without holding anything up.
+// Stage 3: a repeating invite is one row with its rule (repeat.js), each of its dates its own on Today's card, and a
+// later email moving or cancelling one date kept beside it (spot_occ). Stage 2: parcels (parcels.js) and bills
+// (bills.js), each behind its own switch ("Parcels and returns", "Bills and subscriptions"), read only from mail whose
+// DMARC passed for its sender; this file reads each email for every switch that's on, and answers the card and the strip.
 import { ensureSchema } from "./db.js";
+import { parseRule, expand, lastOf, repeatWords, dayKey } from "./repeat.js";
+import { parcelsOf, keepParcels, parcelsCard, threadParcels, domainOf } from "./parcels.js";
+import { billsOf, keepBills, billsCard, threadBills } from "./bills.js";
 
 const H = 3600e3, DAY = 864e5;
 const KINDS = {
@@ -19,7 +26,8 @@ const KINDS = {
   RentalCarReservation: "car", FoodEstablishmentReservation: "restaurant", EventReservation: "event",
 };
 export const TRAVEL = new Set(["flight", "train", "bus"]);
-export const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+// (a booking's, a parcel's or a bill's; one date of a repeating invite's is its series' and the date: <id>~<yyyymmdd>)
+export const ID_RE = /^[A-Za-z0-9_~-]{1,64}$/;
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Plain text, bounded
@@ -66,7 +74,7 @@ export function okZone(z) {
   try { new Intl.DateTimeFormat("en-GB", { timeZone: z }); return true; } catch { return false; }
 }
 const partsFmt = new Map();
-function zoneParts(t, zone) {
+export function zoneParts(t, zone) {
   let f = partsFmt.get(zone);
   if (!f) partsFmt.set(zone, (f = new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" })));
   const p = Object.fromEntries(f.formatToParts(t).map((x) => [x.type, Number(x.value)]));
@@ -454,9 +462,12 @@ export function icsEvents(text) {
     }
     const top = stack[stack.length - 1];
     if (top === "VCALENDAR" && name === "METHOD") method = value.trim().toUpperCase();
-    if (top !== "VEVENT" || !ev || name in ev) continue;
+    if (top !== "VEVENT" || !ev) continue;
     const params = {};
     for (const p of m[2].matchAll(/;([A-Za-z0-9-]+)=("[^"]*"|[^;]*)/g)) params[p[1].toUpperCase()] = p[2].replace(/^"|"$/g, "");
+    // (the dates a repeating one skips or adds may come on more than one line, each with more than one date)
+    if (name === "EXDATE" || name === "RDATE") { (ev[`${name}*`] ||= []).length < 200 && ev[`${name}*`].push({ value, params }); continue; }
+    if (name in ev) continue;
     ev[name] = { value, params };
   }
   return { method, events };
@@ -498,8 +509,24 @@ export function icsBookings(text, { method: partMethod = "", zone, sender = "" }
     const lat = g ? Number(g[1]) : null, lon = g ? Number(g[2]) : null;
     const days = t0?.dateOnly && end ? Math.round((end + 1 - start) / DAY) : 0;
     const when = t0 ? (t0.dateOnly ? (days > 1 ? `${days} days` : "All day") : `${hm(t0, z)}${t1 && !t1.dateOnly ? `–${hm({ ...t1, wall: t1.wall && t1.tz === tz ? t1.wall : null }, z)}` : ""}`) : "";
+    // (one date of a repeating one, moved or cancelled by a later email: kept beside the series, by the date it was)
+    const rid = uid && ev["RECURRENCE-ID"] ? icsTime(ev["RECURRENCE-ID"], zone) : null;
+    // (a repeating one: its rule, the dates it skips and adds, and the wall clock it's worked out on)
+    let rule = null;
+    if (t0 && !rid) {
+      const r = ev.RRULE ? parseRule(ev.RRULE.value) : null;
+      const dates = (k) => (ev[`${k}*`] || []).flatMap((p) => p.value.split(",").map((x) => ({ value: x.trim(), params: p.params })));
+      const rd = dates("RDATE").map((p) => icsTime(p, zone)).filter(Boolean).map((t) => (t.dateOnly ? zonedMs(t.wall.y, t.wall.mo, t.wall.d, t0.wall?.hh || 0, t0.wall?.mi || 0, 0, z) : t.ms));
+      const ex = dates("EXDATE").map((p) => { const t = icsTime(p, zone); return !t ? null : t.dateOnly ? `${t.wall.y}${pad(t.wall.mo)}${pad(t.wall.d)}` : t.ms; }).filter((x) => x != null);
+      if (r || rd.length) {
+        const wall = t0.wall || (({ y, mo, d, hh, mi, ss }) => ({ y, mo, d, hh, mi, ss }))(zoneParts(t0.ms, "UTC"));
+        rule = { r, w: { ...wall, ss: 0 }, z: t0.wall ? z : "UTC", ad: !!t0.dateOnly, dur: end != null && start != null ? end - start : null, ex: ex.slice(0, 200), rd: rd.slice(0, 200) };
+      }
+    }
     out.push({
-      key: ["ics", uid ? `${uid}|${v("RECURRENCE-ID") || ev["RECURRENCE-ID"]?.value || ""}` : `${sender}|${title}|${t0?.ms}`].join("|").toLowerCase(),
+      key: ["ics", uid ? `${uid}|${rid ? "" : v("RECURRENCE-ID") || ev["RECURRENCE-ID"]?.value || ""}` : `${sender}|${title}|${t0?.ms}`].join("|").toLowerCase(),
+      ...(rule && { rule }),
+      ...(rid && { override: { rid: rid.ms, day: rid.wall ? `${rid.wall.y}${pad(rid.wall.mo)}${pad(rid.wall.d)}` : null } }),
       kind: "booking", title: title || loc || "Calendar invite", sub: cut(words(when, loc), 120),
       facts: [["When", t0 ? at(t0, z) : ""], ["Where", loc]].filter(([, x]) => x).map(([k, x]) => [k, cut(x, 40)]),
       start, end, tz,
@@ -533,7 +560,9 @@ export async function spotEmail({ html = "", attachments = [], sender = "", zone
     }
   const seen = new Set(), out = [];
   for (const b of list) {
-    const id = `${b.kind}-${await hashOf(b.key)}`;
+    let id = `${b.kind}-${await hashOf(b.key)}`;
+    // (one date of a repeating one: the series' id, and the date it was)
+    if (b.override) id = `${id}~${b.override.day || dayKey(Math.floor(b.override.rid / DAY))}`;
     // (the same leg twice, once for each passenger, say: once)
     if (seen.has(id)) continue;
     seen.add(id);
@@ -541,7 +570,7 @@ export async function spotEmail({ html = "", attachments = [], sender = "", zone
   }
   return out;
 }
-async function hashOf(s) {
+export async function hashOf(s) {
   const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
   return btoa(String.fromCharCode(...d.slice(0, 15))).replace(/\+/g, "-").replace(/\//g, "_");
 }
@@ -622,11 +651,19 @@ export function tripsOf(rows) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Kept, in Mail's database (db.js: spots, spot_wrong; meta spot_trips, spot_back, spot_tz)
+// Kept, in Mail's database (db.js: spots, spot_occ, spot_wrong, and parcels.js's and bills.js's; meta spot_trips,
+// spot_parcels, spot_bills (Settings' three switches), spot_back, spot_tz)
 // ---------------------------------------------------------------------------------------------------------------------
 const meta = async (env, k) => (await env.DB.prepare(`SELECT v FROM meta WHERE k = ?1`).bind(k).first())?.v ?? null;
 const setMeta = (env, k, v) => env.DB.prepare(`INSERT INTO meta (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v`).bind(k, v);
 export const spotOn = async (env) => (await meta(env, "spot_trips")) === "1";
+// (Settings' switches: "Trips and bookings", "Parcels and returns", "Bills and subscriptions"; and the read-back, if one's going)
+const SWITCH = { trips: "spot_trips", parcels: "spot_parcels", bills: "spot_bills" };
+export async function switches(env) {
+  const { results } = await env.DB.prepare(`SELECT k, v FROM meta WHERE k IN ('spot_trips', 'spot_parcels', 'spot_bills', 'spot_back')`).all();
+  const m = Object.fromEntries(results.map((r) => [r.k, r.v]));
+  return { trips: m.spot_trips === "1", parcels: m.spot_parcels === "1", bills: m.spot_bills === "1", back: m.spot_back || null };
+}
 // (the account's zone: as the browser that turned the switch on said, else the account's Quiet Hours', else the UK's)
 export async function zoneOf(env) {
   const z = await meta(env, "spot_tz");
@@ -636,10 +673,16 @@ export async function zoneOf(env) {
 }
 
 const COLS = ["id", "kind", "title", "sub", "facts", "start_at", "end_at", "tz", "place", "lat", "lon", "dest_lat", "dest_lon", "ref", "from_place", "to_place", "from_city", "city",
-  "thread_id", "message_id", "sender", "source", "status", "mail_date", "created", "updated"];
+  "thread_id", "message_id", "sender", "source", "status", "mail_date", "created", "updated", "rule", "last_at"];
 const UPSERT = `INSERT INTO spots (${COLS.join(", ")}) VALUES (${COLS.map((_, i) => `?${i + 1}`).join(", ")})
   ON CONFLICT(id) DO UPDATE SET ${COLS.filter((c) => !["id", "created"].includes(c)).map((c) => `${c} = excluded.${c}`).join(", ")}
   WHERE excluded.mail_date >= spots.mail_date`;
+// (one date of a repeating invite, moved or cancelled: by its series and the moment it was)
+const OCC = `INSERT INTO spot_occ (series_id, rid, start_at, end_at, cancelled, title, sub, thread_id, message_id, mail_date) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+  ON CONFLICT(series_id, rid) DO UPDATE SET start_at = excluded.start_at, end_at = excluded.end_at, cancelled = excluded.cancelled, title = excluded.title, sub = excluded.sub,
+    thread_id = excluded.thread_id, message_id = excluded.message_id, mail_date = excluded.mail_date WHERE excluded.mail_date >= spot_occ.mail_date`;
+// (a repeating one's last date, or null for one with no end)
+const seriesLast = (rule) => lastOf(rule.r, { wall: rule.w, zone: rule.z, ex: rule.ex, rd: rule.rd });
 
 // An email's bookings, kept: each new one added, each known one brought up to date (unless this email is older than the
 // one it was last read from). Not those of a sender and kind said to be Wrong, and none already over (ended more than 12
@@ -652,6 +695,15 @@ export async function keepBookings(env, list, { threadId, messageId, sender, mai
   const ops = [];
   for (const b of list) {
     if (no.has(b.kind) || !ID_RE.test(b.id)) continue;
+    if (b.override) {
+      const sid = b.id.split("~")[0];
+      ops.push(
+        env.DB.prepare(OCC).bind(sid, b.override.rid, b.start ?? null, b.end ?? null, b.status === "cancelled" ? 1 : 0, cut(b.title, 80), cut(b.sub, 120), threadId, messageId, mailDate),
+        env.DB.prepare(`INSERT OR IGNORE INTO spot_threads (spot_id, thread_id) VALUES (?1, ?2)`).bind(sid, threadId)
+      );
+      continue;
+    }
+    if (b.id.includes("~")) continue;
     // (a cancellation that doesn't say when: the booking it names, if it's known, cancelled)
     if (b.start == null) {
       if (b.status === "cancelled")
@@ -661,12 +713,14 @@ export async function keepBookings(env, list, { threadId, messageId, sender, mai
         );
       continue;
     }
-    if ((b.end ?? b.start) < now - 12 * H) continue;
+    const last = b.rule ? seriesLast(b.rule) : undefined;
+    if (b.rule ? last != null && last + (b.rule.dur || 0) < now - 12 * H : (b.end ?? b.start) < now - 12 * H) continue;
     const row = {
       id: b.id, kind: b.kind, title: cut(b.title, 80), sub: cut(b.sub, 120), facts: JSON.stringify(b.facts || []).slice(0, 600), start_at: b.start, end_at: b.end ?? null, tz: okZone(b.tz) ? b.tz : null,
       place: b.place?.name ? cut(b.place.name, 60) : null, lat: b.place?.lat ?? null, lon: b.place?.lon ?? null, dest_lat: b.dest?.lat ?? null, dest_lon: b.dest?.lon ?? null,
       ref: b.ref ? cut(b.ref, 24) : null, from_place: b.from ? cut(b.from, 60) : null, to_place: b.to ? cut(b.to, 60) : null, from_city: b.fromCity ? cut(b.fromCity, 60) : null, city: b.city ? cut(b.city, 60) : null,
       thread_id: threadId, message_id: messageId, sender, source: b.source, status: b.status, mail_date: mailDate, created: now, updated: now,
+      rule: b.rule ? JSON.stringify(b.rule) : null, last_at: b.rule ? last : null,
     };
     ops.push(env.DB.prepare(UPSERT).bind(...COLS.map((c) => row[c])), env.DB.prepare(`INSERT OR IGNORE INTO spot_threads (spot_id, thread_id) VALUES (?1, ?2)`).bind(b.id, threadId));
   }
@@ -674,53 +728,103 @@ export async function keepBookings(env, list, { threadId, messageId, sender, mai
   return ops.length;
 }
 
+
 // (DMARC failed, by the receiving end's own check: what it says about its sender can't be trusted, so it isn't read)
 const untrusted = (headers) => (headers || []).some((h) => h.key === "authentication-results" && /\bdmarc\s*=\s*fail\b/i.test(h.value || ""));
+// (DMARC passed for the domain of the address it's from, by the receiving end's own check: the topmost
+// Authentication-Results, which it adds above any the sender wrote itself; one that names another domain doesn't count.
+// Parcels and bills are read from nothing less: a parcel or a bill is what scams look like)
+export function dmarcPass(headers, from) {
+  const ar = (headers || []).filter((h) => h.key === "authentication-results").map((h) => String(h.value || ""));
+  if (!ar.length || ar.some((v) => /\bdmarc\s*=\s*fail\b/i.test(v))) return false;
+  const m = /\bdmarc\s*=\s*pass\b([^;]*)/i.exec(ar[0]);
+  if (!m) return false;
+  const named = /\bheader\.from\s*=\s*([^\s;()]+)/i.exec(m[1])?.[1]?.toLowerCase();
+  const d = domainOf(from);
+  return !!d && (!named || d === named || d.endsWith(`.${named}`));
+}
+// (an original's headers, as postal-mime gives them: [{ key, value }], from the top)
+function headersOf(raw) {
+  const text = new TextDecoder().decode(raw.slice(0, 65536));
+  const head = text.split(/\r?\n\r?\n/)[0].replace(/\r?\n[ \t]+/g, " ");
+  return head.split(/\r?\n/).map((l) => /^([!-9;-~]+):\s?(.*)$/.exec(l)).filter(Boolean).map((m) => ({ key: m[1].toLowerCase(), value: m[2] }));
+}
 
-// A message as it's kept (receive.js store): its bookings spotted and kept, while the switch is on. Never throws: a
+// One email, read for each switch that's on: its bookings (stage 1), and where DMARC passed for its sender, its parcels
+// and bills. Each kept apart, so one that fails never stops the others. headers: a function, asked only when there's a
+// parcel or a bill to keep (the read-back reads them from the original then). → how many kept
+async function readOne(env, on, mail, { threadId, messageId, sender, date, zone, now = Date.now() }) {
+  let n = 0;
+  const at = { threadId, messageId, sender, mailDate: date, zone, now };
+  if (on.trips)
+    try { n += await keepBookings(env, await spotEmail({ html: mail.html, attachments: mail.attachments, sender, zone }), at); }
+    catch (err) { console.error("spot: couldn't read a message for bookings", messageId, err); }
+  if (!on.parcels && !on.bills) return n;
+  const given = { html: mail.html, text: mail.text, subject: mail.subject, sender, fromName: mail.fromName, mailDate: date, zone };
+  let parcels = [], bills = [];
+  try { if (on.parcels) parcels = parcelsOf(given); } catch (err) { console.error("spot: couldn't read a message for parcels", messageId, err); }
+  try { if (on.bills) bills = billsOf(given); } catch (err) { console.error("spot: couldn't read a message for bills", messageId, err); }
+  if (!(parcels.length || bills.length) || !dmarcPass(await mail.headers(), sender)) return n;
+  try { n += await keepParcels(env, parcels, at); } catch (err) { console.error("spot: couldn't keep a message's parcels", messageId, err); }
+  try { n += await keepBills(env, bills, at); } catch (err) { console.error("spot: couldn't keep a message's bills", messageId, err); }
+  return n;
+}
+
+// A message as it's kept (receive.js store): what it holds spotted and kept, for each switch that's on. Never throws: a
 // failure to spot never stops mail being kept
 export async function spotStored(env, { email, threadId, messageId, sender, date }) {
   try {
-    if (!(await spotOn(env)) || untrusted(email.headers)) return 0;
+    const on = await switches(env);
+    if (!(on.trips || on.parcels || on.bills) || untrusted(email.headers)) return 0;
     const zone = await zoneOf(env);
-    const list = await spotEmail({ html: email.html || "", attachments: email.attachments || [], sender, zone });
-    return await keepBookings(env, list, { threadId, messageId, sender, mailDate: date });
+    const mail = { html: email.html || "", text: email.text || "", subject: email.subject || "", fromName: email.from?.name || "", attachments: email.attachments || [], headers: async () => email.headers };
+    return await readOne(env, on, mail, { threadId, messageId, sender, date, zone });
   } catch (err) {
-    console.error("spot: couldn't read a message for bookings", messageId, err);
+    console.error("spot: couldn't read a message", messageId, err);
     return 0;
   }
 }
 
-// The last 60 days read back, oldest first (so the newest word on a booking is the one kept), a few at a time: from the
-// switch (once it's on: index.js) and every scheduled run until it's done. → whether there's more to read
+// The last 60 days read back, oldest first (so the newest word on each is the one kept), a few at a time, for the kinds
+// just turned on: from the switch (once it's on: index.js) and every scheduled run until it's done. Each read-back has
+// its own n: one started again meanwhile (another switch turned on) is the one that goes on, and this one stops without
+// writing over it. → whether there's more to read
 export async function readBack(env, { budgetMs = 20000, batch = 8, now = Date.now() } = {}) {
   const began = Date.now();
   let st;
   try { st = JSON.parse((await meta(env, "spot_back")) || "null"); } catch { st = null; }
-  if (!st || !(await spotOn(env))) return false;
+  if (!st) return false;
+  const sw = await switches(env);
+  // (from before parcels and bills: trips alone)
+  const on = Object.fromEntries(Object.keys(SWITCH).map((k) => [k, sw[k] && (st.kinds || ["trips"]).includes(k)]));
+  if (!on.trips && !on.parcels && !on.bills) {
+    await env.DB.prepare(`DELETE FROM meta WHERE k = 'spot_back'`).run();
+    return false;
+  }
   const zone = await zoneOf(env);
+  const mine = `json_extract(v, '$.n') IS ?1`, n = st.n ?? null;
   do {
+    // (started again meanwhile: that one goes on)
+    if (!(await env.DB.prepare(`SELECT 1 AS k FROM meta WHERE k = 'spot_back' AND ${mine}`).bind(n).first())) return false;
     const { results } = await env.DB.prepare(
-      `SELECT id, thread_id, from_email, date FROM messages WHERE folder NOT IN ('sent', 'drafts', 'trash') AND date >= ?1 AND date <= ?2
+      `SELECT id, thread_id, from_email, from_name, subject, date FROM messages WHERE folder NOT IN ('sent', 'drafts', 'trash') AND date >= ?1 AND date <= ?2
          AND (date > ?3 OR (date = ?3 AND id > ?4)) ORDER BY date, id LIMIT ?5`
     ).bind(st.from, st.until, st.at, st.id, batch).all();
     for (const m of results) {
       try {
-        const [body, cals] = await Promise.all([
-          env.MAIL.get(`body/${m.id}.json`).then((o) => (o ? o.json() : null)).catch(() => null),
-          env.DB.prepare(`SELECT id, filename, type FROM attachments WHERE message_id = ?1 AND (type LIKE 'text/calendar%' OR type LIKE 'application/ics%' OR lower(filename) LIKE '%.ics') LIMIT 3`).bind(m.id).all(),
-        ]);
-        const html = String(body?.html || "");
+        const body = await env.MAIL.get(`body/${m.id}.json`).then((o) => (o ? o.json() : null)).catch(() => null);
+        const html = String(body?.html || ""), text = String(body?.text || "");
         const attachments = [];
-        if (!/application\/ld\+json|itemscope/i.test(html))
+        if (on.trips && !/application\/ld\+json|itemscope/i.test(html)) {
+          const cals = await env.DB.prepare(`SELECT id, filename, type FROM attachments WHERE message_id = ?1 AND (type LIKE 'text/calendar%' OR type LIKE 'application/ics%' OR lower(filename) LIKE '%.ics') LIMIT 3`).bind(m.id).all();
           for (const a of cals.results) {
             const o = await env.MAIL.get(`att/${a.id}`).catch(() => null);
             if (o) attachments.push({ filename: a.filename, mimeType: a.type, content: new Uint8Array(await o.arrayBuffer()) });
           }
-        if (html || attachments.length) {
-          const list = await spotEmail({ html, attachments, sender: m.from_email, zone });
-          await keepBookings(env, list, { threadId: m.thread_id, messageId: m.id, sender: m.from_email, mailDate: m.date, now });
         }
+        const headers = async () => { const o = await env.MAIL.get(`raw/${m.id}.eml`).catch(() => null); return o ? headersOf(new Uint8Array(await o.arrayBuffer())) : []; };
+        if (html || text || attachments.length)
+          await readOne(env, on, { html, text, subject: m.subject || "", fromName: m.from_name || "", attachments, headers }, { threadId: m.thread_id, messageId: m.id, sender: m.from_email, date: m.date, zone, now });
       } catch (err) {
         console.error("spot: couldn't read back a message", m.id, err);
       }
@@ -728,102 +832,220 @@ export async function readBack(env, { budgetMs = 20000, batch = 8, now = Date.no
       st.id = m.id;
     }
     if (results.length < batch) {
-      await env.DB.prepare(`DELETE FROM meta WHERE k = 'spot_back'`).run();
+      await env.DB.prepare(`DELETE FROM meta WHERE k = 'spot_back' AND ${mine}`).bind(n).run();
       return false;
     }
-    await setMeta(env, "spot_back", JSON.stringify(st)).run();
+    await env.DB.prepare(`UPDATE meta SET v = ?2 WHERE k = 'spot_back' AND ${mine}`).bind(n, JSON.stringify(st)).run();
   } while (Date.now() - began < budgetMs);
   return true;
 }
 
-// The switch: on, the read-back starts (the last 60 days, up to now: what comes from now on is read as it comes); off,
-// what was spotted goes (what you'd taken off stays taken off, for when it's on again)
-export async function setSpot(env, ctx, { trips, tz }, now = Date.now()) {
-  if (typeof trips !== "boolean") throw Object.assign(new Error("Choose on or off."), { status: 400, publicMessage: "Choose on or off." });
-  const was = await spotOn(env);
-  const ops = [setMeta(env, "spot_trips", trips ? "1" : "0")];
-  if (okZone(tz)) ops.push(setMeta(env, "spot_tz", tz));
-  if (trips && !was) ops.push(setMeta(env, "spot_back", JSON.stringify({ from: now - 60 * DAY, until: now, at: 0, id: "" })));
-  if (!trips) ops.push(env.DB.prepare(`DELETE FROM meta WHERE k = 'spot_back'`), env.DB.prepare(`DELETE FROM spots WHERE hidden = 0`), env.DB.prepare(`DELETE FROM spot_threads WHERE spot_id NOT IN (SELECT id FROM spots)`));
+// The switches ({ trips, parcels, bills }, each true, false or left out): one turned on starts the read-back for it (the
+// last 60 days, up to now: what comes from now on is read as it comes); one turned off, what it spotted goes (what you'd
+// taken off stays taken off, for when it's on again)
+export async function setSpot(env, ctx, given, now = Date.now()) {
+  const keys = Object.keys(SWITCH).filter((k) => given[k] !== undefined);
+  if (!keys.length || keys.some((k) => typeof given[k] !== "boolean")) throw Object.assign(new Error("Choose on or off."), { status: 400, publicMessage: "Choose on or off." });
+  const was = await switches(env);
+  const ops = keys.map((k) => setMeta(env, SWITCH[k], given[k] ? "1" : "0"));
+  if (okZone(given.tz)) ops.push(setMeta(env, "spot_tz", given.tz));
+  const turned = keys.filter((k) => given[k] && !was[k]);
+  if (turned.length) {
+    let st = null;
+    try { st = JSON.parse(was.back || "null"); } catch {}
+    const kinds = [...new Set([...(st ? st.kinds || ["trips"] : []), ...turned])];
+    ops.push(setMeta(env, "spot_back", JSON.stringify({ from: now - 60 * DAY, until: now, at: 0, id: "", kinds, n: crypto.randomUUID() })));
+  }
+  const off = keys.filter((k) => !given[k]);
+  if (off.includes("trips")) ops.push(env.DB.prepare(`DELETE FROM spots WHERE hidden = 0`), env.DB.prepare(`DELETE FROM spot_occ WHERE series_id NOT IN (SELECT id FROM spots)`));
+  if (off.includes("parcels")) ops.push(env.DB.prepare(`DELETE FROM parcels WHERE hidden = 0`));
+  if (off.includes("bills")) ops.push(env.DB.prepare(`DELETE FROM bills WHERE hidden = 0`), env.DB.prepare(`DELETE FROM bill_history`));
+  if (off.length) ops.push(env.DB.prepare(`DELETE FROM spot_threads WHERE spot_id NOT IN (SELECT id FROM spots UNION ALL SELECT id FROM parcels UNION ALL SELECT id FROM bills)`));
+  if (Object.keys(SWITCH).every((k) => (keys.includes(k) ? !given[k] : !was[k]))) ops.push(env.DB.prepare(`DELETE FROM meta WHERE k = 'spot_back'`));
   await env.DB.batch(ops);
-  if (trips && !was && ctx) ctx.waitUntil(readBack(env).catch((err) => console.error("spot: read-back", err)));
+  if (turned.length && ctx) ctx.waitUntil(readBack(env).catch((err) => console.error("spot: read-back", err)));
 }
 export async function spotState(env) {
-  const [on, back] = await Promise.all([spotOn(env), meta(env, "spot_back")]);
-  return { trips: on, reading: on && !!back };
+  const s = await switches(env);
+  return { trips: s.trips, parcels: s.parcels, bills: s.bills, reading: (s.trips || s.parcels || s.bills) && !!s.back };
 }
 
-// (what's near enough now to be on Today, or in a trip that is)
+// ---------------------------------------------------------------------------------------------------------------------
+// For Today's card, and for the strip
+// ---------------------------------------------------------------------------------------------------------------------
+// (what's near enough now to be on Today, or in a trip that is: those taken off too, for the trip's own list of them)
 async function nearRows(env, now) {
   const { results } = await env.DB.prepare(
-    `SELECT * FROM spots WHERE hidden = 0 AND status = 'confirmed' AND COALESCE(end_at, start_at) >= ?1 AND start_at <= ?2 ORDER BY start_at LIMIT 400`
+    `SELECT * FROM spots WHERE rule IS NULL AND status = 'confirmed' AND COALESCE(end_at, start_at) >= ?1 AND start_at <= ?2 ORDER BY start_at LIMIT 400`
   ).bind(now - 45 * DAY, now + 120 * DAY).all();
   return results;
 }
 const placeOut = (r) => (r.place ? { name: cut(r.place, 60), ...(Number.isFinite(r.lat) && Number.isFinite(r.lon) && { lat: r.lat, lon: r.lon }) } : null);
+const ruleOf = (r) => { try { const x = JSON.parse(r.rule || "null"); return x && x.w && okZone(x.z) ? x : null; } catch { return null; } };
+
+// A repeating invite's dates around now (from two days ago to a year on, 400 at most), each moved or cancelled as its
+// later emails said: [{ start, end, day, cancelled, was, title, sub }]
+function seriesDates(r, rule, occ, now) {
+  const dates = expand(rule.r, { wall: rule.w, zone: rule.z, ex: rule.ex || [], rd: rule.rd || [], from: now - 2 * DAY, to: now + 366 * DAY, max: 400 });
+  const dur = Number.isFinite(rule.dur) ? rule.dur : null;
+  const byRid = new Map(occ.map((o) => [o.rid, o]));
+  const out = dates.map((d) => {
+    const o = byRid.get(d.start);
+    byRid.delete(d.start);
+    if (!o) return { start: d.start, end: dur != null ? d.start + dur : null, day: d.day, cancelled: false, was: null, title: r.title, sub: r.sub };
+    if (o.cancelled) return { start: d.start, end: dur != null ? d.start + dur : null, day: d.day, cancelled: true, was: null, title: r.title, sub: r.sub };
+    const start = Number.isFinite(o.start_at) ? o.start_at : d.start;
+    return { start, end: Number.isFinite(o.end_at) ? o.end_at : dur != null ? start + dur : null, day: d.day, cancelled: false, was: start !== d.start ? d.start : null, title: o.title || r.title, sub: o.sub || r.sub };
+  });
+  // (one moved from a date the rule doesn't give, or from before the dates looked at, onto one that is)
+  for (const o of byRid.values())
+    if (!o.cancelled && Number.isFinite(o.start_at) && o.start_at >= now - 2 * DAY && o.start_at <= now + 366 * DAY) {
+      const p = zoneParts(o.rid, rule.z);
+      out.push({ start: o.start_at, end: Number.isFinite(o.end_at) ? o.end_at : null, day: dayKey(Date.UTC(p.y, p.mo - 1, p.d) / DAY), cancelled: false, was: o.rid, title: o.title || r.title, sub: o.sub || r.sub });
+    }
+  return out.sort((a, b) => a.start - b.start);
+}
+const nextOf = (dates, now) => dates.filter((d) => (d.end ?? d.start) >= now).slice(0, 5).map((d) => ({ start: d.start, ...(d.cancelled && { cancelled: true }), ...(d.was != null && { was: d.was }) }));
+async function seriesRows(env, now, where = `hidden = 0 AND status = 'confirmed'`) {
+  const { results } = await env.DB.prepare(`SELECT * FROM spots WHERE rule IS NOT NULL AND ${where} AND (last_at IS NULL OR last_at >= ?1) AND start_at <= ?2 LIMIT 50`).bind(now - 2 * DAY, now + 14 * DAY).all();
+  return results;
+}
+async function occOf(env, ids) {
+  if (!ids.length) return new Map();
+  const { results } = await env.DB.prepare(`SELECT * FROM spot_occ WHERE series_id IN (${ids.map((_, i) => `?${i + 1}`).join(", ")})`).bind(...ids).all();
+  const by = new Map(ids.map((id) => [id, []]));
+  for (const o of results) by.get(o.series_id)?.push(o);
+  return by;
+}
+// (each date of each repeating invite within the card's window, as its own item: <series id>~<yyyymmdd>)
+async function repeating(env, now) {
+  const rows = await seriesRows(env, now);
+  const occ = await occOf(env, rows.map((r) => r.id));
+  const out = [];
+  for (const r of rows) {
+    const rule = ruleOf(r);
+    if (!rule) continue;
+    const dates = seriesDates(r, rule, occ.get(r.id) || [], now), next = nextOf(dates, now), repeat = repeatWords(rule.r, rule.w);
+    for (const d of dates)
+      if (!d.cancelled && d.start <= now + 14 * DAY && (d.end ?? d.start) >= now - 12 * H)
+        out.push({
+          id: `${r.id}~${d.day}`.slice(0, 64), kind: r.kind, title: cut(d.title, 80), sub: cut(d.sub || "", 120), start: d.start, end: d.end, tz: okZone(r.tz) ? r.tz : null,
+          place: placeOut(r), ref: r.ref ? cut(r.ref, 24) : null, trip: null, thread: r.thread_id || null, status: "confirmed", ...(repeat && { repeat }), next, ...(d.was != null && { was: d.was }),
+        });
+  }
+  return out;
+}
 
 // For Today's card (connect.js card): what's ahead in the next 14 days (and what ended in the last 12 hours), soonest
-// first, 40 at most; the trips they're in, 5 at most. null while the switch is off (the card then has neither)
+// first, 40 at most, each date of a repeating invite its own; the trips they're in, 5 at most, each with what of it was
+// taken off (hidden, 10 at most, for Put Back). null while the switch is off (the card then has neither)
 export async function aheadOf(env, now = Date.now()) {
   if (!(await spotOn(env))) return null;
-  const rows = await nearRows(env, now);
+  const all = await nearRows(env, now);
+  const rows = all.filter((r) => !r.hidden);
   const trips = tripsOf(rows);
   const tripOf = new Map(trips.flatMap((t) => t.items.map((id) => [id, t.id])));
   const ahead = rows
     .filter((r) => r.start_at <= now + 14 * DAY && endOf(r) >= now - 12 * H)
-    .slice(0, 40)
     .map((r) => ({
       id: r.id, kind: r.kind, title: cut(r.title, 80), sub: cut(r.sub || "", 120), start: r.start_at, end: r.end_at ?? null, tz: okZone(r.tz) ? r.tz : null,
       place: placeOut(r), ref: r.ref ? cut(r.ref, 24) : null, trip: tripOf.get(r.id) || null, thread: r.thread_id || null, status: r.status,
-    }));
+    }))
+    .concat(await repeating(env, now).catch((err) => (console.error("card: repeating", err), [])))
+    .sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : 1))
+    .slice(0, 40);
   const shown = new Set(ahead.map((a) => a.id));
+  // (the trips as they'd be with nothing taken off: what of each was)
+  const whole = all.some((r) => r.hidden) ? tripsOf(all.map((r) => ({ ...r, hidden: 0 }))) : [];
   const tripsOut = trips
     .filter((t) => t.items.some((id) => shown.has(id)))
     .slice(0, 5)
     // (each item one Today can find in ahead)
-    .map((t) => ({ ...t, items: t.items.filter((id) => shown.has(id)) }));
+    .map((t) => {
+      const w = whole.find((x) => x.items.some((id) => t.items.includes(id)));
+      const hidden = w ? all.filter((r) => r.hidden && w.items.includes(r.id)).slice(0, 10).map((r) => ({ id: r.id, title: cut(r.title, 80), sub: cut(r.sub || "", 120), start: r.start_at })) : [];
+      return { ...t, items: t.items.filter((id) => shown.has(id)), hidden };
+    });
   return { ahead, trips: tripsOut };
 }
 
-// For the strip at the top of a conversation: its bookings (hidden ones too, said so), each with its trip
+// Everything the card has from Mail on Your Day, for each switch that's on (connect.js card): ahead and trips, parcels,
+// bills and money. Each apart: one failing leaves the others, and the card's numbers, as they are
+export async function spotCard(env, now = Date.now()) {
+  const on = await switches(env);
+  const out = {};
+  const part = (what, fn) => fn().catch((err) => (console.error(`card: ${what}`, err), null));
+  if (on.trips) Object.assign(out, await part("bookings", () => aheadOf(env, now)));
+  if (on.parcels) { const p = await part("parcels", () => parcelsCard(env, now)); if (p) out.parcels = p; }
+  if (on.bills) Object.assign(out, await part("bills", async () => billsCard(env, now, await zoneOf(env))));
+  return out;
+}
+
+// For the strip at the top of a conversation: its bookings (hidden ones too, said so), each with its trip, a repeating
+// one at its next date; its parcels and its bills. Only for the switches that are on; null with all three off
 export async function threadSpots(env, threadId, now = Date.now()) {
-  if (!(await spotOn(env))) return null;
+  const on = await switches(env);
+  if (!on.trips && !on.parcels && !on.bills) return null;
+  const out = [];
+  if (on.trips) out.push(...(await threadBookings(env, threadId, now)));
+  if (on.parcels) out.push(...(await threadParcels(env, threadId)));
+  if (on.bills) out.push(...(await threadBills(env, threadId)));
+  return out.slice(0, 6);
+}
+async function threadBookings(env, threadId, now) {
   const { results } = await env.DB.prepare(
     `SELECT s.*, (SELECT from_name FROM messages m WHERE m.id = s.message_id) AS from_name FROM spots s
        WHERE s.thread_id = ?1 OR s.id IN (SELECT spot_id FROM spot_threads WHERE thread_id = ?1) ORDER BY s.start_at LIMIT 6`
   ).bind(threadId).all();
   if (!results.length) return [];
-  const trips = tripsOf(await nearRows(env, now));
+  const trips = tripsOf((await nearRows(env, now)).filter((r) => !r.hidden));
+  const occ = await occOf(env, results.filter((r) => r.rule).map((r) => r.id));
   return results.map((r) => {
     const t = trips.find((x) => x.items.includes(r.id));
     let facts = [];
     try { facts = JSON.parse(r.facts || "[]").filter((f) => Array.isArray(f) && f.length === 2).slice(0, 3).map(([k, v]) => [cut(k, 20), cut(v, 40)]); } catch {}
+    const rule = r.rule ? ruleOf(r) : null;
+    const dates = rule ? seriesDates(r, rule, occ.get(r.id) || [], now) : null;
+    const nextDate = dates?.find((d) => !d.cancelled && (d.end ?? d.start) >= now);
     return {
-      id: r.id, kind: r.kind, title: r.title, sub: r.sub || "", facts, start: r.start_at, end: r.end_at ?? null, tz: r.tz, place: placeOut(r), ref: r.ref || null,
+      id: r.id, kind: r.kind, title: r.title, sub: r.sub || "", facts, start: nextDate?.start ?? r.start_at, end: nextDate ? nextDate.end : r.end_at ?? null, tz: r.tz, place: placeOut(r), ref: r.ref || null,
       status: r.status, hidden: !!r.hidden, source: r.source, sender: cut(r.from_name || r.sender || "", 60),
       trip: t ? { id: t.id, name: t.name, start: t.start, end: t.end } : null,
+      ...(rule && { repeat: repeatWords(rule.r, rule.w), next: nextOf(dates, now) }),
     };
   });
 }
 
 // Remove (hidden), Put it back, and Wrong (hidden, and its sender's mail of that kind not read for it again; put back,
-// read again). → whether there was one
+// read again), for a booking, a parcel or a bill (one date of a repeating invite: the whole series). → whether there was one
+const tableOf = (id) => (id.startsWith("parcel-") ? "parcels" : id.startsWith("bill-") ? "bills" : "spots");
+const kindCol = (table) => (table === "parcels" ? `'parcel'` : "kind");
+const own = (id) => String(id || "").split("~")[0];
 export async function hideSpot(env, id, hidden = true) {
-  const r = await env.DB.prepare(`UPDATE spots SET hidden = ?2, updated = ?3 WHERE id = ?1`).bind(id, hidden ? 1 : 0, Date.now()).run();
+  id = own(id);
+  const table = tableOf(id);
+  const r = await env.DB.prepare(`UPDATE ${table} SET hidden = ?2, updated = ?3 WHERE id = ?1`).bind(id, hidden ? 1 : 0, Date.now()).run();
   if (!hidden && r.meta?.changes) {
-    const s = await env.DB.prepare(`SELECT sender, kind FROM spots WHERE id = ?1`).bind(id).first();
+    const s = await env.DB.prepare(`SELECT sender, ${kindCol(table)} AS kind FROM ${table} WHERE id = ?1`).bind(id).first();
     if (s) await env.DB.prepare(`DELETE FROM spot_wrong WHERE sender = ?1 AND kind = ?2`).bind(s.sender, s.kind).run();
   }
   return !!r.meta?.changes;
 }
 export async function wrongSpot(env, id) {
-  const s = await env.DB.prepare(`SELECT sender, kind FROM spots WHERE id = ?1`).bind(id).first();
+  id = own(id);
+  const table = tableOf(id);
+  const s = await env.DB.prepare(`SELECT sender, ${kindCol(table)} AS kind FROM ${table} WHERE id = ?1`).bind(id).first();
   if (!s) return false;
   await env.DB.batch([
     env.DB.prepare(`INSERT OR IGNORE INTO spot_wrong (sender, kind, at) VALUES (?1, ?2, ?3)`).bind(s.sender || "", s.kind, Date.now()),
-    env.DB.prepare(`UPDATE spots SET hidden = 1, updated = ?2 WHERE id = ?1`).bind(id, Date.now()),
+    env.DB.prepare(`UPDATE ${table} SET hidden = 1, updated = ?2 WHERE id = ?1`).bind(id, Date.now()),
   ]);
   return true;
+}
+// (the conversation one was last read from, for the strip drawn again)
+export async function threadOfSpot(env, id) {
+  id = own(id);
+  return String((await env.DB.prepare(`SELECT thread_id FROM ${tableOf(id)} WHERE id = ?1`).bind(id).first())?.thread_id || "");
 }
 
 export { ensureSchema };

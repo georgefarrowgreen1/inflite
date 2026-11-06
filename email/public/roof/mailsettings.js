@@ -7,8 +7,10 @@
 //   Away), Signature, Remote Images on this device (localStorage mail:remote-images, off by default), a row that opens
 //   Mail Settings at Mail's own address in a new tab for New Address, Delete or Send From (MAIL + "/#settings": Mail's
 //   server refuses those from InFlite, §3.5), and Notifications → You's Mail Notifications (/#you=notify-mail).
-// Saves: ctx.api.saveSettings(patch) with only { signature } or { catchall }; ctx.api.updateAddress(email, patch) with
-//   only one of SAVES.address (never isDefault). Nothing else is written (roofmailviews.test).
+//   Spot in Your Mail (Mail on Your Day): Trips and bookings, Parcels and returns, Bills and subscriptions, each a switch.
+// Saves: ctx.api.saveSettings(patch) with only { signature }, { catchall } or { spot: { <one of SPOT>, tz } };
+//   ctx.api.updateAddress(email, patch) with only one of SAVES.address (never isDefault). Nothing else is written
+//   (roofmailviews.test).
 import { MAIL } from "./api.js";
 import { STORAGE } from "./store.js";
 
@@ -16,6 +18,8 @@ export const REMOTE = STORAGE.remoteImages;
 export const SAVES = Object.freeze({ settings: ["signature", "catchall"], address: ["name", "signature", "category", "color"] });
 export const COLOURS = Object.freeze(["blue", "green", "orange", "pink", "purple", "teal", "grey"]);
 const SORT = [["auto", "Auto"], ["people", "People"], ["updates", "Updates"]];
+export const SPOT = Object.freeze([["trips", "booking", "Trips and bookings", "Flights, trains, hotels, tables, tickets"], ["parcels", "parcel", "Parcels and returns", "On the way, delivered, last day to return"],
+  ["bills", "bill", "Bills and subscriptions", "What’s due, what’s changed, trials ending"]]);
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 export const remoteImages = () => { try { return localStorage.getItem(REMOTE) === "1"; } catch (_) { return false; } };
 export function setRemoteImages(on) { try { if (on) localStorage.setItem(REMOTE, "1"); else localStorage.removeItem(REMOTE); } catch (_) {} }
@@ -53,6 +57,16 @@ export function openSettings(ctx, page = null) {
     try { data.addresses[i] = { ...data.addresses[i], ...(await api.updateAddress(email, patch)) }; refreshMe(); }
     catch (e) { data.addresses[i] = was; say(e); }
   }
+  // (one of Spot in Your Mail's switches, with this phone's zone for the times Mail reads)
+  async function saveSpot(key, on) {
+    if (!SPOT.some(([k]) => k === key)) return;
+    let tz = null;
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) {}
+    const was = data.spot;
+    data.spot = { ...data.spot, [key]: !!on };
+    try { const r = await api.saveSettings({ spot: { [key]: !!on, tz } }); if (r?.spot) data.spot = r.spot; }
+    catch (e) { data.spot = was; say(e); main(); }
+  }
   const sortSaid = (a) => [a.name || null, a.category === "updates" ? "to Updates" : a.category === "people" ? "to People" : null].filter(Boolean).join(" · ") || "As Mail sorts it";
 
   // ---- the first page
@@ -73,6 +87,11 @@ export function openSettings(ctx, page = null) {
       })),
       group("Receiving", ui.row({ lead: { icon: "shield" }, title: "Unknown Addresses", sub: `Anything else @${data.domain || "inflite.ai"}`, value: data.catchall === "reject" ? "Turn Away" : "Keep", trail: "chevron", act: "unknown", run: unknown })),
       group("Sending", ui.row({ lead: { icon: "pen" }, title: "Signature", sub: data.signature ? data.signature.split("\n")[0] : "None, for every address", trail: "chevron", act: "signature", run: signature })),
+      group("Spot in your mail", SPOT.map(([key, ic, title, sub]) => {
+        const r = ui.row({ lead: ctx.icon(`k-${ic}`), title, sub, trail: "switch", checked: !!data.spot?.[key], onChange: (v) => saveSpot(key, v) });
+        r.dataset.key = `spot-${key}`;
+        return r;
+      })),
       group("This Phone", remote),
       group("More", ui.row({ lead: { app: "mail" }, title: "New Address, Delete or Send From", sub: "Open Mail Settings at Mail’s own address", trail: "chevron", act: "own", href: `${MAIL}/#settings` }),
         ui.row({ lead: { icon: "bubble" }, title: "Notifications", sub: "In You, with InFlite’s own", trail: "chevron", act: "notify", href: "/#you=notify-mail" })),

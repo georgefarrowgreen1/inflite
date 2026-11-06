@@ -217,8 +217,8 @@ async function store(message, env, ctx, id, raw, address) {
   // (the message is kept by now: these failing mustn't send it down the couldn't-read path, kept and forwarded twice)
   ctx.waitUntil(upsertContacts(env, [from]).catch((e) => console.error("contacts", e)));
   await bumpVersion(env).catch((e) => console.error("version", e));
-  // (Mail on Your Day: its bookings, while Settings' "Trips and bookings" is on. spotStored never throws: a failure to
-  // spot never stops mail being kept)
+  // (Mail on Your Day: its bookings, parcels and bills, while their switches in Settings are on. spotStored never throws:
+  // a failure to spot never stops mail being kept)
   ctx.waitUntil(spotStored(env, { email, threadId, messageId: id, sender: from.email, date }));
 
   // A notice for mail from people (not for updates: newsletters, receipts and the like wait in the stream), unless its

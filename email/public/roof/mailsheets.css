@@ -68,3 +68,6 @@
 @media (prefers-reduced-motion: reduce) { .ifl-sheet[data-app=mail] .mv-track, .ifl-sheet[data-app=mail] .mv-img { transition: none; } }
 .ifl-sheet[data-app=mail] .mc-prog { margin: 4px 2px 0; color: var(--text-2); font-size: 13px; }
 .ifl-sheet[data-app=mail] .mc-prog:empty { display: none; }
+/* (Spot in Your Mail's switches: Mail's own glyph for each, on the tile the other rows' glyphs have) */
+.ifl-sheet[data-app=mail] [data-key^="spot-"] .ifl-lead { width: 32px; height: 32px; border-radius: 9px; color: #fff; background: var(--acc-fill); }
+.ifl-sheet[data-app=mail] [data-key^="spot-"] .ifl-lead svg.m-ic { width: 20px; height: 20px; }

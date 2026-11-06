@@ -209,25 +209,26 @@ export default (M) => {
               onclick: () => push(signatureView),
             })
           ),
-          // (Mail on Your Day: what Mail looks for in mail, for Today; read back over 60 days once it's turned on)
+          // (Mail on Your Day: what Mail looks for in mail, for Today; read back over 60 days once each is turned on)
           k("Spot in your mail"),
           group(
-            row({
-              ic: "calendar",
-              tint: "green",
-              title: "Trips and bookings",
-              sub: "Flights, trains, hotels, tables, tickets",
-              end: swOf(data.spot?.trips, "Trips and bookings", (v) => {
-                let tz = null;
-                try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch {}
-                saveSettings({ spot: { trips: v, tz } });
-              }),
-            })
-          ),
-          hint(
-            data.spot?.reading
-              ? "Reading the last 60 days of mail for bookings, a few at a time."
-              : "Read on Mail’s own server, by rules alone: no AI, and nothing sent anywhere to be read. What it finds is on Your Day, for you alone."
+            [
+              ["trips", "calendar", "Trips and bookings", "Flights, trains, hotels, tables, tickets"],
+              ["parcels", "box", "Parcels and returns", "On the way, delivered, last day to return"],
+              ["bills", "bill", "Bills and subscriptions", "What’s due, what’s changed, trials ending"],
+            ].map(([key, ic, title, sub]) =>
+              row({
+                ic,
+                tint: "green",
+                title,
+                sub,
+                end: swOf(data.spot?.[key], title, (v) => {
+                  let tz = null;
+                  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch {}
+                  saveSettings({ spot: { [key]: v, tz } });
+                }),
+              })
+            )
           ),
         ],
       };
@@ -235,7 +236,8 @@ export default (M) => {
 
     async function saveSettings(patch) {
       const was = data;
-      data = { ...data, ...patch };
+      // (one of Spot in Your Mail's switches: the others as they were, while Mail answers)
+      data = { ...data, ...patch, ...(patch.spot && { spot: { ...data.spot, ...patch.spot } }) };
       redraw();
       try {
         data = await api.saveSettings(patch);

@@ -10,6 +10,8 @@
 //   or is loading it, then api.meta for the newest and the few unread (≤ 5), each kept in store.thread.metas; opening an
 //   unread conversation marks it read (ctx.actions.act([id], "read", { undo: false })).
 // Hooks it keeps (§10.2): .m-mail iframe.mail-body (bodyframe.js makes them); .m-mail [data-act=done|later|reply|send].
+// Mail on Your Day's strip, above the messages, as Mail's own page has it (parts/spot.js): each booking, parcel or bill
+//   Mail spotted in the conversation (thread.spots), with Remove / Put It Back and Wrong (api.spot), at .mr-spot.
 // Nothing from a message's body is here: cards are Meta (summary fields) drawn with textContent; pictures are blob: URLs
 // made only for logic.PICTURES, re-typed, used only in <img src> and revoked when the conversation goes.
 import { bodyFrame, listenFrames, themeAll } from "./bodyframe.js";
@@ -54,10 +56,11 @@ export function view(el, ctx) {
     const s = store.get(), row = s.list?.rows?.find((r) => r.id === id);
     cur = { id, cards: new Map(), frames: new Map(), urls: [], expanded: new Set(), qr: null };
     cur.head = E("header", { class: "mr-head", tabindex: "-1" });
+    cur.spots = E("div", { class: "mr-spots", role: "group", "aria-label": "Spotted by Mail", hidden: true });
     cur.msgs = E("div", { class: "mr-msgs" });
     cur.foot = E("footer", { class: "mr-foot" });
     cur.bar = E("div", { class: "mr-bar", role: "toolbar", "aria-label": "Conversation" });
-    el.replaceChildren(cur.bar, cur.head, cur.msgs, cur.foot);
+    el.replaceChildren(cur.bar, cur.head, cur.spots, cur.msgs, cur.foot);
     // (the newest message's frame, made on the tap from the row's latestId, while the thread is still on its way)
     if (row?.latestId) {
       cur.expanded.add(row.latestId);
@@ -171,6 +174,88 @@ export function view(el, ctx) {
     } catch (_) { return null; }
   }
 
+  // ---- Mail on Your Day's strip: what Mail spotted in it, the same as on Mail's own page (parts/spot.js)
+  const fmt = (t, o) => new Intl.DateTimeFormat("en-GB", o).format(t);
+  const hm = (t, tz) => { try { return fmt(t, { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(tz && { timeZone: tz }) }); } catch (_) { return fmt(t, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }); } };
+  const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+  const short = (t) => (t == null ? "—" : `${fmt(t, { weekday: "short" })} ${fmt(t, { day: "numeric" })}`);
+  const dayWord = (t) => (sameDay(t, Date.now()) ? "today" : sameDay(t, Date.now() + 864e5) ? "tomorrow" : fmt(t, { weekday: "long" }));
+  const money = (p) => (p == null ? "—" : `£${p % 100 ? (p / 100).toFixed(2) : String(p / 100)}`);
+  const hour = (t) => { const x = hm(t); return x.endsWith(":00") ? String(Number(x.slice(0, 2))) : x; };
+  const range = (a, b) => { const [d1, m1, d2, m2] = [fmt(a, { day: "numeric" }), fmt(a, { month: "short" }), fmt(b, { day: "numeric" }), fmt(b, { month: "short" })]; return d1 === d2 && m1 === m2 ? `${d1} ${m1}` : m1 === m2 ? `${d1}–${d2} ${m1}` : `${d1} ${m1} – ${d2} ${m2}`; };
+  const BILLS = new Set(["bill", "renewal", "trial", "sub"]);
+  const STAGES = ["Ordered", "Shipped", "Out today", "Delivered"];
+  const KINDS = { flight: "flights", train: "trains", bus: "coaches", hotel: "stays", car: "cars", restaurant: "tables", event: "tickets", booking: "invites", parcel: "parcels", bill: "bills", renewal: "renewals", trial: "trials", sub: "receipts" };
+  function about(s) {
+    if (s.kind === "parcel") {
+      const title = `Parcel from ${s.shop || s.carrier || "a shop"}${s.stage === 3 ? " · delivered" : s.window ? ` · ${dayWord(s.window.from)}` : s.due != null ? ` · ${dayWord(s.due)}` : ""}`;
+      const win = s.stage === 3 ? ["Delivered", s.deliveredAt != null ? hm(s.deliveredAt) : "—"] : s.window ? ["Window", `${hour(s.window.from)}–${hour(s.window.to)}`] : ["Due", short(s.due)];
+      const tracking = s.track && /^https:\/\//.test(s.track) ? E("a", { class: "mr-spot-track", href: s.track, target: "_blank", rel: "noopener noreferrer", text: "Track ›" }) : s.ref || "—";
+      const bar = E("div", { class: "mr-spot-bar", role: "img", "aria-label": STAGES[s.stage] || "" },
+        E("span", { class: "mr-spot-steps" }, STAGES.map((_, i) => E("i", { class: i < s.stage || s.stage === 3 ? "on" : i === s.stage ? "now" : null }))),
+        E("span", { class: "mr-spot-labs", "aria-hidden": "true" }, STAGES.map((l, i) => E("span", { class: i <= s.stage ? "on" : null, text: l }))));
+      return { title, facts: [["Courier", s.carrier || "—"], win, ["Tracking", tracking]], extra: bar, how: [s.sender || s.carrier, s.ref ? `ref ${s.ref}` : s.order ? `order ${s.order}` : ""] };
+    }
+    if (BILLS.has(s.kind)) {
+      const d = s.due;
+      const title = s.kind === "renewal" ? `Renews ${dayWord(d)} · ${money(s.amount)}` : s.kind === "trial" ? `Trial ends ${dayWord(d)}` : s.kind === "sub" ? `${money(s.amount)} paid ${dayWord(d)}` : `${money(s.amount)} due ${dayWord(d)}`;
+      const facts = s.kind === "renewal" ? [["Price", money(s.amount)], ["Renews", short(d)], ["Was", money(s.was)]]
+        : s.kind === "trial" ? [["Then", money(s.amount)], ["Ends", short(d)], ["Paid by", s.auto ? "Card" : "You"]]
+        : [["Amount", money(s.amount)], [s.kind === "sub" ? "Paid" : "Due", short(d)], ["Usual", money(s.usual)]];
+      return { title, facts, extra: spark(s), how: [s.sender, s.account ? `account ${s.account}` : ""] };
+    }
+    const facts = s.repeat ? [["Next", `${short(s.start)} ${hm(s.start, s.tz)}`], ["Repeats", s.repeat]] : (s.facts || []).slice(0, 2);
+    const when = `${fmt(s.start, { weekday: "long", ...(s.tz && { timeZone: s.tz }) })}${s.kind === "hotel" ? "" : ` ${hm(s.start, s.tz)}`}`;
+    return { title: `${s.title} · ${when}`, facts: [...facts, ["Status", s.status === "cancelled" ? "Cancelled" : "Booked"]], extra: null, how: [s.sender, s.ref ? `ref ${s.ref}` : ""] };
+  }
+  // (a bill's last six as small bars, the newest marked when it's more than the usual: their heights by custom property)
+  function spark(s) {
+    const last = (s.last || []).slice(-6);
+    if (last.length < 2) return null;
+    const top = Math.max(...last), before = last.slice(0, -1), lo = Math.min(...before), hi = Math.max(...before);
+    const up = s.usual && s.amount > s.usual ? Math.floor(((s.amount - s.usual) / s.usual) * 100) : 0;
+    const bars = last.map((p, i) => { const b = E("i", { class: i === last.length - 1 && up ? "now" : null }); b.style.setProperty("--h", `${Math.max(12, Math.round((p / top) * 100))}%`); return b; });
+    return E("div", { class: "mr-spot-spark" },
+      E("span", {}, E("small", { text: `Your last ${last.length} from ${s.sender}` }), E("b", { text: `${lo === hi ? money(lo) : `${money(lo)}–${money(hi)}`}, now ` }, up ? E("span", { class: "mr-spot-chg", text: `+${up}%` }) : money(s.amount))),
+      E("span", { class: "mr-spot-bars", "aria-hidden": "true" }, bars));
+  }
+  function spotCard(s, t) {
+    const gone = s.status === "cancelled";
+    const state = gone ? "Cancelled" : s.hidden ? "Not on Your Day" : s.trip ? `On Your Day · part of ${s.trip.name}, ${range(s.trip.start, s.trip.end)}` : "On Your Day";
+    const a = about(s);
+    const card = E("article", { class: `mr-spot${s.hidden || gone ? " gone" : ""}`, data: { spot: s.id, kind: s.kind }, "aria-label": `${a.title}, ${state}` });
+    async function change(body, said) {
+      for (const b of card.querySelectorAll("button")) b.disabled = true;
+      try {
+        const r = await api.spot(s.id, body);
+        const th = store.get().thread;
+        if (th?.t?.id === t.id && Array.isArray(r?.spots)) store.set({ thread: { ...th, t: { ...th.t, spots: r.spots } } }, "reader");
+        fw.toast(said);
+      } catch (e) {
+        for (const b of card.querySelectorAll("button")) b.disabled = false;
+        fw.toast(e?.message || "Couldn’t change that. Try again.");
+      }
+    }
+    const btn = (label, act, body, said) => { const b = E("button", { type: "button", class: "ifl-btn small", data: { act }, text: label }); b.addEventListener("click", () => change(body, said)); return b; };
+    card.append(
+      E("div", { class: "mr-spot-top" }, E("span", { class: "mr-spot-ic" }, ctx.icon(`k-${s.kind}`)), E("div", { class: "mr-spot-tx" }, E("small", { class: "mr-spot-state", text: state }), E("b", { text: a.title }))),
+      E("div", { class: "mr-spot-facts" }, a.facts.map(([k, v]) => E("div", {}, k, E("b", {}, v)))),
+      a.extra || "",
+      E("div", { class: "mr-spot-how", text: a.how.filter(Boolean).join(" · ") }),
+      gone ? "" : E("div", { class: "mr-spot-btns" },
+        s.hidden ? btn("Put it back", "back", { hidden: false }, "Back on Your Day") : btn("Remove", "remove", { hidden: true }, "Hidden"),
+        s.hidden ? null : btn("Wrong", "wrong", { wrong: true }, `Hidden. Mail won’t read ${KINDS[s.kind] || "these"} from ${s.sender || "them"} again`)),
+    );
+    return card;
+  }
+  function paintSpots(t) {
+    const list = Array.isArray(t.spots) ? t.spots.slice(0, 4) : [];
+    if (cur.spotsFor === t.spots) return;
+    cur.spotsFor = t.spots;
+    cur.spots.hidden = !list.length;
+    cur.spots.replaceChildren(...list.map((s) => spotCard(s, t)));
+  }
+
   // ---- the head, the bar and the foot
   function paintHead(t) {
     const ps = (t.people || []).slice(0, 4).map((p) => (p.me ? "you" : (p.name || p.email || "").split(/[\s@]/)[0]));
@@ -271,6 +356,7 @@ export function view(el, ctx) {
     if (!t) { if (!cur.msgs.firstChild) cur.msgs.append(ui.skeleton("rows", 3)); return; }
     cur.msgs.querySelector(".ifl-skeleton")?.remove();
     paintHead(t);
+    paintSpots(t);
     // oldest first, as a conversation reads; the newest at the foot, by the reply (cards already made stay where they are)
     let prev = null;
     for (const m of [...(t.messages || [])].reverse()) {

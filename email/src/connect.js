@@ -1,9 +1,10 @@
-// What Mail tells InFlite (One roof, stage 4): Today's card (numbers, and with Trips and Bookings on, what's booked; to
-// the account's server with the shared key), a notice's words (to the phone itself, never through InFlite's servers), and
-// the searches InFlite's page asks for in a request's body rather than its address (Mail's logs keep addresses; S4-D9).
+// What Mail tells InFlite (One roof, stage 4): Today's card (numbers, and with Spot in Your Mail on, what's booked, the
+// parcels and the bills; to the account's server with the shared key), a notice's words (to the phone itself, never
+// through InFlite's servers), and the searches InFlite's page asks for in a request's body rather than its address
+// (Mail's logs keep addresses; S4-D9).
 import { counts, cleanSubject } from "./threads.js";
 import { addressOf } from "./addresses.js";
-import { aheadOf } from "./spot.js";
+import { spotCard } from "./spot.js";
 
 const enc = new TextEncoder();
 
@@ -23,10 +24,11 @@ export async function keyOk(request, env) {
 // Today's card: how many conversations from people are unread, Updates' unread, and Later's count with the next one's
 // time. Numbers only, never a word of mail.
 // With Settings' "Trips and bookings" on (Mail on Your Day), what's booked as well: ahead (the next 14 days' bookings)
-// and trips (those they're in), spot.js aheadOf; with it off, neither, so an account from before this ignores them and
-// one after this knows "off" from "nothing booked". A failure there leaves the numbers as they are.
+// and trips (those they're in); with "Parcels and returns" on, parcels; with "Bills and subscriptions" on, bills and
+// money (spot.js spotCard). Each absent while its switch is off, so an account from before this ignores them and one
+// after this knows "off" from "nothing there". A failure there leaves the numbers as they are.
 export async function card(env) {
-  const [c, spots] = await Promise.all([counts(env), aheadOf(env).catch((err) => (console.error("card: bookings", err), null))]);
+  const [c, spots] = await Promise.all([counts(env), spotCard(env).catch((err) => (console.error("card: spots", err), null))]);
   const n = (v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
   const next = Number(c.nextLater?.at);
   return { people: n(c.people?.unread), updates: n(c.updates?.unread), later: { n: n(c.snoozed), next: Number.isFinite(next) && next > 0 ? next : null }, ...spots };

@@ -11,7 +11,7 @@
 //   switch off: a CORS refusal looks like this), so the page asks /api/hub again (C1).
 export const MAIL = `${location.protocol}//email.${location.host.replace(/^next\./, "")}`;
 
-export const METHODS = ["session", "me", "version", "counts", "settings", "handback", "threads", "search", "thread", "meta", "draft", "batch", "emptyTrash", "unsubInfo", "unsubscribe", "remove", "saveSettings", "updateAddress", "findContacts", "saveDraft", "sendDraft", "sent", "picture", "fileUrl", "rawUrl"];
+export const METHODS = ["session", "me", "version", "counts", "settings", "handback", "threads", "search", "thread", "meta", "draft", "batch", "emptyTrash", "unsubInfo", "unsubscribe", "remove", "saveSettings", "updateAddress", "findContacts", "saveDraft", "sendDraft", "sent", "picture", "fileUrl", "rawUrl", "spot"];
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -115,5 +115,7 @@ export function createApi({ base = MAIL, onLost = null, onRefused = null } = {})
     picture: (id) => req("GET", `/api/attachments/${enc(id)}`, undefined, { blob: true }),
     fileUrl: (id) => `${base}/api/attachments/${enc(id)}`,
     rawUrl: (id) => `${base}/api/messages/${enc(id)}/raw`,
+    // (Mail on Your Day's strip: Remove, Put It Back, Wrong: { hidden } or { wrong: true } → { ok, spots })
+    spot: (id, body) => req("POST", `/api/spots/${enc(id)}`, body),
   };
 }
