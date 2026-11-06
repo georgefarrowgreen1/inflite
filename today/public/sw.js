@@ -1,7 +1,7 @@
 // InFlite's root service worker (scope /, spec §11.4): this phone's one push subscription for InFlite, every app's
 // notifications shown here and tapped open in the one window, the Home Screen icon's badge, Chat's delivered tick, and a
-// copy of Today's own files for when there's no network (below). Today still always loads fresh: never any of your day
-// kept here (the page keeps its own copy, per account, and forgets it when you sign out). Chats and the apps beside it
+// copy of Today's own files, so it opens at once, and with no network (below). Never any of your day kept here (the
+// page keeps its own copy, per account, and forgets it when you sign out). Chats and the apps beside it
 // (/chats/, /fitness/, …) have workers of their own, for their own files only: none of them holds a subscription. Each app
 // that's a module of Today's page (One roof, spec §8.2, D10; stages 2–4, s24-contracts §8: Weather, Markets, Fitness,
 // Mail, by their switches) has its page at /<app>/ be Today's, and its module's files kept here when the page asks, so it
@@ -15,10 +15,14 @@ const MOD_APPS = Object.keys(MODS);
 // for signing in and keys; neither is ever the framework, nor answered here)
 const engineAt = (u) => u.pathname.startsWith("/chats/") && u.searchParams.has("engine");
 
-// ---- Today's own files, kept for when there's no network ----
-// Always from the network while there is one, each kept as it comes; only with no answer at all (or Today's host
-// failing) from what was kept last. So Today opens on a train, with the copy of your day the page kept. Only these
-// files: never the API, nor any page or file of Chats' or the apps'.
+// ---- Today's own files, kept: Today opens at once, from them ----
+// Today's page and files come from what's kept here whenever they're all there, so it opens at once, on a weak signal or
+// none, with the copy of your day the page kept; from the network only when one isn't kept yet, or when the request
+// says to go past what's kept (a reload, or the updater fetching the new version's files: cache "reload"/"no-cache").
+// They're kept fresh as a set, never one at a time behind the page's back: InFlite's updater (IFL.updates) asks /version
+// as Today opens and, when there's a new Today, asks this worker to renew (every file fetched again, each kept as it
+// comes, any it couldn't get let go, so it's fetched from the network next time and never an old one beside new ones)
+// before it loads it. Only these files: never the API, nor any page or file of Chats' or the apps'.
 const SHELL = "today-app-4";
 const FILES = ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg",
   "/mailcard.js", "/mailnotify.js", "/apps/mail.svg",
@@ -33,7 +37,7 @@ self.addEventListener("install", (e) => {
 // the browser's copy, through here and kept as they come, so there's nothing more for this worker to do: IFL.updates.
 // A page of the hub opened, or back in sight: the badge counted again, IFL.hub)
 self.addEventListener("message", (e) => {
-  if (e.data?.ifl === "renew") e.ports[0]?.postMessage({ ifl: "renewed" });
+  if (e.data?.ifl === "renew") e.waitUntil?.(renew().catch(() => {}).then(() => e.ports[0]?.postMessage({ ifl: "renewed" })));
   else if (e.data?.ifl === "badge") e.waitUntil?.(badge());
   else if (e.data?.ifl === "keep" && e.source && sameOrigin(e.source.url)) e.waitUntil?.(keep(e.data));
 });
@@ -52,13 +56,29 @@ self.addEventListener("fetch", (e) => {
     // (Today's one page, at /; the same page at a module's /<app>/, from the network, else the copy of / (never kept as
     // /: what the hub sends there may be the app's milestone-1 page, with its switch off); any other address is the 404
     // page, or a page of the hub's, from the network)
-    if (u.pathname === "/" || u.pathname === "/index.html") e.respondWith(fresh(e, "/"));
+    if (u.pathname === "/" || u.pathname === "/index.html") e.respondWith(keptFirst(e, "/"));
     else if (ROOF_DOCS.includes(u.pathname) && !engineAt(u)) e.respondWith(roofDoc(e));
     return;
   }
-  if (FILES.includes(u.pathname) && !u.search) e.respondWith(fresh(e, u.pathname));
+  if (FILES.includes(u.pathname) && !u.search) e.respondWith(keptFirst(e, u.pathname));
   else if (moduleFile(u)) e.respondWith(fromModule(e, u));
 });
+// (what's kept, if it is, unless the request says to go past it: a reload, the updater's own fetches)
+const PAST = new Set(["reload", "no-cache", "no-store"]);
+async function keptFirst(e, key) {
+  if (!PAST.has(e.request.cache)) {
+    const k = await caches.open(SHELL).then((c) => c.match(key)).catch(() => null);
+    if (k) return k;
+  }
+  return fresh(e, key);
+}
+// (the updater's, before it loads a new Today: every file fetched again past the browser's copy, each kept as it comes;
+// one that couldn't be had let go, so it comes from the network next time rather than an old one beside the new)
+async function renew() {
+  const c = await caches.open(SHELL);
+  await Promise.all(FILES.map((f) => fetch(f, { cache: "reload", credentials: "same-origin" })
+    .then((r) => (r.ok && r.type === "basic" ? c.put(f, r) : c.delete(f)), () => c.delete(f)).catch(() => c.delete(f).catch(() => {}))));
+}
 async function fresh(e, key) {
   const kept = () => caches.open(SHELL).then((c) => c.match(key)).catch(() => null);
   let res;

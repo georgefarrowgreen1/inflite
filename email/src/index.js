@@ -34,6 +34,7 @@ export default {
     // (a bug report, from the window the shared menu shows when something breaks in Mail: passed on to the account's
     // address, where every app's are kept, the georgefarrowgreen repo's functions/_bugs.js; from Mail's own pages only)
     if (url.pathname === "/api/bugs") return bugReport(request, env);
+    if (url.pathname === "/api/vitals") return vitals(request, env, ctx);
     // (status.inflite.ai's banner for Mail, as the shared menu asks for it: the account's address answers it)
     if (url.pathname === "/api/status-banner" && request.method === "GET") {
       const res = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/status-banner?app=mail`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5000) }).catch(() => null);
@@ -1158,6 +1159,20 @@ async function saveDraft(env, body, view) {
     )
     .run();
   return json({ ok: true, id });
+}
+
+// How fast Mail's page was on this device, numbers only, from the shared menu as it's left: passed on to the account
+// (functions/_vitals.js), nothing kept here
+async function vitals(request, env, ctx) {
+  const none = (status = 204) => new Response(null, { status, headers: { "Cache-Control": "no-store" } });
+  if (request.method !== "POST") return none(405);
+  const site = request.headers.get("Sec-Fetch-Site");
+  if (site && site !== "same-origin") return none(403);
+  const body = await request.text();
+  if (body.length > 600) return none(413);
+  const go = appFetch(env, `${env.ACCOUNT_ORIGIN}/api/vitals`, { method: "POST", headers: { "Content-Type": "text/plain" }, body, signal: AbortSignal.timeout(5000) }).catch(() => null);
+  if (ctx?.waitUntil) ctx.waitUntil(go); else await go;
+  return none();
 }
 
 async function bugReport(request, env) {

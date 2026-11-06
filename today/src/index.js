@@ -13,6 +13,8 @@ import { mailPage } from "./mailhost.js";
 // Set-Cookie comes back with it (signing in, its renewal, signing out: never anywhere else)
 const ROUTES = {
   "GET /api/session": { path: "today/me", timeout: 8000, cookies: true, view: true },
+  // (who and the day in one trip, as the page opens where someone was signed in last time: { view, cards })
+  "GET /api/boot": { path: "today/boot", timeout: 12000, cookies: true, boot: true },
   "POST /api/auth/handback": { path: "today/handback", timeout: 8000, cookies: true, view: true },
   "POST /api/logout": { path: "today/signout", timeout: 8000, cookies: true },
   "GET /api/today": { path: "today/cards", timeout: 12000 },
@@ -73,6 +75,7 @@ export default {
       if (hubbed) return await hub(request, env, ctx);
       if (mail) return await mailPage(request, env);
       if (url.pathname === "/api/bugs") return await bugReport(request, env);
+      if (url.pathname === "/api/vitals") return await vitals(request, env, ctx);
       if (url.pathname === "/api/status-banner") return await statusBanner(request, env, url);
       return await api(request, env, url);
     } catch (err) {
@@ -105,6 +108,20 @@ async function bugReport(request, env) {
   const res = await ask(env, request, { method: "POST", path: "bugs", body, timeout: 8000 });
   if (!res) return refuse(502, "The report couldn’t be sent just now.");
   return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json; charset=utf-8", ...SAFE } });
+}
+
+// How fast the page was on this device, numbers only, from the shared menu as the page is left: passed on to the account
+// (functions/_vitals.js), never waited on by the page (a beacon), nothing kept here
+async function vitals(request, env, ctx) {
+  const none = (status = 204) => new Response(null, { status, headers: { ...SAFE } });
+  if (request.method !== "POST") return none(405);
+  const site = request.headers.get("Sec-Fetch-Site");
+  if (site && site !== "same-origin") return none(403);
+  const body = await request.text();
+  if (body.length > 600) return none(413);
+  const go = ask(env, request, { method: "POST", path: "vitals", body, timeout: 5000 }).catch(() => null);
+  if (ctx?.waitUntil) ctx.waitUntil(go); else await go;
+  return none();
 }
 
 async function api(request, env, url) {
@@ -153,6 +170,7 @@ async function api(request, env, url) {
     out = json({ error: typeof data?.error === "string" ? data.error : SAID.wrong, ...(typeof data?.field === "string" ? { field: data.field } : {}) }, res.status);
   } else {
     if (route.view && data && typeof data === "object" && !Array.isArray(data)) data = { ...data, accountOrigin: env.ACCOUNT_ORIGIN };
+    if (route.boot && data?.view && typeof data.view === "object") data = { ...data, view: { ...data.view, accountOrigin: env.ACCOUNT_ORIGIN } };
     out = json(data, res.status);
   }
   if (route.cookies) for (const c of setCookies(res)) out.headers.append("Set-Cookie", c);

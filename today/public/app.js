@@ -12,9 +12,9 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.71";
+const BUILD = "1.72";
 // (what's new in it, said once it's in)
-const NEWS = "Mail is listed only for the site’s admin: no longer in the side list on a computer, or in search, for anyone else";
+const NEWS = "Opens at once from what this device keeps, then catches up; who you are and your day asked in one trip";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1075,8 +1075,47 @@ const IFL = (() => {
     return warm;
   })();
 
+  // ---- How fast this page was, on this device: numbers only, sent once as it's left (POST /api/vitals, functions/_vitals.js)
+  // The time to its first answer (ttfb), to anything on the screen (fcp), to its largest part drawn (lcp: not Safari's
+  // to give, before 26), its slowest tap's answer (inp: the longest event that tap ran, from the press to the next frame)
+  // and how much it jumped about (cls: the worst burst of shifts no tap caused). With the app (at the hub, the part of it
+  // that's open) and whether it's a phone or tablet (a finger's the pointer) or a computer, nothing else: no account, page,
+  // address or time of day. Never from a frame (the page around it counts), nor a page first opened out of sight (its
+  // drawing waited on nothing of its own). VITALS.sent() → what went, for a test; VITALS.now() → what's been seen so far.
+  const VITALS = (() => {
+    const out = {};
+    let sent = null, shown = true;
+    if (typeof window === "undefined" || typeof PerformanceObserver === "undefined" || typeof performance === "undefined") return { now: () => out, sent: () => sent };
+    try { if (window.top !== window) return { now: () => out, sent: () => sent }; } catch (_) { return { now: () => out, sent: () => sent }; }
+    shown = document.visibilityState !== "hidden";
+    const watch = (type, fn, more = {}) => { try { new PerformanceObserver((l) => l.getEntries().forEach(fn)).observe({ type, buffered: true, ...more }); } catch (_) {} };
+    try { const n = performance.getEntriesByType("navigation")[0]; if (n && n.responseStart > 0) out.ttfb = Math.round(n.responseStart); } catch (_) {}
+    watch("paint", (e) => { if (e.name === "first-contentful-paint" && shown) out.fcp = Math.round(e.startTime); });
+    let tapped = false;
+    watch("largest-contentful-paint", (e) => { if (shown && !tapped) out.lcp = Math.round(e.startTime); });
+    for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => { tapped = true; }, { capture: true, once: true, passive: true });
+    watch("event", (e) => { if (e.interactionId) out.inp = Math.max(out.inp || 0, Math.round(e.duration)); }, { durationThreshold: 40 });
+    let burst = 0, first = 0, last = 0;
+    watch("layout-shift", (e) => {
+      if (e.hadRecentInput) return;
+      if (burst && e.startTime - last < 1000 && e.startTime - first < 5000) burst += e.value;
+      else { burst = e.value; first = e.startTime; }
+      last = e.startTime;
+      out.cls = Math.max(out.cls || 0, Math.round(burst * 1000) / 1000);
+    });
+    addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") send(); }, { capture: true });
+    addEventListener("pagehide", () => send(), { capture: true });
+    function send() {
+      if (sent || !Object.keys(out).length || typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") return;
+      const coarse = (() => { try { return matchMedia("(pointer: coarse)").matches; } catch (_) { return false; } })();
+      sent = { app: BUG.app(), dev: coarse ? "phone" : "computer", m: { ...out } };
+      try { navigator.sendBeacon("/api/vitals", new Blob([JSON.stringify(sent)], { type: "text/plain" })); } catch (_) {}
+    }
+    return { now: () => out, sent: () => sent };
+  })();
+
   const api = { bug: BUG, banner: BANNER, header, headerHtml, watch, settle, glyph, APPS, NAME, menu, close, redraw, isOpen: () => !!open, built, note, iconUrl, allow, wantsAllow,
-    updates, offer, here, update: () => apply(true), updateReady: () => !!U.ready, hub, warm: WARM };
+    updates, offer, here, update: () => apply(true), updateReady: () => !!U.ready, hub, warm: WARM, vitals: VITALS };
   // (at the hub, the page's IFL on its window too: so Chat's engine, a frame of this page's, can say it's sent or shut its
   // sheet (parent.IFL.hub.sent(say), parent.IFL.hub.closed(), §8.2), and Today's day and cards find the page's own hub.
   // A const at the top of a module or a script is never the window's own. It can be taken back (configurable), so a
@@ -2563,6 +2602,9 @@ async function hubKnown() {
 }
 async function load() {
   const devP = findDevice();
+  // (the hub's answer, asked once for this load however many wait on it)
+  let knownP = null;
+  const known = () => (knownP ||= hubKnown());
   S.asked5 = false;
   let view = null;
   // (a /weather/ boot: Weather's files asked for at once, beside the session, unless the hub's known not to serve them)
@@ -2585,12 +2627,11 @@ async function load() {
       if (view && thenAfter()) return;
     } catch (e) {
       sessionAsked = null;
-      if (!(await hubKnown())) return;
+      if (!(await known())) return;
       showOut(e.status === 0 ? e.message : e.message || "That sign-in didn’t work. Try again.");
       return;
     }
   }
-  sessionAsked = view ? Promise.resolve(view) : call("/api/session");
   // (the cards asked at the same time, on this device's name, where it's likely someone's signed in here: just back
   // from signing in, or signed in last time. They're drawn only once the session's said who. Anyone else's are asked
   // once it has, so the way in costs the account one request)
@@ -2604,11 +2645,42 @@ async function load() {
       return call(`/api/today?${q}`).then(gotCards, () => {});
     });
   };
-  if (view || readJSON(KEPT)) askCards();
+  // Signed in here last time (and no sign-in just finished): who and the day in one trip (/api/boot: the account asked
+  // once, the sign-in looked up once), on this device's name if it's known within a moment; if it's known only after,
+  // the morning's own part (whether it comes to this device) asked again with it. Anyone else: who, alone, first.
+  const ks0 = view ? null : readJSON(KEPT);
+  if (view) { sessionAsked = Promise.resolve(view); askCards(); }
+  else if (ks0) {
+    asked = true;
+    sessionAsked = Promise.race([devP, new Promise((ok) => setTimeout(() => ok(undefined), 150))]).then((device) => {
+      const q = new URLSearchParams({ v: "2", with: "morning" });
+      if (device) q.set("device", device);
+      S.loadedAt = Date.now();
+      return call(`/api/boot?${q}`).then((r) => (r?.view && typeof r.view === "object" ? r : Promise.reject(Object.assign(new Error(""), { status: 502 })))).then((r) => {
+        if (r.cards) gotCards(r.cards);
+        else if (r.view.signedIn) askCards();
+        if (device === undefined && r.view.signedIn)
+          devP.then((d) => d && call(`/api/morning?${new URLSearchParams({ device: d })}`).then((m) => { if (m && S.view) { S.morning = m; drawMorning(); } }, () => {}));
+        return r.view;
+      }, (e) => {
+        // (an account from before the way in in one trip (Today and the account go live apart), or any trouble but no
+        // network or a sign-in that's over: who, alone, as before, and then the day)
+        if (e?.status === 0 || e?.status === 401) throw e;
+        return call("/api/session").then((v) => { if (v?.signedIn) askCards(); return v; });
+      });
+    });
+  } else sessionAsked = call("/api/session");
+  // (on a Home Screen Today, whose sign-in is its own: the copy kept here of your day drawn at once, while the account's
+  // asked, by the same rule as with no network (this account's, kept under 12 hours ago); the answer, when it comes,
+  // draws the day afresh, or signs you out)
+  let answered = false;
+  sessionAsked.then(() => { answered = true; }, () => { answered = true; });
+  if (ks0 && standalone() && ks0.view?.user?.id && ks0.id === ks0.view.user.id && Date.now() - ks0.at < 12 * 3600e3 && keptFor(ks0.id))
+    known().then((ok) => { if (ok && !answered && !S.view) signedIn(ks0.view, { offline: true }); }).catch(() => {});
   try {
     view = await sessionAsked;
   } catch (e) {
-    if (!(await hubKnown())) return;
+    if (!(await known())) return;
     if (e.status === 401) return signedOutNow(true);
     // (no answer at all (no network, not an error from the account), in a Home Screen Today, whose sign-in is its own and
     // so can't be ended by another app without Today knowing: the copy kept here, if the last answer said it was this
@@ -2622,7 +2694,7 @@ async function load() {
     return;
   }
   if (view?.links) S.links = view.links;
-  if (!(await hubKnown())) return;
+  if (!(await known())) return;
   if (!view?.signedIn) return signedOutNow(true);
   signedIn(view);
   wireLinks();
