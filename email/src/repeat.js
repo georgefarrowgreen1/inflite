@@ -11,9 +11,11 @@ const FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", 
 const SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const ints = (v, lo, hi) => v.split(",").map((x) => (/^[+-]?\d{1,4}$/.test(x) ? Number(x) : NaN)).filter((n) => Number.isInteger(n) && n >= lo && n <= hi && n !== 0);
 
-// RRULE's value → { freq, interval, count, until (its text), byday: [{ n, wd }], bymonthday, bymonth, bysetpos, wkst } | null
+// RRULE's value → { freq, interval, count, until (its text), byday: [{ n, wd }], bymonthday, bymonth, bysetpos, wkst } | null.
+// One longer than any real one, or with more in a list than there are days in a month (months in a year), isn't read
 export function parseRule(s) {
   const r = { freq: null, interval: 1, count: null, until: null, byday: [], bymonthday: [], bymonth: [], bysetpos: [], wkst: 1 };
+  if (String(s || "").length > 300) return null;
   for (const part of String(s || "").trim().toUpperCase().split(";")) {
     if (!part) continue;
     const [k, v = ""] = part.split("=");
@@ -35,6 +37,10 @@ export function parseRule(s) {
     else return null;
   }
   if (!r.freq || !r.interval || r.count === 0 || r.until === "" || r.wkst < 0) return null;
+  // (each list once over: the same day twice is one day)
+  r.byday = [...new Map(r.byday.map((b) => [`${b.n}${b.wd}`, b])).values()];
+  for (const k of ["bymonthday", "bymonth", "bysetpos"]) r[k] = [...new Set(r[k])];
+  if (r.byday.length > 31 || r.bymonthday.length > 31 || r.bysetpos.length > 31 || r.bymonth.length > 12) return null;
   return r;
 }
 
@@ -52,10 +58,10 @@ function monthDays(r, y, mo, firstDay) {
   let set = null;
   if (r.bymonthday.length) set = r.bymonthday.map((d) => (d > 0 ? d : len + 1 + d)).filter((d) => d >= 1 && d <= len);
   if (r.byday.length) {
-    const days = new Set();
+    const days = new Set(), by = [[], [], [], [], [], [], []];
+    for (let d = 1; d <= len; d++) by[wdOf(dn(y, mo, d))].push(d);
     for (const { n, wd } of r.byday) {
-      const all = [];
-      for (let d = 1; d <= len; d++) if (wdOf(dn(y, mo, d)) === wd) all.push(d);
+      const all = by[wd];
       if (!n) all.forEach((d) => days.add(d));
       else { const d = n > 0 ? all[n - 1] : all[all.length + n]; if (d) days.add(d); }
     }
@@ -66,10 +72,10 @@ function monthDays(r, y, mo, firstDay) {
 }
 // (a YEARLY BYDAY with no BYMONTH: the nth of that weekday in the year)
 function yearDays(r, y) {
-  const days = new Set(), first = dn(y, 1, 1), last = dn(y, 12, 31);
+  const days = new Set(), first = dn(y, 1, 1), last = dn(y, 12, 31), by = [[], [], [], [], [], [], []];
+  for (let d = first; d <= last; d++) by[wdOf(d)].push(d);
   for (const { n, wd } of r.byday) {
-    const all = [];
-    for (let d = first; d <= last; d++) if (wdOf(d) === wd) all.push(d);
+    const all = by[wd];
     if (!n) all.forEach((d) => days.add(d));
     else { const d = n > 0 ? all[n - 1] : all[all.length + n]; if (d != null) days.add(d); }
   }
@@ -79,7 +85,8 @@ function yearDays(r, y) {
 // A rule's dates, from its first (wall: { y, mo, d, hh, mi, ss } in zone): each { start: ms, day: "yyyymmdd" } that falls
 // within [from, to], in order, at most max of them. COUNT counts from the first date, however long ago that was; UNTIL
 // is inclusive. ex: EXDATEs (a moment in ms, or a "yyyymmdd" for a date); rd: RDATEs (ms). Never more than 4000
-// periods looked at, so a broken rule can't run on.
+// periods looked at, and a rule that ends (COUNT or UNTIL) never past ten years from its first date, so a broken rule
+// can't run on.
 export function expand(r, { wall, zone, from = -Infinity, to = Infinity, ex = [], rd = [], max = 400 }) {
   // (no rule, only dates added: the first date, and those)
   r = r || { freq: null, interval: 1, count: null, until: null, byday: [], bymonthday: [], bymonth: [], bysetpos: [], wkst: 1 };
@@ -90,6 +97,8 @@ export function expand(r, { wall, zone, from = -Infinity, to = Infinity, ex = []
     const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(r.until);
     until = !m[4] ? zonedMs(+m[1], +m[2], +m[3] + 1, 0, 0, 0, zone) - 1 : m[7] ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : zonedMs(+m[1], +m[2], +m[3], +m[4], +m[5], +m[6], zone);
   }
+  // (an UNTIL of 9999, or a COUNT of years of days: no later than ten years on)
+  if (r.until || r.count) until = Math.min(until, at(first + 3653));
   const exMs = new Set(ex.filter((x) => typeof x === "number")), exDay = new Set(ex.filter((x) => typeof x === "string"));
   const out = [];
   let n = 0, done = false;

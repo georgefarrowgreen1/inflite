@@ -17,7 +17,7 @@
 // DMARC passed for its sender; this file reads each email for every switch that's on, and answers the card and the strip.
 import { ensureSchema } from "./db.js";
 import { parseRule, expand, lastOf, repeatWords, dayKey } from "./repeat.js";
-import { parcelsOf, keepParcels, parcelsCard, threadParcels, domainOf } from "./parcels.js";
+import { parcelsOf, keepParcels, parcelsCard, threadParcels, domainOf, sameSender } from "./parcels.js";
 import { billsOf, keepBills, billsCard, threadBills } from "./bills.js";
 
 const H = 3600e3, DAY = 864e5;
@@ -43,8 +43,9 @@ export function entities(s) {
   });
 }
 // (no markup, no control characters, one line)
-export const plain = (s) => entities(String(s ?? "").replace(/<[^>]*>/g, " ")).replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e]/g, " ").replace(/\s+/g, " ").trim();
-export const cut = (s, n) => { s = plain(s); return s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s; };
+export const plain = (s) => entities(String(s ?? "").replace(/<[^<>]*>/g, " ")).replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e]/g, " ").replace(/\s+/g, " ").trim();
+// (of a long one, its first 2000 characters: no more is ever shown)
+export const cut = (s, n) => { s = plain(String(s ?? "").slice(0, Math.max(2000, n))); return s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s; };
 const one = (v) => (Array.isArray(v) ? v.find((x) => x != null && x !== "") : v);
 const obj = (v) => { v = one(v); return v && typeof v === "object" ? v : null; };
 // (a value as words: a string or number, or a thing's name)
@@ -52,7 +53,7 @@ function str(v) {
   v = one(v);
   if (v && typeof v === "object") v = one(v.name) ?? one(v["@value"]) ?? "";
   if (v && typeof v === "object") v = one(v["@value"]) ?? "";
-  return typeof v === "string" || typeof v === "number" ? plain(v) : "";
+  return typeof v === "string" || typeof v === "number" ? plain(String(v).slice(0, 2000)) : "";
 }
 const typesOf = (o) => [].concat(o?.["@type"] ?? []).map((t) => String(t).replace(/^.*[/#:]/, ""));
 const kindOf = (o) => KINDS[typesOf(o).find((t) => KINDS[t])] || null;
@@ -170,8 +171,42 @@ const codeOf = (place) => { const c = str(place?.iataCode).toUpperCase(); return
 const localityOf = (place) => cut(str(obj(place?.address)?.addressLocality), 60);
 
 // ---------------------------------------------------------------------------------------------------------------------
-// JSON-LD and microdata, as objects
+// JSON-LD and microdata, as objects. Of an email's HTML, its first 256 KB (where any real one puts its details), and read
+// by indexOf and by patterns that never read on to the end again for each tag left open
 // ---------------------------------------------------------------------------------------------------------------------
+export const MAX_HTML = 256 * 1024;
+// (where a block's closing tag, </tag> with only space before its >, is at or after i in the page, lower-cased: [its
+// start, just after it], or null)
+function closing(low, tag, i) {
+  const re = new RegExp(`</${tag}\\s*>`, "y");
+  for (let j = low.indexOf(`</${tag}`, i); j !== -1; j = low.indexOf(`</${tag}`, j + 1)) { re.lastIndex = j; if (re.test(low)) return [j, re.lastIndex]; }
+  return null;
+}
+// (the page with its comments out: one left open, and all after it, left as they are)
+function dropComments(src) {
+  let out = "", from = 0;
+  for (let i; (i = src.indexOf("<!--", from)) !== -1; ) {
+    const j = src.indexOf("-->", i + 4);
+    if (j === -1) break;
+    out += src.slice(from, i);
+    from = j + 3;
+  }
+  return out + src.slice(from);
+}
+// (the page with its scripts', styles' and head's insides out, each put as by; one left open is left as it is, and with
+// none closed after it, every later one of its kind too)
+export function dropBlocks(html, by = "") {
+  const src = String(html), low = src.toLowerCase(), open = new Set(["script", "style", "head"]);
+  let out = "", from = 0;
+  for (const m of low.matchAll(/<(script|style|head)\b/g)) {
+    if (m.index < from || !open.has(m[1])) continue;
+    const c = closing(low, m[1], m.index + m[0].length);
+    if (!c) { open.delete(m[1]); continue; }
+    out += src.slice(from, m.index) + by;
+    from = c[1];
+  }
+  return out + src.slice(from);
+}
 // (a block as senders write it, forgiven its HTML comment or CDATA wrapper, its escaped quotes and its trailing commas;
 // one that still isn't JSON is left alone)
 function looseJson(s) {
@@ -185,10 +220,14 @@ function looseJson(s) {
   return undefined;
 }
 export function jsonLd(html) {
-  const out = [];
-  const re = /<script\b[^>]*?\btype\s*=\s*(["']?)\s*application\/ld\+json\s*\1[^>]*>([\s\S]*?)<\/script\s*>/gi;
-  for (const m of String(html || "").matchAll(re)) {
-    const v = looseJson(m[2]);
+  const out = [], src = String(html || "").slice(0, MAX_HTML), low = src.toLowerCase();
+  let from = 0;
+  for (const m of low.matchAll(/<script\b([^<>]*)>/g)) {
+    if (m.index < from || !/\btype\s*=\s*(["']?)\s*application\/ld\+json\s*\1/.test(m[1])) continue;
+    const c = closing(low, "script", m.index + m[0].length);
+    if (!c) break;
+    from = c[1];
+    const v = looseJson(src.slice(m.index + m[0].length, c[0]));
     if (v !== undefined) out.push(v);
     if (out.length >= 20) break;
   }
@@ -209,8 +248,8 @@ function attrsOf(s) {
 function tree(html) {
   const root = { tag: "", attrs: {}, kids: [] }, stack = [root];
   let n = 0;
-  const src = String(html).replace(/<!--[\s\S]*?-->/g, "").replace(/<(script|style|head)\b[\s\S]*?<\/\1\s*>/gi, "");
-  for (const m of src.matchAll(/<(\/?)([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>|([^<]+)/g)) {
+  const src = dropBlocks(dropComments(String(html).slice(0, MAX_HTML)));
+  for (const m of src.matchAll(/<(\/?)([a-zA-Z][\w:-]*)((?:[^<>"']|"[^"]*"|'[^']*')*)>|([^<]+)/g)) {
     if (++n > 40000) break;
     const top = stack[stack.length - 1];
     if (m[4] !== undefined) { top.kids.push(m[4]); continue; }
@@ -291,7 +330,7 @@ export function reservationsIn(roots) {
   };
   const found = [], seen = new Set();
   const walk = (v, d) => {
-    if (d > 14 || found.length >= 60 || !v || typeof v !== "object") return;
+    if (d > 14 || found.length >= 20 || !v || typeof v !== "object") return;
     if (Array.isArray(v)) return v.forEach((x) => walk(x, d + 1));
     if (typeof v["@id"] === "string" && Object.keys(v).length === 1 && ids.has(v["@id"])) v = ids.get(v["@id"]);
     if (seen.has(v)) return;
@@ -494,7 +533,7 @@ export function icsBookings(text, { method: partMethod = "", zone, sender = "" }
   if (["REPLY", "COUNTER", "REFRESH", "DECLINECOUNTER"].includes(method)) return [];
   const out = [];
   for (const ev of events) {
-    const v = (k) => (ev[k] ? plain(unescapeIcs(ev[k].value)) : "");
+    const v = (k) => (ev[k] ? plain(unescapeIcs(ev[k].value.slice(0, 2000))) : "");
     const t0 = icsTime(ev.DTSTART, zone);
     let t1 = icsTime(ev.DTEND, zone);
     const uid = v("UID"), title = cut(v("SUMMARY"), 80), loc = cut(unescapeIcs(ev.LOCATION?.value || "").split("\n")[0], 60);
@@ -558,8 +597,10 @@ export async function spotEmail({ html = "", attachments = [], sender = "", zone
       const text = asText(a.content);
       if (text.length < 300000 && /BEGIN:VEVENT/i.test(text)) list.push(...icsBookings(text, { method: a.method, zone, sender }));
     }
+  // (20 at most from one email: no real one holds more)
   const seen = new Set(), out = [];
   for (const b of list) {
+    if (out.length >= 20) break;
     let id = `${b.kind}-${await hashOf(b.key)}`;
     // (one date of a repeating one: the series' id, and the date it was)
     if (b.override) id = `${id}~${b.override.day || dayKey(Math.floor(b.override.rid / DAY))}`;
@@ -685,18 +726,26 @@ const OCC = `INSERT INTO spot_occ (series_id, rid, start_at, end_at, cancelled, 
 const seriesLast = (rule) => lastOf(rule.r, { wall: rule.w, zone: rule.z, ex: rule.ex, rd: rule.rd });
 
 // An email's bookings, kept: each new one added, each known one brought up to date (unless this email is older than the
-// one it was last read from). Not those of a sender and kind said to be Wrong, and none already over (ended more than 12
+// one it was last read from, or from another sender: one who knows a booking's reference or an invite's UID never changes
+// or cancels someone else's). Not those of a sender and kind said to be Wrong, and none already over (ended more than 12
 // hours ago: as from the read-back, so for mail as it comes too, which may be a receipt for a stay that's over)
 export async function keepBookings(env, list, { threadId, messageId, sender, mailDate, now = Date.now() }) {
   if (!list.length) return 0;
   sender = String(sender || "").toLowerCase();
   const { results: wrong } = await env.DB.prepare(`SELECT kind FROM spot_wrong WHERE sender = ?1`).bind(sender).all();
   const no = new Set(wrong.map((w) => w.kind));
+  // (who each known one was read from; a date moved or cancelled only of a series known, from its own sender)
+  const ids = [...new Set(list.map((b) => own(b.id)))];
+  const { results: had } = await env.DB.prepare(`SELECT id, sender FROM spots WHERE id IN (${ids.map((_, i) => `?${i + 1}`).join(", ")})`).bind(...ids).all();
+  const from = new Map(had.map((r) => [r.id, r.sender]));
+  const theirs = (id) => from.has(id) && !sameSender(from.get(id), sender);
+  const series = new Set(list.filter((b) => !b.override).map((b) => b.id));
   const ops = [];
   for (const b of list) {
-    if (no.has(b.kind) || !ID_RE.test(b.id)) continue;
+    if (no.has(b.kind) || !ID_RE.test(b.id) || theirs(own(b.id))) continue;
     if (b.override) {
       const sid = b.id.split("~")[0];
+      if (!from.has(sid) && !series.has(sid)) continue;
       ops.push(
         env.DB.prepare(OCC).bind(sid, b.override.rid, b.start ?? null, b.end ?? null, b.status === "cancelled" ? 1 : 0, cut(b.title, 80), cut(b.sub, 120), threadId, messageId, mailDate),
         env.DB.prepare(`INSERT OR IGNORE INTO spot_threads (spot_id, thread_id) VALUES (?1, ?2)`).bind(sid, threadId)
@@ -755,6 +804,8 @@ function headersOf(raw) {
 // parcel or a bill to keep (the read-back reads them from the original then). → how many kept
 async function readOne(env, on, mail, { threadId, messageId, sender, date, zone, now = Date.now() }) {
   let n = 0;
+  // (no later than it came: an email dated ahead never stands over the ones that come after it)
+  if (Number.isFinite(date) && date > now) date = now;
   const at = { threadId, messageId, sender, mailDate: date, zone, now };
   if (on.trips)
     try { n += await keepBookings(env, await spotEmail({ html: mail.html, attachments: mail.attachments, sender, zone }), at); }
@@ -811,6 +862,11 @@ export async function readBack(env, { budgetMs = 20000, batch = 8, now = Date.no
          AND (date > ?3 OR (date = ?3 AND id > ?4)) ORDER BY date, id LIMIT ?5`
     ).bind(st.from, st.until, st.at, st.id, batch).all();
     for (const m of results) {
+      // (its place kept before it's read: one that stops the run itself (too long at it, say) is passed over next time,
+      // never read again and again, holding up all after it)
+      st.at = m.date;
+      st.id = m.id;
+      await env.DB.prepare(`UPDATE meta SET v = ?2 WHERE k = 'spot_back' AND ${mine}`).bind(n, JSON.stringify(st)).run();
       try {
         const body = await env.MAIL.get(`body/${m.id}.json`).then((o) => (o ? o.json() : null)).catch(() => null);
         const html = String(body?.html || ""), text = String(body?.text || "");
@@ -828,14 +884,11 @@ export async function readBack(env, { budgetMs = 20000, batch = 8, now = Date.no
       } catch (err) {
         console.error("spot: couldn't read back a message", m.id, err);
       }
-      st.at = m.date;
-      st.id = m.id;
     }
     if (results.length < batch) {
       await env.DB.prepare(`DELETE FROM meta WHERE k = 'spot_back' AND ${mine}`).bind(n).run();
       return false;
     }
-    await env.DB.prepare(`UPDATE meta SET v = ?2 WHERE k = 'spot_back' AND ${mine}`).bind(n, JSON.stringify(st)).run();
   } while (Date.now() - began < budgetMs);
   return true;
 }

@@ -1,13 +1,14 @@
 // Mail on Your Day, stage 2: parcels and returns, read from mail by rules alone (spot.js's way: no AI of any kind,
 // nothing sent anywhere to be read; an email that can't be read is left alone, never guessed at). In this order of trust:
 //   1. the order and delivery details a shop or courier puts in its email in schema.org's form (JSON-LD or microdata):
-//      ParcelDelivery and Order;
+//      ParcelDelivery and Order, only from a courier's or a known shop's own domain (anyone's domain passes its own DMARC,
+//      so details from evri-redelivery.top naming Evri as the carrier are never read);
 //   2. rules for the couriers' and the big shops' own emails, by the domain of the address they're from (that domain, or
 //      a name under it: evri-redelivery.top or evri.com.parcel.top is never Evri), and only where DMARC passed for it;
 //   3. nothing else: no "your order" guessed at from anyone else.
 // A parcel's tracking page is the courier's own, made from its fixed https address and the tracking number (or, for an
 // Amazon order with no courier's number, Amazon's order page and the order number): never a link taken from an email.
-import { jsonLd, microdata, plain, cut, timeOf, zonedMs, zoneParts, hashOf } from "./spot.js";
+import { jsonLd, microdata, plain, cut, timeOf, zonedMs, zoneParts, hashOf, dropBlocks, MAX_HTML } from "./spot.js";
 
 const H = 3600e3, DAY = 864e5;
 const enc = encodeURIComponent;
@@ -24,6 +25,12 @@ export const COURIERS = {
   parcelforce: { name: "Parcelforce", domains: ["parcelforce.co.uk", "parcelforce.com"], sure: /\b[A-Z]{2}\d{9}GB\b/, labelled: /^(?:[A-Z]{2}\d{7}|[A-Z]{2}\d{9}GB)$/, track: (r) => `https://www.parcelforce.com/track-trace?trackNumber=${enc(r)}` },
   amazon: { name: "Amazon", domains: ["amazon.co.uk", "amazon.com"], sure: /\bTBA\d{9,12}\b/, labelled: /^TBA\d{9,12}$/, track: null },
 };
+// (the shops whose own emails' order details are read, by their domains, as the couriers')
+export const SHOPS = {
+  zara: { name: "Zara", domains: ["zara.com"] }, asos: { name: "ASOS", domains: ["asos.com"] }, wiggle: { name: "Wiggle", domains: ["wiggle.com", "wiggle.co.uk"] },
+  johnlewis: { name: "John Lewis", domains: ["johnlewis.com", "johnlewis.co.uk"] }, next: { name: "Next", domains: ["next.co.uk"] },
+  ms: { name: "M&S", domains: ["marksandspencer.com"] }, hm: { name: "H&M", domains: ["hm.com"] }, uniqlo: { name: "Uniqlo", domains: ["uniqlo.com"] },
+};
 const ORDER_PAGE = { "amazon.co.uk": "https://www.amazon.co.uk/gp/your-account/order-details?orderID=", "amazon.com": "https://www.amazon.com/gp/your-account/order-details?orderID=" };
 const AMAZON_ORDER = /\b\d{3}-\d{7}-\d{7}\b/;
 
@@ -35,9 +42,20 @@ export const returnsOf = (shop) => RETURNS[fold(shop).replace(/\.(?:co\.uk|com)$
 // The address's domain, and whether it's one of a list's (that domain, or a name under it)
 export const domainOf = (email) => String(email || "").toLowerCase().replace(/^.*@/, "").replace(/\.$/, "").trim();
 export const under = (d, base) => !!d && (d === base || d.endsWith(`.${base}`));
+// (whether two addresses are the same sender's: the same site (a domain's last two names, or three under a country's own
+// co.uk, com.au, ...), or at a mail service anyone can have an address at, the same address)
+const OPEN = new Set(["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "hotmail.co.uk", "live.com", "live.co.uk", "msn.com", "yahoo.com", "yahoo.co.uk",
+  "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "gmx.com", "btinternet.com"]);
+export const siteOf = (email) => { const d = domainOf(email).split("."), cc = /^(?:co|com|org|net|gov|ac|ltd|plc|nhs|sch)$/.test(d[d.length - 2] || "") && (d[d.length - 1] || "").length === 2; return d.slice(cc ? -3 : -2).join("."); };
+export const sameSender = (a, b) => { const s = siteOf(a); return !!s && s === siteOf(b) && (!OPEN.has(s) || String(a).toLowerCase() === String(b).toLowerCase()); };
 export function courierOf(email) {
   const d = domainOf(email);
   for (const [key, c] of Object.entries(COURIERS)) { const base = c.domains.find((b) => under(d, b)); if (base) return { key, base, ...c }; }
+  return null;
+}
+export function shopOf(email) {
+  const d = domainOf(email);
+  for (const [key, s] of Object.entries(SHOPS)) { const base = s.domains.find((b) => under(d, b)); if (base) return { key, base, ...s }; }
   return null;
 }
 const courierByName = (name) => {
@@ -62,7 +80,7 @@ export function trackOf(key, ref, order = "", base = "") {
 // ---------------------------------------------------------------------------------------------------------------------
 export function textOf(text, html) {
   let t = String(text || "");
-  if (!t.trim() && html) t = String(html).replace(/<(script|style|head)\b[\s\S]*?<\/\1\s*>/gi, " ").replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d|table|section)>/gi, "\n").replace(/<\/t[dh]>/gi, " ");
+  if (!t.trim() && html) t = dropBlocks(String(html).slice(0, MAX_HTML), " ").replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d|table|section)>/gi, "\n").replace(/<\/t[dh]>/gi, " ");
   return t.slice(0, 60000).split(/\n/).map((l) => plain(l)).filter(Boolean).join("\n");
 }
 
@@ -275,11 +293,14 @@ function fromRules({ text, subject, sender, mailDate, zone }) {
 // An email's parcels: { html, text, subject, sender, mailDate, zone } → [{ source, carrierKey, carrier, shop, order, ref,
 // stage 0–3, failed, window, due, deliveredAt, note, orderedAt }]. The order details first; rules only where there are none
 export function parcelsOf({ html = "", text = "", subject = "", sender = "", mailDate = Date.now(), zone = "Europe/London" }) {
-  const schema = fromSchema(html, { mailDate, zone });
+  // (the order details only from a courier's or a known shop's own address; from anyone else, not read at all)
+  const c = courierOf(sender), shop = c ? null : shopOf(sender);
+  const schema = c || shop ? fromSchema(html, { mailDate, zone }) : [];
   if (schema.length) {
-    // (the courier's own form for the number, where the sender is that courier)
-    const c = courierOf(sender);
-    return schema.slice(0, 5).map((p) => ({ ...p, base: c?.base || "", carrierKey: p.carrierKey || c?.key || null, carrier: p.carrier || c?.name || "" }));
+    // (the courier's own form for the number, where the sender is that courier; and a courier's own email is carried by
+    // that courier, whichever its details name)
+    const own = (p) => c && c.key !== "amazon" && p.carrierKey !== c.key;
+    return schema.slice(0, 5).map((p) => ({ ...p, base: c?.base || "", shop: p.shop || shop?.name || "", carrierKey: own(p) ? c.key : p.carrierKey || c?.key || null, carrier: own(p) ? c.name : p.carrier || c?.name || "" }));
   }
   return fromRules({ text: textOf(text, html), subject: plain(subject), sender, mailDate, zone });
 }
@@ -307,14 +328,20 @@ export async function keepParcels(env, list, { threadId, messageId, sender, mail
   sender = String(sender || "").toLowerCase();
   if (await env.DB.prepare(`SELECT 1 AS k FROM spot_wrong WHERE sender = ?1 AND kind = 'parcel'`).bind(sender).first()) return 0;
   let n = 0;
+  // (one parcel's emails, from its shop and its courier: another sender's, knowing its number, never joins it)
+  const c = courierOf(sender)?.key;
+  const agrees = (r, p) => sameSender(r.sender, sender) || (!!c && c === r.carrier_key) || (!!p.carrierKey && courierOf(r.sender)?.key === p.carrierKey);
   for (const p of list) {
-    let row = p.ref ? await env.DB.prepare(`SELECT * FROM parcels WHERE ref = ?1 ORDER BY updated DESC LIMIT 1`).bind(p.ref).first() : null;
+    let others = false;
+    const pick = ({ results }) => { const r = results.find((x) => agrees(x, p)) || null; others ||= !r && results.length > 0; return r; };
+    let row = p.ref ? pick(await env.DB.prepare(`SELECT * FROM parcels WHERE ref = ?1 ORDER BY updated DESC LIMIT 5`).bind(p.ref).all()) : null;
     if (!row && p.order)
-      row = await env.DB.prepare(`SELECT * FROM parcels WHERE order_no = ?1 AND (COALESCE(shop, '') = '' OR ?2 = '' OR lower(shop) = lower(?2)) ORDER BY updated DESC LIMIT 1`).bind(p.order, p.shop || "").first();
+      row = pick(await env.DB.prepare(`SELECT * FROM parcels WHERE order_no = ?1 AND (COALESCE(shop, '') = '' OR ?2 = '' OR lower(shop) = lower(?2)) ORDER BY updated DESC LIMIT 5`).bind(p.order, p.shop || "").all());
     // (a delivered one long gone, read again from the read-back: not made again)
     if (!row && p.stage === 3 && (p.deliveredAt ?? mailDate) < now - 18 * H && !returnBy(p.shop, p.orderedAt, zone)) continue;
     const newer = !row || mailDate >= row.mail_date;
-    const id = row?.id || `parcel-${await hashOf(p.ref ? `ref|${p.ref}` : p.order ? `order|${p.order}|${fold(p.shop)}` : `msg|${messageId}`)}`;
+    // (one of the same number from a sender that doesn't agree: its own, by this sender's site)
+    const id = row?.id || `parcel-${await hashOf((p.ref ? `ref|${p.ref}` : p.order ? `order|${p.order}|${fold(p.shop)}` : `msg|${messageId}`) + (others ? `|${siteOf(sender)}` : ""))}`;
     const stage = !row ? p.stage : row.stage === 3 || p.stage === 3 ? 3 : p.failed && newer ? 1 : Math.max(row.stage, p.stage);
     const r = row ? { ...row } : { id, hidden: 0, created: now, shop: "", carrier: "", carrier_key: null, base: "", ref: "", order_no: "", note: "", mail_date: 0 };
     r.stage = stage;
@@ -353,7 +380,7 @@ const parcelOut = (r) => ({
 // hours, or whose last day to return is in the next 3; soonest first, 10 at most
 export async function parcelsCard(env, now = Date.now()) {
   const { results } = await env.DB.prepare(
-    `SELECT * FROM parcels WHERE hidden = 0 AND ((stage < 3 AND mail_date >= ?1) OR (stage = 3 AND delivered_at >= ?2) OR (return_by >= ?3 AND return_by <= ?4)) LIMIT 200`
+    `SELECT * FROM parcels WHERE hidden = 0 AND ((stage < 3 AND mail_date >= ?1) OR (stage = 3 AND delivered_at >= ?2) OR (return_by >= ?3 AND return_by <= ?4)) ORDER BY mail_date DESC LIMIT 200`
   ).bind(now - 30 * DAY, now - 18 * H, now, now + 3 * DAY).all();
   const when = (r) => (r.stage < 3 ? r.win_from ?? r.due_at ?? now + 30 * DAY : r.delivered_at >= now - 18 * H ? r.delivered_at : r.return_by);
   return results.sort((a, b) => when(a) - when(b) || (a.id < b.id ? -1 : 1)).slice(0, 10).map(parcelOut);

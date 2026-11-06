@@ -1,6 +1,8 @@
 // Mail on Your Day, stage 2: bills and subscriptions, read from mail by rules alone (spot.js's way: no AI of any kind,
 // nothing sent anywhere to be read; one it's unsure of, the amount or the date, is left alone). In this order of trust:
-//   1. the invoice a company puts in its email in schema.org's form (JSON-LD or microdata): Invoice;
+//   1. the invoice a company puts in its email in schema.org's form (JSON-LD or microdata): Invoice, only from one of the
+//      senders below (anyone's domain passes its own DMARC, so an Invoice from hmrc-refund.top naming HMRC is never read),
+//      and by that sender's own name, never the one the invoice gives;
 //   2. rules for the senders of UK household bills and subscriptions, by the domain of the address they're from (that
 //      domain, or a name under it; never one that only looks like it), and only where DMARC passed for it.
 // In pounds alone: an amount in another currency isn't read. Kinds: "bill" (an amount due), "renewal" (renews on a
@@ -105,6 +107,8 @@ function poundsOf(v) {
 }
 function fromSchema(html, { sender, fromName, mailDate, zone, words }) {
   if (!/application\/ld\+json|itemscope/i.test(html || "")) return [];
+  const known = senderOf(sender, fromName, words);
+  if (!known) return [];
   const out = [];
   for (const inv of invoices([...jsonLd(html), ...microdata(html)])) {
     const amount = poundsOf(inv.totalPaymentDue) ?? poundsOf(inv.minimumPaymentDue);
@@ -112,12 +116,11 @@ function fromSchema(html, { sender, fromName, mailDate, zone, words }) {
     const status = str(inv.paymentStatus).replace(/^.*[/#:]/, "").toLowerCase();
     const paid = /complete|paid/.test(status) && !/due/.test(status);
     if (!amount || (!t && !paid)) continue;
-    const known = senderOf(sender, fromName, words);
-    const name = cut(str(inv.provider) || str(inv.broker) || known?.name || fromName || domainOf(sender), 40);
-    const cat = known ? (known.cat === "insurer" ? insured(words) : known.cat) : "Other";
+    const name = cut(known.name, 40);
+    const cat = known.cat === "insurer" ? insured(words) : known.cat;
     const w = t ? t.wall || wallDay(t.ms, zone) : wallDay(mailDate, zone);
     out.push({
-      source: "schema", kind: paid ? "sub" : "bill", key: known?.key || domainOf(sender), sender: name, cat, amount,
+      source: "schema", kind: paid ? "sub" : "bill", key: known.key, sender: name, cat, amount,
       due: zonedMs(w.y, w.mo, w.d, 0, 0, 0, zone), auto: paid || /automatically/.test(status), was: null, per: perOf(str(inv.billingPeriod)) || perOf(words),
       account: cut(str(inv.accountId) || str(inv.confirmationNumber), 24),
     });
@@ -267,7 +270,8 @@ export async function keepBills(env, list, { threadId, messageId, sender, mailDa
 
 async function historyOf(env, keys) {
   if (!keys.length) return new Map();
-  const { results } = await env.DB.prepare(`SELECT sender_key, at, pence, kind, per FROM bill_history WHERE sender_key IN (${keys.map((_, i) => `?${i + 1}`).join(", ")}) ORDER BY at`).bind(...keys).all();
+  // (the newest 1000 of them, oldest first: no more than 13 months of a few senders' is ever kept)
+  const { results } = await env.DB.prepare(`SELECT * FROM (SELECT sender_key, at, pence, kind, per FROM bill_history WHERE sender_key IN (${keys.map((_, i) => `?${i + 1}`).join(", ")}) ORDER BY at DESC LIMIT 1000) ORDER BY at`).bind(...keys).all();
   const by = new Map(keys.map((k) => [k, []]));
   for (const r of results) by.get(r.sender_key)?.push(r);
   return by;
@@ -286,7 +290,7 @@ export async function billsCard(env, now = Date.now(), zone = "Europe/London", s
   const w = wallDay(now, zone), today = zonedMs(w.y, w.mo, w.d, 0, 0, 0, zone);
   const [{ results }, { results: hist }, { results: paid }] = await Promise.all([
     env.DB.prepare(`SELECT * FROM bills WHERE hidden = 0 AND due_at >= ?1 AND due_at <= ?2 AND (auto = 0 OR due_at <= ?3) ORDER BY due_at, id LIMIT 20`).bind(today, now + 14 * DAY, now + 7 * DAY).all(),
-    env.DB.prepare(`SELECT sender_key, at, pence, kind, per, cat FROM bill_history WHERE at > ?1 AND at <= ?2 ORDER BY at`).bind(now - 400 * DAY, now + 14 * DAY).all(),
+    env.DB.prepare(`SELECT * FROM (SELECT sender_key, at, pence, kind, per, cat FROM bill_history WHERE at > ?1 AND at <= ?2 ORDER BY at DESC LIMIT 2000) ORDER BY at`).bind(now - 400 * DAY, now + 14 * DAY).all(),
     env.DB.prepare(`SELECT amount FROM bills WHERE hidden = 0 AND auto = 1 AND kind != 'trial' AND due_at >= ?1 AND due_at <= ?2`).bind(now - 7 * DAY, now).all(),
   ]);
   const by = await historyOf(env, [...new Set(results.map((r) => r.sender_key))]);
