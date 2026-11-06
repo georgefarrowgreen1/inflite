@@ -209,6 +209,26 @@ export default (M) => {
               onclick: () => push(signatureView),
             })
           ),
+          // (Mail on Your Day: what Mail looks for in mail, for Today; read back over 60 days once it's turned on)
+          k("Spot in your mail"),
+          group(
+            row({
+              ic: "calendar",
+              tint: "green",
+              title: "Trips and bookings",
+              sub: "Flights, trains, hotels, tables, tickets",
+              end: swOf(data.spot?.trips, "Trips and bookings", (v) => {
+                let tz = null;
+                try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch {}
+                saveSettings({ spot: { trips: v, tz } });
+              }),
+            })
+          ),
+          hint(
+            data.spot?.reading
+              ? "Reading the last 60 days of mail for bookings, a few at a time."
+              : "Read on Mail’s own server, by rules alone: no AI, and nothing sent anywhere to be read. What it finds is on Your Day, for you alone."
+          ),
         ],
       };
     }

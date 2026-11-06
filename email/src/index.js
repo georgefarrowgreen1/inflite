@@ -19,6 +19,7 @@ import { cleanQuote, quoteFrom, withQuote } from "./quote.js";
 import { keyOk, card, notice, searchParams } from "./connect.js";
 import { body } from "./body.js";
 import { appFetch } from "./apps.js";
+import { readBack, setSpot, spotState, threadSpots, hideSpot, wrongSpot, ID_RE as SPOT_ID } from "./spot.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -92,6 +93,8 @@ export default {
     }
     // mail that came while the database wasn't answering, read in now it is (receive.js)
     await retryPending(env, ctx).catch((err) => console.error("scheduled: pending", err));
+    // the last 60 days read back for bookings, a few at a time, once Trips and Bookings is turned on (spot.js)
+    await readBack(env, { budgetMs: 15000 }).catch((err) => console.error("scheduled: bookings", err));
     // once a day: what's been in the Trash 30 days goes for good, and people kept for addressing mail who've had
     // nothing to or from them in half a year, with no mail left of theirs
     await tidy(env).catch((err) => console.error("scheduled: tidy", err));
@@ -173,6 +176,15 @@ async function api(request, env, ctx, url, fromAccount = false, hub = null) {
     if (!(await keyOk(request, env))) throw new HttpError(401, "Not allowed.");
     await ensureSchema(env);
     return json(await card(env));
+  }
+  // Today's Hide on a booking from Mail (Mail on Your Day), by the same key: { id } → 204, or 404 for one Mail hasn't got
+  if (pathname === "/api/connector/hide" && method === "POST") {
+    if (!(await keyOk(request, env))) throw new HttpError(401, "Not allowed.");
+    const b = await request.json().catch(() => null);
+    if (typeof b?.id !== "string" || !SPOT_ID.test(b.id)) throw new HttpError(400, "Which booking?");
+    await ensureSchema(env);
+    if (!(await hideSpot(env, b.id, true))) throw new HttpError(404, "No such booking.");
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store", ...SAFE } });
   }
 
   // Mutating requests must carry a custom header, which browsers won't send
@@ -258,11 +270,15 @@ async function route(request, env, ctx, url, view, hub = null) {
   if (pathname === "/api/version" && method === "GET") return json({ v: await mailVersion(env), build: buildOf(env), app: await appBuild(env, request) });
   if (pathname === "/api/me" && method === "GET") return me(env, view);
   // Settings: the addresses, what happens to mail to others, the signature
+  // (and Spot in Your Mail: { spot: { trips, tz } }, Mail on Your Day, spot.js)
   if (pathname === "/api/settings") {
-    if (method === "GET") return json(await settings(env, senderName(env, view)));
+    const all = async () => ({ ...(await settings(env, senderName(env, view))), spot: await spotState(env) });
+    if (method === "GET") return json(await all());
     if (method === "PATCH") {
-      await updateSettings(env, await request.json());
-      return json(await settings(env, senderName(env, view)));
+      const b = await request.json();
+      if (b?.spot !== undefined) await setSpot(env, ctx, b.spot && typeof b.spot === "object" ? b.spot : {});
+      await updateSettings(env, b);
+      return json(await all());
     }
   }
   if (pathname === "/api/addresses/check" && method === "GET") {
@@ -309,12 +325,22 @@ async function route(request, env, ctx, url, view, hub = null) {
     if (method === "GET") {
       const t = await getThread(env, m[1]);
       if (!t) throw new HttpError(404, "Conversation not found");
-      return json(t);
+      // (the bookings spotted in it, for the strip at its top, while Trips and Bookings is on)
+      const spots = await threadSpots(env, m[1]).catch((err) => (console.error("spots", err), null));
+      return json(spots?.length ? { ...t, spots } : t);
     }
     if (method === "POST") {
       await threadAction(env, m[1], await request.json(), deleteMessages);
       return json({ ok: true });
     }
+  }
+  // (the strip's Remove, Put It Back and Wrong: { hidden } or { wrong: true })
+  if ((m = pathname.match(/^\/api\/spots\/([A-Za-z0-9_-]{1,64})$/)) && method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const done = b?.wrong === true ? await wrongSpot(env, m[1]) : typeof b?.hidden === "boolean" ? await hideSpot(env, m[1], b.hidden) : null;
+    if (done === null) throw new HttpError(400, "Remove, put back, or wrong?");
+    if (!done) throw new HttpError(404, "That booking has gone.");
+    return json({ ok: true, spots: await threadSpots(env, String((await env.DB.prepare(`SELECT thread_id FROM spots WHERE id = ?1`).bind(m[1]).first())?.thread_id || "")) });
   }
   if (pathname === "/api/trash/empty" && method === "POST") return emptyTrash(env);
   if (pathname === "/api/push/key" && method === "GET") return json({ key: (await vapid(env)).pub });

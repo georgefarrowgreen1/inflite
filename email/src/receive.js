@@ -3,6 +3,7 @@ import { ensureSchema, findThread, cleanMessageId, upsertContacts, bumpVersion }
 import { pushAll, peopleUnread, noticeInflite } from "./push.js";
 import { arrivalFor } from "./addresses.js";
 import { quietNow } from "./auth.js";
+import { spotStored } from "./spot.js";
 
 // Handles mail delivered by Cloudflare Email Routing. Nothing that arrives is lost: the original is kept first, and if
 // reading it fails (twice: a database that's briefly not answering shouldn't make good mail unreadable) it still shows in
@@ -216,6 +217,9 @@ async function store(message, env, ctx, id, raw, address) {
   // (the message is kept by now: these failing mustn't send it down the couldn't-read path, kept and forwarded twice)
   ctx.waitUntil(upsertContacts(env, [from]).catch((e) => console.error("contacts", e)));
   await bumpVersion(env).catch((e) => console.error("version", e));
+  // (Mail on Your Day: its bookings, while Settings' "Trips and bookings" is on. spotStored never throws: a failure to
+  // spot never stops mail being kept)
+  ctx.waitUntil(spotStored(env, { email, threadId, messageId: id, sender: from.email, date }));
 
   // A notice for mail from people (not for updates: newsletters, receipts and the like wait in the stream), unless its
   // address is set not to notify; an address set to Updates that notifies, notifies for all of it

@@ -1621,6 +1621,7 @@ const IFL = (() => {
       rawUrl: (id) => `/api/messages/${id}/raw`,
       settings: () => req("GET", "/api/settings"),
       saveSettings: (patch) => req("PATCH", "/api/settings", patch),
+      spot: (id, body) => req("POST", `/api/spots/${encodeURIComponent(id)}`, body),
       checkAddress: (local) => req("GET", `/api/addresses/check?${qs({ local })}`),
       createAddress: (body) => req("POST", "/api/addresses", body),
       updateAddress: (email, patch) => req("PATCH", `/api/addresses/${encodeURIComponent(email)}`, patch),
@@ -2319,6 +2320,14 @@ const IFL = (() => {
     navigator.serviceWorker.addEventListener("message", (e) => {
       if (e.data?.open && S.me) openFromUrl(e.data.open);
     });
+  // (and an open Mail sent to one by its address, #thread=<id> (Today's Open Email, say), or to its settings, as boot does)
+  addEventListener("hashchange", () => {
+    const set = location.hash === "#settings";
+    if (!S.me || !(set || /thread=/.test(location.hash))) return;
+    const url = location.href;
+    try { history.replaceState({ depth: 0 }, "", location.pathname + location.search); } catch {}
+    set ? openSettings() : openFromUrl(url);
+  });
 
   function toggleRemoteImages() {
     S.remoteImages = !S.remoteImages;
@@ -3921,6 +3930,8 @@ const IFL = (() => {
       "div",
       { class: keepScroll ? null : "content-in" },
       convHead(t),
+      // (a booking Mail spotted in it, Mail on Your Day: the strip, parts/spot.js)
+      t.spots?.length ? spotSlot(t) : null,
       // (oldest first, as a conversation reads; the newest at the foot, by the reply)
       t.failed ? loadFailed(t.failed, () => openThread(t.id, { fromNav: true }))
         : t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", [...t.messages].reverse().map(messageCard))
@@ -3929,6 +3940,8 @@ const IFL = (() => {
     els.detailScroll.scrollTop = keepScroll ? top : 0;
     els.detail.classList.toggle("scrolled", els.detailScroll.scrollTop > 28);
   }
+
+  const spotSlot = (t) => { const el = h("div.spot-slot"); fromPart("spot", "strip", { quiet: true })(el, t); return el; };
 
   // (opened: at the newest message, with the earlier ones above it)
   function scrollToNewest() {
