@@ -33,6 +33,7 @@ struct ContentView: View {
                     Group {
                         switch model.selection {
                         case .today: NativeTodayView(model: model)
+                            .environment(\.timeZone, TimeZone(identifier: model.day?.tz ?? "") ?? .current)
                         case .apps: NativeAppsView(model: model)
                         case .you: NativeYouView(model: model).id(model.session?.user?.id)
                         default:
