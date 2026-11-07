@@ -46,6 +46,22 @@ inflite Mail, the mail client for `email.inflite.ai`. See [email/README.md](emai
 
 ## Web UI maintenance
 
+The shell's JSON API calls use `today/public/roof/requests.js` (exported by the frame entry point).
+It shares only identical unfinished GETs, returns independent decoded JSON to each caller, and bounds the full
+fetch/body read to 20 seconds by default. Callers can pass an `AbortSignal`, `timeoutMs`, `fresh: true`, or a
+`latestKey` for related reads. One subscriber cancelling does not cancel the others; the transport stops when
+no subscriber remains. A newer replacement read suppresses the older response, including stale HTTP errors.
+
+There is no completed-response cache or automatic retry. Writes are sent separately, with the existing credentials
+and `X-Inflite` header; reads after a write starts/settles cannot join a pre-write transport. Cancellation or a timeout
+does not undo a write already received by the server. A write timeout asks the user to refresh and check its outcome.
+Account transitions reset the coordinator. Screen contexts retain its scope signal so delayed work cannot start
+requests or repaint settings for a different account. Boot results are paired with their authenticated view.
+Full app modules with their own API clients and authentication remain outside this first integration.
+
+Run `npm run test:requests` for deterministic transport/concurrency checks, or `npm test` for these and the browser
+checks. CI runs both. The coordinator is preloaded and included in the offline/updater asset lists.
+
 Today and modules inside its shell share button and switch rules in
 `today/public/roof/controls.css`, imported by `roof.css`. The existing `.pill` and `.ifl-btn` names are aliases;
 control sizes and interaction states live in that one file. App accents and theme colours remain in the existing

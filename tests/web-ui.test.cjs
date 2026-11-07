@@ -36,19 +36,22 @@ before(async () => {
 });
 after(async () => { await browser?.close(); await new Promise(r => server ? server.close(r) : r()); });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences } = {}) {
+async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, user, serviceWorkers = 'block' } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: 'reduce',
-    locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers: 'block', hasTouch: width < 600, isMobile: width < 600 });
+    locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
   const requests = [], errors = [];
   const view = structuredClone(fixture('session'));
+  if (user) view.user = { ...view.user, ...user };
   if (preferences) view.prefs = preferences;
   view.links = { ...view.links, account: origin, auth: origin };
+  if (seedSession) await ctx.addInitScript(view => localStorage.setItem('today:session', JSON.stringify({ id: view.user.id, at: Date.now(), view })), seedSession);
   await ctx.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
     if (url.origin !== origin) return route.abort();
     if (url.pathname === '/version') return route.fulfill({ json: { build } });
     if (!url.pathname.startsWith('/api/')) return route.continue();
     requests.push({ path: url.pathname, method: req.method(), body: req.postDataJSON() });
+    if (intercept && await intercept(route, { url, request: req, view, answer })) return;
     const api = { '/api/session': signedIn ? view : { signedIn: false }, '/api/boot': { view, cards: answer },
       '/api/today': answer, '/api/hub': { ready: true, roof: true, apps: { weather: false, fitness: false, markets: false, chats: false, mail: false } },
       '/api/rules': fixture('rules'), '/api/notify': fixture('notify'), '/api/devices': { devices: [], here: [] },
@@ -63,7 +66,7 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
   });
   await page.clock.setFixedTime(new Date(answer.at));
   await page.goto(origin);
-  await page.locator(signedIn ? '#top .day-top' : '#out:not([hidden]) #signin').waitFor();
+  await page.locator(signedIn ? (waitForDay ? '#top .day-top' : '#in:not([hidden])') : '#out:not([hidden]) #signin').waitFor();
   return { ctx, page, requests, errors };
 }
 async function save(page, name) {
@@ -278,5 +281,90 @@ test('zoom is permitted and control variants share sizes, focus and disabled sta
     assert.equal(controls.outline, 'solid'); assert.match(controls.touch, /manipulation|pinch-zoom|auto/);
     const input = page.getByRole('switch', { name: 'Sample setting' });
     await input.focus(); await page.keyboard.press('Space'); assert.equal(await input.isChecked(), true);
+  } finally { await ctx.close(); }
+});
+
+test('visibility and push refreshes share a pending Today request', async () => {
+  let hold = false, count = 0, release, observed;
+  const seen = new Promise(r => observed = r), gate = new Promise(r => release = r);
+  const { ctx, page, errors } = await open({ intercept: async (route, { url, answer }) => {
+    if (url.pathname !== '/api/today' || !hold) return false;
+    count++; observed(); await gate; await route.fulfill({ json: answer }); return true;
+  } });
+  try {
+    hold = true;
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await seen;
+    await page.evaluate(() => navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { inflight: 'sync' } })));
+    await page.clock.runFor(1600);
+    assert.equal(count, 1, 'both refresh paths join the same transport');
+    release(); await page.waitForResponse(r => new URL(r.url()).pathname === '/api/today');
+    assert.equal(await page.locator('#in').isVisible(), true); assert.deepEqual(errors, []);
+  } finally { release(); await ctx.close(); }
+});
+
+test('sign-out drops an outstanding day response and its cached account data', async () => {
+  let release, observed;
+  const seen = new Promise(r => observed = r), gate = new Promise(r => release = r);
+  const privateDay = structuredClone(day); privateDay.cards.weather.lead = 'PRIVATE OLD ACCOUNT DATA';
+  const { ctx, page, errors } = await open({ waitForDay: false, intercept: async (route, { url }) => {
+    if (url.pathname === '/api/notify') { await route.fulfill({ status: 401, json: { error: 'Signed out' } }); return true; }
+    if (url.pathname !== '/api/today') return false;
+    observed(); await gate; await route.fulfill({ json: privateDay }).catch(() => {}); return true;
+  } });
+  try {
+    await seen;
+    await page.evaluate(() => { location.hash = 'you'; });
+    await page.locator('#out:not([hidden]) #signin').waitFor(); release();
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator('#in').isVisible(), false);
+    assert.doesNotMatch(await page.locator('body').innerText(), /PRIVATE OLD ACCOUNT DATA/);
+    assert.equal(await page.evaluate(() => Object.keys(localStorage).some(k => k.startsWith('today:cards:'))), false);
+    assert.deepEqual(errors, []);
+  } finally { release(); await ctx.close(); }
+});
+
+test('an unavailable day shows an explicit retry and recovers without replaying writes', async () => {
+  let failed = false;
+  const { ctx, page, requests } = await open({ waitForDay: false, intercept: async (route, { url }) => {
+    if (url.pathname !== '/api/today' || failed) return false;
+    failed = true; await route.fulfill({ status: 503, json: { error: 'Today is temporarily unavailable.' } }); return true;
+  } });
+  try {
+    await page.getByText('Today couldn’t load', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Try Again', exact: true }).click();
+    await page.locator('#top .day-top').waitFor();
+    assert.equal(requests.filter(r => r.path === '/api/today').length, 2);
+    assert.equal(requests.some(r => r.method !== 'GET'), false);
+  } finally { await ctx.close(); }
+});
+
+test('a combined boot paints cards only with its authenticated view and falls back on older endpoints', async () => {
+  for (const unavailable of [false, true]) {
+    const { ctx, page, requests, errors } = await open({ seedSession: fixture('session'), user: { id: 'd84670f1-1b2c-4321-8e9f-123456789abc', name: 'Jordan Patel', first: 'Jordan' }, intercept: async (route, { url }) => {
+      if (url.pathname !== '/api/boot' || !unavailable) return false;
+      await route.fulfill({ status: 404, json: { error: 'Older account endpoint' } }); return true;
+    } });
+    try {
+      assert.match(await page.locator('#in').innerText(), /Your day, joined up/);
+      await page.evaluate(() => { location.hash = 'you'; }); await page.locator('#youAcct').waitFor();
+      assert.match(await page.locator('#youAcct').innerText(), /Jordan Patel/);
+      assert.doesNotMatch(await page.locator('#youAcct').innerText(), /Alex Morgan/);
+      assert.equal(requests.filter(r => r.path === '/api/boot').length, 1);
+      assert.equal(requests.filter(r => r.path === '/api/session').length, unavailable ? 1 : 0);
+      assert.equal(requests.filter(r => r.path === '/api/today').length, unavailable ? 1 : 0);
+      assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+  }
+});
+
+test('the coordinator and signed-out shell still load after an offline reload', async () => {
+  const { ctx, page, errors } = await open({ signedIn: false, serviceWorkers: 'allow' });
+  try {
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+    await page.waitForFunction(async () => !!(await caches.match('/roof/requests.js')));
+    await ctx.setOffline(true); await page.reload();
+    await page.locator('#out:not([hidden]) #signin').waitFor();
+    assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
