@@ -80,7 +80,9 @@ Apps (`today/public/apps.js`) uses a compact app list and up to four quick-acces
 sheet with switches, Cancel, Done and Reset to defaults. Choices are stored on this device under
 `today:quick:<account-id>`, separately from the server's Today card preferences. Unknown destinations are discarded;
 unavailable apps are hidden without erasing saved choices until the user saves a new selection. Same-account
-refreshes wait for an open editor to close, and the request scope prevents an old account's editor from saving.
+refreshes patch status text in place, including under an open editor, preserving links, keyboard focus, scroll
+position and unfinished shortcut choices. App/shortcut availability changes wait for the editor to close;
+the request scope prevents an old account's editor from saving or updating statuses.
 The app list and shortcuts stack on phones and sit side by side on desktop. App statuses use Today's answer
 without fetching extra connector previews.
 

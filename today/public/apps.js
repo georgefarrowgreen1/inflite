@@ -27,6 +27,10 @@ function quickIcon(ui, name) {
   return ui.el("span", { class: "ifl-glyph", "aria-hidden": "true" }, svg);
 }
 const switchedOn = (ctx, app) => { const s = ctx.frame?.session; return !!(s?.hub === true && s.apps?.[app] === true); };
+const lineOf = (a, answer) => {
+  const line = answer?.v === 2 ? answer.apps?.[a.app] : null;
+  return typeof line === "string" && line ? line : a.what;
+};
 function readChoices(key) {
   if (!key) return null;
   try {
@@ -39,21 +43,8 @@ function readChoices(key) {
 
 const renders = new WeakMap();
 export function drawApps(root, ctx = {}) {
-  if (!root || !ctx.ui) return;
+  if (!root || !ctx.ui || ctx.current?.() === false) return;
   const { ui } = ctx, { el } = ui, owner = ctx.view?.user?.id;
-  const previous = renders.get(root);
-  // Same-account refreshes wait until the editor closes, keeping its draft and
-  // focus intact. A new account immediately releases the old account's editor.
-  if (previous?.editing && !previous.editing.closed && previous.owner === owner && previous.current()) {
-    previous.latest = ctx;
-    return;
-  }
-  previous?.editing?.close();
-  const state = { owner, latest: ctx, editing: null };
-  renders.set(root, state);
-  const current = () => renders.get(root) === state && root.isConnected && ctx.current?.() !== false;
-  state.current = current;
-  const lines = ctx.answer?.v === 2 && typeof ctx.answer.apps === "object" ? ctx.answer.apps : {};
   const href = (app, section) => ctx.href?.(app, section) || `/${app}/${section ? "#" + section : ""}`;
   const shown = APPS.filter((a) => !a.only || a.only(ctx.view));
   const choices = shown.flatMap((a) => a.app === "mail" && !switchedOn(ctx, "mail") ? [] : a.links.map(([label, section, icon]) =>
@@ -62,9 +53,33 @@ export function drawApps(root, ctx = {}) {
   const defaults = DEFAULTS.filter((id) => available.has(id));
   const key = owner ? `today:quick:${owner}` : null;
   let chosen = readChoices(key) ?? defaults;
-  const list = ui.list(shown.map((a) => ui.row({ lead: { app: a.app }, title: a.name,
-    sub: typeof lines?.[a.app] === "string" && lines[a.app] ? lines[a.app] : a.what,
-    href: href(a.app), trail: "chevron" })));
+  const shape = JSON.stringify([shown.map((a) => [a.app, href(a.app)]), choices.map((q) => [q.id, href(q.app, q.section)])]);
+  const choiceKey = JSON.stringify(chosen), previous = renders.get(root);
+  if (previous && previous.owner === owner && previous.current()) {
+    // Patch text even under the editor. Links, shortcuts and the editor's draft
+    // keep their DOM nodes, keyboard focus and scroll position as data arrives.
+    previous.patchLines(ctx.answer);
+    previous.latest = ctx;
+    previous.pending = previous.shape !== shape || previous.choiceKey !== choiceKey;
+    if (!previous.pending || (previous.editing && !previous.editing.closed)) return;
+  }
+  previous?.editing?.close();
+  const state = { owner, latest: ctx, editing: null, shape, choiceKey, pending: false };
+  renders.set(root, state);
+  const current = () => renders.get(root) === state && root.isConnected && ctx.current?.() !== false;
+  state.current = current;
+  const rows = shown.map((a) => {
+    const row = ui.row({ lead: { app: a.app }, title: a.name, sub: lineOf(a, ctx.answer), href: href(a.app), trail: "chevron" });
+    row.dataset.appRow = a.app;
+    return [a, row];
+  });
+  state.patchLines = (answer) => {
+    for (const [a, row] of rows) {
+      const sub = row.querySelector(".ifl-tx small"), text = lineOf(a, answer);
+      if (sub.textContent !== text) sub.textContent = text;
+    }
+  };
+  const list = ui.list(rows.map(([, row]) => row));
   list.classList.add("apps-list");
   list.setAttribute("aria-label", "Apps");
   const grid = el("div", { class: "apps-shortcuts" });
@@ -113,11 +128,11 @@ export function drawApps(root, ctx = {}) {
             try { localStorage.setItem(key, JSON.stringify(draft)); }
             catch { status.textContent = "Couldn’t save shortcuts on this device. Please try again."; return; }
           }
-          chosen = [...draft]; drawQuick(); h.close();
+          chosen = [...draft]; state.choiceKey = JSON.stringify(chosen); drawQuick(); h.close();
         } },
       ], onClose: () => {
         state.editing = null;
-        if (state.latest !== ctx && current()) {
+        if (state.pending && current()) {
           const refocus = root.contains(document.activeElement);
           drawApps(root, state.latest);
           if (refocus) root.querySelector(".apps-edit")?.focus({ preventScroll: true });
