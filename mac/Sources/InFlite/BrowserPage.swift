@@ -26,7 +26,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        webView.setValue(false, forKey: "drawsBackground")
+        webView.underPageBackgroundColor = .windowBackgroundColor
         observations = [
             webView.observe(\.isLoading, options: [.new]) { [weak self] view, _ in
                 Task { @MainActor in self?.isLoading = view.isLoading }
