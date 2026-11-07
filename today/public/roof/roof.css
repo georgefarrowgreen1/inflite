@@ -130,13 +130,13 @@ body.kb-up .ifl-tabs { visibility: hidden; }
 /* ---- sheets (sheet.js) on <dialog>: the frozen markup, Weather's motion ---- */
 /* (--fix-gap: the shared menu's measure of how far iOS's Home Screen lays the page out short of the screen; what's
    fixed to the foot is taken down by it, to the screen's own bottom) */
-dialog.ifl-sheet { position: fixed; inset: auto 0 var(--sheet-foot, calc(0px - var(--fix-gap, 0px))); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
+dialog.ifl-sheet { --sheet-bottom-pad: calc(28px + env(safe-area-inset-bottom, 0px)); position: fixed; inset: auto 0 var(--sheet-foot, calc(0px - var(--fix-gap, 0px))); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) var(--sheet-bottom-pad) max(18px, env(safe-area-inset-left, 0px));
   max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 24px); overflow: hidden auto; overscroll-behavior: contain; display: none; flex-direction: column;
   border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; color: var(--text); background: var(--sheen), var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), 0 -10px 40px rgba(0, 0, 0, 0.3);
   transform: translateY(var(--drag, 0px)); animation: ifl-sheet-in var(--dur-sheet-in) var(--ease-glide); font: inherit; }
 dialog.ifl-sheet[open] { display: flex; }
 /* (the keyboard up, the sheet on it (sheet.js --sheet-foot): no room kept for the home bar, which the keyboard covers) */
-dialog.ifl-sheet.ifs-kb { padding-bottom: 12px; border-radius: var(--r-sheet); }
+dialog.ifl-sheet.ifs-kb { --sheet-bottom-pad: 12px; padding-bottom: var(--sheet-bottom-pad); border-radius: var(--r-sheet); }
 /* (and as tall as what's in sight, from the top of it down: what's typed and what it finds start at the top, where the
    keyboard's bars, see-through and taller than iOS says, can't cover them) */
 @media (hover: none) { dialog.ifl-sheet.ifs-kb { top: calc(var(--vv-top, 0px) + max(env(safe-area-inset-top, 0px), 12px) + 6px); max-height: none; } }
@@ -149,7 +149,7 @@ dialog.ifl-sheet.dragging { animation: none; transition: none; }
 @keyframes ifl-fade-in { from { opacity: 0; } }
 @keyframes ifl-fade-out { to { opacity: 0; } }
 @media (min-width: 700px) {
-  dialog.ifl-sheet { inset: 0; margin: auto; width: min(560px, calc(100% - 48px)); height: fit-content; border-radius: var(--r-sheet); padding-bottom: 24px; animation-name: ifl-sheet-pop; }
+  dialog.ifl-sheet { --sheet-bottom-pad: 24px; inset: 0; margin: auto; width: min(560px, calc(100% - 48px)); height: fit-content; border-radius: var(--r-sheet); padding-bottom: var(--sheet-bottom-pad); animation-name: ifl-sheet-pop; }
   dialog.ifl-sheet.closing { animation-name: ifl-sheet-unpop; }
   @keyframes ifl-sheet-pop { from { opacity: 0; transform: scale(0.94); } }
   @keyframes ifl-sheet-unpop { to { opacity: 0; transform: scale(0.96); } }
@@ -164,7 +164,11 @@ dialog.ifl-sheet.dragging { animation: none; transition: none; }
 .ifl-sheet:not(.pushed) .ifs-back { display: none; }
 .ifl-sheet .ifs-body { flex: 1 1 auto; min-height: 0; }
 .ifl-sheet .ifs-hero img { width: 64px; height: 64px; border-radius: 15px; }
-.ifl-sheet .ifs-acts { position: sticky; bottom: calc(-28px - env(safe-area-inset-bottom, 0px)); z-index: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin: 12px calc(-1 * max(18px, env(safe-area-inset-left, 0px))) 0; padding: 12px max(18px, env(safe-area-inset-left, 0px)) 4px; background: linear-gradient(transparent, var(--glass-strong) 30%); }
+.ifl-sheet .ifs-acts { position: sticky; bottom: calc(-28px - env(safe-area-inset-bottom, 0px)); z-index: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin: 12px calc(-1 * max(18px, env(safe-area-inset-left, 0px))) 0; padding: 12px max(18px, env(safe-area-inset-left, 0px)) 4px; }
+/* One surface through the bottom padding/home-indicator area. Extending only the
+   paint keeps sticky positioning, button spacing and scrolling unchanged. */
+.ifl-sheet .ifs-acts::before { content: ""; position: absolute; z-index: -1; inset: 0 0 calc(0px - var(--sheet-bottom-pad));
+  background: linear-gradient(transparent, var(--glass-strong) 30%); pointer-events: none; }
 .ifl-sheet .ifs-acts .ifl-btn { flex: 1 1 auto; }
 .ifl-sheet[aria-busy] .ifs-body { opacity: 0.6; }
 .ifs-page { display: grid; gap: 12px; }
