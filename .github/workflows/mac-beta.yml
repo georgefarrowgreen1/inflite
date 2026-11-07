@@ -1,0 +1,44 @@
+name: InFlite Mac beta
+
+on:
+  push:
+    branches: [codex/mac-beta, claude/inflite]
+    paths: [mac/**, .github/workflows/mac-beta.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-beta-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test and build the universal beta
+        run: bash mac/scripts/build-beta.sh
+      - name: Launch the app and capture the native workspace
+        run: |
+          open mac/dist/InFlite.app --args --design-preview
+          sleep 6
+          osascript -e 'tell application "InFlite" to activate'
+          screencapture -x mac/dist/InFlite-Mac-workspace.png
+          pgrep -x InFlite
+          osascript -e 'tell application "InFlite" to quit'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: InFlite-Mac-0.1.0-beta.1
+          path: |
+            mac/dist/InFlite-Mac-0.1.0-beta.1.zip
+            mac/dist/InFlite-Mac-0.1.0-beta.1.dmg
+            mac/dist/SHA256SUMS.txt
+            mac/dist/Read Me.md
+            mac/dist/InFlite-Mac-workspace.png
+          retention-days: 14
+          if-no-files-found: error
