@@ -1,4 +1,4 @@
-# InFlite for Mac — 0.1.0 beta 3
+# InFlite for Mac — 0.1.0 beta 4
 
 The first native SwiftUI slice of InFlite. macOS 14+, Apple silicon and Intel.
 
@@ -26,7 +26,7 @@ confirmation explaining that unsynced local drafts are lost.
 
 ## Install and build
 
-Download the **InFlite-Mac-0.1.0-beta.3** artifact from a successful **InFlite Mac beta** Actions run (GitHub sign-in
+Download the **InFlite-Mac-0.1.0-beta.4** artifact from a successful **InFlite Mac beta** Actions run (GitHub sign-in
 required; artifacts expire after 14 days). Open the DMG and drag InFlite to Applications.
 
 This development beta is ad-hoc signed, not Developer ID signed or notarized. macOS may block opening. Only approve

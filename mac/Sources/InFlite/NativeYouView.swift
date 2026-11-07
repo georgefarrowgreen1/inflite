@@ -9,6 +9,7 @@ struct NativeYouView: View {
     var body: some View {
         if !model.signedIn { NativeSignInView(model: model) }
         else {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     HStack(spacing: 16) {
@@ -23,29 +24,36 @@ struct NativeYouView: View {
                         Text("Your account").font(.headline)
                         Text("Your profile, password, passkeys and signed-in devices are managed through InFlite’s existing account page.")
                             .font(.callout).foregroundStyle(.secondary)
-                        Button("Security and profile on web") { model.select(.account) }.buttonStyle(.bordered).disabled(model.sampleData)
+                        Button("Security and profile on web") { model.select(.account) }.buttonStyle(InFliteButtonStyle()).disabled(model.sampleData)
                     }.padding(22).nativeGlass()
                     if let morning = model.day?.morning { MorningEditor(model: model, initial: morning) }
                     else { Text("Refresh Today to load your morning settings.").font(.callout).foregroundStyle(.secondary) }
-                    if let hours = model.quietSettings { QuietEditor(model: model, initial: hours) }
+                    if let hours = model.quietSettings { QuietEditor(model: model, initial: hours).id("quiet") }
                     else {
                         HStack {
                             Text(model.settingsMessage ?? "Loading Quiet Hours…").font(.callout).foregroundStyle(.secondary)
                             Spacer()
-                            Button("Retry") { Task { await model.loadQuietSettings() } }
+                            Button("Retry") { Task { await model.loadQuietSettings() } }.buttonStyle(InFliteButtonStyle())
                         }.padding(22).nativeGlass()
                     }
-                    if let prefs = model.session?.prefs { CardsEditor(model: model, initial: prefs) }
+                    if let prefs = model.session?.prefs { CardsEditor(model: model, initial: prefs).id("cards") }
                     VStack(alignment: .leading, spacing: 12) {
                         Text("On this Mac").font(.headline)
                         Text("Background notifications aren’t implemented in this beta. Morning and Quiet Hours changes apply to your account and its registered devices.")
                             .font(.callout).foregroundStyle(.secondary)
-                        SettingsLink { Text("Appearance and local data") }.buttonStyle(.bordered)
-                        Button("Sign out…", role: .destructive) { confirmSignOut = true }.disabled(signingOut || model.sampleData)
+                        SettingsLink { Text("Appearance and local data") }.buttonStyle(InFliteButtonStyle())
+                        Button("Sign out…", role: .destructive) { confirmSignOut = true }.buttonStyle(InFliteButtonStyle()).disabled(signingOut || model.sampleData)
                         if let signOutError { Text(signOutError).font(.caption).foregroundStyle(.red) }
                     }.padding(22).nativeGlass()
                 }.padding(30).frame(maxWidth: 850).frame(maxWidth: .infinity)
-            }.task { await model.loadQuietSettings() }
+            }.task {
+                await model.loadQuietSettings()
+                let args = ProcessInfo.processInfo.arguments
+                if let i = args.firstIndex(of: "--capture-section"), i + 1 < args.count, ["quiet", "cards"].contains(args[i + 1]) {
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    proxy.scrollTo(args[i + 1], anchor: .top)
+                }
+            }
                 .alert("Sign out of InFlite?", isPresented: $confirmSignOut) {
                     Button("Cancel", role: .cancel) { }
                     Button("Sign out", role: .destructive) {
@@ -56,6 +64,7 @@ struct NativeYouView: View {
                         }
                     }
                 } message: { Text("This ends the shared InFlite sign-in and clears this app’s website data, including unsynced local drafts.") }
+            }
         }
     }
 }
@@ -75,13 +84,10 @@ struct MorningEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Morning briefing").font(.headline)
-            Toggle("Send my morning briefing", isOn: $on)
+            Toggle("Send my morning briefing", isOn: $on).toggleStyle(.switch).disabled(saving)
             HStack {
-                Picker("Time", selection: $minutes) {
-                    ForEach(Array(stride(from: 0, through: 1435, by: 5)), id: \.self) { value in
-                        Text(String(format: "%02d:%02d", value / 60, value % 60)).tag(value)
-                    }
-                }.frame(maxWidth: 220)
+                TimeMenu(title: "Time", selection: $minutes, values: Array(stride(from: 0, through: 1435, by: 5)))
+                    .disabled(saving)
                 Text(initial.tz ?? "Account time zone").font(.caption).foregroundStyle(.secondary)
                 Spacer()
             }
@@ -95,7 +101,7 @@ struct MorningEditor: View {
                         catch { result = error.localizedDescription }
                         saving = false
                     }
-                }.buttonStyle(.bordered).disabled(saving || model.sampleData)
+                }.buttonStyle(InFliteButtonStyle(.primary)).disabled(saving || model.sampleData)
                 if let result { Text(result).font(.caption).foregroundStyle(.secondary) }
             }
         }.padding(22).nativeGlass()
@@ -119,7 +125,7 @@ struct QuietEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Quiet Hours").font(.headline)
-            Toggle("Keep notifications quiet overnight", isOn: $on)
+            Toggle("Keep notifications quiet overnight", isOn: $on).toggleStyle(.switch).disabled(saving)
             HStack {
                 hourPicker("From", value: $from)
                 hourPicker("Until", value: $to)
@@ -136,13 +142,13 @@ struct QuietEditor: View {
                         } catch { result = error.localizedDescription }
                         saving = false
                     }
-                }.buttonStyle(.bordered).disabled(saving || model.sampleData)
+                }.buttonStyle(InFliteButtonStyle(.primary)).disabled(saving || model.sampleData)
                 if let result { Text(result).font(.caption).foregroundStyle(.secondary) }
             }
         }.padding(22).nativeGlass()
     }
     private func hourPicker(_ label: String, value: Binding<Int>) -> some View {
-        Picker(label, selection: value) { ForEach(0..<24) { hour in Text(String(format: "%02d:00", hour)).tag(hour) } }.frame(maxWidth: 170)
+        TimeMenu(title: label, selection: value, values: Array(0..<24), minutesPerValue: 60).disabled(saving)
     }
 }
 
@@ -163,6 +169,7 @@ struct CardsEditor: View {
                 Toggle(isOn: Binding(get: { !hidden.contains(kind.rawValue) }, set: { visible in
                     if visible { hidden.remove(kind.rawValue) } else { hidden.insert(kind.rawValue) }
                 })) { Label { Text(kind.destination.title) } icon: { DestinationIcon(destination: kind.destination, size: 22) } }
+                    .toggleStyle(.switch).disabled(saving)
             }
             HStack {
                 Button(saving ? "Saving…" : "Save card visibility") {
@@ -172,7 +179,7 @@ struct CardsEditor: View {
                         catch { result = error.localizedDescription }
                         saving = false
                     }
-                }.buttonStyle(.bordered).disabled(saving || model.sampleData)
+                }.buttonStyle(InFliteButtonStyle(.primary)).disabled(saving || model.sampleData)
                 if let result { Text(result).font(.caption).foregroundStyle(.secondary) }
             }
         }.padding(22).nativeGlass()

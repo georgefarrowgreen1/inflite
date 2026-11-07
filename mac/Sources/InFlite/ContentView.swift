@@ -80,7 +80,7 @@ struct ContentView: View {
                     Spacer()
                 }.padding(15)
             }.buttonStyle(.plain)
-            Text("BETA 3").font(.system(size: 9, weight: .medium)).tracking(1).foregroundStyle(.tertiary).padding(.horizontal, 18).padding(.bottom, 15)
+            Text("BETA 4").font(.system(size: 9, weight: .medium)).tracking(1).foregroundStyle(.tertiary).padding(.horizontal, 18).padding(.bottom, 15)
         }.background(.ultraThinMaterial)
     }
     private func row(_ destination: Destination) -> some View {

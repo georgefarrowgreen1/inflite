@@ -24,10 +24,10 @@ struct NativeSignInView: View {
             Button { model.signIn() } label: {
                 Text("Sign in to InFlite").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 7)
             }
-                .buttonStyle(.borderedProminent).controlSize(.large).frame(width: 280).disabled(model.sampleData)
+                .buttonStyle(InFliteButtonStyle(.primary)).controlSize(.large).frame(width: 280).disabled(model.sampleData)
             Text("Your existing account. Sign-in opens in a secure web sheet.")
                 .font(.caption).foregroundStyle(.secondary)
-            Button("Try again") { Task { await model.refresh() } }.buttonStyle(.borderless).disabled(model.refreshing)
+            Button("Try again") { Task { await model.refresh() } }.buttonStyle(InFliteButtonStyle()).disabled(model.refreshing)
         }.padding(42).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -65,7 +65,7 @@ struct NativeTodayView: View {
                                 ForEach(Array(top["lines"].list.enumerated()), id: \.offset) { _, line in
                                     if let text = line.text { Text(text).font(.callout).foregroundStyle(.secondary) }
                                 }
-                                Button("Review day details on web") { model.showWebToday() }.buttonStyle(.bordered).disabled(model.sampleData)
+                                Button("Review day details on web") { model.showWebToday() }.buttonStyle(InFliteButtonStyle()).disabled(model.sampleData)
                             }.padding(22).nativeGlass()
                         }
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
@@ -93,13 +93,13 @@ struct NativeTodayView: View {
                                         Spacer()
                                     }
                                 }
-                                Button("See the full day") { model.showWebToday() }.buttonStyle(.borderless).disabled(model.sampleData)
+                                Button("See the full day") { model.showWebToday() }.buttonStyle(InFliteButtonStyle()).disabled(model.sampleData)
                             }.padding(22).nativeGlass()
                         }
                     } else {
                         ContentUnavailableView("Your day couldn’t be loaded", systemImage: "arrow.clockwise",
                             description: Text("Your account is signed in. Refresh to try loading its summaries again."))
-                        Button("Refresh") { Task { await model.refresh() } }.buttonStyle(.borderedProminent)
+                        Button("Refresh") { Task { await model.refresh() } }.buttonStyle(InFliteButtonStyle(.primary))
                     }
                     if let date = model.lastUpdated {
                         HStack(spacing: 5) { Text("Last loaded"); Text(date, style: .time) }
@@ -128,7 +128,7 @@ struct NativeSummaryCard: View {
             else if value["state"].text != "ok" { Text(value["said"].text ?? "This summary isn’t available right now.").foregroundStyle(.secondary) }
             else { summary }
             Spacer(minLength: 0)
-            Button("Open \(kind.destination.title)", action: open).buttonStyle(.borderless)
+            Button("Open \(kind.destination.title)", action: open).buttonStyle(InFliteButtonStyle())
                 .help("Opens the existing web app")
         }
         .font(.callout).padding(21).frame(maxWidth: .infinity, minHeight: 210, alignment: .topLeading).nativeGlass()
