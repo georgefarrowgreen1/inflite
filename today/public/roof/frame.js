@@ -80,6 +80,8 @@ import { createSearch } from "./search.js";
 import { createSend } from "./send.js";
 
 export const CONTRACT = 1;
+// The shell's request factory also works before the signed-in frame is mounted.
+export { createRequestCoordinator, isRequestCancelled } from "./requests.js";
 const TABN = { today: "Today", apps: "Apps", you: "You" };
 const labelOf = (r) => (r?.kind === "app" ? REGISTRY[r.app]?.name : TABN[r?.tab]) || null;
 const TODAY = { kind: "tab", tab: "today", arg: null };

@@ -50,6 +50,7 @@ const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m 
 const hh = (h) => `${String(h).padStart(2, "0")}:00`;
 const browserTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London"; } catch { return "Europe/London"; } };
 const and = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+const current = (ctx) => ctx.current?.() !== false;
 
 // what You shows, as last asked (each null until asked; false where this account side hasn't it; sub: this phone's
 // subscription, as the browser has it)
@@ -65,10 +66,11 @@ async function sharesOf(ctx) {
   const roof = roofOf(ctx);
   if ((Y.shares && Y.sharesRoof === roof) || typeof ctx.connectors !== "function") return;
   const m = await ctx.connectors().catch(() => null);
-  if (!m) return;
+  if (!m || !current(ctx)) return;
   const out = {};
   for (const [app] of CONNECTED) {
     const c = await Promise.resolve(m.connectorOf(app, ctx.frame)).catch(() => null);
+    if (!current(ctx)) return;
     const s = c?.shares && typeof c.shares === "object" ? c.shares : null;
     out[app] = s ? WORDS.filter(([k]) => typeof s[k] === "string" && s[k]).map(([, w]) => w).join(" · ") : "";
   }
@@ -95,15 +97,17 @@ const said = (ctx) => typeof ctx.view?.push?.on === "boolean";
 const notHere = (ctx) => said(ctx) && phoneOn(ctx) && !ctx.pushWhy?.() && (typeof Notification === "undefined" || Notification.permission !== "granted" || !!Y.notHere);
 
 export async function drawYou(root, ctx) {
-  if (!root || !ctx?.view) return;
+  if (!root || !ctx?.view || !current(ctx)) return;
   // (drawn at once with what's known, then again as each answer comes)
   paint(root, ctx);
   const ask = (path) => ctx.call(path).catch((e) => (ctx.missing(e) ? false : null));
-  const sub = (Y.sub = await ctx.sub().catch(() => null));
+  const sub = await ctx.sub().catch(() => null);
+  if (!current(ctx)) return;
+  Y.sub = sub;
   const dev = sub && ctx.device?.() ? `?device=${encodeURIComponent(ctx.device())}` : "";
   const run = (drawing = Promise.all([ask("/api/rules"), ask("/api/notify"), ctx.hub ? ask(`/api/devices${dev}`) : Promise.resolve(false), sharesOf(ctx).catch(() => {})]));
   const [rules, notify, devices] = await run;
-  if (drawing !== run) return;
+  if (drawing !== run || !current(ctx)) return;
   Y.rules = rules; Y.notify = notify; Y.devices = devices && typeof devices === "object" ? { ...devices, asked: !!dev } : devices;
   paint(root, ctx);
   // (this phone, as the account wants it, where the account hasn't it (the browser lost its subscription; a sign-in that
@@ -113,9 +117,14 @@ export async function drawYou(root, ctx) {
   if (said(ctx) && phoneOn(ctx) && !Y.synced && (!here || !here.includes("td_push") || (every && !here.includes("pg_push")))) {
     Y.synced = true;
     const r = await ctx.syncPush?.({ force: true }).catch(() => null);
-    if (drawing !== run) return;
+    if (drawing !== run || !current(ctx)) return;
     const now = r ? [...new Set([...(here || []), ...(Array.isArray(r.tables) ? r.tables : ["td_push"])])] : here || [];
-    if (r) { Y.sub = await ctx.sub().catch(() => Y.sub); if (Y.devices && typeof Y.devices === "object") Object.assign(Y.devices, { here: now, asked: true }); }
+    if (r) {
+      const sub = await ctx.sub().catch(() => Y.sub);
+      if (!current(ctx)) return;
+      Y.sub = sub;
+      if (Y.devices && typeof Y.devices === "object") Object.assign(Y.devices, { here: now, asked: true });
+    }
     Y.notHere = !now.includes("td_push");
     Y.everyLost = every && !now.includes("pg_push");
     paint(root, ctx);
@@ -123,6 +132,7 @@ export async function drawYou(root, ctx) {
 }
 
 function paint(root, ctx) {
+  if (!current(ctx)) return;
   const u = ctx.view.user || {}, admin = ctx.view.apps?.mail === true;
   // (a section: its heading, one group, a line of small print under it; icons: its rows lead with an icon, the lines
   // between them start where the words do)
@@ -298,16 +308,17 @@ function wire(root, ctx) {
     rec.level = level; say(level);
     try {
       const a = await ctx.call("/api/rules", { method: "PUT", body: { rule, level } });
+      if (!current(ctx)) return;
       Object.assign(rec, { level: a.level || level, setBy: "you", line: a.line ?? rec.line });
       const ln = r.querySelector("[data-line]"); if (ln) ln.textContent = rec.line || "";
-    } catch (e) { rec.level = was; say(was); if (e.status !== 401) ctx.toast(e.message); }
+    } catch (e) { if (!current(ctx)) return; rec.level = was; say(was); if (e.status !== 401) ctx.toast(e.message); }
   });
   // (notifications by app: each a part of the account's settings, as its own page sets them)
   // (a switch that's a part of the account's notify settings: PATCH it, drawn again from the answer)
   const flip = (sel, body) => root.querySelector(sel)?.addEventListener("change", async (e) => {
     const box = e.target, on = box.checked;
     box.disabled = true;
-    try { Y.notify = await ctx.call("/api/notify", { method: "PATCH", body: body(on) }); }
+    try { const answer = await ctx.call("/api/notify", { method: "PATCH", body: body(on) }); if (!current(ctx)) return; Y.notify = answer; }
     catch (err) { box.checked = !on; box.disabled = false; if (err.status === 401) return; box.focus({ preventScroll: true }); ctx.toast(err.message); return; }
     if (root.isConnected) { paint(root, ctx); root.querySelector(sel)?.focus({ preventScroll: true }); }
   });
@@ -324,7 +335,7 @@ function wire(root, ctx) {
   const quiet = (q) => {
     const now = { on: false, from: 22, to: 7, ...(Y.notify?.quiet || {}), ...q };
     return ctx.call("/api/notify", { method: "PATCH", body: { quiet: { on: now.on, from: now.from, to: now.to, tz: now.tz || browserTz() } } })
-      .then((a) => { Y.notify = a; return true; }, (e) => { if (e.status !== 401) ctx.toast(e.message); return e.status !== 401; })
+      .then((a) => { if (!current(ctx)) return false; Y.notify = a; return true; }, (e) => { if (!current(ctx)) return false; if (e.status !== 401) ctx.toast(e.message); return e.status !== 401; })
       .then((draw) => draw && paint(root, ctx));
   };
   $("#youQuiet")?.addEventListener("change", (e) => quiet({ on: e.target.checked }));
@@ -337,6 +348,7 @@ function wire(root, ctx) {
     sw.checked = on;
     sw.disabled = true;
     const ok = await (on ? ctx.turnOn() : ctx.turnOff()).catch(() => false);
+    if (!current(ctx)) return;
     sw.disabled = false;
     if (!ok) { sw.checked = phoneOn(ctx); return; }
     if (on) Y.notHere = false;
@@ -358,6 +370,7 @@ async function stop(b, root, ctx) {
   b.disabled = true;
   try {
     await ctx.call("/api/devices", { method: "DELETE", body: { id } });
+    if (!current(ctx)) return;
     if (Y.devices?.devices) Y.devices.devices = Y.devices.devices.filter((d) => d.id !== id);
     ctx.toast("Stopped there");
   } catch (e) { b.disabled = false; if (e.status !== 401) ctx.toast(e.message); return; }
@@ -383,10 +396,13 @@ function fillEvery(sheet, root, ctx) {
     go.disabled = true;
     try {
       const r = await ctx.fanOut();
+      if (!current(ctx)) return;
       if (!r) { go.disabled = false; return; }
       // (the tables this phone's in now, as the account's answer names them)
       if (Y.devices) Object.assign(Y.devices, { here: [...new Set([...(Y.devices.asked ? Y.devices.here || [] : []), ...(r.tables || [])])], asked: true });
-      Y.sub = await ctx.sub().catch(() => Y.sub);
+      const sub = await ctx.sub().catch(() => Y.sub);
+      if (!current(ctx)) return;
+      Y.sub = sub;
       Y.everyLost = false;
       ctx.closeSheet();
       ctx.toast(r.tables?.includes("pg_push") ? "Every app’s notifications come here now" : "Today’s come here; the others aren’t ready to yet");
@@ -446,7 +462,9 @@ export async function openWxNotify(root, ctx) {
   else fillWx(body, root, ctx);
   if (!sheet.open) ctx.openSheet("sh-wxnotify");
   if (!Y.notify) {
-    Y.notify = await ctx.call("/api/notify").catch((e) => (ctx.missing(e) ? false : null));
+    const answer = await ctx.call("/api/notify").catch((e) => (ctx.missing(e) ? false : null));
+    if (!current(ctx)) return;
+    Y.notify = answer;
     if (sheet.open) fillWx(body, root, ctx);
   }
 }
@@ -488,7 +506,7 @@ function wireWx(body, root, ctx) {
   const w = Y.notify?.weather || {}, places = Array.isArray(w.places) ? w.places : [];
   const send = async (weather, el) => {
     if (el) el.disabled = true;
-    try { Y.notify = await ctx.call("/api/notify", { method: "PATCH", body: { weather } }); }
+    try { const answer = await ctx.call("/api/notify", { method: "PATCH", body: { weather } }); if (!current(ctx)) return; Y.notify = answer; }
     catch (e) { if (e.status !== 401) ctx.toast(e.message); }
     const sheet = document.getElementById("sh-wxnotify");
     if (sheet?.open) {

@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test:web": "node --test tests/web-ui.test.cjs"
+    "test:web": "node --test tests/web-ui.test.cjs",
+    "test:requests": "node tests/requests.test.cjs",
+    "test": "npm run test:requests && npm run test:web"
   },
   "devDependencies": {
     "wrangler": "^4.0.0",

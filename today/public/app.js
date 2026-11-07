@@ -7,15 +7,15 @@
 // this page only draws it (day.js, cards.js, apps.js, you.js) and sends what you change. Signed out, it's InFlite's way
 // in (index.html's, there without a script too).
 import { CARD_KEYS, APP, esc, safe, hm, dateLong, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
-import { createFrame } from "/roof/frame.js";
+import { createFrame, createRequestCoordinator, isRequestCancelled } from "/roof/frame.js";
 import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.83";
+const BUILD = "1.84";
 // (what's new in it, said once it's in)
-const NEWS = "Sheet buttons and the bottom safe area share one continuous background";
+const NEWS = "Shared reads, bounded waits and safer responses when your account changes";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1163,29 +1163,37 @@ const S = {
 let sheetOpen = null, sheetId = null, waitingAnswer = null, F = null;
 
 // ---------------------------------------------------------------- the account's API, through this site's Worker
-async function call(path, { method = "GET", body } = {}) {
+const requests = createRequestCoordinator();
+function resetRequests() {
+  requests.reset();
+  sessionCheck = null;
+  waitingAnswer = null;
+  clearTimeout(prefsT); prefsT = 0; prefsEdits++;
+}
+async function call(path, { method = "GET", body, signal, timeoutMs, fresh, latestKey } = {}) {
+  const scope = requests.signal;
   const headers = { Accept: "application/json" };
   if (method !== "GET") headers["X-Inflite"] = "1";
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (standalone()) headers["X-Home-Screen"] = "1";
-  let r;
   try {
-    r = await fetch(path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, credentials: "same-origin", cache: "no-store" });
-  } catch {
-    throw Object.assign(new Error("Couldn’t reach InFlite just now. Try again in a moment."), { status: 0, offline: true });
-  }
-  let data = null;
-  try { data = await r.json(); } catch {}
-  if (!r.ok) {
-    const err = Object.assign(new Error(data?.error || "Something went wrong. Try again."), { status: r.status, field: data?.field });
+    const data = await requests.request(path, { method, body, headers, signal, timeoutMs, fresh, latestKey });
+    if (scope.aborted) throw scope.reason;
+    return data;
+  } catch (r) {
+    if (scope.aborted) throw scope.reason;
     // (signed out, here or elsewhere: nothing of anyone's day stays on the page or in this browser)
     if (r.status === 401 && S.view) signedOutNow();
-    throw err;
+    throw r;
   }
-  return data;
 }
 // (a route this account side doesn't have yet: an older one, or one not built yet. Either way, that part isn't there)
 const missing = (e) => e?.status === 404 || e?.status === 501;
+// Delayed work owned by a rendered screen cannot start requests in a new account.
+function scopedAPI() {
+  const signal = requests.signal;
+  return { current: () => !signal.aborted, call: (path, options = {}) => call(path, { ...options, signal }) };
+}
 
 // ---------------------------------------------------------------- the hub: whether this site's Worker serves the apps
 // Asked once a visit (GET /api/hub, kept in sessionStorage): ready, the tab bar's Chats, the Apps tiles and every Send are
@@ -1612,6 +1620,7 @@ async function signOut() {
   // (first, what you wrote in a module saved to its app (C10, s24 §10); where something couldn't be, asked before going on)
   const fl = await Promise.resolve(F?.flush?.()).catch(() => null);
   if (fl?.lost > 0 && !(await anyway())) return;
+  resetRequests();
   const endpoint = await currentSub().then((sub) => sub?.endpoint || null, () => null);
   const chatOut = S.hub && await Promise.race([
     IFL.hub.chat().then(async (c) => { if (typeof c?.signOut !== "function") return false; await c.signOut(); return true; }).catch(() => false),
@@ -1622,6 +1631,7 @@ async function signOut() {
   if (chatsHere) await Promise.race([F?.releaseService("chats", { terminate: true }), new Promise((ok) => setTimeout(ok, 2000))]);
   const auth = safe(S.links?.auth) || DEFAULT_LINKS.auth;
   await call("/api/logout", { method: "POST", body: endpoint ? { endpoint } : {} }).catch(() => {});
+  resetRequests();
   forgetKept();
   // (the frame let go of first: a module's own closing (Mail's unsent message) writes before its copies are wiped, never after)
   unframe();
@@ -1662,6 +1672,7 @@ function showOut(said = "") {
 // signed out, as it's found out: by the account's answer, a 401, or the service worker's word. sure: the account itself
 // said so (/api/session's 401 or signedIn false, or the frame's lost(), which asks it first)
 function signedOutNow(sure) {
+  resetRequests();
   // (signed out elsewhere, confirmed: the apps' copies of you here go too; Chat's own engine signs itself out, S2-D10. Any
   // other 401 or word asks the account afresh first: a stray 401 never wipes them)
   // (the frame let go of first, so nothing a module writes as it closes outlives the wipe)
@@ -1680,6 +1691,7 @@ function signedOutNow(sure) {
 function signedIn(view, { offline = false } = {}) {
   if (!view?.user?.id) return signedOutNow();
   const was = S.view?.user?.id;
+  if (was !== view.user.id) { resetRequests(); S.morning = null; }
   S.view = view;
   S.links = view.links || S.links || DEFAULT_LINKS;
   if (!S.hub) IFL.hub.degrade(ownLinks());
@@ -1811,7 +1823,7 @@ function drawYouNow(arg = null) {
 const connectors = () => import("/roof/connectors.js");
 const appsCtx = () => ({ answer: S.answer, view: S.view, hub: S.hub, roof: S.roof, href: (app, section) => IFL.hub.href(app, section), icon: (app) => IFL.iconUrl(app), ui: F?.ui, connectors, frame: F });
 const youCtx = () => ({
-  view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, call, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
+  view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, ...scopedAPI(), missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
   kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
   sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, syncPush, offHere: () => offHere(), toMorning, openAccount, signOut, canPush, pushWhy,
   chatSettings: () => (chatsHere && F ? F.nav.go("/chats/#settings") : location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`)),
@@ -1825,15 +1837,14 @@ const youCtx = () => ({
 let sessionCheck = null;
 function checkSession() {
   if (sessionCheck) return sessionCheck;
+  const scope = requests.generation;
   const headers = { Accept: "application/json" };
   if (standalone()) headers["X-Home-Screen"] = "1";
-  sessionCheck = fetch("/api/session", { credentials: "same-origin", cache: "no-store", headers }).then(async (r) => {
-    if (r.status === 401) return false;
-    if (!r.ok) return true;
-    const j = await r.json().catch(() => null);
-    return j?.signedIn !== false;
-  }, () => true);
-  setTimeout(() => { sessionCheck = null; }, 30e3);
+  const check = requests.request("/api/session", { headers }).then(
+    (j) => scope !== requests.generation || j?.signedIn !== false,
+    (e) => scope !== requests.generation || e.status !== 401);
+  sessionCheck = check;
+  setTimeout(() => { if (sessionCheck === check) sessionCheck = null; }, 30e3);
   return sessionCheck;
 }
 
@@ -2036,7 +2047,7 @@ function drawFour(anim) {
 // without v draws them), timers: false (nothing timed in day.js: the page's own minute, below, ticks it, and only while
 // it's signed in with this answer, so a day forgotten here stays forgotten)
 let day = null;
-const dayCtx = () => ({ now: nowish, hub: IFL.hub, prefs: S.prefs, links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), call, toast, refresh: () => refresh(),
+const dayCtx = () => ({ now: nowish, hub: IFL.hub, prefs: S.prefs, links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), ...scopedAPI(), toast, refresh: () => refresh(),
   // (InFlite's sheet, for Mail's trip and its bookings: day.js, trip.js)
   sheet: (spec) => { if (!F) return null; IFL.close?.(true); closeSheet(); F.sheet.closeAll(); return F.sheet.open(spec); },
   line: (text) => { if (S.view) { S.dayLine = text == null ? null : String(text).slice(0, 120); drawLine(); } }, drawFour: () => drawFour(), timers: false });
@@ -2086,13 +2097,15 @@ function minute() {
 // the same answer again (with the morning, worked out from the same cards), or one card's alone (Try Again)
 async function refresh(only = null) {
   if (!S.view) return;
+  const scope = requests.generation, user = S.view.user.id;
   const q = new URLSearchParams();
   if (only) q.set("only", only);
   else { q.set("v", "2"); q.set("with", "morning"); }
   if (S.device) q.set("device", S.device);
   if (!only) S.loadedAt = Date.now();
   try {
-    const a = await call(`/api/today?${q}`);
+    const a = await call(`/api/today?${q}`, { latestKey: "today" });
+    if (scope !== requests.generation || S.view?.user?.id !== user) return;
     if (!only) return gotCards(a);
     if (!S.answer || !a?.cards?.[only]) return;
     S.answer = { ...S.answer, cards: { ...S.answer.cards, [only]: a.cards[only] } };
@@ -2103,8 +2116,17 @@ async function refresh(only = null) {
     card?.classList.add("in");
     if (a.cards[only].state === "error") toast(a.cards[only].said || "Still couldn’t get it.");
   } catch (e) {
-    if (e.status !== 401 && only) toast(e.message);
+    if (scope !== requests.generation || S.view?.user?.id !== user) return;
+    if (!S.answer) return cardsFailed(e);
+    if (!isRequestCancelled(e) && e.status !== 401 && only) toast(e.message);
   }
+}
+function cardsFailed(error) {
+  if (isRequestCancelled(error) || error?.status === 401 || !S.view || S.answer || !F) return;
+  const rest = $("#rest");
+  rest.className = ""; rest.hidden = false;
+  rest.replaceChildren(F.ui.error({ title: "Today couldn’t load", body: error.message || "Try again in a moment.",
+    acts: [{ label: "Try Again", primary: true, run: () => refresh() }] }));
 }
 // (back to the page: the day afresh, and Chat's engine caught up; at most once in a few seconds)
 let backAt = 0;
@@ -2139,10 +2161,12 @@ function prefsChanged(anim = "move") {
   prefsEdits++;
   drawCards(anim);
   clearTimeout(prefsT);
+  const scope = requests.generation;
   prefsT = setTimeout(() => {
     prefsT = 0;
+    if (scope !== requests.generation || !S.view) return;
     prefsOut++;
-    prefsGoing = prefsGoing.catch(() => {}).then(sendPrefs).finally(() => prefsOut--);
+    prefsGoing = prefsGoing.catch(() => {}).then(() => scope === requests.generation ? sendPrefs() : undefined).finally(() => prefsOut--);
   }, 400);
 }
 async function sendPrefs() {
@@ -2200,7 +2224,7 @@ function closeSheet() {
   sheetOpen = null; sheetId = null;
   try { h?.close(); } catch {}
 }
-function toast(text, o) { return F ? F.toast(text, o) : roofToast(text, o); }
+function toast(text, o) { if (!text) return; return F ? F.toast(text, o) : roofToast(text, o); }
 
 // ---------------------------------------------------------------- acting from a card
 // Fitness: today's session rested, or moved to tomorrow, in Fitness's own plan (POST /api/plan), with Undo
@@ -2652,7 +2676,11 @@ async function hubKnown() {
   if (BOOT_APP && S.apps[BOOT_APP.app]) preload(BOOT_APP.app);
   return true;
 }
+let loadSequence = 0;
 async function load() {
+  const attempt = ++loadSequence;
+  let scope = requests.generation, pendingCards = null;
+  const current = () => attempt === loadSequence && scope === requests.generation;
   const devP = findDevice();
   // (the hub's answer, asked once for this load however many wait on it)
   let knownP = null;
@@ -2673,57 +2701,67 @@ async function load() {
   if (new URLSearchParams(location.hash.slice(1)).get("signin") && BOOT_APP?.app !== "mail") {
     try {
       view = await finishSignIn();
+      if (!current()) return;
       // (going on to an app's page: Chats unlocked first, as this page won't be here to finish it; a few seconds at most)
       if (view && chatsUnlock && (() => { try { return !!sessionStorage.getItem(THEN_KEY); } catch { return false; } })())
         await Promise.race([chatsUnlock, new Promise((ok) => setTimeout(ok, 5000))]);
-      if (view && thenAfter()) return;
+      if (!current() || (view && thenAfter())) return;
     } catch (e) {
+      if (!current() || isRequestCancelled(e)) return;
       sessionAsked = null;
-      if (!(await known())) return;
+      if (!(await known()) || !current()) return;
       showOut(e.status === 0 ? e.message : e.message || "That sign-in didn’t work. Try again.");
       return;
     }
   }
-  // (the cards asked at the same time, on this device's name, where it's likely someone's signed in here: just back
-  // from signing in, or signed in last time. They're drawn only once the session's said who. Anyone else's are asked
-  // once it has, so the way in costs the account one request)
+  // The combined boot below pairs cards with its authenticated view. Other reads
+  // start after that view has been adopted into the coordinator's account scope.
   let asked = false;
-  const askCards = () => {
+  const acceptCards = (answer, owner) => {
+    if (!current() || !owner) return;
+    if (S.view?.user?.id === owner) gotCards(answer);
+    else pendingCards = { answer, owner };
+  };
+  const askCards = (owner = view?.user?.id) => {
     asked = true;
     return devP.then((device) => {
+      if (!current()) return;
       const q = new URLSearchParams({ v: "2", with: "morning" });
       if (device) q.set("device", device);
       S.loadedAt = Date.now();
-      return call(`/api/today?${q}`).then(gotCards, () => {});
+      return call(`/api/today?${q}`, { latestKey: "today" }).then((a) => acceptCards(a, owner), (e) => { if (current()) cardsFailed(e); });
     });
   };
   // Signed in here last time (and no sign-in just finished): who and the day in one trip (/api/boot: the account asked
   // once, the sign-in looked up once), on this device's name (findDevice: at most 800 ms, as the cards were asked
   // before). Anyone else: who, alone, first.
   const ks0 = view ? null : readJSON(KEPT);
-  if (view) { sessionAsked = Promise.resolve(view); askCards(); }
+  if (view) sessionAsked = Promise.resolve(view);
   else if (ks0) {
     asked = true;
     sessionAsked = devP.then((device) => {
+      if (!current()) return;
       const q = new URLSearchParams({ v: "2", with: "morning" });
       if (device) q.set("device", device);
       S.loadedAt = Date.now();
       return call(`/api/boot?${q}`).then((r) => (r?.view && typeof r.view === "object" ? r : Promise.reject(Object.assign(new Error(""), { status: 502 })))).then((r) => {
-        if (r.cards) gotCards(r.cards);
-        else if (r.view.signedIn) askCards();
+        if (!current()) return null;
+        if (r.cards) acceptCards(r.cards, r.view.user?.id);
+        else if (r.view.signedIn) asked = false;
         return r.view;
       }, (e) => {
         // (an account from before the way in in one trip (Today and the account go live apart), or any trouble but no
         // network or a sign-in that's over: who, alone, as before, and then the day)
-        if (e?.status === 0 || e?.status === 401) throw e;
-        return call("/api/session").then((v) => { if (v?.signedIn) askCards(); return v; });
+        if (!current() || isRequestCancelled(e) || e?.status === 0 || e?.status === 401) throw e;
+        return call("/api/session").then((v) => { if (current() && v?.signedIn) asked = false; return v; });
       });
     });
   } else sessionAsked = call("/api/session");
   try {
     view = await sessionAsked;
   } catch (e) {
-    if (!(await known())) return;
+    if (!current() || isRequestCancelled(e)) return;
+    if (!(await known()) || !current()) return;
     if (e.status === 401) return signedOutNow(true);
     // (no answer at all (no network, not an error from the account), in a Home Screen Today, whose sign-in is its own and
     // so can't be ended by another app without Today knowing: the copy kept here, if the last answer said it was this
@@ -2736,10 +2774,15 @@ async function load() {
     showOut(e.message);
     return;
   }
+  if (!current()) return;
   if (view?.links) S.links = view.links;
-  if (!(await known())) return;
+  if (!(await known()) || !current()) return;
   if (!view?.signedIn) return signedOutNow(true);
   signedIn(view);
+  // signedIn may adopt a different account. Its pending work was cancelled; only
+  // the boot data explicitly paired with this view is allowed to cross that reset.
+  if (scope !== requests.generation) { scope = requests.generation; asked = false; }
+  if (pendingCards?.owner === view.user?.id) { gotCards(pendingCards.answer); pendingCards = null; asked = true; }
   wireLinks();
   if (!asked) askCards();
   fromHash();
@@ -2750,7 +2793,7 @@ async function load() {
 
 // (where the page was: what the updater's reload, and the frame's reload for a new Weather (D21), bring back)
 const save = () => ({ y: Math.round(scrollY) });
-const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors"].map((f) => `/roof/${f}.js`);
+const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors", "requests"].map((f) => `/roof/${f}.js`);
 function start() {
   // (Chat's sign-in trip and its emails' links come to /chats/ unchanged; with Chats the framework's here, Chat's own page
   // at /chats/in/ does them, with the same hash, S3-D8)

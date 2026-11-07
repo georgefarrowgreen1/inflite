@@ -727,6 +727,7 @@ async function act(root, st, el) {
     if (typeof st.ctx.refresh === "function") st.ctx.refresh(); else again(root, st);
   } catch (e) {
     // (the account side without acts yet: their buttons go; a refusal of this one: it goes; offline or a fault: kept)
+    if (e?.cancelled) return;
     if (e.status === 501) actsOff = true;
     else if (e.status >= 400 && e.status < 500 && e.status !== 401 && e.status !== 429) acted.set(id, { state: "gone", at: num(st.answer.at) });
     toast(st.ctx, e.status === 501 ? "Today can’t do that just yet." : e.message || "That didn’t work. Try again.");
