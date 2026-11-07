@@ -53,7 +53,7 @@ export function createRequestCoordinator({ fetch: fetcher = (...args) => globalT
     }).finally(() => {
       clearTimeout(timer); controller.signal.removeEventListener("abort", onAbort);
       entry.settled = true; active.delete(entry); dropRead(entry);
-      if (!read) reads.clear();
+      if (!read && entry.generation === generation) reads.clear();
       release(entry);
     });
     return entry;

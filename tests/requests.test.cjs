@@ -125,3 +125,15 @@ test('captured screen signals cannot start new requests after reset; new-scope w
   await assert.rejects(c.request('/api/notify', { signal: oldSignal }), cancelled);
   assert.deepEqual(await fresh, { current: true }); assert.equal(calls, 1);
 });
+
+test('late cleanup of an old-account write cannot clear new-account shared reads', async () => {
+  const pending = deferred(); let reads = 0;
+  const c = await coordinator((_, o) => o.method === 'GET' ? (reads++, pending.promise) : new Promise(() => {}));
+  const write = c.request('/api/prefs', { method: 'PUT', body: {} }); const rejected = assert.rejects(write, cancelled);
+  await tick(); c.reset();
+  const a = c.request('/api/session'); await rejected; await tick();
+  const b = c.request('/api/session'); await tick();
+  pending.resolve(response({ current: true }));
+  assert.deepEqual(await a, { current: true }); assert.deepEqual(await b, { current: true });
+  assert.equal(reads, 1);
+});
