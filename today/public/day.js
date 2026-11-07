@@ -37,6 +37,7 @@
 import { CARD_KEYS, APP, esc, safe, safeOrigin, hm, dayKey, dateLong, dateShort, wkShort, dayWord, G, av, cardHTML, applyVars, tick, sendButton, hubOf, onHub } from "/cards.js";
 import { tripOf, tripCardHtml, bookingRowParts, bookingOfRow, openTrip, openBooking, isGone, redrawTrip } from "/trip.js";
 import { owedOf, paidOf, moneyOf, owedRowHtml, paidHtml, parcelOfRow, parcelRowHtml, openItem, openBills, itemOfRow } from "/mailday.js";
+export { arrangeToday } from "/layout.js";
 
 const MIN = 60e3;
 const PHASES = ["morning", "midday", "preride", "riding", "after", "evening"];

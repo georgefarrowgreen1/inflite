@@ -13,9 +13,9 @@ import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.81";
+const BUILD = "1.82";
 // (what's new in it, said once it's in)
-const NEWS = "A clearer day at a glance, shared controls and zoom that works";
+const NEWS = "A clearer day, with desktop tiles that make room for each other";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1775,6 +1775,7 @@ function frame() {
   });
   // (swiping between an app's sections, as a native app pages between its tabs: swipe.js; once, whichever frame is up)
   if (!frame.swipe) frame.swipe = import("/swipe.js").then((m) => m.swipes({ get route() { return F?.route; }, nav: { section: (a, id) => F?.nav.section(a, id) } }), (e) => console.error(e));
+  if (!frame.layout) frame.layout = import("/day.js").then((m) => m.arrangeToday($("#today")), () => {});
   for (const k of Object.keys(SCREENS)) F.screen(k, SCREENS[k]);
   // (the page's own sheets' close button: the framework's cross, as every sheet it builds has; the ✕ is for no script)
   for (const b of $$(".ifl-sheet .ifs-btn[data-close]")) b.replaceChildren(F.ui.icon("x"));
@@ -2759,7 +2760,7 @@ function start() {
   worker();
   IFL.built("today", BUILD, NEWS);
   IFL.updates({ app: "today", build: BUILD, url: "/version", field: "build", busy: () => !!F?.busy() || !!sheetOpen, save,
-    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css", "/roof/controls.css"] });
+    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/swipe.js", "/layout.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css", "/roof/controls.css"] });
   load();
   nextMinute();
   document.addEventListener("visibilitychange", () => {

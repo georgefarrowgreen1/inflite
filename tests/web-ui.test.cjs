@@ -4,13 +4,14 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { createServer } = require('node:http');
 const { readFile, mkdir } = require('node:fs/promises');
-const { existsSync } = require('node:fs');
+const { existsSync, readFileSync } = require('node:fs');
 const { resolve, extname } = require('node:path');
 const { chromium } = require('playwright');
 
 const publicDir = resolve(__dirname, '../today/public');
 const fixture = (name) => require(`./fixtures/${name}.json`);
 const day = fixture('day');
+const build = /const BUILD = "([\d.]+)"/.exec(readFileSync(resolve(publicDir, 'app.js'), 'utf8'))[1];
 let browser, server, origin;
 before(async () => {
   server = createServer(async (req, res) => {
@@ -35,16 +36,17 @@ before(async () => {
 });
 after(async () => { await browser?.close(); await new Promise(r => server ? server.close(r) : r()); });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true } = {}) {
+async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: 'reduce',
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers: 'block', hasTouch: width < 600, isMobile: width < 600 });
   const requests = [], errors = [];
   const view = structuredClone(fixture('session'));
+  if (preferences) view.prefs = preferences;
   view.links = { ...view.links, account: origin, auth: origin };
   await ctx.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
     if (url.origin !== origin) return route.abort();
-    if (url.pathname === '/version') return route.fulfill({ json: { build: '1.81' } });
+    if (url.pathname === '/version') return route.fulfill({ json: { build } });
     if (!url.pathname.startsWith('/api/')) return route.continue();
     requests.push({ path: url.pathname, method: req.method(), body: req.postDataJSON() });
     const api = { '/api/session': signedIn ? view : { signedIn: false }, '/api/boot': { view, cards: answer },
@@ -70,6 +72,95 @@ async function save(page, name) {
   await mkdir(out, { recursive: true });
   await page.screenshot({ path: `${out}/sample-${name}.png`, fullPage: true });
 }
+
+async function settleLayout(page) {
+  await page.locator('#today.today-packed').waitFor();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))));
+  // Native ResizeObserver notifications and the browser's resize event can arrive
+  // after Playwright's clock-backed animation frames. Wait for the measured heights.
+  await page.waitForFunction(() => [...document.querySelectorAll('#top, #side > section, #rest > .tcard')]
+    .filter(e => e.getClientRects().length && e.offsetHeight)
+    .every(e => Number(e.style.getPropertyValue('--tile-rows')) === Math.ceil((e.offsetHeight + 20) / 4)));
+}
+async function tileBoxes(page) {
+  return page.evaluate(() => [...document.querySelectorAll('#top, #side > section, #rest > .tcard')]
+    .filter(e => e.getClientRects().length && e.offsetHeight).map(e => {
+      const r = e.getBoundingClientRect(); return { id: e.id || e.dataset.app, x: r.x, y: r.y, w: r.width, h: r.height };
+    }));
+}
+function assertPacked(boxes) {
+  for (let i = 0; i < boxes.length; i++) {
+    if (i) assert.ok(boxes[i].y >= boxes[i - 1].y - 1, `${boxes[i].id} stays in reading order`);
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i], b = boxes[j];
+      const overlap = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 1 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 1;
+      assert.equal(overlap, false, `${a.id} overlaps ${b.id}`);
+    }
+  }
+}
+
+test('desktop tiles use two to four columns and fill gaps beneath shorter cards', async () => {
+  const { ctx, page, errors } = await open({ width: 1440, scheme: 'dark' });
+  try {
+    for (const [width, columns] of [[1100, 2], [1280, 2], [1440, 3], [1920, 4], [2560, 4]]) {
+      await page.setViewportSize({ width, height: 1000 }); await settleLayout(page);
+      await page.waitForFunction(n => Number(document.querySelector('#today').style.getPropertyValue('--today-columns')) === n, columns);
+      assert.equal(await page.locator('#today').evaluate(e => Number(e.style.getPropertyValue('--today-columns'))), columns);
+      const boxes = await tileBoxes(page); assertPacked(boxes);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+      if (width === 1440) {
+        const fitness = boxes.find(b => b.id === 'fitness'), markets = boxes.find(b => b.id === 'markets');
+        assert.ok(markets.y < fitness.y + fitness.h, 'Markets fills available space beside Fitness');
+        assert.ok(Math.max(...boxes.map(b => b.y + b.h)) < 1300, 'the sample day makes use of all three columns');
+      }
+      await save(page, `desktop-${width}-packed`);
+    }
+    assert.deepEqual(errors, []);
+    assert.deepEqual(await page.evaluate(() => window.__csp), []);
+  } finally { await ctx.close(); }
+});
+
+test('packing updates for expanding history, new card content and returning from other screens', async () => {
+  const { ctx, page, errors } = await open({ width: 1440 });
+  try {
+    await settleLayout(page);
+    const summary = page.locator('.dt-history > summary'); await summary.focus(); await page.keyboard.press('Enter');
+    await settleLayout(page); assertPacked(await tileBoxes(page));
+    assert.equal(await summary.evaluate(e => e === document.activeElement), true);
+    const weatherHeight = (await tileBoxes(page)).find(b => b.id === 'weather').h;
+    await page.evaluate(async () => {
+      const { drawDay } = await import('/day.js'), answer = await (await fetch('/api/today')).json();
+      answer.cards.weather.lead = 'A longer update to check that loaded content can change the height of a tile without covering the next one. '.repeat(4);
+      drawDay(document.querySelector('#today'), answer, { now: answer.at, timers: false });
+    });
+    await settleLayout(page); assertPacked(await tileBoxes(page));
+    assert.ok((await tileBoxes(page)).find(b => b.id === 'weather').h > weatherHeight + 120, 'new content really changed the card height');
+    assert.equal(await page.locator('.dt-history').evaluate(e => e.open), true);
+    await page.evaluate(() => { location.hash = 'apps'; }); await page.locator('#apps:not([hidden])').waitFor();
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    await page.evaluate(() => { location.hash = ''; }); await settleLayout(page);
+    assertPacked(await tileBoxes(page));
+    assert.equal(await page.locator('#today').evaluate(e => e.style.getPropertyValue('--today-columns')), '4');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForFunction(() => !document.querySelector('#today').classList.contains('today-packed'));
+    assert.equal(await page.locator('#rest').evaluate(e => getComputedStyle(e).display), 'grid');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('hidden cards and a changed card order are respected without a sidebar', async () => {
+  const answer = structuredClone(day); answer.upcoming = []; answer.waiting = [];
+  const order = ['fitness', 'markets', 'chat', 'weather'];
+  const { ctx, page } = await open({ width: 1920, answer, preferences: { order, hidden: ['chat'] } });
+  try {
+    await settleLayout(page);
+    const boxes = await tileBoxes(page); assertPacked(boxes);
+    assert.deepEqual(boxes.filter(b => b.id !== 'top').map(b => b.id), ['fitness', 'markets', 'weather']);
+    assert.equal(await page.locator('#today').evaluate(e => e.style.getPropertyValue('--today-columns')), '4');
+    await save(page, 'desktop-no-sidebar');
+  } finally { await ctx.close(); }
+});
 
 test('changes are keyboard-accessible; Undo keeps the original request and open state', async () => {
   const { ctx, page, requests, errors } = await open();
@@ -127,6 +218,8 @@ test('Today, Apps and You fit phone and desktop widths in both themes', async ()
           await page.evaluate(screen => { location.hash = screen; }, screen);
           await page.locator(`#${screen}:not([hidden])`).waitFor();
         }
+        if (screen === 'today' && width >= 1100) await settleLayout(page);
+        if (screen === 'apps') await page.locator('#apps .ifl-tile').first().waitFor();
         if (screen === 'you') {
           await page.locator('#youQuiet').waitFor();
           assert.match(await page.locator('#youPhoneRow').innerText(), /On This Device/);
