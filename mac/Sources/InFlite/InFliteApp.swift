@@ -2,6 +2,7 @@ import SwiftUI
 import InFliteCore
 
 @main
+@MainActor
 struct InFliteApp: App {
     @StateObject private var model = AppModel()
     @AppStorage("appearance") private var appearance = "system"

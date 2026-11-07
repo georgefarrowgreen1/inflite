@@ -146,7 +146,7 @@ struct BrowserNavigation: View {
         HStack(spacing: 14) {
             Button { page.webView.goBack() } label: { Image(systemName: "chevron.left") }.disabled(!page.canGoBack).help("Back")
             Button { page.webView.goForward() } label: { Image(systemName: "chevron.right") }.disabled(!page.canGoForward).help("Forward")
-            Button { page.isLoading ? page.webView.stopLoading() : page.webView.reload() } label: {
+            Button { if page.isLoading { page.webView.stopLoading() } else { page.webView.reload() } } label: {
                 Image(systemName: page.isLoading ? "xmark" : "arrow.clockwise")
             }.help(page.isLoading ? "Stop loading" : "Reload · ⌘R")
             Divider().frame(height: 16)

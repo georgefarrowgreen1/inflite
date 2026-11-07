@@ -3,7 +3,6 @@ import InFliteCore
 
 struct WorkspaceView: View {
     @ObservedObject var model: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
 
     var body: some View {
