@@ -1594,26 +1594,22 @@ async function finishSignIn() {
   const view = await call("/api/auth/handback", { method: "POST", body: { code, verifier } }).catch((e) => { unlockChats(null); throw e; });
   // (then Chats, by the same sign-in, beside Today coming in: unlockChats. Waited for only before going on to another page)
   chatsUnlock = unlockChats(view ? chat : null);
-  // (a new sign-in: whether every app's still here is asked at once, everyCheck)
-  try { localStorage.removeItem(EVERY_AT); } catch {}
+  // (a new sign-in: this device handed to the account again at once, as it wants it, syncPush)
+  pushAgain = true;
   return view;
 }
 let chatsUnlock = null;
 
-// Signing out of InFlite (You, or the menu): this device's notifications stopped first (in every app's table), Chat's
-// sign-in and key on this phone gone too where its engine's here, the account's sign-in ended, your day forgotten here,
-// then the sign-in page says so and offers the way back (§11.5)
+// Signing out of InFlite (You, or the menu): this device's notifications stopped with the sign-in (the account's
+// logout takes its subscription out of every app's table; the subscription's kept, so signed in again it has them again
+// without a tap, as the account wants them: syncPush), Chat's sign-in and key on this phone gone too where its engine's
+// here, the account's sign-in ended, your day forgotten here, then the sign-in page says so and offers the way back
+// (§11.5)
 async function signOut() {
   // (first, what you wrote in a module saved to its app (C10, s24 §10); where something couldn't be, asked before going on)
   const fl = await Promise.resolve(F?.flush?.()).catch(() => null);
   if (fl?.lost > 0 && !(await anyway())) return;
-  try {
-    const sub = await currentSub();
-    if (sub) {
-      await call("/api/device", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch((e) => (missing(e) ? call("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }) : null)).catch(() => {});
-      await sub.unsubscribe().catch(() => {});
-    }
-  } catch {}
+  const endpoint = await currentSub().then((sub) => sub?.endpoint || null, () => null);
   const chatOut = S.hub && await Promise.race([
     IFL.hub.chat().then(async (c) => { if (typeof c?.signOut !== "function") return false; await c.signOut(); return true; }).catch(() => false),
     new Promise((ok) => setTimeout(() => ok(false), 4000)),
@@ -1622,14 +1618,13 @@ async function signOut() {
   // seconds at most, as one still starting is ended all the same)
   if (chatsHere) await Promise.race([F?.releaseService("chats", { terminate: true }), new Promise((ok) => setTimeout(ok, 2000))]);
   const auth = safe(S.links?.auth) || DEFAULT_LINKS.auth;
-  await call("/api/logout", { method: "POST", body: {} }).catch(() => {});
+  await call("/api/logout", { method: "POST", body: endpoint ? { endpoint } : {} }).catch(() => {});
   forgetKept();
   // (the frame let go of first: a module's own closing (Mail's unsent message) writes before its copies are wiped, never after)
   unframe();
   // (and the apps' copies of you at this address: the hub's, so every app's)
   await forgetApps({ chat: chatsHere || !chatOut });
   try { localStorage.removeItem("today:push"); } catch {}
-  keepEvery(false);
   S.view = null;
   location.assign(`${auth}/#${new URLSearchParams({ signout: "today", back: `${location.origin}/` })}`);
 }
@@ -1804,7 +1799,7 @@ const appsCtx = () => ({ answer: S.answer, view: S.view, hub: S.hub, roof: S.roo
 const youCtx = () => ({
   view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, call, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
   kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
-  sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, everyAgain, toMorning, openAccount, signOut, canPush, pushWhy,
+  sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, syncPush, offHere: () => offHere(), toMorning, openAccount, signOut, canPush, pushWhy,
   chatSettings: () => (chatsHere && F ? F.nav.go("/chats/#settings") : location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`)),
   openSheet, closeSheet, BUILD,
   frame: F, connectors, connector: (app) => connectors().then((m) => F && m.openConnector(F, app)), go: (path) => F?.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
@@ -2348,8 +2343,14 @@ async function subscribe() {
   if (asked !== "granted") { toast("Notifications are blocked for InFlite in this browser’s settings."); drawMorning(); return null; }
   const reg = await swReg();
   if (!reg) throw new Error("Couldn’t turn it on just now. Try again in a moment.");
+  return ownSub(reg);
+}
+// (this device's subscription, or a new one with the account's key: asked nothing, so only where it's allowed already)
+async function ownSub(reg) {
+  const had = await reg.pushManager.getSubscription();
+  if (had) return had;
   const { key } = await call("/api/push/key");
-  return (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toBytes(key) }));
+  return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toBytes(key) });
 }
 async function kept(sub) {
   S.endpoint = sub.endpoint;
@@ -2363,6 +2364,8 @@ async function turnOn() {
     if (!sub) return false;
     await postDevice(sub);
     await kept(sub);
+    offHere(false);
+    pushSays({ on: true });
     return await putMorning({ on: true });
   } catch (e) {
     if (e.status !== 401) toast(e.message || "Couldn’t turn it on just now. Try again in a moment.");
@@ -2371,15 +2374,17 @@ async function turnOn() {
   }
 }
 // This Phone, off: its subscription taken out of every table (and Today's own, on an older account side); kept, so
-// turning it on again is one tap. What's known here of it says so at once (the morning's thisDevice, this browser's
-// today:push), as the account now does, so You's switch stays off
+// turning it on again is one tap. Off on this device alone, as this browser remembers (offHere): the account still
+// wants them on the others, and on a new one, unless this was the last (its answer's on). What's known here of it says
+// so at once (the morning's thisDevice, this browser's today:push), as the account now does, so You's switch stays off
 async function turnOff() {
   const sub = await currentSub();
-  if (!sub) return true;
+  if (!sub) { offHere(true); return true; }
   try {
-    await call("/api/device", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch((e) => { if (missing(e)) return call("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }); throw e; });
+    const r = await call("/api/device", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch((e) => { if (missing(e)) return call("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }); throw e; });
     try { localStorage.removeItem("today:push"); } catch {}
-    keepEvery(false);
+    offHere(true);
+    if (typeof r?.on === "boolean") pushSays({ on: r.on });
     if (S.morning && typeof S.morning === "object") S.morning = { ...S.morning, thisDevice: false };
     drawMorning();
     return true;
@@ -2388,39 +2393,67 @@ async function turnOff() {
     return false;
   }
 }
-// Get Every App's Notifications Here: only ever from its own tap (You). → the account's answer ({ ok, tables })
+// Get Every App's Notifications Here: only ever from its own tap (You), and kept on the account from then on, for this
+// device and every other that has them. → the account's answer ({ ok, tables })
 async function fanOut() {
   const sub = await subscribe();
   if (!sub) return null;
   const r = await postDevice(sub, { fan: true });
   await kept(sub);
-  keepEvery(true);
+  offHere(false);
+  pushSays({ on: true, every: true });
   return r;
 }
-// Get Every App's Notifications Here, remembered: once tapped on this phone, kept for the account until This Phone's
-// turned off or it signs out here. The apps' rows go with the sign-in that made them (one that ends takes Chat's with
-// it), so where the account's lost them they're sent again, quietly: never asked for, this phone's own subscription only
-const EVERY = "today:every", EVERY_AT = "today:every-at";
-function everyKept() { const id = S.view?.user?.id; try { return !!id && localStorage.getItem(EVERY) === id; } catch { return false; } }
-function keepEvery(on) { try { const id = S.view?.user?.id; if (on && id) localStorage.setItem(EVERY, id); else localStorage.removeItem(EVERY); } catch {} }
-// → the account's answer ({ ok, tables }), or null with nothing to send (not chosen here, no subscription, not allowed)
-async function everyAgain() {
-  if (!everyKept() || !canPush() || Notification.permission !== "granted") return null;
-  const sub = await currentSub();
+// The account's word on notifications (the view's push: { on, every }), whichever device said it; an account side from
+// before, without it: none
+const pushSays = (p) => { if (S.view?.push && typeof S.view.push === "object") S.view.push = { ...S.view.push, ...p }; };
+function everyKept() { return S.view?.push?.every === true; }
+// (This Phone turned off on this device: remembered by this browser, for the account it was, through signing out and in)
+const OFF_HERE = "today:push-off";
+function offHere(on) {
+  const id = S.view?.user?.id;
+  try {
+    if (on === undefined) return !!id && localStorage.getItem(OFF_HERE) === id;
+    if (on && id) localStorage.setItem(OFF_HERE, id); else localStorage.removeItem(OFF_HERE);
+  } catch {}
+  return false;
+}
+// This device, as the account wants it: where the account wants notifications, this browser allows them and This Phone
+// wasn't turned off here, its subscription (made again without asking, where the browser's lost it) handed to the
+// account wherever the account hasn't it (a sign-in that ended took the apps' rows; signed out here and in again), and
+// every app's with it where the account says so. Quietly, never asking anything: at launch (and at once after a sign-in,
+// pushAgain), as the page comes back (every ten minutes at most), and from You. → the account's answer ({ ok, tables }),
+// or, with nothing to send, the tables it's in already; null where it can't be (or isn't wanted) here
+let pushAgain = false, pushAt = 0, pushing = null;
+// (one at a time: You's, asked while the launch's is under way, waits for that one)
+function syncPush({ force = false } = {}) {
+  if (!force && !pushAgain && Date.now() - pushAt < 10 * 60e3) return Promise.resolve(null);
+  return (pushing ||= pushHere().finally(() => { pushing = null; }));
+}
+async function pushHere() {
+  if (S.view?.push?.on !== true || offHere() || !canPush() || Notification.permission !== "granted") return null;
+  pushAt = Date.now();
+  const again = pushAgain;
+  pushAgain = false;
+  const reg = await swReg();
+  // (the worker not ready yet, on a first visit: asked again the next time, not ten minutes on)
+  if (!reg) { pushAt = 0; return null; }
+  const sub = await ownSub(reg).catch(() => null);
   if (!sub) return null;
-  const r = await postDevice(sub, { fan: true });
+  // (chosen on this phone before the account kept it: today:every, this account's id, said to the account once)
+  let was = false; try { was = localStorage.getItem("today:every") === S.view.user.id; } catch {}
+  const device = await hashOf(sub.endpoint), every = (everyKept() || was) && S.hub && S.view?.hubPush === true;
+  if (!again && !(was && !everyKept())) {
+    const d = S.hub ? await call(`/api/devices?device=${encodeURIComponent(device)}`).catch(() => null) : null;
+    const here = Array.isArray(d?.here) ? d.here : device === S.device && typeof S.morning?.thisDevice === "boolean" ? (S.morning.thisDevice ? ["td_push"] : []) : null;
+    if (here?.includes("td_push") && (!every || here.includes("pg_push"))) { await kept(sub); return { ok: true, tables: here }; }
+  }
+  const r = await postDevice(sub, every ? { fan: true } : {}).catch(() => null);
+  if (!r) return null;
   await kept(sub);
+  if (every) { pushSays({ every: true }); try { localStorage.removeItem("today:every"); } catch {} }
+  if (S.morning && typeof S.morning === "object") S.morning = { ...S.morning, thisDevice: true };
   return r;
-}
-// (at launch, every six hours at most, and at once after a sign-in: the tables this phone's in asked; Chat's not among
-// them, everyAgain)
-async function everyCheck() {
-  if (!S.hub || S.view?.hubPush !== true || !S.device || !everyKept()) return;
-  let at = 0; try { at = Number(localStorage.getItem(EVERY_AT)) || 0; } catch {}
-  if (Date.now() - at < 6 * 3600e3) return;
-  try { localStorage.setItem(EVERY_AT, String(Date.now())); } catch {}
-  const d = await call(`/api/devices?device=${encodeURIComponent(S.device)}`).catch(() => null);
-  if (d?.fan === true && Array.isArray(d.here) && !d.here.includes("pg_push")) await everyAgain().catch(() => null);
 }
 // (the browser changed this device's subscription while Today was shut, and its worker couldn't say so: said now)
 async function deviceMoved() {
@@ -2694,7 +2727,7 @@ async function load() {
   wireLinks();
   if (!asked) askCards();
   fromHash();
-  devP.then(deviceMoved).then(everyCheck).catch(() => {});
+  devP.then(deviceMoved).then(() => syncPush({ force: true })).catch(() => {});
   const at = IFL.here("today");
   if (at?.y) requestAnimationFrame(() => scrollTo(0, at.y));
 }
@@ -2716,7 +2749,7 @@ function start() {
   nextMinute();
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
-    if (S.view) { back(); hubAgain(); }
+    if (S.view) { back(); hubAgain(); syncPush().catch(() => {}); }
     else if ($("#outSaid").textContent) load();
   });
   // (back from the browser's own cache of the page (bfcache): the day, and whether the hub serves Weather, asked again)

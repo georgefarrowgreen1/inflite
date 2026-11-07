@@ -13,7 +13,9 @@
 //   drawYou(root, ctx) → a promise, once it's drawn: ctx is the page's (app.js youCtx): view, hub, call(path, o),
 //   missing(e), toast(text), morning (the morning's view as the page has it now), sub() → this phone's subscription,
 //   device() → its name for the account, kept() → the endpoint this browser last handed the account (today:push),
-//   photo(user) → the account's picture (its initial under it), turnOn(), turnOff(), fanOut(), toMorning(),
+//   photo(user) → the account's picture (its initial under it), turnOn(), turnOff(), fanOut(), everyKept() → whether the
+//   account has every app's come to each device with notifications, syncPush({ force }) → this device handed to the
+//   account as it wants it (app.js), offHere() → whether This Phone was turned off on this device, toMorning(),
 //   openAccount(open), signOut(), chatSettings(), canPush(), pushWhy(), openSheet(id), closeSheet(), BUILD,
 //   frame (F), connectors() → the framework's connectors.js, connector(app) → its sheet for that app, icon(app) → its icon's address,
 //   go(path) → a screen of the framework's, href(app, section) → an app's address from here (IFL.hub.href)
@@ -53,7 +55,7 @@ const and = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")
 // subscription, as the browser has it)
 const Y = { rules: null, notify: null, devices: null, sub: null, shares: null, sharesRoof: null };
 let drawing = null;
-export function forgetYou() { Y.rules = Y.notify = Y.devices = Y.sub = Y.shares = null; Y.everyTried = Y.everyLost = false; drawing = null; }
+export function forgetYou() { Y.rules = Y.notify = Y.devices = Y.sub = Y.shares = null; Y.synced = Y.notHere = Y.everyLost = false; drawing = null; }
 // (Connected Apps: each app, and the words of InFlite's connector contract its descriptor fills, and only those)
 const CONNECTED = [["weather", "Weather"], ["chats", "Chats"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"]];
 const WORDS = [["cards", "Cards"], ["search", "Search"], ["notifications", "Notifications"], ["actions", "Actions"], ["screens", "Screens"]];
@@ -73,11 +75,15 @@ async function sharesOf(ctx) {
   Y.shares = out; Y.sharesRoof = roof;
 }
 
-// This Phone's switch: on where the account has this phone for Today's morning (td_push), as the account says: GET
-// /api/devices' here (asked with this phone's name), else the morning's thisDevice; only where neither says, this
-// browser's own word (the endpoint it last handed the account). Never the subscription alone: turned off, it's kept,
-// so turning on again is one tap
+// This Phone's switch: the account's word (the view's push.on: notifications wanted, said on any device), unless it was
+// turned off on this device. Where this device can't have them (not allowed here yet, or the account hasn't it and it
+// couldn't be handed over quietly: notHere), the row says so, and a tap turns it on here, never off.
+// An account side from before, without that word: on where the account has this phone for Today's morning (td_push),
+// as the account says: GET /api/devices' here (asked with this phone's name), else the morning's thisDevice; only where
+// neither says, this browser's own word (the endpoint it last handed the account)
 function phoneOn(ctx) {
+  const p = ctx.view?.push;
+  if (typeof p?.on === "boolean") return p.on && !ctx.offHere?.();
   const sub = Y.sub;
   if (!sub || (typeof Notification !== "undefined" && Notification.permission !== "granted")) return false;
   if (Array.isArray(Y.devices?.here) && Y.devices.asked) return Y.devices.here.includes("td_push");
@@ -85,6 +91,8 @@ function phoneOn(ctx) {
   if (typeof t === "boolean") return t;
   return !!sub.endpoint && ctx.kept?.() === sub.endpoint;
 }
+const said = (ctx) => typeof ctx.view?.push?.on === "boolean";
+const notHere = (ctx) => said(ctx) && phoneOn(ctx) && !ctx.pushWhy?.() && (typeof Notification === "undefined" || Notification.permission !== "granted" || !!Y.notHere);
 
 export async function drawYou(root, ctx) {
   if (!root || !ctx?.view) return;
@@ -98,14 +106,18 @@ export async function drawYou(root, ctx) {
   if (drawing !== run) return;
   Y.rules = rules; Y.notify = notify; Y.devices = devices && typeof devices === "object" ? { ...devices, asked: !!dev } : devices;
   paint(root, ctx);
-  // (Get Every App's Here, chosen on this phone, but not in Chat's table now (a sign-in that ended took it): sent again,
-  // quietly, once a visit; failing that, its row's back to tap)
-  if (Y.devices?.asked && Y.devices.fan === true && !Y.devices.here?.includes("pg_push") && ctx.everyKept?.() && !Y.everyTried) {
-    Y.everyTried = true;
-    const r = await ctx.everyAgain?.().catch(() => null);
+  // (this phone, as the account wants it, where the account hasn't it (the browser lost its subscription; a sign-in that
+  // ended took the apps' rows): handed over again, quietly, once a visit; failing that, its row says so, and Get Every
+  // App's Here is back to tap)
+  const here = Y.devices?.asked ? Y.devices.here || [] : null, every = Y.devices?.fan === true && ctx.everyKept?.();
+  if (said(ctx) && phoneOn(ctx) && !Y.synced && (!here || !here.includes("td_push") || (every && !here.includes("pg_push")))) {
+    Y.synced = true;
+    const r = await ctx.syncPush?.({ force: true }).catch(() => null);
     if (drawing !== run) return;
-    if (r?.tables?.includes("pg_push")) Y.devices.here = [...new Set([...(Y.devices.here || []), ...r.tables])];
-    else Y.everyLost = true;
+    const now = r ? [...new Set([...(here || []), ...(Array.isArray(r.tables) ? r.tables : ["td_push"])])] : here || [];
+    if (r) { Y.sub = await ctx.sub().catch(() => Y.sub); if (Y.devices && typeof Y.devices === "object") Object.assign(Y.devices, { here: now, asked: true }); }
+    Y.notHere = !now.includes("td_push");
+    Y.everyLost = every && !now.includes("pg_push");
     paint(root, ctx);
   }
 }
@@ -131,12 +143,14 @@ function paint(root, ctx) {
   {
     const why = ctx.pushWhy?.(), rows = [];
     let foot = "";
-    rows.push(sw(`id="youPhone"${why ? " disabled" : ""}`, "On This Phone", why || "Today’s morning and the apps below", phoneOn(ctx), "Notifications on this phone", ` id="youPhoneRow"`, ic("bell", "red")));
-    const here = Array.isArray(Y.devices?.here) ? Y.devices.here : [];
+    const on = phoneOn(ctx);
+    rows.push(sw(`id="youPhone"${why ? " disabled" : ""}`, "On This Phone", why || (notHere(ctx) ? "Tap to turn on here" : "Today’s morning and the apps below"), on, "Notifications on this phone", ` id="youPhoneRow"`, ic("bell", "red")));
+    const here = Array.isArray(Y.devices?.here) ? Y.devices.here : [], every = !!ctx.everyKept?.();
     if (ctx.hub && ctx.view.hubPush === true && Y.devices !== false) {
-      // (chosen here before, ctx.everyKept: shown as on, and sent again by drawYou if the account's lost it)
-      if (here.includes("pg_push") || (ctx.everyKept?.() && !Y.everyLost)) foot = "Every app notifies here: Chats, Weather and Markets as well as Today.";
-      else rows.push(go(`id="youEvery"`, "Get Every App’s Here", "Chats, Weather and Markets as well as Today", "", ic("every", "blue")));
+      // (chosen on the account, ctx.everyKept: shown as on wherever this phone has them, and sent again by drawYou if
+      // the account's lost it here)
+      if (on && (here.includes("pg_push") || (every && !Y.everyLost))) foot = "Every app notifies here: Chats, Weather and Markets as well as Today.";
+      else if (on || !every) rows.push(go(`id="youEvery"`, "Get Every App’s Here", "Chats, Weather and Markets as well as Today", "", ic("every", "blue")));
     }
     const t = (n && n.today) || ctx.morning || {};
     rows.push(go(`id="youMorning"`, "Today’s Morning", "One notification, from all your apps", t.on ? clock(Number.isInteger(t.at) ? t.at : 420) : "Off", ic("sun", "orange")));
@@ -319,11 +333,13 @@ function wire(root, ctx) {
   // (this phone: on, from a tap; off, taken out of every app's table. Done, what's known here says so at once (off: in
   // none of them; on: Today's morning), and the account's asked again)
   $("#youPhone")?.addEventListener("change", async (e) => {
-    const sw = e.target, on = sw.checked;
+    const sw = e.target, on = sw.checked || notHere(ctx);
+    sw.checked = on;
     sw.disabled = true;
     const ok = await (on ? ctx.turnOn() : ctx.turnOff()).catch(() => false);
     sw.disabled = false;
-    if (!ok) { sw.checked = !on; return; }
+    if (!ok) { sw.checked = phoneOn(ctx); return; }
+    if (on) Y.notHere = false;
     if (Y.devices && Array.isArray(Y.devices.here)) Y.devices.here = on ? [...new Set([...Y.devices.here, "td_push"])] : [];
     drawYou(root, ctx);
   });
