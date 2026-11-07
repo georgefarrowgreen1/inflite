@@ -6,7 +6,7 @@ final class NavigationTests: XCTestCase {
         for destination in Destination.allCases {
             XCTAssertTrue(NavigationPolicy.isInternal(try XCTUnwrap(destination.url)))
         }
-        XCTAssertEqual(Destination.chats.url?.path, "/chats/", "The website retains its own device restrictions")
+        XCTAssertEqual(Destination.chats.url?.absoluteString, "https://inflite.ai/chats/", "The website retains its own device restrictions")
         XCTAssertEqual(Destination.mail.url?.host, "inflite.ai", "Use the same hub interface as the web app")
     }
     func testSignInStaysInsideTheSharedSession() {
