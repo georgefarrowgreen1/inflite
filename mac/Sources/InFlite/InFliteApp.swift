@@ -35,7 +35,7 @@ struct InFliteApp: App {
                 Button("Reload Page") { model.currentPage?.webView.reload() }
                     .keyboardShortcut("r").disabled(model.currentPage == nil)
                 Button("Open in Default Browser") { model.openInBrowser() }
-                    .keyboardShortcut("b", modifiers: [.command, .shift]).disabled(model.selection.url == nil)
+                    .keyboardShortcut("b", modifiers: [.command, .shift]).disabled(model.currentPage == nil)
                 Button("Find on Page…") { model.showFind.toggle() }
                     .keyboardShortcut("f").disabled(model.currentPage == nil)
             }
