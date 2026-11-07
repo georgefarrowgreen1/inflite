@@ -1779,7 +1779,7 @@ function frame() {
   const f = F;
   import("/bell.js").then((m) => {
     if (F !== f || bell) return;
-    bell = m.createBell(f, { count: (n) => f.header.count?.("bell", n), go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); } });
+    bell = m.createBell(f, { count: (n) => f.header.count?.("bell", n), go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); }, settings: () => go("/#you=phone") });
   }, (e) => console.error(e));
   return F;
 }

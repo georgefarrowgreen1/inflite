@@ -297,7 +297,8 @@ async function badge(s) {
 // body, url, tag, at, seen), newest first, at most 50 and 14 days. One leaves it as it's tapped or cleared in Notification
 // Centre (notificationclick, notificationclose), cleared in the bell's sheet (its notification closed too), or replaced
 // by one with its tag. Those still in Notification Centre that it hasn't (shown before it was kept) are added as they're
-// met; one that's left it (gone, as long as the log keeps any) is never added back. Opening the bell marks every one
+// met; one that's left it (gone, as long as the log keeps any) is never added back, but by the bell's Undo, within a
+// minute of its clearing (noteBack). Opening the bell marks every one
 // seen: the badge is the unseen ones. Every change is done in turn (noteQ), each a read and a write in one transaction.
 const NOTE_MAX = 50, NOTE_AGE = 14 * 864e5, GONE_MAX = 100;
 function noteId() { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10); }
@@ -320,6 +321,14 @@ function noteDrop(s, ids = [], tags = [], now = Date.now()) {
   const out = s.list.filter(hit).map((x) => ({ id: x.id, tag: x.tag || "", at: now }));
   for (const id of ids) if (!out.some((g) => g.id === id)) out.push({ id, tag: "", at: now });
   return notePrune({ list: s.list.filter((x) => !hit(x)), gone: [...s.gone.filter((g) => !out.some((o) => o.id === g.id)), ...out] }, now);
+}
+// (cleared ones put back, the bell's Undo: only those the log let go of in the last minute, seen, as the page has them;
+// never over one that's since come with its tag)
+function noteBack(s, back, now) {
+  const ok = back.filter((n) => s.gone.some((g) => g.id === n.id && g.at > now - 60e3) && !s.list.some((x) => x.id === n.id || (n.tag && x.tag === n.tag)));
+  if (!ok.length) return s;
+  const ids = ok.map((n) => n.id);
+  return notePrune({ list: [...s.list, ...ok.map((n) => ({ ...n, seen: true }))], gone: s.gone.filter((g) => !ids.includes(g.id)) }, now);
 }
 function noteUnread(s) { return s.list.filter((x) => !x.seen).length; }
 function noteSeen(s) { return { ...s, list: s.list.map((x) => (x.seen ? x : { ...x, seen: true })) }; }
@@ -379,7 +388,7 @@ async function notesNow(fn = (s) => s) {
   return notesDo((s, now) => fn(noteMerge(s, shown, now), now));
 }
 // (what a page is told: the list, newest first, and how many are unseen)
-const notesSaid = (s) => ({ ifl: "notes", list: s ? s.list.map(({ id, app, title, body, url, at, seen }) => ({ id, app, title, body, url, at, seen: !!seen })) : [], unread: s ? noteUnread(s) : 0, kept: !!s });
+const notesSaid = (s) => ({ ifl: "notes", list: s ? s.list.map(({ id, app, title, body, url, tag, at, seen }) => ({ id, app, title, body, url, tag: tag || "", at, seen: !!seen })) : [], unread: s ? noteUnread(s) : 0, kept: !!s });
 // (the log changed: the badge counted again, and every window of this site's told, so an open bell shows it)
 async function notesChanged(s) {
   if (s === undefined) s = await notesNow();
@@ -388,12 +397,19 @@ async function notesChanged(s) {
   const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []);
   for (const w of wins) if (sameOrigin(w.url)) try { w.postMessage(notesSaid(s)); } catch {}
 }
-// A page's ask ({ ifl: "notes" } the list; "notes-seen" every one seen; "notes-clear" { ids } or { all } cleared, their
-// notifications closed in Notification Centre too), answered on its port with the list
+// A page's ask ({ ifl: "notes" } the list; "notes-seen" every one seen, and which weren't (fresh); "notes-clear" { ids }
+// or { all } cleared, their notifications closed in Notification Centre too; "notes-back" { list } those just cleared put
+// back, their notifications left closed), answered on its port with the list
 async function notesAsked(d, port) {
-  let s;
-  if (d.ifl === "notes-seen") s = await notesNow(noteSeen);
-  else if (d.ifl === "notes-clear") {
+  let s, fresh;
+  if (d.ifl === "notes-seen") s = await notesNow((st) => { fresh = st.list.filter((x) => !x.seen).map((x) => x.id); return noteSeen(st); });
+  else if (d.ifl === "notes-back") {
+    const str = (x, n) => (typeof x === "string" ? x.slice(0, n) : "");
+    const back = (Array.isArray(d.list) ? d.list : []).slice(0, NOTE_MAX).filter((x) => x && typeof x.id === "string" && Number.isFinite(x.at))
+      .map((x) => ({ id: x.id.slice(0, 120), app: APPS.includes(x.app) ? x.app : "today", title: str(x.title, 200), body: str(x.body, 600),
+        url: typeof x.url === "string" && x.url.startsWith("/") && !x.url.startsWith("//") ? x.url.slice(0, 2000) : "/", tag: str(x.tag, 130), at: x.at }));
+    s = await notesNow((st, now) => noteBack(st, back, now));
+  } else if (d.ifl === "notes-clear") {
     const ids = Array.isArray(d.ids) ? d.ids.filter((x) => typeof x === "string").slice(0, NOTE_MAX * 2) : [];
     let dropped = [];
     s = await notesNow((st, now) => {
@@ -407,7 +423,7 @@ async function notesAsked(d, port) {
     }
   } else if (d.ifl === "notes") s = await notesNow();
   else return;
-  try { port?.postMessage(notesSaid(s)); } catch {}
+  try { port?.postMessage(fresh ? { ...notesSaid(s), fresh } : notesSaid(s)); } catch {}
   if (d.ifl === "notes") await badge(s);
   else await notesChanged(s);
 }
