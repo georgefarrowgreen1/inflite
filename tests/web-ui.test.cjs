@@ -511,20 +511,118 @@ test('an Apps refresh preserves an open edit, and an old account editor cannot s
       const input = spec.body.querySelector('[data-quick="weather:radar"] input'); input.checked = false; input.dispatchEvent(new Event('change'));
       drawApps(root, { ...original, answer: { v: 2, apps: { weather: 'Updated forecast' } } });
       const sameEditor = !input.disabled && button === root.querySelector('button');
+      const refreshedWhileEditing = root.textContent.includes('Updated forecast');
       spec.acts[1].run();
       const refreshed = root.textContent.includes('Updated forecast'), saved = JSON.parse(localStorage.getItem('today:quick:edit-owner-a'));
       root.querySelector('button').click(); const old = spec;
       live = false;
       drawApps(root, { ...original, current: () => true, view: { user: { id: 'edit-owner-b' } } });
       old.acts[1].run();
+      const nextRoot = root.firstChild;
+      drawApps(root, { ...original, answer: { v: 2, apps: { weather: 'OLD ACCOUNT STATUS' } } });
+      const staleIgnored = nextRoot === root.firstChild && !root.textContent.includes('OLD ACCOUNT STATUS');
       const other = localStorage.getItem('today:quick:edit-owner-b'); root.remove();
-      return { sameEditor, refreshed, saved, after: JSON.parse(localStorage.getItem('today:quick:edit-owner-a')), other };
+      return { sameEditor, refreshedWhileEditing, refreshed, staleIgnored, saved, after: JSON.parse(localStorage.getItem('today:quick:edit-owner-a')), other };
     });
     assert.equal(result.sameEditor, true);
+    assert.equal(result.refreshedWhileEditing, true);
     assert.equal(result.refreshed, true);
+    assert.equal(result.staleIgnored, true);
     assert.deepEqual(result.saved, ['fitness:activities', 'markets:holdings']);
     assert.deepEqual(result.after, result.saved);
     assert.equal(result.other, null);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+async function refreshFromForeground(page, time) {
+  await page.clock.setFixedTime(new Date(time));
+  const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/today');
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await response;
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
+test('fresh Today answers patch Apps statuses in place and keep focused links and scroll position', async () => {
+  for (const width of [390, 1440]) {
+    const answer = structuredClone(day); answer.apps.mail = 'All caught up';
+    const { ctx, page, requests, errors } = await open({ width, answer, viewApps: { mail: true }, hubApps: { mail: true } });
+    try {
+      await appsScreen(page);
+      await page.setViewportSize({ width, height: 390 });
+      await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+      await page.locator('#apps [data-app-row="weather"]').focus();
+      await page.evaluate(async () => {
+        scrollTo(0, 70);
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        window.__statusNodes = [...document.querySelectorAll('#apps .apps-list a, #apps .apps-shortcut, #apps .apps-edit')];
+        window.__statusFocus = document.activeElement; window.__statusScroll = scrollY; window.__statusMutations = 0;
+        new MutationObserver(rs => window.__statusMutations += rs.length).observe(document.querySelector('#apps'), { subtree: true, childList: true, characterData: true });
+      });
+      const before = requests.filter(r => r.path === '/api/today').length;
+      Object.assign(answer.apps, { weather: '12°, dry now', fitness: 'Recovery today', markets: 'London open', mail: '2 unread' });
+      await refreshFromForeground(page, day.at + 5000);
+      assert.deepEqual(await page.locator('#apps .apps-list .ifl-tx small').allTextContents(), Object.values(answer.apps));
+      const kept = await page.evaluate(() => ({ nodes: __statusNodes.every(n => n.isConnected), focus: __statusFocus === document.activeElement, scroll: scrollY, before: __statusScroll }));
+      assert.ok(kept.before > 0, 'the launcher really was scrolled');
+      assert.deepEqual(kept, { nodes: true, focus: true, scroll: kept.before, before: kept.before }, `${width}px retains the launcher state`);
+      await page.evaluate(() => { window.__statusMutations = 0; });
+      await refreshFromForeground(page, day.at + 10000);
+      assert.equal(await page.evaluate(() => __statusMutations), 0, 'an unchanged answer makes no Apps DOM mutations');
+      assert.equal(requests.filter(r => r.path === '/api/today').length, before + 2, 'uses the existing refresh without another Apps fetch');
+      assert.equal(requests.some(r => r.method !== 'GET'), false);
+      await save(page, `fresh-status-${width}`);
+      assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => window.__csp), []);
+    } finally { await ctx.close(); }
+  }
+});
+
+test('fresh statuses arrive under an open shortcut editor without changing its draft, focus or scroll', async () => {
+  const answer = structuredClone(day); answer.apps.mail = 'All caught up';
+  const { ctx, page, errors } = await open({ answer, viewApps: { mail: true }, hubApps: { mail: true } });
+  try {
+    await appsScreen(page);
+    const initial = await quickIds(page);
+    for (const [i, action] of ['Cancel', 'Done'].entries()) {
+      await page.getByRole('button', { name: 'Edit quick access', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Quick access', exact: true });
+      await dialog.getByRole('switch', { name: 'Radar', exact: true }).uncheck();
+      await dialog.getByRole('switch', { name: 'Warnings', exact: true }).check();
+      await dialog.evaluate(d => {
+        window.__liveEditor = d; d.scrollTop = 120;
+        window.__liveInput = d.querySelector('[data-quick="weather:warnings"] input');
+        __liveInput.focus({ preventScroll: true }); window.__liveScroll = d.scrollTop;
+      });
+      answer.apps.weather = `${13 + i}°, dry now`;
+      await refreshFromForeground(page, day.at + (i + 1) * 5000);
+      assert.equal(await page.locator('#apps [data-app-row="weather"] small').innerText(), answer.apps.weather);
+      assert.equal(await dialog.evaluate(d => d === __liveEditor && d.scrollTop === __liveScroll && document.activeElement === __liveInput && __liveInput.checked), true);
+      assert.equal(await dialog.getByRole('switch', { name: 'Radar', exact: true }).isChecked(), false);
+      await dialog.getByRole('button', { name: action, exact: true }).click();
+      assert.deepEqual(await quickIds(page), action === 'Cancel' ? initial : ['fitness:activities', 'markets:holdings', 'mail:people', 'weather:warnings']);
+    }
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('an unsuccessful status refresh keeps the last answer and a later refresh recovers', async () => {
+  const answer = structuredClone(day);
+  let fail = false;
+  const { ctx, page, errors } = await open({ answer, intercept: async (route, { url }) => {
+    if (url.pathname !== '/api/today' || !fail) return false;
+    await route.fulfill({ status: 503, json: { error: 'Temporarily unavailable' } }); return true;
+  } });
+  try {
+    await appsScreen(page);
+    const row = page.locator('#apps [data-app-row="weather"]'); await row.focus();
+    const before = await row.locator('small').innerText();
+    fail = true; await refreshFromForeground(page, day.at + 5000);
+    assert.equal(await row.locator('small').innerText(), before);
+    assert.equal(await row.evaluate(n => n === document.activeElement), true);
+    fail = false; answer.apps.weather = '15°, sunny';
+    await refreshFromForeground(page, day.at + 10000);
+    assert.equal(await row.locator('small').innerText(), '15°, sunny');
+    assert.equal(await row.evaluate(n => n === document.activeElement), true);
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
