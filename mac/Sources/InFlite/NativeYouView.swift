@@ -166,10 +166,14 @@ struct CardsEditor: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("On Today").font(.headline)
             ForEach(CardKind.allCases) { kind in
-                Toggle(isOn: Binding(get: { !hidden.contains(kind.rawValue) }, set: { visible in
-                    if visible { hidden.remove(kind.rawValue) } else { hidden.insert(kind.rawValue) }
-                })) { Label { Text(kind.destination.title) } icon: { DestinationIcon(destination: kind.destination, size: 22) } }
-                    .toggleStyle(.switch).disabled(saving)
+                HStack {
+                    Label { Text(kind.destination.title) } icon: { DestinationIcon(destination: kind.destination, size: 22) }
+                    Spacer()
+                    Toggle(kind.destination.title, isOn: Binding(get: { !hidden.contains(kind.rawValue) }, set: { visible in
+                        if visible { hidden.remove(kind.rawValue) } else { hidden.insert(kind.rawValue) }
+                    }))
+                        .labelsHidden().toggleStyle(.switch).disabled(saving)
+                }
             }
             HStack {
                 Button(saving ? "Saving…" : "Save card visibility") {

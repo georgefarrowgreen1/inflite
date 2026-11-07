@@ -60,16 +60,13 @@ struct TimeMenu: View {
                     ForEach(values, id: \.self) { value in Text(clock(value)).tag(value) }
                 }
             } label: {
-                HStack(spacing: 15) {
-                    Text(clock(selection)).font(.system(size: 13, weight: .medium).monospacedDigit())
-                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 13).padding(.vertical, 9)
-                .background(Color.white.opacity(scheme == .dark ? 0.07 : 0.62), in: RoundedRectangle(cornerRadius: 11))
-                .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Color.white.opacity(scheme == .dark ? 0.10 : 0.8)))
-                .opacity(enabled ? 1 : 0.52)
+                Text(clock(selection)).font(.system(size: 13, weight: .medium).monospacedDigit())
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
+            .padding(.horizontal, 13).padding(.vertical, 9)
+            .background(Color.white.opacity(scheme == .dark ? 0.07 : 0.62), in: RoundedRectangle(cornerRadius: 11))
+            .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Color.white.opacity(scheme == .dark ? 0.10 : 0.8)))
+            .opacity(enabled ? 1 : 0.52)
             .accessibilityLabel(title).accessibilityValue(clock(selection))
         }
     }
