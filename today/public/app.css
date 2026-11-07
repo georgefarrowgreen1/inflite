@@ -148,14 +148,7 @@ button.row:active, a.row:active { background: var(--press); }
 .row .val { flex: none; color: var(--text-2); font-size: 16px; font-variant-numeric: tabular-nums; }
 .row .chev { flex: none; display: grid; color: var(--text-3); }
 .row .chev svg { width: 16px; height: 16px; }
-.pill { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 18px; border-radius: 999px;
-  background: var(--glass-ctl); box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.25), 0 0 0 0.5px var(--line); font-size: 15px; font-weight: 600; color: var(--text);
-  transition: transform 0.45s var(--ease-spring), background-color 0.2s; text-decoration: none; }
-.pill:active { transform: scale(0.95); transition-duration: 0.1s; }
-.pill.primary { color: #fff; background: linear-gradient(180deg, var(--tint-deep), color-mix(in srgb, var(--tint-deep) 82%, #000)); box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.35), 0 8px 18px -10px rgba(42, 106, 230, 0.8); }
-/* (in light, as the real apps draw it: the tint to its deep, as the paler blue leaves white words under 4.5:1) */
-.pill svg { width: 17px; height: 17px; }
-.pill:disabled { opacity: 0.5; cursor: default; }
+/* Buttons and switches are shared with the framework in roof/controls.css. */
 .bird-ic { fill: currentColor; stroke: none; }
 
 /* ---- a card for each app ---- */
@@ -410,13 +403,6 @@ a.tc-head:active { background: var(--press); }
 .row.pick:has(select:focus-visible) { outline: 2px solid var(--tint); outline-offset: -2px; border-radius: var(--r-group); }
 label.row { cursor: pointer; }
 label.row:active { background: var(--press); }
-.switch { -webkit-appearance: none; appearance: none; flex: none; position: relative; width: 51px; height: 31px; margin: 0; border-radius: 999px; cursor: pointer;
-  background: var(--switch-off); box-shadow: inset 0 0 0 0.5px var(--line); transition: background-color 0.3s; }
-.switch::before { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: var(--knob);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.28), 0 1px 1px rgba(0, 0, 0, 0.12); transition: transform 0.45s var(--ease-spring); }
-.switch:checked { background: var(--good); }
-.switch:checked::before { transform: translateX(20px); }
-.switch:disabled { opacity: 0.45; cursor: default; }
 .mwhy { color: var(--text-2) !important; }
 .ifl-sheet .mwhy { margin-top: 14px; }
 .ifl-sheet .mgroup:first-of-type { margin-top: 4px; }
@@ -1036,7 +1022,7 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 /* ---- swiping between an app's sections (swipe.js): the screen pans up and down by itself and hands a sideways drag to
    the script; the section under the finger and the one coming in, moved by --sx; the one coming in shown from --sy;
    a release settles with a spring ---- */
-main.ifl-screen[data-app]:is([data-app="weather"], [data-app="fitness"], [data-app="markets"]) > [role=tabpanel] { touch-action: pan-y; }
+main.ifl-screen[data-app]:is([data-app="weather"], [data-app="fitness"], [data-app="markets"]) > [role=tabpanel] { touch-action: pan-y pinch-zoom; }
 .ifl-swiping main.ifl-screen:not([hidden]) { overflow-x: clip; }
 .ifl-swiping main.ifl-screen:not([hidden]) > [role=tabpanel] { position: relative; }
 /* (not inherited: moving a section restyles that section alone, never everything inside it, frame after frame) */
@@ -1093,7 +1079,7 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 .ifl-nt-row[data-dir="left"] .ifl-nt-back > span:first-child, .ifl-nt-row[data-dir="right"] .ifl-nt-back > span:last-child { visibility: hidden; }
 .ifl-nt-row:not(.far):not(.gone) .ifl-nt-back { background: color-mix(in srgb, #d70015 70%, var(--solid)); }
 .ifl-nt-card { position: relative; z-index: 1; display: flex; align-items: stretch; border-radius: inherit; background: var(--sheen), linear-gradient(var(--glass), var(--glass)), var(--solid); box-shadow: var(--edge), var(--lift);
-  transform: translate3d(var(--dx, 0px), 0, 0) scale(var(--press-s, 1)); transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1); touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+  transform: translate3d(var(--dx, 0px), 0, 0) scale(var(--press-s, 1)); transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1); touch-action: pan-y pinch-zoom; -webkit-user-select: none; user-select: none; }
 /* (pressed: a little give, as a tap on a phone feels) */
 .ifl-nt-row:not(.dragging):not(.gone) .ifl-nt-card:has(.ifl-nt-main:active) { --press-s: 0.98; transition-duration: 0.12s; }
 .ifl-nt-row.dragging .ifl-nt-card { transition: none; }

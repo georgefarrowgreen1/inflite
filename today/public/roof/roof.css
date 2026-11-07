@@ -1,3 +1,5 @@
+@import url("./controls.css");
+
 /* InFlite's framework styles (One roof, spec §3.13, D18). Linked after app.css by index.html, so app.css's tokens
    (--text*, --glass*, --solid, --line, --press, --edge, --lift, --sheen, --blur, --r-card/-group/-hero, --danger,
    --good, --good-text, --warn, --ease-out/-glide/-spring, --c-<app>, and the shared surfaces every app uses rather than
@@ -225,18 +227,8 @@ a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 .ifl-stat small { display: block; font-size: 12px; color: var(--text-3); }
 .ifl-stat[data-tone="pos"] dd, .ifl-stat[data-tone="good"] dd { color: var(--good-text); } .ifl-stat[data-tone="neg"] dd, .ifl-stat[data-tone="bad"] dd { color: var(--danger); }
 .ifl-stat[data-tone="warn"] dd { color: var(--warn); } .ifl-stat[data-tone="acc"] dd { color: var(--acc-ink); }
-.ifl-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 18px; border-radius: var(--r-pill);
-  font-size: 16px; font-weight: 600; color: var(--text); background: var(--glass-ctl); box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.25); text-decoration: none; cursor: pointer;
-  transition: transform var(--dur-press); }
-.ifl-btn:active { transform: scale(0.95); }
-.ifl-btn:disabled, .ifl-btn[aria-disabled="true"] { opacity: 0.5; cursor: default; }
-.ifl-btn[aria-busy="true"] { opacity: 0.7; }
-.ifl-btn.primary { color: var(--on-acc); background: var(--acc-fill); }
-.ifl-btn.small { min-height: 36px; padding: 0 14px; font-size: 15px; }
-.ifl-btn.small::after { content: ""; position: absolute; inset: -4px 0; }
-.ifl-btn.destructive { color: var(--danger); }
-.ifl-btn .ifl-glyph svg { width: 18px; height: 18px; }
-:is(.ifl-btn, .ifl-icon-btn, .ifl-chip):focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 2px; }
+/* Button and switch aliases share roof/controls.css with Today's cards. */
+:is(.ifl-icon-btn, .ifl-chip):focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 2px; }
 .ifl-icon-btn { position: relative; flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--acc-ink); background: var(--glass-ctl); cursor: pointer; transition: transform var(--dur-press); }
 .ifl-icon-btn::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; }
 .ifl-icon-btn.filled { color: var(--on-acc); background: var(--acc-fill); }

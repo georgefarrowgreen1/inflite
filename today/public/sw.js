@@ -26,7 +26,7 @@ const engineAt = (u) => u.pathname.startsWith("/chats/") && u.searchParams.has("
 const SHELL = "today-app-4";
 const FILES = ["/", "/app.js", "/cards.js", "/day.js", "/trip.js", "/mailday.js", "/apps.js", "/you.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg",
   "/mailcard.js", "/mailnotify.js", "/apps/mail.svg",
-  "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css", "/bell.js"];
+  "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css", "/roof/controls.css", "/bell.js"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();
   // (each kept as it comes, so one that isn't there doesn't keep the rest out; not waited on long: a worker that takes

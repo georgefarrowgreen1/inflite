@@ -13,9 +13,9 @@ import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.80";
+const BUILD = "1.81";
 // (what's new in it, said once it's in)
-const NEWS = "The search box looks right when you start typing";
+const NEWS = "A clearer day at a glance, shared controls and zoom that works";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1841,7 +1841,7 @@ function checkSession() {
 // titles, the people waiting for you by name (→ their chat); and You's rows. The query is never kept, sent or written
 const SETTINGS = [
   ["Notifications", "notify", "Each app’s, and Today’s morning"], ["Weather Notifications", "notify-weather", "Rain and warnings for the places you choose"],
-  ["Quiet Hours", "quiet", "Every app, but warnings"], ["Rules", "rules", "What Today does for you"], ["This Phone", "phone", "Notifications here"],
+  ["Quiet Hours", "quiet", "Every app, but warnings"], ["Rules", "rules", "What Today does for you"], ["This Device", "phone", "Notifications here"],
   ["Connected Apps", "apps", "What each app shares with InFlite"], ["Account", "account", "Password, Passkeys and Devices"], ["Sign Out", "signout", "Of InFlite, on this device"],
   // (Mail's, for the site's admin alone: s4/spec §2.4)
   ["Mail Notifications", "notify-mail", "Through InFlite, and which addresses notify you", (view) => view?.apps?.mail === true],
@@ -2586,7 +2586,7 @@ function wire() {
 function fromHash() {
   if (!S.view) return;
   if (IFL.wantsAllow()) {
-    IFL.allow("today", "Today tells you your day each morning, from all your apps, in one notification. What’s in it is set in You, under This Phone.", turnOn);
+    IFL.allow("today", "Today tells you your day each morning, from all your apps, in one notification. What’s in it is set in You, under This Device.", turnOn);
     return;
   }
   if (location.hash === "#morning") {
@@ -2759,7 +2759,7 @@ function start() {
   worker();
   IFL.built("today", BUILD, NEWS);
   IFL.updates({ app: "today", build: BUILD, url: "/version", field: "build", busy: () => !!F?.busy() || !!sheetOpen, save,
-    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css"] });
+    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css", "/roof/controls.css"] });
   load();
   nextMinute();
   document.addEventListener("visibilitychange", () => {

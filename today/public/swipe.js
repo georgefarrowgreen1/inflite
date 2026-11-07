@@ -6,8 +6,8 @@
 // Only a horizontal drag that starts on the app's screen, by touch, and not: on a field, a map (Radar: the map has the
 // finger), a sheet, the header or the tab bar; within 24 px of either edge (the phone's own back swipe); or on anything
 // that handles a sideways drag of its own (a chart you scrub, a row you swipe, anything scrolling sideways: each sets a
-// touch-action of its own, or scrolls). The screen sets touch-action: pan-y (app.css), so the page still scrolls up and
-// down by itself and a sideways drag comes here. Mail's rows swipe for Done and Later, so Mail has no section swipe.
+// touch-action of its own, or scrolls). The screen allows pan-y and pinch-zoom (app.css): vertical scrolling and zoom
+// stay with the browser; a sideways drag comes here. Mail's rows swipe for Done and Later, so Mail has no section swipe.
 // The section beside is shown from where the switch will put it (the frame's rule: scrolled past the header, its own
 // last place or just under the header; at the top, its top), so letting go changes nothing that's seen. A section never
 // drawn yet is drawn first: an "ifl-peek" event on the module's root with its id (weather.js, fitness.js, markets.js).
@@ -35,6 +35,9 @@ export function swipes(F) {
   const put = (el, x) => el?.style.setProperty("--sx", `${x}px`);
 
   function down(e) {
+    // A second finger belongs to pinch zoom. Cancel any section preview before it
+    // can settle into navigation, including browsers that delay pointercancel.
+    if (e.pointerType === "touch" && !e.isPrimary && st) { up({ pointerId: st.id }, true); return; }
     if (e.pointerType !== "touch" || !e.isPrimary || st || html.classList.contains("ifl-fill") || Date.now() < quiet) return;
     const r = F.route;
     if (r?.kind !== "app" || !r.section || r.app === "mail") return;
@@ -92,7 +95,9 @@ export function swipes(F) {
   function up(e, cancelled = false) {
     if (!st || e.pointerId !== st.id) return;
     const s = st;
+    if (s.settling) return;
     if (s.lock !== "x") { s.cur.classList.remove("ifl-sw-ready"); st = null; return; }
+    s.settling = true;
     const W = innerWidth, [a, b] = [s.v[0], s.v[s.v.length - 1]], vel = a && b && b[0] > a[0] ? (b[1] - a[1]) / (b[0] - a[0]) : 0;
     const go = !cancelled && !!s.nb && (Math.abs(s.dx) > W / 3 || (Math.abs(vel) > 0.45 && Math.sign(vel) === s.dir));
     html.classList.add("ifl-sw-go");

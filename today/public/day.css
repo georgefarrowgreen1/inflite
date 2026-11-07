@@ -28,6 +28,14 @@
 .dt-ic-x svg { width: 15px; height: 15px; }
 .dt-lines { display: grid; gap: 4px; }
 .dt-lines .tc-p:first-child { color: var(--text); }
+.dt-history { min-width: 0; border-top: 1px solid var(--line); }
+.dt-history > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px;
+  padding: 8px 2px; list-style: none; cursor: pointer; color: var(--tint-text); font-size: 15px; font-weight: 600; border-radius: 8px; }
+.dt-history > summary::-webkit-details-marker { display: none; }
+.dt-history-chevron { flex: none; display: grid; transition: transform 0.2s var(--ease-out); }
+.dt-history-chevron svg { width: 16px; height: 16px; }
+.dt-history[open] > summary .dt-history-chevron { transform: rotate(90deg); }
+.dt-history .tc-foot { margin-top: 12px; }
 .dt-stats { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
 .dt-stats > div { min-width: 0; padding: 9px 12px 10px; border-radius: 16px; background: var(--glass-ctl); }
 .dt-stats dt { font-size: 12px; font-weight: 500; color: var(--text-2); }
