@@ -74,11 +74,13 @@ final class AppModel: ObservableObject {
     }
 
     func select(_ destination: Destination) {
+        guard !sampleData || destination.isNative else { return }
         selection = destination
         guard !destination.isNative else { return }
         openWeb(destination.url!)
     }
     func openWeb(_ url: URL) {
+        guard !sampleData else { return }
         guard NavigationPolicy.isInternal(url) else { return }
         if let page { page.webView.load(URLRequest(url: url)) }
         else {
@@ -90,8 +92,8 @@ final class AppModel: ObservableObject {
             page = browser
         }
     }
-    func signIn() { openWeb(Destination.today.url!); showingSignIn = true }
-    func showWebToday() { selection = .webToday; openWeb(Destination.today.url!) }
+    func signIn() { guard !sampleData else { return }; openWeb(Destination.today.url!); showingSignIn = true }
+    func showWebToday() { guard !sampleData else { return }; selection = .webToday; openWeb(Destination.today.url!) }
     func openInBrowser() {
         if let url = currentPage?.webView.url ?? selection.url, NavigationPolicy.canOpenExternally(url) { NSWorkspace.shared.open(url) }
     }

@@ -23,7 +23,7 @@ struct NativeYouView: View {
                         Text("Your account").font(.headline)
                         Text("Your profile, password, passkeys and signed-in devices are managed through InFlite’s existing account page.")
                             .font(.callout).foregroundStyle(.secondary)
-                        Button("Security and profile on web") { model.select(.account) }.buttonStyle(.bordered)
+                        Button("Security and profile on web") { model.select(.account) }.buttonStyle(.bordered).disabled(model.sampleData)
                     }.padding(22).nativeGlass()
                     if let morning = model.day?.morning { MorningEditor(model: model, initial: morning) }
                     else { Text("Refresh Today to load your morning settings.").font(.callout).foregroundStyle(.secondary) }

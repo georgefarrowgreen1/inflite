@@ -22,7 +22,7 @@ struct NativeSignInView: View {
             Spacer()
             if let message = model.message { Text(message).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 400) }
             Button("Sign in to InFlite") { model.signIn() }
-                .buttonStyle(.borderedProminent).controlSize(.large).frame(width: 280)
+                .buttonStyle(.borderedProminent).controlSize(.large).frame(width: 280).disabled(model.sampleData)
             Text("Your existing account. Sign-in opens in a secure web sheet.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Try again") { Task { await model.refresh() } }.buttonStyle(.borderless).disabled(model.refreshing)
@@ -63,12 +63,12 @@ struct NativeTodayView: View {
                                 ForEach(Array(top["lines"].list.enumerated()), id: \.offset) { _, line in
                                     if let text = line.text { Text(text).font(.callout).foregroundStyle(.secondary) }
                                 }
-                                Button("Review day details on web") { model.showWebToday() }.buttonStyle(.bordered)
+                                Button("Review day details on web") { model.showWebToday() }.buttonStyle(.bordered).disabled(model.sampleData)
                             }.padding(22).nativeGlass()
                         }
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
                             ForEach(CardKind.ordered(model.session?.prefs)) { kind in
-                                NativeSummaryCard(kind: kind, card: day.cards[kind.rawValue]) { model.select(kind.destination) }
+                                NativeSummaryCard(kind: kind, card: day.cards[kind.rawValue]) { model.select(kind.destination) }.disabled(model.sampleData)
                             }
                         }
                         if CardKind.ordered(model.session?.prefs).isEmpty {
@@ -91,7 +91,7 @@ struct NativeTodayView: View {
                                         Spacer()
                                     }
                                 }
-                                Button("See the full day") { model.showWebToday() }.buttonStyle(.borderless)
+                                Button("See the full day") { model.showWebToday() }.buttonStyle(.borderless).disabled(model.sampleData)
                             }.padding(22).nativeGlass()
                         }
                     } else {
@@ -186,7 +186,7 @@ struct NativeAppsView: View {
                             Text("Web").font(.caption).foregroundStyle(.secondary)
                             Image(systemName: "chevron.right").font(.caption)
                         }.padding(20).nativeGlass().contentShape(Rectangle())
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.plain).disabled(model.sampleData)
                 }
             }.padding(30).frame(maxWidth: 900).frame(maxWidth: .infinity)
         }
