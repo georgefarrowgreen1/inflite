@@ -26,7 +26,7 @@ const engineAt = (u) => u.pathname.startsWith("/chats/") && u.searchParams.has("
 const SHELL = "today-app-4";
 const FILES = ["/", "/app.js", "/cards.js", "/day.js", "/trip.js", "/mailday.js", "/apps.js", "/you.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg",
   "/mailcard.js", "/mailnotify.js", "/apps/mail.svg",
-  "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css"];
+  "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css", "/bell.js"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();
   // (each kept as it comes, so one that isn't there doesn't keep the rest out; not waited on long: a worker that takes
@@ -39,6 +39,7 @@ self.addEventListener("install", (e) => {
 self.addEventListener("message", (e) => {
   if (e.data?.ifl === "renew") e.waitUntil?.(renew().catch(() => {}).then(() => e.ports[0]?.postMessage({ ifl: "renewed" })));
   else if (e.data?.ifl === "badge") e.waitUntil?.(badge());
+  else if (typeof e.data?.ifl === "string" && e.data.ifl.startsWith("notes") && e.source && sameOrigin(e.source.url)) e.waitUntil?.(notesAsked(e.data, e.ports?.[0]));
   else if (e.data?.ifl === "keep" && e.source && sameOrigin(e.source.url)) e.waitUntil?.(keep(e.data));
 });
 self.addEventListener("activate", (e) =>
@@ -248,18 +249,22 @@ self.addEventListener("push", (e) => {
 });
 async function notify(d) {
   const app = appOf(d), url = openAt(app, d.url), tag = d.tag ? `${app}:${String(d.tag).slice(0, 120)}` : undefined;
-  const jobs = [self.registration.showNotification(typeof d.title === "string" && d.title ? d.title : NAME[app], {
-    body: typeof d.body === "string" ? d.body : "",
+  const title = typeof d.title === "string" && d.title ? d.title : NAME[app], body = typeof d.body === "string" ? d.body : "";
+  const id = noteId();
+  const jobs = [self.registration.showNotification(title, {
+    body,
     tag,
     renotify: !!tag,
     icon: "/icon-192.png",
     badge: "/icon-192.png",
-    data: { app, url },
+    data: { app, url, id },
   })];
+  // (and kept in the log, for Today's bell: in the place of one with its tag)
+  jobs.push(jobs[0].catch(() => {}).then(() => notesDo((s, now) => noteAdd(s, { id, app, title: title.slice(0, 200), body: body.slice(0, 600), url, tag: tag || "", at: now }, now))));
   if (app === "chat") jobs.push(chatCame(d));
-  if (app === "mail") jobs.push(jobs[0].then(() => mailWords(d, { app, url })));
+  if (app === "mail") jobs.push(jobs[0].then(() => mailWords(d, { app, url, id })));
   await Promise.all(jobs.map((j) => j.catch(() => {})));
-  await badge();
+  await notesChanged();
 }
 // Mail's notice (s4 §6.4): the push carries no words of the mail (a fixed body, the thread's opaque id as its tag), so
 // once that's shown, Mail itself is asked for the sender and subject, with your Mail sign-in (3 s at most), and the
@@ -274,14 +279,137 @@ async function mailWords(d, data) {
   const ok = (x) => typeof x === "string" && x.length > 0 && x.length <= 120;
   if (!ok(words?.title) || !ok(words?.body)) return;
   await self.registration.showNotification(words.title, { body: words.body, tag: `mail:${d.tag}`, renotify: false, silent: true, icon: "/icon-192.png", badge: "/icon-192.png", data });
+  await notesDo((s) => ({ ...s, list: s.list.map((x) => (x.id === data.id ? { ...x, title: words.title, body: words.body } : x)) }));
 }
-// the Home Screen icon's badge: as many notifications as are showing. Counted as one comes, as one's tapped or cleared,
+// the Home Screen icon's badge: the log's unseen ones (below), the same number as Today's bell; where the log can't be
+// kept, as many notifications as are showing. Counted as one comes, as one's tapped or cleared, as the bell's opened,
 // and as a page of the hub opens or comes back in sight (one cleared while this worker wasn't running)
-async function badge() {
+async function badge(s) {
   try {
-    const n = (await self.registration.getNotifications()).length;
+    if (s === undefined) s = await notesNow();
+    const n = s ? noteUnread(s) : (await self.registration.getNotifications()).length;
     if (self.navigator?.setAppBadge) await (n ? self.navigator.setAppBadge(n) : self.navigator.clearAppBadge?.());
   } catch {}
+}
+
+// ---- the log: every notification shown here, for Today's bell ----
+// Kept in IndexedDB (inflite-notes → kv → "log": { list, gone }), never sent anywhere: each one shown (id, app, title,
+// body, url, tag, at, seen), newest first, at most 50 and 14 days. One leaves it as it's tapped or cleared in Notification
+// Centre (notificationclick, notificationclose), cleared in the bell's sheet (its notification closed too), or replaced
+// by one with its tag. Those still in Notification Centre that it hasn't (shown before it was kept) are added as they're
+// met; one that's left it (gone, as long as the log keeps any) is never added back. Opening the bell marks every one
+// seen: the badge is the unseen ones. Every change is done in turn (noteQ), each a read and a write in one transaction.
+const NOTE_MAX = 50, NOTE_AGE = 14 * 864e5, GONE_MAX = 100;
+function noteId() { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10); }
+function noteState(raw) {
+  const ok = (x) => x && typeof x === "object" && typeof x.id === "string" && Number.isFinite(x.at);
+  return { list: Array.isArray(raw?.list) ? raw.list.filter(ok) : [], gone: Array.isArray(raw?.gone) ? raw.gone.filter(ok) : [] };
+}
+function notePrune(s, now) {
+  const fresh = (x) => x.at > now - NOTE_AGE;
+  return { list: s.list.filter(fresh).sort((a, b) => b.at - a.at).slice(0, NOTE_MAX), gone: s.gone.filter(fresh).slice(-GONE_MAX) };
+}
+// (one shown: first, in the place of any with its id or tag, and no longer gone)
+function noteAdd(s, n, now) {
+  const same = (x) => x.id === n.id || (n.tag && x.tag === n.tag);
+  return notePrune({ list: [{ ...n, seen: !!n.seen }, ...s.list.filter((x) => !same(x))], gone: s.gone.filter((g) => !same(g)) }, now);
+}
+// (those with these ids, or these tags, out of it, and kept as gone)
+function noteDrop(s, ids = [], tags = [], now = Date.now()) {
+  const hit = (x) => ids.includes(x.id) || (!!x.tag && tags.includes(x.tag));
+  const out = s.list.filter(hit).map((x) => ({ id: x.id, tag: x.tag || "", at: now }));
+  for (const id of ids) if (!out.some((g) => g.id === id)) out.push({ id, tag: "", at: now });
+  return notePrune({ list: s.list.filter((x) => !hit(x)), gone: [...s.gone.filter((g) => !out.some((o) => o.id === g.id)), ...out] }, now);
+}
+function noteUnread(s) { return s.list.filter((x) => !x.seen).length; }
+function noteSeen(s) { return { ...s, list: s.list.map((x) => (x.seen ? x : { ...x, seen: true })) }; }
+// (a notification showing, as the log names it: its own id, else one made from its tag, else its time and title)
+function noteIdOf(n) { return typeof n.data?.id === "string" && n.data.id ? n.data.id : n.tag ? `tag:${n.tag}` : `at:${n.timestamp || 0}:${n.title || ""}`; }
+// (those showing in Notification Centre that the log hasn't, nor has had: added, unseen)
+function noteMerge(s, shown, now) {
+  for (const n of shown || []) {
+    const id = noteIdOf(n), own = !!n.data?.id;
+    if (s.list.some((x) => x.id === id || (!own && n.tag && x.tag === n.tag))) continue;
+    if (s.gone.some((g) => g.id === id || (!own && n.tag && g.tag === n.tag))) continue;
+    const d = n.data || {}, app = APPS.includes(d.app) ? d.app : appOf(d);
+    const at = Number.isFinite(n.timestamp) && n.timestamp > 0 && n.timestamp <= now ? n.timestamp : now;
+    s = noteAdd(s, { id, app, title: String(n.title || NAME[app]).slice(0, 200), body: String(n.body || "").slice(0, 600), url: typeof d.url === "string" ? d.url : openAt(app, ""), tag: n.tag || "", at }, now);
+  }
+  return notePrune(s, now);
+}
+// (the log, in turn: fn(state, now) → the new state, written; resolves to it, or null where it can't be kept)
+let noteQ = Promise.resolve(), noteDbP = null;
+function notesDo(fn) {
+  const job = noteQ.then(() => noteTx(fn)).catch(() => null);
+  noteQ = job.then(() => {}, () => {});
+  return job;
+}
+function noteDb() {
+  return (noteDbP ||= new Promise((ok) => {
+    const t = setTimeout(() => done(null), 2000);
+    function done(v) { clearTimeout(t); if (!v) noteDbP = null; ok(v); }
+    try {
+      const r = indexedDB.open("inflite-notes", 1);
+      r.onupgradeneeded = () => { try { r.result.createObjectStore("kv"); } catch { done(null); } };
+      r.onsuccess = () => { const db = r.result; if (db) db.onversionchange = () => { try { db.close(); } catch {} noteDbP = null; }; done(db || null); };
+      r.onerror = () => done(null);
+    } catch { done(null); }
+  }));
+}
+async function noteTx(fn) {
+  const db = await noteDb();
+  if (!db) return null;
+  return new Promise((ok) => {
+    let out = null, end = false;
+    const t = setTimeout(() => fin(null), 2000);
+    function fin(v) { if (end) return; end = true; clearTimeout(t); ok(v); }
+    try {
+      const tx = db.transaction("kv", "readwrite"), st = tx.objectStore("kv"), q = st.get("log");
+      q.onsuccess = () => {
+        try { out = fn(noteState(q.result), Date.now()); st.put(out, "log"); } catch { try { tx.abort(); } catch {} fin(null); }
+      };
+      tx.oncomplete = () => fin(out);
+      tx.onerror = tx.onabort = () => fin(null);
+    } catch { fin(null); }
+  });
+}
+// (the log with those showing merged in, and fn's change)
+async function notesNow(fn = (s) => s) {
+  const shown = await self.registration.getNotifications().catch(() => []);
+  return notesDo((s, now) => fn(noteMerge(s, shown, now), now));
+}
+// (what a page is told: the list, newest first, and how many are unseen)
+const notesSaid = (s) => ({ ifl: "notes", list: s ? s.list.map(({ id, app, title, body, url, at, seen }) => ({ id, app, title, body, url, at, seen: !!seen })) : [], unread: s ? noteUnread(s) : 0, kept: !!s });
+// (the log changed: the badge counted again, and every window of this site's told, so an open bell shows it)
+async function notesChanged(s) {
+  if (s === undefined) s = await notesNow();
+  await badge(s);
+  if (!s) return;
+  const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []);
+  for (const w of wins) if (sameOrigin(w.url)) try { w.postMessage(notesSaid(s)); } catch {}
+}
+// A page's ask ({ ifl: "notes" } the list; "notes-seen" every one seen; "notes-clear" { ids } or { all } cleared, their
+// notifications closed in Notification Centre too), answered on its port with the list
+async function notesAsked(d, port) {
+  let s;
+  if (d.ifl === "notes-seen") s = await notesNow(noteSeen);
+  else if (d.ifl === "notes-clear") {
+    const ids = Array.isArray(d.ids) ? d.ids.filter((x) => typeof x === "string").slice(0, NOTE_MAX * 2) : [];
+    let dropped = [];
+    s = await notesNow((st, now) => {
+      dropped = d.all === true ? st.list : st.list.filter((x) => ids.includes(x.id));
+      return d.all === true ? noteDrop(st, st.list.map((x) => x.id), [], now) : noteDrop(st, ids, [], now);
+    });
+    const ours = new Set(dropped.map((x) => x.id)), tags = new Set(dropped.map((x) => x.tag).filter(Boolean));
+    for (const n of await self.registration.getNotifications().catch(() => [])) {
+      const id = noteIdOf(n);
+      if (ours.has(id) || ids.includes(id) || (!n.data?.id && n.tag && tags.has(n.tag))) try { n.close(); } catch {}
+    }
+  } else if (d.ifl === "notes") s = await notesNow();
+  else return;
+  try { port?.postMessage(notesSaid(s)); } catch {}
+  if (d.ifl === "notes") await badge(s);
+  else await notesChanged(s);
 }
 // (Chat's: every window of this site's told, those no worker of this one's controls included (Chats has its own), then
 // one pulse; anything going wrong is let be: an open Chat's own pulse does the same)
@@ -337,9 +465,15 @@ self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const d = e.notification.data || {};
   const app = APPS.includes(d.app) ? d.app : appOf(d);
-  e.waitUntil(Promise.all([openIn(openAt(app, d.url)), badge()]));
+  e.waitUntil(Promise.all([openIn(openAt(app, d.url)), noteGone(e.notification)]));
 });
-self.addEventListener("notificationclose", (e) => e.waitUntil(badge()));
+self.addEventListener("notificationclose", (e) => e.waitUntil(noteGone(e.notification)));
+// (one tapped or cleared in Notification Centre: out of the log too)
+async function noteGone(n) {
+  const own = typeof n?.data?.id === "string" && n.data.id;
+  await notesDo((s, now) => noteDrop(s, [noteIdOf(n || {})], !own && n?.tag ? [n.tag] : [], now));
+  await notesChanged();
+}
 const HEARD = 1000;
 async function openIn(path) {
   const wins = (await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => [])).filter((w) => sameOrigin(w.url) && w.frameType !== "nested");

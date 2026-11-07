@@ -419,3 +419,7 @@ dialog.ifl-sheet { animation-timing-function: var(--ease-spring, var(--ease-ios)
   .today-in .view { padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (min-width: 1100px) and (prefers-reduced-motion: reduce) { .ifl-tab-pill { transition: none; } }
+
+/* ---- a count on a header act (header.js count: Today's bell), the Home Screen badge's red ---- */
+.ifl-hd .ifh-act-badge { position: absolute; top: 0; right: -2px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; background: #d70015; pointer-events: none; }

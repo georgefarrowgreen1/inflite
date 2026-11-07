@@ -24,6 +24,8 @@
   Cache-Control: no-cache
 /you.js
   Cache-Control: no-cache
+/bell.js
+  Cache-Control: no-cache
 /roof/*
   Cache-Control: no-cache
 /*

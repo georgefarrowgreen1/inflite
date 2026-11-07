@@ -7,6 +7,7 @@
 //            line: string | Node, acts: [{ icon, label, run, word? }], sections: [[id, label]] | null, section,
 //            badges?: { [sectionId]: n | { n, say } }, onSection(id) }
 //   Search is always the first act (data-act=search), then up to two; each act a button.ifh-act, data-act = its icon.
+//   count(act, n): a count on that act's button (.ifh-act-badge, aria-hidden; none for 0), kept as the acts change.
 //   The switcher is a tablist with manual activation (arrows move the focus, Enter or Space chooses), a sliding lens
 //   (aria-hidden) recomputed on every set, on resize and once the fonts are in, and a count per section
 //   (.ifl-sec-badge; the tab's name then "Warnings, 2 in force").
@@ -16,7 +17,7 @@ import { el, icon } from "./ui.js";
 
 export function createHeader(host, F, { me, onMe } = {}) {
   const IFL = globalThis.IFL;
-  if (!host || !IFL?.header) return { el: host || null, set() {}, lens() {}, destroy() {} };
+  if (!host || !IFL?.header) return { el: host || null, set() {}, lens() {}, count() {}, destroy() {} };
   const hd = IFL.header({ me: "", title: "", line: "", acts: [], cls: "ifl-hd" });
   const $ = (s) => hd.querySelector(s);
   const meB = $(".ifh-me"), tBox = $(".ifh-t"), h1 = $("h1.ifh-name"), line = $(".ifh-line"), acts = $(".ifh-acts");
@@ -40,6 +41,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
   hd.append(row2);
   host.replaceChildren(hd);
   let small = false, cur = {}, actKey = "", secKey = "", runs = {};
+  const counts = {};
 
   pick.addEventListener("click", () => cur.pick?.run?.(pick));
   acts.addEventListener("click", (e) => {
@@ -89,7 +91,17 @@ export function createHeader(host, F, { me, onMe } = {}) {
       else { b.dataset.word = ""; b.textContent = a.word || a.icon[0].toUpperCase() + a.icon.slice(1); }
       return b;
     }));
+    paintCounts();
   }
+  function paintCounts() {
+    for (const b of acts.querySelectorAll(".ifh-act")) {
+      const n = counts[b.dataset.act] || 0;
+      let bd = b.querySelector(".ifh-act-badge");
+      if (n > 0) { if (!bd) b.append(bd = el("span", { class: "ifh-act-badge", "aria-hidden": "true" })); bd.textContent = n > 99 ? "99+" : String(n); }
+      else bd?.remove();
+    }
+  }
+  function count(k, n) { counts[k] = Math.max(0, Math.floor(Number(n)) || 0); paintCounts(); }
   function setSecs(list, section, badges = {}) {
     const k = JSON.stringify(list || null);
     if (k !== secKey) {
@@ -164,7 +176,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
     ro.observe(hd);
   }
   return {
-    el: hd, set, lens, compact,
+    el: hd, set, lens, compact, count,
     destroy() { removeEventListener("scroll", compact); removeEventListener("resize", onResize); ro?.disconnect(); },
   };
 }

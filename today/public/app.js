@@ -1743,8 +1743,11 @@ function lineOf() {
   return w?.state === "ok" && w.place?.name ? String(w.place.name) : "";
 }
 const EDIT = { icon: "edit", label: "Edit Today: hide and reorder cards", run: () => openEdit() };
+// (the bell: the notifications this phone's been shown, in a sheet, bell.js; its count the Home Screen badge's)
+const BELL = { icon: "bell", label: "Notifications", run: () => bell?.open() };
+let bell = null;
 const SCREENS = {
-  today: { el: $("#today"), title: () => "Today", crumb: () => "", line: lineOf, acts: [EDIT], onShow() { drawLine(true); if (cardsStale) { cardsStale = false; refresh(); } }, onHide() {} },
+  today: { el: $("#today"), title: () => "Today", crumb: () => "", line: lineOf, acts: [BELL, EDIT], onShow() { drawLine(true); if (cardsStale) { cardsStale = false; refresh(); } }, onHide() {} },
   apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Open one, or go straight to a part", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
   you: { el: $("#you"), title: () => "You", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() {} },
 };
@@ -1773,12 +1776,19 @@ function frame() {
   // (the page's own sheets' close button: the framework's cross, as every sheet it builds has; the ✕ is for no script)
   for (const b of $$(".ifl-sheet .ifs-btn[data-close]")) b.replaceChildren(F.ui.icon("x"));
   provide();
+  const f = F;
+  import("/bell.js").then((m) => {
+    if (F !== f || bell) return;
+    bell = m.createBell(f, { count: (n) => f.header.count?.("bell", n), go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); } });
+  }, (e) => console.error(e));
   return F;
 }
 // (signed out: the frame let go of, Weather's module unmounted, its sheets shut; made afresh at the next sign-in)
 function unframe() {
   const f = F;
   F = null;
+  try { bell?.destroy(); } catch (e) { console.error(e); }
+  bell = null;
   try { f?.destroy(); } catch (e) { console.error(e); }
 }
 let apps = null, you = null;
