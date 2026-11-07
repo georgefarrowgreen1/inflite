@@ -1,0 +1,41 @@
+name: InFlite Mac beta
+
+on:
+  push:
+    branches: [codex/mac-beta, claude/inflite]
+    paths: [mac/**, .github/workflows/mac-beta.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-beta-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test and build the universal beta
+        id: package
+        run: bash mac/scripts/build-beta.sh
+      - name: Capture native screens, live API and labelled sample layouts
+        run: bash mac/scripts/capture-preview.sh
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.package.outcome == 'success'
+        with:
+          name: InFlite-Mac-0.1.0-beta.4
+          path: |
+            mac/dist/InFlite-Mac-0.1.0-beta.4.zip
+            mac/dist/InFlite-Mac-0.1.0-beta.4.dmg
+            mac/dist/SHA256SUMS.txt
+            mac/dist/Read Me.md
+            mac/dist/InFlite-Mac-*.png
+            mac/dist/capture-*.json
+          retention-days: 14
+          if-no-files-found: error
