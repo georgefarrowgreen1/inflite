@@ -63,10 +63,15 @@ struct NativeYouView: View {
 struct MorningEditor: View {
     @ObservedObject var model: AppModel
     let initial: MorningSettings
-    @State private var on = false
-    @State private var minutes = 420
+    @State private var on: Bool
+    @State private var minutes: Int
     @State private var saving = false
     @State private var result: String?
+    init(model: AppModel, initial: MorningSettings) {
+        self.model = model; self.initial = initial
+        _on = State(initialValue: initial.on)
+        _minutes = State(initialValue: initial.at)
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Morning briefing").font(.headline)
@@ -93,18 +98,24 @@ struct MorningEditor: View {
                 }.buttonStyle(.bordered).disabled(saving || model.sampleData)
                 if let result { Text(result).font(.caption).foregroundStyle(.secondary) }
             }
-        }.padding(22).nativeGlass().onAppear { on = initial.on; minutes = initial.at }
+        }.padding(22).nativeGlass()
     }
 }
 
 struct QuietEditor: View {
     @ObservedObject var model: AppModel
     let initial: QuietHours
-    @State private var on = false
-    @State private var from = 22
-    @State private var to = 7
+    @State private var on: Bool
+    @State private var from: Int
+    @State private var to: Int
     @State private var saving = false
     @State private var result: String?
+    init(model: AppModel, initial: QuietHours) {
+        self.model = model; self.initial = initial
+        _on = State(initialValue: initial.on)
+        _from = State(initialValue: initial.from)
+        _to = State(initialValue: initial.to)
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Quiet Hours").font(.headline)
@@ -128,7 +139,7 @@ struct QuietEditor: View {
                 }.buttonStyle(.bordered).disabled(saving || model.sampleData)
                 if let result { Text(result).font(.caption).foregroundStyle(.secondary) }
             }
-        }.padding(22).nativeGlass().onAppear { on = initial.on; from = initial.from; to = initial.to }
+        }.padding(22).nativeGlass()
     }
     private func hourPicker(_ label: String, value: Binding<Int>) -> some View {
         Picker(label, selection: value) { ForEach(0..<24) { hour in Text(String(format: "%02d:00", hour)).tag(hour) } }.frame(maxWidth: 170)
@@ -138,9 +149,13 @@ struct QuietEditor: View {
 struct CardsEditor: View {
     @ObservedObject var model: AppModel
     let initial: CardPreferences
-    @State private var hidden = Set<String>()
+    @State private var hidden: Set<String>
     @State private var saving = false
     @State private var result: String?
+    init(model: AppModel, initial: CardPreferences) {
+        self.model = model; self.initial = initial
+        _hidden = State(initialValue: Set(initial.hidden))
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("On Today").font(.headline)
@@ -160,6 +175,6 @@ struct CardsEditor: View {
                 }.buttonStyle(.bordered).disabled(saving || model.sampleData)
                 if let result { Text(result).font(.caption).foregroundStyle(.secondary) }
             }
-        }.padding(22).nativeGlass().onAppear { hidden = Set(initial.hidden) }
+        }.padding(22).nativeGlass()
     }
 }

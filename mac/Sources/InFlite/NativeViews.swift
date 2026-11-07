@@ -21,7 +21,9 @@ struct NativeSignInView: View {
             Text("Your day, from all your apps").foregroundStyle(.secondary).font(.system(size: 16))
             Spacer()
             if let message = model.message { Text(message).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 400) }
-            Button("Sign in to InFlite") { model.signIn() }
+            Button { model.signIn() } label: {
+                Text("Sign in to InFlite").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 7)
+            }
                 .buttonStyle(.borderedProminent).controlSize(.large).frame(width: 280).disabled(model.sampleData)
             Text("Your existing account. Sign-in opens in a secure web sheet.")
                 .font(.caption).foregroundStyle(.secondary)
