@@ -1,79 +1,59 @@
-# InFlite for Mac — 0.1.0 beta 2
+# InFlite for Mac — 0.1.0 beta 3
 
-The InFlite website in a lightweight native Mac window. macOS 14 Sonoma or later, Apple silicon and Intel.
+The first native SwiftUI slice of InFlite. macOS 14+, Apple silicon and Intel.
 
-## Same InFlite, on Mac
+## Native now
 
-The app opens **https://inflite.ai/** directly. The live website provides its real desktop navigation, app rail,
-logos, typography, colours, glass, themes, transitions, settings and account screens. There is no separate Mac launcher,
-recreated dashboard, simulated data or second sidebar. At narrower widths the site uses its own responsive layout.
-Website updates appear in the app without rebuilding the Mac shell.
+**Today, Apps, You and navigation** are SwiftUI. Today decodes the existing boot/cards API into native weather,
+fitness, chat and markets summaries, day briefing and Coming Up. It honours card order/visibility and shows loading,
+empty, failure and last-loaded states. You renders the account's identity and native morning, Quiet Hours and card
+visibility controls. Save buttons call the existing account-backed API and show the result; no server contract changes.
+The visual language retains the website's exact SVG logos, soft sky palette and rounded glass cards.
 
-The Mac window adds back/forward/reload, in-page find, native file selection and save dialogs, Mac menus and browser
-handoff for external links. The **Go** menu uses the website's own hub routes for Today, Chats, Apps, You, Mail,
-Weather, Fitness and Markets. Normal navigation inside the website retains its existing SPA behaviour and draft handling;
-Mac Go menu actions perform page navigation. Account permissions and Chat's existing computer restrictions remain the
-website's own. The Mac app does not bypass them.
+## Still web-based
 
-All native branding uses exact SVG artwork from the website, compiled into a vector asset catalogue. See
-`Resources/BrandAssets.md` for source paths. Generic system symbols are used only for window controls and actions.
+Sign-in, registration, profile/password/passkey security and full Weather/Fitness/Markets/Mail/Chat interfaces use
+WebKit and are labelled Website. Complex day actions link explicitly to the website. The account's Mail permission
+and Chat's mobile restriction remain in force. No new authentication system or native password form is introduced.
 
-## Install the beta
+Sign in through the sheet's existing Today/account flow. Native requests read applicable account cookies from that
+WebKit store in memory. Networking is ephemeral: no passwords, tokens or API responses are written to a native
+database, shared cookie jar or URL cache. API redirects are refused. Only applicable account cookies go to the exact
+production API origin. Session renewal is returned to WebKit. The default browser keeps its own session.
 
-Open the **InFlite Mac beta** workflow in this repository's Actions tab. Download the artifact from a successful run
-(GitHub sign-in required), open the DMG, and drag InFlite to Applications. The artifact includes an app ZIP, checksums,
-this guide, website-load reports and light/dark screenshots. Artifacts expire after 14 days.
+Sign-out ends the server session before clearing local website data. Local clearing alone is also available, with a
+confirmation explaining that unsynced local drafts are lost.
 
-The beta is ad-hoc signed, not Apple Developer ID signed or notarized. macOS may prevent it from opening. Only approve
-a beta obtained from this repository, using System Settings → Privacy & Security if macOS offers Open Anyway.
-Developer ID signing and notarization are required before wider distribution.
+## Install and build
 
-Sign in using InFlite's existing account page and password. Cookies are kept in one persistent WebKit website data
-store. The default browser has its own sign-in: opening Safari will not transfer its cookies into the app or vice versa.
+Download the **InFlite-Mac-0.1.0-beta.3** artifact from a successful **InFlite Mac beta** Actions run (GitHub sign-in
+required; artifacts expire after 14 days). Open the DMG and drag InFlite to Applications.
 
-| Shortcut | Action |
-|---|---|
-| ⌘1–4 | Today, Chats, Apps, You |
-| 1–4, / | The website's own tab and search shortcuts, when not typing |
-| ⌘R | Reload the current page |
-| ⌘F | Find on page |
-| ⇧⌘B | Open the current page in the default browser |
-| ⌘, | Mac window settings and local data controls |
+This development beta is ad-hoc signed, not Developer ID signed or notarized. macOS may block opening. Only approve
+builds obtained from this repository, using System Settings → Privacy & Security if Open Anyway is offered.
+Wider distribution requires Apple signing and notarization.
 
-Use the website's own preferences for its appearance and glass styling. Mac window settings provide the default
-system/light/dark appearance; explicit website preferences continue to take precedence on the page.
-Clearing website data requires confirmation and also removes unsynced local drafts.
-
-## Beta limits
-
-- Live pages need an internet connection. Background push, native badges, auto-updates and native sharing are not implemented.
-- Mail remains owner-only; Chat remains restricted to its supported devices by the website.
-- Passkeys and OAuth callbacks are not verified in this ad-hoc build. Apple signing, associated-domain support and
-  real-device account testing are required before claiming parity with Safari. Browser sign-in does not sign this app in.
-- Authenticated flows, attachments, logout and accessibility need a real-account Mac acceptance pass.
-- Screenshot builds open the actual public website without an account. If the runner cannot reach it, the capture step
-  fails and the report explains the HTTP/load result; installer artifacts are retained for diagnosis.
-
-## Build on a Mac
-
-Install Xcode 15 or later and select its command-line tools, then:
+With Xcode 15+ selected:
 
 ```sh
 bash mac/scripts/build-beta.sh
 open mac/dist/InFlite.app
 ```
 
-No third-party Swift dependencies. `swift test --package-path mac` checks hub routes and navigation restrictions.
-The packaging script compiles the site's SVG assets, builds both architectures, validates the bundle and ad-hoc signature,
-and creates ZIP and DMG files. CI launches the app, verifies the public page loaded and captures both themes.
-It does not change website source, production configuration or account data.
+No third-party Swift dependencies. Core tests decode existing backend fixtures and check signed-out handling,
+card ordering, routes and cookie isolation. The Mac workflow builds both architectures, compiles site SVGs, verifies
+the bundle/signature, launches SwiftUI and captures both themes. Normal capture uses the real API without an account.
+Additional captures pass an explicit public fixture and display SAMPLE DATA; account writes are disabled in that mode.
+Normal launch never uses fixtures. Reports identify the surface as SwiftUI and whether sample data was used.
 
-## Acceptance before wider beta
+## Shortcuts and limits
 
-1. Launch on Apple silicon and Intel; compare with inflite.ai at the same viewport size in Safari, including dark mode.
-2. Sign in with a test account. Check the website's own rail, tabs, search, settings, transitions and permissions.
-3. Leave a draft and navigate using the website; verify its draft handling, then test Go menu navigation separately.
-4. Upload an attachment, save a download, use find and follow an external link into the default browser.
-5. Sign out through the website and verify subsequent authenticated requests are rejected.
-6. Clear local data; confirm the app returns to the signed-out website.
-7. Check interrupted connections, VoiceOver, WebKit process recovery, Apple signing and notarization.
+⌘1 Today · ⌘2 Chats · ⌘3 Apps · ⌘4 You · ⌘R Refresh · ⌘F Find in a web screen · ⇧⌘B Open in browser · ⌘, Settings.
+
+Authenticated reads, renewed cookies, preference saves, logout, account changes, accessibility, file transfers and
+offline recovery need real-account Mac acceptance. Signed-out API checks and sample previews do not prove these flows.
+No website source or production configuration is changed by this branch.
+
+Full app screens, profile/security editing and advanced day actions remain web-based. Background push, native Chat,
+badges and auto-updates are not implemented. Passkeys/OAuth require signing and real-device verification. Morning and
+Quiet Hours edits affect the account's existing registered notification devices; this Mac is not registered for push.

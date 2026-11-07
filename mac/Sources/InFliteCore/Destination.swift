@@ -1,7 +1,7 @@
 import Foundation
 
 public enum Destination: String, CaseIterable, Identifiable, Codable {
-    case apps, you, today, mail, chats, weather, fitness, markets, account
+    case apps, you, today, webToday, mail, chats, weather, fitness, markets, account
 
     public var id: String { rawValue }
     public var title: String {
@@ -9,6 +9,7 @@ public enum Destination: String, CaseIterable, Identifiable, Codable {
         case .apps: return "Apps"
         case .you: return "You"
         case .today: return "Today"
+        case .webToday: return "Day details on web"
         case .mail: return "Mail"
         case .chats: return "Chats"
         case .weather: return "Weather"
@@ -22,6 +23,7 @@ public enum Destination: String, CaseIterable, Identifiable, Codable {
         case .apps: return "square.grid.2x2"
         case .you: return "person.crop.circle"
         case .today: return "sun.max.fill"
+        case .webToday: return "globe"
         case .mail: return "envelope.fill"
         case .chats: return "bubble.left.and.bubble.right.fill"
         case .weather: return "cloud.sun.fill"
@@ -35,6 +37,7 @@ public enum Destination: String, CaseIterable, Identifiable, Codable {
         case .apps: return "Your InFlite apps"
         case .you: return "Your InFlite preferences"
         case .today: return "A clear view of your day"
+        case .webToday: return "Advanced day actions on the website"
         case .mail: return "Make room for what matters"
         case .chats: return "Available on iPhone and iPad"
         case .weather: return "Know what’s ahead"
@@ -49,7 +52,7 @@ public enum Destination: String, CaseIterable, Identifiable, Codable {
         case .apps: address = "https://inflite.ai/#apps"
         case .you: address = "https://inflite.ai/#you"
         case .chats: address = "https://inflite.ai/chats/"
-        case .today: address = "https://inflite.ai/"
+        case .today, .webToday: address = "https://inflite.ai/"
         case .mail: address = "https://inflite.ai/mail/"
         case .weather: address = "https://inflite.ai/weather/"
         case .fitness: address = "https://inflite.ai/fitness/"
@@ -58,6 +61,7 @@ public enum Destination: String, CaseIterable, Identifiable, Codable {
         }
         return URL(string: address)
     }
+    public var isNative: Bool { self == .today || self == .apps || self == .you }
     public static let services: [Self] = [.today, .mail, .weather, .fitness, .markets]
 }
 

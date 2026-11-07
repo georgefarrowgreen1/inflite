@@ -8,6 +8,6 @@ let package = Package(
     targets: [
         .target(name: "InFliteCore"),
         .executableTarget(name: "InFlite", dependencies: ["InFliteCore"]),
-        .testTarget(name: "InFliteCoreTests", dependencies: ["InFliteCore"])
+        .testTarget(name: "InFliteCoreTests", dependencies: ["InFliteCore"], resources: [.copy("Fixtures")])
     ]
 )

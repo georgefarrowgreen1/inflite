@@ -6,7 +6,7 @@ extension Destination {
         switch self {
         case .apps: return nil
         case .you: return "LogoAccount"
-        case .today: return "LogoInFlite"
+        case .today, .webToday: return "LogoInFlite"
         case .mail: return "LogoMail"
         case .chats: return "LogoChats"
         case .weather: return "LogoWeather"

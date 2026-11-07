@@ -12,15 +12,15 @@ struct SettingsView: View {
                     Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark")
                 }
             }
-            Text("InFlite’s own preferences control the page’s colours and glass styling, exactly as on the website.").font(.caption).foregroundStyle(.secondary)
+            Text("Today, Apps and You use native SwiftUI. Unfinished app sections use the existing website.").font(.caption).foregroundStyle(.secondary)
             Section("Your account") {
                 Button("Open your InFlite account") { model.select(.account) }
                 Text("Your sign-in is shared between apps inside InFlite for Mac. Your browser has its own sign-in.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Clear sign-in and website data…", role: .destructive) { confirmClear = true }
             }
-            Section("Beta 2") {
-                LabeledContent("Version", value: "0.1.0 (2)")
+            Section("Beta 3") {
+                LabeledContent("Version", value: "0.1.0 (3)")
                 Text("macOS 14 or later · Apple silicon and Intel").font(.caption).foregroundStyle(.secondary)
                 Text("Background notifications and passkeys are not yet verified. Use your existing password to test sign-in. Browser sign-in does not sign this app in.")
                     .font(.caption).foregroundStyle(.secondary)

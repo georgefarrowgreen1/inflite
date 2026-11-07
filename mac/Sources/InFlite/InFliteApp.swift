@@ -32,8 +32,8 @@ struct InFliteApp: App {
                 Button("Your Account") { model.select(.account) }.keyboardShortcut(",", modifiers: [.command, .shift])
             }
             CommandGroup(after: .toolbar) {
-                Button("Reload Page") { model.currentPage?.webView.reload() }
-                    .keyboardShortcut("r").disabled(model.currentPage == nil)
+                Button("Refresh") { if let page = model.currentPage { page.webView.reload() } else { Task { await model.refresh() } } }
+                    .keyboardShortcut("r").disabled(model.refreshing)
                 Button("Open in Default Browser") { model.openInBrowser() }
                     .keyboardShortcut("b", modifiers: [.command, .shift]).disabled(model.currentPage == nil)
                 Button("Find on Page…") { model.showFind.toggle() }
