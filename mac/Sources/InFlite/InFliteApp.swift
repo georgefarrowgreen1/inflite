@@ -17,14 +17,18 @@ struct InFliteApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) { }
-            CommandMenu("Workspace") {
-                Button("Go to Workspace") { model.select(.workspace) }.keyboardShortcut("0")
-                ForEach(Array(Destination.services.enumerated()), id: \.element.id) { index, destination in
-                    Button(destination.title) { model.select(destination) }
-                        .keyboardShortcut(KeyEquivalent(Character(String(index + 1))))
+            CommandMenu("Go") {
+                Button("Today") { model.select(.today) }.keyboardShortcut("1")
+                Button("Chats") { model.select(.chats) }.keyboardShortcut("2")
+                Button("Apps") { model.select(.apps) }.keyboardShortcut("3")
+                Button("You") { model.select(.you) }.keyboardShortcut("4")
+                Divider()
+                ForEach(Destination.services.filter { $0 != .today }) { destination in
+                    Button { model.select(destination) } label: {
+                        Label { Text(destination.title) } icon: { DestinationIcon(destination: destination, size: 16) }
+                    }
                 }
                 Divider()
-                Button("Switch App…") { model.showSwitcher.toggle() }.keyboardShortcut("k")
                 Button("Your Account") { model.select(.account) }.keyboardShortcut(",", modifiers: [.command, .shift])
             }
             CommandGroup(after: .toolbar) {

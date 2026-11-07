@@ -15,6 +15,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     @Published var error: String?
     private var observations: [NSKeyValueObservation] = []
     private var activeDownloads: [WKDownload] = []
+    private var mainStatus: Int?
 
     init(url: URL) {
         homeURL = url
@@ -63,20 +64,33 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        if response.isForMainFrame, let http = response.response as? HTTPURLResponse, http.statusCode >= 400 {
-            error = "This page couldn’t be opened right now. Try again, or open it in your browser."
-        }
+        // Keep the website's own sign-in, permission and HTTP error screens visible.
+        if response.isForMainFrame { mainStatus = (response.response as? HTTPURLResponse)?.statusCode }
         decisionHandler(response.canShowMIMEType ? .allow : .download)
     }
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { error = nil }
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { error = nil; mainStatus = nil }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        captureReport(success: mainStatus.map { (200..<400).contains($0) } ?? false)
+    }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
     private func failed(_ failure: Error) {
         guard (failure as NSError).code != NSURLErrorCancelled else { return }
         error = "InFlite couldn’t connect. Check your connection and try again."
+        captureReport(success: false)
     }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         error = "This page stopped responding. Reload it to pick up where you left off."
+    }
+
+    // Screenshot builds exercise the real public website. No demo account or replacement HTML.
+    private func captureReport(success: Bool) {
+        let args = ProcessInfo.processInfo.arguments
+        guard let index = args.firstIndex(of: "--capture-report"), index + 1 < args.count else { return }
+        let report: [String: Any] = ["loaded": success, "host": webView.url?.host ?? "", "status": mainStatus ?? 0]
+        if let data = try? JSONSerialization.data(withJSONObject: report) {
+            try? data.write(to: URL(fileURLWithPath: args[index + 1]), options: .atomic)
+        }
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {

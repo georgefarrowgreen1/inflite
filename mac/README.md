@@ -1,51 +1,58 @@
-# InFlite for Mac — 0.1.0 beta 1
+# InFlite for Mac — 0.1.0 beta 2
 
-A native SwiftUI workspace around InFlite's existing services. macOS 14 Sonoma or later, on Apple silicon or Intel.
+The InFlite website in a lightweight native Mac window. macOS 14 Sonoma or later, Apple silicon and Intel.
 
-## Get the beta
+## Same InFlite, on Mac
 
-Open the **InFlite Mac beta** workflow in this repository's Actions tab. Download the artifact from a successful
-run (GitHub sign-in required), then open the DMG and drag InFlite to Applications. The artifact also contains an app
-ZIP, SHA-256 checksums, a native screenshot and these instructions. Artifacts expire after 14 days.
+The app opens **https://inflite.ai/** directly. The live website provides its real desktop navigation, app rail,
+logos, typography, colours, glass, themes, transitions, settings and account screens. There is no separate Mac launcher,
+recreated dashboard, simulated data or second sidebar. At narrower widths the site uses its own responsive layout.
+Website updates appear in the app without rebuilding the Mac shell.
 
-This development beta is ad-hoc signed, not Apple Developer ID signed or notarized. macOS may prevent it from opening.
-Only approve a beta you obtained from this repository, using System Settings → Privacy & Security if macOS offers
-Open Anyway. Developer ID signing and notarization are required before wider distribution.
+The Mac window adds back/forward/reload, in-page find, native file selection and save dialogs, Mac menus and browser
+handoff for external links. The **Go** menu uses the website's own hub routes for Today, Chats, Apps, You, Mail,
+Weather, Fitness and Markets. Normal navigation inside the website retains its existing SPA behaviour and draft handling;
+Mac Go menu actions perform page navigation. Account permissions and Chat's existing computer restrictions remain the
+website's own. The Mac app does not bypass them.
 
-## What works in beta 1
+All native branding uses exact SVG artwork from the website, compiled into a vector asset catalogue. See
+`Resources/BrandAssets.md` for source paths. Generic system symbols are used only for window controls and actions.
 
-- A native workspace, translucent sidebar, first-launch welcome, app switcher and light/dark/system appearance.
-- Today, Mail, Weather, Fitness, Markets and Account in WebKit, using the real services and existing permissions.
-- One persistent website data store for sign-in cookies across the app's views. No native password storage or API keys.
-- Back, forward, reload, native file selection and save dialogs, in-page find, standard web editing and scrolling.
-- App views are retained when switching destinations, preserving their in-progress state during the session.
-- Known InFlite and sign-in hosts stay in the app; other web links open in the default browser.
-- Clear sign-in and website data from Settings, after confirmation. This also removes unsynced local drafts.
+## Install the beta
 
-Sign in from **Your account** using an existing account and password. There is no demo data in the workspace.
-Your browser has a separate sign-in; opening Safari will not transfer its cookies into the app or vice versa.
+Open the **InFlite Mac beta** workflow in this repository's Actions tab. Download the artifact from a successful run
+(GitHub sign-in required), open the DMG, and drag InFlite to Applications. The artifact includes an app ZIP, checksums,
+this guide, website-load reports and light/dark screenshots. Artifacts expire after 14 days.
+
+The beta is ad-hoc signed, not Apple Developer ID signed or notarized. macOS may prevent it from opening. Only approve
+a beta obtained from this repository, using System Settings → Privacy & Security if macOS offers Open Anyway.
+Developer ID signing and notarization are required before wider distribution.
+
+Sign in using InFlite's existing account page and password. Cookies are kept in one persistent WebKit website data
+store. The default browser has its own sign-in: opening Safari will not transfer its cookies into the app or vice versa.
 
 | Shortcut | Action |
 |---|---|
-| ⌘0 | Workspace |
-| ⌘1–5 | Today, Mail, Weather, Fitness, Markets |
-| ⌘K | Switch app |
-| ⌘R | Reload current page |
+| ⌘1–4 | Today, Chats, Apps, You |
+| 1–4, / | The website's own tab and search shortcuts, when not typing |
+| ⌘R | Reload the current page |
 | ⌘F | Find on page |
-| ⇧⌘B | Open current page in the default browser |
-| ⌘, | Mac settings |
+| ⇧⌘B | Open the current page in the default browser |
+| ⌘, | Mac window settings and local data controls |
 
-## Current limits
+Use the website's own preferences for its appearance and glass styling. Mac window settings provide the default
+system/light/dark appearance; explicit website preferences continue to take precedence on the page.
+Clearing website data requires confirmation and also removes unsynced local drafts.
 
-- Chat deliberately enforces its existing iPhone/iPad restriction; the Mac app explains that limit and does not spoof a phone.
-- Mail remains admin-only. The app does not grant extra account permissions.
-- Passkeys and third-party OAuth callbacks are not verified in this ad-hoc build. WebKit associated-domain support,
-  Apple signing and real-device sign-in testing are required before claiming parity with Safari.
-- Background push notifications, native badges, offline account data, auto-updates, native sharing and new-window
-  workflows are not implemented. Live app pages need an internet connection.
-- These are the existing service interfaces inside a native shell; the individual app screens have not been rewritten.
-- The automated screenshot uses `--design-preview`, a network-free view of the actual native workspace, not an
-  authenticated account. Password sign-in, attachments and logout still need a real-account Mac acceptance pass.
+## Beta limits
+
+- Live pages need an internet connection. Background push, native badges, auto-updates and native sharing are not implemented.
+- Mail remains owner-only; Chat remains restricted to its supported devices by the website.
+- Passkeys and OAuth callbacks are not verified in this ad-hoc build. Apple signing, associated-domain support and
+  real-device account testing are required before claiming parity with Safari. Browser sign-in does not sign this app in.
+- Authenticated flows, attachments, logout and accessibility need a real-account Mac acceptance pass.
+- Screenshot builds open the actual public website without an account. If the runner cannot reach it, the capture step
+  fails and the report explains the HTTP/load result; installer artifacts are retained for diagnosis.
 
 ## Build on a Mac
 
@@ -56,16 +63,17 @@ bash mac/scripts/build-beta.sh
 open mac/dist/InFlite.app
 ```
 
-No third-party Swift dependencies. `swift test --package-path mac` checks host navigation and sign-in routing.
-The packaging script builds both architectures, validates the bundle and ad-hoc signature, and creates ZIP and DMG files.
-CI builds and launches the real Mac app on a macOS runner. It does not deploy either website or change account data.
+No third-party Swift dependencies. `swift test --package-path mac` checks hub routes and navigation restrictions.
+The packaging script compiles the site's SVG assets, builds both architectures, validates the bundle and ad-hoc signature,
+and creates ZIP and DMG files. CI launches the app, verifies the public page loaded and captures both themes.
+It does not change website source, production configuration or account data.
 
 ## Acceptance before wider beta
 
-1. Launch on Apple silicon and Intel, resize to the minimum size, test dark mode and VoiceOver.
-2. Sign in with a test account; check Today and permitted apps. Confirm Mail remains unavailable for non-admins.
-3. Leave a draft, switch apps and return; restart and verify the website's own draft recovery.
-4. Upload an attachment, save a download, use find, and open an external link in the default browser.
-5. Sign out through Account; revisit all open services and verify their server authorization rejects signed-out actions.
-6. Clear local data and confirm the app returns to Workspace without a signed-in session.
-7. Test interrupted connections and WebKit process recovery. Complete Apple signing and notarization.
+1. Launch on Apple silicon and Intel; compare with inflite.ai at the same viewport size in Safari, including dark mode.
+2. Sign in with a test account. Check the website's own rail, tabs, search, settings, transitions and permissions.
+3. Leave a draft and navigate using the website; verify its draft handling, then test Go menu navigation separately.
+4. Upload an attachment, save a download, use find and follow an external link into the default browser.
+5. Sign out through the website and verify subsequent authenticated requests are rejected.
+6. Clear local data; confirm the app returns to the signed-out website.
+7. Check interrupted connections, VoiceOver, WebKit process recovery, Apple signing and notarization.

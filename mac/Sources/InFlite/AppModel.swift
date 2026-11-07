@@ -5,37 +5,28 @@ import InFliteCore
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var selection: Destination = .workspace
-    @Published var showSwitcher = false
     @Published var showFind = false
-    @Published var showWelcome = !UserDefaults.standard.bool(forKey: "finishedWelcome")
-    @Published var pages: [Destination: BrowserPage] = [:]
-    let designPreview = ProcessInfo.processInfo.arguments.contains("--design-preview")
+    @Published var page: BrowserPage?
+    var currentPage: BrowserPage? { page }
 
-    var currentPage: BrowserPage? { pages[selection] }
+    init() { page = BrowserPage(url: Destination.today.url!) }
 
     func select(_ destination: Destination) {
-        selection = destination
-        if !designPreview, let url = destination.url, pages[destination] == nil {
-            pages[destination] = BrowserPage(url: url)
-        }
-        showSwitcher = false
-    }
-
-    func finishWelcome() {
-        UserDefaults.standard.set(true, forKey: "finishedWelcome")
-        showWelcome = false
+        guard let url = destination.url else { return }
+        guard let page else { self.page = BrowserPage(url: url); return }
+        page.webView.load(URLRequest(url: url))
     }
 
     func openInBrowser() {
-        if let url = currentPage?.webView.url ?? selection.url,
-           NavigationPolicy.canOpenExternally(url) { NSWorkspace.shared.open(url) }
+        if let url = page?.webView.url, NavigationPolicy.canOpenExternally(url) {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func clearLocalSession() async {
-        pages.values.forEach { $0.webView.stopLoading() }
-        pages = [:]
-        selection = .workspace
+        page?.webView.stopLoading()
+        page = nil
         await WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+        page = BrowserPage(url: Destination.today.url!)
     }
 }

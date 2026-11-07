@@ -22,18 +22,21 @@ jobs:
         with:
           persist-credentials: false
       - name: Test and build the universal beta
+        id: package
         run: bash mac/scripts/build-beta.sh
-      - name: Launch the app and capture the native workspace
+      - name: Launch the app and capture the live website
         run: bash mac/scripts/capture-preview.sh
       - uses: actions/upload-artifact@v4
+        if: always() && steps.package.outcome == 'success'
         with:
-          name: InFlite-Mac-0.1.0-beta.1
+          name: InFlite-Mac-0.1.0-beta.2
           path: |
-            mac/dist/InFlite-Mac-0.1.0-beta.1.zip
-            mac/dist/InFlite-Mac-0.1.0-beta.1.dmg
+            mac/dist/InFlite-Mac-0.1.0-beta.2.zip
+            mac/dist/InFlite-Mac-0.1.0-beta.2.dmg
             mac/dist/SHA256SUMS.txt
             mac/dist/Read Me.md
             mac/dist/InFlite-Mac-light.png
             mac/dist/InFlite-Mac-dark.png
+            mac/dist/capture-*.json
           retention-days: 14
           if-no-files-found: error

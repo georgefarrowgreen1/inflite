@@ -3,10 +3,11 @@ import XCTest
 
 final class NavigationTests: XCTestCase {
     func testDestinationsUseTrustedServices() throws {
-        for destination in Destination.services + [.account] {
+        for destination in Destination.allCases {
             XCTAssertTrue(NavigationPolicy.isInternal(try XCTUnwrap(destination.url)))
         }
-        XCTAssertNil(Destination.chats.url, "Do not bypass the existing computer restriction")
+        XCTAssertEqual(Destination.chats.url?.path, "/chats/", "The website retains its own device restrictions")
+        XCTAssertEqual(Destination.mail.url?.host, "inflite.ai", "Use the same hub interface as the web app")
     }
     func testSignInStaysInsideTheSharedSession() {
         for address in ["https://auth.inflite.ai/", "https://account.inflite.ai/#signin", "https://georgefarrowgreen.com/.well-known/webauthn"] {

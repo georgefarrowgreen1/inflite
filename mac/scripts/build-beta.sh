@@ -9,6 +9,9 @@ BIN=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/InFlite" "$APP/Contents/MacOS/InFlite"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+xcrun actool Resources/BrandAssets.xcassets --compile "$APP/Contents/Resources" \
+    --platform macosx --minimum-deployment-target 14.0 --target-device mac \
+    --output-format human-readable-text --notices --warnings
 ICONSET="$OUT/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
@@ -22,12 +25,12 @@ codesign --verify --deep --strict "$APP"
 lipo "$APP/Contents/MacOS/InFlite" -verify_arch arm64 x86_64
 plutil -lint "$APP/Contents/Info.plist"
 cp README.md "$OUT/Read Me.md"
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/InFlite-Mac-0.1.0-beta.1.zip"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/InFlite-Mac-0.1.0-beta.2.zip"
 STAGING="$OUT/dmg"
 mkdir -p "$STAGING"
 ditto "$APP" "$STAGING/InFlite.app"
 cp "$OUT/Read Me.md" "$STAGING/Read Me.md"
 ln -sfn /Applications "$STAGING/Applications"
-hdiutil create -volname "InFlite Beta" -srcfolder "$STAGING" -ov -format UDZO "$OUT/InFlite-Mac-0.1.0-beta.1.dmg"
-shasum -a 256 "$OUT/"*.zip "$OUT/"*.dmg > "$OUT/SHA256SUMS.txt"
+hdiutil create -volname "InFlite Beta" -srcfolder "$STAGING" -ov -format UDZO "$OUT/InFlite-Mac-0.1.0-beta.2.dmg"
+(cd "$OUT" && shasum -a 256 *.zip *.dmg > SHA256SUMS.txt)
 echo "Built $APP"

@@ -1,12 +1,13 @@
 import Foundation
 
 public enum Destination: String, CaseIterable, Identifiable, Codable {
-    case workspace, today, mail, chats, weather, fitness, markets, account
+    case apps, you, today, mail, chats, weather, fitness, markets, account
 
     public var id: String { rawValue }
     public var title: String {
         switch self {
-        case .workspace: return "Workspace"
+        case .apps: return "Apps"
+        case .you: return "You"
         case .today: return "Today"
         case .mail: return "Mail"
         case .chats: return "Chats"
@@ -18,7 +19,8 @@ public enum Destination: String, CaseIterable, Identifiable, Codable {
     }
     public var symbol: String {
         switch self {
-        case .workspace: return "square.grid.2x2"
+        case .apps: return "square.grid.2x2"
+        case .you: return "person.crop.circle"
         case .today: return "sun.max.fill"
         case .mail: return "envelope.fill"
         case .chats: return "bubble.left.and.bubble.right.fill"
@@ -30,7 +32,8 @@ public enum Destination: String, CaseIterable, Identifiable, Codable {
     }
     public var subtitle: String {
         switch self {
-        case .workspace: return "Everything in one place"
+        case .apps: return "Your InFlite apps"
+        case .you: return "Your InFlite preferences"
         case .today: return "A clear view of your day"
         case .mail: return "Make room for what matters"
         case .chats: return "Available on iPhone and iPad"
@@ -43,12 +46,14 @@ public enum Destination: String, CaseIterable, Identifiable, Codable {
     public var url: URL? {
         let address: String
         switch self {
-        case .workspace, .chats: return nil
+        case .apps: address = "https://inflite.ai/#apps"
+        case .you: address = "https://inflite.ai/#you"
+        case .chats: address = "https://inflite.ai/chats/"
         case .today: address = "https://inflite.ai/"
-        case .mail: address = "https://email.inflite.ai/"
-        case .weather: address = "https://weather.inflite.ai/"
-        case .fitness: address = "https://fitness.inflite.ai/"
-        case .markets: address = "https://finance.inflite.ai/"
+        case .mail: address = "https://inflite.ai/mail/"
+        case .weather: address = "https://inflite.ai/weather/"
+        case .fitness: address = "https://inflite.ai/fitness/"
+        case .markets: address = "https://inflite.ai/markets/"
         case .account: address = "https://account.inflite.ai/"
         }
         return URL(string: address)
