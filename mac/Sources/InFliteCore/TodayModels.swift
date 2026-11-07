@@ -25,6 +25,7 @@ public enum JSONValue: Codable, Equatable, Sendable {
     public subscript(_ key: String) -> JSONValue { if case .object(let o) = self { return o[key] ?? .null }; return .null }
     public var text: String? { if case .string(let s) = self { return s }; return nil }
     public var number: Double? { if case .number(let n) = self { return n }; return nil }
+    public var flag: Bool? { if case .bool(let b) = self { return b }; return nil }
     public var list: [JSONValue] { if case .array(let a) = self { return a }; return [] }
 }
 

@@ -33,6 +33,11 @@ struct NativeSignInView: View {
 struct NativeTodayView: View {
     @ObservedObject var model: AppModel
     private let columns = [GridItem(.adaptive(minimum: 270), spacing: 18)]
+    private var dayStyle: Date.FormatStyle {
+        var style = Date.FormatStyle().weekday(.wide).month(.wide).day()
+        style.timeZone = TimeZone(identifier: model.day?.tz ?? "") ?? .current
+        return style
+    }
     var body: some View {
         if !model.hasLoaded {
             ProgressView("Getting your day…").frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -42,7 +47,8 @@ struct NativeTodayView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(Date.now, format: .dateTime.weekday(.wide).month(.wide).day()).font(.callout).foregroundStyle(.secondary)
+                        Text(Date(timeIntervalSince1970: (model.day?.at ?? Date.now.timeIntervalSince1970 * 1000) / 1000).formatted(dayStyle))
+                            .font(.callout).foregroundStyle(.secondary)
                         Text("Your day, \(model.session?.user?.first ?? model.userName)")
                             .font(.system(size: 31, weight: .bold)).tracking(-0.8)
                     }
@@ -154,6 +160,7 @@ struct NativeSummaryCard: View {
                     .font(.system(size: 32, weight: .medium)).foregroundStyle(pct < 0 ? Color.red : Color.primary)
             }
             if let said = value["market"]["said"].text { Text(said).foregroundStyle(.secondary) }
+            if value["stale"].flag == true { Label("Prices may be out of date", systemImage: "clock").font(.caption).foregroundStyle(.secondary) }
             if let count = value["owned"].number { Text("\(Int(count)) holdings").foregroundStyle(.secondary) }
         }
     }
@@ -188,7 +195,19 @@ struct NativeAppsView: View {
 
 extension View {
     func nativeGlass() -> some View {
-        background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(.primary.opacity(0.06)))
+        modifier(NativeGlass())
+    }
+}
+
+private struct NativeGlass: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    func body(content: Content) -> some View {
+        content.background {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.white.opacity(scheme == .dark ? 0.035 : 0.72))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.white.opacity(scheme == .dark ? 0.07 : 0.65)))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.03 : 0.025), radius: 14, y: 5)
     }
 }

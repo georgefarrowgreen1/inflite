@@ -34,7 +34,7 @@ struct ContentView: View {
                         switch model.selection {
                         case .today: NativeTodayView(model: model)
                         case .apps: NativeAppsView(model: model)
-                        case .you: NativeYouView(model: model)
+                        case .you: NativeYouView(model: model).id(model.session?.user?.id)
                         default:
                             if let page = model.currentPage { BrowserContent(page: page, openInBrowser: model.openInBrowser) }
                         }

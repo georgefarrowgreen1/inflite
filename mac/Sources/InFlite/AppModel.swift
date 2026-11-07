@@ -56,6 +56,11 @@ final class AppModel: ObservableObject {
             }
             if signedIn { showingSignIn = false }
             captureReport(loaded: true)
+        } catch TodayServiceError.accountChanged {
+            guard turn == generation else { return }
+            session = nil; day = nil; quietSettings = nil; hasLoaded = true
+            message = TodayServiceError.accountChanged.localizedDescription
+            captureReport(loaded: false)
         } catch TodayServiceError.signedOut {
             guard turn == generation else { return }
             session = nil; day = nil; quietSettings = nil; hasLoaded = true
@@ -80,7 +85,7 @@ final class AppModel: ObservableObject {
             let browser = BrowserPage(url: url)
             browser.onNavigationFinished = { [weak self] in
                 guard let self else { return }
-                Task { await self.refresh() }
+                Task { await self.refresh(force: true) }
             }
             page = browser
         }
@@ -115,7 +120,7 @@ final class AppModel: ObservableObject {
             guard turn == generation && signedIn else { return }
             quietSettings = try JSONDecoder().decode(QuietHours.self, from: JSONEncoder().encode(reply["quiet"]))
             settingsMessage = nil
-        } catch { settingsMessage = error.localizedDescription }
+        } catch { if turn == generation { settingsMessage = error.localizedDescription } }
     }
     func saveCards(hidden: [String]) async throws {
         guard !sampleData else { throw TodayServiceError.rejected("Sample preview: account changes are disabled.") }

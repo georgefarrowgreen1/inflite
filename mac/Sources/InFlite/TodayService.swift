@@ -3,10 +3,11 @@ import WebKit
 import InFliteCore
 
 enum TodayServiceError: LocalizedError {
-    case signedOut, unavailable, invalidResponse, rejected(String)
+    case signedOut, accountChanged, unavailable, invalidResponse, rejected(String)
     var errorDescription: String? {
         switch self {
         case .signedOut: return "Your sign-in has ended. Sign in again to see your day."
+        case .accountChanged: return "Your account changed while this was loading. Refresh to continue."
         case .unavailable: return "Couldn’t reach InFlite. Check your connection and try again."
         case .invalidResponse: return "InFlite sent an unexpected response. Try again."
         case .rejected(let message): return message
@@ -49,6 +50,15 @@ final class TodayService {
         guard http.value(forHTTPHeaderField: "Content-Type")?.contains("application/json") == true else {
             throw TodayServiceError.invalidResponse
         }
+        // A response started under one sign-in must never renew it over a newer web sign-in.
+        let currentCookies: [HTTPCookie] = await withCheckedContinuation { continuation in
+            store.getAllCookies { continuation.resume(returning: $0) }
+        }
+        func identity(_ values: [HTTPCookie]) -> Set<String> {
+            Set(values.filter { APIRequest.permits($0, for: request.url!) && $0.name != "ifl_rw" }
+                .map { "\($0.name)|\($0.domain)|\($0.path)|\($0.value)" })
+        }
+        guard identity(cookies) == identity(currentCookies) else { throw TodayServiceError.accountChanged }
         let headers = http.allHeaderFields.reduce(into: [String: String]()) { result, pair in
             if let name = pair.key as? String { result[name] = String(describing: pair.value) }
         }
