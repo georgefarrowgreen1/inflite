@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-for mode in light dark sample-light sample-dark sample-you; do
+for mode in light dark sample-light sample-dark sample-you sample-apps; do
     appearance=light
     [[ "$mode" = *dark ]] && appearance=dark
     defaults write ai.inflite.mac.beta appearance -string "$appearance"
@@ -10,6 +10,7 @@ for mode in light dark sample-light sample-dark sample-you; do
     args=(--capture-report "$report")
     if [[ "$mode" = sample* ]]; then args+=(--fixture-path "$PWD/Tests/InFliteCoreTests/Fixtures/boot.json"); fi
     if [ "$mode" = sample-you ]; then args+=(--screen you); fi
+    if [ "$mode" = sample-apps ]; then args+=(--screen apps); fi
     open dist/InFlite.app --args "${args[@]}"
     for attempt in $(seq 1 60); do
         [ -f "$report" ] && break
