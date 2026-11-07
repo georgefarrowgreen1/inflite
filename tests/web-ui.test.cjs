@@ -36,12 +36,13 @@ before(async () => {
 });
 after(async () => { await browser?.close(); await new Promise(r => server ? server.close(r) : r()); });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, user, serviceWorkers = 'block' } = {}) {
+async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, user, viewApps, hubApps = {}, serviceWorkers = 'block' } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: 'reduce',
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
   const requests = [], errors = [];
   const view = structuredClone(fixture('session'));
   if (user) view.user = { ...view.user, ...user };
+  if (viewApps) view.apps = viewApps;
   if (preferences) view.prefs = preferences;
   view.links = { ...view.links, account: origin, auth: origin };
   if (seedSession) await ctx.addInitScript(view => localStorage.setItem('today:session', JSON.stringify({ id: view.user.id, at: Date.now(), view })), seedSession);
@@ -53,7 +54,7 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
     requests.push({ path: url.pathname, method: req.method(), body: req.postDataJSON() });
     if (intercept && await intercept(route, { url, request: req, view, answer })) return;
     const api = { '/api/session': signedIn ? view : { signedIn: false }, '/api/boot': { view, cards: answer },
-      '/api/today': answer, '/api/hub': { ready: true, roof: true, apps: { weather: false, fitness: false, markets: false, chats: false, mail: false } },
+      '/api/today': answer, '/api/hub': { ready: true, roof: true, apps: { weather: false, fitness: false, markets: false, chats: false, mail: false, ...hubApps } },
       '/api/rules': fixture('rules'), '/api/notify': fixture('notify'), '/api/devices': { devices: [], here: [] },
       '/api/act/undo': { act: { state: 'undone' }, said: 'Change undone.' } };
     return route.fulfill({ status: api[url.pathname] ? 200 : 404, json: api[url.pathname] || { error: 'Sample response unavailable' } });
@@ -222,7 +223,7 @@ test('Today, Apps and You fit phone and desktop widths in both themes', async ()
           await page.locator(`#${screen}:not([hidden])`).waitFor();
         }
         if (screen === 'today' && width >= 1100) await settleLayout(page);
-        if (screen === 'apps') await page.locator('#apps .ifl-tile').first().waitFor();
+        if (screen === 'apps') await page.locator('#apps .apps-list .ifl-row').first().waitFor();
         if (screen === 'you') {
           await page.locator('#youQuiet').waitFor();
           assert.match(await page.locator('#youPhoneRow').innerText(), /On This Device/);
@@ -365,6 +366,165 @@ test('the coordinator and signed-out shell still load after an offline reload', 
     await page.waitForFunction(async () => !!(await caches.match('/roof/requests.js')));
     await ctx.setOffline(true); await page.reload();
     await page.locator('#out:not([hidden]) #signin').waitFor();
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+async function appsScreen(page) {
+  await page.evaluate(() => { location.hash = 'apps'; });
+  await page.locator('#apps:not([hidden]) .apps-list .ifl-row').first().waitFor();
+  await page.waitForFunction(() => !document.documentElement.hasAttribute('data-vt'));
+}
+const quickIds = page => page.locator('#apps .apps-shortcut').evaluateAll(links => links.map(a => a.dataset.quick));
+
+test('quick launch has four app rows, working destinations and reachable shortcuts on phone and desktop', async () => {
+  const answer = structuredClone(day); answer.apps.mail = 'All caught up';
+  for (const width of [320, 390, 1440]) for (const scheme of ['light', 'dark']) {
+    const { ctx, page, errors } = await open({ width, scheme, answer, viewApps: { mail: true }, hubApps: { mail: true } });
+    try {
+      await appsScreen(page);
+      const rows = page.locator('#apps .apps-list .ifl-row');
+      assert.equal(await rows.count(), 4);
+      assert.deepEqual(await rows.evaluateAll(a => a.map(n => new URL(n.href).pathname)), ['/weather/', '/fitness/', '/markets/', '/mail/']);
+      assert.match(await rows.first().innerText(), /9°, rain from 15:00/);
+      assert.deepEqual(await quickIds(page), ['weather:radar', 'fitness:activities', 'markets:holdings', 'mail:people']);
+      assert.match(await page.getByRole('link', { name: 'People in Mail', exact: true }).getAttribute('href'), /\/mail\/#people$/);
+      for (const b of await page.locator('#apps .apps-shortcut, #apps .apps-edit, #apps .apps-list .ifl-row').all()) {
+        const r = await b.boundingBox(); assert.ok(r.width >= 44 && r.height >= 44, 'comfortable tap target');
+      }
+      const listBox = await page.locator('.apps-list').boundingBox(), quickBox = await page.locator('.apps-quick').boundingBox();
+      assert.ok(width >= 1100 ? quickBox.x > listBox.x + listBox.width : quickBox.y >= listBox.y + listBox.height, 'responsive list and quick access placement');
+      const last = await page.locator('#apps .apps-shortcut').last().boundingBox();
+      if (width === 390) {
+        const nav = await page.locator('#tabs').boundingBox();
+        assert.ok(last.y + last.height < nav.y, 'four shortcuts clear the floating navigation');
+      }
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+      await save(page, `quick-launch-${width}-${scheme}`);
+      assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => window.__csp), []);
+    } finally { await ctx.close(); }
+  }
+});
+
+test('quick access edits use toggles, enforce four choices, cancel cleanly, persist, and reset', async () => {
+  const { ctx, page, requests, errors } = await open({ viewApps: { mail: true }, hubApps: { mail: true } });
+  const initial = ['weather:radar', 'fitness:activities', 'markets:holdings', 'mail:people'];
+  try {
+    await appsScreen(page);
+    const edit = page.getByRole('button', { name: 'Edit quick access', exact: true });
+    await edit.click();
+    let dialog = page.getByRole('dialog', { name: 'Quick access', exact: true });
+    await dialog.waitFor();
+    assert.equal(await dialog.getByRole('switch', { name: 'Warnings', exact: true }).isDisabled(), true);
+    await dialog.getByRole('switch', { name: 'Radar', exact: true }).uncheck();
+    await dialog.getByRole('switch', { name: 'Warnings', exact: true }).check();
+    assert.equal(await dialog.getByRole('switch', { name: 'News', exact: true }).isDisabled(), true);
+    await save(page, 'quick-launch-editor');
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.deepEqual(await quickIds(page), initial);
+    await edit.click(); dialog = page.getByRole('dialog', { name: 'Quick access', exact: true });
+    await dialog.getByRole('switch', { name: 'Radar', exact: true }).focus(); await page.keyboard.press('Space');
+    await dialog.getByRole('switch', { name: 'Warnings', exact: true }).check();
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    const saved = ['fitness:activities', 'markets:holdings', 'mail:people', 'weather:warnings'];
+    assert.deepEqual(await quickIds(page), saved);
+    assert.equal(await edit.evaluate(el => el === document.activeElement), true, 'focus returns to Edit');
+    await page.reload(); await appsScreen(page);
+    assert.deepEqual(await quickIds(page), saved, 'choices survive a reload');
+    await edit.click(); dialog = page.getByRole('dialog', { name: 'Quick access', exact: true });
+    await dialog.getByRole('button', { name: 'Reset to defaults', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    assert.deepEqual(await quickIds(page), initial);
+    await edit.click(); dialog = page.getByRole('dialog', { name: 'Quick access', exact: true });
+    for (const input of await dialog.getByRole('switch').all()) if (await input.isChecked()) await input.uncheck();
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    assert.deepEqual(await quickIds(page), []);
+    await page.reload(); await appsScreen(page); assert.deepEqual(await quickIds(page), [], 'an intentionally empty selection is remembered');
+    assert.equal(requests.some(r => r.method !== 'GET'), false, 'shortcut edits make no account or app writes');
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('quick access respects app availability, validates stored IDs and isolates accounts', async () => {
+  let second = false;
+  const firstId = fixture('session').user.id, secondId = 'other-account';
+  const { ctx, page, errors } = await open({ intercept: async (_route, { view }) => {
+    if (second) view.user.id = secondId;
+    return false;
+  } });
+  try {
+    await page.evaluate(id => {
+      localStorage.setItem(`today:quick:${id}`, JSON.stringify(['mail:people', 'weather:warnings', 'weather:warnings', 'javascript:alert(1)', 'markets:news']));
+    }, firstId);
+    await appsScreen(page);
+    assert.equal(await page.locator('#apps .apps-list .ifl-row').count(), 3);
+    assert.deepEqual(await quickIds(page), ['weather:warnings', 'markets:news'], 'unavailable apps, duplicates and unknown destinations are excluded');
+    await page.getByRole('button', { name: 'Edit quick access', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Quick access', exact: true });
+    assert.equal(await dialog.getByRole('switch', { name: 'People', exact: true }).count(), 0);
+    await page.keyboard.press('Escape');
+    second = true; await page.reload(); await appsScreen(page);
+    assert.deepEqual(await quickIds(page), ['weather:radar', 'fitness:activities', 'markets:holdings']);
+    await page.getByRole('button', { name: 'Edit quick access', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Quick access', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+    const kept = await page.evaluate(([a,b]) => [JSON.parse(localStorage.getItem(`today:quick:${a}`)), JSON.parse(localStorage.getItem(`today:quick:${b}`))], [firstId, secondId]);
+    assert.ok(kept[0].includes('mail:people'), 'another account does not overwrite the first account’s hidden choices');
+    assert.deepEqual(kept[1], ['weather:radar', 'fitness:activities', 'markets:holdings']);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('blocked shortcut storage shows a recoverable error and leaves the previous choices intact', async () => {
+  const { ctx, page, errors } = await open();
+  try {
+    await appsScreen(page); const before = await quickIds(page);
+    await page.getByRole('button', { name: 'Edit quick access', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Quick access', exact: true });
+    await dialog.getByRole('switch', { name: 'Radar', exact: true }).uncheck();
+    await page.evaluate(() => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(k,v) { if (k.startsWith('today:quick:')) throw new DOMException('Storage unavailable', 'QuotaExceededError'); return set.call(this,k,v); };
+    });
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    assert.match(await dialog.getByRole('status').innerText(), /Couldn’t save/);
+    assert.equal(await dialog.isVisible(), true);
+    assert.deepEqual(await quickIds(page), before);
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('an Apps refresh preserves an open edit, and an old account editor cannot save after its scope ends', async () => {
+  const { ctx, page, errors } = await open();
+  try {
+    const result = await page.evaluate(async () => {
+      const { drawApps } = await import('/apps.js'), ui = await import('/roof/ui.js');
+      const root = document.createElement('section'); document.body.append(root);
+      let spec, live = true;
+      const frame = { session: { hub: true, apps: {} }, sheet: { open(s) {
+        spec = s; document.body.append(s.body);
+        const h = { closed: false, close() { if (h.closed) return; h.closed = true; s.body.remove(); s.onClose(); } };
+        return h;
+      } } };
+      const original = { ui, view: { user: { id: 'edit-owner-a' } }, current: () => live, frame };
+      drawApps(root, original); const button = root.querySelector('button'); button.click();
+      const input = spec.body.querySelector('[data-quick="weather:radar"] input'); input.checked = false; input.dispatchEvent(new Event('change'));
+      drawApps(root, { ...original, answer: { v: 2, apps: { weather: 'Updated forecast' } } });
+      const sameEditor = !input.disabled && button === root.querySelector('button');
+      spec.acts[1].run();
+      const refreshed = root.textContent.includes('Updated forecast'), saved = JSON.parse(localStorage.getItem('today:quick:edit-owner-a'));
+      root.querySelector('button').click(); const old = spec;
+      live = false;
+      drawApps(root, { ...original, current: () => true, view: { user: { id: 'edit-owner-b' } } });
+      old.acts[1].run();
+      const other = localStorage.getItem('today:quick:edit-owner-b'); root.remove();
+      return { sameEditor, refreshed, saved, after: JSON.parse(localStorage.getItem('today:quick:edit-owner-a')), other };
+    });
+    assert.equal(result.sameEditor, true);
+    assert.equal(result.refreshed, true);
+    assert.deepEqual(result.saved, ['fitness:activities', 'markets:holdings']);
+    assert.deepEqual(result.after, result.saved);
+    assert.equal(result.other, null);
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });

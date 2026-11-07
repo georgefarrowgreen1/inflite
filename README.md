@@ -76,12 +76,22 @@ Resize and mutation observers update row spans when content grows, cards change 
 in reading/keyboard order; no dense reordering or animated positioning is used. The grid has a readable CSS fallback,
 and phones retain the single-column layout. Keep `layout.js` in the service-worker and updater file lists.
 
+Apps (`today/public/apps.js`) uses a compact app list and up to four quick-access links. Edit opens the shared
+sheet with switches, Cancel, Done and Reset to defaults. Choices are stored on this device under
+`today:quick:<account-id>`, separately from the server's Today card preferences. Unknown destinations are discarded;
+unavailable apps are hidden without erasing saved choices until the user saves a new selection. Same-account
+refreshes wait for an open editor to close, and the request scope prevents an old account's editor from saving.
+The app list and shortcuts stack on phones and sit side by side on desktop. App statuses use Today's answer
+without fetching extra connector previews.
+
 Run the local UI checks with `npm ci`, `npx playwright install chromium`, then `npm run test:web`
 (`CHROMIUM=/path/to/chromium` selects an existing browser). These use an isolated local static server, sample
 account fixtures and the production Content Security Policy; external requests are blocked. They check keyboard
 navigation, Undo requests, offers, both themes at phone/desktop widths, device wording and zoom configuration.
 Desktop checks also cover 1100–2560px, packing without overlaps, expanding content, hidden/reordered cards, a day
 without a sidebar and returning to Today after resizing another screen.
+Apps checks cover shortcut destinations, mobile tap targets, editing, persistence, account isolation, disabled
+apps, storage failures and refreshes during editing.
 They do not verify authenticated backend behaviour. Set `WEB_UI_SCREENSHOTS=test-results/web-ui` for sample
 previews. The Web UI checks workflow runs the same checks on web pull requests and production pushes.
 
