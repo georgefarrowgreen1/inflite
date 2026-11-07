@@ -44,6 +44,31 @@ Then open http://localhost:8787, with a stand-in for the account's API on 8789 (
 
 inflite Mail, the mail client for `email.inflite.ai`. See [email/README.md](email/README.md) for setup.
 
+## Web UI maintenance
+
+Today and modules inside its shell share button and switch rules in
+`today/public/roof/controls.css`, imported by `roof.css`. The existing `.pill` and `.ifl-btn` names are aliases;
+control sizes and interaction states live in that one file. App accents and theme colours remain in the existing
+tokens. Standalone apps and Mail's separate document retain their own styles.
+
+Morning plan history and Undo controls live under **What changed**. Offers needing a decision, ride guidance,
+warnings and messages stay visible. The disclosure preserves its open state and keyboard focus across redraws.
+
+On desktop, `today/public/layout.js` packs the summary, Coming Up and app cards into one grid, using two to four
+columns based on the space available. Cards retain their natural heights, and the summary spans up to two columns.
+Resize and mutation observers update row spans when content grows, cards change or the window resizes. Nodes stay
+in reading/keyboard order; no dense reordering or animated positioning is used. The grid has a readable CSS fallback,
+and phones retain the single-column layout. Keep `layout.js` in the service-worker and updater file lists.
+
+Run the local UI checks with `npm ci`, `npx playwright install chromium`, then `npm run test:web`
+(`CHROMIUM=/path/to/chromium` selects an existing browser). These use an isolated local static server, sample
+account fixtures and the production Content Security Policy; external requests are blocked. They check keyboard
+navigation, Undo requests, offers, both themes at phone/desktop widths, device wording and zoom configuration.
+Desktop checks also cover 1100–2560px, packing without overlaps, expanding content, hidden/reordered cards, a day
+without a sidebar and returning to Today after resizing another screen.
+They do not verify authenticated backend behaviour. Set `WEB_UI_SCREENSHOTS=test-results/web-ui` for sample
+previews. The Web UI checks workflow runs the same checks on web pull requests and production pushes.
+
 ## Deploys
 
 Every push to each Worker's production branch is built and deployed by Cloudflare automatically, so work happens on

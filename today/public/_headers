@@ -18,6 +18,8 @@
   Cache-Control: no-cache
 /day.js
   Cache-Control: no-cache
+/layout.js
+  Cache-Control: no-cache
 /day.css
   Cache-Control: no-cache
 /apps.js

@@ -144,13 +144,13 @@ function paint(root, ctx) {
     const why = ctx.pushWhy?.(), rows = [];
     let foot = "";
     const on = phoneOn(ctx);
-    rows.push(sw(`id="youPhone"${why ? " disabled" : ""}`, "On This Phone", why || (notHere(ctx) ? "Tap to turn on here" : "Today’s morning and the apps below"), on, "Notifications on this phone", ` id="youPhoneRow"`, ic("bell", "red")));
+    rows.push(sw(`id="youPhone"${why ? " disabled" : ""}`, "On This Device", why || (notHere(ctx) ? "Tap to turn on here" : "Today’s morning and the apps below"), on, "Notifications on this device", ` id="youPhoneRow"`, ic("bell", "red")));
     const here = Array.isArray(Y.devices?.here) ? Y.devices.here : [], every = !!ctx.everyKept?.();
     if (ctx.hub && ctx.view.hubPush === true && Y.devices !== false) {
       // (chosen on the account, ctx.everyKept: shown as on wherever this phone has them, and sent again by drawYou if
       // the account's lost it here)
       if (on && (here.includes("pg_push") || (every && !Y.everyLost))) foot = "Every app notifies here: Chats, Weather and Markets as well as Today.";
-      else if (on || !every) rows.push(go(`id="youEvery"`, "Get Every App’s Here", "Chats, Weather and Markets as well as Today", "", ic("every", "blue")));
+      else if (on || !every) rows.push(go(`id="youEvery"`, "Notifications From Every App", "Receive Chats, Weather and Markets on this device", "", ic("every", "blue")));
     }
     const t = (n && n.today) || ctx.morning || {};
     rows.push(go(`id="youMorning"`, "Today’s Morning", "One notification, from all your apps", t.on ? clock(Number.isInteger(t.at) ? t.at : 420) : "Off", ic("sun", "orange")));
