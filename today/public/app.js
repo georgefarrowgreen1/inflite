@@ -10,6 +10,7 @@ import { CARD_KEYS, APP, esc, safe, hm, dateLong, G, cardHTML, placeholder, appl
 import { createFrame } from "/roof/frame.js";
 import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
+import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
 const BUILD = "1.78";
@@ -1430,6 +1431,8 @@ function forgetKept(except = null) {
 // lists and checks every key in them is here.)
 const APP_KEPT = [
   "mail:replies", "mail:unsent", "mail:outbox", "mail:remote-images", "mail:lens",
+  // (Search's Recent: what was opened from it)
+  "ifl:recent",
   "markets:last", "markets:years", "markets:recent", "markets:newsRead", "markets:newsHide", "markets:newsSeen", "markets:plan",
   "wx:acct",
   "fitness:hk", "fitness:today-sent", "fitness:today-swaps", "fitness:meAt", "fitness:files", "fitness:morning", "fitness:sums",
@@ -1843,7 +1846,9 @@ const SETTINGS = [
   // (Mail's, for the site's admin alone: s4/spec §2.4)
   ["Mail Notifications", "notify-mail", "Through InFlite, and which addresses notify you", (view) => view?.apps?.mail === true],
 ];
-const found = (q, ...xs) => xs.some((x) => typeof x === "string" && x.toLowerCase().includes(q));
+// (search's own matching: a word's start, inside one, the letters in order, a slip; what's beside the title only where
+// it holds what was typed)
+const found = (q, x, ...more) => (typeof x === "string" && !!match(q, x)) || more.some((y) => typeof y === "string" && (match(q, y)?.s ?? 0) >= 0.7);
 // (an address from the answer, as this page goes there: the hub's path, or the app's own where it's degraded. Worked
 // out here, not by IFL.hub.go, which leaves the breadcrumb: nothing's written as you type)
 const SUBS = { chat: "/chats", weather: "/weather", fitness: "/fitness", finance: "/markets", email: "/mail" };

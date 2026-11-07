@@ -298,6 +298,37 @@ a.ifl-tile:active, .ifl-tile-main:active { transform: scale(0.97); }
 .ifl-none { margin: 14px 4px 0; color: var(--text-2); }
 .ifl-none:empty { display: none; }
 .ifl-sr-group .ifl-label { margin: 16px 4px 2px; }
+/* (a sheet of one height, whatever's found, so nothing jumps as answers come in: the field stays, the results scroll
+   under it; with the keyboard up, as tall as what's in sight, sheet.js's ifs-kb) */
+dialog.ifl-sheet[data-sheet="search"] { height: min(640px, calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 24px)); overflow: hidden; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+dialog.ifl-sheet[data-sheet="search"].ifs-kb { padding-bottom: 8px; }
+@media (hover: none) { dialog.ifl-sheet[data-sheet="search"].ifs-kb { height: auto; } }
+@media (min-width: 700px) { dialog.ifl-sheet[data-sheet="search"] { height: min(600px, calc(100dvh - 96px)); padding-bottom: 12px; } }
+dialog.ifl-sheet[data-sheet="search"] .ifs-body { display: flex; flex-direction: column; overflow: hidden; }
+.ifl-search { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.ifl-search > .ifl-field { flex: none; }
+.ifl-search .ifl-results { flex: 1 1 auto; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; margin: 0 -18px; padding: 0 18px 12px; scrollbar-width: thin; }
+.ifl-sr-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ifl-sr-more { position: relative; flex: none; margin: 0 4px; padding: 0; font-size: 14px; font-weight: 600; color: var(--acc-ink); }
+.ifl-sr-more::after { content: ""; position: absolute; inset: -12px -8px; }
+.ifl-sr-more:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 3px; border-radius: 6px; }
+.ifl-results [role="option"] { border-radius: 14px; scroll-margin: 8px 0; }
+.ifl-results [role="option"][aria-selected="true"] { background: var(--press); }
+.ifl-results .ifl-row[aria-selected="true"]::before, .ifl-results .ifl-row[aria-selected="true"] + .ifl-row::before { opacity: 0; }
+.ifl-results .ifl-row { padding: 8px 10px; margin: 0 -6px; width: calc(100% + 12px); }
+.ifl-results mark.ifl-hit { color: inherit; background: none; font-weight: 700; }
+/* the empty field: your apps in a row, Recent, the shortcuts as chips */
+.ifl-sr-apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 4px; margin: 4px -4px 0; }
+.ifl-sr-app { display: grid; justify-items: center; gap: 5px; padding: 8px 2px 6px; color: var(--text); text-decoration: none; font-size: 12px; text-align: center; }
+.ifl-sr-app span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ifl-sr-app .ifl-appic { transition: transform var(--dur-press); }
+.ifl-sr-app:active .ifl-appic { transform: scale(0.92); }
+.ifl-sr-app:focus-visible, .ifl-sr-cuts .ifl-chip:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: -2px; }
+.ifl-sr-cuts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.ifl-sr-cuts .ifl-chip { border-radius: var(--r-pill); }
+.ifl-sr-cuts .ifl-chip .ifl-glyph { color: var(--acc-ink); }
+.ifl-sr-cuts .ifl-chip[aria-selected="true"] { box-shadow: inset 0 0 0 2px var(--acc-ink); background: var(--glass-ctl); }
+@media (prefers-reduced-motion: reduce) { .ifl-sr-app .ifl-appic { transition: none; } }
 .ifl-provides { display: grid; gap: 8px; margin: 4px 0 4px; }
 .ifl-provides-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--glass-ctl); font-size: 15px; }
 .ifl-provides-row b { font-size: 12px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--acc-ink); padding-top: 2px; }

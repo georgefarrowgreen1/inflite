@@ -23,6 +23,7 @@
 //   what's on this phone, the query to the core by postMessage only. Each opens that chat (/chats/#open=<id>). Orders 5
 //   and 6 (before Apps) while the Chats screen shows, else 15 and 16.
 import { REGISTRY } from "./router.js";
+import { match } from "./search.js";
 
 export const WORDS = [["cards", "Cards"], ["search", "Search"], ["notifications", "Notifications"], ["actions", "Actions"], ["screens", "Screens"]];
 const sec = (path, list) => list.map(([id, l]) => [id, l, `${path}#${id}`]);
@@ -117,7 +118,7 @@ export function chatsProvider(F, svc) {
   const offA = F.search.provide({ id: "people", group: "People", get order() { return here() ? 5 : 15; },
     search(q) {
       const t = qOf(q).toLowerCase();
-      return t ? [...list.friends, ...list.groups].filter((x) => ok(x?.id) && !x.blocked && typeof x.name === "string" && x.name.toLowerCase().includes(t)).map((x) => to(x.name, "Chats", x.id)) : [];
+      return t ? [...list.friends, ...list.groups].filter((x) => ok(x?.id) && !x.blocked && typeof x.name === "string" && match(t, x.name)).map((x) => to(x.name, "Chats", x.id)) : [];
     } });
   const offB = F.search.provide({ id: "messages", group: "Messages", get order() { return here() ? 6 : 16; },
     async search(q) {
