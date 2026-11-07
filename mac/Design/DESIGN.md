@@ -19,6 +19,7 @@ No fake unread counts, balances, activity, weather or connection indicators.
 - Search is named **Switch app**: it searches destinations, not private account content.
 - Host text in the toolbar makes account redirects visible; navigation controls expose back, forward and reload.
 - Web failures offer reload and browser access; empty search states explain what happened.
+- Short windows use a smaller hero and denser cards, keeping the app launchers within reach.
 - Theme follows macOS by default, with explicit light/dark preferences.
 - Use real button controls and descriptive accessibility labels; never depend on colour alone.
 - First launch and Settings state the beta's functional limits, including mobile-only Chat and owner-only Mail.

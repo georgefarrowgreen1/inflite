@@ -6,8 +6,10 @@ struct WorkspaceView: View {
     private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
 
     var body: some View {
+        GeometryReader { geometry in
+        let compact = geometry.size.height < 720
         ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
+            VStack(alignment: .leading, spacing: compact ? 20 : 30) {
                 HStack {
                     Label("YOUR MAC WORKSPACE", systemImage: "desktopcomputer")
                         .font(.system(size: 10, weight: .semibold)).tracking(1.6).foregroundStyle(.secondary)
@@ -16,9 +18,9 @@ struct WorkspaceView: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 HStack(alignment: .center, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: compact ? 9 : 14) {
                         Text("A little more room\nfor your day.")
-                            .font(.system(size: 42, weight: .medium, design: .rounded)).tracking(-1.8).lineSpacing(-1)
+                            .font(.system(size: compact ? 33 : 42, weight: .medium, design: .rounded)).tracking(-1.8).lineSpacing(-1)
                             .fixedSize(horizontal: false, vertical: true)
                         Text("Your day, your people, your next adventure.\nAll together in InFlite.")
                             .font(.system(size: 14)).foregroundStyle(.secondary).lineSpacing(5)
@@ -26,14 +28,16 @@ struct WorkspaceView: View {
                             HStack(spacing: 10) { Text("Open Today"); Image(systemName: "arrow.right") }
                                 .padding(.horizontal, 9).padding(.vertical, 5)
                         }
-                        .buttonStyle(.borderedProminent).controlSize(.large).padding(.top, 10)
-                        Text("Your existing InFlite account. A new place to settle in.")
-                            .font(.system(size: 10)).foregroundStyle(.tertiary).padding(.top, 1)
+                        .buttonStyle(.borderedProminent).controlSize(.large).padding(.top, compact ? 4 : 10)
+                        if !compact {
+                            Text("Your existing InFlite account. A new place to settle in.")
+                                .font(.system(size: 10)).foregroundStyle(.tertiary).padding(.top, 1)
+                        }
                     }
                     Spacer(minLength: 0)
-                    OrbitArtwork().frame(width: 220, height: 230).accessibilityHidden(true)
+                    OrbitArtwork().scaleEffect(compact ? 0.82 : 1).frame(width: compact ? 180 : 220, height: compact ? 180 : 230).accessibilityHidden(true)
                 }
-                .padding(30)
+                .padding(compact ? 22 : 30)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
                     RoundedRectangle(cornerRadius: 22)
@@ -48,7 +52,7 @@ struct WorkspaceView: View {
                 }
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach([Destination.mail, .weather, .fitness, .markets]) { destination in
-                        AppCard(destination: destination) { model.select(destination) }
+                        AppCard(destination: destination, compact: compact) { model.select(destination) }
                     }
                 }
                 HStack(spacing: 12) {
@@ -62,15 +66,17 @@ struct WorkspaceView: View {
                     Button("Your account") { model.select(.account) }.buttonStyle(.bordered)
                 }.padding(.vertical, 5)
             }
-            .padding(34).frame(maxWidth: 1050)
+            .padding(compact ? 26 : 34).frame(maxWidth: 1050)
             .frame(maxWidth: .infinity)
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
+        }
     }
 }
 
 struct AppCard: View {
     let destination: Destination
+    var compact = false
     let action: () -> Void
     @State private var hovered = false
     var body: some View {
@@ -86,7 +92,7 @@ struct AppCard: View {
                 Spacer(minLength: 0)
                 Image(systemName: "arrow.up.right").font(.system(size: 12)).foregroundStyle(.tertiary)
             }
-            .padding(19).frame(maxWidth: .infinity, minHeight: 92)
+            .padding(compact ? 15 : 19).frame(maxWidth: .infinity, minHeight: compact ? 78 : 92)
             .background(hovered ? destination.tint.opacity(0.05) : Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(hovered ? 0.12 : 0.06)))
             .contentShape(RoundedRectangle(cornerRadius: 16))
