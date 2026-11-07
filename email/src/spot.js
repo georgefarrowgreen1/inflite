@@ -745,7 +745,9 @@ export async function keepBookings(env, list, { threadId, messageId, sender, mai
     if (no.has(b.kind) || !ID_RE.test(b.id) || theirs(own(b.id))) continue;
     if (b.override) {
       const sid = b.id.split("~")[0];
-      if (!from.has(sid) && !series.has(sid)) continue;
+      // (one for a series not read yet, kept for when it is (the read-back can meet a cancellation before its invite):
+      // only that invite's own sender's are kept then, and those still waiting after 60 days go)
+      if (!from.has(sid) && !series.has(sid)) ops.push(env.DB.prepare(`DELETE FROM spot_occ WHERE series_id NOT IN (SELECT id FROM spots) AND mail_date < ?1`).bind(now - 60 * DAY));
       ops.push(
         env.DB.prepare(OCC).bind(sid, b.override.rid, b.start ?? null, b.end ?? null, b.status === "cancelled" ? 1 : 0, cut(b.title, 80), cut(b.sub, 120), threadId, messageId, mailDate),
         env.DB.prepare(`INSERT OR IGNORE INTO spot_threads (spot_id, thread_id) VALUES (?1, ?2)`).bind(sid, threadId)
@@ -772,6 +774,9 @@ export async function keepBookings(env, list, { threadId, messageId, sender, mai
       rule: b.rule ? JSON.stringify(b.rule) : null, last_at: b.rule ? last : null,
     };
     ops.push(env.DB.prepare(UPSERT).bind(...COLS.map((c) => row[c])), env.DB.prepare(`INSERT OR IGNORE INTO spot_threads (spot_id, thread_id) VALUES (?1, ?2)`).bind(b.id, threadId));
+    // (a new series: dates moved or cancelled ahead of it by anyone but its own sender let go)
+    if (b.rule && !from.has(b.id))
+      ops.push(env.DB.prepare(`DELETE FROM spot_occ WHERE series_id = ?1 AND NOT EXISTS (SELECT 1 FROM messages m WHERE (m.id = spot_occ.message_id OR m.message_id = spot_occ.message_id) AND lower(m.from_email) = ?2)`).bind(b.id, sender));
   }
   if (ops.length) await env.DB.batch(ops);
   return ops.length;
