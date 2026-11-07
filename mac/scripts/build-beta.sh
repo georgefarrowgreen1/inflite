@@ -19,7 +19,7 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
-lipo -verify_arch arm64 x86_64 "$APP/Contents/MacOS/InFlite"
+lipo "$APP/Contents/MacOS/InFlite" -verify_arch arm64 x86_64
 plutil -lint "$APP/Contents/Info.plist"
 cp README.md "$OUT/Read Me.md"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/InFlite-Mac-0.1.0-beta.1.zip"
