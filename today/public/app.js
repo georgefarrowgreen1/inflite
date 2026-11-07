@@ -13,9 +13,9 @@ import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.84";
+const BUILD = "1.85";
 // (what's new in it, said once it's in)
-const NEWS = "Shared reads, bounded waits and safer responses when your account changes";
+const NEWS = "A simpler Apps screen with your own quick-access shortcuts";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1763,7 +1763,7 @@ const BELL = { icon: "bell", label: "Notifications", run: () => bell?.open() };
 let bell = null;
 const SCREENS = {
   today: { el: $("#today"), title: () => "Today", crumb: () => "", line: lineOf, acts: [BELL, EDIT], onShow() { drawLine(true); if (cardsStale) { cardsStale = false; refresh(); } }, onHide() {} },
-  apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Open one, or go straight to a part", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
+  apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Open an app or jump straight in", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
   you: { el: $("#you"), title: () => "You", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() {} },
 };
 // (a service's state, as it changes (the frame's opts.serviceState): Chats locked by its app lock, every word of Chat's
@@ -1819,9 +1819,9 @@ function drawYouNow(arg = null) {
     if (arg) m.goTo?.($("#you"), c, arg, drawn);
   }, () => {});
 }
-// (Today's answer's minis, through the framework's connectors: loaded as Apps or You needs them)
+// (The framework's connectors, loaded as You needs them)
 const connectors = () => import("/roof/connectors.js");
-const appsCtx = () => ({ answer: S.answer, view: S.view, hub: S.hub, roof: S.roof, href: (app, section) => IFL.hub.href(app, section), icon: (app) => IFL.iconUrl(app), ui: F?.ui, connectors, frame: F });
+const appsCtx = () => ({ current: scopedAPI().current, answer: S.answer, view: S.view, href: (app, section) => IFL.hub.href(app, section), ui: F?.ui, frame: F });
 const youCtx = () => ({
   view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, ...scopedAPI(), missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
   kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),

@@ -458,26 +458,35 @@ label.row:active { background: var(--press); }
 .today-out.said .today-apps { display: none; }
 
 
-/* ---- Apps: a tile for each app (the framework's .ifl-tile), its line from the day, its mini, chips to its sections ---- */
-.apps-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
-@media (min-width: 720px) { .apps-grid { grid-template-columns: 1fr 1fr; } }
-
-/* (each app a wide card: its icon, its name with a line beneath, its mini's figure on the right; shortcuts beneath,
-   lined up with the name) */
-.apps-grid .ifl-tile { display: grid; gap: 12px; min-height: 0; padding: 14px 16px 16px; border-radius: 24px; }
-.apps-grid .ifl-tile-main { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 12px; row-gap: 2px; align-items: center; }
-.apps-grid .ifl-tile-main > :first-child { grid-column: 1; grid-row: 1 / span 2; width: 44px; height: 44px; }
-.apps-grid .ifl-tile-main > b { grid-column: 2; grid-row: 1; align-self: end; font-size: 17px; line-height: 1.2; }
-.apps-grid .ifl-tile-main > small { grid-column: 2; grid-row: 2; align-self: start; font-size: 14px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.apps-grid .ifl-tile-main > .ifl-mini { grid-column: 3; grid-row: 1 / span 2; margin: 0; min-height: 0; display: grid; justify-items: end; align-content: center; gap: 4px; }
-.apps-grid .ifl-tile-main > .ifl-mini small { display: none; }
-.apps-grid .ifl-tile-main > .ifl-mini b.num { font-size: 26px; line-height: 1; }
-.apps-grid .ifl-tile-main > .ifl-mini .bars { height: 14px; gap: 3px; }
-.apps-grid .ifl-tile-main > .ifl-mini .bars i { width: 5px; height: calc(4px + 10px * var(--h, 0)); }
-.apps-grid .ifl-tile-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 56px; }
-.apps-grid .ifl-chip.action { flex: none; min-height: 30px; padding: 0 13px; font-size: 13.5px; font-weight: 600; }
-@media (max-width: 360px) { .apps-grid .ifl-tile-chips { padding-left: 0; } }
-.apps-note { margin: 18px 18px 0; font-size: 14px; line-height: 1.45; color: var(--text-2); text-align: center; }
+/* ---- Apps: compact app destinations and custom quick access ---- */
+.apps-layout { display: grid; gap: 24px; align-items: start; }
+.apps-layout .apps-list { border-radius: 28px; }
+.apps-list .ifl-row { min-height: 80px; gap: 14px; padding: 14px 16px; }
+.apps-list .ifl-lead img { width: 44px; height: 44px; border-radius: 11px; }
+.apps-list .ifl-tx { min-width: 0; gap: 3px; }
+.apps-list .ifl-tx b { font-size: 18px; font-weight: 650; line-height: 1.2; }
+.apps-list .ifl-tx small { font-size: 14px; line-height: 1.35; }
+.apps-list .ifl-row + .ifl-row::before { left: 74px; right: 16px; }
+.apps-quick { min-width: 0; }
+.apps-quick-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -6px 0 10px; }
+.apps-quick-head h2 { margin: 0; font: 700 20px/1.25 var(--font-d); letter-spacing: -0.25px; }
+.apps-edit { min-width: 44px; min-height: 44px; padding: 0 8px; border-radius: 14px; font-size: 16px; font-weight: 600; color: var(--acc-ink); }
+.apps-edit:active { background: var(--press); }
+.apps-shortcuts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.apps-shortcut { display: flex; align-items: center; gap: 12px; min-height: 68px; padding: 14px; border-radius: 22px;
+  color: var(--text); background: var(--sheen), var(--glass); box-shadow: var(--edge), var(--lift); text-decoration: none; font-size: 16px; font-weight: 600; }
+.apps-shortcut > .ifl-glyph { flex: none; width: 28px; height: 28px; color: var(--acc-ink); }
+.apps-shortcut svg { width: 100%; height: 100%; }
+.apps-shortcut > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.apps-shortcut:active { background: var(--press); }
+.apps-shortcut:focus-visible, .apps-edit:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 3px; }
+.apps-empty { grid-column: 1 / -1; margin: 0; padding: 12px 0; color: var(--text-2); font-size: 15px; line-height: 1.5; }
+.apps-choice-help, .apps-choice-count { margin: 0 0 12px; color: var(--text-2); font-size: 15px; line-height: 1.4; }
+.apps-choice-count { color: var(--text); font-weight: 600; }
+.apps-editor > .ifl-btn { margin-top: 16px; }
+.apps-editor .ifl-tx { min-width: 0; }
+@media (max-width: 360px) { .apps-shortcut { padding: 12px; gap: 8px; font-size: 15px; } }
+@media (min-width: 1100px) { .apps-layout { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 28px; } }
 
 
 /* ---- You: your account, rules, notifications, this phone, quiet hours, Chat, versions, Sign Out ---- */
@@ -561,11 +570,10 @@ label.row:active { background: var(--press); }
 @media (min-width: 672px) {
   #hd .ifh { padding-left: calc((100% - 640px) / 2 + 16px); padding-right: calc((100% - 640px) / 2 + 16px); }
 }
-/* (on a computer, beside the rail (roof.css): InFlite's screens wider, and the header over them; Apps in three) */
+/* (on a computer, beside the rail (roof.css): InFlite's screens wider, and the header over them; Apps in two panes) */
 @media (min-width: 1100px) {
   #hd .ifh { padding-left: max(28px, calc((100% - 1200px) / 2 + 28px)); padding-right: max(28px, calc((100% - 1200px) / 2 + 28px)); }
   .today-in .view { max-width: 1200px; padding-left: 28px; padding-right: 28px; }
-  .apps-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 .d-short { display: none; }
 @media (max-width: 360px) {
