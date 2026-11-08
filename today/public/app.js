@@ -13,9 +13,9 @@ import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.98";
+const BUILD = "1.99";
 // (what's new in it, said once it's in)
-const NEWS = "Smoother navigation, spring controls and steadier sheets throughout Today";
+const NEWS = "Chats stays in InFlite when the connection recovers";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1199,7 +1199,7 @@ function scopedAPI() {
 // as ready with roof on, as the document is the framework only because the Worker served it with roof on (or the root
 // worker the kept / offline). And roof (D14): Weather in this page, read as j.roof === true (a Worker from before, or
 // none said: off, milestone 1's Weather page), kept beside it as ifl-roof ("1" | "0"; one without the other is asked
-// again)
+// again). A cached refusal is always revalidated at the next boot.
 const HUB_KEY = "ifl-hub-ready", ROOF_KEY = "ifl-roof", BOUNCE_KEY = "ifl-roof-bounce", APPS_KEY = "ifl-roof-apps";
 const ss = {
   get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } },
@@ -1245,7 +1245,8 @@ async function hubReady() {
   // (a bare ifl-roof with no ifl-roof-apps, a page's from before stages 2–4, is asked again: Chats is never decided on it,
   // and so Chat's engine is never made before it's known whether Chats is in this page, S3-D12)
   const trusted = BOOT_APP ? v === "1" && a[BOOT_APP.app] === true : (v === "1" || v === "0") && (r === "1" || r === "0") && ss.get(APPS_KEY) != null;
-  if (trusted) {
+  // A failed probe from an earlier visit is not evidence that the hub is still down.
+  if (trusted && v === "1") {
     roofSaid = v === "1" && r === "1";
     appsSaid = v === "1" ? a : {};
     if (v === "1") retireOld();
@@ -1267,17 +1268,25 @@ function hubAgain(within = 5 * MIN) {
   if (againP) return againP;
   if (Date.now() - Math.max(againAt, hubAt) < within) return Promise.resolve();
   againAt = Date.now();
-  againP = askHub().then(applyHub).finally(() => { againP = null; });
+  againP = askHub().then((state) => { applyHub(state); return state; }).finally(() => { againP = null; });
   return againP;
 }
 // (an answer after the first: the hub's explicit no degrading the page, each module as its switch now says (one turned
 // off let go of, one turned on found in-page from now); an unknown changes nothing)
 function applyHub(state) {
   if (state === "unknown") return;
-  if (state === "no" && S.hub) { S.hub = false; IFL.hub.degrade(ownLinks()); }
+  const wasHub = S.hub, wasDegraded = IFL.hub.degraded;
+  S.hub = state === "yes";
+  if (S.hub) IFL.hub.degraded = false;
+  else IFL.hub.degrade(ownLinks());
   const on = S.hub && roofSaid, apps = S.hub ? { ...appsSaid } : {};
   chatsSay(apps);
-  if (on !== S.roof || JSON.stringify(apps) !== JSON.stringify(S.apps)) { S.roof = on; S.apps = apps; F?.setRoof(on, apps); }
+  if (wasHub !== S.hub || on !== S.roof || JSON.stringify(apps) !== JSON.stringify(S.apps)) { S.roof = on; S.apps = apps; F?.setRoof(on, apps); }
+  if (wasDegraded !== IFL.hub.degraded && F) {
+    F.tabs.refresh();
+    if (S.answer) drawCards(false);
+    if (F.route?.kind === "tab" && F.route.tab === "apps") drawAppsNow();
+  }
 }
 // (each module's own old worker at the hub, at scope /<app>/ from milestone 1: unregistered once its switch is known on,
 // so /<app>/ comes to this page, D10, S2-D14. retiring: until they're let go of, which the frame waits for before it
@@ -1320,6 +1329,7 @@ function hubSays(state) {
   S.apps = !S.hub ? {} : state === "unknown" ? { ...keptApps(), weather: true, [BOOT_APP.app]: BOOT_APP.app === "weather" || keptApp(BOOT_APP.app) !== false } : { ...appsSaid };
   chatsSay(S.apps);
   if (!S.hub) IFL.hub.degrade(ownLinks());
+  else IFL.hub.degraded = false;
   signinHref();
   saidOk();
 }
@@ -2515,7 +2525,25 @@ function appearance(a) {
 }
 
 // ---------------------------------------------------------------- what's tapped
+// A slow probe must not send a signed-in Home Screen user to a different
+// origin and an empty Chat key store. Recheck on the tap; only an explicit hub
+// refusal uses the standalone fallback. Never manufacture a Chat session/key.
+let chatNavigation = null;
+function chatFromToday(e) {
+  const a = e.target.closest?.('#tabs a[data-tab="chats"]');
+  if (!a || !S.view || !IFL.hub.degraded || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  if (chatNavigation) return;
+  const fallback = a.href;
+  chatNavigation = Promise.race([hubAgain(0), new Promise((ok) => setTimeout(() => ok("unknown"), 3000))]).then((state) => {
+    if (!S.view) return;
+    if (S.hub) F?.nav.go("/chats/");
+    else if (state === "no") location.assign(fallback);
+    else toast("Chats is reconnecting. Try again in a moment.");
+  }).catch(() => toast("Chats couldn’t connect. Try again.")).finally(() => { chatNavigation = null; });
+}
 function wire() {
+  document.addEventListener("click", chatFromToday, true);
   // (Sign in: Today's own trip, on every device)
   // (and back to where you were: an app in this window, or a part of this page)
   $("#signin").addEventListener("click", (e) => { e.preventDefault(); signInHere(location.pathname + location.hash); });
