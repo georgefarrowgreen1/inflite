@@ -31,5 +31,8 @@ body { font: 17px/1.45 -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans
 @media (prefers-reduced-motion: reduce) { .quote-toggle { transition: none; } }
 
 /* (as InFlite's apps: no text picked up and copied, no callout, no double-tap zoom) */
-html { touch-action: manipulation; }
+html { touch-action: pan-x pan-y; }
 body, body * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+/* Page zoom is blocked; component gestures are handled by their own controls. */
+html { touch-action: pan-x pan-y; }

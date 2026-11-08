@@ -1,3 +1,17 @@
+// ==== InFlite page zoom: shared guard ====
+// InFlite's page zoom policy. Runs before sign-in and independently of the menu.
+// Components such as maps and photo viewers retain their own gesture handling.
+(() => {
+  if (globalThis.__iflZoomBlocked) return;
+  globalThis.__iflZoomBlocked = true;
+  for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
+    document.addEventListener(type, (event) => event.preventDefault(), { passive: false });
+  }
+  document.addEventListener("touchmove", (event) => {
+    if (event.touches?.length > 1) event.preventDefault();
+  }, { passive: false });
+})();
+// ==== End InFlite page zoom ====
 // Mail's body shell (One roof stage 4, spec §3.3): one page at Mail's own address, framed by InFlite's page once per
 // message, that fetches the message itself and draws it exactly as Mail on its own does (its inner frame, scripts off),
 // so nothing of a body ever reaches a document of inflite.ai. What it tells the page holding it: a height and a few

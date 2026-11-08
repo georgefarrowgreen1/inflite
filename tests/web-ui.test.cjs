@@ -261,16 +261,17 @@ test('a second touch cancels section swiping instead of navigating during pinch 
   } finally { await ctx.close(); }
 });
 
-test('zoom is permitted and control variants share sizes, focus and disabled states', async () => {
+test('page zoom is blocked and control variants share sizes, focus and disabled states', async () => {
   const { ctx, page } = await open({ signedIn: false });
   try {
     const viewport = await page.locator('meta[name=viewport]').getAttribute('content');
-    assert.doesNotMatch(viewport, /maximum-scale|user-scalable\s*=\s*no/);
+    assert.match(viewport, /maximum-scale=1/);
+    assert.match(viewport, /user-scalable=no/);
     const zoomEvents = await page.evaluate(() => ['gesturestart', 'gesturechange', 'gestureend'].map(type => {
       const event = new Event(type, { bubbles: true, cancelable: true });
       return document.dispatchEvent(event);
     }));
-    assert.deepEqual(zoomEvents, [true, true, true], 'the shared menu must not cancel browser pinch gestures');
+    assert.deepEqual(zoomEvents, [false, false, false], 'the shared early guard cancels browser pinch gestures');
     const controls = await page.evaluate(async () => {
       const { btn, sw } = await import('/roof/ui.js');
       const host = document.querySelector('#out'), pill = document.createElement('button');
@@ -284,7 +285,7 @@ test('zoom is permitted and control variants share sizes, focus and disabled sta
     });
     assert.deepEqual(controls.pill, controls.button);
     assert.equal(controls.button.h, '44px'); assert.equal(controls.disabled, '0.5');
-    assert.equal(controls.outline, 'solid'); assert.match(controls.touch, /manipulation|pinch-zoom|auto/);
+    assert.equal(controls.outline, 'solid'); assert.equal(controls.touch, 'pan-x pan-y');
     const input = page.getByRole('switch', { name: 'Sample setting' });
     await input.focus(); await page.keyboard.press('Space'); assert.equal(await input.isChecked(), true);
   } finally { await ctx.close(); }
