@@ -205,7 +205,7 @@ test('motion: cancelled and interrupted notification swipes never clear a row', 
   } finally { await ctx.close(); }
 });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
+async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, seedHub, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: motion,
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
   if (noViewTransitions) await ctx.addInitScript(() => { delete Document.prototype.startViewTransition; });
@@ -238,6 +238,7 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
   if (preferences) view.prefs = preferences;
   view.links = { ...view.links, account: origin, auth: origin };
   if (seedSession) await ctx.addInitScript(view => localStorage.setItem('today:session', JSON.stringify({ id: view.user.id, at: Date.now(), view })), seedSession);
+  if (seedHub) await ctx.addInitScript(values => { for (const [key, value] of Object.entries(values)) sessionStorage.setItem(key, value); }, seedHub);
   await ctx.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
     if (url.origin !== origin) return route.abort();
@@ -979,4 +980,86 @@ test('profile menu stays reachable through Home Screen resume and rotation, then
     assert.deepEqual(errors, []);
     assert.deepEqual(await page.evaluate(() => window.__csp), []);
   } finally { await ctx.close(); }
+});
+
+
+test('a slow hub answer restores same-origin Chats without losing the saved Chat session', async () => {
+  const {ctx, page, requests, errors} = await open({ intercept: async (route, {url}) => {
+    if (url.pathname !== '/api/hub') return false;
+    await new Promise(resolve => setTimeout(resolve, 2200));
+    await route.fulfill({json:{ready:true, roof:true, apps:{weather:false, fitness:false, markets:false, chats:false, mail:false}}});
+    return true;
+  }});
+  try {
+    await page.waitForFunction(() => window.IFL.hub.degraded === false, null, {timeout:5000});
+    assert.equal(await page.locator('#tabs [data-tab="chats"]').getAttribute('href'), '/chats/');
+    // A non-extractable Chat key belongs to this origin; navigation must keep it
+    // here rather than opening the separate subdomain's empty IndexedDB store.
+    await page.evaluate(async () => {
+      const keys = await crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-256'}, false, ['deriveBits']);
+      await new Promise((resolve, reject) => {
+        const request = indexedDB.open('inflight',1);
+        request.onupgradeneeded = () => request.result.createObjectStore('kv');
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const db = request.result, tx = db.transaction('kv','readwrite');
+          tx.objectStore('kv').put({token:'saved-chat-session', priv:keys.privateKey},'session');
+          tx.oncomplete = () => {db.close(); resolve();};
+        };
+      });
+    });
+    await ctx.route('**/chats/', route => route.fulfill({contentType:'text/html',body:'<!doctype html><title>Chats navigation check</title>'}));
+    await page.locator('#tabs [data-tab="chats"]').click();
+    await page.waitForURL('**/chats/');
+    assert.equal(new URL(page.url()).origin, origin);
+    const kept = await page.evaluate(() => new Promise(resolve => {
+      const request = indexedDB.open('inflight',1);
+      request.onsuccess = () => {const db=request.result, q=db.transaction('kv').objectStore('kv').get('session'); q.onsuccess=()=>{resolve([q.result.token,q.result.priv.extractable]);db.close();};};
+    }));
+    assert.deepEqual(kept,['saved-chat-session',false]);
+    assert.equal(requests.some(r => /handback|logout/.test(r.path)),false);
+    assert.deepEqual(errors,[]);
+  } finally {await ctx.close();}
+});
+
+test('a cached failed hub check is revalidated on the next Today boot', async () => {
+  const {ctx,page,requests,errors} = await open({seedHub:{'ifl-hub-ready':'0','ifl-roof':'0','ifl-roof-apps':'{}'}});
+  try {
+    assert.equal(requests.filter(r=>r.path==='/api/hub').length,1);
+    assert.equal(await page.locator('#tabs [data-tab="chats"]').getAttribute('href'),'/chats/');
+    assert.deepEqual(errors,[]);
+  } finally {await ctx.close();}
+});
+
+test('tapping fallback Chats rechecks the hub and opens the shared origin after recovery', async () => {
+  let probes=0;
+  const {ctx,page,errors} = await open({intercept:async (route,{url})=>{
+    if(url.pathname!=='/api/hub') return false;
+    await route.fulfill({json:{ready:++probes>1,roof:true,apps:{}}});return true;
+  }});
+  try {
+    assert.match(await page.locator('#tabs [data-tab="chats"]').getAttribute('href'),/^https:\/\/chat\./);
+    await ctx.route('**/chats/',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>Shared Chats</title>'}));
+    await page.locator('#tabs [data-tab="chats"]').click();
+    await page.waitForURL(origin+'/chats/');
+    assert.equal(probes,2);
+    assert.deepEqual(errors,[]);
+  } finally {await ctx.close();}
+});
+
+test('a failed reconnect keeps the signed-in user in Today rather than opening a separate login', async () => {
+  let probes=0;
+  const {ctx,page,errors} = await open({intercept:async (route,{url})=>{
+    if(url.pathname!=='/api/hub') return false;
+    if(++probes===1) await route.fulfill({json:{ready:false,roof:false,apps:{}}});
+    else await route.abort();
+    return true;
+  }});
+  try {
+    await page.locator('#tabs [data-tab="chats"]').click();
+    await page.getByText('Chats is reconnecting. Try again in a moment.').waitFor();
+    assert.equal(page.url(),origin+'/');
+    assert.equal(await page.locator('#in').isVisible(),true);
+    assert.deepEqual(errors,[]);
+  } finally {await ctx.close();}
 });
