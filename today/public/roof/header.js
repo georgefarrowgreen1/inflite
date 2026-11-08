@@ -30,7 +30,8 @@ export function createHeader(host, F, { me, onMe } = {}) {
   back.addEventListener("click", () => F?.nav?.back());
   meB.after(back);
   const crumb = el("span", { class: "ifh-crumb" });
-  tBox.prepend(crumb);
+  const person = el("span", { class: "ifh-person", "aria-hidden": "true", hidden: true });
+  tBox.prepend(person, crumb);
   h1.tabIndex = -1;
   const full = el("span", { class: "ifh-ttl" });
   const pick = el("button", { class: "ifh-pick", type: "button", "aria-haspopup": "dialog" }, full);
@@ -141,6 +142,10 @@ export function createHeader(host, F, { me, onMe } = {}) {
 
   function set(spec = {}) {
     cur = { ...spec };
+    hd.classList.toggle("ifh-conversation", !!spec.conversation);
+    person.hidden = !spec.conversation || !spec.avatar?.nodeType;
+    if (!person.hidden && person.firstChild !== spec.avatar) person.replaceChildren(spec.avatar);
+    if (person.hidden && person.firstChild) person.replaceChildren();
     const onApp = !!spec.back;
     // (only what's different is touched: the same header set again, as a screen and its module each do, changes nothing
     // on screen, so nothing flickers as a section changes)

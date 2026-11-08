@@ -453,3 +453,16 @@ dialog.ifl-sheet { animation-timing-function: var(--ease-spring, var(--ease-ios)
 /* ---- a count on a header act (header.js count: Today's bell), the Home Screen badge's red ---- */
 .ifl-hd .ifh-act-badge { position: absolute; top: 0; right: -2px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center;
   font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; background: #d70015; pointer-events: none; }
+
+/* Conversation identity is compact even before the page has scrolled. */
+.ifl-hd.ifh.ifh-conversation { --p: 0 !important; height: calc(var(--ifh-pt0) + 68px); min-height: 68px; margin-bottom: 0; column-gap: 10px; }
+.ifh-conversation .ifh-crumb { display: none; }
+.ifh-conversation .ifh-t { position: relative; padding-left: 50px; }
+.ifh-person { position: absolute; left: 0; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 40px; height: 40px; }
+.ifh-person[hidden] { display: none; }
+.ifh-person .ifl-avatar { width: 40px; height: 40px; font-size: 18px; }
+.ifh-conversation .ifh-name { font-size: 22px !important; line-height: 26px; letter-spacing: -.4px; }
+.ifh-conversation .ifh-line { font-size: 12px; line-height: 16px; }
+.ifh-conversation .ifh-acts { gap: 2px; padding: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.ifh-conversation .ifh-act { min-width: 44px; min-height: 44px; }
+@media (max-width: 359px) { .ifh-conversation .ifh-t { padding-left: 40px; } .ifh-person, .ifh-person .ifl-avatar { width: 32px; height: 32px; } .ifh-conversation .ifh-name { font-size: 20px !important; } }
