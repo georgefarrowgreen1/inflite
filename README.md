@@ -8,7 +8,7 @@ the georgefarrowgreen repo, at account.inflite.ai.
 
 Your day from every InFlite app on one page: Weather's forecast and warnings, Chat's pigeons on their way, Fitness's
 session and its best time, and Markets' day; and one morning notification in place of Weather's briefing and Fitness's
-reminder. Signed out, it's InFlite's way in: what InFlite is, its apps, and Sign in.
+reminder. Signed out, it's InFlite's way in: the InFlite mark and sign-in controls.
 
 - **The page** is `today/public` (static files, with its service worker, manifest and icons). InFlite's menu and its
   way in are copied into `app.js` and `app.css` from the georgefarrowgreen repo: there, `node .tools/iflmenu.mjs
