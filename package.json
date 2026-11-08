@@ -8,7 +8,7 @@
     "test:web": "node --test tests/web-ui.test.cjs",
     "test:requests": "node tests/requests.test.cjs",
     "test": "npm run test:requests && npm run test:api && npm run test:web",
-    "test:api": "node --test tests/body.test.cjs"
+    "test:api": "node --test tests/body.test.cjs tests/not-found.test.cjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0",

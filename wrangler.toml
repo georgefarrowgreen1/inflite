@@ -15,7 +15,7 @@ binding = "ASSETS"
 not_found_handling = "404-page"
 # (and InFlite's hub, Today First: Chats, Weather, Fitness and Markets at /chats/, /weather/, /fitness/ and /markets/,
 # and Mail framed at /mail/; today/src/hub.js and mailhost.js)
-run_worker_first = ["/api/*", "/version", "/chats", "/chats/*", "/weather", "/weather/*", "/fitness", "/fitness/*", "/markets", "/markets/*", "/mail", "/mail/*"]
+run_worker_first = ["/_errors/404", "/api/*", "/version", "/chats", "/chats/*", "/weather", "/weather/*", "/fitness", "/fitness/*", "/markets", "/markets/*", "/mail", "/mail/*"]
 
 [vars]
 ACCOUNT_ORIGIN = "https://account.inflite.ai"

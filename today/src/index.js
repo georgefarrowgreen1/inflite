@@ -9,6 +9,7 @@ import { ask, setCookies } from "./account.js";
 import { isHubPath, hub } from "./hub.js";
 import { mailPage } from "./mailhost.js";
 import { bodyUpTo } from "./body.js";
+import { renderNotFound, withLocalNotFound } from "./not-found.js";
 
 // Today's API, each route as the account has it: its path there, how long it's waited for, and whether the account's
 // Set-Cookie comes back with it (signing in, its renewal, signing out: never anywhere else)
@@ -70,9 +71,10 @@ const SAFE = {
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...SAFE } });
 const refuse = (status, error) => json({ error }, status);
 
-export default {
+const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/_errors/404" && ["GET", "HEAD"].includes(request.method)) return renderNotFound(request, env);
     if (url.pathname === "/version" && request.method === "GET") return version(env, request);
     const hubbed = isHubPath(url.pathname), mail = url.pathname === "/mail" || url.pathname.startsWith("/mail/");
     if (!hubbed && !mail && !url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
@@ -220,3 +222,9 @@ async function appBuild(env, request) {
 async function version(env, request) {
   return json({ build: await appBuild(env, request), min: null });
 }
+
+export default {
+  async fetch(request, env, ctx) {
+    return withLocalNotFound(request, env, await worker.fetch(request, env, ctx));
+  },
+};

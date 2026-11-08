@@ -5,6 +5,6 @@ back?.addEventListener("click", () => {
   // A new tab can contain about:blank in its history. Without a referring
   // page, take the visitor home rather than back to an empty browser tab.
   if (history.length > 1 && document.referrer) history.back();
-  else location.assign("/");
+  else location.assign(document.querySelector("a.button.primary")?.href || "https://inflite.ai/");
 });
 if (back) back.hidden = false;
