@@ -110,6 +110,9 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 .ifl-sec-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; background: var(--badge, var(--danger)); }
 
 /* ---- the tab bar (tabs.js): menu.css's bar, with a pill that slides; its static pill off under it (D18) ---- */
+/* Keep interactive tabs inside the fixed viewport. The shared screen-height correction can be stale after iOS
+   resumes and may exceed the home-indicator inset; subtracting it moves the labels below the screen. */
+.ifl-tabs.has-pill { bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
 .ifl-tabs.has-pill .ifl-tab[aria-current] { background: none; color: var(--ifl-tab-on); }
 .ifl-tabs.has-pill .ifl-tab { position: relative; z-index: 1; }
 .ifl-tab-pill { position: absolute; z-index: 0; top: var(--ift-pad); bottom: var(--ift-pad); left: 0; width: var(--pw, 0); transform: translateX(var(--px, 0)); border-radius: 999px;

@@ -36,9 +36,21 @@ before(async () => {
 });
 after(async () => { await browser?.close(); await new Promise(r => server ? server.close(r) : r()); });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, user, viewApps, hubApps = {}, serviceWorkers = 'block' } = {}) {
+async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: 'reduce',
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
+  if (iosHomeScreen) await ctx.addInitScript(() => {
+    // iOS can report a short layout height even while fixed elements use the full viewport.
+    let shortBy = 54;
+    Object.defineProperty(navigator, 'standalone', { configurable: true, get: () => true });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, get: () => Math.round(visualViewport.height) - shortBy });
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight').get;
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get() {
+      if (this.style.cssText.includes('safe-area-inset-top') && this.style.visibility === 'hidden') return 47;
+      return height.call(this);
+    } });
+    window.__homeScreenHeight = n => { shortBy = n; dispatchEvent(new Event('resize')); };
+  });
   const requests = [], errors = [];
   const view = structuredClone(fixture('session'));
   if (user) view.user = { ...view.user, ...user };
@@ -629,6 +641,56 @@ test('an unsuccessful status refresh keeps the last answer and a later refresh r
     await refreshFromForeground(page, day.at + 10000);
     assert.equal(await row.locator('small').innerText(), '15°, sunny');
     assert.equal(await row.evaluate(n => n === document.activeElement), true);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+
+test('bottom navigation stays inside the visible Home Screen viewport after height corrections and resume', async () => {
+  const { ctx, page, errors } = await open({ iosHomeScreen: true });
+  try {
+    const placed = async label => {
+      // Resizes and the menu's hide/show transition can settle on later rendering frames.
+      await page.waitForFunction(() => {
+        const r = document.querySelector('#tabs').getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= visualViewport.height - 8;
+      }, null, { timeout: 3000 });
+      const nav = await page.locator('#tabs').boundingBox();
+      const viewport = page.viewportSize();
+      assert.ok(nav && nav.y >= 0 && nav.y + nav.height <= viewport.height - 8, label + ': all tab labels above the screen edge');
+      const labels = await page.locator('#tabs .ifl-tab').evaluateAll(tabs => tabs.map(t => t.getBoundingClientRect().bottom));
+      assert.ok(labels.every(b => b < viewport.height - 8), label + ': every tab remains reachable');
+    };
+    await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--fix-gap') === '54px');
+    await placed('short reported height');
+    for (const gap of [0, 54, 20, 0, 54]) {
+      await page.evaluate(n => { __homeScreenHeight(n); dispatchEvent(new Event('pageshow')); dispatchEvent(new Event('focus')); }, gap);
+      await placed('resume with correction ' + gap);
+    }
+    await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+    await placed('after scrolling');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await page.locator('dialog[open]').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('dialog[open]').waitFor({ state: 'detached' });
+    await placed('after closing search');
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.evaluate(() => { __homeScreenHeight(20); dispatchEvent(new Event('orientationchange')); });
+    await placed('landscape');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => __homeScreenHeight(54));
+    await placed('back to portrait');
+    await save(page, 'menu-home-screen-position');
+    // Match-media rules settle on the rendering frame after a mobile orientation change.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.locator('#tabs').evaluate(nav => nav.classList.add('away'));
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#tabs')).visibility === 'hidden');
+    await page.locator('#tabs').evaluate(nav => nav.classList.remove('away'));
+    await placed('after leaving chat');
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const rail = await page.locator('#tabs').boundingBox();
+    assert.ok(rail.x === 0 && rail.y === 0 && rail.width < 300 && rail.height === 1000, 'desktop sidebar keeps its full-height position');
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
