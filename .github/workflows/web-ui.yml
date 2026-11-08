@@ -1,10 +1,10 @@
 name: Web UI checks
 on:
   pull_request:
-    paths: [today/**, email/**, tests/**, package.json, package-lock.json, .github/workflows/web-ui.yml]
+    paths: [today/**, email/**, shared/**, tests/**, package.json, package-lock.json, .github/workflows/web-ui.yml]
   push:
     branches: [claude/inflite]
-    paths: [today/**, email/**, tests/**, package.json, package-lock.json, .github/workflows/web-ui.yml]
+    paths: [today/**, email/**, shared/**, tests/**, package.json, package-lock.json, .github/workflows/web-ui.yml]
 permissions:
   contents: read
 jobs:

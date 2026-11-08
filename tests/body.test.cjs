@@ -5,7 +5,7 @@ const { resolve } = require('node:path');
 
 test('Mail release probes reach the Worker instead of the SPA fallback', async () => {
   const config = JSON.parse(readFileSync(resolve(__dirname, '../email/wrangler.jsonc'), 'utf8').replace(/^\s*\/\/.*$/gm, ''));
-  assert.ok(config.assets.run_worker_first.includes('/version'));
+  assert.equal(config.assets.run_worker_first, true);
   const { default: worker } = await import('../email/src/index.js');
   const response = await worker.fetch(new Request('https://email.inflite.ai/version'), {
     CF_VERSION_METADATA: { id: 'release-test' },

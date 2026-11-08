@@ -1,3 +1,4 @@
+import { sharedNotFound } from "../../shared/not-found.js";
 import { accountView, accessOf, passOn, forgetCheck, accountCookie, quietNow } from "./auth.js";
 import {
   bumpVersion,
@@ -21,7 +22,7 @@ import { body } from "./body.js";
 import { appFetch } from "./apps.js";
 import { readBack, setSpot, spotState, threadSpots, hideSpot, wrongSpot, threadOfSpot, ID_RE as SPOT_ID } from "./spot.js";
 
-export default {
+const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     // (the body shell for InFlite's page, One roof stage 4: body.js answers every /body path, 404 while no hub is on)
@@ -1287,3 +1288,10 @@ export async function jsonBody(request, max = 64 * 1024, fallback) {
   }
   throw new HttpError(400, "That request wasn’t valid JSON.");
 }
+
+export default {
+  ...worker,
+  async fetch(request, env, ctx) {
+    return sharedNotFound(request, await worker.fetch(request, env, ctx), env.TODAY_APP);
+  },
+};
