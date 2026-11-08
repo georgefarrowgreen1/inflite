@@ -543,13 +543,6 @@ label.row:active { background: var(--press); }
 .ifl-sheet .ev-old { margin-top: 6px; font-weight: 600; color: var(--text-2); }
 .ifl-sheet .dev .tx b { font-size: 16px; }
 
-/* ---- a page that isn't here (404.html) ---- */
-.nf { min-height: 100vh; min-height: 100svh; display: grid; place-items: center; padding: 24px 16px; }
-.nf-card { width: 100%; max-width: 380px; border-radius: var(--r-card); padding: 28px 22px 24px; display: grid; gap: 12px; justify-items: center; text-align: center; }
-.nf-card img { width: 64px; height: 64px; border-radius: 15px; }
-.nf-card h1 { margin: 0; font: 700 24px/1.2 var(--font-d); letter-spacing: -0.3px; }
-.nf-card p { margin: 0; max-width: 34ch; font-size: 15px; line-height: 1.45; color: var(--text-2); }
-
 /* ---- on an iPad or a computer: the header over the column ---- */
 @media (min-width: 672px) {
   #hd .ifh { padding-left: calc((100% - 640px) / 2 + 16px); padding-right: calc((100% - 640px) / 2 + 16px); }

@@ -3,22 +3,48 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-  <title>Not here · InFlite</title>
+  <meta name="color-scheme" content="dark light">
+  <title>Page not found · InFlite</title>
   <meta name="robots" content="noindex">
   <meta name="theme-color" content="#dde3fb" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1b2860" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/app.css">
+  <script src="/fade.js"></script>
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/404.css">
+  <script src="/404.js" defer></script>
 </head>
 <body>
-<div class="sky" aria-hidden="true"><div class="aura a1"></div><div class="aura a2"></div><div class="aura a3"></div></div>
-<main class="nf">
-  <div class="nf-card glass">
-    <img src="/icon.svg" alt="" width="64" height="64">
-    <h1>This page isn’t here</h1>
-    <p>Today is all on one page, at inflite.ai.</p>
-    <a class="pill primary" href="/">Back to Today</a>
-  </div>
-</main>
+  <div class="sky" aria-hidden="true"></div>
+  <header><a class="wordmark" href="/" aria-label="InFlite home">InFlite</a></header>
+  <main>
+    <section class="hero" aria-labelledby="title">
+      <div class="scene" aria-hidden="true">
+        <svg class="trajectory" viewBox="0 0 444 112" focusable="false">
+          <defs>
+            <radialGradient id="planet-blue" cx=".3" cy=".25" r=".8"><stop stop-color="#e1f3ff"/><stop offset=".45" stop-color="#84baff"/><stop offset="1" stop-color="#4070ce"/></radialGradient>
+            <radialGradient id="planet-violet" cx=".3" cy=".25" r=".8"><stop stop-color="#f2ddff"/><stop offset=".45" stop-color="#ba91f7"/><stop offset="1" stop-color="#7350b3"/></radialGradient>
+            <radialGradient id="planet-teal" cx=".3" cy=".25" r=".8"><stop stop-color="#dcfff1"/><stop offset=".45" stop-color="#6cdbc7"/><stop offset="1" stop-color="#238e8b"/></radialGradient>
+          </defs>
+          <ellipse cx="222" cy="56" rx="221" ry="55"/>
+          <g class="planet planet-blue"><circle r="5.5" fill="url(#planet-blue)"/></g>
+          <g class="planet planet-violet"><circle r="4.5" fill="url(#planet-violet)"/></g>
+          <g class="planet planet-teal"><circle r="4" fill="url(#planet-teal)"/></g>
+        </svg>
+        <span class="digit">4</span>
+        <div class="orb"><img class="mark" src="/icon.svg" alt="" width="108" height="108"></div>
+        <span class="digit">4</span>
+        <i class="spark one"></i><i class="spark two"></i><i class="spark three"></i>
+      </div>
+      <p class="eyebrow">404 · PAGE NOT FOUND</p>
+      <h1 id="title">A little off course.</h1>
+      <p class="message">We couldn’t find this page.<br>Let’s get you back to InFlite.</p>
+      <div class="actions">
+        <a class="button primary" href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h14"/></svg>Back to InFlite</a>
+        <button class="button" id="back" type="button" hidden>Go back</button>
+      </div>
+    </section>
+  </main>
+  <footer><a class="powered" href="/"><img src="/inflite.svg" alt="" width="16" height="16">Powered by InFlite</a></footer>
 </body>
 </html>
