@@ -25,6 +25,14 @@
   --pos: var(--good-text); --neg: var(--danger);
   --chart-grid: var(--line); --chart-axis: var(--text-2); --chart-now: var(--text-3);
   --acc: #9a90ff; --acc-ink: #9a90ff; --acc-fill: #5a4fe0; --on-acc: #fff;
+  /* Motion additions keep the shared geometry tokens above unchanged. */
+  --motion-glide: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-press: 0.1s; --motion-release: 0.38s;
+  --motion-page: 0.46s; --motion-tab: 0.28s; --motion-fade: 0.18s;
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root { --motion-spring: linear(0, 0.12, 0.36, 0.59, 0.77, 0.89, 0.96, 0.994, 1.006, 1.008, 1.005, 1.002, 1); }
 }
 [data-app="inflite"] { --acc: #9a90ff; --acc-ink: #9a90ff; --acc-fill: #5a4fe0; --on-acc: #fff; }
 [data-app="chat"], [data-app="chats"] { --acc: #6ea6ff; --acc-ink: #6ea6ff; --acc-fill: #1f63d6; --on-acc: #fff; }
@@ -106,7 +114,7 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 .ifl-sec:active { opacity: 0.6; }
 .ifl-sec:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: -2px; }
 .ifl-lens { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: var(--lw, 0); transform: translateX(var(--lx, 0)); border-radius: var(--r-pill);
-  background: var(--ifl-lens); box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.35); transition: transform var(--dur-base) var(--ease-glide), width var(--dur-base) var(--ease-glide); }
+  background: var(--ifl-lens); box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.35); transition: transform var(--motion-release) var(--motion-spring), width var(--motion-release) var(--motion-spring); }
 .ifl-sec-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; background: var(--badge, var(--danger)); }
 
 /* ---- the tab bar (tabs.js): menu.css's bar, with a pill that slides; its static pill off under it (D18) ---- */
@@ -116,7 +124,7 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 .ifl-tabs.has-pill .ifl-tab[aria-current] { background: none; color: var(--ifl-tab-on); }
 .ifl-tabs.has-pill .ifl-tab { position: relative; z-index: 1; }
 .ifl-tab-pill { position: absolute; z-index: 0; top: var(--ift-pad); bottom: var(--ift-pad); left: 0; width: var(--pw, 0); transform: translateX(var(--px, 0)); border-radius: 999px;
-  background: color-mix(in srgb, var(--ifl-tab-on) var(--ift-pill), transparent); transition: transform 0.38s var(--ease-glide), width 0.38s var(--ease-glide); pointer-events: none; }
+  background: color-mix(in srgb, var(--ifl-tab-on) var(--ift-pill), transparent); transition: transform var(--motion-release) var(--motion-spring), width var(--motion-release) var(--motion-spring); pointer-events: none; }
 .ifl-tab-pill[hidden] { display: none; }
 /* (all the way past the bottom, and out of sight: it floats above the edge, by the home bar's gap, so half again its own
    height wasn't enough on a phone, and its top showed under a chat's composer) */
@@ -145,7 +153,8 @@ dialog.ifl-sheet.ifs-kb { --sheet-bottom-pad: 12px; padding-bottom: var(--sheet-
 dialog.ifl-sheet::backdrop { background: var(--dim); animation: ifl-fade-in var(--dur-sheet-in) ease; }
 dialog.ifl-sheet.closing { animation: ifl-sheet-out var(--dur-sheet-out) var(--ease-in) forwards; }
 dialog.ifl-sheet.closing::backdrop { animation: ifl-fade-out var(--dur-sheet-out) ease forwards; }
-dialog.ifl-sheet.dragging { animation: none; transition: none; }
+dialog.ifl-sheet.ifs-touched:not(.closing) { animation: none; transition: transform var(--motion-release) var(--motion-spring); }
+dialog.ifl-sheet.dragging:not(.closing) { animation: none; transition: none; }
 @keyframes ifl-sheet-in { from { transform: translateY(100%); } }
 @keyframes ifl-sheet-out { to { transform: translateY(100%); } }
 @keyframes ifl-fade-in { from { opacity: 0; } }
@@ -153,8 +162,8 @@ dialog.ifl-sheet.dragging { animation: none; transition: none; }
 @media (min-width: 700px) {
   dialog.ifl-sheet { --sheet-bottom-pad: 24px; inset: 0; margin: auto; width: min(560px, calc(100% - 48px)); height: fit-content; border-radius: var(--r-sheet); padding-bottom: var(--sheet-bottom-pad); animation-name: ifl-sheet-pop; }
   dialog.ifl-sheet.closing { animation-name: ifl-sheet-unpop; }
-  @keyframes ifl-sheet-pop { from { opacity: 0; transform: scale(0.94); } }
-  @keyframes ifl-sheet-unpop { to { opacity: 0; transform: scale(0.96); } }
+  @keyframes ifl-sheet-pop { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
+  @keyframes ifl-sheet-unpop { to { opacity: 0; transform: translateY(6px) scale(0.98); } }
 }
 .ifs-grab { flex: none; width: 40px; height: 5px; margin: 8px auto 2px; border-radius: 3px; background: var(--line); background: color-mix(in srgb, var(--text) 22%, transparent); touch-action: none; }
 .ifl-sheet .ifs-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 6px 0; touch-action: none; }
@@ -341,43 +350,75 @@ dialog.ifl-sheet[data-sheet="search"] .ifs-body { display: flex; flex-direction:
    never show over each other; its band and buttons stay put) */
 ::view-transition-old(ifl-hd) { animation: none; opacity: 0; }
 ::view-transition-new(ifl-hd) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(ifl-tabs) { animation: none; opacity: 0; }
+::view-transition-new(ifl-tabs) { animation: none; mix-blend-mode: normal; }
+::view-transition { pointer-events: none; }
 /* (the group never morphs between a compact header and a full one: it takes the new one's place at once) */
 ::view-transition-group(ifl-hd) { animation: none; overflow: clip; }
 ::view-transition-image-pair(ifl-hd) { isolation: auto; }
 /* (iOS-style: a push slides the new page in over the old from the edge, the old drifting back a third and dimming; a
    pop the reverse; a tab cross-fades with a slight settle and blur; a section glides; a zoom springs. The header and the
    tab bar stay where they are, as a navigation bar does) */
-:root { --ease-ios: cubic-bezier(0.32, 0.72, 0, 1); --dur-push: 0.52s; --dur-tab: 0.34s; }
+:root { --ease-ios: var(--motion-glide); --dur-push: var(--motion-page); --dur-tab: var(--motion-tab); }
 html[data-vt="push"]::view-transition-old(root) { animation: var(--dur-push) var(--ease-ios) both ifl-push-under; }
 html[data-vt="push"]::view-transition-new(root) { animation: var(--dur-push) var(--ease-ios) both ifl-push-over; box-shadow: -18px 0 40px -18px rgba(0, 0, 0, 0.45); }
 html[data-vt="pop"]::view-transition-old(root) { z-index: 1; animation: var(--dur-push) var(--ease-ios) both ifl-pop-off; box-shadow: -18px 0 40px -18px rgba(0, 0, 0, 0.45); }
 html[data-vt="pop"]::view-transition-new(root) { animation: var(--dur-push) var(--ease-ios) both ifl-pop-back; }
 html[data-vt="tab"]::view-transition-old(root) { animation: var(--dur-tab) var(--ease-ios) both ifl-tab-out; }
 html[data-vt="tab"]::view-transition-new(root) { animation: var(--dur-tab) var(--ease-ios) both ifl-tab-in; }
-html[data-vt="fade"]::view-transition-old(root) { animation: 0.22s ease both ifl-fade-out; }
-html[data-vt="fade"]::view-transition-new(root) { animation: 0.26s ease both ifl-fade-in; }
-html[data-vt="zoom"]::view-transition-group(ifl-zoom) { animation-duration: 0.55s; animation-timing-function: var(--ease-spring, var(--ease-ios)); }
-html[data-vt="zoom"]::view-transition-old(root) { animation: 0.32s ease both ifl-tab-out; }
-html[data-vt="zoom"]::view-transition-new(root) { animation: 0.42s var(--ease-ios) both ifl-fade-in; }
+html[data-vt="fade"]::view-transition-old(root) { animation: var(--motion-fade) ease both ifl-fade-out; }
+html[data-vt="fade"]::view-transition-new(root) { animation: var(--motion-fade) ease both ifl-fade-in; }
+html[data-vt="zoom"]::view-transition-group(ifl-zoom) { animation-duration: var(--motion-page); animation-timing-function: var(--motion-spring); }
+html[data-vt="zoom"]::view-transition-old(root) { animation: var(--motion-tab) ease both ifl-tab-out; }
+html[data-vt="zoom"]::view-transition-new(root) { animation: var(--motion-release) var(--ease-ios) both ifl-fade-in; }
 @keyframes ifl-push-over { from { transform: translateX(100%); } }
-@keyframes ifl-push-under { to { transform: translateX(-30%); filter: brightness(0.72); } }
+@keyframes ifl-push-under { to { transform: translateX(-25%); opacity: 0.72; } }
 @keyframes ifl-pop-off { to { transform: translateX(100%); } }
-@keyframes ifl-pop-back { from { transform: translateX(-30%); filter: brightness(0.72); } }
-@keyframes ifl-tab-in { from { opacity: 0; transform: scale(0.985) translateY(6px); filter: blur(6px); } }
-@keyframes ifl-tab-out { to { opacity: 0; transform: scale(1.01); filter: blur(6px); } }
+@keyframes ifl-pop-back { from { transform: translateX(-25%); opacity: 0.72; } }
+@keyframes ifl-tab-in { from { opacity: 0; transform: translateY(5px); } }
+@keyframes ifl-tab-out { to { opacity: 0; } }
 @keyframes ifl-in-right { from { opacity: 0; transform: translateX(40%); } }
 @keyframes ifl-in-left { from { opacity: 0.4; transform: translateX(-30%); } }
 @keyframes ifl-out-left { to { opacity: 0; transform: translateX(-30%); } }
 @keyframes ifl-out-right { to { opacity: 0; transform: translateX(100%); } }
 /* (where there are no View Transitions: the page coming in, the same way) */
-.ifl-enter-push { animation: var(--dur-push) var(--ease-ios) both ifl-in-right; }
-.ifl-enter-pop { animation: var(--dur-push) var(--ease-ios) both ifl-in-left; }
-.ifl-enter-tab { animation: var(--dur-tab) var(--ease-ios) both ifl-tab-in; }
-.ifl-enter-fade { animation: 0.26s ease both ifl-fade-in; }
+.ifl-enter-push { animation: var(--dur-push) var(--ease-ios) ifl-in-right; }
+.ifl-enter-pop { animation: var(--dur-push) var(--ease-ios) ifl-in-left; }
+.ifl-enter-tab { animation: var(--dur-tab) var(--ease-ios) ifl-tab-in; }
+.ifl-enter-fade { animation: var(--motion-fade) ease ifl-fade-in; }
+.ifl-enter-zoom { animation: var(--motion-release) var(--motion-glide) ifl-tab-in; }
+/* Transforming a screen containing a fixed composer would change its containing block. */
+html.ifl-fill .ifl-screen[class*="ifl-enter-"] { animation-name: ifl-fade-in; }
+.ifs-page.ifl-enter-push { animation-name: ifl-sheet-page-in; animation-duration: var(--motion-release); }
+.ifs-body.ifl-enter-pop { animation-name: ifl-sheet-page-back; animation-duration: var(--motion-release); }
+@keyframes ifl-sheet-page-in { from { opacity: 0; transform: translateX(22px); } }
+@keyframes ifl-sheet-page-back { from { opacity: 0; transform: translateX(-14px); } }
 /* (sheets rise with a spring, and a pressed card or row gives a little) */
-dialog.ifl-sheet { animation-timing-function: var(--ease-spring, var(--ease-ios)); }
-.tcard, .ifl-tile, .ifl-card { transition: transform 0.4s var(--ease-spring, var(--ease-ios)); }
-.tcard:active, .ifl-tile:active, a.ifl-card:active { transform: scale(0.985); transition-duration: 0.12s; }
+dialog.ifl-sheet { animation-duration: var(--motion-page); animation-timing-function: var(--motion-glide); }
+dialog.ifl-sheet.closing { animation-duration: 0.3s; }
+:is(a, button).tcard, .ifl-tile-main, .ifl-card.tappable, a.ifl-card,
+.ifs-btn, .ifl-icon-btn, .ifh-me, .ifh-act, .ifl-back, .ifl-tab,
+.apps-shortcut, .wx-warn, .ft-next, .trip-card, .dw-chip, .bk-act, .dc-send, .ifl-nt-all {
+  transition: transform var(--motion-release) var(--motion-spring), background-color var(--motion-fade) ease, opacity var(--motion-fade) ease;
+}
+:is(a, button).tcard:active, a.ifl-card:active, .ifl-card.tappable:active, .ifl-tile-main:active,
+.apps-shortcut:active, .wx-warn:active, .ft-next:active, .trip-card:active, .dw-chip:active, .bk-act:active {
+  transform: scale(0.98); transition-duration: var(--motion-press);
+}
+:is(.ifs-btn, .ifl-icon-btn, .ifh-me, .ifh-act, .ifl-back, .ifl-tab, .dc-send, .ifl-nt-all):active:not(:disabled) {
+  transform: scale(0.93); transition-duration: var(--motion-press);
+}
+:is(button, a).row, :is(button, a, label).ifl-row { transition: background-color var(--motion-fade) ease; }
+.ifm-pop { transform: translateY(-4px) scale(0.96); transition: transform var(--motion-release) var(--motion-spring), opacity var(--motion-fade) ease; }
+.ifm-pop.open { transform: none; }
+.ifm-pop.closing { transform: translateY(-3px) scale(0.97); transition: transform 0.22s var(--motion-glide), opacity var(--motion-fade) ease; }
+.ifm-note, .ifa-sheet { transition: transform var(--motion-release) var(--motion-spring), opacity var(--motion-fade) ease; }
+.ifm-layer { transition: background-color var(--motion-fade) ease; }
+.ifm-switch::before { transition-timing-function: var(--motion-spring); }
+.ifl-nt-card { transition-duration: var(--motion-release); transition-timing-function: var(--motion-spring); }
+.ifl-nt-row.gone .ifl-nt-card { transition-duration: 0.24s; transition-timing-function: var(--motion-glide); }
+/* Decorative loops rest while the document is behind the app switcher. */
+html[data-motion-paused] :is(.aura, .pg-track .cb svg, .tcard.loading .sk i), html[data-motion-paused] .pg-track::before { animation-play-state: paused; }
 
 /* ---- reduced motion, reduced transparency, more contrast, forced colours, a phone on its side ---- */
 @media (prefers-reduced-motion: reduce) {
@@ -387,7 +428,9 @@ dialog.ifl-sheet { animation-timing-function: var(--ease-spring, var(--ease-ios)
   html[data-vt]::view-transition-old(root), html[data-vt]::view-transition-new(root), html[data-vt]::view-transition-group(ifl-zoom) { animation: 0.18s ease both ifl-fade-in !important; box-shadow: none; filter: none; }
   html[data-vt]::view-transition-old(root) { animation-name: ifl-fade-out !important; }
   [class*="ifl-enter-"] { animation: 0.15s ease both ifl-fade-in !important; }
-  .tcard:active, .ifl-tile:active, a.ifl-card:active { transform: none; }
+  :is(.tcard, .ifl-tile-main, .ifl-card, .ifs-btn, .ifl-icon-btn, .ifh-me, .ifh-act, .ifl-back, .ifl-tab,
+    .apps-shortcut, .wx-warn, .ft-next, .trip-card, .dw-chip, .bk-act, .dc-send, .ifl-nt-all):active { transform: none !important; }
+  dialog.ifl-sheet.ifs-touched:not(.closing) { transition: none; }
   dialog.ifl-sheet.closing { animation-name: ifl-fade-out; }
 }
 @media (prefers-reduced-transparency: reduce) {
@@ -416,7 +459,7 @@ dialog.ifl-sheet { animation-timing-function: var(--ease-spring, var(--ease-ios)
   .today-in { padding-left: var(--rail-w); }
   .today-in > .ifl-tabs, .ifl-tabs.has-pill { position: fixed; top: 0; bottom: 0; left: 0; right: auto; width: var(--rail-w); max-width: none; height: auto; margin: 0;
     flex-direction: column; align-items: stretch; gap: 2px; padding: calc(env(safe-area-inset-top, 0px) + 18px) 12px calc(env(safe-area-inset-bottom, 0px) + 14px) max(12px, env(safe-area-inset-left, 0px));
-    border-radius: 0; box-shadow: inset -0.5px 0 0 var(--line); overflow-y: auto; overscroll-behavior: contain; transform: none; view-transition-name: none; }
+    border-radius: 0; box-shadow: inset -0.5px 0 0 var(--line); overflow-y: auto; overscroll-behavior: contain; transform: none; }
   .ifl-tabs.away { transform: none; visibility: visible; }
   .ifl-rail-x { display: revert; }
   .ifl-rail-brand { display: flex; align-items: center; gap: 10px; padding: 2px 10px 18px; font: 700 19px/1 var(--font-d); letter-spacing: -0.3px; color: var(--text); }
@@ -431,7 +474,7 @@ dialog.ifl-sheet { animation-timing-function: var(--ease-spring, var(--ease-ios)
   /* (in an app, the app's row is the one you're on, not Apps) */
   .ifl-tabs.in-app .ifl-tab[aria-current="true"] { color: var(--ifl-tab-ink); }
   .ifl-tab-pill { top: 0; left: 12px; right: 12px; width: auto; height: var(--ph, 0); bottom: auto; border-radius: 12px; transform: translateY(var(--py, 0));
-    transition: transform 0.32s var(--ease-glide), height 0.32s var(--ease-glide); }
+    transition: transform var(--motion-release) var(--motion-spring), height var(--motion-release) var(--motion-spring); }
   .ifl-tab-k { margin-left: auto; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; display: grid; place-items: center; border-radius: 6px;
     box-shadow: inset 0 0 0 1px var(--line); font: 600 11.5px/1 var(--font); color: var(--text-3); }
   .ifl-tab:has(.ifl-tab-badge) .ifl-tab-k { display: none; }

@@ -55,13 +55,15 @@ export function createSheets(F) {
     const body = d.querySelector(".ifs-body"), head = d.querySelector(".ifs-head"), h2 = d.querySelector(".ifs-head h2");
     const was = document.activeElement;
     const stack = [];
-    let shut = false;
+    let shut = false, closeTimer = 0, drag = null, pageTimer = 0;
     const ac = new AbortController(), sig = { signal: ac.signal };
     const h = { el: d, body, close: () => close(true), now: () => close(false), push, pop, setBusy, closed: false };
     function done() {
       if (h.closed) return;
       h.closed = true;
-      d.classList.remove("closing", "dragging");
+      clearTimeout(closeTimer); clearTimeout(pageTimer); drag?.abort();
+      d.classList.remove("closing", "dragging", "ifs-touched");
+      body.classList.remove("ifl-enter-pop");
       d.style.removeProperty("--drag");
       try { if (d.open) d.close(); } catch (_) {}
       const i = open.indexOf(h);
@@ -77,8 +79,9 @@ export function createSheets(F) {
       if (shut && animate) return;
       shut = true;
       if (!animate || reduced() || !d.open) return done();
+      drag?.abort(); d.classList.remove("dragging");
       d.classList.add("closing");
-      setTimeout(done, 340);
+      closeTimer = setTimeout(done, 400);
     }
     const cancel = (e) => { e.preventDefault(); close(true); };
     const closed = () => { if (!h.closed) done(); };
@@ -91,18 +94,22 @@ export function createSheets(F) {
     };
     // drag down from the grab bar or the head to put it away
     function grab(e) {
-      if (e.button || e.target.closest("button")) return;
+      if (shut || drag || e.button || e.isPrimary === false || e.target.closest("button, input, select, textarea, a")) return;
       const y0 = e.clientY, t0 = Date.now();
       let dy = 0;
-      const a = new AbortController(), o = { signal: a.signal };
-      const up = () => {
-        a.abort();
+      const a = drag = new AbortController(), o = { signal: a.signal };
+      const cancelDrag = () => { a.abort(); drag = null; d.classList.remove("dragging"); d.style.removeProperty("--drag"); };
+      const up = (p) => {
+        if (p.pointerId !== e.pointerId) return;
+        a.abort(); drag = null;
         d.classList.remove("dragging");
-        if (dy > 120 || (dy > 40 && dy / (Date.now() - t0) > 0.6)) close(true);
+        if (p.type !== "pointercancel" && (dy > 120 || (dy > 40 && dy / Math.max(1, Date.now() - t0) > 0.6))) close(true);
         else d.style.removeProperty("--drag");
       };
-      addEventListener("pointermove", (m) => { dy = Math.max(0, m.clientY - y0); d.classList.add("dragging"); d.style.setProperty("--drag", `${dy}px`); }, o);
+      addEventListener("pointermove", (m) => { if (m.pointerId !== e.pointerId) return; dy = Math.max(0, m.clientY - y0); d.classList.add("dragging", "ifs-touched"); d.style.setProperty("--drag", `${dy}px`); }, o);
       addEventListener("pointerup", up, o); addEventListener("pointercancel", up, o);
+      addEventListener("blur", cancelDrag, o);
+      document.addEventListener("visibilitychange", () => { if (document.hidden) cancelDrag(); }, o);
     }
     // Tab and Shift-Tab go round the sheet, never out of it to the browser's own bar
     function trap(e) {
@@ -114,6 +121,7 @@ export function createSheets(F) {
       else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
     }
     function push(page = {}) {
+      clearTimeout(pageTimer); body.classList.remove("ifl-enter-pop");
       const kids = [...body.children].filter((c) => !c.hidden);
       for (const c of kids) c.hidden = true;
       const pg = el("div", { class: "ifs-page ifl-enter-push", data: { page: page.page } });
@@ -137,7 +145,11 @@ export function createSheets(F) {
       d.querySelector(".ifs-acts")?.remove();
       if (s.acts) d.append(s.acts);
       d.classList.toggle("pushed", stack.length > 0);
-      if (!quiet) h2?.focus({ preventScroll: true });
+      if (!quiet) {
+        body.classList.add("ifl-enter-pop");
+        clearTimeout(pageTimer); pageTimer = setTimeout(() => body.classList.remove("ifl-enter-pop"), 450);
+        h2?.focus({ preventScroll: true });
+      }
     }
     function setBusy(on) {
       d.toggleAttribute("aria-busy", !!on);
@@ -147,7 +159,8 @@ export function createSheets(F) {
       const back = el("button", { class: "ifs-btn ifs-back", type: "button", "aria-label": "Back", data: { back: "" } }, icon("back"));
       head.prepend(back);
     }
-    for (const [t, e, f] of [[d, "cancel", cancel], [d, "close", closed], [d, "click", click], [d, "keydown", trap], [head, "pointerdown", grab], [d.querySelector(".ifs-grab"), "pointerdown", grab]]) t?.addEventListener(e, f, sig);
+    const ended = (e) => { if (shut && e.target === d && /^(ifl-sheet-out|ifl-sheet-unpop)$/.test(e.animationName)) done(); };
+    for (const [t, e, f] of [[d, "cancel", cancel], [d, "close", closed], [d, "click", click], [d, "keydown", trap], [d, "animationend", ended], [head, "pointerdown", grab], [d.querySelector(".ifs-grab"), "pointerdown", grab]]) t?.addEventListener(e, f, sig);
     d.classList.remove("closing");
     if (!d.isConnected) document.body.append(d);
     try { d.showModal(); } catch (_) { d.setAttribute("open", ""); }

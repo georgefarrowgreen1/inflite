@@ -13,9 +13,9 @@ import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.97";
+const BUILD = "1.98";
 // (what's new in it, said once it's in)
-const NEWS = "A shared way back across InFlite";
+const NEWS = "Smoother navigation, spring controls and steadier sheets throughout Today";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -2798,13 +2798,16 @@ function start() {
     files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/swipe.js", "/layout.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css", "/roof/controls.css"] });
   load();
   nextMinute();
+  const motionState = () => document.documentElement.toggleAttribute("data-motion-paused", document.visibilityState !== "visible");
+  motionState();
   document.addEventListener("visibilitychange", () => {
+    motionState();
     if (document.visibilityState !== "visible") return;
     if (S.view) { back(); hubAgain(); syncPush().catch(() => {}); }
     else if ($("#outSaid").textContent) load();
   });
   // (back from the browser's own cache of the page (bfcache): the day, and whether the hub serves Weather, asked again)
-  addEventListener("pageshow", (e) => { if (e.persisted && S.view) { back(); hubAgain(0); } });
+  addEventListener("pageshow", (e) => { motionState(); if (e.persisted && S.view) { back(); hubAgain(0); } });
   addEventListener("online", () => { if (!S.view || S.kept) load(); });
 }
 start();

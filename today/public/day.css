@@ -205,7 +205,7 @@ button.dm-quiet:active { background: var(--press); }
 .t-mail { background: var(--c-mail); } .t-weather { background: var(--c-weather); } .t-trip { background: #6c5ce7; } .t-fitness { background: var(--c-fitness); } .t-markets { background: var(--c-markets); }
 
 /* ---- what Chat's engine says, faded in as it comes (about a second after the day's drawn) ---- */
-.dw-words.in, .dt-said.in { animation: day-in 0.6s var(--ease-out) both; }
+.dw-words.in, .dt-said.in { animation: day-in var(--motion-release, 0.38s) var(--motion-glide, var(--ease-out)); }
 @keyframes day-in { from { opacity: 0; transform: translateY(3px); } }
 
 /* ---- narrow screens ---- */

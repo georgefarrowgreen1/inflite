@@ -6,9 +6,9 @@ const { createServer } = require('node:http');
 const { readFile, mkdir } = require('node:fs/promises');
 const { existsSync, readFileSync } = require('node:fs');
 const { resolve, extname } = require('node:path');
-const { chromium } = require('playwright');
+const { chromium, webkit } = require('playwright');
 
-const publicDir = resolve(__dirname, '../today/public');
+const publicDir = resolve(process.env.WEB_UI_PUBLIC || resolve(__dirname, '../today/public'));
 const fixture = (name) => require(`./fixtures/${name}.json`);
 const day = fixture('day');
 const build = /const BUILD = "([\d.]+)"/.exec(readFileSync(resolve(publicDir, 'app.js'), 'utf8'))[1];
@@ -32,13 +32,183 @@ before(async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   origin = `http://127.0.0.1:${server.address().port}`;
   const executablePath = process.env.CHROMIUM || (existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined);
-  browser = await chromium.launch({ executablePath, args: ['--no-sandbox'] });
+  browser = process.env.WEB_UI_BROWSER === 'webkit' ? await webkit.launch() : await chromium.launch({ executablePath, args: ['--no-sandbox'] });
 });
 after(async () => { await browser?.close(); await new Promise(r => server ? server.close(r) : r()); });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false } = {}) {
-  const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: 'reduce',
+for (const width of [390, 1440]) for (const noViewTransitions of [false, true]) {
+  test(`motion: rapid tabs and history settle on one usable page at ${width}px (${noViewTransitions ? 'CSS fallback' : 'View Transitions'})`, async () => {
+    const { ctx, page, errors } = await open({ width, motion: 'no-preference', noViewTransitions });
+    try {
+      await page.evaluate(() => {
+        for (const tab of ['apps', 'you', 'today', 'you', 'apps', 'today', 'apps']) document.querySelector(`#tabs [data-tab="${tab}"]`).click();
+      });
+      await page.waitForFunction(() => document.documentElement.dataset.route === '/#apps' && !document.querySelector('#apps').hidden);
+      await page.waitForFunction(() => !document.documentElement.dataset.vt && !document.querySelector('.ifl-screen[class*="ifl-enter-"]'));
+      assert.equal(await page.locator('#apps [data-app-row="weather"]').isVisible(), true);
+      assert.equal(await page.locator('#views > main:not([hidden])').count(), 1);
+      await page.goBack();
+      await page.waitForFunction(() => document.documentElement.dataset.route === '/' && !document.querySelector('#today').hidden);
+      await page.goForward();
+      await page.waitForFunction(() => document.documentElement.dataset.route === '/#apps' && !document.querySelector('#apps').hidden);
+      await page.waitForFunction(() => !document.documentElement.dataset.vt && !document.querySelector('.ifl-screen[class*="ifl-enter-"]'));
+      const boxes = await page.evaluate(() => {
+        const nav = document.querySelector('#tabs').getBoundingClientRect(), current = document.querySelector('#tabs [aria-current]').getBoundingClientRect();
+        return { fits: nav.top >= 0 && nav.bottom <= innerHeight && current.top >= 0 && current.bottom <= innerHeight, overflow: document.documentElement.scrollWidth > innerWidth + 1 };
+      });
+      assert.deepEqual(boxes, { fits: true, overflow: false });
+      await save(page, `motion-apps-${width}-${noViewTransitions ? 'fallback' : 'native'}`);
+      assert.deepEqual(errors, []);
+      assert.deepEqual(await page.evaluate(() => [window.__csp, window.__rejections]), [[], []]);
+    } finally { await ctx.close(); }
+  });
+}
+
+for (const width of [390, 1440]) {
+  test(`motion: sheets spring back, cancel safely, restore nested pages and release focus at ${width}px`, async () => {
+    const { ctx, page, errors } = await open({ width, motion: 'no-preference', iphoneViewport: width === 390 });
+    try {
+      await page.locator('#hd .ifh-me').focus();
+      await page.evaluate(async () => {
+        const { createSheets } = await import('/roof/sheet.js');
+        const { el } = await import('/roof/ui.js');
+        const sheets = window.__motionSheets = createSheets({});
+        const h = window.__motionSheet = sheets.open({ title: 'Motion check', body: el('button', { type: 'button', text: 'Original action' }) });
+      });
+      const sheet = page.locator('dialog[open]');
+      await page.waitForTimeout(500);
+      const before = await sheet.boundingBox();
+      const head = await sheet.locator('.ifs-head').boundingBox();
+      const x = head.x + head.width / 2, y = head.y + 18;
+      await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y + 24, { steps: 4 });
+      await page.waitForTimeout(150); await page.mouse.up();
+      await page.waitForTimeout(450);
+      const after = await sheet.boundingBox();
+      assert.ok(Math.abs(before.y - after.y) < 1, 'short drag springs back to its original position');
+      await page.evaluate(() => {
+        const d = __motionSheet.el, head = d.querySelector('.ifs-head');
+        head.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 71, clientY: 100, isPrimary: true }));
+        dispatchEvent(new PointerEvent('pointermove', { pointerId: 72, clientY: 300 }));
+      });
+      assert.equal(await sheet.evaluate(d => d.style.getPropertyValue('--drag')), '', 'another pointer cannot move the sheet');
+      await page.evaluate(() => {
+        dispatchEvent(new PointerEvent('pointermove', { pointerId: 71, clientY: 280 }));
+        dispatchEvent(new PointerEvent('pointercancel', { pointerId: 71 }));
+      });
+      await page.waitForTimeout(450);
+      assert.equal(await sheet.count(), 1, 'pointer cancellation returns the sheet without dismissing it');
+      await page.evaluate(() => __motionSheet.push({ page: 'details', title: 'Details', body: document.createTextNode('Nested content') }));
+      await page.locator('dialog [data-back]').click();
+      assert.equal(await sheet.getByRole('button', { name: 'Original action' }).isVisible(), true);
+      if (width === 390) {
+        await page.evaluate(() => {
+          const input = document.createElement('input'); __motionSheet.body.append(input); input.focus(); __viewport(360, 48, 'resume');
+        });
+        await page.waitForFunction(() => {
+          const r = document.querySelector('dialog[open]').getBoundingClientRect();
+          return r.top >= 48 && r.bottom <= 408;
+        });
+        await page.evaluate(() => { document.activeElement.blur(); __viewport(844, 0, 'resume'); });
+      }
+      await page.keyboard.press('Escape');
+      await sheet.waitFor({ state: 'detached' });
+      await page.evaluate(() => dispatchEvent(new PointerEvent('pointermove', { pointerId: 71, clientY: 600 })));
+      assert.equal(await page.locator('body.sheet-up').count(), 0);
+      assert.equal(await page.locator('#hd .ifh-me').evaluate(e => e === document.activeElement), true);
+      assert.deepEqual(errors, []);
+      assert.deepEqual(await page.evaluate(() => [window.__csp, window.__rejections]), [[], []]);
+    } finally { await ctx.close(); }
+  });
+}
+
+test('motion: reduced motion removes spatial feedback and decorative loops pause in the background', async () => {
+  const { ctx, page, errors } = await open({ motion: 'no-preference' });
+  try {
+    await page.evaluate(() => {
+      let hidden = false;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => hidden ? 'hidden' : 'visible' });
+      window.__motionHidden = (value, notify = true) => { hidden = value; if (notify) document.dispatchEvent(new Event('visibilitychange')); };
+      __motionHidden(true);
+    });
+    assert.equal(await page.locator('.aura').first().evaluate(e => getComputedStyle(e).animationPlayState), 'paused');
+    await page.evaluate(() => { __motionHidden(false, false); dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); });
+    assert.equal(await page.locator('.aura').first().evaluate(e => getComputedStyle(e).animationPlayState), 'running');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.locator('#tabs [data-tab="apps"]').click();
+    await page.waitForFunction(() => !document.querySelector('#apps').hidden && !document.documentElement.dataset.vt);
+    await page.locator('.apps-shortcut').first().hover(); await page.mouse.down();
+    assert.equal(await page.locator('.apps-shortcut').first().evaluate(e => getComputedStyle(e).transform), 'none');
+    await page.mouse.move(0, 0); await page.mouse.up();
+    assert.equal(await page.locator('.aura').first().evaluate(e => getComputedStyle(e).animationName), 'none');
+    assert.deepEqual(errors, []);
+    assert.deepEqual(await page.evaluate(() => window.__rejections), []);
+  } finally { await ctx.close(); }
+});
+
+test('motion: late snapshot callbacks cannot restore an old route or clear a newer transition', async () => {
+  const { ctx, page, errors } = await open({ motion: 'no-preference' });
+  try {
+    await page.evaluate(() => {
+      window.__snapshots = [];
+      document.startViewTransition = update => {
+        let finish;
+        const finished = new Promise(ok => { finish = ok; });
+        const task = { update, finish, skipped: false };
+        __snapshots.push(task);
+        return { ready: Promise.reject(new DOMException('Snapshot cancelled', 'AbortError')), updateCallbackDone: finished, finished, skipTransition: () => { task.skipped = true; } };
+      };
+      for (const tab of ['apps', 'you', 'apps']) document.querySelector(`#tabs [data-tab="${tab}"]`).click();
+      __snapshots[2].update();
+      __snapshots[0].update(); __snapshots[1].update();
+      __snapshots[0].finish(); __snapshots[1].finish();
+    });
+    await page.waitForFunction(() => !document.querySelector('#apps').hidden);
+    assert.deepEqual(await page.evaluate(() => ({ title: document.querySelector('#hd h1').textContent, route: document.documentElement.dataset.route, motion: document.documentElement.dataset.vt, skipped: __snapshots.slice(0, 2).every(t => t.skipped) })),
+      { title: 'Apps', route: '/#apps', motion: 'tab', skipped: true });
+    await page.evaluate(() => __snapshots[2].finish());
+    await page.waitForFunction(() => !document.documentElement.dataset.vt);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(await page.evaluate(() => window.__rejections), []);
+  } finally { await ctx.close(); }
+});
+
+test('motion: cancelled and interrupted notification swipes never clear a row', async () => {
+  const { ctx, page, errors } = await open({ motion: 'no-preference' });
+  try {
+    await page.evaluate(async () => {
+      const ui = await import('/roof/ui.js'), { createSheets } = await import('/roof/sheet.js'), { draw } = await import('/bell.js');
+      window.__cleared = 0; window.__opened = 0;
+      const box = ui.el('div');
+      window.__noticeSheet = createSheets({}).open({ title: 'Notifications', body: box });
+      draw(box, [{ id: 'motion-note', app: 'weather', title: 'Rain later', body: 'A sample notification', at: Date.now() }], { ui, open() { ++__opened; }, clear() { ++__cleared; } });
+      window.__noticeDrag = (id, end) => {
+        const card = box.querySelector('.ifl-nt-card');
+        card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: id, clientX: 30, clientY: 100, isPrimary: true }));
+        dispatchEvent(new PointerEvent('pointermove', { pointerId: id, clientX: 300, clientY: 100 }));
+        if (end === 'blur') dispatchEvent(new Event('blur'));
+        else if (end) dispatchEvent(new PointerEvent(end, { pointerId: id }));
+      };
+      __noticeDrag(1, 'pointercancel');
+    });
+    assert.equal(await page.evaluate(() => __cleared), 0);
+    assert.equal(await page.locator('.ifl-nt-card').evaluate(e => e.style.getPropertyValue('--dx')), '0px');
+    await page.evaluate(() => __noticeDrag(2, 'blur'));
+    assert.equal(await page.evaluate(() => __cleared), 0);
+    await page.locator('.ifl-nt-main').focus(); await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => __opened), 1, 'keyboard activation still works after an interrupted swipe');
+    await page.evaluate(() => __noticeDrag(3, 'pointerup'));
+    assert.equal(await page.evaluate(() => __cleared), 1, 'a deliberate swipe still clears the notification');
+    await page.evaluate(() => { __noticeDrag(4); __noticeSheet.now(); dispatchEvent(new PointerEvent('pointerup', { pointerId: 4 })); });
+    assert.equal(await page.evaluate(() => __cleared), 1, 'closing the sheet during a drag never clears anything');
+    assert.deepEqual(errors, []);
+    assert.deepEqual(await page.evaluate(() => window.__rejections), []);
+  } finally { await ctx.close(); }
+});
+
+async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
+  const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: motion,
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
+  if (noViewTransitions) await ctx.addInitScript(() => { delete Document.prototype.startViewTransition; });
   if (iphoneViewport) await ctx.addInitScript(() => {
     const v = Object.assign(new EventTarget(), { height: 844, width: 390, offsetTop: 0, scale: 1 });
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: v });
@@ -85,18 +255,29 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
   page.on('pageerror', e => errors.push(e.message));
   await page.addInitScript(() => {
     window.__csp = [];
+    window.__rejections = [];
+    addEventListener('unhandledrejection', e => window.__rejections.push(String(e.reason)));
     document.addEventListener('securitypolicyviolation', e => window.__csp.push(`${e.violatedDirective}: ${e.blockedURI}`));
   });
   await page.clock.setFixedTime(new Date(answer.at));
   await page.goto(origin);
   await page.locator(signedIn ? (waitForDay ? '#top .day-top' : '#in:not([hidden])') : '#out:not([hidden]) #signin').waitFor();
+  if (signedIn && waitForDay && process.env.WEB_UI_BROWSER === 'webkit') {
+    await page.waitForLoadState('networkidle'); await page.bringToFront();
+    // Activate WebKit's page before testing hardware-keyboard focus.
+    await page.mouse.click(1, 1);
+  }
   return { ctx, page, requests, errors };
 }
 async function save(page, name) {
   const out = process.env.WEB_UI_SCREENSHOTS;
-  if (!out) return;
+  // Playwright's WebKit screenshots inject a dummy stylesheet to sync animations.
+  // Preserve the real CSP checks; Chromium supplies the sample preview artifacts.
+  if (!out || process.env.WEB_UI_BROWSER === 'webkit') return;
   await mkdir(out, { recursive: true });
-  await page.screenshot({ path: `${out}/sample-${name}.png`, fullPage: true });
+  // WebKit's default caret hiding injects a style element, which the app's CSP
+  // correctly rejects. Keep the caret as drawn when taking a sample preview.
+  await page.screenshot({ path: `${out}/sample-${name}.png`, fullPage: true, caret: 'initial' });
 }
 
 async function settleLayout(page) {
@@ -150,7 +331,7 @@ test('packing updates for expanding history, new card content and returning from
   const { ctx, page, errors } = await open({ width: 1440 });
   try {
     await settleLayout(page);
-    const summary = page.locator('.dt-history > summary'); await summary.focus(); await page.keyboard.press('Enter');
+    const summary = page.locator('.dt-history > summary'); await summary.scrollIntoViewIfNeeded(); await summary.focus(); await page.keyboard.press('Enter');
     await settleLayout(page); assertPacked(await tileBoxes(page));
     assert.equal(await summary.evaluate(e => e === document.activeElement), true);
     const weatherHeight = (await tileBoxes(page)).find(b => b.id === 'weather').h;
@@ -194,7 +375,7 @@ test('changes are keyboard-accessible; Undo keeps the original request and open 
     const history = page.locator('.dt-history'), summary = history.locator('summary');
     assert.equal(await history.evaluate(e => e.open), false);
     assert.equal(await page.getByRole('button', { name: 'Undo the Move', exact: true }).isVisible(), false);
-    await summary.focus(); await page.keyboard.press('Enter');
+    await summary.scrollIntoViewIfNeeded(); await summary.focus(); await page.keyboard.press('Enter');
     assert.equal(await history.evaluate(e => e.open), true);
     await page.evaluate(async () => {
       const { drawDay } = await import('/day.js'), answer = await (await fetch('/api/today')).json();
@@ -374,6 +555,7 @@ test('a combined boot paints cards only with its authenticated view and falls ba
       await route.fulfill({ status: 404, json: { error: 'Older account endpoint' } }); return true;
     } });
     try {
+      await page.locator('#top .dt-h').waitFor();
       assert.match(await page.locator('#in').innerText(), /Your day, joined up/);
       await page.evaluate(() => { location.hash = 'you'; }); await page.locator('#youAcct').waitFor();
       assert.match(await page.locator('#youAcct').innerText(), /Jordan Patel/);
@@ -386,7 +568,7 @@ test('a combined boot paints cards only with its authenticated view and falls ba
   }
 });
 
-test('the coordinator and signed-out shell still load after an offline reload', async () => {
+test('the coordinator and signed-out shell still load after an offline reload', { skip: process.env.WEB_UI_BROWSER === 'webkit' && 'Playwright WebKit cannot reload this intercepted localhost service-worker page offline' }, async () => {
   const { ctx, page, errors } = await open({ signedIn: false, serviceWorkers: 'allow' });
   try {
     await page.evaluate(() => navigator.serviceWorker.ready);
@@ -749,7 +931,8 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
     assert.equal((await placed('pinch zoom')).keyboard, false, 'zoom is not a keyboard');
     await page.evaluate(() => { visualViewport.scale = 1; __viewport(844); });
     const before = await page.evaluate(() => scrollY);
-    await page.mouse.move(190, 300); await page.mouse.wheel(0, 500);
+    if (process.env.WEB_UI_BROWSER === 'webkit') await page.locator('dialog[open]').evaluate(d => d.scrollBy(0, 500));
+    else { await page.mouse.move(190, 300); await page.mouse.wheel(0, 500); }
     assert.equal(await page.evaluate(() => scrollY), before, 'scrolling sheet content never scrolls the page behind it');
     await page.evaluate(() => __sheet.close());
     await page.locator('dialog[open]').waitFor({ state: 'detached' });

@@ -127,6 +127,8 @@ export function createFrame(opts = {}) {
   };
   const roofs = () => sess().apps;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let motion = 0, stopMotion = () => {};
+  const cancelMotion = () => { stopMotion(); ++motion; stopMotion = () => {}; };
   const newKey = () => Math.random().toString(36).slice(2, 10);
   const ys = new Map(), backTo = new Map();
   let depth = 0, key = "", routes = [], stale = false, gone = false, shown = null, lastApps = sess().apps, lazyAt = {}, fails = {};
@@ -226,6 +228,7 @@ export function createFrame(opts = {}) {
     releaseService(app, o) { const p = svcs[app]; if (o?.terminate) { delete svcs[app]; found(app); if (p && REGISTRY[app]?.tab) F.tabs.badge(REGISTRY[app].tab, 0); } return p?.then((s) => s.release?.(o), () => {}); },
     destroy() {
       if (gone) return;
+      cancelMotion();
       for (const a of Object.keys(svcs)) F.releaseService(a, { terminate: true });
       unlater();
       for (const a of Object.keys(mods)) unmount(a);
@@ -422,28 +425,44 @@ export function createFrame(opts = {}) {
 
   // ---- transitions (§3.7): a View Transition where there is one, its kind on html[data-vt]; else a CSS animation
   function transition(kind, change, o = {}) {
-    // (a section is never animated, nor faded for reduced motion)
+    // A newer route owns both the render and its cleanup. A skipped snapshot may
+    // still call its update callback; it must never put an older page back on top.
+    cancelMotion();
     if (!kind || o.ua || kind == "section") return void change();
-    const k = reduced() ? "fade" : kind;
+    const k = reduced() ? "fade" : kind, mine = motion;
+    let applied = false;
+    const apply = () => { if (gone || mine !== motion || applied) return; applied = true; return change(); };
     if (typeof doc.startViewTransition === "function" && doc.visibilityState === "visible") {
       html.dataset.vt = k;
       const z = k === "zoom" ? o.zoomFrom : null;
       z?.classList.add("ifl-vt-zoom");
-      let t;
-      // (a transition still running is finished at once first: two never stack, and a stuck one never holds the page)
-      try { transition.cur?.skipTransition?.(); } catch (_) {}
-      try { t = doc.startViewTransition(() => { z?.classList.remove("ifl-vt-zoom"); change(); }); transition.cur = t; setTimeout(() => { if (transition.cur === t) try { t.skipTransition(); } catch (_) {} }, 1500); } catch (_) { z?.classList.remove("ifl-vt-zoom"); delete html.dataset.vt; change(); return; }
+      let t, timer;
+      const clean = () => {
+        clearTimeout(timer);
+        if (mine !== motion) return;
+        z?.classList.remove("ifl-vt-zoom");
+        delete html.dataset.vt;
+        doc.querySelector(".ifl-zoom-slot .ifl-vt-zoom")?.classList.remove("ifl-vt-zoom");
+        stopMotion = () => {};
+      };
+      try { t = doc.startViewTransition(() => { z?.classList.remove("ifl-vt-zoom"); return apply(); }); }
+      catch (_) { clean(); apply(); return; }
+      stopMotion = (finish) => { if (finish) apply(); try { t.skipTransition(); } catch (_) {} clean(); };
+      timer = setTimeout(() => { if (mine === motion) stopMotion(true); }, 1500);
       for (const p of ["ready", "updateCallbackDone"]) t[p]?.catch?.(() => {});
-      t.finished.catch(() => {}).finally(() => { if (html.dataset.vt === k) delete html.dataset.vt; z?.classList.remove("ifl-vt-zoom"); doc.querySelector(".ifl-zoom-slot .ifl-vt-zoom")?.classList.remove("ifl-vt-zoom"); });
+      const finished = () => { apply(); clean(); };
+      t.finished.then(finished, finished);
       return;
     }
-    const el = change();
-    if (!el || k === "zoom") return;
+    const el = apply();
+    if (!el) return;
     const c = `ifl-enter-${k}`;
     el.classList.add(c);
-    const done = () => el.classList.remove(c);
-    el.addEventListener("animationend", done, { once: true });
-    setTimeout(done, 600);
+    const done = (e) => { if (e && e.target !== el) return; clearTimeout(timer); el.classList.remove(c); el.removeEventListener("animationend", done); el.removeEventListener("animationcancel", done); if (mine === motion) stopMotion = () => {}; };
+    const timer = setTimeout(() => done(), 700);
+    stopMotion = () => done();
+    el.addEventListener("animationend", done);
+    el.addEventListener("animationcancel", done);
   }
 
   // ---- modules' screens, and what each module gets
@@ -591,7 +610,7 @@ export function createFrame(opts = {}) {
   });
   let hiddenAt = 0;
   on(doc, "visibilitychange", () => {
-    if (doc.visibilityState === "hidden") { hiddenAt = Date.now(); return emit("hidden"); }
+    if (doc.visibilityState === "hidden") { stopMotion(true); hiddenAt = Date.now(); return emit("hidden"); }
     const away = hiddenAt ? Date.now() - hiddenAt : 0;
     hiddenAt = 0;
     if (stale && away >= 60e3 && !F.busy()) return reloadStale();
@@ -603,6 +622,7 @@ export function createFrame(opts = {}) {
   on(globalThis, "pageshow", (e) => { if (e.persisted) emit("visible"); });
   const mq = matchMedia("(prefers-color-scheme: dark)"), themed = () => emit("theme", themeNow());
   on(mq, "change", themed);
+  on(matchMedia("(prefers-reduced-motion: reduce)"), "change", () => { if (reduced()) stopMotion(true); });
   if (globalThis.MutationObserver) {
     const mo = new MutationObserver(themed);
     mo.observe(html, { attributes: true, attributeFilter: ["data-theme"] });

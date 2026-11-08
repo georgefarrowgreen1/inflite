@@ -268,7 +268,7 @@ function topHtml(t, phase, st, now) {
     ${stats.length ? `<dl class="dt-stats">${stats.map((s) => `<div${TONES.includes(s.tone) ? ` class="dt-${s.tone}"` : ""}><dt>${esc(s.label)}</dt><dd>${esc(s.value)}</dd></div>`).join("")}</dl>` : ""}
     ${mainLines.length ? `<ul class="dt-rows">${mainLines.map(lineRow).join("")}</ul>` : ""}
     ${moreLines.length || undo.length ? `<details class="dt-history" data-phase="${esc(phase)}"${st.historyOpen ? " open" : ""}>
-      <summary>What changed<span class="dt-history-chevron" aria-hidden="true">${G.chev}</span></summary>
+      <summary tabindex="0">What changed<span class="dt-history-chevron" aria-hidden="true">${G.chev}</span></summary>
       ${moreLines.length ? `<ul class="dt-rows">${moreLines.map(lineRow).join("")}</ul>` : ""}
       ${undo.length ? `<div class="tc-foot">${undo.join("")}</div>` : ""}
     </details>` : ""}

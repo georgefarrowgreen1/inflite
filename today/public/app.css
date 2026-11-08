@@ -156,7 +156,7 @@ button.row:active, a.row:active { background: var(--press); }
 .kept { margin: 0 6px 10px; font-size: 13.5px; color: var(--text-3); }
 .tcard { border-radius: var(--r-card); padding: 12px 18px 16px; display: grid; gap: 12px; min-width: 0; }
 .tcard > * { min-width: 0; }
-.tcard.in { animation: swap 0.55s var(--ease-glide); }
+.tcard.in { animation: swap var(--motion-release, 0.38s) var(--motion-glide, var(--ease-glide)); }
 @keyframes swap { from { transform: translateY(10px) scale(0.99); } }
 .tc-head { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0 -8px; padding: 0 8px; border-radius: 16px; color: var(--text); text-decoration: none; text-align: left; }
 a.tc-head:active { background: var(--press); }
@@ -437,7 +437,7 @@ label.row:active { background: var(--press); }
 .today-out .ifl-logo img { position: relative; width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 16px 34px -14px var(--in-icon-shadow), 0 0 0 0.5px var(--in-icon-edge); }
 .today-out .ifl-go { min-height: 52px; font-size: 17px; }
 .today-out .ifl-new a { color: var(--tint-text); font-weight: 600; text-decoration: none; }
-.today-out .ifl-top, .today-out .ifl-cta { animation: in-rise 0.7s var(--ease-glide) backwards; }
+.today-out .ifl-top, .today-out .ifl-cta { animation: in-rise var(--motion-page, 0.46s) var(--motion-glide, var(--ease-glide)) backwards; }
 @keyframes in-rise { from { opacity: 0; transform: translateY(14px); } }
 .today-said { margin: 0 0 14px; max-width: 34ch; text-align: center; font-size: 14.5px; line-height: 1.4; font-weight: 600; color: var(--warn); }
 
@@ -501,7 +501,7 @@ label.row:active { background: var(--press); }
   .you-main { display: block; min-width: 0; }
   .you-folds { display: contents; }
   .you-main .you-sec:not(.on) { display: none; }
-  .you-main .you-sec.on { display: block; margin: 0; animation: you-pane 0.22s var(--ease-out, ease) both; }
+  .you-main .you-sec.on { display: block; margin: 0; animation: you-pane var(--motion-tab, 0.28s) var(--motion-glide, var(--ease-out, ease)); }
   .you-main .you-sec.on > .you-h { margin: 6px 4px 16px; font: 700 28px/1.15 var(--font-d, var(--font)); letter-spacing: -0.4px; text-transform: none; color: var(--text); }
   @keyframes you-pane { from { opacity: 0; transform: translateY(4px); } }
 }
@@ -1018,7 +1018,7 @@ section.ifl-sw-ready { will-change: transform; }
 .ifl-swiping section.ifl-sw-cur { transform: translate3d(var(--sx, 0px), 0, 0); will-change: transform; }
 .ifl-swiping section.ifl-sw-peek { display: var(--sw-d, block) !important; content-visibility: visible !important; position: absolute; left: 0; right: 0;
   top: var(--sy, 0px); transform: translate3d(var(--sx, 0px), 0, 0); will-change: transform; pointer-events: none; }
-.ifl-sw-go section:is(.ifl-sw-cur, .ifl-sw-peek) { transition: transform 0.36s cubic-bezier(0.32, 0.72, 0, 1); }
+.ifl-sw-go section:is(.ifl-sw-cur, .ifl-sw-peek) { transition: transform var(--motion-release, 0.38s) var(--motion-glide, cubic-bezier(0.32, 0.72, 0, 1)); }
 @media (prefers-reduced-motion: reduce) { .ifl-sw-go section:is(.ifl-sw-cur, .ifl-sw-peek) { transition-duration: 0.12s; } }
 
 /* ---- acting from a card: a reply typed on Chat's card, and today's session changed on Fitness's ---- */

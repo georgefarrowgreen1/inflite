@@ -13,7 +13,7 @@
   min-height: var(--control-height); padding: 0 var(--control-padding); border-radius: var(--control-radius);
   font-size: var(--control-font-size); font-weight: 600; color: var(--text); background: var(--glass-ctl);
   box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.25), 0 0 0 0.5px var(--line);
-  text-decoration: none; cursor: pointer; transition: transform 0.18s var(--ease-out), background-color 0.2s;
+  text-decoration: none; cursor: pointer; transition: transform var(--motion-release, 0.38s) var(--motion-spring, var(--ease-out)), background-color 0.18s;
 }
 .ifl-btn { --control-fill: var(--acc-fill); }
 :is(.pill, .ifl-btn).primary {
@@ -21,7 +21,7 @@
   box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.35), 0 6px 16px -10px var(--control-fill);
 }
 :is(.pill, .ifl-btn).destructive { color: var(--danger); }
-:is(.pill, .ifl-btn):active:not(:disabled):not([aria-disabled="true"]) { transform: scale(var(--control-press-scale)); }
+:is(.pill, .ifl-btn):active:not(:disabled):not([aria-disabled="true"]) { transform: scale(var(--control-press-scale)); transition-duration: var(--motion-press, 0.1s); }
 :is(.pill, .ifl-btn):is(:disabled, [aria-disabled="true"]) { opacity: 0.5; cursor: default; }
 :is(.pill, .ifl-btn)[aria-busy="true"] { opacity: 0.7; }
 :is(.pill, .ifl-btn):focus-visible { outline: 2px solid var(--acc-ink, var(--tint-text)); outline-offset: 3px; }
@@ -35,7 +35,7 @@
   transition: background-color 0.3s; }
 .switch::before { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
   background: var(--knob); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.28), 0 1px 1px rgba(0, 0, 0, 0.12);
-  transition: transform 0.45s var(--ease-spring); }
+  transition: transform var(--motion-release, 0.38s) var(--motion-spring, var(--ease-spring)); }
 .switch:checked { background: var(--good); }
 .switch:checked::before { transform: translateX(20px); }
 .switch:focus-visible { outline: 2px solid var(--acc-ink, var(--tint-text)); outline-offset: 3px; }

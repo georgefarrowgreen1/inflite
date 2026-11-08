@@ -33,6 +33,14 @@ export function swipes(F) {
   };
   const targetY = (app, id) => (scrollY > 28 ? Math.max(ys.get(`${app}:${id}`) || 0, 29) : 0);
   const put = (el, x) => el?.style.setProperty("--sx", `${x}px`);
+  const reset = (s) => {
+    if (!s) return;
+    clearTimeout(s.timer); s.cur.removeEventListener("transitionend", s.finish);
+    for (const el of [s.cur, s.nb]) { if (!el) continue; el.classList.remove("ifl-sw-cur", "ifl-sw-peek", "ifl-sw-ready"); for (const p of ["--sx", "--sy", "--sw-d"]) el.style.removeProperty(p); }
+    html.classList.remove("ifl-swiping", "ifl-sw-go");
+    if (st === s) st = null;
+  };
+  const cancel = () => reset(st);
 
   function down(e) {
     // A second finger belongs to pinch zoom. Cancel any section preview before it
@@ -105,17 +113,18 @@ export function swipes(F) {
     if (s.nb) put(s.nb, go ? 0 : -s.dir * W);
     quiet = Date.now() + 400;
     let done = false;
-    const finish = () => {
+    const finish = (e) => {
+      if (e && (e.target !== s.cur || e.propertyName !== "transform")) return;
       if (done) return;
       done = true;
       // (the switch first, then the preview let go, in the one task: nothing seen moves)
-      if (go) F.nav.section(s.app, s.nbId);
-      for (const el of [s.cur, s.nb]) { if (!el) continue; el.classList.remove("ifl-sw-cur", "ifl-sw-peek", "ifl-sw-ready"); for (const p of ["--sx", "--sy", "--sw-d"]) el.style.removeProperty(p); }
-      html.classList.remove("ifl-swiping", "ifl-sw-go");
-      if (st === s) st = null;
+      if (go && F.route?.app === s.app && F.route?.section === s.ids[s.i]) F.nav.section(s.app, s.nbId);
+      reset(s);
     };
-    s.cur.addEventListener("transitionend", finish, { once: true });
-    setTimeout(finish, 420);
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { finish(); return; }
+    s.finish = finish;
+    s.cur.addEventListener("transitionend", finish);
+    s.timer = setTimeout(() => finish(), 420);
   }
   // (a tap that ends a swipe opens nothing)
   const click = (e) => { if (Date.now() < quiet) { e.preventDefault(); e.stopPropagation(); } };
@@ -125,10 +134,16 @@ export function swipes(F) {
   doc.addEventListener("pointerup", onUp, { passive: true });
   doc.addEventListener("pointercancel", onCancel, { passive: true });
   doc.addEventListener("click", click, true);
+  const visibility = () => { if (doc.hidden) cancel(); };
+  doc.addEventListener("visibilitychange", visibility);
+  addEventListener("resize", cancel); addEventListener("pagehide", cancel);
   return () => {
+    cancel();
     removeEventListener("scroll", onScroll);
     doc.removeEventListener("pointerdown", down); doc.removeEventListener("pointermove", move);
     doc.removeEventListener("pointerup", onUp); doc.removeEventListener("pointercancel", onCancel);
     doc.removeEventListener("click", click, true);
+    doc.removeEventListener("visibilitychange", visibility);
+    removeEventListener("resize", cancel); removeEventListener("pagehide", cancel);
   };
 }

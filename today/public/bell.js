@@ -92,19 +92,22 @@ export function draw(box, list, { ui, now = Date.now(), fresh = new Set(), shown
 // width, or flicked, it's gone; short of that it comes back. The bin behind grows as it nears the point of going.
 const give = (d) => { const a = Math.abs(d); return Math.sign(d) * (a <= 40 ? a * 0.6 : a - 16); };
 function swipe(row, card, done) {
+  let dragging = false;
   card.addEventListener("pointerdown", (e) => {
-    if (e.button || row.classList.contains("gone") || e.target.closest?.(".ifl-nt-more, .ifl-nt-x")) return;
+    if (dragging || e.isPrimary === false || e.button || row.classList.contains("gone") || e.target.closest?.(".ifl-nt-more, .ifl-nt-x")) return;
+    dragging = true;
     const x0 = e.clientX, y0 = e.clientY, t0 = performance.now(), w = card.offsetWidth || 1, id = e.pointerId;
     let dx = 0, axis = null;
     delete row.dataset.dragged;
     const ac = new AbortController(), o = { signal: ac.signal };
+    const reset = () => { ac.abort(); dragging = false; row.classList.remove("dragging", "far"); card.style.setProperty("--dx", "0px"); row.style.setProperty("--p", "0"); setTimeout(() => delete row.dataset.dragged, 0); };
     const move = (m) => {
       if (m.pointerId !== id) return;
       dx = m.clientX - x0;
       if (!axis) {
         const dy = m.clientY - y0;
         if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) { axis = "x"; try { card.setPointerCapture(id); } catch (_) {} row.classList.add("dragging"); }
-        else if (Math.abs(dy) > 8) return ac.abort();
+        else if (Math.abs(dy) > 8) return reset();
         else return;
       }
       m.preventDefault?.();
@@ -116,11 +119,11 @@ function swipe(row, card, done) {
     };
     const up = (u) => {
       if (u.pointerId !== id) return;
-      ac.abort();
+      ac.abort(); dragging = false;
       row.classList.remove("dragging", "far");
       if (axis !== "x") return;
       const fast = Math.abs(dx) > 40 && Math.abs(dx) / Math.max(1, performance.now() - t0) > 0.6;
-      if (Math.abs(dx) > w / 3 || fast) { row.style.setProperty("--p", "1"); done(); }
+      if (u.type !== "pointercancel" && row.isConnected && (Math.abs(dx) > w / 3 || fast)) { row.style.setProperty("--p", "1"); done(); }
       else { card.style.setProperty("--dx", "0px"); row.style.setProperty("--p", "0"); }
       // (the click that follows a drag isn't a tap)
       setTimeout(() => delete row.dataset.dragged, 0);
@@ -128,6 +131,9 @@ function swipe(row, card, done) {
     addEventListener("pointermove", move, o);
     addEventListener("pointerup", up, o);
     addEventListener("pointercancel", up, o);
+    addEventListener("blur", reset, o);
+    row.closest("dialog")?.addEventListener("close", reset, o);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) reset(); }, o);
   });
 }
 

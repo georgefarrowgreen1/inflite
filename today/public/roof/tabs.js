@@ -113,7 +113,7 @@ export function createTabs(nav, F, { me: meOf } = {}) {
     if (r0 && F?.nav && !(e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) {
       e.preventDefault();
       if (r0.dataset.me) return F.nav.go("/#you", { kind: "tab" });
-      if (F.route?.kind === "app" && F.route.app === r0.dataset.app) return scrollTo({ top: 0, behavior: "smooth" });
+      if (F.route?.kind === "app" && F.route.app === r0.dataset.app) return scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
       return F.nav.go(r0.getAttribute("href"), { kind: "tab" });
     }
     const a = e.target.closest?.("a.ifl-tab");
