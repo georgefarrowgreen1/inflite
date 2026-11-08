@@ -131,9 +131,8 @@ body.kb-up .ifl-tabs { visibility: hidden; }
   display: grid; place-items: center; font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; background: var(--badge, var(--danger)); pointer-events: none; }
 
 /* ---- sheets (sheet.js) on <dialog>: the frozen markup, Weather's motion ---- */
-/* (--fix-gap: the shared menu's measure of how far iOS's Home Screen lays the page out short of the screen; what's
-   fixed to the foot is taken down by it, to the screen's own bottom) */
-dialog.ifl-sheet { --sheet-bottom-pad: calc(28px + env(safe-area-inset-bottom, 0px)); position: fixed; inset: auto 0 var(--sheet-foot, calc(0px - var(--fix-gap, 0px))); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) var(--sheet-bottom-pad) max(18px, env(safe-area-inset-left, 0px));
+/* Sheets stay inside the visible viewport; a Home Screen layout correction must not move their actions below it. */
+dialog.ifl-sheet { --sheet-bottom-pad: calc(28px + env(safe-area-inset-bottom, 0px)); position: fixed; inset: auto 0 var(--sheet-foot, 0px); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) var(--sheet-bottom-pad) max(18px, env(safe-area-inset-left, 0px));
   max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 24px); overflow: hidden auto; overscroll-behavior: contain; display: none; flex-direction: column;
   border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; color: var(--text); background: var(--sheen), var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), 0 -10px 40px rgba(0, 0, 0, 0.3);
   transform: translateY(var(--drag, 0px)); animation: ifl-sheet-in var(--dur-sheet-in) var(--ease-glide); font: inherit; }
@@ -142,7 +141,7 @@ dialog.ifl-sheet[open] { display: flex; }
 dialog.ifl-sheet.ifs-kb { --sheet-bottom-pad: 12px; padding-bottom: var(--sheet-bottom-pad); border-radius: var(--r-sheet); }
 /* (and as tall as what's in sight, from the top of it down: what's typed and what it finds start at the top, where the
    keyboard's bars, see-through and taller than iOS says, can't cover them) */
-@media (hover: none) { dialog.ifl-sheet.ifs-kb { top: calc(var(--vv-top, 0px) + max(env(safe-area-inset-top, 0px), 12px) + 6px); max-height: none; } }
+@media (hover: none) { dialog.ifl-sheet.ifs-kb { top: calc(var(--vv-top, 0px) + max(env(safe-area-inset-top, 0px), 12px) + 6px); max-height: calc(var(--vvh, 100dvh) - max(env(safe-area-inset-top, 0px), 12px) - 6px); } }
 dialog.ifl-sheet::backdrop { background: var(--dim); animation: ifl-fade-in var(--dur-sheet-in) ease; }
 dialog.ifl-sheet.closing { animation: ifl-sheet-out var(--dur-sheet-out) var(--ease-in) forwards; }
 dialog.ifl-sheet.closing::backdrop { animation: ifl-fade-out var(--dur-sheet-out) ease forwards; }

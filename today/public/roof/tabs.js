@@ -13,6 +13,7 @@
 //   tab (.ifl-tab-badge; a number only, none for 0). While Chats is in this page, the bar takes InFlite's indigo (.chats,
 //   roof.css; S3-D16).
 import { REGISTRY } from "./router.js";
+import { el } from "./ui.js";
 
 const TAB_SCREENS = ["today", "apps", "you"];
 export function createTabs(nav, F, { me: meOf } = {}) {
@@ -37,8 +38,7 @@ export function createTabs(nav, F, { me: meOf } = {}) {
   // of it is in the bar at every width and shown only there (.ifl-rail-x): on a phone the bar is as it was.
   const RAIL_APPS = ["weather", "fitness", "markets", "mail"];
   let railKey = null;
-  const at = (e, o) => { for (const k in o) e.setAttribute(k, String(o[k])); };
-  const mk = (tag, cls, text) => { const e = document.createElement(tag); e.className = cls; if (text != null) e.textContent = text; return e; };
+  const mk = (tag, cls, text, attrs) => el(tag, { class: cls, text, ...attrs });
   // (Mail is the site admin's alone: listed only where the account's view says it's theirs, as Apps and You do)
   const yours = (a) => a !== "mail" || F?.session?.view?.apps?.mail === true;
   function rail() {
@@ -49,7 +49,7 @@ export function createTabs(nav, F, { me: meOf } = {}) {
     railKey = k;
     for (const x of nav.querySelectorAll(".ifl-rail-x")) x.remove();
     const brand = mk("span", "ifl-rail-x ifl-rail-brand");
-    const logo = mk("img", "ifl-rail-logo"); at(logo, { src: "/icon.svg", alt: "", width: 28, height: 28 });
+    const logo = mk("img", "ifl-rail-logo", null, { src: "/icon.svg", alt: "", width: 28, height: 28 });
     brand.append(logo, mk("span", "", "InFlite"));
     pill.after(brand);
     const keys = { today: "1", chats: "2", apps: "3", you: "4" };
@@ -60,14 +60,12 @@ export function createTabs(nav, F, { me: meOf } = {}) {
     const extra = [];
     if (apps.length) extra.push(mk("span", "ifl-rail-x ifl-rail-h", "Your Apps"));
     for (const app of apps) {
-      const R = REGISTRY[app], a = mk("a", "ifl-rail-x ifl-rail-app");
-      at(a, { href: R.path, "data-app": app });
-      const img = mk("img", "ifl-rail-ic"); at(img, { src: `/apps/${app}.svg`, alt: "", width: 24, height: 24 });
+      const R = REGISTRY[app], a = mk("a", "ifl-rail-x ifl-rail-app", null, { href: R.path, "data-app": app });
+      const img = mk("img", "ifl-rail-ic", null, { src: `/apps/${app}.svg`, alt: "", width: 24, height: 24 });
       a.append(img, mk("span", "ifl-tab-l", R.name));
       extra.push(a);
     }
-    const me = mk("a", "ifl-rail-x ifl-rail-me");
-    at(me, { href: "/#you", "data-me": "1" });
+    const me = mk("a", "ifl-rail-x ifl-rail-me", null, { href: "/#you", "data-me": "1" });
     const ph = mk("span", "ifl-rail-ph");
     const node = (() => { try { return meOf?.(); } catch (_) { return null; } })();
     if (node) ph.append(node);

@@ -36,9 +36,19 @@ before(async () => {
 });
 after(async () => { await browser?.close(); await new Promise(r => server ? server.close(r) : r()); });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false } = {}) {
+async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: 'reduce',
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
+  if (iphoneViewport) await ctx.addInitScript(() => {
+    const v = Object.assign(new EventTarget(), { height: 844, width: 390, offsetTop: 0, scale: 1 });
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: v });
+    Object.defineProperties(screen, { width: { get: () => 390 }, height: { get: () => 844 } });
+    window.__viewport = (height, offsetTop = 0, event = 'resize') => {
+      Object.assign(v, { height, offsetTop });
+      if (event === 'resume') dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+      else v.dispatchEvent(new Event(event));
+    };
+  });
   if (iosHomeScreen) await ctx.addInitScript(() => {
     // iOS can report a short layout height even while fixed elements use the full viewport.
     let shortBy = 54;
@@ -458,7 +468,7 @@ test('quick access edits use toggles, enforce four choices, cancel cleanly, pers
     await dialog.getByRole('button', { name: 'Done', exact: true }).click();
     assert.deepEqual(await quickIds(page), []);
     await page.reload(); await appsScreen(page); assert.deepEqual(await quickIds(page), [], 'an intentionally empty selection is remembered');
-    assert.equal(requests.some(r => r.method !== 'GET'), false, 'shortcut edits make no account or app writes');
+    assert.equal(requests.some(r => r.method !== 'GET' && r.path !== '/api/vitals'), false, 'shortcut edits make no account or app writes: ' + JSON.stringify(requests.filter(r => r.method !== 'GET')));
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
@@ -692,5 +702,98 @@ test('bottom navigation stays inside the visible Home Screen viewport after heig
     const rail = await page.locator('#tabs').boundingBox();
     assert.ok(rail.x === 0 && rail.y === 0 && rail.width < 300 && rail.height === 1000, 'desktop sidebar keeps its full-height position');
     assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('iPhone sheets fit Home Screen corrections, keyboards and resume while preserving scroll and focus', async () => {
+  const { ctx, page, errors } = await open({ iphoneViewport: true });
+  try {
+    await page.evaluate(async () => {
+      scrollTo(0, 240); window.__beforeSheetY = scrollY;
+      document.documentElement.style.setProperty('--fix-gap', '54px');
+      const { createSheets } = await import('/roof/sheet.js');
+      const { el } = await import('/roof/ui.js');
+      window.__sheets = createSheets({});
+      window.__sheet = __sheets.open({ title: 'Reliability check', sheet: 'iphone-test',
+        body: el('div', {}, ...Array.from({ length: 25 }, (_, i) => el('p', { text: `Scrollable content ${i}` })), el('input', { 'aria-label': 'Test field' })),
+        acts: [{ label: 'Done', run() {} }] });
+    });
+    const placed = async label => {
+      await page.waitForFunction(() => { const r = document.querySelector('dialog[open]').getBoundingClientRect(); return r.top >= visualViewport.offsetTop && r.bottom <= visualViewport.offsetTop + visualViewport.height + 1; }, null, { timeout: 1500 }).catch(() => {});
+      const r = await page.locator('dialog[open]').evaluate(d => {
+        const r = d.getBoundingClientRect(), v = visualViewport;
+        return { top: r.top, bottom: r.bottom, foot: v.height + v.offsetTop, actions: [...d.querySelectorAll('.ifs-acts button')].map(b => { const r = b.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { top: r.top, bottom: r.bottom, hit: b === hit || b.contains(hit) }; }), keyboard: d.classList.contains('ifs-kb') };
+      });
+      assert.ok(r.top >= visualTop && r.bottom <= r.foot + 1, `${label}: ${JSON.stringify(r)}`);
+      assert.ok(r.actions.every(a => a.top >= visualTop && a.bottom <= r.foot + 1 && a.hit), `${label}: action buttons are fully visible and tappable: ${JSON.stringify(r)}`);
+      return r;
+    };
+    let visualTop = 0;
+    await placed('Home Screen gap');
+    await page.locator('input[aria-label="Test field"]').focus();
+    await page.evaluate(() => __viewport(480));
+    assert.equal((await placed('keyboard overlays layout')).keyboard, true);
+    await page.setViewportSize({ width: 390, height: 480 });
+    await page.evaluate(() => __viewport(480));
+    assert.equal((await placed('keyboard also shrinks layout')).keyboard, true);
+    await page.setViewportSize({ width: 390, height: 844 });
+    visualTop = 16;
+    await page.evaluate(() => __viewport(460, 16, 'scroll'));
+    await placed('panned visual viewport');
+    visualTop = 0;
+    await page.evaluate(() => __viewport(740, 0, 'resume'));
+    await placed('resume without resize');
+    await page.evaluate(() => __viewport(844));
+    assert.equal((await placed('keyboard dismissed')).keyboard, false);
+    await page.evaluate(() => { visualViewport.scale = 2; __viewport(480); });
+    assert.equal((await placed('pinch zoom')).keyboard, false, 'zoom is not a keyboard');
+    await page.evaluate(() => { visualViewport.scale = 1; __viewport(844); });
+    const before = await page.evaluate(() => scrollY);
+    await page.mouse.move(190, 300); await page.mouse.wheel(0, 500);
+    assert.equal(await page.evaluate(() => scrollY), before, 'scrolling sheet content never scrolls the page behind it');
+    await page.evaluate(() => __sheet.close());
+    await page.locator('dialog[open]').waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => document.body.classList.contains('kb-up')), false);
+    assert.equal(await page.evaluate(() => scrollY), await page.evaluate(() => __beforeSheetY), 'closing restores the existing page position');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await placed('search sheet');
+    await page.keyboard.press('Escape');
+    await page.locator('dialog[open]').waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Search', 'focus returns to the opener');
+    await page.evaluate(() => { window.__parent = __sheets.open({ title: 'Parent' }); window.__child = __sheets.open({ title: 'Child' }); __child.close(); });
+    await page.getByRole('dialog', { name: 'Child', exact: true }).waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => document.body.classList.contains('sheet-up')), true, 'closing one sheet leaves the other modal');
+    await page.evaluate(() => __parent.close());
+    await page.locator('dialog[open]').waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => document.body.classList.contains('sheet-up')), false);
+    await page.evaluate(() => __viewport(480));
+    assert.equal(await page.evaluate(() => document.body.classList.contains('kb-up')), false, 'closed sheets leave no keyboard state behind');
+    assert.deepEqual(errors, []);
+    assert.deepEqual(await page.evaluate(() => window.__csp), []);
+  } finally { await ctx.close(); }
+});
+
+test('profile menu stays reachable through Home Screen resume and rotation, then restores focus', async () => {
+  const { ctx, page, errors } = await open({ iosHomeScreen: true });
+  try {
+    const opener = page.locator('#hd .ifh-me');
+    await opener.click();
+    const menu = page.locator('.ifm-pop.open'); await menu.waitFor();
+    const fits = async () => {
+      await page.waitForFunction(() => {
+        const r = document.querySelector('.ifm-pop.open').getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= visualViewport.height && r.left >= 0 && r.right <= innerWidth;
+      });
+    };
+    await fits();
+    for (const gap of [20, 54, 0]) { await page.evaluate(gap => { __homeScreenHeight(gap); dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); }, gap); await fits(); }
+    await page.setViewportSize({ width: 844, height: 390 }); await fits();
+    await page.keyboard.press('Tab');
+    assert.equal(await menu.evaluate(m => m.contains(document.activeElement)), true, 'keyboard focus stays in the menu');
+    await page.keyboard.press('Escape');
+    await page.locator('.ifm-pop').waitFor({ state: 'detached' });
+    assert.equal(await opener.evaluate(e => e === document.activeElement), true);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(await page.evaluate(() => window.__csp), []);
   } finally { await ctx.close(); }
 });

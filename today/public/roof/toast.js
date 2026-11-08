@@ -6,21 +6,17 @@
 // focus. Any action offered here is reachable elsewhere on the screen too (WCAG 2.2.1). text always through
 // textContent; app scopes the accent to the toast.
 // toast(text, { action: { label, run }, app }) → { close() } (close: let it go now, s24 §4)
+import { el } from "./ui.js";
 let cur = null;
 export function toast(text, { action = null, app = null } = {}) {
   const d = document;
   cur?.gone();
   for (const t of d.querySelectorAll(".ifl-toast")) t.remove();
   const say = d.querySelector(".ifm-say") || {};
-  const t = d.createElement("div"), tx = d.createElement("span"), b = d.createElement("b");
-  t.className = "ifm-note ifl-toast" + (action ? " has-act" : "");
-  if (app) t.dataset.app = app;
-  tx.className = "ifm-note-tx"; b.textContent = String(text ?? ""); tx.append(b); t.append(tx);
+  const b = el("b", { text: String(text ?? "") });
+  const t = el("div", { class: "ifm-note ifl-toast" + (action ? " has-act" : ""), data: { app } }, el("span", { class: "ifm-note-tx" }, b));
   if (action) {
-    const a = d.createElement("button");
-    a.type = "button"; a.className = "ifl-toast-act"; a.textContent = action.label;
-    a.addEventListener("click", () => { gone(); action.run?.(); });
-    t.append(a);
+    t.append(el("button", { type: "button", class: "ifl-toast-act", text: action.label, on: { click: () => { gone(); action.run?.(); } } }));
   }
   d.body.append(t);
   let left = action ? 6000 : 3600, at = 0, timer = 0, held = 0;

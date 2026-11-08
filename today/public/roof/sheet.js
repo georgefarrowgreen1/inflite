@@ -27,8 +27,13 @@ export function createSheets(F) {
   // taken up by how much of the page the keyboard covers, the page's height less what's in sight and where that starts)
   const v = globalThis.visualViewport;
   const fit = () => {
-    const kb = Math.round(document.documentElement.clientHeight - v.height - v.offsetTop), up = kb > 40;
-    for (const { el } of open) { el.style.setProperty("--vvh", `${Math.round(v.height)}px`); el.style.setProperty("--vv-top", `${Math.round(v.offsetTop)}px`); el.style.setProperty("--sheet-foot", up ? `${kb}px` : ""); el.classList.toggle("ifs-kb", up); }
+    const height = v?.height || document.documentElement.clientHeight, top = v?.offsetTop || 0;
+    const foot = Math.max(0, Math.round(document.documentElement.clientHeight - height - top));
+    const s = globalThis.screen, portrait = matchMedia("(orientation: portrait)").matches;
+    const tall = s ? (portrait ? Math.max(s.width, s.height) : Math.min(s.width, s.height)) : height;
+    const typing = document.activeElement?.matches("input,textarea,[contenteditable]") && matchMedia("(any-pointer: coarse)").matches;
+    const up = Math.abs((v?.scale || 1) - 1) < 0.01 && (foot > 40 || (typing && tall - height > 260));
+    for (const { el } of open) { el.style.setProperty("--vvh", `${Math.round(height)}px`); el.style.setProperty("--vv-top", `${Math.round(top)}px`); el.style.setProperty("--sheet-foot", `${foot}px`); el.classList.toggle("ifs-kb", up); }
     // (and the tab bar out of sight while it's up: iOS's bar above the keyboard is see-through, and it showed through it)
     document.body.classList.toggle("kb-up", up && open.length > 0);
   };
@@ -40,7 +45,8 @@ export function createSheets(F) {
     if (!up) document.body.classList.remove("kb-up");
     // (and again a moment after, and after a field's chosen or typed in: iOS raises its row of word suggestions after
     // the keyboard, and doesn't always say so)
-    if (v) for (const [t, e] of [[v, "resize"], [v, "scroll"], [document, "focusin"], [document, "input"]]) t[up ? "addEventListener" : "removeEventListener"](e, later);
+    if (v) for (const [t, e] of [[v, "resize"], [v, "scroll"], [document, "focusin"], [document, "focusout"], [document, "input"], [document, "visibilitychange"], [globalThis, "pageshow"], [globalThis, "resize"]]) t[up ? "addEventListener" : "removeEventListener"](e, later);
+    clearTimeout(lateT);
     if (up && v) fit();
   };
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
