@@ -1,5 +1,20 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { resolve } = require('node:path');
+
+test('Mail release probes reach the Worker instead of the SPA fallback', async () => {
+  const config = JSON.parse(readFileSync(resolve(__dirname, '../email/wrangler.jsonc'), 'utf8').replace(/^\s*\/\/.*$/gm, ''));
+  assert.ok(config.assets.run_worker_first.includes('/version'));
+  const { default: worker } = await import('../email/src/index.js');
+  const response = await worker.fetch(new Request('https://email.inflite.ai/version'), {
+    CF_VERSION_METADATA: { id: 'release-test' },
+    ASSETS: { fetch: async () => new Response('const BUILD = "1.74";') },
+  }, {});
+  assert.match(response.headers.get('content-type'), /application\/json/);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), { app: 'mail', build: '1.74', min: null });
+});
 
 function streamRequest(chunks, length) {
   let reads = 0, cancelled = false;
