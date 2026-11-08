@@ -266,6 +266,11 @@ test('zoom is permitted and control variants share sizes, focus and disabled sta
   try {
     const viewport = await page.locator('meta[name=viewport]').getAttribute('content');
     assert.doesNotMatch(viewport, /maximum-scale|user-scalable\s*=\s*no/);
+    const zoomEvents = await page.evaluate(() => ['gesturestart', 'gesturechange', 'gestureend'].map(type => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      return document.dispatchEvent(event);
+    }));
+    assert.deepEqual(zoomEvents, [true, true, true], 'the shared menu must not cancel browser pinch gestures');
     const controls = await page.evaluate(async () => {
       const { btn, sw } = await import('/roof/ui.js');
       const host = document.querySelector('#out'), pill = document.createElement('button');

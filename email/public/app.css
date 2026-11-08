@@ -1497,7 +1497,7 @@ html.embed .pane.list .subtitle {
   padding: 11px 16px 11px 4px;
   text-align: left;
   background: transparent;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
 }
 
 /* (a layer of its own only while being swiped: one per row costs an iPhone a lot of memory) */
@@ -4126,7 +4126,7 @@ textarea:focus-visible {
   /* (sideways only: the chips' larger tap areas mustn't make it scroll up and down too) */
   overflow-y: hidden;
   overscroll-behavior: contain;
-  touch-action: pan-x;
+  touch-action: pan-x pinch-zoom;
   scrollbar-width: none;
   margin: 0 -16px;
   padding: 6px 16px;
@@ -5059,7 +5059,7 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  touch-action: pan-x;
+  touch-action: pan-x pinch-zoom;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.5), transparent);
 }
 
@@ -5955,8 +5955,8 @@ button.set-row:active {
 }
 
 /* ==== InFlite's menu, shared: from .tools/inflite/menu.css by node .tools/iflmenu.mjs (change it there) ==== */
-/* (no app's page pinched or double-tapped bigger: a finger scrolls it, and no more. A map or a photo pinches itself) */
-html { touch-action: pan-x pan-y; }
+/* Allow browser pinch zoom alongside scrolling and app-owned gestures. */
+html { touch-action: manipulation; }
 /* InFlite's menu, the same in every app (.tools/inflite/menu.js): its own colours, type and shapes, whatever the
    app's, light or dark as the app is (data-theme, else the device) */
 .ifm-layer, .ifm-note, .ifa-layer, .ifl-tabs, .ifl-back, .ifb-layer {

@@ -181,7 +181,7 @@ async function api(request, env, ctx, url, fromAccount = false, hub = null) {
   // → 204, or 404 for one Mail hasn't got. Put back, that sender's mail of that kind is read again (as the strip's)
   if ((pathname === "/api/connector/hide" || pathname === "/api/connector/unhide") && method === "POST") {
     if (!(await keyOk(request, env))) throw new HttpError(401, "Not allowed.");
-    const b = await request.json().catch(() => null);
+    const b = await jsonBody(request, 64 * 1024, null);
     if (typeof b?.id !== "string" || !SPOT_ID.test(b.id)) throw new HttpError(400, "Which one?");
     await ensureSchema(env);
     if (!(await hideSpot(env, b.id, pathname === "/api/connector/hide"))) throw new HttpError(404, "No such one.");
@@ -211,7 +211,7 @@ async function api(request, env, ctx, url, fromAccount = false, hub = null) {
 
   // Back from the account's page: the code it handed back, swapped there for the site's sign-in.
   if (pathname === "/api/auth/handback" && method === "POST") {
-    const { code, verifier } = await request.json();
+    const { code, verifier } = await jsonBody(request);
     const r = await passOn(env, request, "handback", { code, verifier });
     if (r.status !== 200) throw new HttpError(r.status === 403 ? 403 : 400, r.data.error || "That sign-in didn’t work. Try again.");
     const res = json({ access: accessOf(r.data), accountOrigin: env.ACCOUNT_ORIGIN, user: publicUser(r.data) });
@@ -249,7 +249,7 @@ async function api(request, env, ctx, url, fromAccount = false, hub = null) {
   // Mail's notifications, for the account's Notifications page: how many devices it's on, and each address's on or off
   if (pathname === "/api/notify") {
     if (method === "PATCH") {
-      const b = await request.json().catch(() => ({}));
+      const b = await jsonBody(request, 64 * 1024, {});
       if (typeof b.notify !== "boolean") throw new HttpError(400, "Choose on or off.");
       await updateAddress(env, b.email, { notify: b.notify });
     } else if (method !== "GET") throw new HttpError(405, "Not allowed.");
@@ -276,7 +276,7 @@ async function route(request, env, ctx, url, view, hub = null) {
     const all = async () => ({ ...(await settings(env, senderName(env, view))), spot: await spotState(env) });
     if (method === "GET") return json(await all());
     if (method === "PATCH") {
-      const b = await request.json();
+      const b = await jsonBody(request);
       if (b?.spot !== undefined) await setSpot(env, ctx, b.spot && typeof b.spot === "object" ? b.spot : {});
       await updateSettings(env, b);
       return json(await all());
@@ -288,11 +288,11 @@ async function route(request, env, ctx, url, view, hub = null) {
     const taken = !problem && !!(await addressOf(env, `${local}@${env.DOMAIN}`));
     return json({ ok: !problem && !taken, problem: problem || (taken ? "That’s already one of your addresses." : null) });
   }
-  if (pathname === "/api/addresses" && method === "POST") return json(await createAddress(env, await request.json()));
+  if (pathname === "/api/addresses" && method === "POST") return json(await createAddress(env, await jsonBody(request)));
   if ((m = pathname.match(/^\/api\/addresses\/([^/]+)$/))) {
     const email = decodeURIComponent(m[1]);
     if (method === "PATCH") {
-      const b = await request.json();
+      const b = await jsonBody(request);
       // (the address mail goes from unless chosen: at Mail's own address, S4-D11)
       if (hub && b?.isDefault) throw new HttpError(403, "Choose the default address in Mail Settings at Mail’s own address.");
       return json(await updateAddress(env, email, b));
@@ -315,10 +315,10 @@ async function route(request, env, ctx, url, view, hub = null) {
   }
   if (pathname === "/api/counts" && method === "GET") return json(await counts(env));
   if (pathname === "/api/threads" && method === "GET") return json(await listThreads(env, url));
-  if (pathname === "/api/threads/batch" && method === "POST") return threadBatch(env, await request.json());
+  if (pathname === "/api/threads/batch" && method === "POST") return threadBatch(env, await jsonBody(request));
   // (a search asked in the request's body, as InFlite's page asks: the same as /api/threads?q=)
   if (pathname === "/api/threads/search" && method === "POST") {
-    const sp = searchParams(await request.json().catch(() => null));
+    const sp = searchParams(await jsonBody(request, 64 * 1024, null));
     if (!sp) throw new HttpError(400, "That search is too long.");
     return json(await listThreads(env, new URL(`https://mail/api/threads?${sp}`)));
   }
@@ -331,13 +331,13 @@ async function route(request, env, ctx, url, view, hub = null) {
       return json(spots?.length ? { ...t, spots } : t);
     }
     if (method === "POST") {
-      await threadAction(env, m[1], await request.json(), deleteMessages);
+      await threadAction(env, m[1], await jsonBody(request), deleteMessages);
       return json({ ok: true });
     }
   }
   // (the strip's Remove, Put It Back and Wrong, for a booking, a parcel or a bill: { hidden } or { wrong: true })
   if ((m = pathname.match(/^\/api\/spots\/([A-Za-z0-9_~-]{1,64})$/)) && method === "POST") {
-    const b = await request.json().catch(() => ({}));
+    const b = await jsonBody(request, 64 * 1024, {});
     const done = b?.wrong === true ? await wrongSpot(env, m[1]) : typeof b?.hidden === "boolean" ? await hideSpot(env, m[1], b.hidden) : null;
     if (done === null) throw new HttpError(400, "Remove, put back, or wrong?");
     if (!done) throw new HttpError(404, "That one has gone.");
@@ -345,28 +345,28 @@ async function route(request, env, ctx, url, view, hub = null) {
   }
   if (pathname === "/api/trash/empty" && method === "POST") return emptyTrash(env);
   if (pathname === "/api/push/key" && method === "GET") return json({ key: (await vapid(env)).pub });
-  if (pathname === "/api/push/subscribe" && method === "POST") return pushSubscribe(env, await request.json());
+  if (pathname === "/api/push/subscribe" && method === "POST") return pushSubscribe(env, await jsonBody(request));
   if (pathname === "/api/push/unsubscribe" && method === "POST") {
-    const { endpoint } = await request.json();
+    const { endpoint } = await jsonBody(request);
     await env.DB.prepare(`DELETE FROM push_subs WHERE endpoint = ?1`).bind(String(endpoint || "")).run();
     return json({ ok: true });
   }
   if (pathname === "/api/messages" && method === "GET") return listMessages(env, url);
-  if (pathname === "/api/messages/batch" && method === "POST") return batchUpdate(env, await request.json());
+  if (pathname === "/api/messages/batch" && method === "POST") return batchUpdate(env, await jsonBody(request));
   // (a message without its body: who, when, about what, its files; for InFlite's reader, whose bodies are Mail's frame)
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)\/meta$/)) && method === "GET") return messageMeta(env, m[1]);
   // (a draft's fields, without the old quoted text: drafts only)
   if ((m = pathname.match(/^\/api\/drafts\/([\w-]+)$/)) && method === "GET") return getDraft(env, m[1]);
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)$/))) {
     if (method === "GET") return getMessage(env, m[1]);
-    if (method === "PATCH") return updateMessage(env, m[1], await request.json());
+    if (method === "PATCH") return updateMessage(env, m[1], await jsonBody(request));
     if (method === "DELETE") return deleteMessages(env, [m[1]]);
   }
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)\/raw$/)) && method === "GET") return rawMessage(env, m[1]);
   if ((m = pathname.match(/^\/api\/attachments\/([\w-]+)$/)) && method === "GET") return attachment(env, m[1], url, request, hub);
   if (pathname === "/api/contacts" && method === "GET") return contacts(env, url);
   if (pathname === "/api/contacts/find" && method === "POST") {
-    const sp = searchParams(await request.json().catch(() => null));
+    const sp = searchParams(await jsonBody(request, 64 * 1024, null));
     if (!sp) throw new HttpError(400, "That search is too long.");
     return contacts(env, new URL(`https://mail/api/contacts?${sp}`));
   }
@@ -380,10 +380,9 @@ async function route(request, env, ctx, url, view, hub = null) {
     return json({ sent: results.map((r) => r.key) });
   }
   if (pathname === "/api/send" && method === "POST") {
-    if (Number(request.headers.get("Content-Length")) > 36 * 1024 * 1024) throw new HttpError(413, "That message is too big to send.");
-    return send(env, ctx, await request.json(), view);
+    return send(env, ctx, await jsonBody(request, 36 * 1024 * 1024), view);
   }
-  if (pathname === "/api/drafts" && method === "POST") return saveDraft(env, await request.json(), view);
+  if (pathname === "/api/drafts" && method === "POST") return saveDraft(env, await jsonBody(request, 36 * 1024 * 1024), view);
 
   throw new HttpError(404, "Not found");
 }
@@ -1259,7 +1258,8 @@ function whose(request, env, headers) {
 // (a body of max bytes at most, or null: one that says it's longer refused before any of it's read, and one that doesn't
 // say read no further than that)
 async function bodyUpTo(request, max) {
-  if (Number(request.headers.get("Content-Length")) > max) return null;
+  const length = request.headers.get("Content-Length");
+  if (length !== null && !(Number(length) >= 0 && Number(length) <= max)) return null;
   if (!request.body) return "";
   const reader = request.body.getReader(), parts = [];
   for (let n = 0; ; ) {
@@ -1272,4 +1272,18 @@ async function bodyUpTo(request, max) {
     parts.push(value);
   }
   return new TextDecoder().decode(await new Blob(parts).arrayBuffer());
+}
+
+// Small API objects by default; composing mail has its own attachment-sized cap.
+// A fallback applies only to malformed JSON, never to an oversized request.
+export async function jsonBody(request, max = 64 * 1024, fallback) {
+  const text = await bodyUpTo(request, max);
+  if (text === null) throw new HttpError(413, "That request is too large.");
+  try {
+    const value = JSON.parse(text);
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  } catch {
+    if (fallback !== undefined) return fallback;
+  }
+  throw new HttpError(400, "That request wasn’t valid JSON.");
 }

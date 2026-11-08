@@ -101,3 +101,13 @@ previews. The Web UI checks workflow runs the same checks on web pull requests a
 
 Every push to each Worker's production branch is built and deployed by Cloudflare automatically, so work happens on
 other branches until it's ready to go live. By hand: `npx wrangler deploy` at the root (Today) or in `email/` (Mail).
+
+## November 2026 audit
+
+The sitewide findings and validation scope are recorded in the companion repository's
+[2026-11-08 audit](https://github.com/georgefarrowgreen1/georgefarrowgreen/blob/main/.tools/audits/2026-11-08.md).
+Today and Mail now cap actual streamed API bytes before decoding, including uploads without Content-Length.
+Mail permits 36 MiB send/draft envelopes for its existing 25 MiB attachment allowance; other JSON objects are
+64 KiB. `npm run test:api` covers rejection and cancellation. Run `npm ci --prefix email --omit=dev` before it.
+Shared browser zoom is permitted in every app. Fitness defers route planning styles and account/geometry helpers;
+the saved-route card's styles remain in Today and deferred files remain available for offline installation.

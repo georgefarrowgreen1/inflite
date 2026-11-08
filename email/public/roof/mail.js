@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.73";
-export const NEWS = "Safer: unusual or hostile emails can no longer slow Mail down, get into your replies’ headers or into your conversations";
+export const BUILD = "1.74";
+export const NEWS = "Pinch zoom and safer message and draft uploads";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

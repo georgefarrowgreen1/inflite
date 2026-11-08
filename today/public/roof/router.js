@@ -60,7 +60,7 @@ export const REGISTRY = fz({
     idb: "fitness",
     entry: "/fitness/roof/fitness.js",
     connector: "/fitness/roof/connector.js",
-    css: fz(["/fitness/roof/fitness.css", "/fitness/roof/fxviews.css", "/fitness/routes.css"]),
+    css: fz(["/fitness/roof/fitness.css", "/fitness/roof/fxviews.css"]),
     sections: secs([["today", "Today"], ["activities", "Activities"], ["routes", "Routes"], ["progress", "Progress"]]),
     aliases: fz({ plan: "today", day: "today", offer: "today", settings: "today", act: "activities" }),
   }),

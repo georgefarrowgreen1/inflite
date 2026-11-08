@@ -8,6 +8,7 @@
 import { ask, setCookies } from "./account.js";
 import { isHubPath, hub } from "./hub.js";
 import { mailPage } from "./mailhost.js";
+import { bodyUpTo } from "./body.js";
 
 // Today's API, each route as the account has it: its path there, how long it's waited for, and whether the account's
 // Set-Cookie comes back with it (signing in, its renewal, signing out: never anywhere else)
@@ -107,8 +108,8 @@ async function bugReport(request, env) {
   if (request.method !== "POST") return refuse(405, "Today doesn’t do that.");
   const site = request.headers.get("Sec-Fetch-Site");
   if (site && site !== "same-origin") return refuse(403, SAID.notToday);
-  const body = await request.text();
-  if (body.length > 12000) return refuse(413, "That’s too much to send.");
+  const body = await bodyUpTo(request, 3 * 12000);
+  if (body === null || body.length > 12000) return refuse(413, "That’s too much to send.");
   const res = await ask(env, request, { method: "POST", path: "bugs", body, timeout: 8000 });
   if (!res) return refuse(502, "The report couldn’t be sent just now.");
   return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json; charset=utf-8", ...SAFE } });
@@ -157,9 +158,8 @@ async function api(request, env, url) {
 
   let body = null;
   if (!read) {
-    if (Number(request.headers.get("Content-Length") || 0) > MAX_BODY) return refuse(413, "That’s too much to send.");
-    body = await request.text();
-    if (new TextEncoder().encode(body).length > MAX_BODY) return refuse(413, "That’s too much to send.");
+    body = await bodyUpTo(request, MAX_BODY);
+    if (body === null) return refuse(413, "That’s too much to send.");
     if (!body) body = "{}";
   }
   const query = new URLSearchParams();
