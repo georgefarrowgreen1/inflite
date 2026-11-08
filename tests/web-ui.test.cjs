@@ -1008,7 +1008,7 @@ test('a slow hub answer restores same-origin Chats without losing the saved Chat
         };
       });
     });
-    await ctx.route('**/chats/', route => route.fulfill({contentType:'text/html',body:'<!doctype html><title>Chats navigation check</title>'}));
+    await ctx.route('**/chats/', route => route.fulfill({contentType:'text/html',body:'<!doctype html><head><title>Chats navigation check</title><script src="/fade.js"></script></head>'}));
     await page.locator('#tabs [data-tab="chats"]').click();
     await page.waitForURL('**/chats/');
     assert.equal(new URL(page.url()).origin, origin);
@@ -1039,7 +1039,7 @@ test('tapping fallback Chats rechecks the hub and opens the shared origin after 
   }});
   try {
     assert.match(await page.locator('#tabs [data-tab="chats"]').getAttribute('href'),/^https:\/\/chat\./);
-    await ctx.route('**/chats/',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>Shared Chats</title>'}));
+    await ctx.route('**/chats/',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><head><title>Shared Chats</title><script src="/fade.js"></script></head>'}));
     await page.locator('#tabs [data-tab="chats"]').click();
     await page.waitForURL(origin+'/chats/');
     assert.equal(probes,2);
@@ -1057,7 +1057,7 @@ test('a failed reconnect keeps the signed-in user in Today rather than opening a
   }});
   try {
     await page.locator('#tabs [data-tab="chats"]').click();
-    await page.getByText('Chats is reconnecting. Try again in a moment.').waitFor();
+    await page.locator('.ifm-say[role="status"]').filter({hasText:'Chats is reconnecting. Try again in a moment.'}).waitFor();
     assert.equal(page.url(),origin+'/');
     assert.equal(await page.locator('#in').isVisible(),true);
     assert.deepEqual(errors,[]);
