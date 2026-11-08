@@ -13,9 +13,9 @@ import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "1.94";
+const BUILD = "1.95";
 // (what's new in it, said once it's in)
-const NEWS = "A simpler welcome to InFlite";
+const NEWS = "A cleaner InFlite welcome screen";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1658,8 +1658,6 @@ function showOut(said = "") {
   $("#outSaid").textContent = said;
   $("#outSaid").hidden = !said;
   $("#out").classList.toggle("said", !!said);
-  const L = S.links || DEFAULT_LINKS;
-  for (const a of $$(".today-apps a[data-app]")) { const h = safe(L[a.dataset.app]); if (h) a.href = `${h}/`; }
   signinHref();
   lift();
 }
