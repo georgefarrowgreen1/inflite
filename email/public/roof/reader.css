@@ -12,7 +12,7 @@
 .m-mail .ml-reader > .ifl-empty { margin: auto; }
 
 /* the iPad's toolbar, the head */
-.m-mail .mr-bar { display: flex; gap: 8px; justify-content: flex-end; position: sticky; top: 0; z-index: 2; padding: 4px 0; }
+.m-mail .mr-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; position: sticky; top: 0; z-index: 2; padding: 8px; border-radius: var(--r-well, 16px); background: var(--solid); }
 .m-mail .mr-bar[hidden] { display: none; }
 .m-mail .mr-head { display: flex; flex-direction: column; gap: 4px; outline: none; }
 .m-mail .mr-subject { margin: 0; font: 600 22px/1.2 var(--font-d, inherit); overflow-wrap: anywhere; }
@@ -58,7 +58,8 @@
 .m-mail .mr-acts, .m-mail .mr-replies { display: flex; flex-wrap: wrap; gap: 8px; }
 .m-mail .mr-acts .ifl-btn, .m-mail .mr-replies .ifl-btn, .m-mail .mr-bar .ifl-btn { gap: 6px; }
 .m-mail .mr-qr { display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 24px; background: var(--glass); border: 1px solid var(--line); }
-.m-mail .mr-qr-text { flex: 1; min-height: 36px; max-height: 120px; padding: 8px 0; border: 0; background: none; resize: none; field-sizing: content; outline: none; }
+.m-mail .mr-qr-text { flex: 1; min-width: 0; min-height: 36px; max-height: 120px; padding: 8px 0; border: 0; background: none; resize: none; field-sizing: content; outline: none; }
+.m-mail .mr-qr:focus-within { border-color: var(--acc-ink); box-shadow: 0 0 0 1px var(--acc-ink); }
 .m-mail .mr-qr .ifl-icon-btn { flex: none; background: var(--acc-fill); color: var(--on-acc); }
 .m-mail .mr-qr .ifl-icon-btn:disabled { opacity: .45; }
 

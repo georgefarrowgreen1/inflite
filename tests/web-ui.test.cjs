@@ -76,7 +76,7 @@ for (const width of [390, 1440]) {
         const h = window.__motionSheet = sheets.open({ title: 'Motion check', body: el('button', { type: 'button', text: 'Original action' }) });
       });
       const sheet = page.locator('dialog[open]');
-      await page.waitForTimeout(500);
+      await sheet.evaluate(async d => { await Promise.allSettled(d.getAnimations().map(a => a.finished)); });
       const before = await sheet.boundingBox();
       const head = await sheet.locator('.ifs-head').boundingBox();
       const x = head.x + head.width / 2, y = head.y + 18;

@@ -166,8 +166,10 @@ dialog.ifl-sheet.dragging:not(.closing) { animation: none; transition: none; }
   @keyframes ifl-sheet-unpop { to { opacity: 0; transform: translateY(6px) scale(0.98); } }
 }
 .ifs-grab { flex: none; width: 40px; height: 5px; margin: 8px auto 2px; border-radius: 3px; background: var(--line); background: color-mix(in srgb, var(--text) 22%, transparent); touch-action: none; }
-.ifl-sheet .ifs-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 6px 0; touch-action: none; }
-.ifl-sheet .ifs-head h2 { flex: 1; min-width: 0; margin: 0; font: 700 22px/1.2 var(--font-d); letter-spacing: -0.2px; overflow-wrap: anywhere; }
+.ifl-sheet .ifs-head { position: sticky; top: 0; z-index: 2; display: flex; flex-shrink: 0; align-items: center; gap: 10px; min-height: 56px; padding: 6px 0; touch-action: none; }
+/* A quiet, opaque title strip keeps scrolling form text clear of the controls without another live blur. */
+.ifl-sheet .ifs-head::before { content: ""; position: absolute; z-index: -1; inset: -12px calc(0px - max(18px, env(safe-area-inset-right, 0px))) 0 calc(0px - max(18px, env(safe-area-inset-left, 0px))); background: var(--solid); box-shadow: 0 0.5px 0 var(--line); pointer-events: none; }
+.ifl-sheet .ifs-head h2 { flex: 1; min-width: 0; margin: 0; font: 700 22px/1.2 var(--font-d); letter-spacing: -0.2px; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .ifl-sheet .ifs-head h2:focus { outline: none; }
 .ifl-sheet .ifs-head h2.vh { flex: 1; position: static !important; width: auto; height: auto; clip: auto; clip-path: none; visibility: hidden; }
 .ifl-sheet .ifs-btn .ifl-glyph { display: grid; place-items: center; width: 18px; height: 18px; }
