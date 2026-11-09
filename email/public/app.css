@@ -1494,7 +1494,7 @@ html.embed .pane.list .subtitle {
   display: grid;
   grid-template-columns: 22px 42px 1fr;
   column-gap: 0;
-  padding: 11px 16px 11px 4px;
+  padding: 10px 16px 10px 4px;
   text-align: left;
   background: transparent;
   touch-action: pan-y pinch-zoom;
@@ -6377,3 +6377,10 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 .large-title .status-dot::before {
   inset: -25px -28px -13px -8px;
 }
+
+/* Compact read mail, with unread subjects and senders carrying the emphasis. */
+.row .from { font-weight: 500; }
+.row.unread .from { font-weight: 700; }
+.row.unread .subject { font-weight: 600; }
+.row .date { font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.row:not(.unread) .preview { -webkit-line-clamp: 1; font-size: 14px; }

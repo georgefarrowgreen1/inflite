@@ -21,7 +21,7 @@
 .m-mail .ml-wrap.swiping .ml-under { opacity: 1; }
 .m-mail .ml-wrap.go-l .ml-under { background: var(--warn, #b26a00); }
 .m-mail .ml-under span { display: inline-flex; align-items: center; gap: 6px; }
-.m-mail .ml-row { position: relative; display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: var(--ml-row-h); padding: 12px 12px 12px 18px; text-align: left; cursor: pointer;
+.m-mail .ml-row { position: relative; display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: var(--ml-row-h); padding: 10px 12px 10px 18px; text-align: left; cursor: pointer;
   background: var(--solid, var(--glass)); border-radius: var(--r-well); transform: translateX(var(--x)); transition: transform var(--dur-base) var(--ease-out); touch-action: pan-y; -webkit-user-select: none; user-select: none; }
 .m-mail .ml-wrap.swiping .ml-row { transition: none; }
 .m-mail .ml-row:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
@@ -36,7 +36,7 @@
 .m-mail .ml-row.unread .ml-from { font-weight: 700; }
 .m-mail .ml-tag { margin-right: 6px; color: var(--danger); font-weight: 600; }
 .m-mail .ml-n { font-size: 12px; color: var(--text-3); }
-.m-mail .ml-date { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.m-mail .ml-date { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; white-space: nowrap; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .m-mail .ml-date.later { color: var(--acc-ink); }
 .m-mail .ml-subj { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text); }
 .m-mail .ml-subj > span { overflow: hidden; text-overflow: ellipsis; }
@@ -65,3 +65,6 @@
 .ifl-sheet[data-app="mail"] .ml-when { width: 100%; font: inherit; color: var(--text); background: transparent; border: 0; }
 
 @media (prefers-reduced-motion: reduce) { .m-mail .ml-row { transition: none; } }
+
+.m-mail .ml-row:not(.unread) .ml-snip { -webkit-line-clamp: 1; }
+.m-mail .ml-row.unread .ml-subj { font-weight: 600; }
