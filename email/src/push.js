@@ -102,6 +102,7 @@ async function pushToSub(env, sub, note) {
   try {
     const r = await fetch(env.PUSH_URL || sub.endpoint, {
       method: "POST",
+      redirect: "manual",
       signal: AbortSignal.timeout(8000),
       headers: {
         Authorization: await vapidAuth(env, sub.endpoint),
@@ -115,9 +116,10 @@ async function pushToSub(env, sub, note) {
     });
     if (r.status === 404 || r.status === 410) return "gone";
     if (r.ok) return "sent";
-    console.error("push", r.status, await r.text().catch(() => ""));
+    r.body?.cancel().catch(() => {});
+    console.error("push", r.status);
   } catch (e) {
-    console.error("push", e?.message);
+    console.error("push", "network");
   }
   return "error";
 }

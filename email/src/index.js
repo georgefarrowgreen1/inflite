@@ -194,6 +194,12 @@ async function api(request, env, ctx, url, fromAccount = false, hub = null) {
   if (method !== "GET" && method !== "HEAD" && request.headers.get("X-Inflite") !== "1") {
     throw new HttpError(403, "Missing request header");
   }
+  // The custom header and CORS are the first boundary; check the sender too.
+  // Service-to-service routes above authenticate with their own shared key.
+  if (method !== "GET" && method !== "HEAD") {
+    const origin = request.headers.get("Origin");
+    if (origin !== url.origin && !(hub && origin === hub) && !(fromAccount && origin === env.ACCOUNT_ORIGIN)) throw new HttpError(403, "That request didn’t come from Mail.");
+  }
 
   // Same-site pages elsewhere on inflite.ai also carry the account cookie, so the API answers only this app's own pages.
   const site = request.headers.get("Sec-Fetch-Site");

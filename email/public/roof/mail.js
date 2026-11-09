@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.75";
-export const NEWS = "Page zoom is blocked consistently across all InFlite apps";
+export const BUILD = "1.76";
+export const NEWS = "Consistent menus, spacing and motion that adapt to your screen";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
