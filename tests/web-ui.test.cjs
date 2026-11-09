@@ -277,6 +277,28 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
   }
   return { ctx, page, requests, errors };
 }
+
+for (const width of [320, 390, 1440]) test(`Today presents one next action and keeps other details reachable at ${width}px`, async () => {
+  const answer = structuredClone(day), first = 'offer-one', second = 'offer-two';
+  answer.acts = [{ id: first, state: 'offered' }, { id: second, state: 'offered' }];
+  answer.tops.morning = { kind: 'plan', title: 'Your day, joined up', chip: 'A suggestion',
+    stats: [{ label: 'Weather', value: 'Dry' }],
+    lines: ['Today: dry all day.', 'Long ride has no time yet.', 'Long ride today · best 12:00–14:00.', 'London shut today.'],
+    buttons: [{ do: 'take', id: first, label: 'Ride Then' }, { do: 'take', id: second, label: 'Add Thursday’s Ride' }] };
+  const { ctx, page, errors } = await open({ width, answer });
+  try {
+    assert.equal(await page.locator('.day-top > .tc-foot .primary').count(), 1);
+    assert.match(await page.locator('.day-top > .dt-rows').innerText(), /best 12:00–14:00.*not scheduled/s);
+    assert.equal(await page.getByRole('button', { name: 'Add Thursday’s Ride', exact: true }).isVisible(), false);
+    await page.locator('.dt-history summary').click();
+    assert.equal(await page.getByRole('button', { name: 'Add Thursday’s Ride', exact: true }).isVisible(), true);
+    assert.match(await page.locator('.dt-history').innerText(), /London shut today/);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+    await save(page, `next-action-${width}`);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(await page.evaluate(() => window.__csp), []);
+  } finally { await ctx.close(); }
+});
 async function save(page, name) {
   const out = process.env.WEB_UI_SCREENSHOTS;
   // Playwright's WebKit screenshots inject a dummy stylesheet to sync animations.

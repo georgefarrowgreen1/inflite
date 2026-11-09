@@ -248,6 +248,23 @@ function lineRow(l) {
 }
 // (the digits of a figure, to tell a stat that only says the title again: "−0.2%" beside "Down 0.2%")
 const digitsOf = (x) => (String(x).match(/\d+(?:[.,]\d+)?/g) || []).join(" ");
+function planLines(lines, stats) {
+  const unique = [...new Set(lines)];
+  const omitted = new Set();
+  unique.forEach((line, at) => {
+    const m = /^(.*?) has no time yet\.$/i.exec(line);
+    if (!m) return;
+    const i = unique.findIndex(other => other.startsWith(`${m[1]} today`) && /best /i.test(other));
+    if (i < 0) return;
+    unique[i] = unique[i].replace(/\.$/, "") + " · not scheduled.";
+    omitted.add(at);
+  });
+  const folded = unique.filter((_, i) => !omitted.has(i));
+  const routine = line => /^Nothing needed moving\.$/.test(line) || / (?:opens at|is open until|shut today)\b/i.test(line)
+    || (stats.length && /^Today: dry all day\.$/i.test(line));
+  const lead = folded.filter(line => !routine(line));
+  return { main: lead.length ? lead : folded.slice(0, 1), more: lead.length ? folded.filter(routine) : folded.slice(1) };
+}
 function topHtml(t, phase, st, now) {
   const kind = KINDS.includes(t.kind) ? t.kind : "plan", lines = texts(t.lines);
   const said = digitsOf(t.title);
@@ -258,19 +275,22 @@ function topHtml(t, phase, st, now) {
   // Completed changes can be inspected without crowding out the next event. Offers that
   // need a decision stay outside the disclosure; ride guidance and warnings stay expanded.
   const history = kind === "plan" && actions.some((b) => b.do === "undo");
-  const buttons = actions.filter((b) => !history || b.do !== "undo").map((b) => buttonHtml(b, t, st, now)).filter(Boolean);
+  const available = actions.filter((b) => !history || b.do !== "undo").map((b) => buttonHtml(b, t, st, now)).filter(Boolean);
+  const buttons = kind === "plan" ? available.slice(0, 1) : available;
+  const extraButtons = kind === "plan" ? available.slice(1) : [];
   const undo = history ? actions.filter((b) => b.do === "undo").map((b) => buttonHtml(b, t, st, now)).filter(Boolean) : [];
-  const mainLines = history ? lines.slice(0, 1) : lines;
-  const moreLines = history ? lines.slice(1) : [];
+  const plan = kind === "plan" && !history ? planLines(lines, stats) : null;
+  const mainLines = history ? lines.slice(0, 1) : plan ? plan.main : lines;
+  const moreLines = history ? lines.slice(1) : plan ? plan.more : [];
   return `<article class="tcard glass day-top" data-kind="${kind}" data-phase="${esc(phase)}" aria-labelledby="dt-h">
     ${str(t.chip) ? `<span class="dt-chip">${kind === "done" ? G.check : kind === "ride" ? G.ride : ""}${esc(t.chip)}</span>` : ""}
     <h2 class="tc-h dt-h" id="dt-h" tabindex="-1">${esc(t.title)}</h2>
     ${stats.length ? `<dl class="dt-stats">${stats.map((s) => `<div${TONES.includes(s.tone) ? ` class="dt-${s.tone}"` : ""}><dt>${esc(s.label)}</dt><dd>${esc(s.value)}</dd></div>`).join("")}</dl>` : ""}
     ${mainLines.length ? `<ul class="dt-rows">${mainLines.map(lineRow).join("")}</ul>` : ""}
-    ${moreLines.length || undo.length ? `<details class="dt-history" data-phase="${esc(phase)}"${st.historyOpen ? " open" : ""}>
-      <summary tabindex="0">What changed<span class="dt-history-chevron" aria-hidden="true">${G.chev}</span></summary>
+    ${moreLines.length || undo.length || extraButtons.length ? `<details class="dt-history" data-phase="${esc(phase)}"${st.historyOpen ? " open" : ""}>
+      <summary tabindex="0">${history ? "What changed" : "More from your day"}<span class="dt-history-chevron" aria-hidden="true">${G.chev}</span></summary>
       ${moreLines.length ? `<ul class="dt-rows">${moreLines.map(lineRow).join("")}</ul>` : ""}
-      ${undo.length ? `<div class="tc-foot">${undo.join("")}</div>` : ""}
+      ${undo.length || extraButtons.length ? `<div class="tc-foot">${[...extraButtons, ...undo].join("")}</div>` : ""}
     </details>` : ""}
     ${wrote.length ? `<div class="dt-wrote">${wrote.map((w) => `<p class="dt-said" data-wid="${esc(w.id)}" data-first="${esc(w.first)}" data-since="${num(w.at) ?? 0}" hidden></p>`).join("")}</div>` : ""}
     ${buttons.length ? `<div class="tc-foot">${buttons.join("")}</div>` : ""}
