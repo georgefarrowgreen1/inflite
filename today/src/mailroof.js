@@ -13,6 +13,8 @@
 // Mail's Worker is reached by the service binding MAIL where wrangler.toml has one (the fallback, BI20), else at
 // MAIL_VIA (the tests' stand-in, RI13), else at MAIL_ORIGIN, in this zone, so Cloudflare sends it to Mail's Worker.
 import { roofOn, roofPage } from "./roof.js";
+import { bodyUpTo } from "./body.js";
+import { fetchUpstream } from "./upstream.js";
 
 const DOCS = /^\/mail\/(index\.html)?$/;
 const FILES = /^\/mail\/roof\//;
@@ -32,8 +34,9 @@ async function askMail(env, path, request, method) {
   const headers = new Headers();
   for (const k of ["Accept", "If-None-Match"]) { const v = request.headers.get(k); if (v && v.length <= 512) headers.set(k, v); }
   const init = { method, headers, redirect: "manual" };
-  if (typeof env.MAIL?.fetch === "function") return env.MAIL.fetch(new Request(mail + path, init));
-  return fetch((originOf(env.MAIL_VIA) || mail) + path, init);
+  const options = { signal: request.signal, timeout: 12000 };
+  if (typeof env.MAIL?.fetch === "function") return fetchUpstream((u, o) => env.MAIL.fetch(new Request(u, o)), mail + path, init, options);
+  return fetchUpstream(fetch, (originOf(env.MAIL_VIA) || mail) + path, init, options);
 }
 
 export async function mailRoof(request, env) {
@@ -59,7 +62,12 @@ export async function mailRoof(request, env) {
   if (version) {
     // ({ build } and nothing else, read and written again here)
     let build = null;
-    try { if (res.status === 200 && /^application\/json\b/i.test(res.headers.get("Content-Type") || "")) build = (await res.json())?.build; } catch (_) {}
+    try {
+      if (res.status === 200 && /^application\/json\b/i.test(res.headers.get("Content-Type") || "")) {
+        const text = await bodyUpTo(res, 4096, { signal: AbortSignal.any([request.signal, AbortSignal.timeout(5000)]) });
+        if (text !== null) build = JSON.parse(text)?.build;
+      }
+    } catch (_) {}
     if (!(typeof build === "string" || typeof build === "number") || !/^\d{1,4}(\.\d{1,4})?$/.test(String(build))) { res.body?.cancel?.().catch?.(() => {}); return said(502, "Mail can’t be reached just now."); }
     return new Response(method === "HEAD" ? null : JSON.stringify({ build }), { headers: { "Content-Type": "application/json; charset=utf-8", ...SAFE } });
   }

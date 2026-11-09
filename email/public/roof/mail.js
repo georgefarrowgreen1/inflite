@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.78";
-export const NEWS = "Refined touch controls, spacing, sheets, focus and motion across InFlite";
+export const BUILD = "1.79";
+export const NEWS = "More reliable app switching and recovery";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
@@ -65,7 +65,7 @@ const OFFLINE = ["Mail needs a connection", "Your mail is safe at Mail and will 
 export async function mount(root, fw) {
   const doc = root.ownerDocument, win = doc.defaultView || globalThis;
   const store = createStore();
-  let readAt = 0;
+  let readAt = 0, alive = true, onScreen = false, seen = 0;
   const api = createApi({
     base: MAIL,
     onLost: (access) => { store.set({ access }, "401"); if (access === "signin") fw.session.lost(); },
@@ -73,13 +73,24 @@ export async function mount(root, fw) {
   });
   const ctx = { store, api, logic, actions: null, fw, layout: () => store.get().layout, icon, open: {}, outbox: null, touched: () => { readAt = Date.now(); } };
   const failed = (e) => { fw.toast("That didn’t open. Try again."); throw e; };
-  const signinJs = () => fw.lazy((q) => import("./signin.js" + q)).catch(failed);
+  // A file may finish loading after Mail was left, even after a return. Only the
+  // visible episode that requested it may open its sheet or start sign-in.
+  const here = (mine) => alive && !fw.signal?.aborted && onScreen && seen === mine;
+  const opener = (load, run) => (...args) => {
+    const mine = seen;
+    if (!here(mine)) return Promise.resolve(null);
+    return load().then((m) => here(mine) ? run(m, ...args) : null, (e) => {
+      if (here(mine) && e?.name !== "AbortError") return failed(e);
+      return null;
+    });
+  };
+  const signinJs = () => fw.lazy((q) => import("./signin.js" + q));
   Object.assign(ctx.open, {
-    compose: (init) => fw.lazy((q) => import("./compose.js" + q)).catch(failed).then((m) => m.openCompose(ctx, init || {})),
+    compose: opener(() => fw.lazy((q) => import("./compose.js" + q)), (m, init) => m.openCompose(ctx, init || {})),
     later: (ids) => openLater(ctx, ids), views: () => openViews(ctx), rowMenu: (t) => openRowMenu(ctx, t), unsub: (t) => openUnsub(ctx, t),
-    settings: (page) => fw.lazy((q) => import("./mailsettings.js" + q)).catch(failed).then((m) => m.openSettings(ctx, page ?? null)),
-    viewer: (files, i) => fw.lazy((q) => import("./viewer.js" + q)).catch(failed).then((m) => m.openViewer(ctx, files, i)),
-    signin: () => signinJs().then((m) => m.signIn(ctx)),
+    settings: opener(() => fw.lazy((q) => import("./mailsettings.js" + q)), (m, page) => m.openSettings(ctx, page ?? null)),
+    viewer: opener(() => fw.lazy((q) => import("./viewer.js" + q)), (m, files, i) => m.openViewer(ctx, files, i)),
+    signin: opener(signinJs, (m) => m.signIn(ctx)),
     confirm: (spec) => confirmSheet(ctx, spec),
   });
   ctx.leave = (id, next) => {
@@ -124,7 +135,7 @@ export async function mount(root, fw) {
   const list = listView(listEl, ctx), reader = readerView(readerEl, ctx);
   const bootState = { first: true, started: null };
   const hashCode = () => { try { return new URLSearchParams(String(win.location.hash || "").slice(1)).get("signin"); } catch (_) { return null; } };
-  let onScreen = false, route = null, cold = false;
+  let route = null, cold = false;
 
   // ---- the header, from one place
   function header() {
@@ -328,7 +339,7 @@ export async function mount(root, fw) {
       // (the code read from the address as it is now, before the frame tidies it: the sign-in page puts its own hints
       // after it, &f=…, which the router's arg can't hold)
       const code = r?.key === "signin" ? r.arg || hashCode() : null;
-      if (code) signinJs().then((m) => m.finishSignIn(ctx, code)).then(() => Promise.resolve(bootState.started).catch(() => {})).then(() => start(), () => {});
+      if (code) signinJs().catch(failed).then((m) => m.finishSignIn(ctx, code)).then(() => Promise.resolve(bootState.started).catch(() => {})).then(() => start(), () => {});
       drawState();
       list.draw();
       reader.draw();
@@ -344,6 +355,7 @@ export async function mount(root, fw) {
     },
     hide() {
       onScreen = false;
+      seen++;
       stopPoll();
       // (the header back to the lens's: nothing of the thread left behind for the next show)
       fw.header.set(headOf(store.get(), { lensOnly: true }));
@@ -364,7 +376,9 @@ export async function mount(root, fw) {
     flush: () => ctx.outbox.flush(),
     sendable: () => null,
     unmount() {
+      alive = false;
       onScreen = false;
+      seen++;
       stopPoll();
       ctx.outbox.flush({ keepalive: true }).catch(() => {}).finally(() => ctx.outbox.destroy());
       unprovide();

@@ -19,6 +19,7 @@
 //   openAccount(open), signOut(), chatSettings(), canPush(), pushWhy(), openSheet(id), closeSheet(), BUILD,
 //   frame (F), connectors() → the framework's connectors.js, connector(app) → its sheet for that app, icon(app) → its icon's address,
 //   go(path) → a screen of the framework's, href(app, section) → an app's address from here (IFL.hub.href)
+//   current() → account/frame still owned, active() → this visit to You is still shown (including its route argument)
 //   forgetYou() → nothing: what You last asked forgotten (signed out, or another account)
 //   goTo(root, ctx, id, drawn) → /#you=<id>: its section scrolled to (notify, apps, quiet, rules, phone, account,
 //   signout), or its sheet (notify-weather, notify-mail), once drawn (drawYou's promise)
@@ -50,7 +51,9 @@ const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m 
 const hh = (h) => `${String(h).padStart(2, "0")}:00`;
 const browserTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London"; } catch { return "Europe/London"; } };
 const and = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
-const current = (ctx) => ctx.current?.() !== false;
+// A hidden or replaced visit may finish a request, but cannot replace the current
+// visit's handlers, focus or sheets when its result eventually arrives.
+const current = (ctx) => ctx.current?.() !== false && ctx.active?.() !== false;
 
 // what You shows, as last asked (each null until asked; false where this account side hasn't it; sub: this phone's
 // subscription, as the browser has it)
@@ -278,6 +281,7 @@ function fillFolder(sheet, root, ctx) {
   wire(body, ctx);
 }
 function openFolder(k, root, ctx) {
+  if (!current(ctx)) return;
   const sheet = document.getElementById("sh-youfolder");
   if (!sheet || !FOLDER_TITLE[k]) return;
   if (k === "versions") liveVersions(root, ctx);
@@ -319,7 +323,7 @@ function wire(root, ctx) {
     const box = e.target, on = box.checked;
     box.disabled = true;
     try { const answer = await ctx.call("/api/notify", { method: "PATCH", body: body(on) }); if (!current(ctx)) return; Y.notify = answer; }
-    catch (err) { box.checked = !on; box.disabled = false; if (err.status === 401) return; box.focus({ preventScroll: true }); ctx.toast(err.message); return; }
+    catch (err) { if (!current(ctx)) return; box.checked = !on; box.disabled = false; if (err.status === 401) return; box.focus({ preventScroll: true }); ctx.toast(err.message); return; }
     if (root.isConnected) { paint(root, ctx); root.querySelector(sel)?.focus({ preventScroll: true }); }
   });
   flip('#youApps2 [data-k="chat"]', (on) => ({ chat: Object.fromEntries(Object.keys(Y.notify?.chat?.kinds || { messages: true }).map((k) => [k, on])) }));
@@ -373,7 +377,7 @@ async function stop(b, root, ctx) {
     if (!current(ctx)) return;
     if (Y.devices?.devices) Y.devices.devices = Y.devices.devices.filter((d) => d.id !== id);
     ctx.toast("Stopped there");
-  } catch (e) { b.disabled = false; if (e.status !== 401) ctx.toast(e.message); return; }
+  } catch (e) { if (!current(ctx)) return; b.disabled = false; if (e.status !== 401) ctx.toast(e.message); return; }
   paint(root, ctx);
   const sheet = document.getElementById("sh-every");
   if (sheet?.open) fillEvery(sheet, root, ctx);
@@ -407,14 +411,14 @@ function fillEvery(sheet, root, ctx) {
       ctx.closeSheet();
       ctx.toast(r.tables?.includes("pg_push") ? "Every app’s notifications come here now" : "Today’s come here; the others aren’t ready to yet");
       paint(root, ctx);
-    } catch (e) { go.disabled = false; if (e.status !== 401) ctx.toast(e.message || "Couldn’t turn it on just now. Try again in a moment."); }
+    } catch (e) { if (!current(ctx)) return; go.disabled = false; if (e.status !== 401) ctx.toast(e.message || "Couldn’t turn it on just now. Try again in a moment."); }
   };
 }
 
 // ---------------------------------------------------------------- /#you=<id>: a section of You, or its sheet
 const SECTIONS = { notify: "youApps2", apps: "youApps", quiet: "youNotify", rules: "youRules", phone: "youNotify", account: "youAccount", versions: "youVersions" };
 export async function goTo(root, ctx, id, drawn) {
-  if (!root || !id) return;
+  if (!root || !id || !current(ctx)) return;
   if (id === "notify-weather") return openWxNotify(root, ctx);
   if (id === "notify-mail") return openMailNotifyFrom(ctx);
   // (on a computer, the part in the right-hand pane: a folder's too, rather than its sheet)
@@ -422,17 +426,18 @@ export async function goTo(root, ctx, id, drawn) {
     const to = { rules: "youRules-pane", apps: "youApps-pane", versions: "youVersions-pane", notify: "youApps2", quiet: "youNotify", phone: "youNotify" }[id];
     if (to) {
       await Promise.resolve(drawn).catch(() => {});
-      if (!root.querySelector(`#${to}`)) return;
+      if (!current(ctx) || !root.querySelector(`#${to}`)) return;
       if (to === "youVersions-pane") liveVersions(root, ctx);
       showPane(root, to);
       root.querySelector(`.you-tab[data-pane="${to}"]`)?.focus({ preventScroll: true });
       return;
     }
   }
-  if (id === "rules" || id === "apps" || id === "versions") { if (!FOLDERS[id]) await Promise.resolve(drawn).catch(() => {}); return openFolder(id, root, ctx); }
+  if (id === "rules" || id === "apps" || id === "versions") { if (!FOLDERS[id]) await Promise.resolve(drawn).catch(() => {}); if (current(ctx)) openFolder(id, root, ctx); return; }
   const at = () => (id === "signout" ? root.querySelector(".you-out") : SECTIONS[id] ? root.querySelector(`#${SECTIONS[id]}`) : null);
   // (a section drawn only once its answer's in, Quiet Hours: waited for)
   if (!at()) await Promise.resolve(drawn).catch(() => {});
+  if (!current(ctx)) return;
   const el = at();
   if (!el) return;
   el.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -443,7 +448,8 @@ export async function goTo(root, ctx, id, drawn) {
 // ---------------------------------------------------------------- Mail Notifications (#sh-mailnotify)
 // mailnotify.js's, loaded as it's first wanted; for anyone but the admin it says so itself and asks nothing (S4-D21)
 function openMailNotifyFrom(ctx) {
-  return import("/mailnotify.js").then((m) => m.openMailNotify(ctx.frame), () => ctx.toast?.("Couldn’t open Mail Notifications just now. Try again in a moment."));
+  if (!current(ctx)) return;
+  return import("/mailnotify.js").then((m) => current(ctx) && m.openMailNotify(ctx.frame), () => { if (current(ctx)) ctx.toast?.("Couldn’t open Mail Notifications just now. Try again in a moment."); });
 }
 
 // ---------------------------------------------------------------- Weather Notifications (#sh-wxnotify)
@@ -456,7 +462,7 @@ const BRIEF_TIMES = Array.from({ length: 21 }, (_, i) => clock(300 + i * 15));
 const near = (a, b) => a && b && Math.abs(a.lat - b.lat) < 0.01 && Math.abs(a.lon - b.lon) < 0.01;
 export async function openWxNotify(root, ctx) {
   const sheet = document.getElementById("sh-wxnotify");
-  if (!sheet || !ctx?.view) return;
+  if (!sheet || !ctx?.view || !current(ctx)) return;
   const body = sheet.querySelector("#wxnBody");
   if (!Y.notify) body.innerHTML = `<p class="sh-sub">Getting them…</p>`;
   else fillWx(body, root, ctx);
@@ -507,7 +513,7 @@ function wireWx(body, root, ctx) {
   const send = async (weather, el) => {
     if (el) el.disabled = true;
     try { const answer = await ctx.call("/api/notify", { method: "PATCH", body: { weather } }); if (!current(ctx)) return; Y.notify = answer; }
-    catch (e) { if (e.status !== 401) ctx.toast(e.message); }
+    catch (e) { if (!current(ctx)) return; if (e.status !== 401) ctx.toast(e.message); }
     const sheet = document.getElementById("sh-wxnotify");
     if (sheet?.open) {
       const k = el?.dataset?.wxn, i = el?.dataset?.i, id = el?.id;

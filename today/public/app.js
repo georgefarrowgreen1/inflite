@@ -11,11 +11,12 @@ import { createFrame, createRequestCoordinator, isRequestCancelled } from "/roof
 import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
+import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.06";
+const BUILD = "2.07";
 // (what's new in it, said once it's in)
-const NEWS = "Refined touch controls, spacing, sheets, focus and motion across InFlite";
+const NEWS = "More reliable app switching and recovery";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1178,8 +1179,10 @@ let sheetOpen = null, sheetId = null, waitingAnswer = null, F = null;
 
 // ---------------------------------------------------------------- the account's API, through this site's Worker
 const requests = createRequestCoordinator();
+let accountTasks = createTaskScope(requests.signal);
 function resetRequests() {
   requests.reset();
+  accountTasks = createTaskScope(requests.signal);
   sessionCheck = null;
   sessionCheckPending = false;
   waitingAnswer = null;
@@ -1731,7 +1734,18 @@ function signedOutNow(sure) {
 function signedIn(view, { offline = false } = {}) {
   if (!view?.user?.id) return signedOutNow();
   const was = S.view?.user?.id;
-  if (was !== view.user.id) { resetRequests(); S.morning = null; }
+  if (was !== view.user.id) {
+    resetRequests();
+    // A frame and every mounted store belong to one account. Replacing only
+    // Chats leaves the other modules and lazy screen state owned by the old one.
+    if (was) {
+      unframe();
+      letDayGo();
+      you?.forgetYou?.();
+      for (const id of ["#top", "#trip", "#waiting", "#coming", "#rest", "#apps", "#you", "#hd"]) $(id).replaceChildren();
+    }
+    S.morning = null; S.asked5 = false; S.boundary = 0;
+  }
   S.view = view;
   S.links = view.links || S.links || DEFAULT_LINKS;
   if (!S.hub) IFL.hub.degrade(ownLinks());
@@ -1741,7 +1755,7 @@ function signedIn(view, { offline = false } = {}) {
   forgetKept(CARDS_KEY(view.user.id));
   if (!offline) keepSession(view);
   appearance(view.user.appearance);
-  if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; if (was) { you?.forgetYou?.(); F?.releaseService("chats", { terminate: true }); } }
+  if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; }
   if (!S.morning || !("lines" in S.morning)) S.morning = view.morning || S.morning;
   $("#out").hidden = true;
   $("#sessionState").hidden = true;
@@ -1757,10 +1771,10 @@ function signedIn(view, { offline = false } = {}) {
   lift();
   // (Chat's engine, made once the day's first drawn, when the page has a moment: for Waiting for You's words. With Chats
   // in this page, its service instead: service.js and the core, not the Chats screen)
-  if (S.hub && !offline) idle(() => { if (S.view) IFL.hub.chat(); });
+  if (S.hub && !offline) accountTasks.idle(() => { if (S.view) IFL.hub.chat(); });
   preloadSoon();
 }
-const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 3000 }) : setTimeout(fn, 1200));
+const idle = (fn) => accountTasks.idle(fn);
 
 // a cards answer: drawn once the account's said who's signed in, and kept for next time
 function gotCards(answer) {
@@ -1778,7 +1792,7 @@ function gotCards(answer) {
   // (the day still being worked out on the account: asked once more, 5 seconds on; once an answer's no longer planning,
   // the next that is gets its own)
   if (!answer.planning) S.asked5 = false;
-  else if (!S.asked5) { S.asked5 = true; setTimeout(() => refresh(), 5000); }
+  else if (!S.asked5) { S.asked5 = true; accountTasks.timeout(() => refresh(), 5000); }
   // (the minute's tick put to this answer's moments: its until may come sooner)
   nextMinute();
 }
@@ -1830,6 +1844,10 @@ function frame() {
   if (!frame.swipe) frame.swipe = import("/swipe.js").then((m) => m.swipes({ get route() { return F?.route; }, nav: { section: (a, id) => F?.nav.section(a, id) } }), (e) => console.error(e));
   if (!frame.layout) frame.layout = import("/day.js").then((m) => m.arrangeToday($("#today")), () => {});
   for (const k of Object.keys(SCREENS)) F.screen(k, SCREENS[k]);
+  // createFrame's synchronous first render runs before the host receives F.
+  // Start built-in lazy screens once their owner can be captured, including a
+  // cold Apps/You deep link. Today itself was already drawn during signedIn.
+  if (F.route?.kind === "tab" && F.route.tab !== "today") SCREENS[F.route.tab]?.onShow?.(F.route);
   // (the page's own sheets' close button: the framework's cross, as every sheet it builds has; the ✕ is for no script)
   for (const b of $$(".ifl-sheet .ifs-btn[data-close]")) b.replaceChildren(F.ui.icon("x"));
   provide();
@@ -1848,28 +1866,34 @@ function unframe() {
   bell = null;
   try { f?.destroy(); } catch (e) { console.error(e); }
 }
+import { createScreenTasks } from "/roof/screens.js";
+const screenTasks = createScreenTasks(() => ({ frame: F, signal: requests.signal, owner: S.view?.user?.id }));
 let apps = null, you = null;
 function drawAppsNow() {
-  import("/apps.js").then((m) => { apps = m; if (S.view && F) m.drawApps($("#apps"), appsCtx()); }, () => {});
+  const task = screenTasks.begin("apps");
+  if (!task.active()) return;
+  import("/apps.js").then((m) => { apps = m; if (task.active()) m.drawApps($("#apps"), appsCtx(task)); }, () => {});
 }
-function drawYouNow(arg = null) {
+function drawYouNow(arg = F?.route?.arg ?? null) {
+  const task = screenTasks.begin("you", arg);
+  if (!task.active()) return;
   import("/you.js").then((m) => {
     you = m;
-    if (!S.view || !F) return;
-    const c = youCtx(), drawn = m.drawYou($("#you"), c);
+    if (!task.active()) return;
+    const c = youCtx(task), drawn = m.drawYou($("#you"), c);
     if (arg) m.goTo?.($("#you"), c, arg, drawn);
   }, () => {});
 }
 // (The framework's connectors, loaded as You needs them)
 const connectors = () => import("/roof/connectors.js");
-const appsCtx = () => ({ current: scopedAPI().current, answer: S.answer, view: S.view, href: (app, section) => IFL.hub.href(app, section), ui: F?.ui, frame: F });
-const youCtx = () => ({
-  view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, ...scopedAPI(), missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
+const appsCtx = (task) => ({ current: task.current, answer: S.answer, view: S.view, href: (app, section) => IFL.hub.href(app, section), ui: task.frame.ui, frame: task.frame });
+const youCtx = (task) => ({
+  view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, ...scopedAPI(), current: task.current, active: task.active, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
   kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
   sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, syncPush, offHere: () => offHere(), toMorning, openAccount, signOut, canPush, pushWhy,
-  chatSettings: () => (chatsHere && F ? F.nav.go("/chats/#settings") : location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`)),
-  openSheet, closeSheet, BUILD,
-  frame: F, connectors, connector: (app) => connectors().then((m) => F && m.openConnector(F, app)), go: (path) => F?.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
+  chatSettings: () => task.active() && (chatsHere ? task.frame.nav.go("/chats/#settings") : location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`)),
+  openSheet: (id) => task.active() && openSheet(id), closeSheet: () => task.active() && closeSheet(), BUILD,
+  frame: task.frame, connectors, connector: (app) => connectors().then((m) => task.active() && m.openConnector(task.frame, app)), go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
   icon: (app) => { try { return IFL.iconUrl(app) || ""; } catch { return ""; } },
 });
 
@@ -2131,7 +2155,7 @@ function minute() {
   drawKept();
   if (a?.v === 2 && Number.isFinite(a.until) && now >= a.until && S.boundary !== a.until) {
     S.boundary = a.until;
-    setTimeout(() => { if (S.answer === a) refresh(); }, 90e3);
+    accountTasks.timeout(() => { if (S.answer === a) refresh(); }, 90e3);
   }
   // (every five minutes while it's in sight, every two while a ride's near or on)
   const every = a?.v === 2 && (a.phase === "preride" || a.phase === "riding") ? 2 * MIN : 5 * MIN;
@@ -2361,20 +2385,45 @@ function drawMorning() {
   $("#lines").innerHTML = LINES.map(([k, sub]) => `<label class="row"><span class="ic app"><img src="${APP[k].icon}" alt=""></span><span class="tx"><b>${NAMES[k]}</b><small>${esc(sub(m))}</small></span><input type="checkbox" class="switch" role="switch" data-line="${k}" ${lines[k] ? "checked" : ""} ${full ? "" : "disabled"} aria-label="${NAMES[k]} in the morning notification"></label>`).join("");
   $("#namesSaid").textContent = m.names ? "On, from Chat" : "Off";
 }
-async function putMorning(patch) {
+async function putMorning(patch, scope = pushScope()) {
+  if (!scope.current()) return false;
   const body = { ...patch, tz: browserTz() };
   if (S.device) body.device = S.device;
   try {
-    const m = await call("/api/morning", { method: "PUT", body });
+    const m = await scope.call("/api/morning", { method: "PUT", body });
+    scope.check();
     if (m && typeof m === "object") S.morning = m;
     if (S.view) S.view.morning = { on: !!S.morning.on, at: S.morning.at, devices: S.morning.devices };
     drawMorning();
     return true;
   } catch (e) {
+    if (!scope.current()) return false;
     if (e.status !== 401) toast(e.message);
     drawMorning();
     return false;
   }
+}
+
+// Browser permission, subscription and hashing work can finish after an account
+// change. Keep one owner through the whole workflow, including fallback requests.
+function pushScope() {
+  const signal = requests.signal, owner = S.view?.user?.id ?? null;
+  const current = () => !signal.aborted && (S.view?.user?.id ?? null) === owner;
+  const check = () => { if (!current()) throw new DOMException("This account changed", "AbortError"); };
+  return { signal, current, check, async call(path, options = {}) {
+    check(); const result = await call(path, { ...options, signal }); check(); return result;
+  } };
+}
+function pushWait(work, scope, ms = 0) {
+  return new Promise((ok, no) => {
+    let done = false, timer;
+    const finish = (fn, value) => { if (done) return; done = true; clearTimeout(timer); scope.signal.removeEventListener("abort", abort); fn(value); };
+    const abort = () => finish(no, new DOMException("This account changed", "AbortError"));
+    scope.signal.addEventListener("abort", abort, { once: true });
+    if (!scope.current()) abort();
+    if (ms && !done) timer = setTimeout(() => finish(ok, null), ms);
+    Promise.resolve(work).then((value) => { try { scope.check(); finish(ok, value); } catch (e) { finish(no, e); } }, (e) => finish(no, e));
+  });
 }
 
 // ---------------------------------------------------------------- push on this device: the one subscription (§11.3)
@@ -2384,22 +2433,27 @@ async function putMorning(patch) {
 // on first run. An account side from before (404 or 501): POST /api/push, the morning only, as Today always did.
 const toBytes = (b64) => { const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64.length + 3) % 4)); return Uint8Array.from(s, (c) => c.charCodeAt(0)); };
 const hashOf = async (endpoint) => b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(endpoint))).slice(0, 16);
-async function swReg() {
+async function swReg(scope = pushScope()) {
+  scope.check();
   if (!("serviceWorker" in navigator)) return null;
-  return Promise.race([navigator.serviceWorker.ready, new Promise((ok) => setTimeout(() => ok(null), 8000))]);
+  return pushWait(navigator.serviceWorker.ready, scope, 8000);
 }
-async function currentSub() {
+async function currentSub(scope = pushScope()) {
+  scope.check();
   if (!canPush()) return null;
-  const reg = await navigator.serviceWorker.getRegistration("/").catch(() => null);
-  return (await reg?.pushManager?.getSubscription().catch(() => null)) || null;
+  const reg = await pushWait(navigator.serviceWorker.getRegistration("/").catch(() => null), scope);
+  return (await pushWait(reg?.pushManager?.getSubscription().catch(() => null), scope)) || null;
 }
 // this device's name for the server, from its subscription (none: no device)
-async function findDevice() {
+async function findDevice(scope = pushScope()) {
   try {
-    const sub = await Promise.race([currentSub(), new Promise((ok) => setTimeout(() => ok(null), 800))]);
+    const sub = await pushWait(currentSub(scope), scope, 800);
+    scope.check();
     if (!sub) { S.device = S.endpoint = null; return null; }
+    const device = await pushWait(hashOf(sub.endpoint), scope);
+    scope.check();
     S.endpoint = sub.endpoint;
-    S.device = await hashOf(sub.endpoint);
+    S.device = device;
     return S.device;
   } catch {
     return null;
@@ -2407,50 +2461,62 @@ async function findDevice() {
 }
 // (this device's subscription to the account: the device route, else Today's own as before: a renewed one (was) moved in
 // Today's own table, as the root worker does, else added)
-async function postDevice(sub, extra = {}) {
+async function postDevice(sub, extra = {}, scope = pushScope()) {
   try {
-    return await call("/api/device", { method: "POST", body: { sub: sub.toJSON(), tz: browserTz(), ...extra } });
+    return await scope.call("/api/device", { method: "POST", body: { sub: sub.toJSON(), tz: browserTz(), ...extra } });
   } catch (e) {
+    scope.check();
     if (!missing(e) || extra.fan) throw e;
     if (extra.was) {
-      const moved = await call("/api/push/move", { method: "POST", body: { sub: sub.toJSON(), was: extra.was } }).catch(() => null);
+      const moved = await scope.call("/api/push/move", { method: "POST", body: { sub: sub.toJSON(), was: extra.was } }).catch(() => null);
+      scope.check();
       if (moved?.moved) return moved;
     }
-    return call("/api/push", { method: "POST", body: { sub: sub.toJSON() } });
+    return scope.call("/api/push", { method: "POST", body: { sub: sub.toJSON() } });
   }
 }
 // the subscription itself, from a tap (a phone asks only from a tap): the browser asked first, then the account's key
-async function subscribe() {
+async function subscribe(scope = pushScope()) {
+  scope.check();
   if (!canPush()) { toast(pushWhy()); return null; }
-  const asked = Notification.permission === "granted" ? "granted" : await Notification.requestPermission().catch(() => "denied");
+  const asked = Notification.permission === "granted" ? "granted" : await pushWait(Notification.requestPermission().catch(() => "denied"), scope);
+  scope.check();
   if (asked !== "granted") { toast("Notifications are blocked for InFlite in this browser’s settings."); drawMorning(); return null; }
-  const reg = await swReg();
+  const reg = await swReg(scope);
   if (!reg) throw new Error("Couldn’t turn it on just now. Try again in a moment.");
-  return ownSub(reg);
+  return ownSub(reg, scope);
 }
 // (this device's subscription, or a new one with the account's key: asked nothing, so only where it's allowed already)
-async function ownSub(reg) {
-  const had = await reg.pushManager.getSubscription();
+async function ownSub(reg, scope = pushScope()) {
+  scope.check();
+  const had = await pushWait(reg.pushManager.getSubscription(), scope);
   if (had) return had;
-  const { key } = await call("/api/push/key");
-  return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toBytes(key) });
+  const { key } = await scope.call("/api/push/key");
+  scope.check();
+  return pushWait(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toBytes(key) }), scope);
 }
-async function kept(sub) {
+async function kept(sub, scope = pushScope()) {
+  scope.check();
+  const device = await pushWait(hashOf(sub.endpoint), scope);
+  scope.check();
   S.endpoint = sub.endpoint;
-  S.device = await hashOf(sub.endpoint);
+  S.device = device;
   try { localStorage.setItem("today:push", sub.endpoint); } catch {}
 }
 // Turned on, from a tap: this device's subscription handed to the account, and the morning on. → true once it's on here
 async function turnOn() {
+  const scope = pushScope();
   try {
-    const sub = await subscribe();
+    const sub = await subscribe(scope);
     if (!sub) return false;
-    await postDevice(sub);
-    await kept(sub);
+    await postDevice(sub, {}, scope);
+    await kept(sub, scope);
+    scope.check();
     offHere(false);
     pushSays({ on: true });
-    return await putMorning({ on: true });
+    return await putMorning({ on: true }, scope);
   } catch (e) {
+    if (!scope.current()) return false;
     if (e.status !== 401) toast(e.message || "Couldn’t turn it on just now. Try again in a moment.");
     drawMorning();
     return false;
@@ -2461,10 +2527,13 @@ async function turnOn() {
 // wants them on the others, and on a new one, unless this was the last (its answer's on). What's known here of it says
 // so at once (the morning's thisDevice, this browser's today:push), as the account now does, so You's switch stays off
 async function turnOff() {
-  const sub = await currentSub();
-  if (!sub) { offHere(true); return true; }
+  const scope = pushScope();
   try {
-    const r = await call("/api/device", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch((e) => { if (missing(e)) return call("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }); throw e; });
+    const sub = await currentSub(scope);
+    scope.check();
+    if (!sub) { offHere(true); return true; }
+    const r = await scope.call("/api/device", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch((e) => { scope.check(); if (missing(e)) return scope.call("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }); throw e; });
+    scope.check();
     try { localStorage.removeItem("today:push"); } catch {}
     offHere(true);
     if (typeof r?.on === "boolean") pushSays({ on: r.on });
@@ -2472,6 +2541,7 @@ async function turnOff() {
     drawMorning();
     return true;
   } catch (e) {
+    if (!scope.current()) return false;
     if (e.status !== 401) toast(e.message);
     return false;
   }
@@ -2479,13 +2549,17 @@ async function turnOff() {
 // Get Every App's Notifications Here: only ever from its own tap (You), and kept on the account from then on, for this
 // device and every other that has them. → the account's answer ({ ok, tables })
 async function fanOut() {
-  const sub = await subscribe();
-  if (!sub) return null;
-  const r = await postDevice(sub, { fan: true });
-  await kept(sub);
-  offHere(false);
-  pushSays({ on: true, every: true });
-  return r;
+  const scope = pushScope();
+  try {
+    const sub = await subscribe(scope);
+    if (!sub) return null;
+    const r = await postDevice(sub, { fan: true }, scope);
+    await kept(sub, scope);
+    scope.check();
+    offHere(false);
+    pushSays({ on: true, every: true });
+    return r;
+  } catch (e) { if (!scope.current()) return null; throw e; }
 }
 // The account's word on notifications (the view's push: { on, every }), whichever device said it; an account side from
 // before, without it: none
@@ -2507,44 +2581,58 @@ function offHere(on) {
 // every app's with it where the account says so. Quietly, never asking anything: at launch (and at once after a sign-in,
 // pushAgain), as the page comes back (every ten minutes at most), and from You. → the account's answer ({ ok, tables }),
 // or, with nothing to send, the tables it's in already; null where it can't be (or isn't wanted) here
-let pushAgain = false, pushAt = 0, pushing = null;
+let pushAgain = false, pushAt = 0, pushing = null, pushSignal = null;
 // (one at a time: You's, asked while the launch's is under way, waits for that one)
 function syncPush({ force = false } = {}) {
+  const scope = pushScope();
+  if (pushSignal !== scope.signal) { pushSignal = scope.signal; pushAt = 0; }
   if (!force && !pushAgain && Date.now() - pushAt < 10 * 60e3) return Promise.resolve(null);
-  return (pushing ||= pushHere().finally(() => { pushing = null; }));
+  if (pushing?.scope.current()) return pushing.promise;
+  const record = { scope, promise: null };
+  pushing = record;
+  return record.promise = pushHere(scope).catch((e) => { if (!scope.current()) return null; throw e; }).finally(() => { if (pushing === record) pushing = null; });
 }
-async function pushHere() {
+async function pushHere(scope = pushScope()) {
+  scope.check();
   if (S.view?.push?.on !== true || offHere() || !canPush() || Notification.permission !== "granted") return null;
   pushAt = Date.now();
   const again = pushAgain;
   pushAgain = false;
-  const reg = await swReg();
+  const reg = await swReg(scope);
+  scope.check();
   // (the worker not ready yet, on a first visit: asked again the next time, not ten minutes on)
   if (!reg) { pushAt = 0; return null; }
-  const sub = await ownSub(reg).catch(() => null);
+  const sub = await ownSub(reg, scope).catch(() => null);
+  scope.check();
   if (!sub) return null;
   // (chosen on this phone before the account kept it: today:every, this account's id, said to the account once)
   let was = false; try { was = localStorage.getItem("today:every") === S.view.user.id; } catch {}
-  const device = await hashOf(sub.endpoint), every = (everyKept() || was) && S.hub && S.view?.hubPush === true;
+  const device = await pushWait(hashOf(sub.endpoint), scope), every = (everyKept() || was) && S.hub && S.view?.hubPush === true;
+  scope.check();
   if (!again && !(was && !everyKept())) {
-    const d = S.hub ? await call(`/api/devices?device=${encodeURIComponent(device)}`).catch(() => null) : null;
+    const d = S.hub ? await scope.call(`/api/devices?device=${encodeURIComponent(device)}`).catch(() => null) : null;
+    scope.check();
     const here = Array.isArray(d?.here) ? d.here : device === S.device && typeof S.morning?.thisDevice === "boolean" ? (S.morning.thisDevice ? ["td_push"] : []) : null;
-    if (here?.includes("td_push") && (!every || here.includes("pg_push"))) { await kept(sub); return { ok: true, tables: here }; }
+    if (here?.includes("td_push") && (!every || here.includes("pg_push"))) { await kept(sub, scope); return { ok: true, tables: here }; }
   }
-  const r = await postDevice(sub, every ? { fan: true } : {}).catch(() => null);
+  const r = await postDevice(sub, every ? { fan: true } : {}, scope).catch(() => null);
   if (!r) return null;
-  await kept(sub);
+  await kept(sub, scope);
+  scope.check();
   if (every) { pushSays({ every: true }); try { localStorage.removeItem("today:every"); } catch {} }
   if (S.morning && typeof S.morning === "object") S.morning = { ...S.morning, thisDevice: true };
   return r;
 }
 // (the browser changed this device's subscription while Today was shut, and its worker couldn't say so: said now)
 async function deviceMoved() {
+  const scope = pushScope();
   let was = null;
   try { was = localStorage.getItem("today:push"); } catch {}
-  const sub = was ? await currentSub() : null;
-  if (!sub || sub.endpoint === was) return;
-  try { await postDevice(sub, { was }); await kept(sub); } catch {}
+  try {
+    const sub = was ? await currentSub(scope) : null;
+    if (!sub || sub.endpoint === was) return;
+    await postDevice(sub, { was }, scope); await kept(sub, scope);
+  } catch {}
 }
 // (the morning's settings: a sheet, opened from the menu or You)
 function toMorning() {
@@ -2854,14 +2942,14 @@ async function load({ fresh = false } = {}) {
   wireLinks();
   if (!asked) askCards();
   fromHash();
-  devP.then(deviceMoved).then(() => syncPush({ force: true })).catch(() => {});
+  devP.then(() => current() && deviceMoved()).then(() => current() && syncPush({ force: true })).catch(() => {});
   const at = IFL.here("today");
-  if (at?.y) requestAnimationFrame(() => scrollTo(0, at.y));
+  if (at?.y) requestAnimationFrame(() => { if (current()) scrollTo(0, at.y); });
 }
 
 // (where the page was: what the updater's reload, and the frame's reload for a new Weather (D21), bring back)
 const save = () => ({ y: Math.round(scrollY) });
-const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors", "requests"].map((f) => `/roof/${f}.js`);
+const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors", "requests", "tasks", "screens"].map((f) => `/roof/${f}.js`);
 // An installed copy can briefly have the previous cached HTML with this script.
 // Give that shell the same neutral state before asking anything about the account.
 function ensureSessionUI() {

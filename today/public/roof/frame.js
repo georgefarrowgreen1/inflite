@@ -1,75 +1,4 @@
-// InFlite's frame (One roof, spec §3.2, §3.4, §3.7, §3.15, D2–D3, D6, D14, D19–D22): the one page every screen of the
-// framework lives in. Statically imported by Today's app.js, which makes it once it knows you're signed in.
-//
-// createFrame(opts) → F. opts (from app.js):
-//   { root: #in, header: #hd, views: #views, tabs: #tabs, retired: Promise (stage 3: old workers let go of, awaited
-//     before a service starts), serviceState: (app, state) => void (stage 3: each state patch of a service),
-//     session: () => ({ view, hub, roof, apps, links }),   // hub, roof: booleans (D14: roof = j.roof === true); apps:
-//                                                     // { [app]: boolean } (/api/hub's, s24 §2; none = { weather: roof })
-//     lost: signedOutNow, checkSession: () => Promise<boolean signedIn>, hubAgain: () => Promise<void> (D14 re-ask),
-//     save: () => ({ y, … }) (D21's reload writes ifl-here:today from it), onMe: (button) => openMenu (D24),
-//     changed: () => void (a module said its data changed: fw.changed(), Today's cards asked again on their next show),
-//     me: () => Node (your photo), today: ScreenSpec, apps: ScreenSpec, you: ScreenSpec }
-//   ScreenSpec = { el, title(), crumb(), line(), acts: [{ icon, label, run }] (or a function giving them),
-//                  onShow(route), onHide() }
-//
-// F (§3.2):
-//   F.screen(id, spec)                     a built-in screen "today" | "apps" | "you" (again: replaced, header redrawn)
-//   F.nav.go(path, { replace, zoomFrom, from, kind })   in-page if router.owns(path) (not while F.stale into an app:
-//                                          then location.assign, D21), else IFL.hub.go(path) (the crumb) + location.assign
-//   F.nav.back()                           the Back rule, §3.4
-//   F.nav.section(app, id, { arg })        replaceState to router.format({ app, section: id, arg }); header follows
-//   F.nav.prev() → Route | null            the route of the entry before this one, as this page pushed it (§3.6)
-//   F.route                                the current Route
-//   F.header, F.tabs, F.sheet, F.toast, F.search, F.send, F.ui
-//   F.session                              { view, hub, roof, apps, links, lost() → Promise<boolean> } (D3); apps: each
-//                                          app's flag ANDed with hub ({} with the hub off)
-//   F.setRoof(roof, apps)                  D14 per app, from app.js when /api/hub answers differently (s24 §2, §7)
-//   F.flush() → Promise<{ lost }>          every mounted module's instance.flush(), 2 s each at most (s24 §4)
-//   F.restamp()                            re-writes a missing history.state.ifl (RI1)
-//   F.stale                                boolean, D21 (set by modules.js watchVersion)
-//   F.fill(on)                             D20 (html.ifl-fill)
-//   F.on(evt, fn) → off                    "route", "visible", "hidden", "theme", "signedout"
-//   F.busy() → boolean                     a sheet open, or the shown module's busy()
-//   F.refresh()                            the shown tab screen's header asked for again (its title, crumb, line, acts)
-//   F.hubAgain() → Promise                 opts.hubAgain (modules.js asks before loading a module)
-//   F.forModule(app) → fw                  §5.2, below
-//   F.service(app) → Promise<Facade>       stage 3 (S3-C3; B0's stub, HOST's to fill): the app's service (REGISTRY[app]
-//                                          .service), one per app in this page, made by modules.js loadService after
-//                                          opts.retired; its facade (Chats: IFLChat's seven keys). Refused while off
-//   F.releaseService(app, { terminate })   let go of it (terminate: the Worker ended; the next F.service makes a new one)
-//   F.destroy()                            sign-out: unmount modules, close sheets, hide the frame, let go of listeners
-//
-// fw = F.forModule(app) (§5.2), what a module gets in mount(root, fw):
-//   fw.contract = 1; fw.app; fw.screenEl (main#m-<app>)
-//   fw.ui                                  ui.js's builders
-//   fw.header.set({ title, compactTitle, pick, line, acts, badges })   merged into what it set before; shown only while
-//     its screen shows (the frame fills back, crumb, sections and the section). pick: { label, run } | null;
-//     acts: [{ icon, label, run }] (data-act = icon); badges: { [sectionId]: n }
-//     sections: false hides the switcher; back: { label } says where Back goes (the action is always F.nav.back)
-//   fw.nav.go(path, { replace, kind }), fw.nav.back(), fw.nav.section(id, { arg }), fw.nav.href(key, arg) →
-//     router.format({ app, key, arg }), fw.nav.depth() → number (0: a cold screen); kind: "push" | "tab" | "zoom" |
-//     "section" (anything else, "pop" too, is ignored: a Back is only ever the frame's own)
-//   fw.sheet.open(spec) → Handle           sheet.js, accent = the app
-//   fw.toast(text, opts)
-//   fw.send({ words, packed, what }), fw.sendButton({ words, packed, what }) → Element
-//   fw.search.provide(provider) → off      replaces this app's own connector provider while mounted (s24 §6)
-//   fw.changed()                           this app's data changed (Today's cards asked again)
-//   fw.session = { user: { id, name }, lost() → Promise<boolean>, hubAgain() → Promise }   lost: true signed out
-//     (confirmed), false still in; hubAgain: the module's API refused it, /api/hub asked again (s24 §2)
-//   fw.visible() → boolean; fw.on("visible" | "hidden" | "theme", fn) → off (let go of at unmount)
-//   fw.theme() → "light" | "dark"; fw.motion() → "full" | "reduced"
-//   fw.zoomTarget(el)                      the module's hero is in: the frame drops the card's clone
-//   fw.fill(on)                            D20
-//   fw.service() → Promise<Service>        stage 3: this app's full service (Chats only; never the facade's host)
-//   fw.tabs.away(on), fw.tabs.badge(n)     stage 3 (S3-C4): the tab bar out of the way; this app's tab's count
-//   fw.on("push", fn)                      stage 3 (S3-C5): the root worker's { inflight: "sync", tag } as { app, tag }
-//   fw.lazy((q) => import("./x.js" + q)) → Promise; fw.stale() → boolean   every dynamic import in a module goes here;
-//     q is "" until an import of this app's failed, then "?retry=<n>"; /<app>/version asked beside it (≤ once a minute),
-//     and at once on a failure: a new build reloads at the route once nothing is unsaved (s24 §7)
-//
-// History state the frame writes: { ifl: { d: depth, k: key, b: the entry before's name or null } }, kept with whatever
-// else the entry holds. Scroll is kept per entry and per app section in memory; sessionStorage["ifl-roof-y"] = { p: formatted route, y } on pagehide.
+// InFlite framework: frame and module api. Full public contract: docs/framework-contract.md.
 import { REGISTRY, parse, format, owns, ownPath } from "./router.js";
 import { createHeader } from "./header.js";
 import { createTabs } from "./tabs.js";
@@ -90,10 +19,11 @@ const ss = (k, v) => T(() => sessionStorage.setItem(k, v));
 const val = (x) => (typeof x === "function" ? x() : x);
 // (the kinds a module may ask fw.nav.go for; "pop" is the frame's own Back)
 const KINDS = ["push", "tab", "zoom", "section"];
+const released = () => new DOMException("This screen was let go of", "AbortError");
 
 export function createFrame(opts = {}) {
   const H = history, L = location, doc = document, html = doc.documentElement;
-  const offs = [], subs = {}, screens = {}, mods = {};
+  const offs = [], subs = {}, screens = {}, mods = {}, lifetime = new AbortController();
   const on = (t, ev, fn, o) => { if (!t) return; t.addEventListener(ev, fn, o); offs.push(() => t.removeEventListener(ev, fn, o)); };
   const emit = (ev, x) => { for (const f of [...(subs[ev] || [])]) try { f(x); } catch (e) { console.error(e); } };
   const sess0 = () => ({ view: null, hub: false, roof: false, links: {}, ...(opts.session?.() || {}) });
@@ -103,18 +33,33 @@ export function createFrame(opts = {}) {
   const isOn = (app) => !!sess().apps[app];
   // (stage 3, S3-C3: each app's service, one promise per app; B0's stub, HOST's to fill)
   const svcs = {};
+  const releaseValue = (record) => {
+    if (!record.value || record.released) return;
+    record.released = true;
+    for (const off of record.offs.splice(0)) T(() => off?.());
+    T(() => record.value.release?.({ terminate: true }))?.catch?.((e) => console.error(e));
+  };
   // (one let go of before it's made is never made; its state heard only while it's still this app's one)
   const svc = (app) => {
-    if (svcs[app]) return svcs[app];
+    if (svcs[app]) return svcs[app].promise;
     if (gone || !isOn(app) || !REGISTRY[app]?.service) return Promise.reject(new Error(`${app}: no service here`));
-    const p = svcs[app] = Promise.resolve(opts.retired).catch(() => {}).then(() => (svcs[app] === p ? import("./modules.js") : Promise.reject(new Error("let go of")))).then((M) => M.loadService(app, F))
+    const record = svcs[app] = { controller: new AbortController(), value: null, released: false, offs: [] };
+    const live = () => !gone && svcs[app] === record && !record.controller.signal.aborted && isOn(app);
+    record.promise = Promise.resolve(opts.retired).catch(() => {}).then(async () => {
+      if (!live()) throw released();
+      const M = await import("./modules.js");
+      if (!live()) throw released();
+      return M.loadService(app, F, { signal: record.controller.signal });
+    })
       .then((s) => {
-        const st = (d) => { if (svcs[app] !== p) return; T(() => opts.serviceState?.(app, d?.state)); found(app, s, /^(ready|offline)$/.test(d?.state)); };
+        record.value = s;
+        if (!live()) { releaseValue(record); throw released(); }
+        const st = (d) => { if (!live()) return; T(() => opts.serviceState?.(app, d?.state)); found(app, s, /^(ready|offline)$/.test(d?.state)); };
         // (its tab's count from the service's unread, on every screen, the module mounted or not: §2.5)
-        const tab = REGISTRY[app].tab, un = (x) => { if (tab && x?.topic === "unread" && svcs[app] === p) F.tabs.badge(tab, x.data); };
-        s.on?.("state", st); s.on?.("*", un); st(s); return s;
-      }, (e) => { if (svcs[app] === p) delete svcs[app]; throw e; });
-    return p;
+        const tab = REGISTRY[app].tab, un = (x) => { if (tab && x?.topic === "unread" && live()) F.tabs.badge(tab, x.data); };
+        record.offs.push(s.on?.("state", st), s.on?.("*", un)); st(s); return s;
+      }).catch((e) => { if (svcs[app] === record) delete svcs[app]; releaseValue(record); throw e; });
+    return record.promise;
   };
   // (the frame's own search over a service (Chats' People and Messages, §2.4): while it's unlocked and signed in; gone as
   // it's locked, signed out or let go of)
@@ -144,11 +89,12 @@ export function createFrame(opts = {}) {
 
   // ---- the session, and lost() (D3): asks once, shared for 30 s; signs out only on a confirmed "signed out"
   let lostP = null, lostAt = 0;
-  const lost = () => lostP && Date.now() - lostAt < 30e3 ? lostP
-    : (lostAt = Date.now(), lostP = Promise.resolve().then(() => opts.checkSession?.()).catch(() => true).then((inn) => inn === false && (T(() => opts.lost?.()), true)));
+  const lost = () => gone ? Promise.resolve(false) : lostP && Date.now() - lostAt < 30e3 ? lostP
+    : (lostAt = Date.now(), lostP = Promise.resolve().then(() => !gone && opts.checkSession?.()).catch(() => true).then((inn) => !gone && inn === false && (T(() => opts.lost?.()), true)));
 
   // D21: the page reloaded at its route, where you were kept the way the shared updater keeps it
   const reloadStale = () => {
+    if (gone) return;
     ss("ifl-here:today", JSON.stringify({ at: T(() => opts.save?.()) ?? null, t: Date.now() }));
     L.reload();
   };
@@ -171,25 +117,27 @@ export function createFrame(opts = {}) {
   const letGo = (a) => {
     const m = mods[a], f = T(() => m?.instance?.flush?.());
     if (!f?.then) return unmount(a);
-    f.then(null, () => {}).then(() => { if (mods[a] === m && shown?.id !== "m:" + a) unmount(a); });
+    f.then(null, () => {}).then(() => { if (!gone && !isOn(a) && mods[a] === m && shown?.id !== "m:" + a) unmount(a); });
   };
 
   const F = {
     route: null,
+    signal: lifetime.signal,
     ui, toast,
-    get session() { return { ...sess(), lost }; },
+    get session() { return gone ? { view: null, hub: false, roof: false, apps: {}, links: {}, lost } : { ...sess(), lost }; },
     flush() {
       return Promise.all(Object.values(mods).map((m) => Promise.race([Promise.resolve().then(() => m.instance?.flush?.()).catch(() => null), new Promise((ok) => setTimeout(ok, 2000))])))
         .then((a) => ({ lost: a.reduce((n, x) => n + (Number(x?.lost) || 0), 0) }));
     },
     get stale() { return stale; },
-    set stale(v) { stale = !!v; },
-    on(ev, fn) { (subs[ev] ||= []).push(fn); return () => { subs[ev] = (subs[ev] || []).filter((f) => f !== fn); }; },
-    hubAgain: () => Promise.resolve(opts.hubAgain?.()).catch(() => {}),
+    set stale(v) { if (!gone) stale = !!v; },
+    on(ev, fn) { if (gone) return () => {}; (subs[ev] ||= []).push(fn); return () => { subs[ev] = (subs[ev] || []).filter((f) => f !== fn); }; },
+    hubAgain: () => gone ? Promise.resolve() : Promise.resolve(opts.hubAgain?.()).catch(() => {}),
     busy: () => !!F.sheet.top() || !!(shownMod()?.instance?.busy?.()),
-    restamp() { if (!H.state?.ifl) stamp(); },
-    fill(v) { html.classList.toggle("ifl-fill", !!v); F.header.compact?.(); },
+    restamp() { if (!gone && !H.state?.ifl) stamp(); },
+    fill(v) { if (!gone) { html.classList.toggle("ifl-fill", !!v); F.header.compact?.(); } },
     screen(id, spec = {}) {
+      if (gone) return;
       const was = screens[id];
       const el = spec.el || doc.getElementById(id);
       if (el) { el.classList.add("ifl-screen"); el.dataset.app = "inflite"; }
@@ -199,11 +147,12 @@ export function createFrame(opts = {}) {
         else F.header.set(tabHead(spec, F.route));
       } else if (el && shown) { el.hidden = true; el.inert = true; }
     },
-    refresh() { const s = shown && screens[shown.id]; if (s) F.header.set(tabHead(s.spec, F.route)); },
+    refresh() { const s = !gone && shown && screens[shown.id]; if (s) F.header.set(tabHead(s.spec, F.route)); },
     // (v is Weather's flag (stage 1's argument, alone from a host before stages 2–4), apps the new map, each ANDed with
     // hub; the host changes what session() says too. Apps turned off are let go of, the shown one with D14's bounce once
     // nothing is unsaved (s24 §7); apps turned on get their search provider)
     setRoof(v, apps) {
+      if (gone) return;
       const s = sess(), now = apps && typeof apps === "object" ? appsOf({ ...s, apps }) : v === undefined ? s.apps : { ...lastApps, weather: !!(s.hub && v) }, was = lastApps;
       lastApps = now;
       const off = Object.keys(REGISTRY).filter((a) => was[a] && !now[a]);
@@ -214,8 +163,9 @@ export function createFrame(opts = {}) {
       if (!off.includes(a)) return;
       // (nothing unsaved: at once, as stage 1 did; else what's unsaved saved first, and the bounce once it's done; left
       // for another screen meanwhile: let go of, no marker, no reload)
-      const here = () => shown?.id === "m:" + a, busy = () => here() && F.busy();
+      const m = mods[a], here = () => !gone && mods[a] === m && shown?.id === "m:" + a, busy = () => here() && F.busy();
       const go = () => {
+        if (gone || isOn(a)) return;
         if (!here()) return letGo(a);
         T(() => mods[a]?.instance?.flush?.());
         unmount(a); ss("ifl-roof-bounce", "1"); put(L.pathname + L.hash); L.reload();
@@ -223,11 +173,20 @@ export function createFrame(opts = {}) {
       if (!busy()) return go();
       F.flush().then(() => safely(go, 10e3, busy));
     },
-    forModule: (app) => modOf(app).fw,
+    forModule: (app) => { if (gone) throw released(); return modOf(app).fw; },
     service: (app) => svc(app).then((s) => s.facade),
-    releaseService(app, o) { const p = svcs[app]; if (o?.terminate) { delete svcs[app]; found(app); if (p && REGISTRY[app]?.tab) F.tabs.badge(REGISTRY[app].tab, 0); } return p?.then((s) => s.release?.(o), () => {}); },
+    releaseService(app, o) {
+      const record = svcs[app];
+      if (!record) return;
+      if (!o?.terminate) return record.promise.then((s) => s.release?.(o), () => {});
+      delete svcs[app]; record.controller.abort();
+      found(app); releaseValue(record);
+      if (!gone && REGISTRY[app]?.tab) F.tabs.badge(REGISTRY[app].tab, 0);
+      return record.promise.then(() => {}, () => {});
+    },
     destroy() {
       if (gone) return;
+      gone = true; lifetime.abort();
       cancelMotion();
       for (const a of Object.keys(svcs)) F.releaseService(a, { terminate: true });
       unlater();
@@ -236,12 +195,12 @@ export function createFrame(opts = {}) {
       for (const f of Object.values(provs)) f();
       for (const f of offs.splice(0)) f();
       F.header.destroy?.(); F.tabs.destroy?.();
-      gone = true;
       html.classList.remove("ifl-fill");
       html.dataset.app = "inflite";
       delete html.dataset.route; delete html.dataset.vt;
       if (opts.root) opts.root.hidden = true;
       emit("signedout");
+      for (const ev of Object.keys(subs)) delete subs[ev];
     },
   };
 
@@ -268,6 +227,7 @@ export function createFrame(opts = {}) {
       render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom && r.app === "weather" ? hintOf(o.zoomFrom, u) : null, y: o.replace && shown?.id === idOf(r) ? scrollY : 0 });
     },
     back() {
+      if (gone) return;
       const top = F.sheet.top();
       if (top) return top.close();
       if (shownMod()?.instance?.back?.()) return;
@@ -276,6 +236,7 @@ export function createFrame(opts = {}) {
       if (!t || !tabRoot(F.route)) F.nav.go(t ? REGISTRY[F.route.app].path : "/#apps", { replace: true, kind: "pop" });
     },
     section(app, id, { arg = null } = {}) {
+      if (gone) return;
       const m = mods[app], r0 = F.route, ids = REGISTRY[app]?.sections.map((s) => s[0]);
       if (!m || shown?.id !== "m:" + app || !ids.includes(id)) return;
       if (r0.section === id && !arg && r0.key === id) return;
@@ -295,7 +256,7 @@ export function createFrame(opts = {}) {
       F.header.set(appHead(r));
       m.root.setAttribute("aria-labelledby", `ifl-sec-${id}`);
       scrollTo(0, y);
-      const sh = () => F.route === r && m.instance?.show(r, null);
+      const sh = () => liveModule(m) && F.route === r && m.instance?.show(r, null);
       Promise.resolve(m.instance ? sh() : m.loading?.then(sh)).then(() => { if (F.route === r && y) scrollTo(0, y); }, (e) => console.error(e));
       emit("route", r);
     },
@@ -386,13 +347,19 @@ export function createFrame(opts = {}) {
     if (o.zoomFrom) clone(m, o.zoomFrom);
     if (!m.instance && !m.loading) {
       if (!m.root.firstChild) m.root.append(ui.skeleton("hero"), ui.skeleton("card", 3));
-      m.loading = import("./modules.js").then((M) => M.loadModule(r.app, F)).then(({ instance, m: M }) => { m.instance = instance; m.build = M?.BUILD; }, (e) => { console.error(e); }).finally(() => { m.loading = null; });
+      m.loading = import("./modules.js").then((M) => {
+        if (!liveModule(m)) throw released();
+        return M.loadModule(r.app, F);
+      }).then(({ instance, m: M }) => {
+        if (!liveModule(m)) { T(() => instance.unmount?.()); return; }
+        m.instance = instance; m.build = M?.BUILD;
+      }, (e) => { if (liveModule(m) && e?.name !== "AbortError") console.error(e); }).finally(() => { m.loading = null; });
     }
     Promise.resolve(m.loading).then(() => {
-      if (F.route !== r || !m.instance) return dropClone(m);
+      if (!liveModule(m) || F.route !== r || !m.instance) return dropClone(m);
       return Promise.resolve(m.instance.show(r, o.hint || null)).then(() => {
         dropClone(m);
-        if (F.route !== r) return;
+        if (!liveModule(m) || F.route !== r) return;
         const y = o.y || o.popY;
         if (y && Math.abs(scrollY - y) > 2) scrollTo(0, y);
         tidy(r);
@@ -466,6 +433,7 @@ export function createFrame(opts = {}) {
   }
 
   // ---- modules' screens, and what each module gets
+  const liveModule = (m) => !gone && mods[m.app] === m && !m.controller.signal.aborted;
   function modOf(app) {
     if (mods[app]) return mods[app];
     const el = ui.el("main", { id: `m-${app}`, class: "view ifl-screen", data: { app }, hidden: true });
@@ -473,7 +441,7 @@ export function createFrame(opts = {}) {
     const root = ui.el("div", { class: `m-${app}`, role: "tabpanel" });
     el.append(root);
     opts.views?.append(el);
-    const m = (mods[app] = { app, el, root, instance: null, loading: null, header: {}, offs: [], provs: [], slot: null });
+    const m = (mods[app] = { app, el, root, controller: new AbortController(), instance: null, loading: null, header: {}, offs: [], provs: [], slot: null });
     m.fw = makeFw(m);
     return m;
   }
@@ -481,28 +449,31 @@ export function createFrame(opts = {}) {
     if (svcs[app]) F.releaseService(app, { terminate: true });
     const m = mods[app];
     if (!m) return;
+    delete mods[app];
+    m.controller.abort();
     try { m.instance?.unmount?.(); } catch (e) { console.error(e); }
     for (const f of m.offs.splice(0)) f();
     for (const f of m.provs.splice(0)) f();
     m.el.remove();
-    delete mods[app];
     providers();
   }
   function makeFw(m) {
-    const app = m.app, mine = () => shown?.id === "m:" + app;
+    const app = m.app, live = () => liveModule(m), mine = () => live() && shown?.id === "m:" + app;
+    const closedSheet = () => ({ el: ui.el("dialog"), body: ui.el("div"), closed: true, close() {}, now() {}, push: () => ui.el("div"), pop() {}, setBusy() {} });
     return {
-      contract: CONTRACT, app, screenEl: m.el, ui,
-      header: { set(spec = {}) { m.header = { ...m.header, ...spec }; if (mine()) F.header.set(appHead(F.route)); } },
+      contract: CONTRACT, app, screenEl: m.el, signal: m.controller.signal, ui,
+      header: { set(spec = {}) { if (!live()) return; m.header = { ...m.header, ...spec }; if (mine()) F.header.set(appHead(F.route)); } },
       nav: {
-        go: (path, o) => F.nav.go(path, { from: app, replace: !!o?.replace, kind: KINDS.includes(o?.kind) ? o.kind : null }), back: () => F.nav.back(),
-        section: (id, o) => F.nav.section(app, id, o), href: (k, arg = null) => format({ app, key: k, arg }), depth: () => curDepth(),
+        go: (path, o) => live() && F.nav.go(path, { from: app, replace: !!o?.replace, kind: KINDS.includes(o?.kind) ? o.kind : null }), back: () => live() && F.nav.back(),
+        section: (id, o) => live() && F.nav.section(app, id, o), href: (k, arg = null) => format({ app, key: k, arg }), depth: () => curDepth(),
       },
-      sheet: { open: (spec) => F.sheet.open({ app, ...spec }) },
-      toast: (text, o) => toast(text, { ...o, app }),
-      send: (spec) => F.send.send(spec),
-      sendButton: (spec) => F.send.button(spec),
+      sheet: { open: (spec) => live() ? F.sheet.open({ app, ...spec }) : closedSheet() },
+      toast: (text, o) => { if (live()) return toast(text, { ...o, app }); },
+      send: (spec) => live() ? F.send.send(spec) : Promise.resolve(false),
+      sendButton: (spec) => ui.btn("Send", { icon: "send", act: "send", label: `Send ${spec.what || "this"} to a friend`, run: () => live() && F.send.send(typeof spec === "function" ? spec() : spec) }),
       search: {
         provide(p) {
+          if (!live()) return () => {};
           provs[app]?.(); delete provs[app];
           const off = F.search.provide(p);
           const drop = () => { off(); m.provs = m.provs.filter((f) => f !== drop); providers(); };
@@ -510,32 +481,40 @@ export function createFrame(opts = {}) {
           return drop;
         },
       },
-      changed: () => { T(() => opts.changed?.(app)); },
-      session: { get user() { const u = sess().view?.user || {}; return { id: u.id ?? null, name: u.name ?? null }; }, lost, hubAgain: () => F.hubAgain() },
-      visible: () => doc.visibilityState === "visible",
-      on(ev, fn) { const off = F.on(ev === "push" ? "push:" + app : ev, fn); m.offs.push(off); return off; },
+      changed: () => { if (live()) T(() => opts.changed?.(app)); },
+      session: { get user() { const u = live() ? sess().view?.user || {} : {}; return { id: u.id ?? null, name: u.name ?? null }; }, lost: () => live() ? lost() : Promise.resolve(false), hubAgain: () => live() ? F.hubAgain() : Promise.resolve() },
+      visible: () => live() && doc.visibilityState === "visible",
+      on(ev, fn) {
+        if (!live()) return () => {};
+        const off = F.on(ev === "push" ? "push:" + app : ev, (x) => { if (live()) fn(x); });
+        const drop = () => { off(); m.offs = m.offs.filter((f) => f !== drop); };
+        m.offs.push(drop); return drop;
+      },
       theme: () => themeNow(),
       motion: () => (reduced() ? "reduced" : "full"),
       zoomTarget: () => dropClone(m),
       fill(v) { if (mine()) F.fill(v); },
       lazy(fn) {
+        if (!live()) return Promise.reject(released());
         if (stale && !F.busy()) { reloadStale(); return new Promise(() => {}); }
         if (Date.now() - (lazyAt[app] || 0) > 60e3) { lazyAt[app] = Date.now(); version(m); }
         let p;
         try { p = Promise.resolve(fn(fails[app] ? `?retry=${fails[app]}` : "")); } catch (e) { p = Promise.reject(e); }
-        return p.catch((e) => { fails[app] = (fails[app] || 0) + 1; version(m, true); throw e; });
+        return p.then((x) => { if (!live()) throw released(); return x; }, (e) => { if (!live()) throw released(); fails[app] = (fails[app] || 0) + 1; version(m, true); throw e; });
       },
       stale: () => stale,
-      service: () => svc(app),
-      tabs: { away: (v) => F.tabs.away(!!v && mine()), badge: (n) => F.tabs.badge(REGISTRY[app].tab, n) },
+      service: () => live() ? svc(app).then((s) => { if (!live()) throw released(); return s; }) : Promise.reject(released()),
+      tabs: { away: (v) => { if (live()) F.tabs.away(!!v && mine()); }, badge: (n) => { if (live()) F.tabs.badge(REGISTRY[app].tab, n); } },
     };
   }
   const themeNow = () => /^(light|dark)$/.test(html.dataset.theme) ? html.dataset.theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   // /<app>/version, asked for fw.lazy (C7): a build other than the mounted one's makes the page stale; on a failed import,
   // that reload at the route once nothing is unsaved
   function version(m, failed) {
+    if (!liveModule(m)) return;
     const b = m.build;
-    fetch(`${REGISTRY[m.app].path}version`, { cache: "no-store", credentials: "same-origin" }).then((r) => (r.ok ? r.json() : null)).then((j) => {
+    fetch(`${REGISTRY[m.app].path}version`, { cache: "no-store", credentials: "same-origin", signal: m.controller.signal }).then((r) => (r.ok ? r.json() : null)).then((j) => {
+      if (!liveModule(m)) return;
       if (!j?.build || b == null || String(j.build) === String(b)) return;
       stale = true;
       if (failed) safely(reloadStale, 1 / 0);
@@ -649,7 +628,8 @@ export function createFrame(opts = {}) {
   const kept = T(() => JSON.parse(sessionStorage.getItem("ifl-roof-y")), null), y0 = kept?.y;
   T(() => sessionStorage.removeItem("ifl-roof-y"));
   let n = 0;
-  const tryY = () => { scrollTo(0, y0); ys.set(key, y0); if (!gone && Math.abs(scrollY - y0) > 2 && ++n < 90) requestAnimationFrame(tryY); };
+  const keptKey = key;
+  const tryY = () => { if (gone || F.route !== r0 || key !== keptKey) return; scrollTo(0, y0); ys.set(key, y0); if (Math.abs(scrollY - y0) > 2 && ++n < 90) requestAnimationFrame(tryY); };
   if (kept?.p === format(F.route) && y0 > 0) requestAnimationFrame(tryY);
   (globalThis.requestIdleCallback || ((f) => setTimeout(f, 1200)))(() => providers());
   return F;

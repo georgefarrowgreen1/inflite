@@ -1,34 +1,48 @@
-// Loading the apps that are modules (One roof, spec §3.12, D2, D14, D15, D21). Loaded lazily by the frame (the first
-// app opened, or the idle preload).
-// loadModule(app, F) → Promise<{ m, instance }>: asks /api/hub again through app.js first (F.hubAgain, D14) and refuses
-//   unless F.session.apps[app] (each app's flag, ANDed with hub; s24 §2); import(REGISTRY[app].entry) within 12 s; m.CONTRACT === 1; each of
-//   REGISTRY[app].css linked and awaited (5 s at most; at once if already in); instance = await
-//   m.mount(root, F.forModule(app)); IFL.built(R.id || app, m.BUILD, m.NEWS) once it's in (Chats: "chat", its data id); then watchVersion and keepOffline. On a failure the screen shows ui.error: Try Again
-//   (data-act=retry: the entry asked for again, ?retry=<n>) and Open <App> on Its Own (data-act=own: the app's own
-//   address, links[R.link || app], same path, query and hash); after a second failure, Reload (data-act=reload), which is the real recovery
-//   (a failed dependency stays failed in the document's module map).
-// loadConnector(app) → Promise<Connector>: import(REGISTRY[app].connector) → its `connector` export.
-// preload(app): loadConnector(app), then a <link rel=modulepreload> per connector.preload entry (else connector.files)
-//   ending .js (stage 3, S3-C1: Chats preloads only its entry and connector, as its graph's asked for under stamped URLs).
-// watchVersion(app, build, F): asks /<app>/version as the page becomes visible (at most every 10 minutes); a build
-//   other than this one sets F.stale (D21).
-// loadService(app, F) → Promise<Service> (stage 3, S3-C3): import(REGISTRY[app].service), then its startService({ path,
-//   ui: F.forModule(app), onStale }) (onStale: F.stale = true). Only the frame calls it, once per app (F.service).
-// keepOffline(app, build, files): { ifl: "keep", app, build, files } (absolute same-origin paths) to the root worker
-//   (scope /, by its registration, whatever controls the page),
-//   once per build and list per page: connector.files after mount; files ∪ connector.lazy again only on the Home Screen,
-//   at idle, 10 s or more after the first show (C4, s24 §8). preload reads files only.
+// InFlite framework: loading, recovery and offline files. Full public contract: docs/framework-contract.md.
 import { REGISTRY } from "./router.js";
 
-const tries = {}, built = {}, kept = {}, watching = new WeakMap();
-const wait = (ms, what) => new Promise((_, no) => setTimeout(() => no(new Error(`${what} took too long`)), ms));
+const tries = {}, built = {}, kept = {}, watching = new WeakMap(), styles = new Map(), failedStyles = new WeakSet(), disposed = new WeakSet();
+const released = () => new DOMException("This screen was released", "AbortError");
+const check = (signal) => { if (signal?.aborted) throw released(); };
+// Dynamic imports cannot be stopped, but their callers can stop waiting. Their eventual result is still handled.
+function until(work, ms, what, signal, optional = false) {
+  return new Promise((ok, no) => {
+    let done = false, timer;
+    const finish = (fn, value) => { if (done) return; done = true; clearTimeout(timer); signal?.removeEventListener("abort", abort); fn(value); };
+    const abort = () => finish(no, released());
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    if (ms && !done) timer = setTimeout(() => finish(optional ? ok : no, optional ? undefined : new Error(`${what} took too long`)), ms);
+    Promise.resolve(work).then((x) => finish(ok, x), (e) => finish(no, e));
+  });
+}
+function dispose(instance) {
+  if (!instance || (typeof instance !== "object" && typeof instance !== "function") || disposed.has(instance)) return;
+  disposed.add(instance);
+  try { instance.unmount?.()?.catch?.((e) => console.error(e)); } catch (e) { console.error(e); }
+}
 const abs = (p) => new URL(p, location.origin).pathname;
 
 function css(href) {
-  let l = document.querySelector(`link[rel=stylesheet][href="${href}"]`);
-  if (l?.dataset.loaded || l?.sheet) return Promise.resolve();
-  if (!l) { l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; document.head.append(l); }
-  return Promise.race([new Promise((ok) => { l.addEventListener("load", () => { l.dataset.loaded = "1"; ok(); }, { once: true }); l.addEventListener("error", ok, { once: true }); }), new Promise((ok) => setTimeout(ok, 5000))]);
+  if (styles.has(href)) return styles.get(href);
+  const links = [...document.querySelectorAll(`link[rel=stylesheet][href="${href}"]`)];
+  if (links.some((l) => l.dataset.loaded || l.sheet)) return Promise.resolve();
+  let l = links.find((l) => !failedStyles.has(l));
+  const owned = !l;
+  if (owned) { l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; }
+  const p = new Promise((ok, no) => {
+    const finish = (error) => {
+      clearTimeout(timer); l.removeEventListener("load", loaded); l.removeEventListener("error", failed);
+      if (error) { failedStyles.add(l); if (owned) l.remove(); styles.delete(href); no(error); }
+      else { l.dataset.loaded = "1"; ok(); }
+    };
+    const loaded = () => finish(), failed = () => finish(new Error(`Stylesheet did not load: ${href}`));
+    const timer = setTimeout(() => finish(new Error(`Stylesheet took too long: ${href}`)), 5000);
+    l.addEventListener("load", loaded); l.addEventListener("error", failed);
+    if (owned) document.head.append(l);
+  });
+  styles.set(href, p);
+  return p;
 }
 
 export async function loadModule(app, F) {
@@ -36,27 +50,47 @@ export async function loadModule(app, F) {
   if (!R) throw new Error(`no module ${app}`);
   const fw = F.forModule(app), root = fw.screenEl.querySelector(`.m-${app}`);
   const n = tries[app] = (tries[app] || 0);
+  let instance = null;
   try {
-    await Promise.race([F.hubAgain?.(), new Promise((ok) => setTimeout(ok, 2000))]);
+    check(fw.signal);
+    await until(F.hubAgain?.(), 2000, "the hub", fw.signal, true);
+    check(fw.signal);
     const s = F.session;
     if (!s.apps?.[app]) throw new Error(`the hub or the roof is off (${app}'s switch)`);
-    const m = await Promise.race([import(n ? `${R.entry}?retry=${n}` : R.entry), wait(12e3, "the module")]);
+    const m = await until(import(n ? `${R.entry}?retry=${n}` : R.entry), 12e3, "the module", fw.signal);
+    check(fw.signal);
     if (m?.CONTRACT !== 1 || typeof m.mount !== "function") throw new Error(`${app}: contract ${m?.CONTRACT} isn't 1`);
-    await Promise.all(R.css.map(css));
+    await until(Promise.all(R.css.map(css)), 0, "the stylesheets", fw.signal);
+    check(fw.signal);
     root.replaceChildren();
-    const instance = await m.mount(root, fw);
+    const mounting = Promise.resolve(m.mount(root, fw)).then((value) => {
+      if (fw.signal?.aborted) { dispose(value); throw released(); }
+      return value;
+    });
+    instance = await until(mounting, 0, "the mount", fw.signal);
+    check(fw.signal);
     if (!instance || typeof instance.show !== "function") throw new Error(`${app}: mount gave no instance`);
     if (!built[app]) { built[app] = 1; try { globalThis.IFL?.built?.(R.id || app, m.BUILD, m.NEWS); } catch (_) {} }
     tries[app] = 0;
-    watchVersion(app, m.BUILD, F);
+    watchVersion(app, m.BUILD, F, { signal: fw.signal });
     loadConnector(app).then((c) => {
-      keepOffline(app, m.BUILD, c.files || []);
+      if (fw.signal?.aborted) return;
+      keepOffline(app, m.BUILD, c.files || [], { signal: fw.signal });
       const lazy = Array.isArray(c.lazy) ? c.lazy : [];
       const home = () => { try { return navigator.standalone === true || matchMedia("(display-mode: standalone)").matches; } catch (_) { return false; } };
-      if (lazy.length && home()) setTimeout(() => (globalThis.requestIdleCallback || ((f) => f()))(() => keepOffline(app, m.BUILD, [...(c.files || []), ...lazy])), 10e3);
+      if (lazy.length && home()) {
+        const cancel = () => clearTimeout(timer);
+        const timer = setTimeout(() => {
+          fw.signal?.removeEventListener("abort", cancel);
+          (globalThis.requestIdleCallback || ((f) => f()))(() => { if (!fw.signal?.aborted) keepOffline(app, m.BUILD, [...(c.files || []), ...lazy], { signal: fw.signal }); });
+        }, 10e3);
+        fw.signal?.addEventListener("abort", cancel, { once: true });
+      }
     }, () => {});
     return { m, instance };
   } catch (e) {
+    dispose(instance);
+    if (fw.signal?.aborted || e?.name === "AbortError") throw released();
     tries[app] = n + 1;
     failed(app, F, root, n + 1);
     throw e;
@@ -82,11 +116,14 @@ export async function loadConnector(app) {
   return m.connector;
 }
 
-export async function loadService(app, F) {
+export async function loadService(app, F, { signal = F.signal } = {}) {
   const R = REGISTRY[app];
   if (!R?.service) throw new Error(`no service for ${app}`);
-  const m = await import(R.service);
-  return m.startService({ path: R.path, ui: F.forModule(app), onStale: () => { F.stale = true; } });
+  check(signal);
+  const ui = F.forModule(app), m = await until(import(R.service), 0, "the service", signal);
+  check(signal); check(ui.signal);
+  // Startup owns its abort handling; the frame also releases an eventual result after termination.
+  return m.startService({ path: R.path, ui, signal, onStale: () => { if (!signal?.aborted && !ui.signal?.aborted) F.stale = true; } });
 }
 
 export function preload(app) {
@@ -103,31 +140,32 @@ export function preload(app) {
   }, () => null);
 }
 
-export function watchVersion(app, build, F) {
-  const w = watching.get(F) || new Set();
-  if (w.has(app)) return;
-  w.add(app); watching.set(F, w);
+export function watchVersion(app, build, F, { signal = F.signal } = {}) {
+  if (signal?.aborted) return;
+  const w = watching.get(F) || new Map();
+  w.get(app)?.(); watching.set(F, w);
   const R = REGISTRY[app];
   let at = 0;
   const ask = async () => {
-    if (document.visibilityState !== "visible" || Date.now() - at < 10 * 60e3) return;
+    if (signal?.aborted || document.visibilityState !== "visible" || Date.now() - at < 10 * 60e3) return;
     at = Date.now();
     try {
-      const r = await fetch(`${R.path}version`, { cache: "no-store", credentials: "same-origin" });
+      const r = await fetch(`${R.path}version`, { cache: "no-store", credentials: "same-origin", signal });
       if (!r.ok) return;
       const j = await r.json();
-      if (j?.build && String(j.build) !== String(build)) F.stale = true;
+      if (!signal?.aborted && j?.build && String(j.build) !== String(build)) F.stale = true;
     } catch (_) {}
   };
-  F.on("visible", ask);
+  const off = F.on("visible", ask), drop = () => { off(); signal?.removeEventListener("abort", drop); if (w.get(app) === drop) w.delete(app); };
+  w.set(app, drop); signal?.addEventListener("abort", drop, { once: true });
 }
 
-export function keepOffline(app, build, files) {
+export function keepOffline(app, build, files, { signal } = {}) {
   const k = `${app}:${build}:${files.length}`, sw = navigator.serviceWorker;
-  if (kept[k] || !sw?.getRegistration) return;
+  if (signal?.aborted || kept[k] || !sw?.getRegistration) return;
   kept[k] = 1;
   // (to the root worker itself, by its registration, never to whatever controls this page: that may be an app's old
   // worker still (Chat's at /chats/, retired, yet this document's until it's left), and the ask would go nowhere and the
   // module not open offline. No root worker active yet (the site's first visit): asked again at the next mount)
-  sw.getRegistration("/").then((r) => r.active.postMessage({ ifl: "keep", app, build, files: [...new Set(files.map(abs))] })).catch(() => { delete kept[k]; });
+  sw.getRegistration("/").then((r) => { if (signal?.aborted) { delete kept[k]; return; } r.active.postMessage({ ifl: "keep", app, build, files: [...new Set(files.map(abs))] }); }).catch(() => { delete kept[k]; });
 }

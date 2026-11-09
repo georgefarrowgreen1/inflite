@@ -22,6 +22,7 @@ jobs:
       - run: npm run test:requests
       - run: npm run test:api
       - run: npx playwright install --with-deps chromium
+      - run: npm run test:framework
       - run: npm run test:web
         env:
           WEB_UI_SCREENSHOTS: test-results/web-ui
@@ -32,3 +33,20 @@ jobs:
           path: test-results/web-ui
           if-no-files-found: ignore
           retention-days: 14
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: inflite
+      - name: Production app modules
+        run: git clone --quiet --depth 1 https://github.com/georgefarrowgreen1/georgefarrowgreen georgefarrowgreen
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix inflite/email --omit=dev --no-audit --no-fund
+      - run: npm ci --prefix georgefarrowgreen/.tools/tests --no-audit --no-fund
+      - name: Framework, modules, offline assets and worker boundaries
+        working-directory: georgefarrowgreen
+        run: node --test --test-concurrency=4 .tools/tests/unit/roof*.test.mjs .tools/tests/unit/today*.test.mjs

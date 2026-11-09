@@ -15,6 +15,8 @@
 import { accountCookie, geoOf } from "./account.js";
 import { roofOn, appsOn, modOf, filesOf, roofPage, retireWorker } from "./roof.js";
 import { appFetch } from "./apps.js";
+import { bodyUpTo } from "./body.js";
+import { fetchUpstream } from "./upstream.js";
 
 // each hub path to the host that serves it: `app` names the vars (<APP>_ORIGIN, the origin spoken as: the app's public
 // address; <APP>_VIA, where to connect, the same in production and a local pass-through in tests), `under` where its
@@ -62,26 +64,37 @@ export const isHubPath = (p) => PAGE_RE.test(p) || API_RE.test(p) || p === "/api
 //   ok: it answered 200. refused: it said not found, a definite no (the key isn't theirs); never a moment's trouble
 //   there (no answer, a 5xx), so a blip at the apps' hosts never closes the hub for a minute.
 const KEEP_OK = 300e3, KEEP_NO = 60e3, PROBE_WAIT = 5000;
-let probed = null, asking = 0;
+let probed = null;
+const probing = new Map();
 // (for tests: forget what was found)
-export const forgetProbe = () => { probed = null; asking = 0; };
+export const forgetProbe = () => { probed = null; probing.clear(); };
 const keyed = (env) => !!env?.HUB_KEY && APPS.every((a) => !!env[`${a}_ORIGIN`]);
 const probeTo = (env) => { try { return `${new URL(env.CHAT_VIA || env.CHAT_ORIGIN).origin}${PAGES["/chats/"].under}version`; } catch { return null; } };
+const probeId = (env) => JSON.stringify([env.HUB_KEY, env.CHAT_ORIGIN, probeTo(env)]);
 // (what was found, while it's fresh, and only for this key and this address of Chat's)
-const known = (env, t) => (probed && keyed(env) && probed.key === env.HUB_KEY && probed.to === probeTo(env) && t < probed.until ? probed : null);
-async function probe(env, request, t) {
+const known = (env, t) => (probed && keyed(env) && probed.key === env.HUB_KEY && probed.to === probeTo(env) && probed.origin === env.CHAT_ORIGIN && t < probed.until ? probed : null);
+function probe(env, request, t) {
   const to = probeTo(env);
-  let status = 0;
-  try {
-    if (!to) throw new TypeError("no address for Chat");
-    const res = await appFetch(env, to, { headers: hubHeaders(env, request, "CHAT"), redirect: "manual", signal: AbortSignal.timeout(PROBE_WAIT) });
-    status = res.status;
-    if (res.body) res.body.cancel().catch(() => {});
-  } catch (e) {
-    console.error("hub probe", e && e.message);
-  }
-  const ok = status === 200;
-  return (probed = { ok, refused: status === 404, until: t + (ok ? KEEP_OK : KEEP_NO), key: env.HUB_KEY, to });
+  const key = env.HUB_KEY, origin = env.CHAT_ORIGIN, id = probeId(env);
+  if (probing.has(id)) return probing.get(id);
+  // Shared by foreground checks and background checks. One visitor leaving must
+  // not cancel the probe another visitor is waiting for; its own deadline bounds it.
+  const pending = Promise.resolve().then(async () => {
+    let status = 0;
+    try {
+      if (!to) throw new TypeError("no address for Chat");
+      const res = await fetchUpstream((u, init) => appFetch(env, u, init), to, { headers: hubHeaders(env, request, "CHAT"), redirect: "manual" }, { timeout: PROBE_WAIT });
+      status = res.status;
+      if (res.body) res.body.cancel().catch(() => {});
+    } catch (e) {
+      console.error("hub probe", e && e.message);
+    }
+    const ok = status === 200, found = { ok, refused: status === 404, until: t + (ok ? KEEP_OK : KEEP_NO), key, origin, to };
+    if (probing.get(id) === pending) probed = found;
+    return found;
+  }).finally(() => { if (probing.get(id) === pending) probing.delete(id); });
+  probing.set(id, pending);
+  return pending;
 }
 async function ready(env, request) {
   if (!keyed(env)) return false;
@@ -118,10 +131,7 @@ export async function hub(request, env, ctx) {
   // What was found is /api/hub's; where nothing fresh is, it's asked beside this request, for the next)
   const t = Date.now(), found = known(env, t);
   if (found?.refused) return refuse(503, SAID.notReady);
-  if (!found && keyed(env) && ctx?.waitUntil && !(t - asking < PROBE_WAIT * 2)) {
-    asking = t;
-    ctx.waitUntil(probe(env, request, t).finally(() => { asking = 0; }));
-  }
+  if (!found && keyed(env) && ctx?.waitUntil && !probing.has(probeId(env))) ctx.waitUntil(probe(env, request, t));
 
   // ---- an app's API, at the same path as on its own host ----
   const api = Object.keys(APIS).find((k) => p.startsWith(k));
@@ -168,20 +178,17 @@ export async function forward(env, request, { app, path, api = false }) {
     if (auth) h.set("Authorization", auth);
   }
 
-  // (a body only to an API, and no more of it than the app takes: by what the browser says it's sending, which is all
-  // that's read of it; and where it doesn't say (sent in chunks), counted as it's read, and refused past the cap
-  // before any of it goes on)
+  // (a body only to an API, counted even with a stated length, and refused past
+  // the app's cap before any goes on; binary photos, voice and .fit files stay bytes)
   let body = null;
   if (api && !read && request.body) {
-    const cap = CAPS[app], said = request.headers.get("Content-Length");
-    if (said != null && !(Number(said) <= cap)) return refuse(413, SAID.big);
-    body = said != null ? request.body : await upTo(request.body, cap);
+    body = await bodyUpTo(request, CAPS[app], { raw: true });
     if (body === null) return refuse(413, SAID.big);
   }
   let res;
   try {
     // (written out, never resolved against the app's address: a path that starts // is still a path there)
-    res = await appFetch(env, `${new URL(via).origin}${path}`, { method, headers: h, body, redirect: "manual" });
+    res = await fetchUpstream((u, init) => appFetch(env, u, init), `${new URL(via).origin}${path}`, { method, headers: h, body, redirect: "manual" }, { signal: request.signal, timeout: 30000 });
   } catch (e) {
     console.error("hub", app, e && e.message);
     return refuse(502, SAID.down);
@@ -253,22 +260,6 @@ function hubHeaders(env, request, app) {
 // (the two addresses of Cloudflare's Web Analytics beacon, out of a CSP: nothing here runs another site's script)
 const noBeacon = (csp) => csp.split(";").map((d) => d.split(/\s+/).filter((t) => !/^https:\/\/(static\.)?cloudflareinsights\.com(\/\S*)?$/i.test(t)).join(" ")).join(";");
 const setCookiesOf = (res) => (res.headers.getSetCookie ? res.headers.getSetCookie() : [res.headers.get("Set-Cookie")].filter(Boolean));
-// (a body of no stated length, read up to the cap: its bytes, or null past it)
-async function upTo(stream, cap) {
-  const parts = [], reader = stream.getReader();
-  let n = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    n += value.byteLength;
-    if (n > cap) { reader.cancel().catch(() => {}); return null; }
-    parts.push(value);
-  }
-  const out = new Uint8Array(n);
-  let at = 0;
-  for (const p of parts) { out.set(p, at); at += p.byteLength; }
-  return out;
-}
 // (an address as the app's host will read it: decoded, backslashes as slashes, one slash at a time, and its . and ..
 // worked out, as MAIN's own functions/_middleware.js plainPath does; a ? or # decoded out of it kept in the path)
 function plainPath(p) {

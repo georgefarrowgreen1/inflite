@@ -71,9 +71,13 @@ export async function miniOf(app, answer, F = F0) {
 }
 
 export async function openConnector(F, app) {
+  const signal = F.signal, route = F.route;
+  if (signal?.aborted) return null;
   F0 = F;
   const c = await connectorOf(app, F);
-  if (!c) return null;
+  // Imports can finish after leaving this screen or destroying its frame. A
+  // return to the same address is a new route visit, with its own sheet owner.
+  if (!c || signal?.aborted || F.signal !== signal || F.route !== route) return null;
   const ui = F.ui, rows = WORDS.filter(([k]) => typeof c.shares?.[k] === "string").map(([k, l]) => ui.el("div", { class: "ifl-provides-row", data: { word: k } }, ui.el("b", { text: l }), ui.el("span", { text: c.shares[k] })));
   const acts = [{ label: `Open ${c.name}`, primary: true, href: c.href, act: "open" }];
   const on = !!F.session?.apps?.[app];

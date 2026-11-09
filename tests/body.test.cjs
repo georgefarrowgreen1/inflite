@@ -40,6 +40,31 @@ test('Today caps bytes, including split UTF-8, and stops oversized chunked uploa
   }
 });
 
+test('the same body limit preserves binary uploads and counts a falsely short declared length', async () => {
+  const { bodyUpTo } = await import('../today/src/body.js');
+  const bytes = new Uint8Array([0, 255, 128, 195, 40, 13, 10]);
+  const request = new Request('https://inflite.ai/api/fitness/upload', { method: 'POST', body: bytes });
+  assert.deepEqual(await bodyUpTo(request, bytes.length, { raw: true }), bytes);
+  const short = streamRequest(['1234', '5678', 'never read'], '1');
+  assert.equal(await bodyUpTo(short, 7, { raw: true }), null);
+  assert.equal(short.cancelled, true);
+  assert.equal(short.reads, 2);
+});
+
+test('cancelling a request releases a pending body read', async () => {
+  const { bodyUpTo } = await import('../today/src/body.js');
+  const controller = new AbortController();
+  let cancelled = false;
+  const body = new ReadableStream({ cancel() { cancelled = true; } });
+  const request = { headers: new Headers(), body, signal: controller.signal };
+  const pending = bodyUpTo(request, 64, { raw: true });
+  const rejected = assert.rejects(pending, e => e.name === 'AbortError');
+  controller.abort();
+  await rejected;
+  assert.equal(cancelled, true);
+  assert.equal(body.locked, false);
+});
+
 test('oversized Today settings and bug reports never reach the account service', async () => {
   const { default: worker } = await import('../today/src/index.js');
   let forwarded = 0;

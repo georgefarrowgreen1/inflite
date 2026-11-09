@@ -1,34 +1,4 @@
-// InFlite's router: which screen an address is, and the address of a screen (One roof, spec §3.3; stages 2–4's joint
-// contracts, roof/s24-contracts.md §3). Pure: no DOM, no storage, no history; the frame (frame.js) does all of that with
-// what this returns. Written in full by B0 and frozen: every batch builds on these names and shapes (MAIN
-// .tools/tests/unit/roofrouter.test.mjs pins them).
-//
-// Route = { kind: "tab", tab: "today" | "apps" | "you", arg: string | null }
-//       | { kind: "app", app: <a REGISTRY key>, section: <one of its section ids>, key: string, arg: string | null, query: string }
-//   tab arg: only You's, from /#you=<arg> (notify, quiet, rules, phone, apps, account, notify-weather, …).
-//   app key: the hash's key as written, a section id or one of the app's aliases, else the app's first section;
-//   app hash: only where key is one of the app's raw keys (REGISTRY[app].raw: Chats' share), the address's whole hash
-//   after #, as written (≤ 7000 characters; such an address may be up to 2048 + 7000 long); absent otherwise.
-//   app arg: what follows the first = after key, once decodeURIComponent'd (a day YYYY-MM-DD, a settings page, a symbol
-//   such as TSCO.L, ^GSPC or GBPUSD=X, a thread's id); query: the address's search, raw ("" past 400).
-//   An app's arg is only ever [A-Za-z0-9_.^=-]{1,40} after that one decoding; You's and Weather's [A-Za-z0-9_-]{1,40} as
-//   written, never decoded (stage 1's rule, kept); anything else (or a bad %) is dropped (null).
-//
-// History state the frame writes: { ifl: { d: depth, k: key, b } } only (§3.3); nothing here reads it.
-
-// The apps that are modules. sections = the module's SECTIONS = its connector's sections (roofcontract.test); css = the
-// module's stylesheets, linked and awaited before mount (D2). Optional fields (s24-contracts §3):
-//   link   the F.session.links key of the app's own address, where it isn't the app's name (links[R.link || app])
-//   stay   hash keys the frame's tidy (D6) leaves in the address once shown (Mail's reader: #thread=<id>)
-//   idb    the one IndexedDB database the module may open, only from <app>/roof/idb.js (C5)
-// Stage 3 (Chats; roof/s3/spec.md §5.1, S3-C1), optional too:
-//   tab      the tab-bar key whose screen this app's root route is (Chats: "chats"; the frame draws it as a tab screen)
-//   id       the app's data id where it isn't the app's name (Chats: "chat": versions, IFL.built, push app, storage)
-//   raw      hash keys whose whole hash the route carries raw, as route.hash (≤ 7000 characters; Send's #share=…)
-//   service  the one file that may make the app's Worker (Chats: service.js, loaded only by the frame, never a module)
-//   skip     { paths, query }: addresses under the app's path that aren't the framework's (null: a normal navigation):
-//            a path starting with one of paths (Chat's own page at /chats/in/), or a query with one of query's names
-//            (/chats/?engine=1, the milestone-1 engine)
+// InFlite framework: routes and module descriptors. Full public contract: docs/framework-contract.md.
 const fz = (o) => Object.freeze(o);
 const secs = (l) => fz(l.map((s) => fz(s)));
 export const REGISTRY = fz({

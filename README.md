@@ -46,6 +46,10 @@ inflite Mail, the mail client for `email.inflite.ai`. See [email/README.md](emai
 
 ## Web UI maintenance
 
+See [Today and framework architecture](docs/architecture.md) for responsibilities,
+account/frame/module lifetimes, asynchronous screen ownership, proxy boundaries and release checks.
+The complete public API is in [the framework contract](docs/framework-contract.md).
+
 The shell's JSON API calls use `today/public/roof/requests.js` (exported by the frame entry point).
 It shares only identical unfinished GETs, returns independent decoded JSON to each caller, and bounds the full
 fetch/body read to 20 seconds by default. Callers can pass an `AbortSignal`, `timeoutMs`, `fresh: true`, or a

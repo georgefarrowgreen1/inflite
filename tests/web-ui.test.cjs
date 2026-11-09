@@ -205,7 +205,7 @@ test('motion: cancelled and interrupted notification swipes never clear a row', 
   } finally { await ctx.close(); }
 });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedHub, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
+async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, initialPath = '/', waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedHub, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: motion,
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
   if (noViewTransitions) await ctx.addInitScript(() => { delete Document.prototype.startViewTransition; });
@@ -268,7 +268,7 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
   await page.clock.setFixedTime(new Date(answer.at));
   // WebKit can include startup fetches in its load event. Tests that hold the
   // session response must observe the page before that event to release it.
-  await page.goto(origin, { waitUntil: waitForReady ? 'load' : 'commit' });
+  await page.goto(origin + initialPath, { waitUntil: waitForReady ? 'load' : 'commit' });
   if (waitForReady) await page.locator(signedIn ? (waitForDay ? '#top .day-top' : '#in:not([hidden])') : '#out:not([hidden]) #signin').waitFor();
   if (waitForReady && signedIn && waitForDay && process.env.WEB_UI_BROWSER === 'webkit') {
     await page.waitForLoadState('networkidle'); await page.bringToFront();
@@ -276,6 +276,57 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
     await page.mouse.click(1, 1);
   }
   return { ctx, page, requests, errors };
+}
+
+for (const width of [390, 1440]) for (const tab of ['apps', 'you']) {
+  test(`cold /#${tab} startup renders its requested screen at ${width}px`, async () => {
+    const { ctx, page, errors } = await open({ width, initialPath: `/#${tab}`, waitForDay: false });
+    try {
+      await page.bringToFront();
+      const content = tab === 'apps' ? '#apps [data-app-row="weather"]' : '#youAcct';
+      await page.locator(content).waitFor({ timeout: 5000 });
+      await page.waitForFunction(title => document.querySelector('#hd h1')?.innerText.trim() === title, tab === 'apps' ? 'Apps' : 'You', { timeout: 5000 });
+      assert.equal(await page.locator(content).isVisible(), true);
+      assert.equal((await page.locator('#hd h1').innerText()).trim(), tab === 'apps' ? 'Apps' : 'You');
+      assert.equal(await page.locator('#views > main:not([hidden])').count(), 1);
+      assert.equal(await page.locator(`#tabs [data-tab="${tab}"]`).getAttribute('aria-current'), 'page');
+      assert.equal(await page.evaluate(() => document.documentElement.dataset.route), `/#${tab}`);
+      if (tab === 'apps') assert.equal(await page.locator('#apps .apps-shortcut').count(), 3);
+      else await page.locator('#youQuiet').waitFor({ timeout: 5000 });
+      assert.deepEqual(errors, []);
+      assert.deepEqual(await page.evaluate(() => [window.__csp, window.__rejections]), [[], []]);
+    } finally { await ctx.close(); }
+  });
+}
+
+for (const width of [390, 1440]) {
+  test(`cold /#you=quiet startup survives delayed settings at ${width}px`, async () => {
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    const { ctx, page, requests, errors } = await open({
+      width, initialPath: '/#you=quiet', waitForDay: false, waitForReady: false,
+      intercept: async (route, { url }) => {
+        if (url.pathname === '/api/notify') await held;
+      },
+    });
+    try {
+      await page.bringToFront();
+      await page.locator('#youAcct').waitFor({ timeout: 5000 });
+      await page.waitForFunction(() => document.querySelector('#hd h1')?.innerText.trim() === 'You', undefined, { timeout: 5000 });
+      assert.equal(await page.locator('#youAcct').isVisible(), true);
+      assert.equal(await page.locator('#youQuiet').count(), 0, 'the screen renders before its delayed settings answer');
+      assert.equal((await page.locator('#hd h1').innerText()).trim(), 'You');
+      release(); await page.locator('#youQuiet').waitFor({ timeout: 5000 });
+      assert.equal(await page.locator('#youQuiet').isVisible(), true);
+      assert.equal(await page.locator('#youQuiet').getAttribute('role'), 'switch');
+      assert.equal(await page.evaluate(() => document.documentElement.dataset.route), '/#you=quiet');
+      assert.equal(await page.locator('#views > main:not([hidden])').count(), 1);
+      assert.ok(requests.some(r => r.path === '/api/notify'));
+      if (width >= 1100) assert.equal(await page.locator('.you-tab[data-pane="youNotify"]').getAttribute('aria-current'), 'page');
+      assert.deepEqual(errors, []);
+      assert.deepEqual(await page.evaluate(() => [window.__csp, window.__rejections]), [[], []]);
+    } finally { release(); await ctx.close(); }
+  });
 }
 
 for (const width of [320, 390, 1440]) test(`Today presents one next action and keeps other details reachable at ${width}px`, async () => {
@@ -720,6 +771,57 @@ test('a combined boot paints cards only with its authenticated view and falls ba
       assert.deepEqual(errors, []);
     } finally { await ctx.close(); }
   }
+});
+
+test('revalidating an offline session replaces every module lifetime before showing a different account', async () => {
+  let offline = false, otherAccount = false;
+  const { ctx, page, errors } = await open({ iosHomeScreen: true, hubApps: { weather: true }, intercept: async (route, { url, view, answer }) => {
+    if (!['/api/session', '/api/boot'].includes(url.pathname)) return false;
+    if (offline) { await route.abort(); return true; }
+    if (!otherAccount) return false;
+    const next = structuredClone(view);
+    next.user = { ...next.user, id: 'new-account-lifetime', name: 'New Account', first: 'New' };
+    await route.fulfill({ json: url.pathname === '/api/boot' ? { view: next, cards: answer } : next });
+    return true;
+  } });
+  try {
+    await ctx.route('**/weather/roof/*', async route => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('.css')) return route.fulfill({ contentType: 'text/css', body: '/* fixture */' });
+      const body = path.endsWith('/weather.js') ? `export const CONTRACT = 1, BUILD = 'fixture';
+        export function mount(root, fw) {
+          const id = fw.session.user.id;
+          (globalThis.__moduleLifetimes ||= []).push({ id, signal: fw.signal, ended: false });
+          const record = __moduleLifetimes.at(-1);
+          root.textContent = 'Module owner: ' + id;
+          return { show() {}, hide() {}, unmount() { record.ended = true; } };
+        }` : 'export const connector = { files: [], preload: [], sections: [] };';
+      await route.fulfill({ contentType: 'text/javascript', body });
+    });
+    await page.waitForFunction(() => {
+      const kept = JSON.parse(localStorage.getItem('today:session'));
+      return kept && localStorage.getItem('today:cards:' + kept.id);
+    });
+    offline = true;
+    await page.reload();
+    await page.locator('#rest .tcard').first().waitFor();
+    await page.evaluate(() => {
+      const link = document.createElement('a'); link.href = '/weather/'; document.body.append(link); link.click(); link.remove();
+    });
+    await page.waitForFunction(() => globalThis.__moduleLifetimes?.length === 1);
+    const oldId = await page.evaluate(() => __moduleLifetimes[0].id);
+    offline = false; otherAccount = true;
+    await page.evaluate(() => dispatchEvent(new Event('online')));
+    await page.waitForFunction(() => globalThis.__moduleLifetimes?.length === 2);
+    assert.deepEqual(await page.evaluate(() => __moduleLifetimes.map(x => ({ id: x.id, aborted: x.signal.aborted, ended: x.ended }))), [
+      { id: oldId, aborted: true, ended: true },
+      { id: 'new-account-lifetime', aborted: false, ended: false },
+    ]);
+    assert.equal(await page.locator('#views > main[data-app="weather"]').count(), 1);
+    assert.doesNotMatch(await page.locator('#in').innerText(), new RegExp(oldId));
+    assert.deepEqual(errors, []);
+    assert.deepEqual(await page.evaluate(() => [window.__csp, window.__rejections]), [[], []]);
+  } finally { await ctx.close(); }
 });
 
 test('the coordinator and signed-out shell still load after an offline reload', { skip: process.env.WEB_UI_BROWSER === 'webkit' && 'Playwright WebKit cannot reload this intercepted localhost service-worker page offline' }, async () => {
