@@ -433,6 +433,9 @@ label.row:active { background: var(--press); }
 
 /* ---- signed out: InFlite's way in (where each part sits is the shared block's, at the foot), in Today's colours, with
    the mark above Sign in ---- */
+/* The neutral shell can be painted before app.js or the session answer arrives. Keep its mark hidden so a
+   completed logo never flashes before First Light starts. This also covers a previously cached HTML shell. */
+#sessionState .ifl-top { display: none; }
 .today-out .ifl-logo::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(closest-side, var(--in-glow), var(--in-glow-2) 55%, transparent); }
 .today-out .ifl-logo img { position: relative; width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 16px 34px -14px var(--in-icon-shadow), 0 0 0 0.5px var(--in-icon-edge); }
 /* First light: the approved mark assembles once when sign-in is revealed. These rules belong to Today;
