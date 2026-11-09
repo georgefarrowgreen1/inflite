@@ -13,9 +13,9 @@ import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.00";
+const BUILD = "2.01";
 // (what's new in it, said once it's in)
-const NEWS = "Consistent menus, spacing and motion that adapt to your screen";
+const NEWS = "Slow connections and secondary requests no longer show a false sign-in screen";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1171,6 +1171,7 @@ const requests = createRequestCoordinator();
 function resetRequests() {
   requests.reset();
   sessionCheck = null;
+  sessionCheckPending = false;
   waitingAnswer = null;
   clearTimeout(prefsT); prefsT = 0; prefsEdits++;
 }
@@ -1186,8 +1187,9 @@ async function call(path, { method = "GET", body, signal, timeoutMs, fresh, late
     return data;
   } catch (r) {
     if (scope.aborted) throw scope.reason;
-    // (signed out, here or elsewhere: nothing of anyone's day stays on the page or in this browser)
-    if (r.status === 401 && S.view) signedOutNow();
+    // Only the session endpoint confirms expiry. An app-specific 401 asks it
+    // first, without dropping the current screen, drafts or cached account data.
+    if (r.status === 401 && S.view) signedOutNow(path === "/api/session");
     throw r;
   }
 }
@@ -1670,9 +1672,20 @@ function anyway() {
 
 // ---------------------------------------------------------------- the two states
 function lift() { document.documentElement.classList.remove("boot"); }
+function sessionWaiting(said) {
+  if (S.view) { if (said) toast(said); return; }
+  $("#out").hidden = true;
+  $("#in").hidden = true;
+  $("#sessionState").hidden = false;
+  $("#sessionState").setAttribute("aria-busy", "false");
+  $("#sessionSaid").textContent = said || "Couldn’t check your connection. Try again.";
+  $("#sessionRetry").hidden = false;
+  lift();
+}
 function showOut(said = "") {
   sheetOpen && closeSheet();
   IFL.close(true);
+  $("#sessionState").hidden = true;
   $("#in").hidden = true;
   $("#out").hidden = false;
   $("#outSaid").textContent = said;
@@ -1684,13 +1697,18 @@ function showOut(said = "") {
 // signed out, as it's found out: by the account's answer, a 401, or the service worker's word. sure: the account itself
 // said so (/api/session's 401 or signedIn false, or the frame's lost(), which asks it first)
 function signedOutNow(sure) {
+  if (sure !== true) {
+    const scope = requests.generation;
+    return checkSession(true).then((inn) => {
+      if (inn === false && scope === requests.generation) signedOutNow(true);
+    }).catch(() => {});
+  }
   resetRequests();
   // (signed out elsewhere, confirmed: the apps' copies of you here go too; Chat's own engine signs itself out, S2-D10. Any
   // other 401 or word asks the account afresh first: a stray 401 never wipes them)
   // (the frame let go of first, so nothing a module writes as it closes outlives the wipe)
   unframe();
-  if (sure === true) forgetApps({ chat: false }).catch(() => {});
-  else { sessionCheck = null; checkSession().then((inn) => inn === false && forgetApps({ chat: false })).catch(() => {}); }
+  forgetApps({ chat: false }).catch(() => {});
   forgetKept();
   clearTimeout(prefsT); prefsT = 0;
   S.view = null; S.answer = null; S.morning = null; S.kept = false; S.dayLine = null; waitingAnswer = null;
@@ -1716,6 +1734,7 @@ function signedIn(view, { offline = false } = {}) {
   if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; if (was) { you?.forgetYou?.(); F?.releaseService("chats", { terminate: true }); } }
   if (!S.morning || !("lines" in S.morning)) S.morning = view.morning || S.morning;
   $("#out").hidden = true;
+  $("#sessionState").hidden = true;
   $("#in").hidden = false;
   frame();
   if (waitingAnswer) { const a = waitingAnswer; waitingAnswer = null; gotCards(a); }
@@ -1845,17 +1864,19 @@ const youCtx = () => ({
 });
 
 // (signed out, or not? For the framework's session.lost(), D3: a module's 401 is believed only once /api/session says
-// so. One read shared for 30 s; no answer is "still signed in", as nothing says otherwise)
-let sessionCheck = null;
-function checkSession() {
-  if (sessionCheck) return sessionCheck;
+// so. Ordinary checks share 30 s; explicit expiry hints revalidate, sharing any
+// check already pending. No answer keeps the existing session.)
+let sessionCheck = null, sessionCheckPending = false;
+function checkSession(fresh = false) {
+  if (sessionCheck && (!fresh || sessionCheckPending)) return sessionCheck;
   const scope = requests.generation;
   const headers = { Accept: "application/json" };
   if (standalone()) headers["X-Home-Screen"] = "1";
-  const check = requests.request("/api/session", { headers }).then(
+  const check = requests.request("/api/session", { headers, fresh }).then(
     (j) => scope !== requests.generation || j?.signedIn !== false,
-    (e) => scope !== requests.generation || e.status !== 401);
+    (e) => scope !== requests.generation || e.status !== 401).finally(() => { if (sessionCheck === check) sessionCheckPending = false; });
   sessionCheck = check;
+  sessionCheckPending = true;
   setTimeout(() => { if (sessionCheck === check) sessionCheck = null; }, 30e3);
   return sessionCheck;
 }
@@ -2134,10 +2155,10 @@ async function refresh(only = null) {
   }
 }
 function cardsFailed(error) {
-  if (isRequestCancelled(error) || error?.status === 401 || !S.view || S.answer || !F) return;
+  if (isRequestCancelled(error) || !S.view || S.answer || !F) return;
   const rest = $("#rest");
   rest.className = ""; rest.hidden = false;
-  rest.replaceChildren(F.ui.error({ title: "Today couldn’t load", body: error.message || "Try again in a moment.",
+  rest.replaceChildren(F.ui.error({ title: "Today couldn’t load", body: error.status === 401 ? "Couldn’t load your day. Try again in a moment." : error.message || "Try again in a moment.",
     acts: [{ label: "Try Again", primary: true, run: () => refresh() }] }));
 }
 // (back to the page: the day afresh, and Chat's engine caught up; at most once in a few seconds)
@@ -2554,6 +2575,7 @@ function chatFromToday(e) {
 }
 function wire() {
   document.addEventListener("click", chatFromToday, true);
+  $("#sessionRetry").addEventListener("click", (e) => { e.preventDefault(); load({ fresh: true }); });
   // (Sign in: Today's own trip, on every device)
   // (and back to where you were: an app in this window, or a part of this page)
   $("#signin").addEventListener("click", (e) => { e.preventDefault(); signInHere(location.pathname + location.hash); });
@@ -2707,8 +2729,12 @@ async function hubKnown() {
   return true;
 }
 let loadSequence = 0;
-async function load() {
+async function load({ fresh = false } = {}) {
   const attempt = ++loadSequence;
+  if (!S.view && !$("#sessionState").hidden) {
+    $("#sessionState").setAttribute("aria-busy", "true");
+    $("#sessionSaid").textContent = "Opening InFlite…";
+  }
   let scope = requests.generation, pendingCards = null;
   const current = () => attempt === loadSequence && scope === requests.generation;
   const devP = findDevice();
@@ -2774,19 +2800,20 @@ async function load() {
       const q = new URLSearchParams({ v: "2", with: "morning" });
       if (device) q.set("device", device);
       S.loadedAt = Date.now();
-      return call(`/api/boot?${q}`).then((r) => (r?.view && typeof r.view === "object" ? r : Promise.reject(Object.assign(new Error(""), { status: 502 })))).then((r) => {
+      return call(`/api/boot?${q}`, { fresh }).then((r) => (r?.view && typeof r.view === "object" ? r : Promise.reject(Object.assign(new Error(""), { status: 502 })))).then((r) => {
         if (!current()) return null;
         if (r.cards) acceptCards(r.cards, r.view.user?.id);
         else if (r.view.signedIn) asked = false;
         return r.view;
       }, (e) => {
         // (an account from before the way in in one trip (Today and the account go live apart), or any trouble but no
-        // network or a sign-in that's over: who, alone, as before, and then the day)
-        if (!current() || isRequestCancelled(e) || e?.status === 0 || e?.status === 401) throw e;
-        return call("/api/session").then((v) => { if (current() && v?.signedIn) asked = false; return v; });
+        // network: who, alone, as before, and then the day. Even a boot 401 is
+        // checked against the session before showing sign-in controls.)
+        if (!current() || isRequestCancelled(e) || e?.status === 0) throw e;
+        return call("/api/session", { fresh }).then((v) => { if (current() && v?.signedIn) asked = false; return v; });
       });
     });
-  } else sessionAsked = call("/api/session");
+  } else sessionAsked = call("/api/session", { fresh });
   try {
     view = await sessionAsked;
   } catch (e) {
@@ -2801,13 +2828,14 @@ async function load() {
       signedIn(ks.view, { offline: true });
       return;
     }
-    showOut(e.message);
+    sessionWaiting(e.message);
     return;
   }
   if (!current()) return;
   if (view?.links) S.links = view.links;
   if (!(await known()) || !current()) return;
-  if (!view?.signedIn) return signedOutNow(true);
+  if (view?.signedIn === false) return signedOutNow(true);
+  if (view?.signedIn !== true || !view.user?.id) return sessionWaiting();
   signedIn(view);
   // signedIn may adopt a different account. Its pending work was cancelled; only
   // the boot data explicitly paired with this view is allowed to cross that reset.
@@ -2824,7 +2852,21 @@ async function load() {
 // (where the page was: what the updater's reload, and the frame's reload for a new Weather (D21), bring back)
 const save = () => ({ y: Math.round(scrollY) });
 const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors", "requests"].map((f) => `/roof/${f}.js`);
+// An installed copy can briefly have the previous cached HTML with this script.
+// Give that shell the same neutral state before asking anything about the account.
+function ensureSessionUI() {
+  if ($("#sessionState")) return;
+  const out = $("#out"), state = out.cloneNode(true);
+  state.id = "sessionState"; state.hidden = false;
+  state.setAttribute("aria-label", "Opening InFlite"); state.setAttribute("aria-busy", "true");
+  const said = document.createElement("p"), retry = document.createElement("a");
+  said.id = "sessionSaid"; said.className = "today-said"; said.setAttribute("role", "status"); said.textContent = "Opening InFlite…";
+  retry.id = "sessionRetry"; retry.className = "ifl-go pill primary"; retry.href = ""; retry.textContent = "Try Again";
+  state.querySelector(".ifl-cta").replaceChildren(said, retry);
+  out.before(state); out.hidden = true;
+}
 function start() {
+  ensureSessionUI();
   // (Chat's sign-in trip and its emails' links come to /chats/ unchanged; with Chats the framework's here, Chat's own page
   // at /chats/in/ does them, with the same hash, S3-D8)
   if (/^\/chats\/(index\.html)?$/.test(location.pathname) && /^#(signin|verify=|invite=|reset=)/.test(location.hash)) return location.replace("/chats/in/" + location.hash);
@@ -2842,10 +2884,10 @@ function start() {
     motionState();
     if (document.visibilityState !== "visible") return;
     if (S.view) { back(); hubAgain(); syncPush().catch(() => {}); }
-    else if ($("#outSaid").textContent) load();
+    else if ($("#outSaid").textContent || !$("#sessionState").hidden) load();
   });
   // (back from the browser's own cache of the page (bfcache): the day, and whether the hub serves Weather, asked again)
-  addEventListener("pageshow", (e) => { motionState(); if (e.persisted && S.view) { back(); hubAgain(0); } });
+  addEventListener("pageshow", (e) => { motionState(); if (e.persisted && S.view) { back(); hubAgain(0); } else if (e.persisted && !$("#sessionState").hidden) load(); });
   addEventListener("online", () => { if (!S.view || S.kept) load(); });
 }
 start();

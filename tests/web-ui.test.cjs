@@ -205,7 +205,7 @@ test('motion: cancelled and interrupted notification swipes never clear a row', 
   } finally { await ctx.close(); }
 });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, seedSession, seedHub, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
+async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedHub, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: motion,
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
   if (noViewTransitions) await ctx.addInitScript(() => { delete Document.prototype.startViewTransition; });
@@ -242,6 +242,11 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
   await ctx.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
     if (url.origin !== origin) return route.abort();
+    if (legacyShell && url.pathname === '/') {
+      const html = (await readFile(resolve(publicDir, 'index.html'), 'utf8')).replace(/<main[^>]*id="sessionState"[\s\S]*?<\/main>/, '').replace('id="out" aria-label="InFlite" hidden', 'id="out" aria-label="InFlite"');
+      const policy = await readFile(resolve(publicDir, '_headers'), 'utf8');
+      return route.fulfill({ body: html, headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': /Content-Security-Policy: (.*)/.exec(policy)[1] } });
+    }
     if (url.pathname === '/version') return route.fulfill({ json: { build } });
     if (!url.pathname.startsWith('/api/')) return route.continue();
     requests.push({ path: url.pathname, method: req.method(), body: req.postDataJSON() });
@@ -261,9 +266,11 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
     document.addEventListener('securitypolicyviolation', e => window.__csp.push(`${e.violatedDirective}: ${e.blockedURI}`));
   });
   await page.clock.setFixedTime(new Date(answer.at));
-  await page.goto(origin);
-  await page.locator(signedIn ? (waitForDay ? '#top .day-top' : '#in:not([hidden])') : '#out:not([hidden]) #signin').waitFor();
-  if (signedIn && waitForDay && process.env.WEB_UI_BROWSER === 'webkit') {
+  // WebKit can include startup fetches in its load event. Tests that hold the
+  // session response must observe the page before that event to release it.
+  await page.goto(origin, { waitUntil: waitForReady ? 'load' : 'commit' });
+  if (waitForReady) await page.locator(signedIn ? (waitForDay ? '#top .day-top' : '#in:not([hidden])') : '#out:not([hidden]) #signin').waitFor();
+  if (waitForReady && signedIn && waitForDay && process.env.WEB_UI_BROWSER === 'webkit') {
     await page.waitForLoadState('networkidle'); await page.bringToFront();
     // Activate WebKit's page before testing hardware-keyboard focus.
     await page.mouse.click(1, 1);
@@ -513,12 +520,136 @@ test('visibility and push refreshes share a pending Today request', async () => 
   } finally { release(); await ctx.close(); }
 });
 
+test('slow cold and returning starts never reveal sign-in before the session answers', async () => {
+  for (const returning of [false, true]) {
+    let release, observed;
+    const gate = new Promise(r => release = r), seen = new Promise(r => observed = r);
+    const { ctx, page, errors } = await open({ waitForReady: false, seedSession: returning ? fixture('session') : undefined,
+      intercept: async (route, { url, view, answer }) => {
+        if (url.pathname !== (returning ? '/api/boot' : '/api/session')) return false;
+        observed(); await gate; await route.fulfill({ json: returning ? { view, cards: answer } : view }); return true;
+      } });
+    try {
+      await seen; await page.waitForTimeout(4500);
+      assert.equal(await page.locator('#sessionSaid').isVisible(), true);
+      assert.equal(await page.locator('#sessionRetry').isVisible(), true);
+      assert.equal(await page.locator('#signin').isVisible(), false, 'the four-second fallback must not show login');
+      release(); await page.locator('#top .day-top').waitFor();
+      assert.equal(await page.locator('#sessionSaid').isVisible(), false);
+      assert.equal(await page.locator('#out').isVisible(), false);
+      assert.deepEqual(errors, []);
+    } finally { release(); await ctx.close(); }
+  }
+});
+
+test('an unavailable or malformed startup session offers Retry and recovers without sign-in', async () => {
+  for (const failure of ['network', 'server', 'malformed']) {
+    let fail = true;
+    const { ctx, page, errors } = await open({ waitForReady: false, intercept: async (route, { url }) => {
+      if (url.pathname !== '/api/session' || !fail) return false;
+      fail = false;
+      if (failure === 'network') await route.abort();
+      else await route.fulfill({ status: failure === 'server' ? 503 : 200, json: failure === 'server' ? { error: 'Connection unavailable' } : {} });
+      return true;
+    } });
+    try {
+      await page.locator('#sessionState #sessionRetry:not([hidden])').waitFor();
+      assert.equal(await page.locator('#signin').isVisible(), false);
+      assert.equal(await page.locator('#in').isVisible(), false, 'unknown sessions do not expose cached account content');
+      await page.locator('#sessionRetry').click();
+      await page.locator('#top .day-top').waitFor();
+      assert.equal(await page.locator('#out').isVisible(), false);
+      assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+  }
+});
+
+test('secondary 401s and worker sign-out hints keep the current screen until the session is confirmed', async () => {
+  let verifying = false, expired = false, release, observed, checks = 0;
+  const gate = new Promise(r => release = r), seen = new Promise(r => observed = r);
+  const { ctx, page, errors } = await open({ intercept: async (route, { url, view }) => {
+    if (url.pathname === '/api/notify') { verifying = true; await route.fulfill({ status: 401, json: { error: 'Unavailable app session' } }); return true; }
+    if (url.pathname === '/api/session' && verifying) {
+      checks++; observed(); await gate; await route.fulfill({ json: expired ? { signedIn: false } : view }); return true;
+    }
+    return false;
+  } });
+  try {
+    await page.evaluate(() => { localStorage.setItem('markets:plan', 'kept'); location.hash = 'you'; });
+    await seen;
+    await page.evaluate(() => { for (let i=0;i<3;i++) navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { ifl: 'signedout' } })); });
+    await page.waitForTimeout(150);
+    assert.equal(checks, 1, 'concurrent hints share the authoritative session check');
+    assert.equal(await page.locator('#in').isVisible(), true);
+    assert.equal(await page.locator('#signin').isVisible(), false);
+    assert.equal(await page.evaluate(() => localStorage.getItem('markets:plan')), 'kept');
+    assert.ok(await page.evaluate(() => localStorage.getItem('today:session')));
+    release(); await page.waitForResponse(r => new URL(r.url()).pathname === '/api/session');
+    assert.equal(await page.locator('#in').isVisible(), true);
+    assert.equal(await page.locator('#out').isVisible(), false);
+    expired = true;
+    await page.evaluate(() => navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { ifl: 'signedout' } })));
+    await page.locator('#out:not([hidden]) #signin').waitFor();
+    assert.equal(checks, 2, 'a later sign-out hint revalidates instead of reusing the cached positive check');
+    assert.equal(await page.evaluate(() => localStorage.getItem('today:session')), null);
+    assert.deepEqual(errors, []);
+  } finally { release(); await ctx.close(); }
+});
+
+test('failure to verify a secondary 401 preserves the already authenticated session and its cache', async () => {
+  let verifying = false;
+  const { ctx, page, errors } = await open({ intercept: async (route, { url }) => {
+    if (url.pathname === '/api/notify') { verifying = true; await route.fulfill({ status: 401, json: { error: 'Unavailable app session' } }); return true; }
+    if (url.pathname === '/api/session' && verifying) { await route.fulfill({ status: 503, json: { error: 'Try later' } }); return true; }
+    return false;
+  } });
+  try {
+    const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/session');
+    await page.evaluate(() => { location.hash = 'you'; }); await response;
+    assert.equal(await page.locator('#in').isVisible(), true);
+    assert.equal(await page.locator('#out').isVisible(), false);
+    assert.ok(await page.evaluate(() => localStorage.getItem('today:session')));
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('a Home Screen offline reload keeps the eligible same-account day without showing login', async () => {
+  let offline = false;
+  const { ctx, page, errors } = await open({ iosHomeScreen: true, intercept: async (route, { url }) => {
+    if (!offline || !['/api/boot', '/api/session'].includes(url.pathname)) return false;
+    await route.abort(); return true;
+  } });
+  try {
+    await page.waitForFunction(() => { const s = JSON.parse(localStorage.getItem('today:session')); return s && localStorage.getItem('today:cards:' + s.id); });
+    offline = true; await page.reload();
+    // Offline storage intentionally keeps the redacted legacy cards, never the
+    // live v2 day header (which can contain money and other transient details).
+    await page.locator('#in:not([hidden])').waitFor();
+    await page.locator('#rest .tcard').first().waitFor();
+    assert.equal(await page.locator('#signin').isVisible(), false);
+    assert.equal(await page.locator('#sessionSaid').isVisible(), false);
+    assert.ok(await page.evaluate(() => localStorage.getItem('today:session')));
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('the updated script opens safely with the previous cached Home Screen HTML', async () => {
+  const { ctx, page, errors } = await open({ legacyShell: true, iosHomeScreen: true });
+  try {
+    assert.equal(await page.locator('#in').isVisible(), true);
+    assert.equal(await page.locator('#signin').isVisible(), false);
+    assert.equal(await page.locator('#sessionState').count(), 1);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
 test('sign-out drops an outstanding day response and its cached account data', async () => {
-  let release, observed;
+  let release, observed, expired = false;
   const seen = new Promise(r => observed = r), gate = new Promise(r => release = r);
   const privateDay = structuredClone(day); privateDay.cards.weather.lead = 'PRIVATE OLD ACCOUNT DATA';
   const { ctx, page, errors } = await open({ waitForDay: false, intercept: async (route, { url }) => {
-    if (url.pathname === '/api/notify') { await route.fulfill({ status: 401, json: { error: 'Signed out' } }); return true; }
+    if (url.pathname === '/api/notify') { expired = true; await route.fulfill({ status: 401, json: { error: 'Signed out' } }); return true; }
+    if (url.pathname === '/api/session' && expired) { await route.fulfill({ status: 401, json: { error: 'Session ended' } }); return true; }
     if (url.pathname !== '/api/today') return false;
     observed(); await gate; await route.fulfill({ json: privateDay }).catch(() => {}); return true;
   } });
@@ -550,10 +681,10 @@ test('an unavailable day shows an explicit retry and recovers without replaying 
 });
 
 test('a combined boot paints cards only with its authenticated view and falls back on older endpoints', async () => {
-  for (const unavailable of [false, true]) {
+  for (const unavailable of [false, 404, 401]) {
     const { ctx, page, requests, errors } = await open({ seedSession: fixture('session'), user: { id: 'd84670f1-1b2c-4321-8e9f-123456789abc', name: 'Jordan Patel', first: 'Jordan' }, intercept: async (route, { url }) => {
       if (url.pathname !== '/api/boot' || !unavailable) return false;
-      await route.fulfill({ status: 404, json: { error: 'Older account endpoint' } }); return true;
+      await route.fulfill({ status: unavailable, json: { error: 'Boot unavailable' } }); return true;
     } });
     try {
       await page.locator('#top .dt-h').waitFor();
@@ -570,13 +701,18 @@ test('a combined boot paints cards only with its authenticated view and falls ba
 });
 
 test('the coordinator and signed-out shell still load after an offline reload', { skip: process.env.WEB_UI_BROWSER === 'webkit' && 'Playwright WebKit cannot reload this intercepted localhost service-worker page offline' }, async () => {
-  const { ctx, page, errors } = await open({ signedIn: false, serviceWorkers: 'allow' });
+  let offline = false;
+  const { ctx, page, errors } = await open({ signedIn: false, serviceWorkers: 'allow', intercept: async (route, { url }) => {
+    if (!offline || url.pathname !== '/api/session') return false;
+    await route.abort(); return true;
+  } });
   try {
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.waitForFunction(() => !!navigator.serviceWorker.controller);
     await page.waitForFunction(async () => !!(await caches.match('/roof/requests.js')));
-    await ctx.setOffline(true); await page.reload();
-    await page.locator('#out:not([hidden]) #signin').waitFor();
+    offline = true; await ctx.setOffline(true); await page.reload();
+    await page.locator('#sessionState:not([hidden]) #sessionRetry:not([hidden])').waitFor();
+    assert.equal(await page.locator('#signin').isVisible(), false, 'an offline session check does not claim the account signed out');
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });

@@ -15,7 +15,7 @@
 // The account's appearance, Light or Dark as chosen (app.js keeps it in this browser), set as the page is read, before
 // it's first drawn, and the browser's bar with it, as the other apps do. (Automatic needs nothing: the stylesheet
 // follows the device.) And neither the way in nor your day is shown until app.js knows which it is (html.boot), so
-// one never flashes before the other; whatever happens, both may show after 4 seconds.
+// one never flashes before the other. A slow start offers Retry, never an unconfirmed sign-in screen.
 try {
   const t = localStorage.getItem("today:appearance");
   if (t === "light" || t === "dark") {
@@ -24,4 +24,10 @@ try {
   }
 } catch (_) {}
 document.documentElement.classList.add("boot");
-setTimeout(() => document.documentElement.classList.remove("boot"), 4000);
+setTimeout(() => {
+  document.documentElement.classList.remove("boot");
+  const state = document.getElementById("sessionState");
+  if (!state || state.hidden || state.getAttribute("aria-busy") !== "true") return;
+  document.getElementById("sessionSaid").textContent = "Still connecting…";
+  document.getElementById("sessionRetry").hidden = false;
+}, 4000);

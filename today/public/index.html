@@ -49,8 +49,17 @@
 <body>
 <div class="sky" aria-hidden="true"><div class="aura a1"></div><div class="aura a2"></div><div class="aura a3"></div></div>
 
-<!-- Signed out: InFlite's way in, as every app has it (the shared .ifl-in block), with InFlite’s mark and sign-in controls -->
-<main class="today-out ifl-in" id="out" aria-label="InFlite">
+<!-- The session is unknown until the account answers. Slow startup never means signed out. -->
+<main class="today-out ifl-in" id="sessionState" aria-label="Opening InFlite" aria-busy="true">
+  <div class="ifl-top"><div class="ifl-logo"><img src="/icon.svg" alt="" width="96" height="96"></div></div>
+  <div class="ifl-cta">
+    <p class="today-said" id="sessionSaid" role="status">Opening InFlite…</p>
+    <a class="ifl-go pill primary" id="sessionRetry" href="" hidden>Try Again</a>
+  </div>
+</main>
+
+<!-- Sign-in controls are shown only after the account confirms the session ended. -->
+<main class="today-out ifl-in" id="out" aria-label="InFlite" hidden>
   <div class="ifl-top">
     <div class="ifl-logo"><img src="/icon.svg" alt="" width="96" height="96"></div>
   </div>
