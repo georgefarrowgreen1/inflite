@@ -1221,3 +1221,37 @@ test('a failed reconnect keeps the signed-in user in Today rather than opening a
     assert.deepEqual(errors,[]);
   } finally {await ctx.close();}
 });
+
+for (const width of [320, 390, 1440]) test(`shared header removes repeated words and actions without losing controls at ${width}px`, async () => {
+  const {ctx,page,errors}=await open({width});
+  try {
+    const initial=await page.evaluate(async()=>{
+      const {createHeader}=await import('/roof/header.js');
+      const host=document.createElement('div');host.id='header-review';document.querySelector('#in').prepend(host);
+      window.headerCalls=[];
+      const head=createHeader(host,{search:{open:()=>headerCalls.push('search')},nav:{back:()=>headerCalls.push('back')}});
+      window.reviewHeader=head;
+      head.set({title:'Weather',crumb:{app:'weather',text:'Weather'},line:'  WEATHER  ',back:{label:'Back to Today'},acts:[
+        {icon:'search',label:'Search again',run:()=>headerCalls.push('duplicate search')},
+        {icon:'settings',label:'Settings',run:()=>headerCalls.push('settings')},
+        {icon:'settings',label:'Settings again',run:()=>headerCalls.push('duplicate settings')},
+        {icon:'plus',label:'Add',run:()=>headerCalls.push('add')}
+      ]});
+      return {crumb:host.querySelector('.ifh-crumb').hidden,line:host.querySelector('.ifh-line').textContent,actions:[...host.querySelectorAll('.ifh-act')].map(x=>x.dataset.act)};
+    });
+    assert.deepEqual(initial,{crumb:true,line:'',actions:['search','settings','plus']});
+    const host=page.locator('#header-review');
+    await host.locator('[data-act=search]').click();await host.locator('[data-act=settings]').click();await host.locator('[data-act=plus]').click();
+    assert.deepEqual(await page.evaluate(()=>headerCalls),['search','settings','add']);
+    const preserved=await page.evaluate(()=>{
+      const spec={title:'Today',crumb:{app:'weather',text:'Weather'},line:'Rain from 14:00',acts:[]};reviewHeader.set(spec);reviewHeader.set(spec);
+      const root=reviewHeader.el,normal={crumb:!root.querySelector('.ifh-crumb').hidden,line:root.querySelector('.ifh-line').textContent};
+      const b=document.createElement('button');b.textContent='Today';b.onclick=()=>headerCalls.push('line');reviewHeader.set({...spec,line:b});
+      return {...normal,interactive:root.querySelector('.ifh-line button')===b};
+    });
+    assert.deepEqual(preserved,{crumb:true,line:'Rain from 14:00',interactive:true});
+    await host.locator('.ifh-line button').click();assert.equal((await page.evaluate(()=>headerCalls)).at(-1),'line');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
+    await page.evaluate(()=>{reviewHeader.destroy();document.querySelector('#header-review').remove();});assert.deepEqual(errors,[]);
+  } finally {await ctx.close();}
+});

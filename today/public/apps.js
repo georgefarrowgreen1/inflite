@@ -2,10 +2,10 @@
 // lines come from Today's answer; app destinations and Mail lenses retain the hub's
 // existing switches and standalone fallbacks. Chats has its own navigation tab.
 const APPS = [
-  { app: "weather", name: "Weather", what: "A forecast that explains itself", links: [["Radar", "radar", "radar"], ["Warnings", "warnings", "warn"]] },
-  { app: "fitness", name: "Fitness", what: "Your training, a day at a time", links: [["Activities", "activities", "run"], ["Progress", "progress", "trend"]] },
-  { app: "markets", name: "Markets", what: "Your money, said simply", links: [["Holdings", "holdings", "layers"], ["News", "news", "file"]] },
-  { app: "mail", name: "Mail", what: "For you only", only: (view) => view?.apps?.mail === true,
+  { app: "weather", name: "Weather", what: "Forecast, radar and warnings", links: [["Radar", "radar", "radar"], ["Warnings", "warnings", "warn"]] },
+  { app: "fitness", name: "Fitness", what: "Your training and progress", links: [["Activities", "activities", "run"], ["Progress", "progress", "trend"]] },
+  { app: "markets", name: "Markets", what: "Holdings, returns and news", links: [["Holdings", "holdings", "layers"], ["News", "news", "file"]] },
+  { app: "mail", name: "Mail", what: "Your inbox", only: (view) => view?.apps?.mail === true,
     links: [["People", "people", "people"], ["Updates", "updates", "inbox"], ["Later", "later", "clock"], ["Done", "done", "check"]] },
 ];
 const LIMIT = 4;

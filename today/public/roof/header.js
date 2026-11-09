@@ -80,7 +80,8 @@ export function createHeader(host, F, { me, onMe } = {}) {
     h1.setAttribute("aria-label", t || "");
   }
   function setActs(list) {
-    list = [{ icon: "search", label: "Search" }, ...(list || []).filter(Boolean).slice(0, 2)];
+    const seen = new Set(["search"]);
+    list = [{ icon: "search", label: "Search" }, ...(list || []).filter((a) => a && !seen.has(a.icon) && seen.add(a.icon)).slice(0, 2)];
     runs = {};
     for (const a of list) if (a.run) runs[a.icon] = a.run;
     const k = list.map((a) => `${a.icon}|${a.label}|${a.word || ""}`).join(";");
@@ -140,6 +141,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
     else if (r > segs.scrollLeft + segs.clientWidth) segs.scrollLeft = r - segs.clientWidth + 12;
   }
 
+  const words = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
   function set(spec = {}) {
     cur = { ...spec };
     hd.classList.toggle("ifh-conversation", !!spec.conversation);
@@ -153,11 +155,11 @@ export function createHeader(host, F, { me, onMe } = {}) {
     if (onApp) back.setAttribute("aria-label", spec.back.label || "Back");
     const c = spec.crumb, ck = (c?.app || "") + (c?.text || "");
     if (crumb.dataset.k !== ck) { crumb.dataset.k = ck; crumb.replaceChildren(...(c?.app ? [icon(null, { app: c.app, size: 16 })] : []), c?.text || ""); }
-    crumb.hidden = !c?.text;
+    crumb.hidden = !c?.text || words(c.text) === words(spec.title);
     hd.dataset.app = c?.app || "inflite";
     title(spec.title, spec.compactTitle);
     if (spec.line?.nodeType) line.replaceChildren(spec.line);
-    else if (line.textContent !== (spec.line || "") || line.firstElementChild) line.textContent = spec.line || "";
+    else { const said = words(spec.line) === words(spec.title) ? "" : spec.line || ""; if (line.textContent !== said || line.firstElementChild) line.textContent = said; }
     setActs(spec.acts);
     setSecs(spec.sections || null, spec.section, spec.badges);
     compact();

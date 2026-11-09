@@ -13,9 +13,9 @@ import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.04";
+const BUILD = "2.05";
 // (what's new in it, said once it's in)
-const NEWS = "A clearer next action, with routine day details tucked away";
+const NEWS = "Less repetition in app headers, clearer account links and shorter app descriptions";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
