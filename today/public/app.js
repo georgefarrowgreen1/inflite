@@ -13,9 +13,9 @@ import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.01";
+const BUILD = "2.02";
 // (what's new in it, said once it's in)
-const NEWS = "Slow connections and secondary requests no longer show a false sign-in screen";
+const NEWS = "InFlite’s logo comes together once as sign-in opens, with a still version for reduced motion";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -2859,6 +2859,12 @@ function ensureSessionUI() {
   const out = $("#out"), state = out.cloneNode(true);
   state.id = "sessionState"; state.hidden = false;
   state.setAttribute("aria-label", "Opening InFlite"); state.setAttribute("aria-busy", "true");
+  // The neutral shell uses the static mark: never clone an animated SVG's IDs into the document.
+  const logo = state.querySelector(".ifl-logo");
+  if (logo?.querySelector("svg")) {
+    const img = document.createElement("img"); img.src = "/icon.svg"; img.alt = ""; img.width = img.height = 96;
+    logo.classList.remove("ifl-arrival"); logo.replaceChildren(img);
+  }
   const said = document.createElement("p"), retry = document.createElement("a");
   said.id = "sessionSaid"; said.className = "today-said"; said.setAttribute("role", "status"); said.textContent = "Opening InFlite…";
   retry.id = "sessionRetry"; retry.className = "ifl-go pill primary"; retry.href = ""; retry.textContent = "Try Again";

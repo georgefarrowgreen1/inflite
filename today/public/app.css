@@ -435,6 +435,53 @@ label.row:active { background: var(--press); }
    the mark above Sign in ---- */
 .today-out .ifl-logo::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(closest-side, var(--in-glow), var(--in-glow-2) 55%, transparent); }
 .today-out .ifl-logo img { position: relative; width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 16px 34px -14px var(--in-icon-shadow), 0 0 0 0.5px var(--in-icon-edge); }
+/* First light: the approved mark assembles once when sign-in is revealed. These rules belong to Today;
+   the shared sign-in block below continues to own its position. Static artwork is the fallback. */
+.today-out .ifl-arrival::before { content: none; }
+.ifl-arrival { pointer-events: none; }
+.ifl-arrival-mark { position: relative; display: block; width: 96px; height: 96px; overflow: visible; }
+.ifl-arrival-lights { position: absolute; width: 296px; height: 296px; top: calc(50% - 148px); left: calc(50% - 148px); transform: scale(0.94); }
+.ifl-arrival-light { position: absolute; width: 169px; height: 169px; opacity: 0.3; transform: scale(0.85); }
+.ifl-arrival-light::after { content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(ellipse, var(--arrival-colour), transparent 67%); filter: blur(10px); }
+.ifl-arrival-blue { --arrival-colour: #6db4ffa0; --arrival-x: -33px; --arrival-y: -33px; left: 0; top: 0; }
+.ifl-arrival-coral { --arrival-colour: #ffad8d85; --arrival-x: 33px; --arrival-y: -33px; right: 0; top: 0; }
+.ifl-arrival-teal { --arrival-colour: #5edccb90; --arrival-x: 33px; --arrival-y: 33px; right: 0; bottom: 0; }
+.ifl-arrival-violet { --arrival-colour: #a798ffa0; --arrival-x: -33px; --arrival-y: 33px; left: 0; bottom: 0; }
+.ifl-arrival-lift, .ifl-arrival-tile, .ifl-arrival-core { transform-origin: 512px 512px; }
+.ifl-arrival-tile { filter: drop-shadow(0 110px 120px var(--in-icon-shadow)); }
+.ifl-arrival-petal { transform-origin: 512px 296px; }
+@media (prefers-reduced-motion: no-preference) {
+  #out:not([hidden]) .ifl-arrival-lights { animation: arrival-bloom 3.3s ease-in-out both; }
+  #out:not([hidden]) .ifl-arrival-light { animation: arrival-gather 2.4s cubic-bezier(0.22, 0.8, 0.26, 1) both; }
+  #out:not([hidden]) .ifl-arrival-coral { animation-delay: -0.08s; }
+  #out:not([hidden]) .ifl-arrival-teal { animation-delay: -0.16s; }
+  #out:not([hidden]) .ifl-arrival-violet { animation-delay: -0.24s; }
+  #out:not([hidden]) .ifl-arrival-lift { animation: arrival-lift 2.2s ease-in-out both; }
+  #out:not([hidden]) .ifl-arrival-tile { animation: arrival-tile 2.04s cubic-bezier(0.22, 0.8, 0.26, 1) both; }
+  #out:not([hidden]) .ifl-arrival-petal { animation: arrival-petal 1.98s cubic-bezier(0.18, 0.85, 0.25, 1) both; }
+  #out:not([hidden]) .ifl-arrival-petal-1 { animation-delay: -0.07s; }
+  #out:not([hidden]) .ifl-arrival-petal-2 { animation-delay: -0.14s; }
+  #out:not([hidden]) .ifl-arrival-petal-3 { animation-delay: -0.21s; }
+  #out:not([hidden]) .ifl-arrival-core { animation: arrival-core 2.1s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+}
+:root[data-motion-paused] .ifl-arrival * { animation-play-state: paused !important; }
+@keyframes arrival-bloom { 0% { transform: scale(0.98); } 45.5% { transform: scale(1.08); } 100% { transform: scale(0.94); } }
+@keyframes arrival-gather {
+  0% { opacity: 0; transform: translate(var(--arrival-x), var(--arrival-y)) scale(0.65); }
+  20% { opacity: 0.8; } 55% { opacity: 1; transform: translate(0, 0) scale(1.05); }
+  100% { opacity: 0.3; transform: translate(0, 0) scale(0.85); }
+}
+@keyframes arrival-lift {
+  0% { opacity: 0; transform: translateY(90px) scale(0.93); } 25% { opacity: 1; }
+  74% { transform: translateY(-20px) scale(1.018); } 100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes arrival-tile { 0%, 12% { opacity: 0; transform: scale(0.82); } 65% { opacity: 1; transform: scale(1.025); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes arrival-petal {
+  0%, 6% { opacity: 0; transform: translateY(-540px) rotate(-10deg) scale(0.84); } 24% { opacity: 1; }
+  73% { transform: translateY(24px) rotate(1deg) scale(1.025); } 100% { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
+}
+@keyframes arrival-core { 0%, 40% { opacity: 0; transform: scale(0.4); } 77% { opacity: 1; transform: scale(1.12); } 100% { opacity: 1; transform: scale(1); } }
 .today-out .ifl-go { min-height: 52px; font-size: 17px; }
 .today-out .ifl-new a { color: var(--tint-text); font-weight: 600; text-decoration: none; }
 .today-out .ifl-top, .today-out .ifl-cta { animation: in-rise var(--motion-page, 0.46s) var(--motion-glide, var(--ease-glide)) backwards; }
