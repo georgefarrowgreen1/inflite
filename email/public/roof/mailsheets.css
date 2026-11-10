@@ -87,3 +87,6 @@
 .ifl-sheet[data-app=mail] [data-key^="spot-"] .ifl-lead svg.m-ic { width: 20px; height: 20px; }
 
 @media (prefers-reduced-motion: reduce) { .ifl-sheet[data-app=mail] .mc-chip:active { transform: none; } .ifl-sheet[data-app=mail] .mc-opt { transition: none; } }
+@media (forced-colors: active) {
+  .ifl-sheet[data-app=mail] .mc-row:focus-within { outline: 2px solid Highlight; outline-offset: -2px; }
+}

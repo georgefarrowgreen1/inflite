@@ -6447,3 +6447,8 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 }
 .set-field:focus-within, .set-addr:focus-within { box-shadow: inset 0 0 0 2px var(--tint); }
 .set-input:focus-visible, .set-local:focus-visible { outline: none; }
+@media (forced-colors: active) {
+  .sheet-body .field:focus-within, .set-field:focus-within, .set-addr:focus-within, .qr:focus-within {
+    outline: 2px solid Highlight; outline-offset: -2px;
+  }
+}

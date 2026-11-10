@@ -299,7 +299,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.83";
+  const BUILD = "1.84";
   // (what's new in it, said once it's in)
   const NEWS = "Rounded controls, clearer spacing and centred icons";
 

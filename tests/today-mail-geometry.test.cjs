@@ -132,3 +132,68 @@ for (const [width, theme] of [[320, 'dark'], [390, 'light'], [1440, 'dark']]) te
     await noErrors(page, errors);
   } finally { await ctx.close(); }
 });
+
+async function forcedOuterFocus(page, input, selector) {
+  await input.focus();
+  await input.evaluate(async (el, selector) => { await Promise.allSettled(el.closest(selector).getAnimations().filter(a => Number.isFinite(a.effect.getComputedTiming().endTime)).map(a => a.finished)); }, selector);
+  const focused = await input.evaluate((el, selector) => {
+    const inner = getComputedStyle(el), outer = getComputedStyle(el.closest(selector));
+    return { active: el === document.activeElement, forced: matchMedia('(forced-colors: active)').matches,
+      inner: inner.outlineStyle, outer: outer.outlineStyle, width: parseFloat(outer.outlineWidth), offset: parseFloat(outer.outlineOffset),
+      radius: parseFloat(outer.borderTopLeftRadius), shadow: outer.boxShadow };
+  }, selector);
+  assert.equal(focused.forced, true, 'exercise actual forced-colors emulation');
+  assert.equal(focused.active, true);
+  assert.equal(focused.inner, 'none', 'keep the duplicate inner ring suppressed');
+  assert.equal(focused.shadow, 'none', 'a shadow cannot provide focus in forced colors');
+  assert.equal(focused.outer, 'solid'); assert.ok(focused.width >= 2); assert.ok(focused.offset <= -2);
+  assert.ok(focused.radius >= 16, 'the visible outline follows the rounded outer surface');
+  await input.evaluate(el => el.blur());
+  await input.evaluate(async (el, selector) => { await Promise.allSettled(el.closest(selector).getAnimations().filter(a => Number.isFinite(a.effect.getComputedTiming().endTime)).map(a => a.finished)); }, selector);
+  assert.equal(await input.evaluate((el, selector) => getComputedStyle(el.closest(selector)).outlineStyle, selector), 'none', 'the outer indicator tracks focus');
+}
+
+test('forced-colors: shared fields retain rounded outer focus without a duplicate inner ring', async () => {
+  const { ctx, page, errors } = await open({ width: 390, theme: 'dark' });
+  try {
+    await page.emulateMedia({ forcedColors: 'active' });
+    await page.evaluate(async () => { const ui = await import('/roof/ui.js'); __geometryCompose.body.append(ui.field({ label: 'Generic search', placeholder: 'Search' })); });
+    await forcedOuterFocus(page, page.locator('.ifl-field input'), '.ifl-field');
+    await page.locator('.ifl-field input').focus(); await screenshot(page, 'forced-colors-shared-field');
+    await noErrors(page, errors);
+  } finally { await ctx.close(); }
+});
+
+test('forced-colors: hosted Mail recipient rows retain rounded outer focus without an inner ring', async () => {
+  const { ctx, page, errors } = await open({ width: 390, theme: 'dark' });
+  try {
+    await page.emulateMedia({ forcedColors: 'active' });
+    const input = page.locator('.mc-row[data-k="to"] input');
+    await forcedOuterFocus(page, input, '.mc-row');
+    await input.focus(); await screenshot(page, 'forced-colors-hosted-recipients');
+    await noErrors(page, errors);
+  } finally { await ctx.close(); }
+});
+
+test('forced-colors: native Mail compose, quick reply and compound settings retain visible outer focus', async () => {
+  const { ctx, page, errors } = await open({ native: true, width: 390, theme: 'light' });
+  try {
+    await page.emulateMedia({ forcedColors: 'active' });
+    await forcedOuterFocus(page, page.locator('.field[data-k="to"] input'), '.field');
+    await page.locator('.field[data-k="to"] input').focus(); await screenshot(page, 'forced-colors-native-recipients');
+    await page.locator('.sheet.open').getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('.sheet').waitFor({ state: 'detached' });
+    await page.locator('.row[data-id]').first().click(); await page.locator('.qr-field').waitFor();
+    await forcedOuterFocus(page, page.locator('.qr-field'), '.qr');
+    const origin = new URL(page.url()).origin;
+    await page.goto(origin + '/?demo#settings'); await page.locator('.set-sheet .set-row').first().waitFor();
+    await page.locator('.set-row').filter({ hasText: '@' }).first().click();
+    await forcedOuterFocus(page, page.locator('.set-sheet .set-input'), '.set-field');
+    await page.locator('.set-sheet .set-input').focus(); await screenshot(page, 'forced-colors-native-settings');
+    const current = page.locator('.set-page:not(.to-left):not(.to-right)');
+    await current.getByRole('button', { name: 'Back to Settings', exact: true }).click();
+    await current.locator('.set-add').click();
+    await forcedOuterFocus(page, page.locator('.set-sheet .set-local'), '.set-addr');
+    await noErrors(page, errors);
+  } finally { await ctx.close(); }
+});

@@ -14,7 +14,7 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.11";
+const BUILD = "2.12";
 // (what's new in it, said once it's in)
 const NEWS = "Rounded controls, clearer spacing and centred icons";
 
