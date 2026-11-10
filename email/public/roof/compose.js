@@ -133,11 +133,23 @@ export function openCompose(ctx, init = {}) {
   function tokens(key, label) {
     const box = el("div", { class: "mc-chips" });
     const input = el("input", { type: "email", inputmode: "email", autocomplete: "off", autocapitalize: "off", spellcheck: "false", enterkeyhint: "next", "aria-label": label, data: { key } });
-    const draw = () => box.replaceChildren(...c[key].map((p, i) => {
-      const b = el("button", { type: "button", class: `mc-chip${EMAIL_RE.test(p.email) ? "" : " bad"}`, "aria-label": `Remove ${p.name || p.email}`, title: p.email, text: p.name || p.email });
-      b.addEventListener("click", () => { c[key].splice(i, 1); draw(); changed(); });
-      return b;
-    }), input);
+    // Keep the input mounted so committing an address retains the keyboard.
+    const chips = new Map();
+    box.append(input);
+    const draw = () => {
+      for (const [p, node] of chips) if (!c[key].includes(p)) { node.remove(); chips.delete(p); }
+      let previous = null;
+      for (const p of c[key]) {
+        let node = chips.get(p);
+        if (!node) {
+          node = el("button", { type: "button", class: `mc-chip${EMAIL_RE.test(p.email) ? "" : " bad"}`, "aria-label": `Remove ${p.name || p.email}`, title: p.email, text: p.name || p.email });
+          node.addEventListener("click", (e) => { e.preventDefault(); const i = c[key].indexOf(p); if (i < 0) return; c[key].splice(i, 1); draw(); changed(); input.focus({ preventScroll: true }); });
+          chips.set(p, node);
+          if (previous) previous.after(node); else box.prepend(node);
+        }
+        previous = node;
+      }
+    };
     // (all: at a comma, Return or Send, everything typed; on leaving the field, only whole addresses, so a name half
     // typed stays as it was typed, not a red chip of a letter or two)
     const commit = (all = true) => {
@@ -160,7 +172,10 @@ export function openCompose(ctx, init = {}) {
     input.addEventListener("blur", () => setTimeout(() => { if (!sugg.contains(document.activeElement)) commit(false); }, 150));
     draw();
     fields[key] = { input, draw, commit };
-    return el("label", { class: "mc-row", data: { k: key } }, el("span", { class: "mc-k", text: `${label}:` }), box);
+    const caption = el("span", { class: "mc-k", text: `${label}:` });
+    const row = el("div", { class: "mc-row", data: { k: key } }, caption, box);
+    row.addEventListener("click", (e) => { if (e.target === row || e.target === caption || e.target === box) input.focus({ preventScroll: true }); });
+    return row;
   }
   const clear = () => { suggFor = null; sugg.replaceChildren(); };
   let suggT = 0;

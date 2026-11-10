@@ -51,6 +51,33 @@ async function open({ nativeMail = false, width = 390, motion = 'no-preference' 
 async function settled(locator) { await locator.evaluate(async el => { await Promise.allSettled(el.getAnimations({ subtree: true }).filter(a => Number.isFinite(a.effect.getComputedTiming().endTime)).map(a => a.finished)); }); }
 async function noErrors(page, errors) { assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => __rejections), []); }
 
+async function hostedCompose() {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' }), page = await ctx.newPage(), errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { window.__rejections = []; addEventListener('unhandledrejection', e => __rejections.push(String(e.reason))); });
+  await ctx.route('**/*', async route => {
+    const u = new URL(route.request().url());
+    if (u.origin !== mailOrigin) return route.abort();
+    if (u.pathname === '/__compose-test') return route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body></body></html>' });
+    if (u.pathname === '/__compose-ui.js') return route.fulfill({ contentType: 'text/javascript', body: await readFile(resolve(today, 'roof/ui.js')) });
+    return route.continue();
+  });
+  await page.goto(mailOrigin + '/__compose-test');
+  await page.evaluate(async () => {
+    const ui = await import('/__compose-ui.js'), { openCompose } = await import('/roof/compose.js'), { createStore } = await import('/roof/store.js');
+    let slot = null;
+    const outbox = window.__composeOutbox = { sends: [], unsent: () => slot, keepUnsent: f => (slot = f, true), dropUnsent: () => { slot = null; }, track: () => () => {}, send: async (f, files) => { outbox.sends.push({ f, files }); return { ok: true }; } };
+    const fw = { ui, toast() {}, sheet: { open(spec) {
+      const el = ui.el('section', { class: 'ifl-sheet', data: { app: 'mail' } }, spec.body, spec.acts.map(a => ui.btn(a.label, a)));
+      document.body.append(el);
+      return { el, closed: false, setBusy() {}, close() { this.closed = true; el.remove(); spec.onClose?.(); } };
+    } } };
+    openCompose({ fw, store: createStore({ me: { defaultFrom: 'me@example.com', identities: ['me@example.com'] } }), logic: {}, icon: () => document.createElement('span'), open: {},
+      api: { saveDraft: async () => ({ id: 'sample-draft' }) }, outbox }, { subject: 'Sample note', text: 'Hello' });
+  });
+  return { ctx, page, errors };
+}
+
 test('Today refresh keeps the card stationary and its content readable throughout the stagger', async () => {
   const { ctx, page, errors } = await open();
   try {
@@ -179,6 +206,71 @@ test('Mail reduced motion removes the composer immediately and stops indefinite 
       const active = spinner.getAnimations().length; spinner.remove(); return active;
     });
     assert.equal(moving, 0);
+    await noErrors(page, errors);
+  } finally { await ctx.close(); }
+});
+
+for (const width of [390, 1440]) test(`Mail recipients retain keyboard focus and existing chips through edits at ${width}px`, async () => {
+  const { ctx, page, errors } = await open({ nativeMail: true, width });
+  try {
+    await page.getByRole('button', { name: 'New Message', exact: true }).click();
+    const sheet = page.locator('.sheet.open'), input = sheet.getByRole('textbox', { name: 'To', exact: true });
+    await sheet.waitFor(); await settled(sheet);
+    await input.fill('one@example.com'); await input.press('Enter');
+    assert.equal(await input.evaluate(el => el === document.activeElement), true, 'Return keeps the recipient keyboard active');
+    await settled(sheet);
+    await sheet.locator('.token').first().evaluate(el => { window.__firstRecipient = el; });
+    await input.fill('two@example.com'); await input.press('Enter');
+    assert.deepEqual(await input.evaluate(el => ({ focused: el === document.activeElement, same: __firstRecipient === el.parentNode.querySelector('.token'), replaying: __firstRecipient.getAnimations().length > 0 })), { focused: true, same: true, replaying: false });
+    await sheet.locator('.c-subject').focus();
+    await sheet.locator('.field[data-k="to"] > label').click();
+    assert.equal(await sheet.locator('.token').count(), 2, 'tapping the To label keeps every recipient');
+    assert.equal(await input.evaluate(el => el === document.activeElement), true);
+    await input.press('Backspace');
+    assert.equal(await sheet.locator('.token').count(), 1);
+    assert.equal(await input.evaluate(el => el === document.activeElement), true);
+    await input.fill('two@example.com'); await input.press('Enter');
+    await sheet.locator('.token[title="one@example.com"]').click();
+    await page.getByRole('menuitem', { name: 'Remove', exact: true }).click();
+    assert.equal(await sheet.locator('.token').getAttribute('title'), 'two@example.com', 'removal follows current recipient identity');
+    assert.equal(await input.evaluate(el => el === document.activeElement), true);
+    await sheet.getByRole('button', { name: 'Cc/Bcc', exact: true }).click();
+    const cc = sheet.getByRole('textbox', { name: 'Cc', exact: true });
+    await cc.fill('partial');
+    const toggled = await cc.evaluate(el => {
+      const button = el.closest('.sheet').querySelector('.c-cc');
+      button.click(); button.click();
+      return { same: el.isConnected, value: el.value, focused: document.activeElement === el };
+    });
+    assert.deepEqual(toggled, { same: true, value: 'partial', focused: true }, 'rapid Cc/Bcc reversal preserves the field and partial address');
+    await sheet.getByRole('button', { name: 'Cc/Bcc', exact: true }).click();
+    assert.equal(await sheet.locator('.c-subject').evaluate(el => el === document.activeElement), true, 'hiding a focused recipient row returns focus to the subject');
+    await noErrors(page, errors);
+  } finally { await ctx.close(); }
+});
+
+test('Hosted Mail recipients keep focus and identity while preserving ordered duplicate recipients and send validation', async () => {
+  const { ctx, page, errors } = await hostedCompose();
+  try {
+    const input = page.getByRole('textbox', { name: 'To', exact: true });
+    await input.fill('one@example.com'); await input.press('Enter');
+    assert.equal(await input.evaluate(el => el === document.activeElement), true);
+    await page.locator('.mc-chip').first().evaluate(el => { window.__firstRecipient = el; });
+    for (const address of ['two@example.com', 'one@example.com']) { await input.fill(address); await input.press('Enter'); }
+    assert.equal(await page.locator('.mc-chip').first().evaluate(el => el === __firstRecipient), true);
+    await page.getByRole('textbox', { name: 'Subject', exact: true }).focus();
+    await page.locator('.mc-row[data-k="to"] > .mc-k').click();
+    assert.equal(await page.locator('.mc-chip').count(), 3, 'tapping the To label keeps every recipient');
+    assert.equal(await input.evaluate(el => el === document.activeElement), true);
+    await page.getByRole('button', { name: 'Remove one@example.com', exact: true }).first().click();
+    assert.equal(await input.evaluate(el => el === document.activeElement), true);
+    assert.deepEqual(await page.locator('.mc-chip').allTextContents(), ['two@example.com', 'one@example.com']);
+    await input.fill('invalid-address'); await input.press('Enter');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    assert.equal(await page.evaluate(() => __composeOutbox.sends.length), 0, 'invalid addresses still prevent sending');
+    await page.getByRole('button', { name: 'Remove invalid-address', exact: true }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    assert.deepEqual(await page.evaluate(() => __composeOutbox.sends.map(s => s.f.to.map(p => p.email))), [['two@example.com', 'one@example.com']]);
     await noErrors(page, errors);
   } finally { await ctx.close(); }
 });

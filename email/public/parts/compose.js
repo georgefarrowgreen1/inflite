@@ -140,19 +140,24 @@ export default (M) => {
       });
       const field = h("div.field", { "data-k": key }, h("label", `${label}:`), tokens, extra);
       field.addEventListener("click", (e) => {
-        if (e.target === field || e.target === tokens) input.focus();
+        if (e.target === field || e.target === field.firstChild || e.target === tokens) input.focus({ preventScroll: true });
       });
+      // Keep the input mounted so committing an address retains the keyboard.
+      const chips = new Map();
+      tokens.append(input);
       const draw = () => {
-        setKids(tokens, 
-          ...c[key].map((p, i) =>
-            h(
+        for (const [p, node] of chips) if (!c[key].includes(p)) { node.remove(); chips.delete(p); }
+        let previous = null;
+        for (const p of c[key]) {
+          let node = chips.get(p);
+          if (!node) {
+            node = h(
               "button.token",
               {
                 type: "button",
                 class: EMAIL_RE.test(p.email) ? null : "invalid",
                 title: p.email,
                 onclick: (e) => {
-                  e.currentTarget.classList.toggle("focused");
                   showMenu(e.currentTarget, [
                     { label: p.email, disabled: true },
                     "-",
@@ -161,9 +166,12 @@ export default (M) => {
                       icon: "x",
                       destructive: true,
                       action: () => {
+                        const i = c[key].indexOf(p);
+                        if (i < 0) return;
                         c[key].splice(i, 1);
                         draw();
                         update();
+                        input.focus({ preventScroll: true });
                       },
                     },
                   ]);
@@ -171,10 +179,12 @@ export default (M) => {
               },
               avatar(p, "tok-av"),
               h("span.tok-n", p.name || p.email)
-            )
-          ),
-          input
-        );
+            );
+            chips.set(p, node);
+            if (previous) previous.after(node); else tokens.prepend(node);
+          }
+          previous = node;
+        }
       };
       const commit = () => {
         const parts = input.value.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
@@ -218,7 +228,7 @@ export default (M) => {
       });
       input.addEventListener("blur", () =>
         setTimeout(() => {
-          if (document.activeElement?.closest?.(".suggestions")) return;
+          if (document.activeElement === input || document.activeElement?.closest?.(".suggestions")) return;
           commit();
           if (suggestState.key === key) clearSuggest();
         }, 120)
@@ -306,7 +316,9 @@ export default (M) => {
 
     const ccRow = h("div");
     function drawCcRow() {
-      setKids(ccRow, c.showCc ? [tokenField("cc", "Cc"), tokenField("bcc", "Bcc")] : null);
+      if (c.showCc && !ccRow.firstChild) ccRow.append(tokenField("cc", "Cc"), tokenField("bcc", "Bcc"));
+      if (!c.showCc && ccRow.contains(document.activeElement)) subjectInput.focus({ preventScroll: true });
+      ccRow.hidden = !c.showCc;
       ccBtn.classList.toggle("on", c.showCc);
       ccBtn.setAttribute("aria-pressed", String(c.showCc));
     }

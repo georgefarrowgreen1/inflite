@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.81";
-export const NEWS = "Smoother springs, transitions and interrupted motion across InFlite";
+export const BUILD = "1.82";
+export const NEWS = "Steadier recipient entry, chips and Cc fields";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
