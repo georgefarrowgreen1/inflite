@@ -12,14 +12,14 @@
   position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   min-height: var(--control-height); min-width: 0; max-width: 100%; padding: 10px var(--control-padding); border-radius: var(--control-radius);
   font-size: var(--control-font-size); font-weight: 600; color: var(--text); background: var(--glass-ctl);
-  box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.25), 0 0 0 0.5px var(--line);
+  box-shadow: var(--ifl-shadow-control, 0 1px 4px rgba(0, 0, 0, 0.08));
   text-align: center; line-height: 1.3; white-space: normal; overflow-wrap: anywhere;
   text-decoration: none; cursor: pointer; transition: transform var(--motion-release, 0.38s) var(--motion-spring, var(--ease-out)), background-color 0.18s;
 }
 .ifl-btn { --control-fill: var(--acc-fill); }
 :is(.pill, .ifl-btn).primary {
-  color: #fff; background: linear-gradient(180deg, var(--control-fill), color-mix(in srgb, var(--control-fill) 86%, #000));
-  box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.35), 0 6px 16px -10px var(--control-fill);
+  color: var(--ifl-on-accent, #10150d); background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  box-shadow: var(--ifl-shadow-control, 0 1px 4px rgba(0, 0, 0, 0.08));
 }
 :is(.pill, .ifl-btn).destructive { color: var(--danger); }
 :is(.pill, .ifl-btn):active:not(:disabled):not([aria-disabled="true"]) { transform: scale(var(--control-press-scale)); transition-duration: var(--motion-press, 0.1s); }
@@ -35,9 +35,9 @@
   border: 0; border-radius: 999px; cursor: pointer; background: var(--switch-off); box-shadow: inset 0 0 0 0.5px var(--line);
   transition: background-color 0.3s; }
 .switch::before { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
-  background: var(--knob); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.28), 0 1px 1px rgba(0, 0, 0, 0.12);
+  background: var(--knob); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
   transition: transform var(--motion-release, 0.38s) var(--motion-spring, var(--ease-spring)); }
-.switch:checked { background: var(--good); }
+.switch:checked { background: var(--ifl-accent-fill, var(--good)); }
 .switch:checked::before { transform: translateX(20px); }
 .switch:focus-visible { outline: 2px solid var(--acc-ink, var(--tint-text)); outline-offset: 3px; }
 .switch:disabled { opacity: 0.45; cursor: default; }

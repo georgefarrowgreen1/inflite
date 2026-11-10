@@ -5,27 +5,23 @@
    --good, --good-text, --warn, --ease-out/-glide/-spring, --c-<app>, and the shared surfaces every app uses rather than
    its own light and dark pairs: --inset (a card set into a card), --raised (the chosen one of a few), --badge (a count))
    stay as they are; this adds the framework's.
-   The token block is B0's and frozen: names and values exactly map-design §3.2 (accents) and §3.1 (the rest); FW may
-   add tokens, never rename or change these. Dark first, light in both light blocks, as app.css. No inline styles
-   anywhere: a figure a drawing needs is a custom property set by script.
+   The shared --ifl-* palette supplies neutral surfaces and the green action accent in both themes.
+   No inline styles: a figure a drawing needs is a custom property set by script.
 
    Accent sets: --acc (graphics, indicator, rings, charts), --acc-ink (text on a surface), --acc-fill + --on-acc (a
-   filled button, the same in both modes), --acc-wash (13 % of --acc in light, 16 % in dark), per html[data-app] and
-   any [data-app] (a screen, a sheet, a tile). InFlite's own (Today, Apps, You): indigo. The tab bar keeps menu.css's
-   own colours (--ifl-tab-on) in stage 1. */
+   filled button), --acc-wash, per html[data-app] and any [data-app] (a screen, a sheet, a tile).
+   Action colours are shared; app identity remains in its symbol and semantic data colours. */
 
-/* ---- tokens (B0, frozen) ---- */
+/* Shared geometry and action colours. App symbols and chart tokens retain their identities. */
 :root {
-  --bar: rgba(36, 38, 52, 0.82);
-  --r-sheet: 38px; --r-well: 16px; --r-pill: 999px;
+  --bar: var(--ifl-surface, #191c19);
+  --r-sheet: var(--ifl-radius-sheet, 30px); --r-well: var(--ifl-radius-row, 16px); --r-pill: var(--ifl-radius-pill, 999px);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --dur-press: 0.1s; --dur-fast: 0.2s; --dur-base: 0.35s; --dur-sheet-in: 0.5s; --dur-sheet-out: 0.34s;
   --tabs-h: var(--ift-h, 64px); --gutter: 16px;
-  --hd-h: 112px; /* (a first guess: header.js sets the measured height from a ResizeObserver) */
+  --hd-h: 112px;
   --pos: var(--good-text); --neg: var(--danger);
   --chart-grid: var(--line); --chart-axis: var(--text-2); --chart-now: var(--text-3);
-  --acc: #9a90ff; --acc-ink: #9a90ff; --acc-fill: #5a4fe0; --on-acc: #fff;
-  /* Motion additions keep the shared geometry tokens above unchanged. */
   --motion-glide: cubic-bezier(0.32, 0.72, 0, 1);
   --motion-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-press: 0.1s; --motion-release: 0.38s;
@@ -34,44 +30,15 @@
 @supports (transition-timing-function: linear(0, 1)) {
   :root { --motion-spring: linear(0, 0.12, 0.36, 0.59, 0.77, 0.89, 0.96, 0.994, 1.006, 1.008, 1.005, 1.002, 1); }
 }
-[data-app="inflite"] { --acc: #9a90ff; --acc-ink: #9a90ff; --acc-fill: #5a4fe0; --on-acc: #fff; }
-[data-app="chat"], [data-app="chats"] { --acc: #6ea6ff; --acc-ink: #6ea6ff; --acc-fill: #1f63d6; --on-acc: #fff; }
-[data-app="weather"] { --acc: #6aa8ff; --acc-ink: #6aa8ff; --acc-fill: #1f63d6; --on-acc: #fff; }
-[data-app="fitness"] { --acc: #ff8a68; --acc-ink: #ff8a68; --acc-fill: #b93a1c; --on-acc: #fff; }
-[data-app="markets"] { --acc: #4fd18e; --acc-ink: #4fd18e; --acc-fill: #0a7a4d; --on-acc: #fff; }
-[data-app="mail"] { --acc: #45cfc8; --acc-ink: #45cfc8; --acc-fill: #0b7a76; --on-acc: #fff; }
-/* (the wash is mixed where --acc is set, so it's redeclared on every [data-app]) */
-:root, [data-app] { --acc-wash: color-mix(in srgb, var(--acc) 16%, transparent); }
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) { --bar: rgba(250, 250, 253, 0.8); --acc: #5a4fe0; --acc-ink: #5a4fe0; }
-  :root:not([data-theme="dark"])[data-app="inflite"], :root:not([data-theme="dark"]) [data-app="inflite"] { --acc: #5a4fe0; --acc-ink: #5a4fe0; }
-  :root:not([data-theme="dark"])[data-app="chat"], :root:not([data-theme="dark"]) [data-app="chat"],
-  :root:not([data-theme="dark"])[data-app="chats"], :root:not([data-theme="dark"]) [data-app="chats"] { --acc: #2a6ae6; --acc-ink: #1f63d6; }
-  :root:not([data-theme="dark"])[data-app="weather"], :root:not([data-theme="dark"]) [data-app="weather"] { --acc: #2f7af0; --acc-ink: #1f63d6; }
-  :root:not([data-theme="dark"])[data-app="fitness"], :root:not([data-theme="dark"]) [data-app="fitness"] { --acc: #e8532f; --acc-ink: #b93a1c; }
-  :root:not([data-theme="dark"])[data-app="markets"], :root:not([data-theme="dark"]) [data-app="markets"] { --acc: #138a52; --acc-ink: #0a7a4d; }
-  :root:not([data-theme="dark"])[data-app="mail"], :root:not([data-theme="dark"]) [data-app="mail"] { --acc: #0f8f8a; --acc-ink: #096b67; }
-  :root:not([data-theme="dark"]), :root:not([data-theme="dark"]) [data-app] { --acc-wash: color-mix(in srgb, var(--acc) 13%, transparent); }
+:root, [data-app] {
+  --acc: var(--ifl-accent, #73d781); --acc-ink: var(--ifl-accent-ink, #97e84e);
+  --acc-fill: var(--ifl-accent-fill, #73d781); --on-acc: var(--ifl-on-accent, #10150d);
+  --acc-wash: var(--ifl-accent-wash, color-mix(in srgb, var(--acc) 15%, transparent));
+  --acc-tint-bg: transparent; --ifl-lens: var(--ifl-raised, #2b302b);
 }
-:root[data-theme="light"] { --bar: rgba(250, 250, 253, 0.8); --acc: #5a4fe0; --acc-ink: #5a4fe0; }
-:root[data-theme="light"][data-app="inflite"], :root[data-theme="light"] [data-app="inflite"] { --acc: #5a4fe0; --acc-ink: #5a4fe0; }
-:root[data-theme="light"][data-app="chat"], :root[data-theme="light"] [data-app="chat"],
-:root[data-theme="light"][data-app="chats"], :root[data-theme="light"] [data-app="chats"] { --acc: #2a6ae6; --acc-ink: #1f63d6; }
-:root[data-theme="light"][data-app="weather"], :root[data-theme="light"] [data-app="weather"] { --acc: #2f7af0; --acc-ink: #1f63d6; }
-:root[data-theme="light"][data-app="fitness"], :root[data-theme="light"] [data-app="fitness"] { --acc: #e8532f; --acc-ink: #b93a1c; }
-:root[data-theme="light"][data-app="markets"], :root[data-theme="light"] [data-app="markets"] { --acc: #138a52; --acc-ink: #0a7a4d; }
-:root[data-theme="light"][data-app="mail"], :root[data-theme="light"] [data-app="mail"] { --acc: #0f8f8a; --acc-ink: #096b67; }
-:root[data-theme="light"], :root[data-theme="light"] [data-app] { --acc-wash: color-mix(in srgb, var(--acc) 13%, transparent); }
-/* ---- end of the token block ---- */
 
-/* ---- the framework's own tokens (FW: added, never in place of the block above) ---- */
-:root { --acc-tint-bg: color-mix(in srgb, var(--acc) 16%, transparent); --ifl-lens: rgba(255, 255, 255, 0.16); }
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --acc-tint-bg: color-mix(in srgb, var(--acc) 22%, transparent); --ifl-lens: #fff; } }
-:root[data-theme="light"] { --acc-tint-bg: color-mix(in srgb, var(--acc) 22%, transparent); --ifl-lens: #fff; }
-
-/* ---- the frame: the app's wash over the sky (crossfaded with the screen inside a View Transition), screens ---- */
-body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(120% 55% at 10% -12%, var(--acc-tint-bg), transparent 62%); }
+/* ---- the frame and screens ---- */
+body::after { content: none; }
 .ifl-screen { position: relative; }
 .ifl-screen[data-app]:not([data-app="inflite"]) { max-width: 1180px; }
 .ifl-zoom-slot { position: absolute; z-index: 3; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); top: 4px; pointer-events: none; }
@@ -80,17 +47,17 @@ body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-event
 html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none; }
 
 /* ---- the header (header.js): row 1 is the shared .ifh; the crumb, Back, the compact title and row 2 are the framework's ---- */
-.ifl-hd.ifh { grid-template-columns: auto minmax(112px, 1fr) auto; grid-template-rows: auto; view-transition-name: ifl-hd; --ifh-tint: var(--acc-ink);
+.ifl-hd.ifh { grid-template-columns: auto minmax(112px, 1fr) auto; grid-template-rows: auto; view-transition-name: ifl-hd; --ifh-tint: var(--text);
   height: calc(var(--ifh-pt0) + 90px - 42px * var(--p)); margin-bottom: calc(var(--ifh-mb, 0px) + 42px * var(--p)); }
 .ifl-hd.ifh.has-secs { grid-template-rows: auto auto; row-gap: 10px; height: calc(var(--ifh-pt0) + 140px - 42px * var(--p)); }
 /* (with sections, the band reaches below them: nothing scrolls visibly under the switcher) */
-.ifl-hd.ifh.has-secs::before { background: linear-gradient(to bottom, var(--ifh-band, rgba(240, 242, 250, 0.9)) 82%, transparent); -webkit-mask-image: linear-gradient(to bottom, #000 88%, transparent); mask-image: linear-gradient(to bottom, #000 88%, transparent); }
-.ifl-hd .ifl-back { width: 44px; min-width: 44px; height: 44px; padding: 0; border-radius: 50%; color: var(--acc-ink); }
+.ifl-hd.ifh.has-secs::before { background: linear-gradient(to bottom, var(--ifh-band, var(--ifl-page, #f8f9f6)) 82%, transparent); -webkit-mask-image: linear-gradient(to bottom, #000 88%, transparent); mask-image: linear-gradient(to bottom, #000 88%, transparent); }
+.ifl-hd .ifl-back { width: 44px; min-width: 44px; height: 44px; padding: 0; border-radius: 50%; color: var(--text); }
 .ifl-hd .ifl-back .ifl-glyph, .ifl-hd .ifl-back svg { width: 22px; height: 22px; display: grid; place-items: center; }
 .ifl-hd .ifl-back svg { stroke-width: 2.4; }
 .ifh-crumb { display: flex; align-items: center; gap: 6px; min-width: 0; height: calc(18px * (1 - var(--p))); overflow: hidden; opacity: calc(1 - var(--p) * 1.6);
   font-size: 13px; font-weight: 600; line-height: 18px; color: var(--text-3); white-space: nowrap; text-overflow: ellipsis; }
-.ifl-hd:not([data-app="inflite"]) .ifh-crumb { color: var(--acc-ink); }
+.ifl-hd:not([data-app="inflite"]) .ifh-crumb { color: var(--text-2); }
 .ifh-crumb img { flex: none; width: 16px; height: 16px; border-radius: 4.5px; }
 .ifh-crumb[hidden] { display: none; }
 .ifh-ttl, .ifh-plain { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -110,31 +77,28 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 .ifl-sec { position: relative; z-index: 1; flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: var(--r-pill);
   font-size: 14.5px; font-weight: 600; color: var(--text-2); white-space: nowrap; transition: color var(--dur-fast); }
 .ifl-sec::after { content: ""; position: absolute; inset: -5px 0; }
-.ifl-sec[aria-selected="true"] { color: var(--acc-ink); }
+.ifl-sec[aria-selected="true"] { color: var(--on-acc); }
 .ifl-sec:active { opacity: 0.6; }
 .ifl-sec:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: -2px; }
 .ifl-lens { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: var(--lw, 0); transform: translateX(var(--lx, 0)); border-radius: var(--r-pill);
-  background: var(--ifl-lens); box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.35); transition: transform var(--motion-release) var(--motion-spring), width var(--motion-release) var(--motion-spring); }
+  background: var(--ifl-accent-gradient, var(--acc-fill)); box-shadow: var(--ifl-shadow-control); transition: transform var(--motion-release) var(--motion-spring), width var(--motion-release) var(--motion-spring); }
 .ifl-sec-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; background: var(--badge, var(--danger)); }
 
 /* ---- the tab bar (tabs.js): menu.css's bar, with a pill that slides; its static pill off under it (D18) ---- */
 /* Keep interactive tabs inside the fixed viewport. The shared screen-height correction can be stale after iOS
    resumes and may exceed the home-indicator inset; subtracting it moves the labels below the screen. */
 .ifl-tabs.has-pill { bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
-.ifl-tabs.has-pill .ifl-tab[aria-current] { background: none; color: var(--ifl-tab-on); }
+.ifl-tabs.has-pill .ifl-tab[aria-current] { background: none; color: var(--ifl-on-accent, var(--text)); }
 .ifl-tabs.has-pill .ifl-tab { position: relative; z-index: 1; }
 .ifl-tab-pill { position: absolute; z-index: 0; top: var(--ift-pad); bottom: var(--ift-pad); left: 0; width: var(--pw, 0); transform: translateX(var(--px, 0)); border-radius: 999px;
-  background: color-mix(in srgb, var(--ifl-tab-on) var(--ift-pill), transparent); transition: transform var(--motion-release) var(--motion-spring), width var(--motion-release) var(--motion-spring); pointer-events: none; }
+  background: var(--ifl-accent-gradient, var(--acc-fill)); transition: transform var(--motion-release) var(--motion-spring), width var(--motion-release) var(--motion-spring); pointer-events: none; }
 .ifl-tab-pill[hidden] { display: none; }
 /* (all the way past the bottom, and out of sight: it floats above the edge, by the home bar's gap, so half again its own
    height wasn't enough on a phone, and its top showed under a chat's composer) */
 .ifl-tabs.away { transform: translateY(calc(100% + 24px + env(safe-area-inset-bottom, 0px))); visibility: hidden; }
 body.kb-up .ifl-tabs { visibility: hidden; }
-/* stage 3: with Chats in the page the bar is InFlite's indigo on every screen, scoped to the bar so html[data-app]
-   doesn't move it (S3-D16); a tab's count (tabs.js badge: Chats' unread, a number only) */
-.ifl-tabs.has-pill.chats { --ifl-tab-on: #5a4fe0; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ifl-tabs.has-pill.chats { --ifl-tab-on: #9a90ff; } }
-:root[data-theme="dark"] .ifl-tabs.has-pill.chats { --ifl-tab-on: #9a90ff; }
+/* The tab bar keeps one shared action accent on every screen; a tab's count remains semantic red. */
+.ifl-tabs.has-pill.chats { --ifl-tab-on: var(--ifl-accent-ink, var(--text)); }
 .ifl-tab-badge { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px;
   display: grid; place-items: center; font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; background: var(--badge, var(--danger)); pointer-events: none; }
 
@@ -142,7 +106,7 @@ body.kb-up .ifl-tabs { visibility: hidden; }
 /* Sheets stay inside the visible viewport; a Home Screen layout correction must not move their actions below it. */
 dialog.ifl-sheet { --sheet-bottom-pad: calc(28px + env(safe-area-inset-bottom, 0px)); position: fixed; inset: auto 0 var(--sheet-foot, 0px); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) var(--sheet-bottom-pad) max(18px, env(safe-area-inset-left, 0px));
   max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 24px); overflow: hidden auto; overscroll-behavior: contain; display: none; flex-direction: column;
-  border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; color: var(--text); background: var(--sheen), var(--glass-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--edge), 0 -10px 40px rgba(0, 0, 0, 0.3);
+  border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; color: var(--text); background: var(--ifl-surface, var(--glass-strong)); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: var(--ifl-shadow-card, var(--lift));
   transform: translateY(var(--drag, 0px)); animation: ifl-sheet-in var(--dur-sheet-in) var(--ease-glide); font: inherit; }
 dialog.ifl-sheet[open] { display: flex; }
 /* (the keyboard up, the sheet on it (sheet.js --sheet-foot): no room kept for the home bar, which the keyboard covers) */
@@ -168,7 +132,7 @@ dialog.ifl-sheet.dragging:not(.closing) { animation: none; transition: none; }
 .ifs-grab { flex: none; width: 40px; height: 5px; margin: 8px auto 2px; border-radius: 3px; background: var(--line); background: color-mix(in srgb, var(--text) 22%, transparent); touch-action: none; }
 .ifl-sheet .ifs-head { position: sticky; top: 0; z-index: 2; display: flex; flex-shrink: 0; align-items: center; gap: 10px; min-height: 56px; padding: 6px 0; touch-action: none; }
 /* A quiet, opaque title strip keeps scrolling form text clear of the controls without another live blur. */
-.ifl-sheet .ifs-head::before { content: ""; position: absolute; z-index: -1; inset: -12px calc(0px - max(18px, env(safe-area-inset-right, 0px))) 0 calc(0px - max(18px, env(safe-area-inset-left, 0px))); background: var(--solid); box-shadow: 0 0.5px 0 var(--line); pointer-events: none; }
+.ifl-sheet .ifs-head::before { content: ""; position: absolute; z-index: -1; inset: -12px calc(0px - max(18px, env(safe-area-inset-right, 0px))) 0 calc(0px - max(18px, env(safe-area-inset-left, 0px))); background: var(--ifl-surface, var(--solid)); box-shadow: 0 0.5px 0 var(--line); pointer-events: none; }
 .ifl-sheet .ifs-head h2 { flex: 1; min-width: 0; margin: 0; font: 700 22px/1.2 var(--font-d); letter-spacing: -0.2px; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .ifl-sheet .ifs-head h2:focus { outline: none; }
 .ifl-sheet .ifs-head h2.vh { flex: 1; position: static !important; width: auto; height: auto; clip: auto; clip-path: none; visibility: hidden; }
@@ -181,7 +145,7 @@ dialog.ifl-sheet.dragging:not(.closing) { animation: none; transition: none; }
 /* One surface through the bottom padding/home-indicator area. Extending only the
    paint keeps sticky positioning, button spacing and scrolling unchanged. */
 .ifl-sheet .ifs-acts::before { content: ""; position: absolute; z-index: -1; inset: 0 0 calc(0px - var(--sheet-bottom-pad));
-  background: linear-gradient(transparent, var(--glass-strong) 30%); pointer-events: none; }
+  background: var(--ifl-surface, var(--glass-strong)); pointer-events: none; }
 .ifl-sheet .ifs-acts .ifl-btn { flex: 1 1 auto; }
 .ifl-sheet[aria-busy] .ifs-body { opacity: 0.6; }
 .ifs-page { display: grid; gap: 12px; }
@@ -203,15 +167,15 @@ body:has(.ifl-tabs.away) .ifl-toast { bottom: calc(max(var(--tabs-h), 120px) + 1
 .ifl-appic.s16 { width: 16px; height: 16px; } .ifl-appic.s24 { width: 24px; height: 24px; } .ifl-appic.s32 { width: 32px; height: 32px; }
 .ifl-appic.s40 { width: 40px; height: 40px; } .ifl-appic.s64 { width: 64px; height: 64px; }
 .ifl-card { position: relative; display: block; margin: 0 0 12px; padding: 16px 18px; border-radius: var(--r-card); color: var(--text); text-decoration: none; text-align: left; width: 100%;
-  background: var(--sheen), var(--glass); box-shadow: var(--edge), var(--lift); }
-.ifl-card.hero { border-radius: var(--r-hero); background: var(--sheen), linear-gradient(160deg, var(--acc-tint-bg), transparent 70%), var(--glass); }
+  background: var(--ifl-surface, var(--glass)); box-shadow: var(--ifl-shadow-card, var(--lift)); }
+.ifl-card.hero { border-radius: var(--r-hero); background: var(--ifl-surface, var(--glass)); }
 .ifl-card.list { padding: 4px 0; }
 .ifl-card.tappable { cursor: pointer; transition: transform var(--dur-press); }
 .ifl-card.tappable:active { transform: scale(0.98); }
 .ifl-card-t { margin: 0 0 6px; font: 600 17px/1.25 var(--font-d); }
 .ifl-label { margin: 18px 18px 8px; font: 600 13px/1.2 var(--font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-3); }
 .ifl-sheet .ifl-label, .ifl-group .ifl-label { color: var(--text-2); }
-.ifl-list { border-radius: var(--r-group); overflow: hidden; background: var(--sheen), var(--glass); box-shadow: var(--edge), var(--lift); }
+.ifl-list { border-radius: var(--r-group); overflow: hidden; background: var(--ifl-surface, var(--glass)); box-shadow: var(--ifl-shadow-card, var(--lift)); }
 .ifl-sheet .ifl-list { background: var(--glass-ctl); box-shadow: none; }
 .ifl-row { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 54px; padding: 10px 18px; color: var(--text); text-decoration: none; text-align: left; }
 a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
@@ -220,7 +184,7 @@ a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 .ifl-row + .ifl-row::before { content: ""; position: absolute; top: 0; left: 18px; right: 0; height: 0.5px; background: var(--line); }
 .ifl-row:has(> .ifl-lead) + .ifl-row::before, .ifl-row:has(> .ifl-lead) + .ifl-row:has(> .ifl-lead)::before { left: 64px; }
 .ifl-lead { flex: none; display: grid; place-items: center; }
-.ifl-lead.ic { width: 32px; height: 32px; border-radius: 9px; color: #fff; background: var(--acc-fill); }
+.ifl-lead.ic { width: 32px; height: 32px; border-radius: 9px; color: var(--on-acc); background: var(--ifl-accent-gradient, var(--acc-fill)); }
 .ifl-lead.tm { width: 46px; font-weight: 650; font-variant-numeric: tabular-nums; }
 /* (the words keep at least two fifths of the row and break between words, never letter by letter; a long value beside
    them gives way, onto a second line, and only past that cut short) */
@@ -257,7 +221,7 @@ a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 .ifl-seg-sm [role="radio"][aria-checked="true"] { color: var(--on-acc); background: var(--acc-fill); }
 .ifl-seg-sm [role="radio"]:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 1px; }
 .ifl-switch { display: inline-grid; }
-.ifl-field { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 14px; background: var(--field); }
+.ifl-field { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: var(--ifl-radius-row, 16px); background: var(--ifl-surface-2, var(--field)); }
 .ifl-field .ifl-glyph { color: var(--text-3); }
 .ifl-field input { flex: 1; min-width: 0; height: 44px; border: 0; background: none; outline: none; font-size: 16px; color: var(--text); }
 .ifl-field { transition: box-shadow 0.18s, background-color 0.18s; }
@@ -268,8 +232,8 @@ a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 .ifl-clear { position: relative; flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); background: var(--glass-ctl); }
 .ifl-clear::after { content: ""; position: absolute; inset: -8px; }
 .ifl-clear[hidden] { display: none; }
-.ifl-tile { position: relative; display: grid; gap: 8px; align-content: start; min-height: 128px; padding: 14px; border-radius: 22px; color: var(--text); text-decoration: none;
-  background: var(--sheen), var(--glass); box-shadow: var(--edge), var(--lift); transition: transform var(--dur-fast) var(--ease-out); }
+.ifl-tile { position: relative; display: grid; gap: 8px; align-content: start; min-height: 128px; padding: 16px; border-radius: var(--r-card); color: var(--text); text-decoration: none;
+  background: var(--ifl-surface, var(--glass)); box-shadow: var(--ifl-shadow-card, var(--lift)); transition: transform var(--dur-fast) var(--ease-out); }
 a.ifl-tile:active, .ifl-tile-main:active { transform: scale(0.97); }
 .ifl-tile-main { display: grid; gap: 8px; align-content: start; color: inherit; text-decoration: none; }
 .ifl-tile b { font-size: 16px; font-weight: 650; }
@@ -296,12 +260,12 @@ a.ifl-tile:active, .ifl-tile-main:active { transform: scale(0.97); }
 .ifl-empty b, .ifl-error b { font: 600 18px/1.3 var(--font-d); }
 .ifl-empty p, .ifl-error p { margin: 0; max-width: 36ch; color: var(--text-2); font-size: 15px; }
 .ifl-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 8px; }
-.ifl-error { margin: 12px 0; border-radius: var(--r-card); background: var(--sheen), var(--glass); box-shadow: var(--edge), var(--lift); }
+.ifl-error { margin: 12px 0; border-radius: var(--r-card); background: var(--ifl-surface, var(--glass)); box-shadow: var(--ifl-shadow-card, var(--lift)); }
 .ifl-skeleton { display: grid; gap: 12px; margin-bottom: 12px; }
 .ifl-skeleton i { display: block; height: 84px; border-radius: var(--r-card); background: var(--glass); animation: ifl-pulse 1.4s ease-in-out infinite alternate; }
 .ifl-skeleton.hero i { height: 220px; border-radius: var(--r-hero); }
-.ifl-skeleton.rows i { height: 54px; border-radius: 14px; }
-.ifl-skeleton.tile i { height: 128px; border-radius: 22px; }
+.ifl-skeleton.rows i { height: 54px; border-radius: var(--ifl-radius-row, 16px); }
+.ifl-skeleton.tile i { height: 128px; border-radius: var(--r-card); }
 @keyframes ifl-pulse { to { opacity: 0.5; } }
 .ifl-sub { margin: 0 0 12px; color: var(--text-2); font-size: 15px; }
 
@@ -324,7 +288,7 @@ dialog.ifl-sheet[data-sheet="search"] .ifs-body { display: flex; flex-direction:
 .ifl-sr-more { position: relative; flex: none; margin: 0 4px; padding: 0; font-size: 14px; font-weight: 600; color: var(--acc-ink); }
 .ifl-sr-more::after { content: ""; position: absolute; inset: -12px -8px; }
 .ifl-sr-more:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 3px; border-radius: 6px; }
-.ifl-results [role="option"] { border-radius: 14px; scroll-margin: 8px 0; }
+.ifl-results [role="option"] { border-radius: var(--ifl-radius-row, 16px); scroll-margin: 8px 0; }
 .ifl-results [role="option"][aria-selected="true"] { background: var(--press); }
 .ifl-results .ifl-row[aria-selected="true"]::before, .ifl-results .ifl-row[aria-selected="true"] + .ifl-row::before { opacity: 0; }
 .ifl-results .ifl-row { padding: 8px 10px; margin: 0 -6px; width: calc(100% + 12px); }
@@ -342,7 +306,7 @@ dialog.ifl-sheet[data-sheet="search"] .ifs-body { display: flex; flex-direction:
 .ifl-sr-cuts .ifl-chip[aria-selected="true"] { box-shadow: inset 0 0 0 2px var(--acc-ink); background: var(--glass-ctl); }
 @media (prefers-reduced-motion: reduce) { .ifl-sr-app .ifl-appic { transition: none; } }
 .ifl-provides { display: grid; gap: 8px; margin: 4px 0 4px; }
-.ifl-provides-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--glass-ctl); font-size: 15px; }
+.ifl-provides-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border-radius: var(--ifl-radius-row, 16px); background: var(--glass-ctl); font-size: 15px; }
 .ifl-provides-row b { font-size: 12px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--acc-ink); padding-top: 2px; }
 @media (max-width: 360px) { .ifl-provides-row { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
 
@@ -466,16 +430,16 @@ html[data-motion-paused] :is(.aura, .pg-track .cb svg, .tcard.loading .sk i), ht
   .ifl-rail-x { display: revert; }
   .ifl-rail-brand { display: flex; align-items: center; gap: 10px; padding: 2px 10px 18px; font: 700 19px/1 var(--font-d); letter-spacing: -0.3px; color: var(--text); }
   .ifl-rail-logo { width: 30px; height: 30px; border-radius: 8px; }
-  .ifl-tabs .ifl-tab, .ifl-rail-app { flex: none; flex-direction: row; justify-content: flex-start; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 12px;
+  .ifl-tabs .ifl-tab, .ifl-rail-app { flex: none; flex-direction: row; justify-content: flex-start; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: var(--ifl-radius-row, 16px);
     font-size: 15px; font-weight: 600; letter-spacing: -0.1px; color: var(--ifl-tab-ink); text-decoration: none; position: relative; z-index: 1; display: flex; }
   .ifl-tabs .ifl-tab-ic { width: 22px; height: 22px; }
   .ifl-tabs .ifl-tab:active, .ifl-rail-app:active { transform: none; opacity: 0.7; }
   .ifl-tabs .ifl-tab:hover, .ifl-rail-app:hover { background: color-mix(in srgb, var(--ifl-tab-ink) 7%, transparent); }
   .ifl-tabs .ifl-tab[aria-current]:hover { background: none; }
-  .ifl-rail-app[aria-current] { color: var(--ifl-tab-on); }
+  .ifl-rail-app[aria-current] { color: var(--ifl-on-accent, var(--text)); }
   /* (in an app, the app's row is the one you're on, not Apps) */
   .ifl-tabs.in-app .ifl-tab[aria-current="true"] { color: var(--ifl-tab-ink); }
-  .ifl-tab-pill { top: 0; left: 12px; right: 12px; width: auto; height: var(--ph, 0); bottom: auto; border-radius: 12px; transform: translateY(var(--py, 0));
+  .ifl-tab-pill { top: 0; left: 12px; right: 12px; width: auto; height: var(--ph, 0); bottom: auto; border-radius: var(--ifl-radius-row, 16px); transform: translateY(var(--py, 0));
     transition: transform var(--motion-release) var(--motion-spring), height var(--motion-release) var(--motion-spring); }
   .ifl-tab-k { margin-left: auto; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; display: grid; place-items: center; border-radius: 6px;
     box-shadow: inset 0 0 0 1px var(--line); font: 600 11.5px/1 var(--font); color: var(--text-3); }
@@ -484,7 +448,7 @@ html[data-motion-paused] :is(.aura, .pg-track .cb svg, .tcard.loading .sk i), ht
   .ifl-rail-h { padding: 18px 12px 6px; font-size: 12px; font-weight: 650; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-3); }
   .ifl-rail-ic { flex: none; width: 24px; height: 24px; border-radius: 6px; }
   .ifl-rail-me { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 16px; text-decoration: none; color: var(--text);
-    background: var(--glass); box-shadow: var(--edge); position: relative; z-index: 1; }
+    background: var(--ifl-surface-2, var(--glass)); box-shadow: none; position: relative; z-index: 1; }
   .ifl-rail-me:hover { background: var(--glass-2, var(--glass)); }
   .ifl-rail-ph { flex: none; width: 34px; height: 34px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: var(--acc-fill); color: var(--on-acc); font-weight: 700; }
   .ifl-rail-ph > * { width: 100%; height: 100%; object-fit: cover; }

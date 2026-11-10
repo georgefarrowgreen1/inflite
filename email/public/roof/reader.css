@@ -12,7 +12,7 @@
 .m-mail .ml-reader > .ifl-empty { margin: auto; }
 
 /* the iPad's toolbar, the head */
-.m-mail .mr-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; position: sticky; top: 0; z-index: 2; padding: 8px; border-radius: var(--r-well, 16px); background: var(--solid); }
+.m-mail .mr-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; position: sticky; top: 0; z-index: 2; padding: 8px; border-radius: var(--ifl-radius-row, 16px); background: var(--ifl-surface, var(--solid)); box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16)); }
 .m-mail .mr-bar[hidden] { display: none; }
 .m-mail .mr-head { display: flex; flex-direction: column; gap: 4px; outline: none; }
 .m-mail .mr-subject { margin: 0; font: 600 22px/1.2 var(--font-d, inherit); overflow-wrap: anywhere; }
@@ -24,7 +24,7 @@
 
 /* a message: folded to one line, or open with its body frame, files and date */
 .m-mail .mr-msgs { display: flex; flex-direction: column; gap: 10px; }
-.m-mail .mr-card { border-radius: var(--r-card, 24px); background: var(--glass); border: 1px solid var(--line); overflow: hidden; }
+.m-mail .mr-card { border-radius: var(--r-card, 26px); background: var(--ifl-surface, var(--glass)); border: 1px solid var(--ifl-line, var(--line)); box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16)); overflow: hidden; }
 .m-mail .mr-card.unread .mr-who b::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--acc); vertical-align: 1px; }
 .m-mail .mr-mhead { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 10px 14px; text-align: left; }
 .m-mail .mr-mhead:active { background: var(--press); }
@@ -44,7 +44,7 @@
 .m-mail .mr-files { display: flex; flex-direction: column; gap: 8px; padding: 0 14px; }
 .m-mail .mr-files:not(:empty) { padding-top: 8px; }
 .m-mail .mr-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
-.m-mail .mr-tile { aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--glass-ctl); }
+.m-mail .mr-tile { aspect-ratio: 1; border-radius: var(--ifl-radius-row, 16px); overflow: hidden; background: var(--ifl-surface-2, var(--glass-ctl)); }
 .m-mail .mr-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .m-mail .mr-file { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px; border-radius: var(--r-well, 16px); background: var(--glass-ctl); text-decoration: none; }
 .m-mail .mr-file span { display: flex; flex-direction: column; min-width: 0; }
@@ -57,20 +57,20 @@
 .m-mail .mr-foot { display: flex; flex-direction: column; gap: 10px; }
 .m-mail .mr-acts, .m-mail .mr-replies { display: flex; flex-wrap: wrap; gap: 8px; }
 .m-mail .mr-acts .ifl-btn, .m-mail .mr-replies .ifl-btn, .m-mail .mr-bar .ifl-btn { gap: 6px; }
-.m-mail .mr-qr { display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 24px; background: var(--glass); border: 1px solid var(--line); }
+.m-mail .mr-qr { display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 26px; background: var(--ifl-surface, var(--glass)); border: 1px solid var(--ifl-line, var(--line)); box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16)); }
 .m-mail .mr-qr-text { flex: 1; min-width: 0; min-height: 36px; max-height: 120px; padding: 8px 0; border: 0; background: none; resize: none; field-sizing: content; outline: none; }
 .m-mail .mr-qr:focus-within { border-color: var(--acc-ink); box-shadow: 0 0 0 1px var(--acc-ink); }
-.m-mail .mr-qr .ifl-icon-btn { flex: none; background: var(--acc-fill); color: var(--on-acc); }
+.m-mail .mr-qr .ifl-icon-btn { flex: none; background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b)); color: var(--ifl-on-accent, #10150d); }
 .m-mail .mr-qr .ifl-icon-btn:disabled { opacity: .45; }
 
 /* Mail on Your Day's strip, above the messages (as Mail's own page's, parts/spot.js): what was spotted, its facts, a
    parcel's four-part bar, a bill's last six, Remove / Put It Back and Wrong */
 .m-mail .mr-spots { display: grid; gap: 10px; }
 .m-mail .mr-spots[hidden] { display: none; }
-.m-mail .mr-spot { display: grid; gap: 10px; padding: 12px 14px; border-radius: var(--r-card, 24px); background: var(--glass); border: 1px solid color-mix(in srgb, var(--acc) 55%, var(--line)); transition: opacity 0.3s; }
+.m-mail .mr-spot { display: grid; gap: 10px; padding: 14px 16px; border-radius: var(--r-card, 26px); background: var(--ifl-surface, var(--glass)); border: 1px solid var(--ifl-line, var(--line)); box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16)); transition: opacity 0.3s; }
 .m-mail .mr-spot.gone { opacity: 0.6; }
 .m-mail .mr-spot-top { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; align-items: center; }
-.m-mail .mr-spot-ic { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--acc-fill); color: var(--on-acc); }
+.m-mail .mr-spot-ic { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--ifl-surface-2, var(--glass-ctl)); color: var(--ifl-accent-ink, var(--acc-ink)); }
 .m-mail .mr-spot-ic svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .m-mail .mr-spot-ic svg .f, .m-mail .mr-spot-ic svg[data-icon="k-flight"] path { fill: currentColor; stroke: none; }
 .m-mail .mr-spot-tx { min-width: 0; }

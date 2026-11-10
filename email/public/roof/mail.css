@@ -7,26 +7,26 @@
 .m-mail .ml-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 var(--ml-gap); }
 .m-mail .ml-chips .ifl-chip::after { content: "✕"; margin-left: 6px; opacity: .7; }
 .m-mail .ml-out { display: grid; gap: 6px; margin: 0 0 var(--ml-gap); }
-.m-mail .ml-sending { border-radius: var(--r-well); background: var(--acc-wash); }
+.m-mail .ml-sending { border-radius: var(--ifl-radius-row, 16px); background: var(--ifl-surface-2, var(--glass-ctl)); }
 .m-mail .ml-sending[data-state="failed"] { background: color-mix(in srgb, var(--danger) 14%, transparent); }
 .m-mail .ml-day { margin: 18px 4px 6px; font-size: 13px; font-weight: 600; color: var(--text-3); text-transform: none; }
-.m-mail .ml-rows { display: grid; gap: 2px; }
+.m-mail .ml-rows { display: grid; gap: 8px; }
 .m-mail .ml-foot { display: flex; justify-content: center; padding: 12px 0; }
 .m-mail .ml-foot:empty { display: none; }
 .m-mail .ml-end { height: 1px; }
 
 /* a row: the swipe's backing under it, the row over it, moved by --x */
-.m-mail .ml-wrap { position: relative; overflow: hidden; border-radius: var(--r-well); --x: 0px; }
-.m-mail .ml-under { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-weight: 600; color: var(--on-acc); background: var(--acc-fill); opacity: 0; }
+.m-mail .ml-wrap { position: relative; overflow: hidden; border-radius: var(--ifl-radius-row, 16px); box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16)); --x: 0px; }
+.m-mail .ml-under { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-weight: 600; color: var(--ifl-on-accent, #10150d); background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b)); opacity: 0; }
 .m-mail .ml-wrap.swiping .ml-under { opacity: 1; }
-.m-mail .ml-wrap.go-l .ml-under { background: var(--warn, #b26a00); }
+.m-mail .ml-wrap.go-l .ml-under { background: var(--warn, #b26a00); color: #fff; }
 .m-mail .ml-under span { display: inline-flex; align-items: center; gap: 6px; }
 .m-mail .ml-row { position: relative; display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: var(--ml-row-h); padding: 10px 12px 10px 18px; text-align: left; cursor: pointer;
-  background: var(--solid, var(--glass)); border-radius: var(--r-well); transform: translateX(var(--x)); transition: transform var(--motion-release, var(--dur-base)) var(--motion-spring, var(--ease-out)), background-color var(--motion-fade, .18s) ease; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+  background: var(--ifl-surface, var(--solid, var(--glass))); border-radius: var(--ifl-radius-row, 16px); transform: translateX(var(--x)); transition: transform var(--motion-release, var(--dur-base)) var(--motion-spring, var(--ease-out)), background-color var(--motion-fade, .18s) ease; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
 .m-mail .ml-wrap.swiping .ml-row { transition: none; }
 .m-mail .ml-row:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 .m-mail .ml-row:active { background: var(--press); }
-.m-mail .ml-row.selected { background: var(--acc-wash); }
+.m-mail .ml-row.selected { background: color-mix(in srgb, var(--ifl-accent, var(--acc)) 18%, var(--ifl-surface, var(--solid))); }
 .m-mail .ml-dot { position: absolute; left: 6px; top: 22px; width: 8px; height: 8px; border-radius: 50%; background: transparent; }
 .m-mail .ml-row.unread .ml-dot { background: var(--acc); }
 .m-mail .ml-row .ifl-avatar { flex: none; width: 40px; height: 40px; }

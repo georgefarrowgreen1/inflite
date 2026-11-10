@@ -22,6 +22,7 @@ import { el, btn, icon } from "./ui.js";
 let n = 0;
 export function createSheets(F) {
   const open = [];
+  let restoreFrame = 0, restoreAt = 0;
   // (the keyboard up: an open sheet no taller than what's in sight, and lifted above it. iOS lays the keyboard over the
   // page, not the page above the keyboard, so a sheet fixed to the page's foot sat under it, its field out of sight: it's
   // taken up by how much of the page the keyboard covers, the page's height less what's in sight and where that starts)
@@ -52,8 +53,9 @@ export function createSheets(F) {
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function make(d, { onClose, built, focus } = {}) {
+    cancelAnimationFrame(restoreFrame); restoreFrame = 0; restoreAt++;
     const body = d.querySelector(".ifs-body"), head = d.querySelector(".ifs-head"), h2 = d.querySelector(".ifs-head h2");
-    const was = document.activeElement;
+    const was = document.activeElement, page = { x: scrollX, y: scrollY, route: F?.route, url: location.href };
     const stack = [];
     let shut = false, closeTimer = 0, drag = null, pageTimer = 0;
     const ac = new AbortController(), sig = { signal: ac.signal };
@@ -61,6 +63,8 @@ export function createSheets(F) {
     function done() {
       if (h.closed) return;
       h.closed = true;
+      const current = !F?.signal?.aborted && F?.route === page.route && location.href === page.url;
+      const position = current ? page : { x: scrollX, y: scrollY };
       clearTimeout(closeTimer); clearTimeout(pageTimer); drag?.abort();
       d.classList.remove("closing", "dragging", "ifs-touched");
       body.classList.remove("ifl-enter-pop");
@@ -72,7 +76,18 @@ export function createSheets(F) {
       while (stack.length) pop(true);
       if (built) d.remove();
       sync();
-      if (was?.isConnected && !document.querySelector("dialog[open]")) was.focus?.({ preventScroll: true });
+      if (current && was?.isConnected && !document.querySelector("dialog[open]")) was.focus?.({ preventScroll: true });
+      // WebKit can scroll after native dialog close, despite preventScroll. A newer sheet, route or frame owns its
+      // own position; it must never inherit this close's deferred restoration.
+      cancelAnimationFrame(restoreFrame);
+      const token = ++restoreAt, route = F?.route, url = location.href;
+      if (!F?.signal?.aborted) {
+        scrollTo(position.x, position.y);
+        restoreFrame = requestAnimationFrame(() => {
+          restoreFrame = 0;
+          if (token === restoreAt && !F?.signal?.aborted && F?.route === route && location.href === url) scrollTo(position.x, position.y);
+        });
+      }
       onClose?.();
     }
     function close(animate) {

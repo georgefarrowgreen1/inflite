@@ -1,5 +1,5 @@
 /* Today's day (day.js, Today First): the top card of the phase it is, Waiting for You, Coming Up and The Rest of Today.
-   Built on app.css's own glass, rows, pills and colours (its tokens, light and dark), with nothing inline. */
+   Built on app.css's neutral surfaces, rows, pills and colours (its tokens, light and dark), with nothing inline. */
 
 /* ---- the sections ---- */
 #top, #waiting, #coming, #rest { display: grid; min-width: 0; }
@@ -12,15 +12,15 @@
 #cards > .day-sec + .day-sec:not([hidden]) { margin-top: 10px; }
 
 /* ---- the top card ---- */
-.day-top { --dt-ac: var(--c-inflite); gap: 12px; padding-top: 16px; }
-.day-top[data-kind="weather"] { --dt-ac: var(--c-weather); }
-.day-top[data-kind="ride"], .day-top[data-kind="done"] { --dt-ac: var(--c-fitness); }
-.day-top[data-kind="closed"] { --dt-ac: var(--c-account); }
+.day-top { --dt-ac: var(--ifl-accent-fill, var(--c-inflite)); gap: 12px; padding-top: 20px; }
+.day-top[data-kind="weather"] { --dt-ac: var(--ifl-accent-fill, var(--c-weather)); }
+.day-top[data-kind="ride"], .day-top[data-kind="done"] { --dt-ac: var(--ifl-accent-fill, var(--c-fitness)); }
+.day-top[data-kind="closed"] { --dt-ac: var(--ifl-accent-fill, var(--c-account)); }
 .dt-chip { justify-self: start; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 12px; border-radius: 999px;
   background: color-mix(in srgb, var(--dt-ac) 22%, transparent); color: var(--text); font-size: 13.5px; font-weight: 650; overflow-wrap: anywhere; }
 .dt-chip svg { flex: none; width: 15px; height: 15px; }
 .dt-h { font-size: 28px; letter-spacing: -0.4px; }
-.dt-rows { list-style: none; margin: 2px 0 0; padding: 0 14px; border-radius: 18px; background: var(--glass-ctl); }
+.dt-rows { list-style: none; margin: 2px 0 0; padding: 0 14px; border-radius: var(--ifl-radius-row, 16px); background: var(--glass-ctl); }
 .dt-rows li { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 9px 0; font-size: 15px; line-height: 1.3; color: var(--text); }
 .dt-rows li + li { box-shadow: 0 -0.5px 0 var(--line); }
 .dt-ic { flex: none; width: 28px; height: 28px; border-radius: 8px; }
@@ -58,7 +58,7 @@
 .dw-words { font-size: 15px; line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
 .dw-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 12px 72px; margin-top: -4px; }
 .dw-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px 0 11px; border-radius: 999px; background: var(--glass-ctl);
-  box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.2), 0 0 0 0.5px var(--line); color: var(--text); font: 600 14px/1 var(--font); text-decoration: none; }
+  box-shadow: var(--ifl-shadow-control, 0 1px 4px rgba(0,0,0,.08)); color: var(--text); font: 600 14px/1 var(--font); text-decoration: none; }
 .dw-chip svg { width: 15px; height: 15px; }
 
 /* ---- Coming Up ---- */
@@ -75,27 +75,27 @@
 
 /* ---- Mail on Your Day (trip.js): the trip card above Waiting for You, Mail's rows in Coming Up, the trip day by day and
    a booking's sheet. Mail's teal for what came from Mail, the trip's violet for the trip itself ---- */
-#trip { --c-trip: #6c5ce7; }
+#trip { --c-trip: var(--ifl-accent-fill, #73d781); }
 #trip:not([hidden]) { margin-top: 14px; }
 .trip-card { width: 100%; padding: 14px; gap: 10px; text-align: left; border-radius: var(--r-card); color: var(--text); }
 .trip-card:active { transform: scale(0.99); }
 .trip-card:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
 .tp-hd { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
-.tp-ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--c-trip, #6c5ce7); color: #fff; box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.35); }
+.tp-ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--ifl-accent-gradient, var(--c-trip)); color: var(--ifl-on-accent, #10150d); box-shadow: none; }
 .tp-ic svg { width: 21px; height: 21px; }
 .tp-hd .tx { display: grid; gap: 1px; min-width: 0; }
 .tp-h { font: 700 19px/1.2 var(--font-d); letter-spacing: -0.2px; overflow-wrap: anywhere; }
 .tp-hd small { font-size: 13.5px; color: var(--text-2); overflow-wrap: anywhere; }
 .tp-hd .chev, .trip-card .chev { color: var(--text-3); display: grid; }
 .tp-hd .chev svg { width: 18px; height: 18px; }
-.tp-next { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 11px; border-radius: 14px; background: var(--glass-ctl); font-size: 14px; line-height: 1.3; }
+.tp-next { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 11px; border-radius: var(--ifl-radius-row, 16px); background: var(--glass-ctl); font-size: 14px; line-height: 1.3; }
 .tp-next .tx b { font-weight: 650; }
 .tp-next .tx span { color: var(--text-2); }
 .tp-next .tx { overflow-wrap: anywhere; }
 .tp-pill { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text-2); white-space: nowrap; }
 .tp-ref { font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tp-wx { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.tp-day { display: grid; justify-items: center; gap: 1px; padding: 7px 4px; border-radius: 13px; background: var(--glass-ctl); }
+.tp-day { display: grid; justify-items: center; gap: 1px; padding: 7px 4px; border-radius: var(--ifl-radius-row, 16px); background: var(--glass-ctl); }
 .tp-day small { font-size: 12px; color: var(--text-2); }
 .tp-day b { font: 650 15px/1.2 var(--font); font-variant-numeric: tabular-nums; }
 .tp-day .wi { display: block; }
@@ -150,7 +150,7 @@ button.dm-quiet:active { background: var(--press); }
 /* (a booking hidden, still in its day: faded, with Put Back) */
 .tv-hid .bk-ic { background: transparent; color: var(--text-3); box-shadow: inset 0 0 0 1.5px var(--line); }
 .tv-hid .tx b, .tv-hid .tx small { color: var(--text-3); }
-.tv-back { flex: none; min-height: 36px; padding: 0 12px; border: 0; border-radius: 12px; background: var(--glass-ctl); color: var(--tint-text); font: 700 14px/1 var(--font); cursor: pointer; }
+.tv-back { flex: none; min-height: 44px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--glass-ctl); color: var(--tint-text); font: 700 14px/1 var(--font); cursor: pointer; }
 .tv-back:active { filter: brightness(1.15); }
 .tv-back:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
 .tv-list { padding-bottom: 4px; }
@@ -167,8 +167,8 @@ button.dm-quiet:active { background: var(--press); }
 .bk-acts { display: grid; gap: 8px; }
 .bk-act { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 50px; padding: 12px 14px; border-radius: 16px; background: var(--glass-ctl); color: var(--text); font: 600 16px/1.2 var(--font); text-decoration: none; text-align: left; }
 .bk-act svg { flex: none; width: 19px; height: 19px; color: var(--tint-text); }
-.bk-act.go { background: var(--c-mail); color: #fff; }
-.bk-act.go svg { color: #fff; }
+.bk-act.go { background: var(--ifl-accent-gradient, var(--c-mail)); color: var(--ifl-on-accent, #10150d); }
+.bk-act.go svg { color: inherit; }
 .bk-act:active { filter: brightness(1.12); }
 .bk-act:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
 /* (a repeating invite's next dates) */

@@ -1,22 +1,20 @@
-/* inflite Mail. In keeping with the site's other apps (the account page, InFlight, Weather, Fitness): the account
-   page's sky (night in dark mode, dawn in light) with its three slow lights, iOS 27's Liquid Glass over it (clear panes on
-   the sky, the stronger blurred glass for what floats), the site's blue, and its motion. Light or Dark follows the
-   account's Appearance (data-theme, set by theme.js and app.js), or the device when it's Automatic. */
+/* InFlite Mail: the shared neutral canvas, raised cards and green-to-lime actions.
+   Light or Dark follows the account's Appearance, or the device when Automatic. */
 
 :root {
     color-scheme: dark;
-    --sky-a: #121a3c; --sky-b: #0a0f26; --sky-c: #05060e; --sky-top: #1b2860;
-    --aura-1: rgba(80, 120, 255, 0.55); --aura-2: rgba(160, 90, 255, 0.4); --aura-3: rgba(40, 190, 230, 0.32);
-    --text: #f5f6fb; --text-2: rgba(235, 238, 250, 0.72); --text-3: rgba(235, 238, 250, 0.56);
-    --glass: rgba(34, 40, 66, 0.5); --glass-strong: rgba(28, 33, 56, 0.86); --glass-ctl: rgba(255, 255, 255, 0.1); --sheet: rgba(24, 28, 50, 0.94);
-    --line: rgba(255, 255, 255, 0.1); --press: rgba(255, 255, 255, 0.07); --field: rgba(0, 0, 0, 0.24);
-    --ift-tint: #3fd2b8; --ift-on: #03322b; --tint: #5aa9ff; --tint-deep: #2a6ae6; --tint-text: #8cc2ff; --danger: #ff6a5f; --good: #4fdc8e; --warn: #ffbd4a; --flag: #ffa53a;
-    --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.42), inset 0 -1px 0.5px rgba(255, 255, 255, 0.08), inset 0 0 22px rgba(255, 255, 255, 0.03);
-    --lift: 0 0 0 0.5px rgba(0, 0, 0, 0.4), 0 22px 44px -18px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.16);
-    --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 46%);
-    --dim: rgba(0, 0, 0, 0.5);
-    --mail-text: #f5f6fb; --mail-link: #8cc2ff; --mail-quote: rgba(235, 238, 250, 0.62); --mail-rule: rgba(235, 238, 250, 0.28);
-  --blur: blur(28px) saturate(180%);
+    --sky-a: var(--ifl-page, #101210); --sky-b: var(--ifl-page, #101210); --sky-c: var(--ifl-page, #101210); --sky-top: var(--ifl-page, #101210);
+    --aura-1: transparent; --aura-2: transparent; --aura-3: transparent;
+    --text: var(--ifl-text, #f4f7f2); --text-2: var(--ifl-muted, #bac2b9); --text-3: var(--ifl-muted, #bac2b9);
+    --glass: var(--ifl-surface, #191c19); --glass-strong: var(--ifl-raised, #2b302b); --glass-ctl: var(--ifl-surface-2, #222622); --sheet: var(--ifl-surface, #191c19);
+    --line: var(--ifl-line, rgba(238, 245, 228, .12)); --press: color-mix(in srgb, var(--text) 6%, var(--glass)); --field: var(--ifl-surface-2, #222622);
+    --ift-tint: var(--ifl-accent-ink, #97e84e); --ift-on: var(--ifl-on-accent, #10150d); --tint: var(--ifl-accent, #2ea84d); --tint-deep: var(--ifl-accent-fill, #74df36); --tint-text: var(--ifl-accent-ink, #97e84e); --danger: #ff6a5f; --good: #4fdc8e; --warn: #ffbd4a; --flag: #ffa53a;
+    --edge: 0 0 0 1px var(--line);
+    --lift: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
+    --sheen: none;
+    --dim: rgba(0, 0, 0, .48);
+    --mail-text: var(--text); --mail-link: var(--tint-text); --mail-quote: var(--text-2); --mail-rule: var(--line);
+  --blur: none;
 
   /* Mail's own names for them */
   --red: var(--danger);
@@ -64,33 +62,33 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --sky-a: #e9eefc; --sky-b: #f3f0fb; --sky-c: #f7f8fc; --sky-top: #dde3fb;
-    --aura-1: rgba(110, 150, 255, 0.42); --aura-2: rgba(200, 150, 255, 0.36); --aura-3: rgba(90, 210, 240, 0.3);
-    --text: #0d1020; --text-2: rgba(20, 24, 44, 0.66); --text-3: rgba(20, 24, 44, 0.62);
-    --glass: rgba(255, 255, 255, 0.58); --glass-strong: rgba(250, 251, 255, 0.9); --glass-ctl: rgba(20, 30, 60, 0.06); --sheet: rgba(246, 247, 252, 0.95);
-    --line: rgba(20, 24, 44, 0.09); --press: rgba(20, 24, 44, 0.05); --field: rgba(20, 30, 60, 0.06);
-    --ift-tint: #076a5a; --ift-on: #fff; --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
-    --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.95), inset 0 -1px 0.5px rgba(255, 255, 255, 0.4), inset 0 0 22px rgba(255, 255, 255, 0.3);
-    --lift: 0 0 0 0.5px rgba(20, 30, 60, 0.08), 0 22px 44px -20px rgba(40, 50, 100, 0.28), 0 2px 6px rgba(40, 50, 100, 0.06);
-    --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%);
-    --dim: rgba(10, 14, 30, 0.32);
-    --mail-text: #0d1020; --mail-link: #1f63d6; --mail-quote: rgba(20, 24, 44, 0.62); --mail-rule: rgba(20, 24, 44, 0.22);
+    --sky-a: var(--ifl-page, #f8f9f6); --sky-b: var(--ifl-page, #f8f9f6); --sky-c: var(--ifl-page, #f8f9f6); --sky-top: var(--ifl-page, #f8f9f6);
+    --aura-1: transparent; --aura-2: transparent; --aura-3: transparent;
+    --text: var(--ifl-text, #171a18); --text-2: var(--ifl-muted, #646a66); --text-3: var(--ifl-muted, #646a66);
+    --glass: var(--ifl-surface, #fff); --glass-strong: var(--ifl-raised, #fff); --glass-ctl: var(--ifl-surface-2, #f1f2ef); --sheet: var(--ifl-surface, #fff);
+    --line: var(--ifl-line, rgba(24, 32, 18, .1)); --press: color-mix(in srgb, var(--text) 6%, var(--glass)); --field: var(--ifl-surface-2, #f1f2ef);
+    --ift-tint: var(--ifl-accent-ink, #247a35); --ift-on: var(--ifl-on-accent, #10150d); --tint: var(--ifl-accent, #2ea84d); --tint-deep: var(--ifl-accent-fill, #74df36); --tint-text: var(--ifl-accent-ink, #247a35); --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
+    --edge: 0 0 0 1px var(--line);
+    --lift: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
+    --sheen: none;
+    --dim: rgba(15, 20, 12, .25);
+    --mail-text: var(--text); --mail-link: var(--tint-text); --mail-quote: var(--text-2); --mail-rule: var(--line);
   }
 }
 
 :root[data-theme="light"] {
     color-scheme: light;
-    --sky-a: #e9eefc; --sky-b: #f3f0fb; --sky-c: #f7f8fc; --sky-top: #dde3fb;
-    --aura-1: rgba(110, 150, 255, 0.42); --aura-2: rgba(200, 150, 255, 0.36); --aura-3: rgba(90, 210, 240, 0.3);
-    --text: #0d1020; --text-2: rgba(20, 24, 44, 0.66); --text-3: rgba(20, 24, 44, 0.62);
-    --glass: rgba(255, 255, 255, 0.58); --glass-strong: rgba(250, 251, 255, 0.9); --glass-ctl: rgba(20, 30, 60, 0.06); --sheet: rgba(246, 247, 252, 0.95);
-    --line: rgba(20, 24, 44, 0.09); --press: rgba(20, 24, 44, 0.05); --field: rgba(20, 30, 60, 0.06);
-    --ift-tint: #076a5a; --ift-on: #fff; --tint: #2f7af0; --tint-deep: #1f5fd8; --tint-text: #1f63d6; --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
-    --edge: inset 0 1px 0.5px rgba(255, 255, 255, 0.95), inset 0 -1px 0.5px rgba(255, 255, 255, 0.4), inset 0 0 22px rgba(255, 255, 255, 0.3);
-    --lift: 0 0 0 0.5px rgba(20, 30, 60, 0.08), 0 22px 44px -20px rgba(40, 50, 100, 0.28), 0 2px 6px rgba(40, 50, 100, 0.06);
-    --sheen: radial-gradient(140% 90% at 12% -20%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%);
-    --dim: rgba(10, 14, 30, 0.32);
-    --mail-text: #0d1020; --mail-link: #1f63d6; --mail-quote: rgba(20, 24, 44, 0.62); --mail-rule: rgba(20, 24, 44, 0.22);
+    --sky-a: var(--ifl-page, #f8f9f6); --sky-b: var(--ifl-page, #f8f9f6); --sky-c: var(--ifl-page, #f8f9f6); --sky-top: var(--ifl-page, #f8f9f6);
+    --aura-1: transparent; --aura-2: transparent; --aura-3: transparent;
+    --text: var(--ifl-text, #171a18); --text-2: var(--ifl-muted, #646a66); --text-3: var(--ifl-muted, #646a66);
+    --glass: var(--ifl-surface, #fff); --glass-strong: var(--ifl-raised, #fff); --glass-ctl: var(--ifl-surface-2, #f1f2ef); --sheet: var(--ifl-surface, #fff);
+    --line: var(--ifl-line, rgba(24, 32, 18, .1)); --press: color-mix(in srgb, var(--text) 6%, var(--glass)); --field: var(--ifl-surface-2, #f1f2ef);
+    --ift-tint: var(--ifl-accent-ink, #247a35); --ift-on: var(--ifl-on-accent, #10150d); --tint: var(--ifl-accent, #2ea84d); --tint-deep: var(--ifl-accent-fill, #74df36); --tint-text: var(--ifl-accent-ink, #247a35); --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
+    --edge: 0 0 0 1px var(--line);
+    --lift: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
+    --sheen: none;
+    --dim: rgba(15, 20, 12, .25);
+    --mail-text: var(--text); --mail-link: var(--tint-text); --mail-quote: var(--text-2); --mail-rule: var(--line);
 }
 
 * {
@@ -104,7 +102,7 @@ body {
   overflow: hidden;
   /* (behind everything, as far as the screen goes, past the sky too: its colours, top to bottom, ending as it does, so
      no band of another colour shows at an edge the sky doesn't reach, under a toolbar or the Home indicator) */
-  background: var(--sky-c) linear-gradient(to bottom, var(--sky-a), var(--sky-b) 52%, var(--sky-c)) no-repeat;
+  background: var(--sky-c);
   color: var(--label);
   font: 17px/1.29 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   letter-spacing: -0.012em;
@@ -180,10 +178,10 @@ svg.i {
 .glass {
   position: relative;
   isolation: isolate;
-  background: var(--sheen), var(--glass-bg);
-  -webkit-backdrop-filter: var(--blur);
-  backdrop-filter: var(--blur);
-  box-shadow: var(--edge), var(--lift);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
   border-radius: 999px;
 }
 
@@ -203,6 +201,7 @@ svg.i {
   pointer-events: none;
   mix-blend-mode: soft-light;
   z-index: 1;
+  display: none;
 }
 
 .glass.lit::after {
@@ -211,12 +210,13 @@ svg.i {
 }
 
 .glass.tinted {
-  background: var(--sheen), linear-gradient(180deg, color-mix(in srgb, var(--tint) 92%, white), var(--tint-deep));
-  color: #fff;
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  color: var(--ifl-on-accent, #10150d);
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
 }
 
 .glass.strong {
-  background: var(--sheen), var(--glass-strong);
+  background: var(--glass-strong);
 }
 
 /* ---------- The sky: the account page's, with its three slow lights (night in dark mode, dawn in light) ---------- */
@@ -232,7 +232,7 @@ svg.i {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background: radial-gradient(120% 80% at 50% -10%, var(--sky-a), var(--sky-b) 52%, var(--sky-c)) var(--sky-top);
+  background: var(--sky-c);
 }
 
 /* (on a phone or a tablet, as the account page's: the sky ends above Safari's bar at the foot, fading into the page's own
@@ -257,7 +257,8 @@ svg.i {
   height: 70vmax;
   border-radius: 50%;
   opacity: 0.9;
-  will-change: transform;
+  will-change: auto;
+  display: none;
 }
 
 .a1 {
@@ -363,7 +364,7 @@ body.sheet-open .aura {
 }
 
 .tint-text {
-  color: var(--tint);
+  color: var(--tint-text);
 }
 
 /* ---------- App frame ---------- */
@@ -458,9 +459,9 @@ body.sheet-open.phone #app::after {
 .navbar::before {
   top: 0;
   bottom: 0;
-  background: color-mix(in srgb, var(--sky-b) 94%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  backdrop-filter: blur(16px) saturate(1.4);
+  background: var(--sky-c);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .navbar::after {
@@ -582,8 +583,8 @@ body.sheet-open.phone #app::after {
 }
 
 .gbtn.on {
-  background: var(--tint);
-  color: #fff;
+  background: var(--ifl-accent-fill, #74df36);
+  color: var(--ifl-on-accent, #10150d);
   box-shadow: none;
 }
 
@@ -642,8 +643,8 @@ body.sheet-open.phone #app::after {
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: var(--tint);
-  color: #fff;
+  background: var(--ifl-accent-fill, #74df36);
+  color: var(--ifl-on-accent, #10150d);
   font-size: 11px;
   font-weight: 700;
   line-height: 18px;
@@ -683,9 +684,9 @@ body.sheet-open.phone #app::after {
   flex: 1 1 auto;
   gap: 7px;
   padding: 0 14px;
-  color: #fff;
-  background: var(--lc);
-  box-shadow: 0 6px 18px -8px var(--lc), inset 0 1px 0.5px rgba(255, 255, 255, 0.3);
+  color: var(--ifl-on-accent, #10150d);
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
 }
 
 .lens.on .lbl {
@@ -695,7 +696,7 @@ body.sheet-open.phone #app::after {
 
 .lens.on .ct {
   position: static;
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(20, 30, 12, .08);
 }
 
 /* The stream by day */
@@ -1211,8 +1212,8 @@ html.embed .pane.list .subtitle {
   border-radius: 10px;
   display: inline-grid;
   place-items: center;
-  background: var(--tint);
-  color: #fff;
+  background: var(--ifl-accent-fill, #74df36);
+  color: var(--ifl-on-accent, #10150d);
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -1262,9 +1263,9 @@ html.embed .pane.list .subtitle {
 }
 
 .chip.on {
-  background: var(--sheen), linear-gradient(180deg, color-mix(in srgb, var(--tint) 92%, white), var(--tint-deep));
-  box-shadow: var(--edge);
-  color: #fff;
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
+  color: var(--ifl-on-accent, #10150d);
 }
 
 .chip-n {
@@ -1275,7 +1276,7 @@ html.embed .pane.list .subtitle {
 }
 
 .chip.on .chip-n {
-  color: rgba(255, 255, 255, 0.85);
+  color: color-mix(in srgb, var(--ifl-on-accent, #10150d) 75%, transparent);
 }
 
 .chip .at {
@@ -1475,6 +1476,9 @@ html.embed .pane.list .subtitle {
 
 .rows {
   position: relative;
+  border-radius: var(--ifl-radius-card, 26px);
+  background: var(--glass);
+  box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
 }
 
 .row-wrap {
@@ -1519,9 +1523,9 @@ html.embed .pane.list .subtitle {
 }
 
 .row.selected {
-  background: var(--sheen), linear-gradient(180deg, color-mix(in srgb, var(--tint) 92%, white), var(--tint-deep));
-  color: #fff;
-  border-radius: 14px;
+  background: color-mix(in srgb, var(--tint) 20%, var(--glass));
+  color: var(--label);
+  border-radius: var(--ifl-radius-row, 16px);
 }
 
 .row.selected::after {
@@ -1531,7 +1535,7 @@ html.embed .pane.list .subtitle {
 .row.selected .meta,
 .row.selected .preview,
 .row.selected .date {
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--label-2);
 }
 
 .row:not(.selected):active {
@@ -1746,6 +1750,7 @@ html.embed .pane.list .subtitle {
 
 .swipe-actions .a-read {
   background: var(--tint);
+  color: var(--ifl-on-accent, #10150d);
 }
 
 .swipe-actions .a-flag {
@@ -1794,9 +1799,9 @@ html.embed .pane.list .subtitle {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  color: #fff;
-  background: var(--sheen), linear-gradient(160deg, #4fdc8e, #1fa75a);
-  box-shadow: var(--edge), 0 14px 34px -12px rgba(31, 167, 90, 0.6);
+  color: var(--ifl-on-accent, #10150d);
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
   animation: pop-in 0.6s var(--spring) both;
 }
 
@@ -2101,11 +2106,11 @@ html.embed .pane.list .subtitle {
 }
 
 .mcard {
-  border-radius: 24px;
-  background: var(--sheen), var(--glass);
-  -webkit-backdrop-filter: var(--blur);
-  backdrop-filter: var(--blur);
-  box-shadow: var(--edge), var(--lift);
+  border-radius: 26px;
+  background: var(--glass);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
   overflow: hidden;
 }
 
@@ -2702,7 +2707,7 @@ body.phone .pane.detail::before {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: radial-gradient(120% 80% at 50% -10%, var(--sky-a), var(--sky-b) 52%, var(--sky-c)) var(--sky-top);
+  background: var(--sky-c);
   opacity: 0;
   transition: opacity 0.35s var(--ease);
   pointer-events: none;
@@ -2747,7 +2752,7 @@ body.pad .pane.detail {
 body.pad .pane.list .row {
   margin: 0 8px;
   width: calc(100% - 16px);
-  border-radius: 14px;
+  border-radius: var(--ifl-radius-row, 16px);
   padding-left: 0;
 }
 
@@ -2781,10 +2786,10 @@ body.pad .pane.detail .msgs {
   overscroll-behavior: contain;
   padding: 6px;
   border-radius: 26px;
-  background: var(--menu-bg);
-  -webkit-backdrop-filter: blur(30px) saturate(2);
-  backdrop-filter: blur(30px) saturate(2);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.1), var(--glass-inner);
+  background: var(--sheet);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
   transform: scale(0.3);
   opacity: 0;
   transition: transform 0.5s var(--spring), opacity 0.22s;
@@ -3000,11 +3005,11 @@ body.phone .sheet-scrim {
   display: flex;
   flex-direction: column;
   background: var(--sheet);
-  -webkit-backdrop-filter: var(--blur);
-  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   overflow: hidden;
   transition: transform 0.55s var(--ease), border-radius 0.4s;
-  box-shadow: var(--edge), 0 -10px 60px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
 }
 
 body.phone .sheet {
@@ -3012,7 +3017,7 @@ body.phone .sheet {
   right: 0;
   top: calc(var(--sat) + 12px);
   bottom: 0;
-  border-radius: 38px 38px 0 0;
+  border-radius: 30px 30px 0 0;
   transform: translateY(105%);
   padding-bottom: var(--kb);
 }
@@ -3023,7 +3028,7 @@ body.pad .sheet {
   width: min(700px, calc(100vw - 80px));
   height: min(780px, calc(100% - 80px - var(--kb)));
   margin-top: calc(var(--kb) / -2);
-  border-radius: 34px;
+  border-radius: 30px;
   transform: translate(-50%, 120vh);
 }
 
@@ -3100,9 +3105,9 @@ body.pad .sheet-grabber {
 }
 
 .sheet-head .glass.tinted {
-  background: var(--sheen), linear-gradient(180deg, color-mix(in srgb, var(--tint) 88%, white), var(--tint-deep));
-  color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  color: var(--ifl-on-accent, #10150d);
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
   transition: background 0.25s, box-shadow 0.25s, transform 0.45s var(--spring);
 }
 
@@ -3293,8 +3298,8 @@ body.pad .sheet-grabber {
 }
 
 .token.focused {
-  background: var(--tint);
-  color: #fff;
+  background: var(--ifl-accent-fill, #74df36);
+  color: var(--ifl-on-accent, #10150d);
 }
 
 .token.invalid {
@@ -3565,6 +3570,8 @@ body.phone .sheet.kb .compose-accessory {
   z-index: 150;
   overflow: hidden;
   isolation: isolate;
+  --ifl-pill: var(--glass);
+  --ifl-pill-edge: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
 }
 
 .welcome {
@@ -3614,6 +3621,7 @@ body.phone .sheet.kb .compose-accessory {
   border-radius: 50%;
   background: radial-gradient(closest-side, rgba(63, 208, 198, 0.42), rgba(255, 210, 90, 0.14) 55%, rgba(255, 210, 90, 0));
   animation: w-fade 2s ease 0.5s backwards;
+  display: none;
 }
 
 .wlogo .mark {
@@ -3621,7 +3629,7 @@ body.phone .sheet.kb .compose-accessory {
   width: 96px;
   height: 96px;
   border-radius: 22px;
-  box-shadow: 0 18px 40px -16px rgba(17, 154, 149, 0.75), 0 0 0 0.5px rgba(255, 255, 255, 0.2);
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
   animation: w-logo 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.25s backwards;
 }
 
@@ -3717,11 +3725,11 @@ body.phone .sheet.kb .compose-accessory {
   justify-content: center;
   font-size: 17px;
   font-weight: 600;
-  color: #fff;
-  background: linear-gradient(135deg, #6fb1ff, #2f6bff 55%, #7a4bff);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 10px 28px -10px rgba(47, 107, 255, 0.75);
+  color: var(--ifl-on-accent, #10150d);
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
   transition: transform 0.45s var(--spring), filter 0.2s;
-  animation: w-beat 2.4s ease-in-out 2.6s infinite;
+  animation: w-cta .45s var(--ease) both;
 }
 
 .w-go:active {
@@ -3752,23 +3760,23 @@ body.phone .sheet.kb .compose-accessory {
 
 /* Mail's scene: clouds rising out of the haze, the route drawn over them, then the plane */
 :root {
-  --f-far: rgba(110, 150, 255, 0.14);
-  --f-mid: rgba(160, 120, 255, 0.14);
-  --f-near: rgba(90, 190, 240, 0.12);
+  --f-far: color-mix(in srgb, var(--text-3) 10%, transparent);
+  --f-mid: color-mix(in srgb, var(--text-3) 10%, transparent);
+  --f-near: color-mix(in srgb, var(--text-3) 10%, transparent);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --f-far: rgba(90, 130, 240, 0.12);
-    --f-mid: rgba(170, 130, 240, 0.12);
-    --f-near: rgba(80, 180, 230, 0.12);
+    --f-far: color-mix(in srgb, var(--text-3) 10%, transparent);
+    --f-mid: color-mix(in srgb, var(--text-3) 10%, transparent);
+    --f-near: color-mix(in srgb, var(--text-3) 10%, transparent);
   }
 }
 
 :root[data-theme="light"] {
-  --f-far: rgba(90, 130, 240, 0.12);
-  --f-mid: rgba(170, 130, 240, 0.12);
-  --f-near: rgba(80, 180, 230, 0.12);
+  --f-far: color-mix(in srgb, var(--text-3) 10%, transparent);
+  --f-mid: color-mix(in srgb, var(--text-3) 10%, transparent);
+  --f-near: color-mix(in srgb, var(--text-3) 10%, transparent);
 }
 
 .flight {
@@ -4015,11 +4023,11 @@ textarea:focus-visible {
   display: grid;
   gap: 10px;
   padding: 12px 14px;
-  border-radius: 20px;
-  background: var(--sheen), var(--glass);
-  -webkit-backdrop-filter: var(--blur);
-  backdrop-filter: var(--blur);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 55%, transparent), var(--edge), var(--lift);
+  border-radius: 26px;
+  background: var(--glass);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
   transition: opacity 0.3s var(--ease);
 }
 .spot.gone { opacity: 0.6; }
@@ -4101,9 +4109,10 @@ textarea:focus-visible {
 }
 
 .pbtn.primary {
-  background: var(--tint);
-  color: #fff;
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  color: var(--ifl-on-accent, #10150d);
   font-weight: 600;
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
 }
 
 /* (long labels wrap inside the menu, never past it; the times beside Later's choices stay on one line) */
@@ -4178,7 +4187,7 @@ textarea:focus-visible {
   left: var(--ift-pad);
   width: calc((100% - 2 * var(--ift-pad)) / 4);
   border-radius: calc(var(--ift-h) / 2 - var(--ift-pad));
-  background: color-mix(in srgb, var(--ift-tint) var(--ift-pill), transparent);
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
   transition: transform 0.5s var(--spring), opacity 0.2s;
 }
 
@@ -4206,7 +4215,7 @@ textarea:focus-visible {
 }
 
 .tab.on {
-  color: var(--ift-tint);
+  color: var(--ifl-on-accent, #10150d);
 }
 
 .tab-n {
@@ -4217,7 +4226,7 @@ textarea:focus-visible {
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: var(--ift-badge, var(--ift-tint));
+  background: var(--ift-badge, var(--ifl-accent-fill, #74df36));
   box-shadow: 0 0 0 2px var(--sheet);
   color: var(--ift-on, #fff);
   font-size: 11px;
@@ -4327,13 +4336,13 @@ html.kb-up .toolbar.searching {
 }
 
 .profile-layer.open {
-  background: rgba(14, 18, 40, 0.14);
-  -webkit-backdrop-filter: blur(3px) saturate(120%);
-  backdrop-filter: blur(3px) saturate(120%);
+  background: var(--dim);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .gbtn.profile.lit {
-  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--tint) 55%, transparent), 0 0 18px 2px color-mix(in srgb, var(--tint) 35%, transparent);
+  box-shadow: 0 0 0 2px var(--tint-text);
 }
 
 .menu.profile-pop {
@@ -4344,9 +4353,9 @@ html.kb-up .toolbar.searching {
   display: grid;
   gap: 6px;
   background: var(--sheet);
-  -webkit-backdrop-filter: blur(44px) saturate(200%);
-  backdrop-filter: blur(44px) saturate(200%);
-  box-shadow: var(--edge), 0 0 0 0.5px var(--line), 0 2px 6px rgba(20, 30, 60, 0.06), 0 16px 36px -14px rgba(20, 30, 80, 0.32);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
 }
 
 .p-card {
@@ -4596,18 +4605,18 @@ html.kb-up .toolbar.searching {
 }
 
 .lift-layer.open {
-  background: rgba(14, 18, 40, 0.2);
-  -webkit-backdrop-filter: blur(4px) saturate(120%);
-  backdrop-filter: blur(4px) saturate(120%);
+  background: var(--dim);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .lifted-row {
   position: fixed;
   z-index: 1;
   margin: 0;
-  border-radius: 22px;
+  border-radius: var(--ifl-radius-row, 16px);
   background: var(--glass-strong);
-  box-shadow: var(--edge), 0 24px 60px -16px rgba(20, 30, 80, 0.45);
+  box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
   transform: scale(1);
   transition: transform 0.4s var(--spring);
   pointer-events: auto;
@@ -4826,15 +4835,15 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
 }
 
 .d-pill.icon-only {
-  width: 38px;
+  width: 44px;
   padding: 0;
   justify-content: center;
 }
 
 .d-pill.done-pill {
-  color: #fff;
-  background: linear-gradient(160deg, #4fdc8e, #1fa75a);
-  box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.45), 0 8px 18px -8px #1fa75a;
+  color: var(--ifl-on-accent, #10150d);
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
 }
 
 .qr {
@@ -4849,8 +4858,8 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
 .qr-more,
 .qr-send {
   flex: none;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -4867,8 +4876,9 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
 }
 
 .qr-send {
-  color: #fff;
-  background: var(--tint);
+  color: var(--ifl-on-accent, #10150d);
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
   transition: opacity 0.2s, transform 0.4s var(--spring);
 }
 
@@ -5359,10 +5369,10 @@ body.pad .set-scroll {
 }
 
 .set-group {
-  border-radius: 22px;
+  border-radius: var(--ifl-radius-group, 22px);
   overflow: hidden;
-  background: var(--glass-strong);
-  box-shadow: 0 0 0 0.5px var(--line);
+  background: var(--glass);
+  box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
 }
 
 .set-group + .set-group {
@@ -5593,23 +5603,24 @@ button.set-row:active {
 .set-seg {
   flex: none;
   display: flex;
-  padding: 2px;
-  border-radius: 9px;
-  background: rgba(120, 120, 128, 0.14);
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--field);
 }
 
 .set-seg button {
   padding: 6px 10px;
-  border-radius: 7px;
+  border-radius: 999px;
   font-size: 13.5px;
   font-weight: 500;
   color: var(--label);
   transition: background 0.2s, box-shadow 0.2s;
+  min-height: 36px;
 }
 
 .set-seg button.on {
-  background: var(--glass-strong);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14), 0 0 0 0.5px var(--line);
+  background: var(--glass);
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
   font-weight: 600;
 }
 
@@ -5762,18 +5773,18 @@ button.set-row:active {
   font-size: 14px;
   font-weight: 500;
   line-height: 22px;
-  color: var(--ifl-pill-ink, rgba(20, 24, 50, 0.62));
-  background: var(--ifl-pill, rgba(255, 255, 255, 0.6));
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  backdrop-filter: blur(14px) saturate(1.4);
-  box-shadow: var(--ifl-pill-edge, 0 0 0 0.5px rgba(20, 24, 60, 0.1), 0 6px 18px -10px rgba(0, 0, 0, 0.3));
+  color: var(--ifl-muted);
+  background: var(--ifl-surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--ifl-shadow-control);
 }
 
 .ifl-in .ifl-brand img {
   width: 22px;
   height: 22px;
   border-radius: 5px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .ifl-in .ifl-go {
@@ -5837,9 +5848,9 @@ button.set-row:active {
 
 .sf.on {
   padding-right: 6px;
-  background: var(--sheen), linear-gradient(180deg, color-mix(in srgb, var(--tint) 92%, white), var(--tint-deep));
-  box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--tint-deep) 80%, transparent);
-  color: #fff;
+  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
+  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
+  color: var(--ifl-on-accent, #10150d);
 }
 
 .sf svg.sf-dd {
@@ -5872,7 +5883,7 @@ button.set-row:active {
 }
 
 .sf-strip {
-  border-radius: 20px;
+  border-radius: var(--ifl-radius-row, 16px);
   background: var(--glass-ctl);
   box-shadow: inset 0 0 0 0.5px var(--line);
   animation: sf-open 0.3s var(--ease-out) both;
@@ -5936,7 +5947,7 @@ button.set-row:active {
 .sf-strip.dates button {
   flex: 1;
   padding: 8px 0;
-  border-radius: 11px;
+  border-radius: 12px;
   font-size: 14px;
   font-weight: 500;
   color: var(--label);
@@ -5960,52 +5971,34 @@ html { touch-action: pan-x pan-y; }
 /* InFlite's menu, the same in every app (.tools/inflite/menu.js): its own colours, type and shapes, whatever the
    app's, light or dark as the app is (data-theme, else the device) */
 .ifm-layer, .ifm-note, .ifa-layer, .ifl-tabs, .ifl-back, .ifb-layer {
-  --ifm-sheet: rgba(250, 250, 253, 0.86);
-  --ifm-panel: rgba(255, 255, 255, 0.9);
-  --ifm-line: rgba(60, 60, 67, 0.14);
-  --ifm-text: #11131c;
-  --ifm-text-2: rgba(60, 60, 67, 0.62);
-  --ifm-text-3: rgba(60, 60, 67, 0.36);
-  --ifm-press: rgba(120, 120, 128, 0.14);
-  --ifm-red: #e5342a;
-  --ifm-red-bg: rgba(229, 52, 42, 0.1);
-  --ifm-green: #1f9d55;
-  --ifm-dim: rgba(14, 18, 40, 0.14);
-  --ifm-tint: #2f6be6;
-  --ifm-warn: #c86a00;
+  --ifm-sheet: var(--ifl-surface); --ifm-panel: var(--ifl-surface-2);
+  --ifm-line: var(--ifl-line); --ifm-text: var(--ifl-text);
+  --ifm-text-2: var(--ifl-muted); --ifm-text-3: var(--ifl-subtle);
+  --ifm-press: var(--ifl-press); --ifm-red: #c73229; --ifm-red-bg: rgba(199, 50, 41, 0.1);
+  --ifm-green: var(--ifl-accent-ink); --ifm-dim: rgba(14, 18, 16, 0.2);
+  --ifm-tint: var(--ifl-accent-ink); --ifm-warn: #9b5900;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) :is(.ifm-layer, .ifm-note, .ifa-layer, .ifl-tabs, .ifl-back, .ifb-layer) {
-    --ifm-sheet: rgba(36, 38, 52, 0.86); --ifm-panel: rgba(56, 58, 74, 0.72); --ifm-line: rgba(235, 235, 245, 0.12);
-    --ifm-text: #f4f5fa; --ifm-text-2: rgba(235, 235, 245, 0.62); --ifm-text-3: rgba(235, 235, 245, 0.34);
-    --ifm-press: rgba(235, 235, 245, 0.1); --ifm-red: #ff5a50; --ifm-red-bg: rgba(255, 90, 80, 0.16); --ifm-green: #4fdc8e; --ifm-warn: #ffb44a; --ifm-dim: rgba(0, 0, 0, 0.32);
+    --ifm-red: #ff857c; --ifm-red-bg: rgba(255, 133, 124, 0.12); --ifm-warn: #ffbf69; --ifm-dim: rgba(0, 0, 0, 0.46);
   }
 }
 :root[data-theme="dark"] :is(.ifm-layer, .ifm-note, .ifa-layer, .ifl-tabs, .ifl-back, .ifb-layer) {
-  --ifm-sheet: rgba(36, 38, 52, 0.86); --ifm-panel: rgba(56, 58, 74, 0.72); --ifm-line: rgba(235, 235, 245, 0.12);
-  --ifm-text: #f4f5fa; --ifm-text-2: rgba(235, 235, 245, 0.62); --ifm-text-3: rgba(235, 235, 245, 0.34);
-  --ifm-press: rgba(235, 235, 245, 0.1); --ifm-red: #ff5a50; --ifm-red-bg: rgba(255, 90, 80, 0.16); --ifm-green: #4fdc8e; --ifm-warn: #ffb44a; --ifm-dim: rgba(0, 0, 0, 0.32);
+  --ifm-red: #ff857c; --ifm-red-bg: rgba(255, 133, 124, 0.12); --ifm-warn: #ffbf69; --ifm-dim: rgba(0, 0, 0, 0.46);
 }
-/* each app's own colour: its focus rings, and Update */
-.ifm-in-chat { --ifm-tint: #2b6fe6; }
-.ifm-in-weather { --ifm-tint: #3a86f0; }
-.ifm-in-fitness { --ifm-tint: #f0542e; }
-.ifm-in-markets { --ifm-tint: #12a46a; }
-.ifm-in-mail { --ifm-tint: #1aa58f; }
-.ifm-in-account { --ifm-tint: #5b4fe0; }
 
 .ifm-layer { position: fixed; inset: 0; z-index: 2147483000; background: transparent; transition: background 0.3s ease, backdrop-filter 0.3s ease; }
 .ifm-layer.open { background: var(--ifm-dim); -webkit-backdrop-filter: blur(3px) saturate(120%); backdrop-filter: blur(3px) saturate(120%); }
 .ifm-layer button, .ifm-layer a { appearance: none; -webkit-appearance: none; margin: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit;
   text-align: left; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; box-shadow: none; min-height: 0; min-width: 0; width: auto; height: auto; }
 .ifm-layer button:focus-visible, .ifm-layer a:focus-visible { outline: 2px solid var(--ifm-tint); outline-offset: 2px; }
-.ifm-lit { box-shadow: 0 0 0 2.5px rgba(47, 107, 230, 0.5), 0 0 18px 2px rgba(47, 107, 230, 0.3) !important; border-radius: 50%; }
+.ifm-lit { box-shadow: 0 0 0 2px var(--ifl-accent-ink) !important; border-radius: 50%; }
 
 .ifm-pop { position: fixed; box-sizing: border-box; width: min(340px, calc(100vw - 24px)); padding: 6px; border-radius: 30px; display: grid; gap: 6px;
-  color: var(--ifm-text); background: var(--ifm-sheet); -webkit-backdrop-filter: blur(44px) saturate(200%); backdrop-filter: blur(44px) saturate(200%);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.5), 0 0 0 0.5px var(--ifm-line), 0 2px 6px rgba(20, 30, 60, 0.06), 0 16px 36px -14px rgba(20, 30, 80, 0.32);
+  color: var(--ifm-text); background: var(--ifm-sheet); -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: 0 0 0 1px var(--ifm-line), 0 12px 36px -16px rgba(14, 18, 16, 0.24);
   transform: scale(0.3); opacity: 0; transition: transform 0.5s cubic-bezier(0.32, 1.25, 0.5, 1), opacity 0.22s; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; font-size: 16px; line-height: 1.25; letter-spacing: -0.01em; }
 .ifm-pop.open { transform: none; opacity: 1; }
 .ifm-pop.closing { transform: scale(0.5); opacity: 0; transition: transform 0.25s cubic-bezier(0.4, 0, 1, 1), opacity 0.2s; }
@@ -6015,7 +6008,7 @@ html { touch-action: pan-x pan-y; }
 .ifm-card { display: grid !important; grid-template-columns: 52px minmax(0, 1fr) auto; column-gap: 14px; align-items: center; padding: 12px 14px 12px 12px !important; border-radius: 24px; transition: background 0.2s; }
 .ifm-card:active { background: var(--ifm-press) !important; }
 .ifm-photo { width: 52px; height: 52px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; font-size: 20px; font-weight: 600; color: #fff;
-  background: linear-gradient(160deg, #8aa0c8, #5a6f99); box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 6px 14px -6px rgba(20, 30, 60, 0.45); }
+  background: #556253; box-shadow: none; }
 .ifm-photo > * { width: 100% !important; height: 100% !important; margin: 0 !important; border-radius: 50% !important; font-size: inherit; box-shadow: none !important; }
 .ifm-photo img { object-fit: cover; display: block; }
 .ifm-who { min-width: 0; }
@@ -6025,20 +6018,21 @@ html { touch-action: pan-x pan-y; }
 
 /* the app's own rows */
 .ifm-rows { display: grid; gap: 6px; }
-.ifm-row.off { opacity: 0.5; }
-.ifm-grp { border-radius: 24px; overflow: hidden; background: var(--ifm-panel); box-shadow: 0 0 0 0.5px var(--ifm-line); }
+.ifm-row.off { color: var(--ifm-text-2); }
+.ifm-row.off .ifm-ic { opacity: 0.55; }
+.ifm-grp { border-radius: 24px; overflow: hidden; background: var(--ifm-panel); box-shadow: none; }
 .ifm-row { position: relative; width: 100% !important; height: 52px !important; padding: 0 14px 0 12px !important; display: grid !important; grid-template-columns: 30px minmax(0, 1fr) auto auto; column-gap: 12px; align-items: center; }
 .ifm-row.go:active { background: var(--ifm-press) !important; }
 .ifm-row + .ifm-row::before { content: ""; position: absolute; top: 0; left: 54px; right: 0; height: 0.5px; background: var(--ifm-line); }
 .ifm-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; }
 .ifm-ic svg { width: 17px; height: 17px; stroke-width: 2.1; }
-.ifm-ic.red { background: linear-gradient(160deg, #ff6b5e, #e5342a); }
-.ifm-ic.blue { background: linear-gradient(160deg, #5aa9ff, #2a6ae6); }
-.ifm-ic.green { background: linear-gradient(160deg, #4fd27b, #22a352); }
-.ifm-ic.orange { background: linear-gradient(160deg, #ffb340, #f27a12); }
-.ifm-ic.indigo { background: linear-gradient(160deg, #8a7dff, #5546e0); }
-.ifm-ic.grey { background: linear-gradient(160deg, #9aa3b8, #6b7389); }
-.ifm-ic.teal { background: linear-gradient(160deg, #4fd6c4, #169b8f); }
+.ifm-ic.red { background: #e85850; }
+.ifm-ic.blue { background: #548cd4; }
+.ifm-ic.green { background: #2da75b; }
+.ifm-ic.orange { background: #df9527; }
+.ifm-ic.indigo { background: #8a76c8; }
+.ifm-ic.grey { background: #7b837b; }
+.ifm-ic.teal { background: #29988b; }
 .ifm-l { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ifm-val { font-size: 15px; color: var(--ifm-text-2); white-space: nowrap; }
 /* (its own name: an app's .warn, a banner of its own, isn't this) */
@@ -6047,7 +6041,7 @@ html { touch-action: pan-x pan-y; }
 .ifm-switch { position: relative; width: 51px !important; height: 31px !important; border-radius: 16px !important; background: rgba(120, 120, 128, 0.2) !important; transition: background 0.25s; grid-column: 3 / 5; }
 .ifm-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff;
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.04); transition: transform 0.35s cubic-bezier(0.32, 1.25, 0.5, 1); }
-.ifm-switch[aria-checked="true"] { background: #34c759 !important; }
+.ifm-switch[aria-checked="true"] { background: var(--ifl-accent-gradient) !important; }
 .ifm-switch[aria-checked="true"]::after { transform: translateX(20px); }
 
 /* its version, and Sign Out */
@@ -6057,7 +6051,7 @@ html { touch-action: pan-x pan-y; }
 .ifm-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ifm-green); }
 .ifm-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .ifm-foot .ifm-upd { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 10px !important; border-radius: 16px !important;
-  background: rgba(47, 107, 230, 0.14) !important; background: color-mix(in srgb, var(--ifm-tint) 15%, transparent) !important; color: var(--ifm-tint) !important; font-size: 14px; font-weight: 600; position: relative; }
+  background: var(--ifl-accent-wash) !important; color: var(--ifm-tint) !important; font-size: 14px; font-weight: 600; position: relative; }
 .ifm-foot .ifm-upd svg { width: 15px; height: 15px; stroke-width: 2.2; }
 .ifm-foot .ifm-upd::after { content: ""; position: absolute; inset: -6px -2px; }
 .ifm-foot .ifm-out { flex: none; position: relative; width: 40px; height: 40px; padding: 0 !important; border-radius: 50% !important; display: grid; place-items: center;
@@ -6070,22 +6064,22 @@ html { touch-action: pan-x pan-y; }
 .ifa-layer { position: fixed; inset: 0; z-index: 2147483002; display: flex; align-items: flex-end; justify-content: center; background: var(--ifm-dim); opacity: 0; transition: opacity 0.3s; }
 .ifa-layer.on { opacity: 1; }
 .ifa-sheet { box-sizing: border-box; width: min(520px, 100%); padding: 26px 22px calc(env(safe-area-inset-bottom, 0px) + 22px); border-radius: 34px 34px 0 0; text-align: center; color: var(--ifm-text);
-  background: var(--ifm-sheet); -webkit-backdrop-filter: blur(30px) saturate(1.6); backdrop-filter: blur(30px) saturate(1.6); box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.25);
+  background: var(--ifm-sheet); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0 -8px 30px rgba(14, 18, 16, 0.12);
   transform: translateY(100%); transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1); }
 .ifa-layer.on .ifa-sheet { transform: none; }
 .ifa-ic { width: 62px; height: 62px; border-radius: 15px; }
 .ifa-t { margin: 12px 0 6px; font-size: 21px; font-weight: 700; letter-spacing: -0.2px; }
 .ifa-p { margin: 0 auto 18px; max-width: 340px; color: var(--ifm-text-2); font-size: 15px; line-height: 1.4; }
 .ifa-sheet button { appearance: none; -webkit-appearance: none; border: 0; font: inherit; cursor: pointer; display: block; width: 100%; -webkit-tap-highlight-color: transparent; }
-.ifa-go { height: 50px; border-radius: 25px; background: var(--ifm-tint); color: #fff; font-size: 17px; font-weight: 600; }
+.ifa-go { height: 50px; border-radius: 25px; background: var(--ifl-accent-gradient); color: var(--ifl-on-accent); font-size: 17px; font-weight: 600; }
 .ifa-go[disabled] { opacity: 0.6; }
 .ifa-later { margin-top: 8px; height: 44px; background: none; color: var(--ifm-tint); font-size: 16px; }
 @media (prefers-reduced-motion: reduce) { .ifa-sheet { transition: none; } }
 
 /* the note after an update */
 .ifm-note { position: fixed; z-index: 2147483001; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 104px); display: flex; align-items: center; gap: 12px;
-  padding: 10px 20px 10px 10px; border-radius: 22px; color: var(--ifm-text); background: var(--ifm-sheet); -webkit-backdrop-filter: blur(30px) saturate(200%); backdrop-filter: blur(30px) saturate(200%);
-  box-shadow: 0 0 0 0.5px var(--ifm-line), 0 14px 34px -12px rgba(20, 30, 80, 0.4); transform: translate(-50%, 20px) scale(0.92); opacity: 0;
+  padding: 10px 20px 10px 10px; border-radius: 22px; color: var(--ifm-text); background: var(--ifm-sheet); -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: 0 0 0 1px var(--ifm-line), var(--ifl-shadow-card); transform: translate(-50%, 20px) scale(0.92); opacity: 0;
   transition: transform 0.45s cubic-bezier(0.32, 1.25, 0.5, 1), opacity 0.25s; pointer-events: none; }
 .ifm-note.on { transform: translate(-50%, 0); opacity: 1; }
 .ifm-note-ic { width: 36px; height: 36px; border-radius: 9px; }
@@ -6116,21 +6110,21 @@ img, svg, a { -webkit-user-drag: none; }
 /* (the band behind the header once the page has scrolled: solid the whole way down the header, so nothing reads through
    behind its title, then fading out over the 16px below it) */
 .ifh::before { content: ""; position: absolute; inset: 0 0 -16px; z-index: -1; pointer-events: none; opacity: var(--p);
-  background: linear-gradient(to bottom, var(--ifh-band, rgba(240, 242, 250, 0.9)) calc(100% - 16px), transparent);
+  background: linear-gradient(to bottom, var(--ifl-page) calc(100% - 16px), transparent);
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent); }
 /* (at the top, no band at all: its glass isn't worked out, frame after frame, behind whatever's over the page) */
 .ifh:not(.ifh-up)::before { display: none; }
 /* (the blur on the header itself, not its band: a header with a view-transition-name is a backdrop root, so a blur on
    anything inside it sees nothing of the page behind; on the header, it sees the page) */
-.ifh.ifh-up { -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); }
+.ifh.ifh-up { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .ifh button { appearance: none; -webkit-appearance: none; margin: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.ifh button:focus-visible { outline: 2px solid var(--ifh-tint, #2f6be6); outline-offset: 3px; }
-.ifh-me { position: relative; flex: none; width: calc(42px - 8px * var(--p)); height: calc(42px - 8px * var(--p)); padding: 0 !important; border-radius: 50% !important; overflow: hidden;
-  display: grid; place-items: center; font-size: calc(16px - 3px * var(--p)); font-weight: 600; color: #fff; background: var(--ifh-photo, linear-gradient(150deg, #8f7ff0, #5e48c8)) !important;
-  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55), 0 6px 14px -6px rgba(20, 30, 70, 0.45); transition: transform 0.2s; }
+.ifh button:focus-visible { outline: 2px solid var(--ifl-accent-ink); outline-offset: 3px; }
+.ifh .ifh-me { position: relative; flex: none; width: calc(42px - 8px * var(--p)); height: calc(42px - 8px * var(--p)); padding: 0 !important; border-radius: 50% !important; overflow: hidden;
+  display: grid; place-items: center; font-size: calc(16px - 3px * var(--p)); font-weight: 600; color: var(--ifh-photo-ink, #fff); background: var(--ifh-photo, #556253) !important;
+  box-shadow: var(--ifl-shadow-control); transition: transform 0.2s; }
 .ifh-me > * { width: 100% !important; height: 100% !important; margin: 0 !important; border-radius: 50% !important; font-size: inherit !important; box-shadow: none !important; }
 .ifh-me img { object-fit: cover; display: block; }
-.ifh-me.out { color: var(--ifh-tint, #2f6be6); background: var(--ifh-glass, rgba(255, 255, 255, 0.58)) !important; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.08); }
+.ifh-me.out { color: var(--ifl-accent-ink); background: var(--ifl-surface) !important; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.08); }
 .ifh-me.out svg { width: 22px !important; height: 22px !important; stroke-width: 2; }
 .ifh-me:active, .ifh-act:active { transform: scale(0.92); }
 .ifh-t { min-width: 0; display: grid; }
@@ -6144,11 +6138,11 @@ img, svg, a { -webkit-user-drag: none; }
   font-size: 15px; line-height: 20px; color: var(--ifh-ink-2, inherit); white-space: nowrap; text-overflow: ellipsis; }
 .ifh-line:empty { height: 0; margin: 0; }
 .ifh-line i, .ifh-line em { font-style: normal; font-weight: 600; color: var(--ifh-tint, inherit); }
-.ifh-acts { display: flex; align-items: center; height: 44px; padding: 0 3px; border-radius: 999px; background: var(--ifh-glass, rgba(255, 255, 255, 0.58));
-  -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.7), 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 6px 16px -10px rgba(20, 30, 70, 0.35); }
+.ifh-acts { display: flex; align-items: center; height: 44px; padding: 0 3px; border-radius: 999px; background: var(--ifl-surface);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: var(--ifl-shadow-control); }
 .ifh-acts:empty { display: none; }
-.ifh-act { position: relative; width: 38px; height: 38px; padding: 0 !important; border-radius: 50% !important; display: grid; place-items: center; color: var(--ifh-tint, currentColor) !important; transition: transform 0.2s; }
+.ifh-act { position: relative; width: 38px; height: 38px; padding: 0 !important; border-radius: 50% !important; display: grid; place-items: center; color: var(--ifl-text) !important; transition: transform 0.2s; }
 .ifh-act svg { width: 22px; height: 22px; stroke-width: 2; }
 .ifh-act[disabled] { opacity: 0.4; }
 /* (a 44px target round each, over the capsule's padding) */
@@ -6167,12 +6161,12 @@ img, svg, a { -webkit-user-drag: none; }
 /* InFlite's Settings sheet, the same in every app: a round ‹ to go back on a page inside, a round ✕ to close on every one
    (.ifs-btn), and the first page opening on the app (.ifs-hero: its icon, its name, a line about it) */
 .ifs-btn { flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
-  color: inherit; background: rgba(120, 120, 128, 0.2); -webkit-tap-highlight-color: transparent; transition: transform 0.2s; }
+  color: inherit; background: var(--ifl-surface-2); -webkit-tap-highlight-color: transparent; transition: transform 0.2s; }
 .ifs-btn svg { width: 18px; height: 18px; stroke-width: 2.4; }
 .ifs-btn:active { transform: scale(0.9); }
 .ifs-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .ifs-hero { display: grid; justify-items: center; gap: 4px; padding: 4px 0 16px; text-align: center; }
-.ifs-hero img { width: 64px; height: 64px; border-radius: 15px; margin-bottom: 6px; box-shadow: 0 10px 22px -10px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.15); }
+.ifs-hero img { width: 64px; height: 64px; border-radius: 15px; margin-bottom: 6px; box-shadow: var(--ifl-shadow-control); }
 .ifs-hero b { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .ifs-hero span { font-size: 14px; opacity: 0.62; }
 
@@ -6181,28 +6175,26 @@ img, svg, a { -webkit-user-drag: none; }
    colour; it stays put as the pages cross-fade (its view-transition-name). The cross-fade between pages is asked for
    here, of every page (an at-rule can't be kept to html.ifl-hub); off the hub menu.js lets it go as a page is left */
 @view-transition { navigation: auto; }
-.ifl-tabs { --ifl-tab-ink: #3f4250; --ifl-tab-on: #1d55c4; --ifl-tabs-glass: rgba(250, 250, 253, 0.8);
+.ifl-tabs { --ifl-tab-ink: var(--ifl-muted); --ifl-tab-on: var(--ifl-on-accent); --ifl-tabs-glass: var(--ifl-surface-2);
   position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom, 0px) - var(--fix-gap, 0px)); z-index: 40; box-sizing: border-box; display: flex; gap: 0;
   width: calc(100% - 32px); max-width: var(--ift-max); height: var(--ift-h); margin: 0 auto; padding: var(--ift-pad); border-radius: 999px;
-  background: var(--ifl-tabs-glass); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.7), 0 0 0 0.5px var(--ifm-line), 0 10px 28px -14px rgba(20, 30, 70, 0.45);
+  background: var(--ifl-tabs-glass); -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: 0 0 0 1px var(--ifl-line), var(--ifl-shadow-control);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ifl-tabs { --ifl-tab-ink: #d2d3de; --ifl-tab-on: #9dbdff; --ifl-tabs-glass: rgba(36, 38, 52, 0.82); } }
-:root[data-theme="dark"] .ifl-tabs { --ifl-tab-ink: #d2d3de; --ifl-tab-on: #9dbdff; --ifl-tabs-glass: rgba(36, 38, 52, 0.82); }
 html.ifl-hub .ifl-tabs { view-transition-name: ifl-tabs; }
 .ifl-tab { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 999px;
   color: var(--ifl-tab-ink); font-size: var(--ift-label); font-weight: 600; letter-spacing: 0.1px; line-height: 1.1; text-decoration: none;
   -webkit-tap-highlight-color: transparent; transition: transform 0.2s, color 0.2s, background 0.2s; }
 .ifl-tab-ic { flex: none; width: var(--ift-icon); height: var(--ift-icon); stroke-width: 1.9; }
-.ifl-tab[aria-current="page"] { color: var(--ifl-tab-on); background: color-mix(in srgb, var(--ifl-tab-on) var(--ift-pill), transparent); }
+.ifl-tab[aria-current="page"] { color: var(--ifl-tab-on); background: var(--ifl-accent-gradient); }
 .ifl-tab:active { transform: scale(0.92); }
-.ifl-tab:focus-visible { outline: 2px solid var(--ifl-tab-on); outline-offset: -2px; }
+.ifl-tab:focus-visible { outline: 2px solid var(--ifl-accent-ink); outline-offset: -2px; }
 /* (a phone on its side: the bar lower, its labels beside their icons) */
 @media (max-height: 500px) and (orientation: landscape) { .ifl-tabs { height: 48px; } .ifl-tab { flex-direction: row; gap: 6px; } .ifl-tab-ic { width: 20px; height: 20px; } }
 /* Back, in the place of an app's menu button at the hub (IFL.hub.back()) */
 .ifl-back { display: inline-flex; align-items: center; justify-content: center; gap: 1px; flex: none; min-width: 44px; height: 42px; margin: 0; padding: 0 14px 0 8px;
   border: 0; border-radius: 999px; background: var(--ifm-panel); color: var(--ifm-tint); font: 600 16px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
-  box-shadow: 0 0 0 0.5px var(--ifm-line), 0 6px 14px -8px rgba(20, 30, 70, 0.35); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.2s; }
+  box-shadow: var(--ifl-shadow-control); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.2s; }
 .ifl-back svg { width: 20px; height: 20px; stroke-width: 2.4; }
 .ifl-back:active { transform: scale(0.94); }
 .ifl-back:focus-visible { outline: 2px solid var(--ifm-tint); outline-offset: 2px; }
@@ -6227,8 +6219,8 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
   background: var(--ifm-dim); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .ifb-layer::backdrop { background: transparent; }
 .ifb { box-sizing: border-box; width: min(420px, 100%); max-height: calc(100dvh - 32px); overflow: auto; padding: 20px 20px 16px; border-radius: 28px; color: var(--ifm-text);
-  background: var(--ifm-sheet); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.5), 0 0 0 0.5px var(--ifm-line), 0 24px 60px -20px rgba(10, 14, 40, 0.55); }
+  background: var(--ifm-sheet); -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: 0 0 0 1px var(--ifm-line), 0 16px 48px -20px rgba(14, 18, 16, 0.3); }
 .ifb-head { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 700; letter-spacing: -0.3px; }
 .ifb-ic { flex: none; width: 26px; height: 26px; padding: 6px; border-radius: 50%; color: var(--ifm-red); background: var(--ifm-red-bg); stroke-width: 2.2; }
 .ifb-code { margin: 14px 0 6px; padding: 10px 12px; border-radius: 14px; background: var(--ifm-panel); box-shadow: inset 0 0 0 0.5px var(--ifm-line);
@@ -6244,7 +6236,7 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 .ifb-who { margin: -6px 0 12px; color: var(--ifm-text-3); font-size: 12.5px; }
 .ifb-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .ifb-btn { flex: 1 1 auto; min-height: 44px; padding: 0 16px; text-align: center; border: 0; border-radius: 999px; color: var(--ifm-text); background: var(--ifm-press); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
-.ifb-go { flex-basis: 100%; color: #fff; background: var(--ifm-tint); }
+.ifb-go { flex-basis: 100%; color: var(--ifl-on-accent); background: var(--ifl-accent-gradient); }
 .ifb-btn:disabled { opacity: 0.6; cursor: default; }
 .ifb-btn:focus-visible { outline: 2px solid var(--ifm-tint); outline-offset: 2px; }
 .ifb-link { color: var(--ifm-tint, #4c8dff); font-weight: 600; white-space: nowrap; }
@@ -6253,10 +6245,10 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 /* the status banner (menu.js BANNER): under the app's header while something touching it is wrong, a link to the status
    page; amber for an incident, the app's tint for maintenance */
 .ifl-sb { --sb: #c26a00; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 2px 10px; margin: 6px 16px 10px; padding: 10px 6px 10px 14px; border-radius: 16px;
-  background: color-mix(in srgb, var(--sb) 12%, rgba(255, 255, 255, 0.78)); border: 0.5px solid color-mix(in srgb, var(--sb) 30%, transparent); color: #11131c; cursor: pointer;
-  -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); font: 13px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; position: relative; z-index: 5; }
-.ifl-sb[data-k="maint"] { --sb: #4c56dc; }
-.ifl-sb.float { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 0; right: 0; margin: 0 12px; z-index: 900; box-shadow: 0 10px 30px -14px rgba(10, 16, 50, 0.4); }
+  background: color-mix(in srgb, var(--sb) 10%, var(--ifl-surface)); border: 0.5px solid color-mix(in srgb, var(--sb) 30%, transparent); color: var(--ifl-text); cursor: pointer;
+  -webkit-backdrop-filter: none; backdrop-filter: none; font: 13px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; position: relative; z-index: 5; }
+.ifl-sb[data-k="maint"] { --sb: var(--ifl-accent-ink); }
+.ifl-sb.float { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 0; right: 0; margin: 0 12px; z-index: 900; box-shadow: var(--ifl-shadow-card); }
 .ifl-sb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sb); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sb) 22%, transparent); }
 .ifl-sb-t { min-width: 0; display: grid; }
 .ifl-sb-t b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -6264,20 +6256,28 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 .ifl-sb-go { display: inline-flex; align-items: center; gap: 1px; color: var(--sb); font-weight: 600; font-size: 12.5px; white-space: nowrap; }
 .ifl-sb-go svg, .ifl-sb-x svg { width: 14px; height: 14px; stroke-width: 2.6; }
 .ifl-sb-x { width: 30px; height: 30px; border: 0; border-radius: 50%; background: none; color: inherit; opacity: 0.55; display: grid; place-items: center; cursor: pointer; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ifl-sb { --sb: #ffb24a; background: color-mix(in srgb, var(--sb) 14%, rgba(28, 30, 48, 0.82)); color: #f2f3f9; } :root:not([data-theme="light"]) .ifl-sb[data-k="maint"] { --sb: #9c93ff; } }
-:root[data-theme="dark"] .ifl-sb { --sb: #ffb24a; background: color-mix(in srgb, var(--sb) 14%, rgba(28, 30, 48, 0.82)); color: #f2f3f9; }
-:root[data-theme="dark"] .ifl-sb[data-k="maint"] { --sb: #9c93ff; }
-/* InFlite's shared geometry and motion. Bundled into each app by iflmenu.mjs:
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ifl-sb { --sb: #ffb24a; background: color-mix(in srgb, var(--sb) 10%, var(--ifl-surface)); color: var(--ifl-text); } :root:not([data-theme="light"]) .ifl-sb[data-k="maint"] { --sb: var(--ifl-accent-ink); } }
+:root[data-theme="dark"] .ifl-sb { --sb: #ffb24a; background: color-mix(in srgb, var(--sb) 10%, var(--ifl-surface)); color: var(--ifl-text); }
+:root[data-theme="dark"] .ifl-sb[data-k="maint"] { --sb: var(--ifl-accent-ink); }
+/* InFlite's shared palette, geometry and motion. Bundled into each app by iflmenu.mjs:
    no extra request, and an app's existing offline/update mechanism keeps it current. */
 :root {
+  --ifl-page: #f8f9f6; --ifl-surface: #ffffff; --ifl-surface-2: #f1f2ef; --ifl-raised: #ffffff;
+  --ifl-text: #171a18; --ifl-muted: #646a66; --ifl-subtle: #676e66;
+  --ifl-line: rgba(24, 31, 26, 0.08); --ifl-press: rgba(24, 31, 26, 0.06);
+  --ifl-accent: #2ea84d; --ifl-accent-ink: #247a35; --ifl-accent-fill: #74df36; --ifl-on-accent: #10150d;
+  --ifl-accent-gradient: linear-gradient(110deg, #24c872, #b8eb2b); --ifl-accent-wash: #e2f5d8;
+  --ifl-contrast: #141714; --ifl-on-contrast: #ffffff;
+  --ifl-shadow-card: 0 1px 2px rgba(14, 18, 16, 0.025), 0 9px 24px -18px rgba(14, 18, 16, 0.18);
+  --ifl-shadow-control: 0 1px 3px rgba(14, 18, 16, 0.05), 0 5px 14px -10px rgba(14, 18, 16, 0.16);
   --ifl-space-1: 4px; --ifl-space-2: 8px; --ifl-space-3: 12px;
   --ifl-space-4: 16px; --ifl-space-5: 24px; --ifl-space-6: 32px;
-  --ifl-radius-card: 30px; --ifl-radius-group: 26px; --ifl-radius-sheet: 38px; --ifl-radius-pill: 999px;
+  --ifl-radius-card: 26px; --ifl-radius-group: 22px; --ifl-radius-sheet: 30px; --ifl-radius-row: 16px; --ifl-radius-pill: 999px;
   --ifl-motion-press: 0.1s; --ifl-motion-release: 0.38s; --ifl-motion-fast: 0.18s;
   --ifl-motion-glide: cubic-bezier(0.32, 0.72, 0, 1);
   --ifl-motion-spring: cubic-bezier(0.22, 1, 0.36, 1);
-  --ifl-chrome-blur: blur(24px) saturate(160%);
-  --ifl-chrome-solid: #f7f8fc;
+  --ifl-chrome-blur: none;
+  --ifl-chrome-solid: var(--ifl-surface);
   --r-card: var(--ifl-radius-card); --r-group: var(--ifl-radius-group); --r-sheet: var(--ifl-radius-sheet);
   --ease-glide: var(--ifl-motion-glide); --ease-spring: var(--ifl-motion-spring);
   --dur-press: var(--ifl-motion-press); --dur-release: var(--ifl-motion-release);
@@ -6286,9 +6286,25 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
   :root { --ifl-motion-spring: linear(0, 0.12, 0.36, 0.59, 0.77, 0.89, 0.96, 0.994, 1.006, 1.008, 1.005, 1.002, 1); }
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --ifl-chrome-solid: #242634; }
+  :root:not([data-theme="light"]) {
+    --ifl-page: #101210; --ifl-surface: #191c19; --ifl-surface-2: #222622; --ifl-raised: #2b302b;
+    --ifl-text: #f4f7f2; --ifl-muted: #bac2b9; --ifl-subtle: #a2aba1;
+    --ifl-line: rgba(244, 247, 242, 0.08); --ifl-press: rgba(244, 247, 242, 0.07);
+    --ifl-accent: #97e84e; --ifl-accent-ink: #97e84e; --ifl-accent-wash: #26391e;
+    --ifl-contrast: #080a08; --ifl-on-contrast: #f4f7f2;
+    --ifl-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.12), 0 9px 24px -18px rgba(0, 0, 0, 0.45);
+    --ifl-shadow-control: 0 1px 3px rgba(0, 0, 0, 0.12), 0 5px 14px -10px rgba(0, 0, 0, 0.4);
+  }
 }
-:root[data-theme="dark"] { --ifl-chrome-solid: #242634; }
+:root[data-theme="dark"] {
+  --ifl-page: #101210; --ifl-surface: #191c19; --ifl-surface-2: #222622; --ifl-raised: #2b302b;
+  --ifl-text: #f4f7f2; --ifl-muted: #bac2b9; --ifl-subtle: #a2aba1;
+  --ifl-line: rgba(244, 247, 242, 0.08); --ifl-press: rgba(244, 247, 242, 0.07);
+  --ifl-accent: #97e84e; --ifl-accent-ink: #97e84e; --ifl-accent-wash: #26391e;
+  --ifl-contrast: #080a08; --ifl-on-contrast: #f4f7f2;
+  --ifl-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.12), 0 9px 24px -18px rgba(0, 0, 0, 0.45);
+  --ifl-shadow-control: 0 1px 3px rgba(0, 0, 0, 0.12), 0 5px 14px -10px rgba(0, 0, 0, 0.4);
+}
 /* Concentric surfaces: the inset is subtracted from the outer corner. */
 .ifm-pop { padding: var(--ifl-space-2); border-radius: var(--ifl-radius-card);
   -webkit-backdrop-filter: var(--ifl-chrome-blur); backdrop-filter: var(--ifl-chrome-blur);
@@ -6392,5 +6408,5 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 .sheet-body .field:focus-within { border-bottom-color: var(--tint); box-shadow: 0 1px 0 var(--tint); }
 .sheet .c-subject:focus-visible, .sheet .compose-text:focus-visible,
 .set-input:focus-visible, .set-local:focus-visible, .set-sig:focus-visible {
-  outline: 2px solid var(--tint); outline-offset: -2px; border-radius: 8px;
+  outline: 2px solid var(--tint); outline-offset: -2px; border-radius: var(--ifl-radius-row, 16px);
 }

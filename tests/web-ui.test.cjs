@@ -1148,6 +1148,39 @@ test('bottom navigation stays inside the visible Home Screen viewport after heig
   } finally { await ctx.close(); }
 });
 
+test('sheet-close restoration belongs to its current route, frame and sheet generation', async () => {
+  const { ctx, page, errors } = await open();
+  try {
+    const calls = await page.evaluate(async () => {
+      const { createSheets } = await import('/roof/sheet.js');
+      const original = { requestAnimationFrame, cancelAnimationFrame, scrollTo }, url = location.href;
+      let queued = new Map(), id = 0, writes = [];
+      window.requestAnimationFrame = fn => { queued.set(++id, fn); return id; };
+      window.cancelAnimationFrame = n => queued.delete(n);
+      window.scrollTo = (...args) => writes.push(args);
+      const results = {};
+      try {
+        for (const end of ['current', 'route', 'url', 'signal', 'new-sheet']) {
+          const controller = new AbortController(), owner = { route: {}, signal: controller.signal };
+          const sheets = createSheets(owner), sheet = sheets.open({ title: 'Close ownership' });
+          sheet.now();
+          const late = [...queued.values()].at(-1); writes = [];
+          if (end === 'route') owner.route = {};
+          if (end === 'url') history.replaceState(history.state, '', '#another-screen');
+          if (end === 'signal') controller.abort();
+          if (end === 'new-sheet') sheets.open({ title: 'A newer sheet' });
+          // A cancelled frame may already be in the browser's callback queue.
+          late(); results[end] = writes.length;
+          sheets.closeAll(); queued.clear(); history.replaceState(history.state, '', url);
+        }
+      } finally { Object.assign(window, original); }
+      return results;
+    });
+    assert.deepEqual(calls, { current: 1, route: 0, url: 0, signal: 0, 'new-sheet': 0 });
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
 test('iPhone sheets fit Home Screen corrections, keyboards and resume while preserving scroll and focus', async () => {
   const { ctx, page, errors } = await open({ iphoneViewport: true });
   try {

@@ -14,9 +14,9 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.07";
+const BUILD = "2.08";
 // (what's new in it, said once it's in)
-const NEWS = "More reliable app switching and recovery";
+const NEWS = "A unified neutral design with clearer cards and green controls";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -2650,7 +2650,7 @@ function appearance(a) {
   try { if (t) localStorage.setItem("today:appearance", t); else localStorage.removeItem("today:appearance"); } catch {}
   if (t) document.documentElement.dataset.theme = t;
   else delete document.documentElement.dataset.theme;
-  for (const m of $$('meta[name="theme-color"]')) m.setAttribute("content", t ? (t === "dark" ? "#1b2860" : "#dde3fb") : m.media.includes("dark") ? "#1b2860" : "#dde3fb");
+  for (const m of $$('meta[name="theme-color"]')) m.setAttribute("content", t ? (t === "dark" ? "#101210" : "#f8f9f6") : m.media.includes("dark") ? "#101210" : "#f8f9f6");
 }
 
 // ---------------------------------------------------------------- what's tapped

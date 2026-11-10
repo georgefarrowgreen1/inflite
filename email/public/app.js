@@ -299,9 +299,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.79";
+  const BUILD = "1.80";
   // (what's new in it, said once it's in)
-  const NEWS = "More reliable app switching and recovery";
+  const NEWS = "A unified neutral design with clearer cards and green controls";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -1690,7 +1690,7 @@ const IFL = (() => {
 
   // The look, as the account has it (its page's Appearance, for every app on the site): Automatic, Light or Dark, kept
   // in this browser too, so theme.js has it for the first frame next time
-  const THEME_COLOR = { dark: "#1b2860", light: "#dde3fb" };
+  const THEME_COLOR = { dark: "#101210", light: "#f8f9f6" };
   function lookOf(v) {
     v = v === "light" || v === "dark" ? v : "auto";
     const root = document.documentElement;
