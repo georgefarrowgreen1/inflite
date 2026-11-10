@@ -73,7 +73,7 @@ export function createFrame(opts = {}) {
   const roofs = () => sess().apps;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   let motion = 0, stopMotion = () => {};
-  const cancelMotion = () => { stopMotion(); ++motion; stopMotion = () => {}; };
+  const cancelMotion = (finish) => { stopMotion(finish); ++motion; stopMotion = () => {}; };
   const newKey = () => Math.random().toString(36).slice(2, 10);
   const ys = new Map(), backTo = new Map();
   let depth = 0, key = "", routes = [], stale = false, gone = false, shown = null, lastApps = sess().apps, lazyAt = {}, fails = {};
@@ -540,7 +540,7 @@ export function createFrame(opts = {}) {
   // ---- the pieces
   F.header = createHeader(opts.header, F, { me: opts.me, onMe: opts.onMe });
   F.tabs = createTabs(opts.tabs, F, { me: opts.me });
-  F.sheet = createSheets(F);
+  F.sheet = createSheets(F, { beforeOpen: () => cancelMotion(true) });
   F.search = createSearch(F);
   F.send = createSend(F);
   for (const id of ["today", "apps", "you"]) if (opts[id]) F.screen(id, opts[id]);

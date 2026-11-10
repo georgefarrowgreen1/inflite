@@ -32,9 +32,16 @@
 .dt-history > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px;
   padding: 8px 2px; list-style: none; cursor: pointer; color: var(--tint-text); font-size: 15px; font-weight: 600; border-radius: 8px; }
 .dt-history > summary::-webkit-details-marker { display: none; }
-.dt-history-chevron { flex: none; display: grid; transition: transform 0.2s var(--ease-out); }
+.dt-history-chevron { flex: none; display: grid; transition: transform var(--ifl-motion-release, .42s) var(--ifl-motion-spring, var(--ease-out)); }
 .dt-history-chevron svg { width: 16px; height: 16px; }
 .dt-history[open] > summary .dt-history-chevron { transform: rotate(90deg); }
+.dt-history[open] > :not(summary) { animation: day-in var(--ifl-motion-enter, .36s) var(--ifl-motion-glide, var(--ease-out)); }
+/* Native disclosure interpolation is progressive; older browsers keep the normal details interaction. */
+@supports (interpolate-size: allow-keywords) and selector(details::details-content) {
+  .dt-history { interpolate-size: allow-keywords; }
+  .dt-history::details-content { block-size: 0; overflow: clip; transition: block-size var(--ifl-motion-layout, .28s) var(--ifl-motion-glide, var(--ease-out)), content-visibility var(--ifl-motion-layout, .28s) allow-discrete; }
+  .dt-history[open]::details-content { block-size: auto; }
+}
 .dt-history .tc-foot { margin-top: 12px; }
 .dt-stats { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
 .dt-stats > div { min-width: 0; padding: 9px 12px 10px; border-radius: 16px; background: var(--glass-ctl); }
@@ -205,8 +212,8 @@ button.dm-quiet:active { background: var(--press); }
 .t-mail { background: var(--c-mail); } .t-weather { background: var(--c-weather); } .t-trip { background: #6c5ce7; } .t-fitness { background: var(--c-fitness); } .t-markets { background: var(--c-markets); }
 
 /* ---- what Chat's engine says, faded in as it comes (about a second after the day's drawn) ---- */
-.dw-words.in, .dt-said.in { animation: day-in var(--motion-release, 0.38s) var(--motion-glide, var(--ease-out)); }
-@keyframes day-in { from { opacity: 0; transform: translateY(3px); } }
+.dw-words.in, .dt-said.in { animation: day-in var(--ifl-motion-enter, .36s) var(--ifl-motion-glide, var(--ease-out)); }
+@keyframes day-in { from { opacity: .86; transform: translateY(3px); } }
 
 /* ---- narrow screens ---- */
 @media (max-width: 360px) {
@@ -214,7 +221,7 @@ button.dm-quiet:active { background: var(--press); }
   .dw-chips { padding-left: 18px; }
   .dc-tm { width: 42px; font-size: 14px; }
 }
-@media (prefers-reduced-motion: reduce) { .dw-words.in, .dt-said.in { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dw-words.in, .dt-said.in, .dt-history[open] > :not(summary) { animation: none; } .dt-history-chevron, .dt-history::details-content { transition: none; } }
 
 /* ---- desktop: one ordered grid for the summary, timeline and app cards.
    layout.js measures natural heights into small row spans; CSS alone remains a readable grid. ---- */

@@ -5,7 +5,7 @@
   --control-radius: 999px;
   --control-padding: 18px;
   --control-font-size: 15px;
-  --control-press-scale: 0.97;
+  --control-press-scale: var(--ifl-press-scale, 0.97);
 }
 :is(.pill, .ifl-btn) {
   --control-fill: var(--tint-deep);
@@ -24,7 +24,7 @@
 :is(.pill, .ifl-btn).destructive { color: var(--danger); }
 :is(.pill, .ifl-btn):active:not(:disabled):not([aria-disabled="true"]) { transform: scale(var(--control-press-scale)); transition-duration: var(--motion-press, 0.1s); }
 :is(.pill, .ifl-btn):is(:disabled, [aria-disabled="true"]) { opacity: 0.5; cursor: default; }
-:is(.pill, .ifl-btn)[aria-busy="true"] { opacity: 0.7; }
+:is(.pill, .ifl-btn)[aria-busy="true"] { cursor: progress; }
 :is(.pill, .ifl-btn):focus-visible { outline: 2px solid var(--acc-ink, var(--tint-text)); outline-offset: 3px; }
 .pill svg { flex: none; width: 17px; height: 17px; }
 .ifl-btn .ifl-glyph svg { width: 18px; height: 18px; }

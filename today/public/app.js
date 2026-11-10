@@ -14,9 +14,9 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.08";
+const BUILD = "2.09";
 // (what's new in it, said once it's in)
-const NEWS = "A unified neutral design with clearer cards and green controls";
+const NEWS = "Smoother springs, transitions and interrupted motion across InFlite";
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own

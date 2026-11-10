@@ -121,6 +121,142 @@ for (const width of [390, 1440]) {
   });
 }
 
+for (const width of [390, 1440]) test(`motion: nested sheet height follows content and reverses without a pixel lock at ${width}px`, async () => {
+  const { ctx, page, errors } = await open({ width, motion: 'no-preference' });
+  try {
+    await page.evaluate(async () => {
+      const { createSheets } = await import('/roof/sheet.js'), { el } = await import('/roof/ui.js');
+      window.__sizeSheets = createSheets({});
+      window.__sizeSheet = __sizeSheets.open({ title: 'Height check', body: el('button', { type: 'button', text: 'Original action' }), acts: [{ label: 'Done' }] });
+      window.__heightMotion = () => __sizeSheet.el.getAnimations().find(a => a.effect.getKeyframes().some(k => 'height' in k));
+      window.__pushTall = () => __sizeSheet.push({ page: 'tall', title: 'Expanded details', body: el('div', { class: 'size-copy' }, ...Array.from({ length: 6 }, (_, i) => el('p', { text: `Expanded section ${i + 1}` }))), acts: [{ label: 'Continue' }] });
+    });
+    const sheet = page.locator('dialog[open]');
+    await sheet.evaluate(async d => { await Promise.allSettled(d.getAnimations().map(a => a.finished)); });
+    const short = (await sheet.boundingBox()).height;
+    const growing = await page.evaluate(() => {
+      __pushTall(); const a = __heightMotion();
+      if (!a) return null;
+      a.pause(); a.currentTime = a.effect.getTiming().duration / 2;
+      return { height: __sizeSheet.el.getBoundingClientRect().height, target: parseFloat(a.effect.getKeyframes().at(-1).height), fill: a.effect.getTiming().fill, inline: __sizeSheet.el.style.height };
+    });
+    assert.ok(growing, 'expanding real content creates a finite height morph');
+    assert.ok(growing.target > short + 80 && growing.height > short && growing.height < growing.target, 'the intermediate sheet height lies between its short and tall content');
+    assert.ok(['auto', 'none'].includes(growing.fill), 'the WAAPI effect has no retained fill'); assert.equal(growing.inline, '');
+    await page.evaluate(async () => { const a = __heightMotion(); a.finish(); await a.finished; });
+    const tall = (await sheet.boundingBox()).height;
+    assert.ok(Math.abs(tall - growing.target) < 1.5, 'completion returns to the intrinsic tall height');
+    const intrinsic = await sheet.evaluate(d => {
+      const before = d.offsetHeight, extra = document.createElement('p'); extra.textContent = 'Content added after the transition';
+      d.querySelector('.size-copy').append(extra); const after = d.offsetHeight; extra.remove();
+      return { before, after, inline: d.style.height };
+    });
+    assert.ok(intrinsic.after > intrinsic.before + 10, 'new content can still grow the completed sheet'); assert.equal(intrinsic.inline, '');
+    const reversed = await page.evaluate(() => {
+      __sizeSheet.pop(); const shrinking = __heightMotion(); shrinking.pause(); shrinking.currentTime = shrinking.effect.getTiming().duration / 2;
+      const before = __sizeSheet.el.getBoundingClientRect().height;
+      __pushTall(); const growing = __heightMotion(); growing.pause(); growing.currentTime = 0;
+      return { before, after: __sizeSheet.el.getBoundingClientRect().height, running: __sizeSheet.el.getAnimations().filter(a => a.effect.getKeyframes().some(k => 'height' in k)).length };
+    });
+    assert.ok(Math.abs(reversed.before - reversed.after) < 1.5, 'reversing starts from the current visual height'); assert.equal(reversed.running, 1, 'the earlier height morph is cancelled');
+    await page.evaluate(async () => { const a = __heightMotion(); a.finish(); await a.finished; __sizeSheet.pop(); const back = __heightMotion(); back.finish(); await back.finished; });
+    assert.ok(Math.abs((await sheet.boundingBox()).height - short) < 1.5, 'popping returns to the original natural height');
+    assert.equal(await sheet.getByRole('button', { name: 'Original action' }).isVisible(), true);
+    assert.equal(await sheet.evaluate(d => d.style.height), '');
+    await page.keyboard.press('Escape'); await sheet.waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
+  } finally { await ctx.close(); }
+});
+
+test('motion: sheet height releases for keyboard, resize, hidden, reduced motion, drag and close', async () => {
+  const { ctx, page, errors } = await open({ motion: 'no-preference', iphoneViewport: true });
+  try {
+    await page.evaluate(async () => {
+      const { createSheets } = await import('/roof/sheet.js'), { el } = await import('/roof/ui.js');
+      let hidden = false;
+      Object.defineProperties(document, { hidden: { configurable: true, get: () => hidden }, visibilityState: { configurable: true, get: () => hidden ? 'hidden' : 'visible' } });
+      window.__sizeHidden = v => { hidden = v; document.dispatchEvent(new Event('visibilitychange')); };
+      window.__openSizeSheet = () => {
+        const sheets = createSheets({});
+        window.__cancelSizeSheet = sheets.open({ title: 'Height cancellation', body: el('p', { text: 'Short content' }), acts: [{ label: 'Done' }] });
+        window.__cancelHeight = () => __cancelSizeSheet.el.getAnimations().find(a => a.effect.getKeyframes().some(k => 'height' in k));
+        window.__expandSizeSheet = () => __cancelSizeSheet.push({ page: 'long', title: 'Longer content', body: el('div', { class: 'cancel-copy' }, ...Array.from({ length: 6 }, (_, i) => el('p', { text: `Longer section ${i + 1}` })), el('input', { 'aria-label': 'Height test field' })), acts: [{ label: 'Continue' }] });
+      };
+    });
+    for (const reason of ['keyboard', 'resize', 'hidden', 'reduced', 'drag', 'close']) {
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.evaluate(() => { __sizeHidden(false); __viewport(844); __openSizeSheet(); });
+      const sheet = page.locator('dialog[open]');
+      await sheet.evaluate(async d => { await Promise.allSettled(d.getAnimations().map(a => a.finished)); });
+      assert.equal(await page.evaluate(() => { __expandSizeSheet(); const a = __cancelHeight(); if (!a) return false; a.pause(); a.currentTime = 80; return true; }), true, `${reason}: a height morph started`);
+      if (reason === 'keyboard') { await sheet.getByRole('textbox', { name: 'Height test field' }).focus(); await page.evaluate(() => __viewport(480)); }
+      if (reason === 'resize') { await page.setViewportSize({ width: 420, height: 780 }); await page.evaluate(() => __viewport(780)); }
+      if (reason === 'hidden') await page.evaluate(() => __sizeHidden(true));
+      if (reason === 'reduced') await page.emulateMedia({ reducedMotion: 'reduce' });
+      if (reason === 'drag') await page.evaluate(() => {
+        __cancelSizeSheet.el.querySelector('.ifs-head').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 91, clientY: 100, isPrimary: true }));
+        dispatchEvent(new PointerEvent('pointermove', { pointerId: 91, clientY: 124 })); dispatchEvent(new PointerEvent('pointercancel', { pointerId: 91 }));
+      });
+      if (reason === 'close') assert.equal(await page.evaluate(() => { __cancelSizeSheet.close(); return !!__cancelHeight(); }), false, 'closing cancels the height effect immediately');
+      await page.waitForFunction(() => !__cancelHeight());
+      assert.equal(await page.evaluate(() => __cancelSizeSheet.el.style.height), '', `${reason}: no retained inline height`);
+      if (reason === 'keyboard' || reason === 'resize') { const rect = await sheet.boundingBox(), foot = reason === 'keyboard' ? 480 : 780; assert.ok(rect.y >= 0 && rect.y + rect.height <= foot + 1, `${reason}: the sheet fits the changed viewport`); }
+      if (reason === 'close') await sheet.waitFor({ state: 'detached' });
+      else {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.evaluate(() => { __sizeHidden(false); document.activeElement?.blur(); __viewport(844); });
+        const flow = await sheet.evaluate(d => {
+          const before = d.offsetHeight, extra = document.createElement('p'); extra.textContent = 'More content still participates in layout';
+          d.querySelector('.cancel-copy').append(extra); const after = d.offsetHeight; extra.remove();
+          return { before, after, open: d.open };
+        });
+        assert.ok(flow.open && flow.after > flow.before + 10, `${reason}: the released sheet follows its content`);
+        await page.evaluate(() => __cancelSizeSheet.now());
+      }
+      await page.waitForFunction(() => !document.body.classList.contains('sheet-up') && !document.body.classList.contains('kb-up'));
+    }
+    assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
+  } finally { await ctx.close(); }
+});
+
+test('motion: opening Search flushes pending route snapshots before the dialog and retains focus against late callbacks', async () => {
+  const { ctx, page, errors } = await open({ motion: 'no-preference' });
+  try {
+    await page.evaluate(() => {
+      window.__modalSnapshots = [];
+      document.startViewTransition = update => {
+        let finish, ready;
+        const finished = new Promise(ok => { finish = ok; }), pending = new Promise(ok => { ready = ok; });
+        const task = { update, finish: () => { ready(); finish(); }, skipped: false }; __modalSnapshots.push(task);
+        return { ready: pending, updateCallbackDone: finished, finished, skipTransition: () => { task.skipped = true; } };
+      };
+      const show = HTMLDialogElement.prototype.showModal;
+      HTMLDialogElement.prototype.showModal = function () {
+        window.__beforeModal = { route: document.documentElement.dataset.route, motion: document.documentElement.dataset.vt || '', youVisible: !document.querySelector('#you').hidden, skipped: __modalSnapshots.every(t => t.skipped) };
+        return show.call(this);
+      };
+      for (const tab of ['apps', 'you']) document.querySelector(`#tabs [data-tab="${tab}"]`).click();
+    });
+    assert.equal(await page.evaluate(() => document.querySelector('#you').hidden), true, 'the current route snapshot is still pending');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    const search = page.getByRole('combobox', { name: 'Search everything', exact: true }); await search.waitFor();
+    assert.deepEqual(await page.evaluate(() => __beforeModal), { route: '/#you', motion: '', youVisible: true, skipped: true }, 'the latest route is rendered and snapshots are skipped before native dialog open');
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Search everything');
+    await page.evaluate(async () => {
+      for (const task of [...__modalSnapshots].reverse()) { task.update(); task.finish(); }
+      await Promise.resolve(); await Promise.resolve();
+    });
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.route), '/#you');
+    assert.equal(await page.locator('#you').isVisible(), true);
+    assert.equal(await search.evaluate(e => e === document.activeElement), true, 'late updates and completion cannot steal dialog focus');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.vt || ''), '');
+    await page.keyboard.press('Escape'); await page.locator('dialog[open]').waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.route), '/#you');
+    assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
+  } finally { await ctx.close(); }
+});
+
 test('motion: reduced motion removes spatial feedback and decorative loops pause in the background', async () => {
   const { ctx, page, errors } = await open({ motion: 'no-preference' });
   try {

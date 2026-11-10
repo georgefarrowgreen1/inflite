@@ -8,12 +8,14 @@
 .ifl-sheet[data-app=mail] .mc-k { flex: none; padding-top: 6px; color: var(--text-2); font-size: 15px; }
 .ifl-sheet[data-app=mail] .mc-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex: 1; min-width: 0; }
 .ifl-sheet[data-app=mail] .mc-chips input { flex: 1; min-width: 120px; min-height: 32px; border: 0; background: none; outline: none; }
-.ifl-sheet[data-app=mail] .mc-chip { max-width: 100%; min-height: 44px; padding: 4px 12px; border-radius: var(--r-pill, 999px); background: var(--ifl-surface, var(--glass)); color: var(--ifl-text, var(--text)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; transition: background-color var(--motion-fade, .18s) ease; }
+.ifl-sheet[data-app=mail] .mc-chip { max-width: 100%; min-height: 44px; padding: 4px 12px; border-radius: var(--r-pill, 999px); background: var(--ifl-surface, var(--glass)); color: var(--ifl-text, var(--text)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; transition: transform var(--ifl-motion-release, .42s) var(--ifl-motion-spring, ease), background-color var(--ifl-motion-fast, .16s) ease; }
+.ifl-sheet[data-app=mail] .mc-chip:active { transform: scale(var(--ifl-press-scale, .97)); transition-duration: var(--ifl-motion-press, .09s); }
 .ifl-sheet[data-app=mail] .mc-chip.bad { color: var(--danger); background: var(--glass-ctl); }
 .ifl-sheet[data-app=mail] .mc-from { align-self: flex-start; min-width: 0; max-width: 100%; min-height: 44px; margin: 6px 0 2px; padding: 0 10px; border-radius: var(--r-well, 16px); border: 1px solid var(--line); background: var(--glass-ctl); font-size: 15px; }
 .ifl-sheet[data-app=mail] .mc-sugg { display: flex; flex-direction: column; }
 .ifl-sheet[data-app=mail] .mc-sugg:empty { display: none; }
 .ifl-sheet[data-app=mail] .mc-opt { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px; border-radius: var(--ifl-radius-row, 16px); text-align: left; }
+.ifl-sheet[data-app=mail] .mc-opt { transition: background-color var(--ifl-motion-fast, .16s) ease; }
 .ifl-sheet[data-app=mail] .mc-opt:hover, .ifl-sheet[data-app=mail] .mc-opt:focus-visible { background: var(--press); }
 .ifl-sheet[data-app=mail] .mc-opt span { display: flex; flex-direction: column; min-width: 0; }
 .ifl-sheet[data-app=mail] .mc-opt small { color: var(--text-2); }
@@ -61,10 +63,10 @@
 /* ---- the pictures viewer (mail-viewer): tall, dark, a picture at a time */
 .ifl-sheet[data-app=mail] .mv { display: flex; flex-direction: column; gap: 8px; width: 100%; align-self: stretch; }
 .ifl-sheet[data-app=mail] .mv-stage { position: relative; flex: none; width: 100%; height: min(60dvh, 640px); overflow: hidden; border-radius: 26px; background: #000; touch-action: none; outline: none; }
-.ifl-sheet[data-app=mail] .mv-track { display: flex; width: 100%; height: 100%; transform: translateX(calc(var(--i, 0) * -100% + var(--dx, 0px))); transition: transform .4s var(--ease-glide, ease); }
+.ifl-sheet[data-app=mail] .mv-track { display: flex; width: 100%; height: 100%; transform: translateX(calc(var(--i, 0) * -100% + var(--dx, 0px))); transition: transform var(--ifl-motion-release, .42s) var(--ifl-motion-spring, var(--ease-glide, ease)); }
 .ifl-sheet[data-app=mail] .mv-track.still { transition: none; }
 .ifl-sheet[data-app=mail] .mv-slide { flex: 0 0 100%; width: 100%; height: 100%; display: grid; place-items: center; overflow: hidden; }
-.ifl-sheet[data-app=mail] .mv-img { width: 100%; height: 100%; object-fit: contain; user-select: none; transform: translate(var(--zx, 0), var(--zy, 0)) scale(var(--zs, 1)); transition: transform .25s var(--ease-glide, ease); }
+.ifl-sheet[data-app=mail] .mv-img { width: 100%; height: 100%; object-fit: contain; user-select: none; transform: translate(var(--zx, 0), var(--zy, 0)) scale(var(--zs, 1)); transition: transform var(--ifl-motion-layout, .28s) var(--ifl-motion-glide, var(--ease-glide, ease)); }
 .ifl-sheet[data-app=mail] .mv-slide.zoomed .mv-img { transition: none; }
 .ifl-sheet[data-app=mail] .mv-wait { width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .25); border-top-color: #fff; animation: mv-spin 1s linear infinite; }
 @keyframes mv-spin { to { transform: rotate(360deg); } }
@@ -78,3 +80,5 @@
 /* (Spot in Your Mail's switches: Mail's own glyph for each, on the tile the other rows' glyphs have) */
 .ifl-sheet[data-app=mail] [data-key^="spot-"] .ifl-lead { width: 32px; height: 32px; border-radius: 10px; color: var(--ifl-accent-ink, var(--acc-ink)); background: var(--ifl-surface-2, var(--glass-ctl)); }
 .ifl-sheet[data-app=mail] [data-key^="spot-"] .ifl-lead svg.m-ic { width: 20px; height: 20px; }
+
+@media (prefers-reduced-motion: reduce) { .ifl-sheet[data-app=mail] .mc-chip:active { transform: none; } .ifl-sheet[data-app=mail] .mc-opt { transition: none; } }

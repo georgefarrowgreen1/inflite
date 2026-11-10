@@ -547,7 +547,7 @@ export default (M) => {
 
     function closeSheet(mode) {
       const st = M.sheetState;
-      if (!st) return;
+      if (!st || st !== composeState) return;
       M.sheetState = null;
       clearInterval(st.keepT);
       // (nothing written: no copy kept; sent, its copy's the outbox's once it has it (queueSend); thrown away or saved,
@@ -562,12 +562,25 @@ export default (M) => {
       scrim.classList.remove("open");
       if (mode === "sending") sheet.classList.add("sending");
       sheet.classList.remove("open");
-      setTimeout(() => {
+      let removed = false, timer;
+      const finish = () => {
+        if (removed) return;
+        removed = true; clearTimeout(timer);
+        sheet.removeEventListener("transitionend", ended);
         scrim.remove();
         sheet.remove();
         // (a message brought back while this one was open (bringBack): now it can be)
         if (!M.sheetState && heldSends.length) bringBack(heldSends.shift());
-      }, 650);
+      };
+      const ended = (e) => { if (e.target === sheet && e.propertyName === "transform") finish(); };
+      sheet.addEventListener("transitionend", ended);
+      timer = setTimeout(finish, 650);
+      // The closing sheet owns only its own motion. A later composer can open
+      // immediately without a descendant's transition removing either sheet.
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) queueMicrotask(finish);
+      else if (typeof sheet.getAnimations === "function") {
+        try { Promise.allSettled(sheet.getAnimations().map((a) => a.finished)).then(finish); } catch {}
+      }
     }
 
     // Drag the sheet down to dismiss (iPhone)
@@ -596,7 +609,7 @@ export default (M) => {
     head.addEventListener("pointerup", endDrag);
     head.addEventListener("pointercancel", endDrag);
 
-    M.sheetState = {
+    const composeState = M.sheetState = {
       c,
       dirty,
       closeBtn,

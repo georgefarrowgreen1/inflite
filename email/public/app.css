@@ -46,15 +46,15 @@
 
   /* the motion every app on the site shares: glide (things put in place, and sheets), out (settling in), and a soft
      spring (about 2% past, for a press let go) */
-  --ease: cubic-bezier(0.32, 0.72, 0, 1);
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --spring: linear(0, 0.019, 0.067, 0.135, 0.214, 0.3, 0.388, 0.473, 0.553, 0.628, 0.695, 0.755, 0.807, 0.852, 0.89, 0.921, 0.947, 0.968, 0.984, 0.996, 1.005, 1.012, 1.016, 1.018, 1.02, 1.02, 1.019, 1.018, 1.017, 1.015, 1.013, 1.012, 1.01, 1.008, 1.007, 1.006, 1.005, 1.004, 1.003, 1);
+  --ease: var(--ifl-motion-glide, cubic-bezier(0.32, 0.72, 0, 1));
+  --ease-out: var(--ifl-motion-glide, cubic-bezier(0.22, 1, 0.36, 1));
+  --spring: var(--ifl-motion-spring, cubic-bezier(0.22, 1, 0.36, 1));
   --spring-bouncy: var(--spring);
 }
 
 @supports not (transition-timing-function: linear(0, 1)) {
   :root {
-    --spring: cubic-bezier(0.2, 1.1, 0.4, 1);
+    --spring: var(--ifl-motion-spring, cubic-bezier(0.22, 1, 0.36, 1));
   }
 }
 
@@ -319,7 +319,7 @@ body.sheet-open .aura {
   gap: 6px;
   min-width: 44px;
   height: 44px;
-  transition: transform 0.55s var(--spring-bouncy), opacity 0.3s, filter 0.3s;
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), opacity var(--ifl-motion-fast, .16s) ease, background-color var(--ifl-motion-fast, .16s) ease;
 }
 
 .gbtn {
@@ -329,9 +329,8 @@ body.sheet-open .aura {
 
 .gbtn:active,
 .gbtn.pressed {
-  transform: scale(1.12);
-  filter: brightness(1.08);
-  transition-duration: 0.18s;
+  transform: scale(var(--ifl-press-icon, .94));
+  transition-duration: var(--ifl-motion-press, .09s);
   transition-timing-function: var(--ease-out);
 }
 
@@ -354,8 +353,8 @@ body.sheet-open .aura {
 }
 
 .gcap > button:active {
-  transform: scale(1.18);
-  transition-duration: 0.18s;
+  transform: scale(var(--ifl-press-icon, .94));
+  transition-duration: var(--ifl-motion-press, .09s);
 }
 
 .gbtn.text {
@@ -451,7 +450,7 @@ body.sheet-open.phone #app::after {
   left: 0;
   right: 0;
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity var(--ifl-motion-fast, .16s);
   pointer-events: none;
 }
 
@@ -488,7 +487,7 @@ body.sheet-open.phone #app::after {
   text-overflow: ellipsis;
   text-align: center;
   opacity: 0;
-  transition: opacity 0.25s, transform 0.35s var(--ease);
+  transition: opacity var(--ifl-motion-fast, .16s), transform 0.35s var(--ease);
   pointer-events: none;
 }
 
@@ -556,7 +555,7 @@ body.sheet-open.phone #app::after {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  transition: opacity 0.3s;
+  transition: opacity var(--ifl-motion-fast, .16s);
 }
 
 .subtitle[hidden] {
@@ -609,7 +608,7 @@ body.sheet-open.phone #app::after {
   background: var(--glass-ctl);
   box-shadow: inset 0 0 0 0.5px var(--line);
   color: var(--label-2);
-  transition: background 0.3s, color 0.3s, padding 0.45s var(--spring), flex-grow 0.45s var(--spring), transform 0.4s var(--spring);
+  transition: background-color var(--ifl-motion-fast, .16s), color 0.3s, padding 0.45s var(--spring), flex-grow 0.45s var(--spring), transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .lens:active {
@@ -632,7 +631,7 @@ body.sheet-open.phone #app::after {
   font-weight: 600;
   font-size: 15px;
   opacity: 0;
-  transition: max-width 0.45s var(--spring), opacity 0.3s;
+  transition: max-width 0.45s var(--spring), opacity var(--ifl-motion-fast, .16s);
 }
 
 .lens .ct {
@@ -885,7 +884,7 @@ body.sheet-open.phone #app::after {
   padding: 12px 14px;
   border-radius: 22px;
   text-align: left;
-  transition: transform 0.4s var(--spring);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .next-card:active {
@@ -1049,7 +1048,7 @@ body.sheet-open.phone #app::after {
 }
 
 .toolbar .side {
-  transition: transform 0.5s var(--spring), opacity 0.3s, width 0.5s var(--spring), margin 0.5s var(--spring);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), opacity var(--ifl-motion-fast, .16s), width 0.5s var(--spring), margin 0.5s var(--spring);
   width: 48px;
   height: 48px;
   padding: 0;
@@ -1179,7 +1178,7 @@ html.embed .pane.list .subtitle {
   border-radius: 999px;
   background: var(--sheen), var(--glass-strong);
   box-shadow: var(--edge), 0 2px 10px rgba(0, 0, 0, 0.18);
-  transition: transform 0.5s var(--spring);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .seg[data-sel="updates"] .seg-thumb {
@@ -1254,12 +1253,12 @@ html.embed .pane.list .subtitle {
   font-size: 15px;
   font-weight: 500;
   white-space: nowrap;
-  transition: background 0.2s, color 0.2s, transform 0.45s var(--spring);
+  transition: background-color var(--ifl-motion-fast, .16s), color 0.2s, transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .chip:active {
-  transform: scale(0.95);
-  transition-duration: 0.1s;
+  transform: scale(var(--ifl-press-scale, .97));
+  transition-duration: var(--ifl-motion-press, .09s);
 }
 
 .chip.on {
@@ -1358,7 +1357,7 @@ html.embed .pane.list .subtitle {
   font: inherit;
   font-size: 16px;
   text-align: left;
-  transition: background 0.15s;
+  transition: background-color var(--ifl-motion-fast, .16s);
 }
 
 .s-main:active {
@@ -1454,7 +1453,7 @@ html.embed .pane.list .subtitle {
   background: color-mix(in srgb, var(--tint) 18%, transparent);
   color: var(--tint-text);
   font-size: 15px;
-  animation: pop-in 0.45s var(--spring) both;
+  animation: pop-in var(--ifl-motion-enter, .36s) var(--spring) backwards;
 }
 
 .qtoken svg {
@@ -1484,7 +1483,7 @@ html.embed .pane.list .subtitle {
 .row-wrap {
   position: relative;
   overflow: hidden;
-  transition: height 0.38s var(--ease), opacity 0.3s;
+  transition: height var(--ifl-motion-layout, .28s) var(--ease), opacity var(--ifl-motion-fast, .16s) ease;
 }
 
 .row-wrap.removing {
@@ -1551,7 +1550,7 @@ html.embed .pane.list .subtitle {
   border-radius: 50%;
   background: var(--tint);
   transform: scale(0);
-  transition: transform 0.45s var(--spring-bouncy);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .row.unread .dot {
@@ -1571,7 +1570,7 @@ html.embed .pane.list .subtitle {
   border-radius: 2px;
   background: var(--orange);
   transform: scale(0);
-  transition: transform 0.45s var(--spring-bouncy);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .row.starred .flag {
@@ -1802,7 +1801,7 @@ html.embed .pane.list .subtitle {
   color: var(--ifl-on-accent, #10150d);
   background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
   box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
-  animation: pop-in 0.6s var(--spring) both;
+  animation: pop-in var(--ifl-motion-release, .42s) var(--spring) backwards;
 }
 
 .empty .done-badge svg {
@@ -1981,7 +1980,7 @@ html.embed .pane.list .subtitle {
 }
 
 .e-clear:active {
-  transform: scale(0.96);
+  transform: scale(var(--ifl-press-scale, .97));
 }
 
 /* whose mail a search is of, in the field beside what's typed */
@@ -2022,7 +2021,7 @@ html.embed .pane.list .subtitle {
   position: absolute;
   top: -36px;
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity var(--ifl-motion-fast, .16s);
 }
 
 .refreshing .ptr {
@@ -2332,11 +2331,11 @@ html.embed .pane.list .subtitle {
   color: var(--label-2);
   font-size: 13px;
   font-weight: 500;
-  transition: transform 0.4s var(--spring-bouncy), background 0.2s;
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), background-color var(--ifl-motion-fast, .16s);
 }
 
 .quote-toggle:active {
-  transform: scale(0.95);
+  transform: scale(var(--ifl-press-scale, .97));
   background: var(--bg-fill-2);
 }
 
@@ -2348,7 +2347,7 @@ html.embed .pane.list .subtitle {
 .mail-body.quoted {
   padding-top: 0;
   color: var(--label-2);
-  animation: content-in 0.35s var(--ease) both;
+  animation: content-in var(--ifl-motion-enter, .36s) var(--ease) backwards;
 }
 
 .reader-date {
@@ -2435,7 +2434,7 @@ html.embed .pane.list .subtitle {
 .thread-card.open .thread-body {
   display: block;
   border-top: 0.5px solid var(--sep);
-  animation: content-in 0.35s var(--ease) both;
+  animation: content-in var(--ifl-motion-enter, .36s) var(--ease) backwards;
 }
 
 .thread-body .mail-body {
@@ -2503,7 +2502,7 @@ html.embed .pane.list .subtitle {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.4s var(--spring), filter 0.2s;
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), filter 0.2s;
 }
 
 .gallery.n1 .g-tile img {
@@ -2513,7 +2512,7 @@ html.embed .pane.list .subtitle {
 .g-tile:active img {
   transform: scale(0.97);
   filter: brightness(0.9);
-  transition-duration: 0.12s;
+  transition-duration: var(--ifl-motion-press, .09s);
 }
 
 .g-more {
@@ -2574,12 +2573,12 @@ html.embed .pane.list .subtitle {
   text-decoration: none;
   color: inherit;
   min-width: 0;
-  transition: transform 0.4s var(--spring-bouncy);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .att:active {
-  transform: scale(0.96);
-  transition-duration: 0.12s;
+  transform: scale(var(--ifl-press-scale, .97));
+  transition-duration: var(--ifl-motion-press, .09s);
 }
 
 .att .att-ic {
@@ -2651,15 +2650,17 @@ html.embed .pane.list .subtitle {
 }
 
 .content-in {
-  animation: content-in 0.45s var(--ease) both;
+  animation: content-in var(--ifl-motion-enter, .36s) var(--ease) backwards;
 }
 
 @keyframes content-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
+  from { opacity: .88; transform: translateY(4px); }
 }
+/* Only genuinely new list rows receive content-in from the list renderer. */
+.row-wrap.content-in { animation-delay: 0ms; }
+.row-wrap.content-in:nth-child(2) { animation-delay: var(--ifl-motion-stagger, 24ms); }
+.row-wrap.content-in:nth-child(3) { animation-delay: calc(2 * var(--ifl-motion-stagger, 24ms)); }
+.row-wrap.content-in:nth-child(n + 4) { animation-delay: min(calc(3 * var(--ifl-motion-stagger, 24ms)), var(--ifl-motion-stagger-cap, 120ms)); }
 
 /* ---------- Phone: navigation stack ---------- */
 
@@ -2668,8 +2669,7 @@ html.embed .pane.list .subtitle {
 body.phone .pane {
   left: 0;
   right: 0;
-  transition: transform 0.52s var(--ease), opacity 0.4s var(--ease);
-  will-change: transform;
+  transition: transform var(--ifl-motion-page, .46s) var(--ease), opacity var(--ifl-motion-fast, .16s) ease;
 }
 
 body.phone .pane[data-pos="behind"] {
@@ -2687,6 +2687,7 @@ body.phone .pane[data-pos="current"] {
   transform: none;
 }
 
+body.phone.moving .pane, body.phone.dragging .pane { will-change: transform; }
 body.phone.dragging .pane {
   transition: none;
 }
@@ -2697,7 +2698,7 @@ body.phone .pane.list {
 
 body.phone .pane.detail {
   z-index: 3;
-  transition: transform 0.52s var(--ease), opacity 0.4s var(--ease), box-shadow 0.52s var(--ease);
+  transition: transform var(--ifl-motion-page, .46s) var(--ease), opacity var(--ifl-motion-fast, .16s) ease, box-shadow var(--ifl-motion-page, .46s) var(--ease);
 }
 
 /* While a conversation slides over the list (or is swiped back): solid, with an edge shadow, so the list doesn't show
@@ -2709,7 +2710,7 @@ body.phone .pane.detail::before {
   z-index: -1;
   background: var(--sky-c);
   opacity: 0;
-  transition: opacity 0.35s var(--ease);
+  transition: opacity var(--ifl-motion-fast, .16s) ease;
   pointer-events: none;
 }
 
@@ -2738,14 +2739,14 @@ body.pad .pane.list {
   left: var(--list-left);
   width: var(--list-w);
   border-right: 0.5px solid var(--sep);
-  transition: left 0.55s var(--spring);
+  transition: left var(--ifl-motion-layout, .28s) var(--ease);
   z-index: 2;
 }
 
 body.pad .pane.detail {
   left: calc(var(--list-left) + var(--list-w));
   right: 0;
-  transition: left 0.55s var(--spring);
+  transition: left var(--ifl-motion-layout, .28s) var(--ease);
   z-index: 1;
 }
 
@@ -2790,9 +2791,9 @@ body.pad .pane.detail .msgs {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
-  transform: scale(0.3);
+  transform: translateY(-4px) scale(.97);
   opacity: 0;
-  transition: transform 0.5s var(--spring), opacity 0.22s;
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), opacity var(--ifl-motion-fast, .16s) ease;
 }
 
 .menu.open {
@@ -2801,15 +2802,16 @@ body.pad .pane.detail .msgs {
 }
 
 .menu.closing {
-  transform: scale(0.5);
+  transform: translateY(-3px) scale(.98);
   opacity: 0;
-  transition: transform 0.25s var(--ease-out), opacity 0.2s;
+  pointer-events: none;
+  transition: transform var(--ifl-motion-exit, .22s) var(--ease), opacity var(--ifl-motion-fast, .16s) ease;
 }
 
 /* a drop-down: unfolds from its edge, its choices following one after another */
 .menu.dropdown {
-  transform: translateY(-6px) scaleY(0.4) scaleX(0.92);
-  transition: transform 0.45s var(--spring), opacity 0.18s;
+  transform: translateY(-5px) scale(.98);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), opacity var(--ifl-motion-fast, .16s) ease;
 }
 
 .menu.dropdown.open {
@@ -2817,25 +2819,22 @@ body.pad .pane.detail .msgs {
 }
 
 .menu.dropdown.closing {
-  transform: translateY(-4px) scaleY(0.6) scaleX(0.95);
-  transition: transform 0.22s var(--ease-out), opacity 0.18s;
+  transform: translateY(-3px) scale(.98);
+  transition: transform var(--ifl-motion-exit, .22s) var(--ease), opacity var(--ifl-motion-fast, .16s) ease;
 }
 
 .menu.dropdown.open > * {
-  animation: drop-in 0.4s var(--ease-out) both;
+  animation: drop-in var(--ifl-motion-enter, .36s) var(--ease) backwards;
 }
 
-.menu.dropdown.open > :nth-child(2) { animation-delay: 30ms; }
-.menu.dropdown.open > :nth-child(3) { animation-delay: 60ms; }
-.menu.dropdown.open > :nth-child(4) { animation-delay: 90ms; }
-.menu.dropdown.open > :nth-child(5) { animation-delay: 120ms; }
-.menu.dropdown.open > :nth-child(n + 6) { animation-delay: 150ms; }
+.menu.dropdown.open > :nth-child(2) { animation-delay: calc(1 * var(--ifl-motion-stagger, 24ms)); }
+.menu.dropdown.open > :nth-child(3) { animation-delay: calc(2 * var(--ifl-motion-stagger, 24ms)); }
+.menu.dropdown.open > :nth-child(4) { animation-delay: calc(3 * var(--ifl-motion-stagger, 24ms)); }
+.menu.dropdown.open > :nth-child(5) { animation-delay: calc(4 * var(--ifl-motion-stagger, 24ms)); }
+.menu.dropdown.open > :nth-child(n + 6) { animation-delay: var(--ifl-motion-stagger-cap, 120ms); }
 
 @keyframes drop-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
+  from { opacity: .86; transform: translateY(-3px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2915,7 +2914,7 @@ body.pad .pane.detail .msgs {
   font-weight: 500;
   font-size: 15px;
   white-space: nowrap;
-  transition: transform 0.6s var(--spring-bouncy), opacity 0.3s;
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), opacity var(--ifl-motion-fast, .16s);
   opacity: 0;
 }
 
@@ -2988,7 +2987,7 @@ body.phone .toast .msg {
   z-index: 100;
   background: rgba(0, 0, 0, 0.2);
   opacity: 0;
-  transition: opacity 0.45s var(--ease);
+  transition: opacity var(--ifl-motion-fast, .16s) ease;
 }
 
 body.phone .sheet-scrim {
@@ -3008,7 +3007,7 @@ body.phone .sheet-scrim {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   overflow: hidden;
-  transition: transform 0.55s var(--ease), border-radius 0.4s;
+  transition: transform var(--ifl-motion-sheet, .46s) var(--spring);
   box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
 }
 
@@ -3044,17 +3043,20 @@ body.pad .sheet.open {
   transition: none;
 }
 
+.sheet:not(.open), .sheet-scrim:not(.open) { pointer-events: none; }
+.sheet:not(.open) { transition-duration: var(--ifl-motion-exit, .22s); }
 .sheet.sending {
-  transition: transform 0.6s cubic-bezier(0.5, 0, 0.75, 0), opacity 0.6s;
+  pointer-events: none;
+  transition: transform var(--ifl-motion-layout, .28s) var(--ease), opacity var(--ifl-motion-exit, .22s) ease;
   opacity: 0;
 }
 
 body.phone .sheet.sending {
-  transform: translateY(-110%) scale(0.9);
+  transform: translateY(-18px) scale(.985);
 }
 
 body.pad .sheet.sending {
-  transform: translate(-50%, -150%) scale(0.85);
+  transform: translate(-50%, calc(-50% - 18px)) scale(.985);
 }
 
 .sheet-grabber {
@@ -3108,7 +3110,7 @@ body.pad .sheet-grabber {
   background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
   color: var(--ifl-on-accent, #10150d);
   box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
-  transition: background 0.25s, box-shadow 0.25s, transform 0.45s var(--spring);
+  transition: background-color var(--ifl-motion-fast, .16s), box-shadow var(--ifl-motion-fast, .16s), transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .sheet-head .glass.tinted:disabled {
@@ -3201,7 +3203,7 @@ body.pad .sheet-grabber {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  animation: pop-in 0.45s var(--spring-bouncy) both;
+  animation: pop-in var(--ifl-motion-enter, .36s) var(--spring) backwards;
 }
 
 .token .avatar.tok-av {
@@ -3242,11 +3244,11 @@ body.pad .sheet-grabber {
   color: var(--label-2);
   font-size: 13px;
   white-space: nowrap;
-  transition: transform 0.4s var(--spring), background 0.25s, color 0.25s;
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), background-color var(--ifl-motion-fast, .16s), color 0.25s;
 }
 
 .from-chip:active {
-  transform: scale(0.95);
+  transform: scale(var(--ifl-press-scale, .97));
 }
 
 .from-chip span {
@@ -3266,7 +3268,7 @@ body.pad .sheet-grabber {
   height: 12px;
   flex: none;
   stroke-width: 2.4;
-  transition: transform 0.4s var(--spring);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 /* (open: its arrow turned up, the chip lit) */
@@ -3309,8 +3311,8 @@ body.pad .sheet-grabber {
 
 @keyframes pop-in {
   from {
-    transform: scale(0.5);
-    opacity: 0;
+    transform: scale(.94);
+    opacity: .84;
   }
 }
 
@@ -3323,7 +3325,7 @@ body.pad .sheet-grabber {
 
 .suggestions {
   padding: 6px 12px;
-  animation: content-in 0.3s var(--ease) both;
+  animation: content-in var(--ifl-motion-enter, .36s) var(--ease) backwards;
 }
 
 .suggestion {
@@ -3427,7 +3429,7 @@ body.pad .sheet-grabber {
   gap: 4px;
   padding: 6px;
   color: var(--tint);
-  animation: pop-in 0.45s var(--spring-bouncy) both;
+  animation: pop-in var(--ifl-motion-enter, .36s) var(--spring) backwards;
 }
 
 .c-att.pic {
@@ -3517,11 +3519,11 @@ body.phone .sheet.kb .compose-accessory {
   place-items: center;
   border-radius: 22px;
   color: var(--label);
-  transition: background 0.15s, transform 0.4s var(--spring);
+  transition: background-color var(--ifl-motion-fast, .16s), transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .c-tool:active {
-  transform: scale(0.9);
+  transform: scale(var(--ifl-press-scale, .97));
   background: var(--press);
 }
 
@@ -3630,17 +3632,13 @@ body.phone .sheet.kb .compose-accessory {
   height: 96px;
   border-radius: 22px;
   box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
-  animation: w-logo 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.25s backwards;
+  animation: w-logo var(--ifl-motion-enter, .36s) var(--spring) backwards;
 }
 
 @keyframes w-logo {
   from {
-    opacity: 0;
-    filter: blur(14px);
-    transform: scale(0.86);
-  }
-  80% {
-    filter: blur(0);
+    opacity: .9;
+    transform: scale(.97);
   }
 }
 
@@ -3654,30 +3652,29 @@ body.phone .sheet.kb .compose-accessory {
 
 .wtitle span {
   display: inline-block;
-  animation: w-letter 0.9s var(--ease-out) backwards;
+  animation: w-letter var(--ifl-motion-enter, .36s) var(--spring) backwards;
 }
 
 .wtitle span:nth-child(1) {
-  animation-delay: 0.55s;
+  animation-delay: calc(0 * var(--ifl-motion-stagger, 24ms));
 }
 
 .wtitle span:nth-child(2) {
-  animation-delay: 0.61s;
+  animation-delay: calc(1 * var(--ifl-motion-stagger, 24ms));
 }
 
 .wtitle span:nth-child(3) {
-  animation-delay: 0.67s;
+  animation-delay: calc(2 * var(--ifl-motion-stagger, 24ms));
 }
 
 .wtitle span:nth-child(4) {
-  animation-delay: 0.73s;
+  animation-delay: calc(3 * var(--ifl-motion-stagger, 24ms));
 }
 
 @keyframes w-letter {
   from {
-    opacity: 0;
-    transform: translateY(14px);
-    filter: blur(6px);
+    opacity: .88;
+    transform: translateY(4px);
   }
 }
 
@@ -3687,24 +3684,19 @@ body.phone .sheet.kb .compose-accessory {
   font-size: 16px;
   color: var(--text-2);
   text-wrap: balance;
-  animation: w-fade 1.2s ease 1.3s backwards;
+  animation: w-fade var(--ifl-motion-enter, .36s) ease var(--ifl-motion-stagger, 24ms) backwards;
 }
 
 .w-cta {
-  animation: w-cta 0.9s var(--ease-out) 1.8s backwards;
+  animation: w-cta var(--ifl-motion-enter, .36s) var(--spring) calc(2 * var(--ifl-motion-stagger, 24ms)) backwards;
 }
 
 @keyframes w-cta {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
+  from { opacity: .88; transform: translateY(4px); }
 }
 
 @keyframes w-fade {
-  from {
-    opacity: 0;
-  }
+  from { opacity: .88; }
 }
 
 .said {
@@ -3728,7 +3720,7 @@ body.phone .sheet.kb .compose-accessory {
   color: var(--ifl-on-accent, #10150d);
   background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
   box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
-  transition: transform 0.45s var(--spring), filter 0.2s;
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), filter 0.2s;
   animation: w-cta .45s var(--ease) both;
 }
 
@@ -3809,7 +3801,7 @@ body.phone .sheet.kb .compose-accessory {
   stroke-linecap: round;
   stroke-dasharray: 2 12;
   opacity: 0.8;
-  animation: w-fade 1.4s ease 0.9s backwards;
+  animation: w-fade var(--ifl-motion-page, .46s) ease var(--ifl-motion-stagger, 24ms) backwards;
 }
 
 .flight .f-paper {
@@ -3823,41 +3815,43 @@ body.phone .sheet.kb .compose-accessory {
 }
 
 .flight .f-plane {
-  animation: w-fade 0.8s ease 2.2s backwards;
+  animation: w-fade var(--ifl-motion-page, .46s) ease calc(2 * var(--ifl-motion-stagger, 24ms)) backwards;
 }
 
 .flight :is(.f-far, .f-mid, .f-near) {
-  animation: f-rise 1.6s var(--ease-out) backwards;
+  animation: f-rise var(--ifl-motion-page, .46s) var(--ease) backwards;
 }
 
 .flight .f-mid {
-  animation-delay: 0.12s;
+  animation-delay: var(--ifl-motion-stagger, 24ms);
 }
 
 .flight .f-near {
-  animation-delay: 0.24s;
+  animation-delay: calc(2 * var(--ifl-motion-stagger, 24ms));
 }
 
 @keyframes f-rise {
   from {
-    opacity: 0;
-    transform: translateY(40px);
+    opacity: .88;
+    transform: translateY(6px);
   }
 }
 
 /* (shown again, after signing out: no slow start) */
 .welcome.again :is(.wlogo .mark, .wlogo::before, .wtitle span, .tagline, .flight *) {
   animation-delay: 0s !important;
-  animation-duration: 0.5s;
+  animation-duration: var(--ifl-motion-enter, .36s);
 }
 
 .welcome.again .w-cta {
-  animation: w-fade 0.5s ease;
+  animation: w-fade var(--ifl-motion-enter, .36s) ease;
 }
 
 .welcome.again .w-go {
-  animation: w-beat 2.4s ease-in-out 1s infinite;
+  animation: none;
 }
+
+html[data-motion-paused] :is(.spinner, .orb .ring, .flight .f-plane) { animation-play-state: paused; }
 
 /* ---------- Accessibility ---------- */
 
@@ -3872,9 +3866,12 @@ body.phone .sheet.kb .compose-accessory {
   /* (still: shortened, an endless drift or breath would flicker) */
   .aura,
   .orb .ring,
-  .w-go {
+  .w-go, .spinner {
     animation: none !important;
   }
+  .orb .core svg { stroke-dashoffset: 0; }
+  :is(.gbtn, .gcap > button, .chip, .tab, .c-tool, .set-swatch, .from-chip, .e-clear):active,
+  .gbtn.pressed { transform: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -4028,7 +4025,7 @@ textarea:focus-visible {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
-  transition: opacity 0.3s var(--ease);
+  transition: opacity var(--ifl-motion-fast, .16s) var(--ease);
 }
 .spot.gone { opacity: 0.6; }
 .spot.busy { opacity: 0.75; }
@@ -4188,7 +4185,7 @@ textarea:focus-visible {
   width: calc((100% - 2 * var(--ift-pad)) / 4);
   border-radius: calc(var(--ift-h) / 2 - var(--ift-pad));
   background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
-  transition: transform 0.5s var(--spring), opacity 0.2s;
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), opacity var(--ifl-motion-fast, .16s);
 }
 
 .tab {
@@ -4202,11 +4199,11 @@ textarea:focus-visible {
   font-size: var(--ift-label);
   font-weight: 600;
   letter-spacing: 0.01em;
-  transition: color 0.2s, transform 0.4s var(--spring);
+  transition: color 0.2s, transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .tab:active {
-  transform: scale(0.9);
+  transform: scale(var(--ifl-press-scale, .97));
 }
 
 .tab svg {
@@ -4252,7 +4249,7 @@ textarea:focus-visible {
 .toolbar .search .search-x {
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s;
+  transition: opacity var(--ifl-motion-fast, .16s);
 }
 
 .search-x {
@@ -4332,7 +4329,7 @@ html.kb-up .toolbar.searching {
 /* (the inbox dims and softens behind it; your photo glows to say it's open) */
 .profile-layer {
   background: transparent;
-  transition: background 0.3s var(--ease), backdrop-filter 0.3s var(--ease);
+  transition: background-color var(--ifl-motion-fast, .16s) var(--ease), backdrop-filter 0.3s var(--ease);
 }
 
 .profile-layer.open {
@@ -4366,7 +4363,7 @@ html.kb-up .toolbar.searching {
   padding: 12px 14px 12px 12px;
   border-radius: 24px;
   text-align: left;
-  transition: background 0.2s;
+  transition: background-color var(--ifl-motion-fast, .16s);
 }
 
 .p-card:active {
@@ -4512,7 +4509,7 @@ html.kb-up .toolbar.searching {
   height: 31px;
   border-radius: 16px;
   background: rgba(120, 120, 128, 0.2);
-  transition: background 0.25s;
+  transition: background-color var(--ifl-motion-fast, .16s);
 }
 
 .switch::after {
@@ -4525,7 +4522,7 @@ html.kb-up .toolbar.searching {
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
-  transition: transform 0.35s var(--spring);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .switch[aria-checked="true"] {
@@ -4547,7 +4544,7 @@ html.kb-up .toolbar.searching {
   margin: 4px 0 0 -2px;
   border-radius: 50%;
   background: var(--dot);
-  transition: background 0.4s var(--ease), transform 0.4s var(--spring);
+  transition: background-color var(--ifl-motion-fast, .16s) var(--ease), transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 /* (a fingertip's worth to tap, without making the dot any bigger) */
@@ -4558,7 +4555,8 @@ html.kb-up .toolbar.searching {
 }
 
 .status-dot:active {
-  transform: scale(1.4);
+  transform: scale(1.12);
+  transition-duration: var(--ifl-motion-press, .09s);
 }
 
 .status-dot.green {
@@ -4601,7 +4599,7 @@ html.kb-up .toolbar.searching {
 
 .lift-layer {
   background: transparent;
-  transition: background 0.3s var(--ease), backdrop-filter 0.3s var(--ease);
+  transition: background-color var(--ifl-motion-fast, .16s) var(--ease), backdrop-filter 0.3s var(--ease);
 }
 
 .lift-layer.open {
@@ -4618,12 +4616,12 @@ html.kb-up .toolbar.searching {
   background: var(--glass-strong);
   box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
   transform: scale(1);
-  transition: transform 0.4s var(--spring);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
   pointer-events: auto;
 }
 
 .lift-layer.open .lifted-row {
-  transform: scale(1.03);
+  transform: scale(1.015);
 }
 
 .lifted-row::after {
@@ -4821,7 +4819,7 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
   gap: 6px;
   font-size: 15px;
   font-weight: 600;
-  transition: transform 0.4s var(--spring);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .d-pill:active {
@@ -4879,7 +4877,7 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
   color: var(--ifl-on-accent, #10150d);
   background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
   box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
-  transition: opacity 0.2s, transform 0.4s var(--spring);
+  transition: opacity var(--ifl-motion-fast, .16s), transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .qr-send:disabled {
@@ -5090,7 +5088,7 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
   font-size: 10px;
   font-weight: 800;
   opacity: 0.55;
-  transition: opacity 0.2s, width 0.35s var(--ease), transform 0.35s var(--spring);
+  transition: opacity var(--ifl-motion-fast, .16s), width 0.35s var(--ease), transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .v-thumb.on {
@@ -5099,7 +5097,7 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
 }
 
 .v-thumb:active {
-  transform: scale(0.92);
+  transform: scale(var(--ifl-press-scale, .97));
 }
 
 .v-thumb img {
@@ -5128,7 +5126,7 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
   color: #fff;
   background: rgba(40, 40, 46, 0.55);
   box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.18);
-  transition: opacity 0.2s;
+  transition: opacity var(--ifl-motion-fast, .16s);
 }
 
 .v-arrow.prev {
@@ -5157,7 +5155,7 @@ body.phone .v-arrow {
 .v-bar,
 .v-thumbs,
 .v-arrow {
-  transition: opacity 0.25s, transform 0.35s var(--ease);
+  transition: opacity var(--ifl-motion-fast, .16s), transform 0.35s var(--ease);
 }
 
 .viewer:not(.open) .v-bar,
@@ -5279,7 +5277,7 @@ body.phone .v-arrow {
   color: var(--tint-text);
   font-size: 17px;
   font-weight: 500;
-  transition: opacity 0.2s;
+  transition: opacity var(--ifl-motion-fast, .16s);
 }
 
 .set-link.strong {
@@ -5614,7 +5612,7 @@ button.set-row:active {
   font-size: 13.5px;
   font-weight: 500;
   color: var(--label);
-  transition: background 0.2s, box-shadow 0.2s;
+  transition: background-color var(--ifl-motion-fast, .16s), box-shadow var(--ifl-motion-fast, .16s);
   min-height: 36px;
 }
 
@@ -5636,7 +5634,7 @@ button.set-row:active {
   height: 30px;
   border-radius: 50%;
   background: var(--c);
-  transition: transform 0.35s var(--spring), box-shadow 0.2s;
+  transition: transform var(--ifl-motion-release, .42s) var(--spring), box-shadow var(--ifl-motion-fast, .16s);
 }
 
 .set-swatch.on {
@@ -5644,7 +5642,7 @@ button.set-row:active {
 }
 
 .set-swatch:active {
-  transform: scale(0.88);
+  transform: scale(var(--ifl-press-scale, .97));
 }
 
 .set-sig {
@@ -5662,7 +5660,7 @@ button.set-row:active {
 
 @media (prefers-reduced-motion: reduce) {
   .set-page {
-    transition: opacity 0.2s;
+    transition: opacity var(--ifl-motion-fast, .16s);
   }
 
   .set-page.from-right,
@@ -5833,12 +5831,12 @@ button.set-row:active {
   font-size: 15px;
   font-weight: 500;
   white-space: nowrap;
-  transition: background 0.2s, color 0.2s, transform 0.4s var(--spring);
+  transition: background-color var(--ifl-motion-fast, .16s), color 0.2s, transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .sf:active {
-  transform: scale(0.95);
-  transition-duration: 0.1s;
+  transform: scale(var(--ifl-press-scale, .97));
+  transition-duration: var(--ifl-motion-press, .09s);
 }
 
 .sf.open {
@@ -5859,7 +5857,7 @@ button.set-row:active {
   height: 12px;
   stroke-width: 2.4;
   color: var(--label-3);
-  transition: transform 0.35s var(--spring);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .sf.open svg.sf-dd {
@@ -5910,11 +5908,11 @@ button.set-row:active {
   gap: 5px;
   font-size: 12px;
   color: var(--label-2);
-  transition: transform 0.35s var(--spring);
+  transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
 
 .sf-person:active {
-  transform: scale(0.92);
+  transform: scale(var(--ifl-press-scale, .97));
 }
 
 .sf-person span {
@@ -6006,7 +6004,7 @@ html { touch-action: pan-x pan-y; }
 
 /* you */
 .ifm-card { display: grid !important; grid-template-columns: 52px minmax(0, 1fr) auto; column-gap: 14px; align-items: center; padding: 12px 14px 12px 12px !important; border-radius: 24px; transition: background 0.2s; }
-.ifm-card:active { background: var(--ifm-press) !important; }
+.ifm-card:active { background: var(--ifm-press) !important; transform: scale(var(--ifl-press-card)); transition-duration: var(--ifl-motion-press); }
 .ifm-photo { width: 52px; height: 52px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; font-size: 20px; font-weight: 600; color: #fff;
   background: #556253; box-shadow: none; }
 .ifm-photo > * { width: 100% !important; height: 100% !important; margin: 0 !important; border-radius: 50% !important; font-size: inherit; box-shadow: none !important; }
@@ -6022,7 +6020,8 @@ html { touch-action: pan-x pan-y; }
 .ifm-row.off .ifm-ic { opacity: 0.55; }
 .ifm-grp { border-radius: 24px; overflow: hidden; background: var(--ifm-panel); box-shadow: none; }
 .ifm-row { position: relative; width: 100% !important; height: 52px !important; padding: 0 14px 0 12px !important; display: grid !important; grid-template-columns: 30px minmax(0, 1fr) auto auto; column-gap: 12px; align-items: center; }
-.ifm-row.go:active { background: var(--ifm-press) !important; }
+.ifm-row.go { transition: transform var(--ifl-motion-release) var(--ifl-motion-spring), background-color var(--ifl-motion-fast); }
+.ifm-row.go:active { background: var(--ifm-press) !important; transform: scale(var(--ifl-press-card)); transition-duration: var(--ifl-motion-press); }
 .ifm-row + .ifm-row::before { content: ""; position: absolute; top: 0; left: 54px; right: 0; height: 0.5px; background: var(--ifm-line); }
 .ifm-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; }
 .ifm-ic svg { width: 17px; height: 17px; stroke-width: 2.1; }
@@ -6055,10 +6054,10 @@ html { touch-action: pan-x pan-y; }
 .ifm-foot .ifm-upd svg { width: 15px; height: 15px; stroke-width: 2.2; }
 .ifm-foot .ifm-upd::after { content: ""; position: absolute; inset: -6px -2px; }
 .ifm-foot .ifm-out { flex: none; position: relative; width: 40px; height: 40px; padding: 0 !important; border-radius: 50% !important; display: grid; place-items: center;
-  background: var(--ifm-red-bg) !important; color: var(--ifm-red) !important; transition: transform 0.2s; }
+  background: var(--ifm-red-bg) !important; color: var(--ifm-red) !important; transition: transform var(--ifl-motion-release) var(--ifl-motion-spring); }
 .ifm-foot .ifm-out svg { width: 19px; height: 19px; stroke-width: 2; }
 .ifm-foot .ifm-out::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; }
-.ifm-foot .ifm-out:active, .ifm-foot .ifm-upd:active { transform: scale(0.92); }
+.ifm-foot .ifm-out:active, .ifm-foot .ifm-upd:active { transform: scale(var(--ifl-press-icon, 0.94)); }
 
 /* notifications on this device, asked for in one tap: a sheet from the foot */
 .ifa-layer { position: fixed; inset: 0; z-index: 2147483002; display: flex; align-items: flex-end; justify-content: center; background: var(--ifm-dim); opacity: 0; transition: opacity 0.3s; }
@@ -6101,7 +6100,7 @@ body, body *:not(input):not(textarea):not(select):not([contenteditable]):not([co
 img, svg, a { -webkit-user-drag: none; }
 /* (--p animated as a number: the header's height, title size and band all move together, smoothly, as it goes compact) */
 @property --p { syntax: "<number>"; inherits: true; initial-value: 0; }
-.ifh { transition: --p 0.34s cubic-bezier(0.32, 0.72, 0, 1); }
+.ifh { transition: --p var(--ifl-motion-layout) var(--ifl-motion-glide); }
 @media (prefers-reduced-motion: reduce) { .ifh { transition-duration: 0.01s; } }
 .ifh { --p: 0; --ifh-pt0: var(--ifh-pt, calc(env(safe-area-inset-top, 0px) + 10px)); position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center; column-gap: 12px; box-sizing: border-box; height: calc(var(--ifh-pt0) + 72px - 24px * var(--p)); margin: 0 0 calc(var(--ifh-mb, 0px) + 24px * var(--p));
@@ -6121,12 +6120,12 @@ img, svg, a { -webkit-user-drag: none; }
 .ifh button:focus-visible { outline: 2px solid var(--ifl-accent-ink); outline-offset: 3px; }
 .ifh .ifh-me { position: relative; flex: none; width: calc(42px - 8px * var(--p)); height: calc(42px - 8px * var(--p)); padding: 0 !important; border-radius: 50% !important; overflow: hidden;
   display: grid; place-items: center; font-size: calc(16px - 3px * var(--p)); font-weight: 600; color: var(--ifh-photo-ink, #fff); background: var(--ifh-photo, #556253) !important;
-  box-shadow: var(--ifl-shadow-control); transition: transform 0.2s; }
+  box-shadow: var(--ifl-shadow-control); transition: transform var(--ifl-motion-release) var(--ifl-motion-spring); }
 .ifh-me > * { width: 100% !important; height: 100% !important; margin: 0 !important; border-radius: 50% !important; font-size: inherit !important; box-shadow: none !important; }
 .ifh-me img { object-fit: cover; display: block; }
 .ifh-me.out { color: var(--ifl-accent-ink); background: var(--ifl-surface) !important; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.08); }
 .ifh-me.out svg { width: 22px !important; height: 22px !important; stroke-width: 2; }
-.ifh-me:active, .ifh-act:active { transform: scale(0.92); }
+.ifh-me:active, .ifh-act:active { transform: scale(var(--ifl-press-icon, 0.94)); }
 .ifh-t { min-width: 0; display: grid; }
 .ifh-name { display: flex; align-items: center; min-width: 0; margin: 0; font-size: calc(clamp(26px, 8.6vw, 32px) * (1 - 0.375 * var(--p))); font-weight: 700; line-height: 1.12; letter-spacing: calc(0.3px - 0.6px * var(--p));
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
@@ -6142,7 +6141,7 @@ img, svg, a { -webkit-user-drag: none; }
   -webkit-backdrop-filter: none; backdrop-filter: none;
   box-shadow: var(--ifl-shadow-control); }
 .ifh-acts:empty { display: none; }
-.ifh-act { position: relative; width: 38px; height: 38px; padding: 0 !important; border-radius: 50% !important; display: grid; place-items: center; color: var(--ifl-text) !important; transition: transform 0.2s; }
+.ifh-act { position: relative; width: 38px; height: 38px; padding: 0 !important; border-radius: 50% !important; display: grid; place-items: center; color: var(--ifl-text) !important; transition: transform var(--ifl-motion-release) var(--ifl-motion-spring); }
 .ifh-act svg { width: 22px; height: 22px; stroke-width: 2; }
 .ifh-act[disabled] { opacity: 0.4; }
 /* (a 44px target round each, over the capsule's padding) */
@@ -6161,9 +6160,9 @@ img, svg, a { -webkit-user-drag: none; }
 /* InFlite's Settings sheet, the same in every app: a round ‹ to go back on a page inside, a round ✕ to close on every one
    (.ifs-btn), and the first page opening on the app (.ifs-hero: its icon, its name, a line about it) */
 .ifs-btn { flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
-  color: inherit; background: var(--ifl-surface-2); -webkit-tap-highlight-color: transparent; transition: transform 0.2s; }
+  color: inherit; background: var(--ifl-surface-2); -webkit-tap-highlight-color: transparent; transition: transform var(--ifl-motion-release) var(--ifl-motion-spring); }
 .ifs-btn svg { width: 18px; height: 18px; stroke-width: 2.4; }
-.ifs-btn:active { transform: scale(0.9); }
+.ifs-btn:active { transform: scale(var(--ifl-press-icon, 0.94)); }
 .ifs-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .ifs-hero { display: grid; justify-items: center; gap: 4px; padding: 4px 0 16px; text-align: center; }
 .ifs-hero img { width: 64px; height: 64px; border-radius: 15px; margin-bottom: 6px; box-shadow: var(--ifl-shadow-control); }
@@ -6184,19 +6183,19 @@ img, svg, a { -webkit-user-drag: none; }
 html.ifl-hub .ifl-tabs { view-transition-name: ifl-tabs; }
 .ifl-tab { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 999px;
   color: var(--ifl-tab-ink); font-size: var(--ift-label); font-weight: 600; letter-spacing: 0.1px; line-height: 1.1; text-decoration: none;
-  -webkit-tap-highlight-color: transparent; transition: transform 0.2s, color 0.2s, background 0.2s; }
+  -webkit-tap-highlight-color: transparent; transition: transform var(--ifl-motion-release) var(--ifl-motion-spring), color 0.2s, background 0.2s; }
 .ifl-tab-ic { flex: none; width: var(--ift-icon); height: var(--ift-icon); stroke-width: 1.9; }
 .ifl-tab[aria-current="page"] { color: var(--ifl-tab-on); background: var(--ifl-accent-gradient); }
-.ifl-tab:active { transform: scale(0.92); }
+.ifl-tab:active { transform: scale(var(--ifl-press-icon, 0.94)); }
 .ifl-tab:focus-visible { outline: 2px solid var(--ifl-accent-ink); outline-offset: -2px; }
 /* (a phone on its side: the bar lower, its labels beside their icons) */
 @media (max-height: 500px) and (orientation: landscape) { .ifl-tabs { height: 48px; } .ifl-tab { flex-direction: row; gap: 6px; } .ifl-tab-ic { width: 20px; height: 20px; } }
 /* Back, in the place of an app's menu button at the hub (IFL.hub.back()) */
 .ifl-back { display: inline-flex; align-items: center; justify-content: center; gap: 1px; flex: none; min-width: 44px; height: 42px; margin: 0; padding: 0 14px 0 8px;
   border: 0; border-radius: 999px; background: var(--ifm-panel); color: var(--ifm-tint); font: 600 16px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
-  box-shadow: var(--ifl-shadow-control); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.2s; }
+  box-shadow: var(--ifl-shadow-control); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform var(--ifl-motion-release) var(--ifl-motion-spring); }
 .ifl-back svg { width: 20px; height: 20px; stroke-width: 2.4; }
-.ifl-back:active { transform: scale(0.94); }
+.ifl-back:active { transform: scale(var(--ifl-press-scale, 0.97)); }
 .ifl-back:focus-visible { outline: 2px solid var(--ifm-tint); outline-offset: 2px; }
 /* Chat's engine: its page in a frame over the whole page, see-through, in a dialog of its own. Shown (.on), the dialog's
    modal, in the top layer over every sheet of the page's own; put away, it's shut but still laid out (never display:
@@ -6273,7 +6272,11 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
   --ifl-space-1: 4px; --ifl-space-2: 8px; --ifl-space-3: 12px;
   --ifl-space-4: 16px; --ifl-space-5: 24px; --ifl-space-6: 32px;
   --ifl-radius-card: 26px; --ifl-radius-group: 22px; --ifl-radius-sheet: 30px; --ifl-radius-row: 16px; --ifl-radius-pill: 999px;
-  --ifl-motion-press: 0.1s; --ifl-motion-release: 0.38s; --ifl-motion-fast: 0.18s;
+  --ifl-motion-press: 0.09s; --ifl-motion-release: 0.42s; --ifl-motion-fast: 0.16s;
+  --ifl-motion-enter: 0.36s; --ifl-motion-exit: 0.22s; --ifl-motion-layout: 0.28s;
+  --ifl-motion-page: 0.46s; --ifl-motion-tab: 0.28s; --ifl-motion-sheet: 0.46s;
+  --ifl-motion-stagger: 24ms; --ifl-motion-stagger-cap: 120ms; --ifl-motion-distance: 8px;
+  --ifl-press-scale: 0.97; --ifl-press-icon: 0.94; --ifl-press-card: 0.985;
   --ifl-motion-glide: cubic-bezier(0.32, 0.72, 0, 1);
   --ifl-motion-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --ifl-chrome-blur: none;
@@ -6312,10 +6315,11 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
   transition: transform var(--ifl-motion-release) var(--ifl-motion-spring), opacity var(--ifl-motion-fast) ease; }
 .ifm-pop.open { transform: none; }
 .ifm-pop.closing { transform: translateY(-3px) scale(0.97);
-  transition: transform 0.22s var(--ifl-motion-glide), opacity var(--ifl-motion-fast) ease; }
+  transition: transform var(--ifl-motion-exit) var(--ifl-motion-glide), opacity var(--ifl-motion-fast) ease; }
 .ifm-grp, .ifm-card { border-radius: calc(var(--ifl-radius-card) - var(--ifl-space-2)); }
-.ifm-card { padding: var(--ifl-space-3) var(--ifl-space-4) !important; column-gap: var(--ifl-space-3); }
+.ifm-card { transition: transform var(--ifl-motion-release) var(--ifl-motion-spring), background-color var(--ifl-motion-fast); padding: var(--ifl-space-3) var(--ifl-space-4) !important; column-gap: var(--ifl-space-3); }
 .ifm-layer { transition: background-color var(--ifl-motion-fast) ease; }
+.ifm-layer:not(.open), .ifa-layer:not(.on) { pointer-events: none; }
 .ifm-layer.open { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .ifa-sheet { border-radius: var(--ifl-radius-sheet) var(--ifl-radius-sheet) 0 0;
   transition: transform var(--ifl-motion-release) var(--ifl-motion-spring); }
@@ -6323,6 +6327,8 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 .ifm-switch::after { transition: transform var(--ifl-motion-release) var(--ifl-motion-spring); }
 .ifh-me, .ifh-act, .ifl-back, .ifs-btn { transition: transform var(--ifl-motion-release) var(--ifl-motion-spring); }
 .ifh-me:active, .ifh-act:active, .ifl-back:active, .ifs-btn:active { transition-duration: var(--ifl-motion-press); }
+.ifa-go, .ifa-later, .ifb-btn { transition: transform var(--ifl-motion-release) var(--ifl-motion-spring), background-color var(--ifl-motion-fast); }
+:is(.ifa-go, .ifa-later, .ifb-btn):active:not(:disabled) { transform: scale(var(--ifl-press-scale)); transition-duration: var(--ifl-motion-press); }
 .ifs-btn { position: relative; }
 .ifs-btn::after { content: ""; position: absolute; inset: -2px; border-radius: inherit; }
 
@@ -6338,11 +6344,14 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 :is(.pill, .btn, .ifl-btn) { max-width: 100%; overflow-wrap: anywhere; }
 :is(.pill, .btn, .ifl-btn):focus-visible { outline: 2px solid var(--tint-text, var(--tint, currentColor)); outline-offset: 3px; }
 
+/* CSS presentation motion rests while data and navigation retain their own lifetimes. */
+html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion-paused] *::after { animation-play-state: paused !important; }
+
 /* Accessibility preferences apply to the shared chrome in every standalone app. */
 @media (prefers-reduced-motion: reduce) {
   .ifm-pop, .ifm-pop.closing, .ifa-sheet, .ifm-note { transform: none !important; transition: opacity 0.12s ease !important; }
-  .ifh-me, .ifh-act, .ifl-back, .ifs-btn, .ifm-switch::after { transition: none; }
-  .ifh-me:active, .ifh-act:active, .ifl-back:active, .ifs-btn:active { transform: none !important; }
+  .ifh-me, .ifh-act, .ifl-back, .ifs-btn, .ifm-switch::after, .ifm-row, .ifm-card, .ifa-go, .ifa-later, .ifb-btn { transition: none; }
+  .ifh-me:active, .ifh-act:active, .ifl-back:active, .ifs-btn:active, .ifm-row:active, .ifm-card:active, .ifa-go:active, .ifa-later:active, .ifb-btn:active { transform: none !important; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .ifm-pop, .ifm-note, .ifa-sheet, .ifl-tabs, .ifl-back, .ifb, .ifh.ifh-up, .ifh-acts {

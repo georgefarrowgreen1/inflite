@@ -20,7 +20,7 @@
 import { el, btn, icon } from "./ui.js";
 
 let n = 0;
-export function createSheets(F) {
+export function createSheets(F, { beforeOpen } = {}) {
   const open = [];
   let restoreFrame = 0, restoreAt = 0;
   // (the keyboard up: an open sheet no taller than what's in sight, and lifted above it. iOS lays the keyboard over the
@@ -53,11 +53,12 @@ export function createSheets(F) {
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function make(d, { onClose, built, focus } = {}) {
+    beforeOpen?.();
     cancelAnimationFrame(restoreFrame); restoreFrame = 0; restoreAt++;
     const body = d.querySelector(".ifs-body"), head = d.querySelector(".ifs-head"), h2 = d.querySelector(".ifs-head h2");
     const was = document.activeElement, page = { x: scrollX, y: scrollY, route: F?.route, url: location.href };
     const stack = [];
-    let shut = false, closeTimer = 0, drag = null, pageTimer = 0;
+    let shut = false, closeTimer = 0, drag = null, pageTimer = 0, sizeMotion = null;
     const ac = new AbortController(), sig = { signal: ac.signal };
     const h = { el: d, body, close: () => close(true), now: () => close(false), push, pop, setBusy, closed: false };
     function done() {
@@ -65,7 +66,7 @@ export function createSheets(F) {
       h.closed = true;
       const current = !F?.signal?.aborted && F?.route === page.route && location.href === page.url;
       const position = current ? page : { x: scrollX, y: scrollY };
-      clearTimeout(closeTimer); clearTimeout(pageTimer); drag?.abort();
+      clearTimeout(closeTimer); clearTimeout(pageTimer); drag?.abort(); sizeMotion?.cancel();
       d.classList.remove("closing", "dragging", "ifs-touched");
       body.classList.remove("ifl-enter-pop");
       d.style.removeProperty("--drag");
@@ -93,6 +94,7 @@ export function createSheets(F) {
     function close(animate) {
       if (shut && animate) return;
       shut = true;
+      sizeMotion?.cancel();
       if (!animate || reduced() || !d.open) return done();
       drag?.abort(); d.classList.remove("dragging");
       d.classList.add("closing");
@@ -110,6 +112,7 @@ export function createSheets(F) {
     // drag down from the grab bar or the head to put it away
     function grab(e) {
       if (shut || drag || e.button || e.isPrimary === false || e.target.closest("button, input, select, textarea, a")) return;
+      sizeMotion?.cancel();
       const y0 = e.clientY, t0 = Date.now();
       let dy = 0;
       const a = drag = new AbortController(), o = { signal: a.signal };
@@ -135,7 +138,19 @@ export function createSheets(F) {
       if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
       else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
     }
+    const stopSize = () => sizeMotion?.cancel();
+    for (const target of [v, globalThis, document]) target?.addEventListener?.(target === document ? "visibilitychange" : "resize", stopSize, sig);
+    const calm = matchMedia("(prefers-reduced-motion: reduce)");
+    calm.addEventListener?.("change", stopSize, sig);
+    const sizeBefore = () => { const height = d.offsetHeight; stopSize(); return height; };
+    function resizeFrom(height) {
+      if (!height || height === d.offsetHeight || drag || shut || reduced() || document.hidden || d.classList.contains("ifs-kb") || !d.animate) return;
+      // A finite, unfilled animation returns to intrinsic height automatically.
+      // Cancelling on resize, keyboard appearance or a newer page leaves no pixel lock.
+      try { sizeMotion = d.animate([{ height: `${height}px` }, { height: `${d.offsetHeight}px` }], { duration: 280, easing: "cubic-bezier(0.32, 0.72, 0, 1)" }); sizeMotion.finished.catch(() => {}); } catch (_) {}
+    }
     function push(page = {}) {
+      const height = sizeBefore();
       clearTimeout(pageTimer); body.classList.remove("ifl-enter-pop");
       const kids = [...body.children].filter((c) => !c.hidden);
       for (const c of kids) c.hidden = true;
@@ -148,12 +163,14 @@ export function createSheets(F) {
       if (typeof page.body === "function") page.body(pg, h);
       else if (page.body) pg.append(page.body);
       body.scrollTop = 0;
+      resizeFrom(height);
       h2?.focus({ preventScroll: true });
       return pg;
     }
     function pop(quiet) {
       const s = stack.pop();
       if (!s) return;
+      const height = sizeBefore();
       s.pg.remove();
       for (const c of s.kids) c.hidden = false;
       if (h2) h2.textContent = s.title;
@@ -161,13 +178,14 @@ export function createSheets(F) {
       if (s.acts) d.append(s.acts);
       d.classList.toggle("pushed", stack.length > 0);
       if (!quiet) {
+        resizeFrom(height);
         body.classList.add("ifl-enter-pop");
         clearTimeout(pageTimer); pageTimer = setTimeout(() => body.classList.remove("ifl-enter-pop"), 450);
         h2?.focus({ preventScroll: true });
       }
     }
     function setBusy(on) {
-      d.toggleAttribute("aria-busy", !!on);
+      if (on) d.setAttribute("aria-busy", "true"); else d.removeAttribute("aria-busy");
       for (const b of d.querySelectorAll(".ifs-acts button")) b.disabled = !!on;
     }
     if (head && !head.querySelector("[data-back]")) {
