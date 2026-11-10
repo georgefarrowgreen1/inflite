@@ -105,11 +105,12 @@ body.kb-up .ifl-tabs { visibility: hidden; }
 
 /* ---- sheets (sheet.js) on <dialog>: the frozen markup, Weather's motion ---- */
 /* Sheets stay inside the visible viewport; a Home Screen layout correction must not move their actions below it. */
-dialog.ifl-sheet { --sheet-bottom-pad: calc(28px + env(safe-area-inset-bottom, 0px)); position: fixed; inset: auto 0 var(--sheet-foot, 0px); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(18px, env(safe-area-inset-right, 0px)) var(--sheet-bottom-pad) max(18px, env(safe-area-inset-left, 0px));
+dialog.ifl-sheet { --sheet-inset: 20px; --sheet-bottom-pad: calc(28px + env(safe-area-inset-bottom, 0px)); position: fixed; inset: auto 0 var(--sheet-foot, 0px); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(var(--sheet-inset), env(safe-area-inset-right, 0px)) var(--sheet-bottom-pad) max(var(--sheet-inset), env(safe-area-inset-left, 0px));
   max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 24px); overflow: hidden auto; overscroll-behavior: contain; display: none; flex-direction: column;
-  border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; color: var(--text); background: var(--ifl-surface, var(--glass-strong)); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: var(--ifl-shadow-card, var(--lift));
+  border: 0; border-radius: var(--r-sheet); color: var(--text); background: var(--ifl-surface, var(--glass-strong)); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: var(--ifl-shadow-card, var(--lift));
   transform: translateY(var(--drag, 0px)); animation: ifl-sheet-in var(--dur-sheet-in) var(--ease-glide); font: inherit; }
 dialog.ifl-sheet[open] { display: flex; }
+@media (min-width: 600px) { dialog.ifl-sheet { --sheet-inset: 24px; } }
 /* (the keyboard up, the sheet on it (sheet.js --sheet-foot): no room kept for the home bar, which the keyboard covers) */
 dialog.ifl-sheet.ifs-kb { --sheet-bottom-pad: 12px; padding-bottom: var(--sheet-bottom-pad); border-radius: var(--r-sheet); }
 /* (and as tall as what's in sight, from the top of it down: what's typed and what it finds start at the top, where the
@@ -133,16 +134,16 @@ dialog.ifl-sheet.dragging:not(.closing) { animation: none; transition: none; }
 .ifs-grab { flex: none; width: 40px; height: 5px; margin: 8px auto 2px; border-radius: 3px; background: var(--line); background: color-mix(in srgb, var(--text) 22%, transparent); touch-action: none; }
 .ifl-sheet .ifs-head { position: sticky; top: 0; z-index: 2; display: flex; flex-shrink: 0; align-items: center; gap: 10px; min-height: 56px; padding: 6px 0; touch-action: none; }
 /* A quiet, opaque title strip keeps scrolling form text clear of the controls without another live blur. */
-.ifl-sheet .ifs-head::before { content: ""; position: absolute; z-index: -1; inset: -12px calc(0px - max(18px, env(safe-area-inset-right, 0px))) 0 calc(0px - max(18px, env(safe-area-inset-left, 0px))); background: var(--ifl-surface, var(--solid)); box-shadow: 0 0.5px 0 var(--line); pointer-events: none; }
+.ifl-sheet .ifs-head::before { content: ""; position: absolute; z-index: -1; inset: -12px calc(0px - max(var(--sheet-inset), env(safe-area-inset-right, 0px))) 0 calc(0px - max(var(--sheet-inset), env(safe-area-inset-left, 0px))); background: var(--ifl-surface, var(--solid)); box-shadow: 0 0.5px 0 var(--line); pointer-events: none; }
 .ifl-sheet .ifs-head h2 { flex: 1; min-width: 0; margin: 0; font: 700 22px/1.2 var(--font-d); letter-spacing: -0.2px; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .ifl-sheet .ifs-head h2:focus { outline: none; }
 .ifl-sheet .ifs-head h2.vh { flex: 1; position: static !important; width: auto; height: auto; clip: auto; clip-path: none; visibility: hidden; }
 .ifl-sheet .ifs-btn .ifl-glyph { display: grid; place-items: center; width: 18px; height: 18px; }
 .ifl-sheet .ifs-btn svg { width: 18px; height: 18px; stroke-width: 2.4; }
 .ifl-sheet:not(.pushed) .ifs-back { display: none; }
-.ifl-sheet .ifs-body { flex: 1 1 auto; min-height: 0; }
+.ifl-sheet .ifs-body { flex: 1 1 auto; min-height: 0; box-sizing: border-box; padding-top: 12px; }
 .ifl-sheet .ifs-hero img { width: 64px; height: 64px; border-radius: 15px; }
-.ifl-sheet .ifs-acts { position: sticky; bottom: calc(-28px - env(safe-area-inset-bottom, 0px)); z-index: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin: 12px calc(-1 * max(18px, env(safe-area-inset-left, 0px))) 0; padding: 12px max(18px, env(safe-area-inset-left, 0px)) 4px; }
+.ifl-sheet .ifs-acts { position: sticky; bottom: calc(-28px - env(safe-area-inset-bottom, 0px)); z-index: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin: 12px calc(-1 * max(var(--sheet-inset), env(safe-area-inset-left, 0px))) 0; padding: 12px max(var(--sheet-inset), env(safe-area-inset-left, 0px)) 4px; }
 /* One surface through the bottom padding/home-indicator area. Extending only the
    paint keeps sticky positioning, button spacing and scrolling unchanged. */
 .ifl-sheet .ifs-acts::before { content: ""; position: absolute; z-index: -1; inset: 0 0 calc(0px - var(--sheet-bottom-pad));
@@ -178,10 +179,10 @@ body:has(.ifl-tabs.away) .ifl-toast { bottom: calc(max(var(--tabs-h), 120px) + 1
 .ifl-sheet .ifl-label, .ifl-group .ifl-label { color: var(--text-2); }
 .ifl-list { border-radius: var(--r-group); overflow: hidden; background: var(--ifl-surface, var(--glass)); box-shadow: var(--ifl-shadow-card, var(--lift)); }
 .ifl-sheet .ifl-list { background: var(--glass-ctl); box-shadow: none; }
-.ifl-row { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 54px; padding: 10px 18px; color: var(--text); text-decoration: none; text-align: left; }
+.ifl-row { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 54px; padding: 12px 18px; border-radius: var(--r-well); color: var(--text); text-decoration: none; text-align: left; }
 a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 :is(a, button, label).ifl-row:active { background: var(--press); }
-.ifl-row:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: -2px; border-radius: var(--r-group); }
+.ifl-row:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: -2px; border-radius: var(--r-well); }
 .ifl-row + .ifl-row::before { content: ""; position: absolute; top: 0; left: 18px; right: 0; height: 0.5px; background: var(--line); }
 .ifl-row:has(> .ifl-lead) + .ifl-row::before, .ifl-row:has(> .ifl-lead) + .ifl-row:has(> .ifl-lead)::before { left: 64px; }
 .ifl-lead { flex: none; display: grid; place-items: center; }
@@ -196,7 +197,7 @@ a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 .ifl-trail { flex: none; display: grid; place-items: center; color: var(--text-3); }
 .ifl-trail .ifl-glyph svg { width: 17px; height: 17px; stroke-width: 2.6; }
 .ifl-row[aria-current="true"] .ifl-trail, .ifl-row[aria-selected="true"] .ifl-trail { color: var(--acc-ink); }
-.ifl-results .ifl-row { padding: 8px 4px; min-height: 52px; }
+.ifl-results .ifl-row { padding: 10px 12px; min-height: 52px; }
 .ifl-results .ifl-tx b, .ifl-results .ifl-tx small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ifl-chip { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 11px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600; color: var(--acc-ink); background: var(--acc-wash); text-decoration: none; }
 .ifl-chip.action { min-height: 36px; padding: 0 14px; font-size: 14px; color: var(--text); background: var(--glass-ctl); cursor: pointer; }
@@ -211,10 +212,11 @@ a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 .ifl-stat[data-tone="warn"] dd { color: var(--warn); } .ifl-stat[data-tone="acc"] dd { color: var(--acc-ink); }
 /* Button and switch aliases share roof/controls.css with Today's cards. */
 :is(.ifl-icon-btn, .ifl-chip):focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 2px; }
-.ifl-icon-btn { position: relative; flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--acc-ink); background: var(--glass-ctl); cursor: pointer; transition: transform var(--dur-press); }
+.ifl-icon-btn { position: relative; flex: none; width: 44px; height: 44px; padding: 0; border-radius: 50%; display: grid; place-items: center; color: var(--acc-ink); background: var(--glass-ctl); cursor: pointer; transition: transform var(--dur-press); }
 .ifl-icon-btn::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; }
 .ifl-icon-btn.filled { color: var(--on-acc); background: var(--acc-fill); }
 .ifl-icon-btn:active { transform: scale(0.92); }
+.ifl-icon-btn .ifl-glyph { display: grid; place-items: center; line-height: 1; }
 .ifl-icon-btn .ifl-glyph svg { width: 20px; height: 20px; }
 .ifl-seg-sm { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: var(--glass-ctl); }
 .ifl-seg-sm [role="radio"] { position: relative; min-height: 32px; padding: 0 13px; border-radius: var(--r-pill); font-size: 14px; font-weight: 600; color: var(--text-2); }
@@ -222,9 +224,10 @@ a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 .ifl-seg-sm [role="radio"][aria-checked="true"] { color: var(--on-acc); background: var(--acc-fill); }
 .ifl-seg-sm [role="radio"]:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: 1px; }
 .ifl-switch { display: inline-grid; }
-.ifl-field { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: var(--ifl-radius-row, 16px); background: var(--ifl-surface-2, var(--field)); }
+.ifl-field { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: var(--ifl-radius-row, 16px); background: var(--ifl-surface-2, var(--field)); }
 .ifl-field .ifl-glyph { color: var(--text-3); }
-.ifl-field input { flex: 1; min-width: 0; height: 44px; border: 0; background: none; outline: none; font-size: 16px; color: var(--text); }
+.ifl-field input, .ifl-field input:focus-visible { outline: none; border-radius: inherit; }
+.ifl-field input { flex: 1; min-width: 0; height: 44px; border: 0; background: none; outline: none; font-size: 16px; color: var(--text); padding: 10px 0; box-sizing: border-box; }
 .ifl-field { transition: box-shadow 0.18s, background-color 0.18s; }
 /* (focused: a ring drawn inside the field, never clipped by the sheet or the list around it, and lighter than a button's) */
 .ifl-field:focus-within { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--acc-ink) 55%, transparent); background: color-mix(in srgb, var(--field) 70%, var(--acc-ink) 4%); }
@@ -236,7 +239,7 @@ a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 .ifl-tile { position: relative; display: grid; gap: 8px; align-content: start; min-height: 128px; padding: 16px; border-radius: var(--r-card); color: var(--text); text-decoration: none;
   background: var(--ifl-surface, var(--glass)); box-shadow: var(--ifl-shadow-card, var(--lift)); transition: transform var(--dur-fast) var(--ease-out); }
 a.ifl-tile:active, .ifl-tile-main:active { transform: scale(0.97); }
-.ifl-tile-main { display: grid; gap: 8px; align-content: start; color: inherit; text-decoration: none; }
+.ifl-tile-main { display: grid; gap: 8px; align-content: start; border-radius: var(--r-well); color: inherit; text-decoration: none; }
 .ifl-tile b { font-size: 16px; font-weight: 650; }
 .ifl-tile small { font-size: 13px; line-height: 1.35; color: var(--text-2); }
 .ifl-tile-chips { display: flex; flex-wrap: wrap; gap: 6px; }

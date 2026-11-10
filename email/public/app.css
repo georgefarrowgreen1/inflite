@@ -2854,8 +2854,8 @@ body.pad .pane.detail .msgs {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 14px;
-  border-radius: 18px;
+  padding: 10px 16px;
+  border-radius: var(--ifl-radius-row, 16px);
   text-align: left;
   font-size: 17px;
 }
@@ -2999,6 +2999,7 @@ body.phone .sheet-scrim {
 }
 
 .sheet {
+  --compose-gutter: 20px;
   position: fixed;
   z-index: 101;
   display: flex;
@@ -3016,12 +3017,13 @@ body.phone .sheet {
   right: 0;
   top: calc(var(--sat) + 12px);
   bottom: 0;
-  border-radius: 30px 30px 0 0;
+  border-radius: var(--ifl-radius-sheet, 30px);
   transform: translateY(105%);
   padding-bottom: var(--kb);
 }
 
 body.pad .sheet {
+  --compose-gutter: 24px;
   left: 50%;
   top: 50%;
   width: min(700px, calc(100vw - 80px));
@@ -3079,7 +3081,7 @@ body.pad .sheet-grabber {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 18px 16px 8px;
+  padding: 18px var(--compose-gutter) 10px;
   touch-action: none;
 }
 
@@ -3132,23 +3134,30 @@ body.pad .sheet-grabber {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  min-height: 52px;
-  margin: 0 16px;
-  border-bottom: 0.5px solid var(--sep);
+  min-height: 60px;
+  margin: 0 var(--compose-gutter) 10px;
+  padding: 8px 16px;
+  border: 1px solid var(--sep);
+  border-radius: var(--ifl-radius-row, 16px);
+  background: var(--bg-fill);
 }
 
 .field > label,
 .field > .flabel {
+  display: flex;
+  align-items: center;
   flex: none;
+  min-height: 44px;
   color: var(--label-2);
-  line-height: 52px;
 }
 
 .field input {
   flex: 1;
   min-width: 80px;
-  height: 46px;
+  height: 44px;
+  padding: 0;
   border: 0;
+  border-radius: var(--ifl-radius-row, 16px);
   outline: 0;
   background: none;
   font-size: 17px;
@@ -3178,12 +3187,12 @@ body.pad .sheet-grabber {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 10px 0;
-  min-height: 52px;
+  padding: 0;
+  min-height: 44px;
 }
 
 .tokens input {
-  height: 32px;
+  height: 44px;
   min-width: 40px;
   width: 40px;
 }
@@ -3192,9 +3201,9 @@ body.pad .sheet-grabber {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 12px 0 3px;
-  border-radius: 16px;
+  height: 44px;
+  padding: 0 12px 0 6px;
+  border-radius: 999px;
   /* (the darker blue for words, on a paler wash: 4.5:1 on the sheet in light) */
   background: color-mix(in srgb, var(--tint) 10%, transparent);
   color: var(--tint-text);
@@ -3230,15 +3239,15 @@ body.pad .sheet-grabber {
 .from-chip {
   flex: none;
   align-self: flex-start;
-  margin-top: 11px;
+  margin-top: 0;
   max-width: 46%;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 30px;
-  margin-left: 4px;
-  padding: 0 8px 0 3px;
-  border-radius: 15px;
+  height: 44px;
+  margin-left: 0;
+  padding: 0 8px 0 6px;
+  border-radius: 999px;
   background: var(--bg-fill);
   box-shadow: inset 0 0 0 0.5px var(--sep);
   color: var(--label-2);
@@ -3284,14 +3293,16 @@ body.pad .sheet-grabber {
 /* the subject: a title over the message */
 .c-subject {
   display: block;
-  width: 100%;
-  padding: 16px 16px 0;
-  border: 0;
+  width: calc(100% - 2 * var(--compose-gutter));
+  min-height: 52px;
+  margin: 0 var(--compose-gutter) 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--sep);
+  border-radius: var(--ifl-radius-row, 16px);
   outline: 0;
-  background: none;
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -0.022em;
+  background: var(--bg-fill);
+  font-size: 17px;
+  font-weight: 600;
 }
 
 .c-subject::placeholder,
@@ -3372,13 +3383,15 @@ body.pad .sheet-grabber {
 
 .compose-text {
   display: block;
-  width: 100%;
+  width: calc(100% - 2 * var(--compose-gutter));
   min-height: 120px;
-  padding: 8px 16px 14px;
-  border: 0;
+  margin: 0 var(--compose-gutter) 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--sep);
+  border-radius: var(--ifl-radius-row, 16px);
   outline: 0;
   resize: none;
-  background: none;
+  background: var(--bg-fill);
   font-size: 17px;
   line-height: 1.45;
 }
@@ -3506,9 +3519,9 @@ body.phone .sheet.kb .compose-accessory {
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 52px;
-  padding: 0 6px;
-  border-radius: 26px;
+  height: 56px;
+  padding: 6px;
+  border-radius: 999px;
 }
 
 .c-tool {
@@ -4853,6 +4866,8 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
   gap: 6px;
 }
 
+.qr:focus-within { box-shadow: inset 0 0 0 2px var(--tint); }
+
 .qr-more,
 .qr-send {
   flex: none;
@@ -4887,10 +4902,11 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
 .qr-field {
   flex: 1;
   min-width: 0;
-  min-height: 40px;
+  min-height: 44px;
   max-height: 120px;
-  padding: 9px 4px;
+  padding: 10px 4px;
   border: 0;
+  border-radius: var(--ifl-radius-row, 16px);
   background: none;
   resize: none;
   font: inherit;
@@ -5525,7 +5541,11 @@ button.set-row:active {
   gap: 12px;
   min-height: 52px;
   padding: 0 16px;
+  border-radius: var(--ifl-radius-row, 16px);
 }
+
+.set-group > :is(.set-field, .set-addr, .set-sig):first-child { border-top-left-radius: inherit; border-top-right-radius: inherit; }
+.set-group > :is(.set-field, .set-addr, .set-sig):last-child { border-bottom-left-radius: inherit; border-bottom-right-radius: inherit; }
 
 .set-fl {
   flex: none;
@@ -5551,6 +5571,7 @@ button.set-row:active {
   padding: 16px 18px;
   font-size: 22px;
   font-weight: 600;
+  border-radius: var(--ifl-radius-row, 16px);
 }
 
 .set-local {
@@ -6321,7 +6342,7 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 .ifm-layer { transition: background-color var(--ifl-motion-fast) ease; }
 .ifm-layer:not(.open), .ifa-layer:not(.on) { pointer-events: none; }
 .ifm-layer.open { -webkit-backdrop-filter: none; backdrop-filter: none; }
-.ifa-sheet { border-radius: var(--ifl-radius-sheet) var(--ifl-radius-sheet) 0 0;
+.ifa-sheet { border-radius: var(--ifl-radius-sheet);
   transition: transform var(--ifl-motion-release) var(--ifl-motion-spring); }
 .ifm-note { transition: transform var(--ifl-motion-release) var(--ifl-motion-spring), opacity var(--ifl-motion-fast) ease; }
 .ifm-switch::after { transition: transform var(--ifl-motion-release) var(--ifl-motion-spring); }
@@ -6330,7 +6351,9 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 .ifh-me:active, .ifh-act:active, .ifl-back:active, .ifs-btn:active { transition-duration: var(--ifl-motion-press); }
 .ifa-go, .ifa-later, .ifb-btn { transition: transform var(--ifl-motion-release) var(--ifl-motion-spring), background-color var(--ifl-motion-fast); }
 :is(.ifa-go, .ifa-later, .ifb-btn):active:not(:disabled) { transform: scale(var(--ifl-press-scale)); transition-duration: var(--ifl-motion-press); }
-.ifs-btn { position: relative; }
+.ifs-btn { position: relative; display: grid; place-items: center; padding: 0; line-height: 1; }
+.ifb { border-radius: var(--ifl-radius-sheet); }
+.ifb-code, .ifb-note { border-radius: var(--ifl-radius-row); }
 .ifs-btn::after { content: ""; position: absolute; inset: -2px; border-radius: inherit; }
 
 /* Allow flex/grid text to shrink before it can push a control outside its surface. */
@@ -6340,7 +6363,9 @@ dialog.ifl-engine-box::backdrop { background: transparent; }
 .ifm-who b, .ifm-who small, .ifm-l, .ifm-note-tx, .ifb-facts, .ifl-sub { white-space: normal; overflow-wrap: anywhere; }
 .ifm-val { max-width: min(40vw, 18ch); white-space: normal; overflow-wrap: anywhere; text-align: end; }
 .ifm-row:has(.ifm-val:not(:empty)) { grid-template-columns: 30px minmax(0, 1.2fr) minmax(0, 0.8fr) 15px; }
-.ifm-row { min-height: 52px !important; height: auto !important; padding-top: var(--ifl-space-2) !important; padding-bottom: var(--ifl-space-2) !important; }
+.ifm-row { border-radius: var(--ifl-radius-row); min-height: 52px !important; height: auto !important; padding-top: var(--ifl-space-2) !important; padding-bottom: var(--ifl-space-2) !important; }
+.ifh-pick { border-radius: var(--ifl-radius-row); padding: 4px 6px; margin: -4px -6px; }
+.ifa-sheet button { display: grid; place-items: center; padding: 10px 16px; border-radius: var(--ifl-radius-pill); }
 .ifm-switch::before { content: ""; position: absolute; inset: -7px 0; }
 :is(.pill, .btn, .ifl-btn) { max-width: 100%; overflow-wrap: anywhere; }
 :is(.pill, .btn, .ifl-btn):focus-visible { outline: 2px solid var(--tint-text, var(--tint, currentColor)); outline-offset: 3px; }
@@ -6367,7 +6392,7 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 
 /* Small buttons with a larger place to tap than they show */
 .sub-tag, .s-clear, .quote-toggle, .from-chip, .later-note button, .unsub-btn { position: relative; }
-.sub-tag::after, .s-clear::after, .quote-toggle::after, .from-chip::after, .later-note button::after, .unsub-btn::after {
+.sub-tag::after, .s-clear::after, .quote-toggle::after, .later-note button::after, .unsub-btn::after {
   content: "";
   position: absolute;
   inset: -8px -4px;
@@ -6415,8 +6440,10 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 .row:not(.unread) .preview { -webkit-line-clamp: 1; font-size: 14px; }
 
 /* The same clear editing state as Mail inside Today, without moving the fields. */
-.sheet-body .field:focus-within { border-bottom-color: var(--tint); box-shadow: 0 1px 0 var(--tint); }
+.sheet-body .field:focus-within { border-color: var(--tint); box-shadow: inset 0 0 0 1px var(--tint); }
 .sheet .c-subject:focus-visible, .sheet .compose-text:focus-visible,
-.set-input:focus-visible, .set-local:focus-visible, .set-sig:focus-visible {
+.set-sig:focus-visible {
   outline: 2px solid var(--tint); outline-offset: -2px; border-radius: var(--ifl-radius-row, 16px);
 }
+.set-field:focus-within, .set-addr:focus-within { box-shadow: inset 0 0 0 2px var(--tint); }
+.set-input:focus-visible, .set-local:focus-visible { outline: none; }
