@@ -13,6 +13,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Matching production app fixtures
+        run: git clone --quiet --depth 1 https://github.com/georgefarrowgreen1/georgefarrowgreen ../georgefarrowgreen
       - uses: actions/setup-node@v4
         with:
           node-version: 22
