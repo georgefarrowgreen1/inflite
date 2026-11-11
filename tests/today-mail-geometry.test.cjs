@@ -104,6 +104,12 @@ for (const [width, theme] of [[320, 'dark'], [390, 'dark'], [1440, 'light']]) te
     await screenshot(page, `hosted-${width}-${theme}`);
     if (width < 600) {
       await page.evaluate(() => __geometryViewport(400)); await sheet.locator('input[aria-label="To"]').focus();
+      // WebKit commits the synthetic visual viewport change on a later layout.
+      // Wait for the required bounds; still fail if either surface stays covered.
+      await page.waitForFunction(() => {
+        const field = document.querySelector('dialog[data-sheet="mail-compose"] .mc-row[data-k="to"]'), dialog = field?.closest('dialog');
+        return field && dialog && field.getBoundingClientRect().bottom <= 400 && dialog.getBoundingClientRect().bottom <= 400;
+      }, null, { timeout: 1500 });
       const fit = await input.evaluate(el => ({ bottom: el.closest('.mc-row').getBoundingClientRect().bottom, sheetBottom: el.closest('dialog').getBoundingClientRect().bottom }));
       assert.ok(fit.bottom <= 400 && fit.sheetBottom <= 400, 'the rounded focused row stays above the keyboard');
       await roundedWindow(sheet);

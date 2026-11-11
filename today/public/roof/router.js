@@ -98,7 +98,7 @@ const isOn = (roof, app) => roof === true || (!!roof && typeof roof === "object"
 //   roof: false (no app is ours), true (every app: only the frame's re-parse of an address it already accepted), or a
 //   map { [app]: boolean } (the caller's `session.hub ? session.apps : false`): an app's paths are ours only where its
 //   flag is true, else null (a normal navigation); tabs always are.
-export function parse(href, { roof = false, origin } = {}) {
+export function parse(href, { roof = false, origin, workspace = false } = {}) {
   if (typeof href !== "string" || !href) return null;
   if (/[\\\u0000-\u001f\u007f]/.test(href)) return null;
   // (the length cap is on the address less its query: from the first ? before any # up to that #)
@@ -122,6 +122,7 @@ export function parse(href, { roof = false, origin } = {}) {
   }
   const path = u.pathname, hash = u.hash.slice(1);
   if (path === "/" || path === "/index.html") {
+    if (workspace && (!hash || hash === "workspace" || hash.startsWith("workspace=") && arg1(hash.slice(10)))) return { kind: "tab", tab: "workspace", arg: !hash || hash === "workspace" ? null : arg1(hash.slice(10)) };
     if (hash === "apps") return { kind: "tab", tab: "apps", arg: null };
     if (hash === "you") return { kind: "tab", tab: "you", arg: null };
     if (hash.startsWith("you=")) return { kind: "tab", tab: "you", arg: arg1(hash.slice(4)) };
@@ -166,6 +167,7 @@ export function format(route) {
   if (!route || typeof route !== "object") return "/";
   const kind = route.kind ?? (route.app != null ? "app" : route.tab != null ? "tab" : null);
   if (kind === "tab") {
+    if (route.tab === "workspace") { const a = arg1(route.arg); return a ? `/#workspace=${a}` : "/#workspace"; }
     if (route.tab === "apps") return "/#apps";
     if (route.tab === "you") { const a = arg1(route.arg); return a ? `/#you=${a}` : "/#you"; }
     return "/";

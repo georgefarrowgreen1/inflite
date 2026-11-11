@@ -46,7 +46,7 @@ for (const width of [390, 1440]) for (const noViewTransitions of [false, true]) 
       await page.waitForFunction(() => document.documentElement.dataset.route === '/#apps' && !document.querySelector('#apps').hidden);
       await page.waitForFunction(() => !document.documentElement.dataset.vt && !document.querySelector('.ifl-screen[class*="ifl-enter-"]'));
       assert.equal(await page.locator('#apps [data-app-row="weather"]').isVisible(), true);
-      assert.equal(await page.locator('#views > main:not([hidden])').count(), 1);
+      assert.equal(await page.locator('#views > :is(main,[role=main]):not([hidden])').count(), 1);
       await page.goBack();
       await page.waitForFunction(() => document.documentElement.dataset.route === '/' && !document.querySelector('#today').hidden);
       await page.goForward();
@@ -424,7 +424,7 @@ for (const width of [390, 1440]) for (const tab of ['apps', 'you']) {
       await page.waitForFunction(title => document.querySelector('#hd h1')?.innerText.trim() === title, tab === 'apps' ? 'Apps' : 'You', { timeout: 5000 });
       assert.equal(await page.locator(content).isVisible(), true);
       assert.equal((await page.locator('#hd h1').innerText()).trim(), tab === 'apps' ? 'Apps' : 'You');
-      assert.equal(await page.locator('#views > main:not([hidden])').count(), 1);
+      assert.equal(await page.locator('#views > :is(main,[role=main]):not([hidden])').count(), 1);
       assert.equal(await page.locator(`#tabs [data-tab="${tab}"]`).getAttribute('aria-current'), 'page');
       assert.equal(await page.evaluate(() => document.documentElement.dataset.route), `/#${tab}`);
       if (tab === 'apps') assert.equal(await page.locator('#apps .apps-shortcut').count(), 3);
@@ -456,7 +456,7 @@ for (const width of [390, 1440]) {
       assert.equal(await page.locator('#youQuiet').isVisible(), true);
       assert.equal(await page.locator('#youQuiet').getAttribute('role'), 'switch');
       assert.equal(await page.evaluate(() => document.documentElement.dataset.route), '/#you=quiet');
-      assert.equal(await page.locator('#views > main:not([hidden])').count(), 1);
+      assert.equal(await page.locator('#views > :is(main,[role=main]):not([hidden])').count(), 1);
       assert.ok(requests.some(r => r.path === '/api/notify'));
       if (width >= 1100) assert.equal(await page.locator('.you-tab[data-pane="youNotify"]').getAttribute('aria-current'), 'page');
       assert.deepEqual(errors, []);
@@ -953,7 +953,7 @@ test('revalidating an offline session replaces every module lifetime before show
       { id: oldId, aborted: true, ended: true },
       { id: 'new-account-lifetime', aborted: false, ended: false },
     ]);
-    assert.equal(await page.locator('#views > main[data-app="weather"]').count(), 1);
+    assert.equal(await page.locator('#views > :is(main,[role=main])[data-app="weather"]').count(), 1);
     assert.doesNotMatch(await page.locator('#in').innerText(), new RegExp(oldId));
     assert.deepEqual(errors, []);
     assert.deepEqual(await page.evaluate(() => [window.__csp, window.__rejections]), [[], []]);
@@ -1331,7 +1331,14 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
         acts: [{ label: 'Done', run() {} }] });
     });
     const placed = async label => {
-      await page.waitForFunction(() => { const r = document.querySelector('dialog[open]').getBoundingClientRect(); return r.top >= visualViewport.offsetTop && r.bottom <= visualViewport.offsetTop + visualViewport.height + 1; }, null, { timeout: 1500 }).catch(() => {});
+      await page.waitForFunction(() => {
+        const d = document.querySelector('dialog[open]'), r = d.getBoundingClientRect(), v = visualViewport;
+        if (r.top < v.offsetTop || r.bottom > v.offsetTop + v.height + 1) return false;
+        return [...d.querySelectorAll('.ifs-acts button')].every(b => {
+          const a = b.getBoundingClientRect(), hit = document.elementFromPoint(a.x + a.width / 2, a.y + a.height / 2);
+          return a.top >= v.offsetTop && a.bottom <= v.offsetTop + v.height + 1 && (b === hit || b.contains(hit));
+        });
+      }, null, { timeout: 1500 }).catch(() => {});
       const r = await page.locator('dialog[open]').evaluate(d => {
         const r = d.getBoundingClientRect(), v = visualViewport;
         return { top: r.top, bottom: r.bottom, foot: v.height + v.offsetTop, actions: [...d.querySelectorAll('.ifs-acts button')].map(b => { const r = b.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { top: r.top, bottom: r.bottom, hit: b === hit || b.contains(hit) }; }), keyboard: d.classList.contains('ifs-kb') };

@@ -14,9 +14,17 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.12";
+const BUILD = "2.13";
 // (what's new in it, said once it's in)
-const NEWS = "Rounded controls, clearer spacing and centred icons";
+const NEWS = "Saved workspaces, shared app views and InFlite OS";
+// OS is a separate surface. The query switch is reserved for local/test previews.
+const OS_MODE = location.hostname === "os.inflite.ai" || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
+const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-state.js", "/roof/workspace-catalog.js", "/roof/workspace-context.js", "/roof/workspace.css", "/os.webmanifest"];
+if (OS_MODE) {
+  document.title = "InFlite OS";
+  document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/os.webmanifest");
+  document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute("content", "InFlite OS");
+}
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -619,7 +627,8 @@ const IFL = (() => {
   if (document.body) fitScreen(); else document.addEventListener("DOMContentLoaded", fitScreen, { once: true });
   // degraded: the apps' own addresses (degrade's links, else <app>.<site>), and a hub path back to its app's
   let links = {};
-  const origin = (sub) => links[sub] || `${location.protocol}//${sub}.${location.host.replace(/^next\./, "")}`;
+  const hubSite = () => location.hostname === "os.inflite.ai" ? "inflite.ai" : location.host.replace(/^next\./, "");
+  const origin = (sub) => links[sub] || `${location.protocol}//${sub}.${hubSite()}`;
   const ownAt = (p) => { const m = /^\/(chats|weather|fitness|markets|mail)(?=$|[/?#])\/?([\s\S]*)$/.exec(p); return m ? `${origin(OWN[m[1]])}/${m[2]}` : null; };
   const stillHere = (say) => (/still here/i.test(say) ? say : `${say.replace(/[.\s]+$/, "")}. You’re still here`);
   const hub = {
@@ -632,7 +641,7 @@ const IFL = (() => {
       try { u = new URL(String(url), location.href); } catch (_) { return url; }
       if (!/^https?:$/.test(u.protocol) || u.username || u.password) return url;
       // (the site: this page's, the staging hub's next. taken off, so its links to the apps' own addresses come here too)
-      const site = location.host.replace(/^next\./, ""), rest = u.pathname + u.search + u.hash, sub = /^([a-z]+)\.(.+)$/.exec(u.host);
+      const site = hubSite(), rest = u.pathname + u.search + u.hash, sub = /^([a-z]+)\.(.+)$/.exec(u.host);
       let p = null;
       if (u.host === location.host || u.host === site) p = rest;
       else if (sub && sub[2] === site && SUBS[sub[1]]) p = SUBS[sub[1]].slice(0, -1) + rest;
@@ -1109,7 +1118,7 @@ const IFL = (() => {
       if (typeof location === "undefined") return null;
       const { protocol, hostname, port } = location;
       if (!hostname.includes(".") || /(^|\.)localhost$/.test(hostname)) return null;
-      const site = hostname.replace(/^(chat|weather|fitness|finance|email|account|auth|next|www)\./, "");
+      const site = hostname === "os.inflite.ai" ? "inflite.ai" : hostname.replace(/^(chat|weather|fitness|finance|email|account|auth|next|www)\./, "");
       return `${protocol}//auth.${site}${port ? ":" + port : ""}`;
     };
     function warm() {
@@ -1207,7 +1216,7 @@ const S = {
   boundary: 0, // the until whose crossing has had its fetch put in hand
 };
 // (the page's own sheet that's open, as the frame's sheet handle, and its dialog's id; the frame, made once signed in)
-let sheetOpen = null, sheetId = null, waitingAnswer = null, F = null;
+let sheetOpen = null, sheetId = null, waitingAnswer = null, F = null, workspaceHost = null;
 
 // ---------------------------------------------------------------- the account's API, through this site's Worker
 const requests = createRequestCoordinator();
@@ -1821,6 +1830,7 @@ function gotCards(answer) {
   drawLine();
   drawMorning();
   if (on("apps")) drawAppsNow();
+  workspaceHost?.update();
   // (the day still being worked out on the account: asked once more, 5 seconds on; once an answer's no longer planning,
   // the next that is gets its own)
   if (!answer.planning) S.asked5 = false;
@@ -1834,7 +1844,7 @@ function gotCards(answer) {
 // screens in #views and the page's history (/, /#apps, /#you, /#you=<section>, and Weather at /weather/…), and draws
 // each of Today, Apps and You from its spec here: its header (crumb, title, line, acts) and what to do as it's shown.
 // Apps and You are drawn as they're first shown (apps.js and you.js, loaded then). Signed out, it's let go of (F.destroy)
-const on = (tab) => F?.route?.kind === "tab" && F.route.tab === tab;
+const on = (tab) => F?.route?.kind === "tab" && (F.route.tab === tab || OS_MODE && tab === "today" && F.route.tab === "workspace" && !F.route.arg);
 // (a module said its data changed, fw.changed(): Today's cards asked for again as Today's next shown, RI3)
 let cardsStale = false;
 // (Today's header: the date above its title, and the day's line under it: the phase's, else where the weather is)
@@ -1847,7 +1857,7 @@ function lineOf() {
 const EDIT = { icon: "edit", label: "Edit Today: hide and reorder cards", run: () => openEdit() };
 // (the bell: the notifications this phone's been shown, in a sheet, bell.js; its count the Home Screen badge's)
 const BELL = { icon: "bell", label: "Notifications", run: () => bell?.open() };
-let bell = null;
+let bell = null, bellReady = Promise.resolve(), notificationCount = 0;
 const SCREENS = {
   today: { el: $("#today"), title: () => "Today", crumb: () => "", line: lineOf, acts: [BELL, EDIT], onShow() { drawLine(true); if (cardsStale) { cardsStale = false; refresh(); } }, onHide() {} },
   apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Open an app or jump straight in", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
@@ -1862,6 +1872,42 @@ function serviceState(app, state) {
 }
 function frame() {
   if (F) return F;
+  let workspace = null, workspaceLoad = null, workspaceRoute = null, ownerFrame = null;
+  const workspaceRoot = OS_MODE ? $("#workspace") || Object.assign(document.createElement("section"), { id: "workspace", tabIndex: -1 }) : null;
+  if (workspaceRoot && !workspaceRoot.isConnected) $("#views").append(workspaceRoot);
+  const installWorkspace = () => {
+    if (!OS_MODE) return Promise.resolve(null);
+    if (workspaceLoad) return workspaceLoad;
+    workspaceLoad = import("/roof/workspace.js").then(async (m) => {
+      if (F !== ownerFrame || ownerFrame?.signal.aborted) return null;
+      return m.createWorkspace(ownerFrame, {
+        root: workspaceRoot, today: $("#today"), dockRoot: $("#in"), day: () => F === ownerFrame ? S.answer : null, notifications: () => notificationCount,
+        onTodayShow: () => SCREENS.today.onShow(),
+        onAccount: (opener) => { if (F === ownerFrame) openMenu(opener); },
+        onSettings: () => { if (F === ownerFrame) ownerFrame.nav.go("/#you"); },
+        onNotifications: async () => { await bellReady; if (F === ownerFrame && !ownerFrame.signal.aborted) bell?.open(); },
+      });
+    }).then((host) => {
+      if (!host) return null;
+      if (F !== ownerFrame || ownerFrame.signal.aborted) { host.destroy(); return null; }
+      workspace = host;
+      workspaceHost = host;
+      if (workspaceRoute && F.route === workspaceRoute) host.show(workspaceRoute).catch((e) => console.error(e));
+      else host.hide();
+      return host;
+    }).catch((e) => {
+      workspaceLoad = null;
+      if (F !== ownerFrame || ownerFrame?.signal.aborted) return null;
+      console.error(e);
+      workspaceRoot.replaceChildren(ownerFrame.ui.error({ title: "Workspace didn’t open", body: "Try again to open your saved apps.", acts: [{ label: "Try Again", run: installWorkspace }] }));
+      return null;
+    });
+    return workspaceLoad;
+  };
+  const workspaceScreen = OS_MODE ? { el: workspaceRoot, title: () => "InFlite OS", acts: [],
+    onShow(r) { workspaceRoute = r; if (workspace) workspace.show(r).catch((e) => console.error(e)); else installWorkspace(); },
+    onHide() { workspaceRoute = null; workspace?.hide(); }, focus: () => workspace?.focus() || workspaceRoot } : undefined;
+  if (OS_MODE && location.pathname === "/" && !location.hash) history.replaceState(history.state, "", `/${location.search}#workspace`);
   F = createFrame({
     root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
     session: () => ({ view: S.view, hub: S.hub, roof: S.roof, apps: S.apps, links: S.links || DEFAULT_LINKS }),
@@ -1871,7 +1917,11 @@ function frame() {
     retired: { then: (ok, no) => retiredSoon().then(ok, no) }, serviceState,
     onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
     today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you,
+    workspace: workspaceScreen,
+    workspacePreview: OS_MODE && location.hostname !== "os.inflite.ai",
   });
+  ownerFrame = F;
+  if (OS_MODE) installWorkspace();
   // (swiping between an app's sections, as a native app pages between its tabs: swipe.js; once, whichever frame is up)
   if (!frame.swipe) frame.swipe = import("/swipe.js").then((m) => m.swipes({ get route() { return F?.route; }, nav: { section: (a, id) => F?.nav.section(a, id) } }), (e) => console.error(e));
   if (!frame.layout) frame.layout = import("/day.js").then((m) => m.arrangeToday($("#today")), () => {});
@@ -1884,9 +1934,9 @@ function frame() {
   for (const b of $$(".ifl-sheet .ifs-btn[data-close]")) b.replaceChildren(F.ui.icon("x"));
   provide();
   const f = F;
-  import("/bell.js").then((m) => {
+  bellReady = import("/bell.js").then((m) => {
     if (F !== f || bell) return;
-    bell = m.createBell(f, { count: (n) => f.header.count?.("bell", n), go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); }, settings: () => go("/#you=phone") });
+    bell = m.createBell(f, { count: (n) => { if (F !== f || f.signal.aborted) return; notificationCount = n; f.header.count?.("bell", n); workspaceHost?.update(); }, go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); }, settings: () => go("/#you=phone") });
   }, (e) => console.error(e));
   return F;
 }
@@ -1894,6 +1944,8 @@ function frame() {
 function unframe() {
   const f = F;
   F = null;
+  workspaceHost = null;
+  notificationCount = 0;
   try { bell?.destroy(); } catch (e) { console.error(e); }
   bell = null;
   try { f?.destroy(); } catch (e) { console.error(e); }
@@ -2810,7 +2862,7 @@ function fromHash() {
 let syncT = 0;
 function worker() {
   if (!("serviceWorker" in navigator)) return;
-  navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+  navigator.serviceWorker.register(OS_MODE && location.hostname !== "os.inflite.ai" ? "/sw.js?os=1" : "/sw.js", { scope: "/" }).catch(() => {});
   navigator.serviceWorker.addEventListener("message", (e) => {
     const d = e.data || {};
     if (d.ifl === "signedout") return signedOutNow();
@@ -3011,7 +3063,7 @@ function start() {
   worker();
   IFL.built("today", BUILD, NEWS);
   IFL.updates({ app: "today", build: BUILD, url: "/version", field: "build", busy: () => !!F?.busy() || !!sheetOpen, save,
-    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/swipe.js", "/layout.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css", "/roof/controls.css"] });
+    files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/swipe.js", "/layout.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css", "/roof/controls.css", ...(OS_MODE ? OS_FILES : [])] });
   load();
   nextMinute();
   const motionState = () => document.documentElement.toggleAttribute("data-motion-paused", document.visibilityState !== "visible");

@@ -1145,9 +1145,9 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 /* ---- swiping between an app's sections (swipe.js): the screen pans up and down by itself and hands a sideways drag to
    the script; the section under the finger and the one coming in, moved by --sx; the one coming in shown from --sy;
    a release settles with a spring ---- */
-main.ifl-screen[data-app]:is([data-app="weather"], [data-app="fitness"], [data-app="markets"]) > [role=tabpanel] { touch-action: pan-y pinch-zoom; }
-.ifl-swiping main.ifl-screen:not([hidden]) { overflow-x: clip; }
-.ifl-swiping main.ifl-screen:not([hidden]) > [role=tabpanel] { position: relative; }
+.ifl-screen[data-app]:is([data-app="weather"], [data-app="fitness"], [data-app="markets"]) > [role=tabpanel] { touch-action: pan-y pinch-zoom; }
+.ifl-swiping .ifl-screen:not([hidden]) { overflow-x: clip; }
+.ifl-swiping .ifl-screen:not([hidden]) > [role=tabpanel] { position: relative; }
 /* (not inherited: moving a section restyles that section alone, never everything inside it, frame after frame) */
 @property --sx { syntax: "<length>"; inherits: false; initial-value: 0px; }
 @property --sy { syntax: "<length>"; inherits: false; initial-value: 0px; }

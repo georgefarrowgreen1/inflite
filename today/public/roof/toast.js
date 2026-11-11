@@ -14,7 +14,7 @@ export function toast(text, { action = null, app = null } = {}) {
   for (const t of d.querySelectorAll(".ifl-toast")) t.remove();
   const say = d.querySelector(".ifm-say") || {};
   const b = el("b", { text: String(text ?? "") });
-  const t = el("div", { class: "ifm-note ifl-toast" + (action ? " has-act" : ""), data: { app } }, el("span", { class: "ifm-note-tx" }, b));
+  const t = el("div", { class: "ifm-note ifl-toast" + (action ? " has-act" : ""), role: "region", "aria-label": "Notification", data: { app } }, el("span", { class: "ifm-note-tx" }, b));
   if (action) {
     t.append(el("button", { type: "button", class: "ifl-toast-act", text: action.label, on: { click: () => { gone(); action.run?.(); } } }));
   }

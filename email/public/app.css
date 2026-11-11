@@ -6449,6 +6449,6 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 .set-input:focus-visible, .set-local:focus-visible { outline: none; }
 @media (forced-colors: active) {
   .sheet-body .field:focus-within, .set-field:focus-within, .set-addr:focus-within, .qr:focus-within {
-    outline: 2px solid Highlight; outline-offset: -2px;
+    outline: 2px solid Highlight; outline-offset: -2px; box-shadow: none;
   }
 }

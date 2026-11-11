@@ -21,7 +21,7 @@ export function swipes(F) {
   addEventListener("scroll", onScroll, { passive: true });
   let st = null, quiet = 0;
 
-  const screen = () => doc.querySelector("main.ifl-screen:not([hidden])");
+  const screen = () => doc.querySelector(".ifl-screen:not([hidden])");
   const secOf = (scr, id) => scr.querySelector(`[role=tabpanel] > section[data-sec="${CSS.escape(id)}"]`);
   const ownDrag = (t, stop) => {
     for (let n = t; n && n !== stop; n = n.parentElement) {

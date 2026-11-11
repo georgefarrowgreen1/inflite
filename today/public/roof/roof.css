@@ -413,7 +413,7 @@ html[data-motion-paused] :is(.aura, .pg-track .cb svg, .tcard.loading .sk i), ht
   .ifl-card, .ifl-list, .ifl-tile, dialog.ifl-sheet, .ifl-segs { box-shadow: 0 0 0 1px var(--line); }
 }
 @media (forced-colors: active) {
-  .ifl-field:focus-within { outline: 2px solid Highlight; outline-offset: -2px; }
+  .ifl-field:focus-within { outline: 2px solid Highlight; outline-offset: -2px; box-shadow: none; }
   .ifl-sec[aria-selected="true"], .ifl-tabs .ifl-tab[aria-current], .ifl-seg-sm [role="radio"][aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
   .ifl-lens, .ifl-tab-pill { display: none; }
   .ifl-mini .spark { forced-color-adjust: none; background: CanvasText; }

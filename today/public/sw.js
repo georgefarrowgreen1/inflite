@@ -27,6 +27,9 @@ const SHELL = "today-app-4";
 const FILES = ["/", "/app.js", "/cards.js", "/day.js", "/trip.js", "/mailday.js", "/apps.js", "/you.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg",
   "/mailcard.js", "/mailnotify.js", "/layout.js", "/roof/requests.js", "/roof/tasks.js", "/roof/screens.js", "/apps/mail.svg",
   "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css", "/roof/controls.css", "/bell.js"];
+const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-state.js", "/roof/workspace-catalog.js", "/roof/workspace-context.js", "/roof/workspace.css", "/os.webmanifest"];
+const OS_MODE = self.location.hostname === "os.inflite.ai" || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(self.location.hostname) && new URL(self.location.href).searchParams.get("os") === "1";
+if (OS_MODE) FILES.push(...OS_FILES);
 self.addEventListener("install", (e) => {
   self.skipWaiting();
   // (each kept as it comes, so one that isn't there doesn't keep the rest out; not waited on long: a worker that takes
@@ -129,12 +132,15 @@ const KEEP_APPS = MOD_APPS, KEEP_MAX = 60;
 // radar stack and rain files, Fitness's maps, share card, file formats and reader; Chats' flight sheets, QR scan and
 // their geodata and decoder, and crypto.js's Argon2; and anyone's vendor/, above)
 const NET = { weather: /^\/weather\/(radar|radarmix|mapstyle|mapgl|mapleaf|rainmap|radarrain)\.js$/, fitness: /^\/fitness\/(map|mapstyle|share|formats|fit|reader)\.js$/, chats: /^\/chats\/(roof\/flight|roof\/scan|moon|space|land|placegrid|places|countries|shapes|jsqr|argon2|argon2w)\.js$/ };
+// Only static code/styles may enter a build cache. API aliases and documents
+// must never become a retained response, even after a mistaken keep message.
+const moduleAsset = (p) => /\.(?:js|css)$/.test(p) && !/\/api(?:\/|$)/i.test(p);
 const keeping = new Map(), keepQueue = new Map();
 function keepList(d) {
   if (!d || !KEEP_APPS.includes(d.app) || typeof d.build !== "string" || !/^\d+\.\d{2}$/.test(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
   const base = `/${d.app}/`, out = new Set();
   for (const f of d.files) {
-    if (typeof f !== "string" || !f.startsWith(base) || !/^\/[\w./-]+$/.test(f) || /\/vendor\//.test(f) || NET[d.app]?.test(f) || f === base + "sw.js" || f === base + "version" || f.endsWith("/")) return null;
+    if (typeof f !== "string" || !f.startsWith(base) || !moduleAsset(f) || !/^\/[\w./-]+$/.test(f) || /\/vendor\//.test(f) || NET[d.app]?.test(f) || f === base + "sw.js" || f === base + "version" || f.endsWith("/")) return null;
     let u;
     try { u = new URL(f, self.location.origin); } catch { return null; }
     if (u.origin !== self.location.origin || u.pathname !== f) return null;
@@ -203,6 +209,7 @@ const chatsFile = (p) => /^\/chats\/(roof\/[\w./-]+|[\w.-]+\.(js|css))$/.test(p)
 // loaded stamped, ?v=<12 hex> (MAIN's stampImports), or plain; the kept copy is by path, whichever)
 const modOf = (u) => MOD_APPS.find((a) => u.pathname.startsWith(`/${a}/`)) || null;
 const moduleFile = (u) => {
+  if (!moduleAsset(u.pathname)) return false;
   const a = modOf(u);
   if (a === "chats") return (!u.search || /^\?v=[0-9a-f]{12}$/.test(u.search)) && chatsFile(u.pathname);
   return !!a && !u.search && u.pathname !== `/${a}/sw.js` && u.pathname !== `/${a}/version` && !u.pathname.endsWith("/");
@@ -269,7 +276,7 @@ async function notify(d) {
 // Mail's notice (s4 §6.4): the push carries no words of the mail (a fixed body, the thread's opaque id as its tag), so
 // once that's shown, Mail itself is asked for the sender and subject, with your Mail sign-in (3 s at most), and the
 // notice shown again with them, silently, in the same place. Only for a tag that's an id; nothing fetched is kept.
-const MAIL = () => { const o = new URL(self.location.origin); return `${o.protocol}//email.${o.host.replace(/^next\./, "")}`; };
+const MAIL = () => { const o = new URL(self.location.origin), host = o.hostname === "os.inflite.ai" ? "inflite.ai" : o.host.replace(/^next\./, ""); return `${o.protocol}//email.${host}`; };
 async function mailWords(d, data) {
   if (typeof d.tag !== "string" || !/^[\w-]{1,64}$/.test(d.tag)) return;
   const words = await Promise.race([

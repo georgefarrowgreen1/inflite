@@ -67,7 +67,7 @@ Worker proxy code uses a shared upstream header deadline: 30 seconds for hub req
 
 ## Assets and release checks
 
-New framework scripts belong in all three places: HTML module preloads where statically imported, Today's updater list, and the root service worker's shell list. Account data does not belong in the shell cache. Cross-repository contracts check each framework script and module connector graph.
+New core framework scripts belong in all three places: HTML module preloads where statically imported, Today's updater list, and the root service worker's shell list. Optional OS files are deliberately absent from the shared HTML preloads; they belong to the OS-only updater and service-worker lists instead. Account data does not belong in the shell cache. Cross-repository contracts check each framework script and module connector graph.
 
 Run locally:
 
@@ -88,4 +88,6 @@ node --test --test-concurrency=4 .tools/tests/unit/roof*.test.mjs .tools/tests/u
 
 The root Web UI workflow now runs these companion contracts on root framework changes as well as running its own request, proxy, lifecycle and browser suites. Browser fixtures cover interrupted imports/mounts, teardown, CSS failure/retry, account replacement, cold deep links and existing navigation, keyboard, draft and offline behaviour. They use synthetic accounts, not production mutations.
 
-The executable framework layer has a bounded 33 KiB gzip budget (previously 30 KiB with only 31 bytes of slack). The ownership/recovery changes and two small task helpers add about 2.1 KiB of executable code. The separately bounded request layer remains unchanged. Moving the lengthy API comments to this document set reduces the actual framework files sent to browsers. Fitness's JS ceiling is 86 KiB (previously 85 KiB; measured 85.384 KiB) for cancellation and retaining parsed import batches across navigation. Its CSS ceiling and other module budgets remain unchanged.
+The executable core framework has a bounded **35 KiB gzip** budget. Workspace v1 adds about 1.5 KiB to the previous 33 KiB layer for controlled app views, pane visibility and navigation ownership; the measured core is about 34.0 KiB. The separately bounded request layer remains unchanged. The optional OS shell and both first-party adapters have a separate **24 KiB JS / 8 KiB CSS** served-gzip ceiling (about 22.1 / 5.9 KiB measured). These scripts are excluded from the core ceiling by an explicit five-file list, not a wildcard. Ordinary app first-open budgets remain Weather 90/14, Fitness 86/22 and Markets 40/12 KiB JS/CSS. Moving the API notes to this document set keeps them out of the executable files.
+
+Workspace architecture, privacy boundaries and the optional asset contract are described in [workspaces.md](workspaces.md). The workspace-specific pure models, real-frame lifecycle fixtures and real-app composition browser suites complement the existing framework checks.

@@ -18,12 +18,13 @@ createFrame(opts) → F. opts (from app.js):
     lost: signedOutNow, checkSession: () => Promise<boolean signedIn>, hubAgain: () => Promise<void> (D14 re-ask),
     save: () => ({ y, … }) (D21's reload writes ifl-here:today from it), onMe: (button) => openMenu (D24),
     changed: () => void (a module said its data changed: fw.changed(), Today's cards asked again on their next show),
-    me: () => Node (your photo), today: ScreenSpec, apps: ScreenSpec, you: ScreenSpec }
+    me: () => Node (your photo), today: ScreenSpec, apps: ScreenSpec, you: ScreenSpec,
+    workspace?: ScreenSpec, workspacePreview?: boolean } // trusted host opt-in; preview preserves ?os=1 locally
   ScreenSpec = { el, title(), crumb(), line(), acts: [{ icon, label, run }] (or a function giving them),
-                 onShow(route), onHide() }
+                 onShow(route), onHide(), focus?() → Element }
 
 F (§3.2):
-  F.screen(id, spec)                     a built-in screen "today" | "apps" | "you" (again: replaced, header redrawn)
+  F.screen(id, spec)                     a built-in screen "today" | "apps" | "you" | "workspace" (again: replaced, header redrawn)
   F.nav.go(path, { replace, zoomFrom, from, kind })   in-page if router.owns(path) (not while F.stale into an app:
                                          then location.assign, D21), else IFL.hub.go(path) (the crumb) + location.assign
   F.nav.back()                           the Back rule, §3.4
@@ -39,8 +40,8 @@ F (§3.2):
   F.restamp()                            re-writes a missing history.state.ifl (RI1)
   F.stale                                boolean, D21 (set by modules.js watchVersion)
   F.fill(on)                             D20 (html.ifl-fill)
-  F.on(evt, fn) → off                    "route", "visible", "hidden", "theme", "signedout"
-  F.busy() → boolean                     a sheet open, or the shown module's busy()
+  F.on(evt, fn) → off                    "route", "visible", "hidden", "theme", "signedout", "apps", "changed"
+  F.busy() → boolean                     a sheet open, or any mounted module's busy() (hidden drafts still block unsafe reload)
   F.refresh()                            the shown tab screen's header asked for again (its title, crumb, line, acts)
   F.hubAgain() → Promise                 opts.hubAgain (modules.js asks before loading a module)
   F.forModule(app) → fw                  §5.2, below
@@ -51,7 +52,7 @@ F (§3.2):
   F.destroy()                            sign-out: unmount modules, close sheets, hide the frame, let go of listeners
 
 fw = F.forModule(app) (§5.2), what a module gets in mount(root, fw):
-  fw.contract = 1; fw.app; fw.screenEl (main#m-<app>)
+  fw.contract = 1; fw.app; fw.screenEl (stable #m-<app> container; role=main when full-screen)
   fw.signal                              module lifetime; aborted at unmount, stays live while its screen is hidden
   fw.ui                                  ui.js's builders
   fw.header.set({ title, compactTitle, pick, line, acts, badges })   merged into what it set before; shown only while
@@ -116,9 +117,11 @@ contracts, roof/s24-contracts.md §3). Pure: no DOM, no storage, no history; the
 what this returns. Written in full by B0 and frozen: every batch builds on these names and shapes (MAIN
 .tools/tests/unit/roofrouter.test.mjs pins them).
 
-Route = { kind: "tab", tab: "today" | "apps" | "you", arg: string | null }
+Route = { kind: "tab", tab: "today" | "apps" | "you" | "workspace", arg: string | null }
       | { kind: "app", app: <a REGISTRY key>, section: <one of its section ids>, key: string, arg: string | null, query: string }
-  tab arg: only You's, from /#you=<arg> (notify, quiet, rules, phone, apps, account, notify-weather, …).
+  workspace: only with parse(href, { workspace: true }); /#workspace or /#workspace=<bounded id>.
+    Without that opt-in the ordinary Today routing remains unchanged.
+  tab arg: You's, from /#you=<arg> (notify, quiet, rules, phone, apps, account, notify-weather, …).
   app key: the hash's key as written, a section id or one of the app's aliases, else the app's first section;
   app hash: only where key is one of the app's raw keys (REGISTRY[app].raw: Chats' share), the address's whole hash
   after #, as written (≤ 7000 characters; such an address may be up to 2048 + 7000 long); absent otherwise.

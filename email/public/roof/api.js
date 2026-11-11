@@ -4,12 +4,12 @@
 // logout, push, the old send with its payload, New or Delete Address, the address check (its GET puts what was typed
 // into a URL). A query never goes in a URL: search and contact
 // lookups are POST bodies (S4-D9).
-// MAIL: Mail's address beside this one (modules.js's rule: next.inflite.ai → email.inflite.ai; the test hub
+// MAIL: Mail's address beside this one (next./os.inflite.ai → email.inflite.ai; the test hub
 //   ifl.test:8788 → email.ifl.test:8788).
 // createApi({ base = MAIL, onLost(access), onRefused() }) → the methods of §4.7; each rejects with ApiError(status,
 //   message) (status 0: no answer). onLost: a 401 with an access word; onRefused: no answer while online (Mail's hub
 //   switch off: a CORS refusal looks like this), so the page asks /api/hub again (C1).
-export const MAIL = `${location.protocol}//email.${location.host.replace(/^next\./, "")}`;
+export const MAIL = `${location.protocol}//email.${(location.protocol === "https:" && location.host === "os.inflite.ai" || /^https?:$/.test(location.protocol) && /^os\.ifl\.test(?::\d{1,5})?$/.test(location.host)) ? location.host.slice(3) : location.host.replace(/^next\./, "")}`;
 
 export const METHODS = ["session", "me", "version", "counts", "settings", "handback", "threads", "search", "thread", "meta", "draft", "batch", "emptyTrash", "unsubInfo", "unsubscribe", "remove", "saveSettings", "updateAddress", "findContacts", "saveDraft", "sendDraft", "sent", "picture", "fileUrl", "rawUrl", "spot"];
 

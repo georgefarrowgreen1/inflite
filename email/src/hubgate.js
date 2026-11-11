@@ -5,12 +5,12 @@
 //
 // HUB_ORIGIN (wrangler.jsonc) lists every hub, a space between each. The switches (Worker secrets, absent = off; set by
 // roof.yml, Mail's first both ways): HUB_API="1" opens https://inflite.ai, HUB_API_NEXT="1" https://next.inflite.ai, and
-// HUB_API_TEST="1" (a var only the test stack sets) any other listed origin, such as the test hub http://ifl.test:8788
+// HUB_API_OS="1" opens https://os.inflite.ai; HUB_API_TEST="1" (a var only the test stack sets) any other listed origin, such as the test hub http://ifl.test:8788
 // (".test" never resolves, RFC 6761, so it can't be anyone's real site). The framed page of milestone 1 keeps using the
 // whole HUB_ORIGIN list for its frame-ancestors (index.js pagePolicy): with the switches off it must keep working.
 
 const ORIGIN_RE = /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i;
-const SWITCH = { "https://inflite.ai": "HUB_API", "https://next.inflite.ai": "HUB_API_NEXT" };
+const SWITCH = { "https://inflite.ai": "HUB_API", "https://next.inflite.ai": "HUB_API_NEXT", "https://os.inflite.ai": "HUB_API_OS" };
 
 // Every hub HUB_ORIGIN lists (lower case), or none at all if anything in it isn't an origin.
 export function listedOrigins(env) {

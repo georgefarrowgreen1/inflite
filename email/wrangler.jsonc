@@ -31,13 +31,14 @@
   "services": [{ "binding": "APPS", "service": "inflite-apps" }, { "binding": "TODAY_APP", "service": "inflite" }],
 
   // Signing in is the inflite account's; sent mail goes out under the account's name. HUB_ORIGIN: InFlite's window and
-  // its staging hub (a space between them), whose /mail/ pages are the only pages that may frame Mail (Today First; the
+  // its staging and OS hubs (a space between them), whose /mail/ pages are the only pages that may frame Mail (Today First; the
   // root Worker's today/src/mailhost.js; the staging hub at next.inflite.ai is the root Worker's [env.next]).
   "vars": {
     "DOMAIN": "inflite.ai",
     "DEFAULT_FROM": "hello@inflite.ai",
     "ACCOUNT_ORIGIN": "https://account.inflite.ai",
-    "HUB_ORIGIN": "https://inflite.ai https://next.inflite.ai"
+    "HUB_ORIGIN": "https://inflite.ai https://next.inflite.ai https://os.inflite.ai",
+    "HUB_API_OS": "1"
   },
 
   "triggers": { "crons": ["*/5 * * * *"] },

@@ -11,7 +11,7 @@ import { createSend } from "./send.js";
 export const CONTRACT = 1;
 // The shell's request factory also works before the signed-in frame is mounted.
 export { createRequestCoordinator, isRequestCancelled } from "./requests.js";
-const TABN = { today: "Today", apps: "Apps", you: "You" };
+const TABN = { today: "Today", apps: "Apps", you: "You", workspace: "Workspace" };
 const labelOf = (r) => (r?.kind === "app" ? REGISTRY[r.app]?.name : TABN[r?.tab]) || null;
 const TODAY = { kind: "tab", tab: "today", arg: null };
 const T = (f, d) => { try { return f(); } catch (_) { return d; } };
@@ -79,13 +79,16 @@ export function createFrame(opts = {}) {
   let depth = 0, key = "", routes = [], stale = false, gone = false, shown = null, lastApps = sess().apps, lazyAt = {}, fails = {};
 
   // (b: the name of the entry before, so a reload there still says where Back goes, C6: kept by a replace)
-  const put = (p, push, s) => T(() => H[push ? "pushState" : "replaceState"]({ ...s, ifl: { d: depth, k: key, b: labelOf(routes[depth - 1]) || (!push && H.state?.ifl?.k === key && H.state.ifl.b) || null } }, "", p));
+  const put = (p, push, s) => T(() => {
+    if (opts.workspacePreview) { const u = new URL(p, L.href); u.searchParams.set("os", "1"); p = u.pathname + u.search + u.hash; }
+    H[push ? "pushState" : "replaceState"]({ ...s, ifl: { d: depth, k: key, b: labelOf(routes[depth - 1]) || (!push && H.state?.ifl?.k === key && H.state.ifl.b) || null } }, "", p);
+  });
   const stamp = () => put(L.href, 0, typeof H.state == "object" && H.state);
   const st0 = H.state?.ifl;
   if (st0 && Number.isInteger(st0.d)) { depth = st0.d; key = String(st0.k || newKey()); } else { key = newKey(); stamp(); }
   H.scrollRestoration = "manual";
   const curDepth = () => (Number.isInteger(H.state?.ifl?.d) ? H.state.ifl.d : depth);
-  const here = () => parse(L.href, { roof: roofs() }) || TODAY;
+  const here = () => parse(L.href, { roof: roofs(), workspace: !!opts.workspace }) || TODAY;
 
   // ---- the session, and lost() (D3): asks once, shared for 30 s; signs out only on a confirmed "signed out"
   let lostP = null, lostAt = 0;
@@ -133,7 +136,7 @@ export function createFrame(opts = {}) {
     set stale(v) { if (!gone) stale = !!v; },
     on(ev, fn) { if (gone) return () => {}; (subs[ev] ||= []).push(fn); return () => { subs[ev] = (subs[ev] || []).filter((f) => f !== fn); }; },
     hubAgain: () => gone ? Promise.resolve() : Promise.resolve(opts.hubAgain?.()).catch(() => {}),
-    busy: () => !!F.sheet.top() || !!(shownMod()?.instance?.busy?.()),
+    busy: () => !!F.sheet.top() || Object.values(mods).some((m) => !!T(() => m.instance?.busy?.(), false)),
     restamp() { if (!gone && !H.state?.ifl) stamp(); },
     fill(v) { if (!gone) { html.classList.toggle("ifl-fill", !!v); F.header.compact?.(); } },
     screen(id, spec = {}) {
@@ -157,6 +160,7 @@ export function createFrame(opts = {}) {
       lastApps = now;
       const off = Object.keys(REGISTRY).filter((a) => was[a] && !now[a]);
       providers();
+      emit("apps", now);
       if (!off.length) return;
       const a = shownMod()?.app;
       for (const x of off) if (x !== a) letGo(x);
@@ -174,6 +178,11 @@ export function createFrame(opts = {}) {
       F.flush().then(() => safely(go, 10e3, busy));
     },
     forModule: (app) => { if (gone) throw released(); return modOf(app).fw; },
+    view(app) {
+      if (gone || !Object.hasOwn(REGISTRY, app)) throw released();
+      const m = modOf(app);
+      return m.view ||= viewOf(m);
+    },
     service: (app) => svc(app).then((s) => s.facade),
     releaseService(app, o) {
       const record = svcs[app];
@@ -213,7 +222,7 @@ export function createFrame(opts = {}) {
       if (!u) return;
       if (u.origin !== L.origin) return /^https?:$/.test(u.protocol) && L.assign(u.href);
       const p = u.pathname + u.search + u.hash;
-      const r = parse(p, { roof: roofs() });
+      const r = parse(p, { roof: roofs(), workspace: !!opts.workspace });
       if (!r) return L.assign(globalThis.IFL?.hub?.go ? globalThis.IFL.hub.go(p) : p);
       if (r.kind === "app" && stale && shown?.id !== "m:" + r.app && !F.busy()) return L.assign(p);
       const cur = shown?.route;
@@ -222,7 +231,7 @@ export function createFrame(opts = {}) {
       leaveEntry();
       F.restamp();
       if (!o.replace) { depth++; key = newKey(); routes.length = depth; }
-      put(p, !o.replace);
+      put(p, !o.replace, o.state);
       routes[depth] = r;
       render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom && r.app === "weather" ? hintOf(o.zoomFrom, u) : null, y: o.replace && shown?.id === idOf(r) ? scrollY : 0 });
     },
@@ -313,7 +322,10 @@ export function createFrame(opts = {}) {
         else screens[prev.id]?.spec.onHide?.();
       }
       for (const [k, s] of Object.entries(screens)) if (s.el && k !== id) { s.el.hidden = true; s.el.inert = true; }
-      for (const [k, m] of Object.entries(mods)) if ("m:" + k !== id) { m.el.hidden = true; m.el.inert = true; }
+      for (const [k, m] of Object.entries(mods)) {
+        if (m.host && m.host.screen !== id) m.view?.hide({ detach: true });
+        if ("m:" + k !== id && !m.host?.visible) { m.el.hidden = true; m.el.inert = true; }
+      }
       if (!same || r.kind !== "app" || prev.route.section !== r.section) html.classList.remove("ifl-fill");
       html.dataset.app = r.kind === "app" ? r.app : "inflite";
       F.tabs.set(r.kind === "app" ? REGISTRY[r.app].tab || "apps" : r.tab);
@@ -324,7 +336,7 @@ export function createFrame(opts = {}) {
       if (!o.first) scrollTo(0, y);
       if (!o.first && (!same || stays(r, prev.route))) {
         const f = pop ? backTo.get(k) : null;
-        (f?.isConnected && !f.closest("[hidden]") ? f : doc.querySelector("#hd h1.ifh-name"))?.focus?.({ preventScroll: true });
+        (f?.isConnected && !f.closest("[hidden]") ? f : screens[id]?.spec.focus?.() || doc.querySelector("#hd h1.ifh-name"))?.focus?.({ preventScroll: true });
       }
       return el;
     };
@@ -341,20 +353,17 @@ export function createFrame(opts = {}) {
   }
   function showApp(r, o) {
     const m = modOf(r.app);
+    if (m.host) m.view?.hide({ detach: true });
+    m.host = null;
+    if (m.el.parentNode !== opts.views) opts.views?.append(m.el);
+    m.root.classList.remove("ifl-in-pane");
+    m.el.classList.remove("ifl-pane-screen");
+    m.el.setAttribute("role", "main");
     m.el.hidden = false; m.el.inert = false;
     m.root.setAttribute("aria-labelledby", `ifl-sec-${r.section}`);
     F.header.set(appHead(r));
     if (o.zoomFrom) clone(m, o.zoomFrom);
-    if (!m.instance && !m.loading) {
-      if (!m.root.firstChild) m.root.append(ui.skeleton("hero"), ui.skeleton("card", 3));
-      m.loading = import("./modules.js").then((M) => {
-        if (!liveModule(m)) throw released();
-        return M.loadModule(r.app, F);
-      }).then(({ instance, m: M }) => {
-        if (!liveModule(m)) { T(() => instance.unmount?.()); return; }
-        m.instance = instance; m.build = M?.BUILD;
-      }, (e) => { if (liveModule(m) && e?.name !== "AbortError") console.error(e); }).finally(() => { m.loading = null; });
-    }
+    ensureApp(m);
     Promise.resolve(m.loading).then(() => {
       if (!liveModule(m) || F.route !== r || !m.instance) return dropClone(m);
       return Promise.resolve(m.instance.show(r, o.hint || null)).then(() => {
@@ -366,6 +375,21 @@ export function createFrame(opts = {}) {
       });
     }).catch((e) => { console.error(e); dropClone(m); });
     return m.el;
+  }
+  function ensureApp(m) {
+    if (!liveModule(m)) return Promise.resolve(null);
+    if (!m.instance && !m.loading) {
+      if (!m.root.firstChild) m.root.append(ui.skeleton("hero"), ui.skeleton("card", 3));
+      m.loading = import("./modules.js").then((M) => {
+        if (!liveModule(m)) throw released();
+        return M.loadModule(m.app, F);
+      }).then(({ instance, m: M }) => {
+        if (!liveModule(m)) { T(() => instance.unmount?.()); return; }
+        m.instance = instance; m.build = M?.BUILD;
+        if (m.host && !m.host.visible) T(() => instance.hide?.());
+      }, (e) => { if (liveModule(m) && e?.name !== "AbortError") console.error(e); }).finally(() => { m.loading = null; });
+    }
+    return m.loading ? m.loading.then(() => m.instance) : Promise.resolve(m.instance);
   }
   // D6: once a deep link is shown, the address is the section's own (no query, no sheet key)
   function tidy(r) {
@@ -436,7 +460,7 @@ export function createFrame(opts = {}) {
   const liveModule = (m) => !gone && mods[m.app] === m && !m.controller.signal.aborted;
   function modOf(app) {
     if (mods[app]) return mods[app];
-    const el = ui.el("main", { id: `m-${app}`, class: "view ifl-screen", data: { app }, hidden: true });
+    const el = ui.el("div", { id: `m-${app}`, class: "view ifl-screen", role: "main", data: { app }, hidden: true });
     el.inert = true;
     const root = ui.el("div", { class: `m-${app}`, role: "tabpanel" });
     el.append(root);
@@ -444,6 +468,73 @@ export function createFrame(opts = {}) {
     const m = (mods[app] = { app, el, root, controller: new AbortController(), instance: null, loading: null, header: {}, offs: [], provs: [], slot: null });
     m.fw = makeFw(m);
     return m;
+  }
+  // A trusted host can present the same app in a pane without creating another
+  // store, worker, or draft. The account/module still owns disposal.
+  function viewOf(m) {
+    let epoch = 0;
+    const live = () => liveModule(m);
+    const valid = (r) => {
+      if (!r || r.app !== m.app) return null;
+      const base = format(r), at = base.indexOf("#"), query = typeof r.query === "string" ? r.query : "";
+      const path = at < 0 ? base + query : base.slice(0, at) + query + base.slice(at);
+      const out = parse(path, { roof: roofs() });
+      return out?.kind === "app" && out.app === m.app ? out : null;
+    };
+    const place = (container) => {
+      if (!container || container.nodeType !== 1 || m.el.contains(container)) throw new TypeError("An app view needs its own container");
+      container.append(m.el);
+      m.el.classList.add("ifl-pane-screen"); m.root.classList.add("ifl-in-pane");
+      m.el.removeAttribute("role");
+      m.root.removeAttribute("aria-labelledby"); m.root.setAttribute("aria-label", REGISTRY[m.app].name);
+    };
+    const handle = {
+      el: m.el, root: m.root, fw: m.fw, signal: m.controller.signal,
+      get build() { return live() ? m.build : null; },
+      get header() { return live() ? { ...m.header } : {}; },
+      get route() { return live() ? m.host?.route || null : null; },
+      attach(spec = {}) {
+        if (!live()) return () => {};
+        const visible = !!(m.host?.visible && m.el.parentNode === spec.container);
+        if (!visible && !m.el.hidden) T(() => m.instance?.hide?.());
+        place(spec.container);
+        const host = m.host = { ...spec, screen: shown?.id, visible, route: m.host?.route || null };
+        if (spec.workspace?.enabled && !m.fw.workspace) m.fw.workspace = spec.workspace;
+        m.el.hidden = !visible; m.el.inert = !visible; ++epoch;
+        return () => { if (live() && m.host === host) handle.hide({ detach: true }); };
+      },
+      load: () => live() ? ensureApp(m) : Promise.resolve(null),
+      async show(route, { container, visible = true } = {}) {
+        if (!live()) return false;
+        const r = valid(route);
+        if (!r) return false;
+        if (container && !m.host) handle.attach({ container });
+        if (!m.host) return false;
+        if (container) { place(container); m.host.container = container; }
+        const host = m.host, mine = ++epoch;
+        host.route = r;
+        if (!visible) { handle.hide(); return true; }
+        host.visible = true; m.el.hidden = false; m.el.inert = false;
+        if (!m.el.isConnected && host.container?.isConnected) place(host.container);
+        const instance = await ensureApp(m);
+        if (!live() || mine !== epoch || m.host !== host || !host.visible || !instance) return false;
+        T(() => host.header?.({ ...m.header }));
+        await instance.show(r, null);
+        return live() && mine === epoch && m.host === host && host.visible;
+      },
+      hide({ detach = false } = {}) {
+        if (!live()) return;
+        ++epoch;
+        const host = m.host;
+        if (host?.visible) T(() => m.instance?.hide?.());
+        if (host) host.visible = false;
+        m.el.hidden = true; m.el.inert = true;
+        if (detach) { m.el.remove(); m.el.classList.remove("ifl-pane-screen"); m.root.classList.remove("ifl-in-pane"); }
+      },
+      busy: () => live() && !!T(() => m.instance?.busy?.(), false),
+      flush: () => live() ? Promise.resolve().then(() => m.instance?.flush?.()).then((x) => x || { lost: 0 }) : Promise.resolve({ lost: 0 }),
+    };
+    return handle;
   }
   function unmount(app) {
     if (svcs[app]) F.releaseService(app, { terminate: true });
@@ -462,12 +553,13 @@ export function createFrame(opts = {}) {
     const closedSheet = () => ({ el: ui.el("dialog"), body: ui.el("div"), closed: true, close() {}, now() {}, push: () => ui.el("div"), pop() {}, setBusy() {} });
     return {
       contract: CONTRACT, app, screenEl: m.el, signal: m.controller.signal, ui,
-      header: { set(spec = {}) { if (!live()) return; m.header = { ...m.header, ...spec }; if (mine()) F.header.set(appHead(F.route)); } },
+      header: { set(spec = {}) { if (!live()) return; m.header = { ...m.header, ...spec }; if (m.host) { if (m.host.visible) T(() => m.host.header?.({ ...m.header })); } else if (mine()) F.header.set(appHead(F.route)); } },
       nav: {
-        go: (path, o) => live() && F.nav.go(path, { from: app, replace: !!o?.replace, kind: KINDS.includes(o?.kind) ? o.kind : null }), back: () => live() && F.nav.back(),
-        section: (id, o) => live() && F.nav.section(app, id, o), href: (k, arg = null) => format({ app, key: k, arg }), depth: () => curDepth(),
+        go: (path, o) => live() && (m.host ? m.host.visible && m.host.navigate?.(path, o) : F.nav.go(path, { from: app, replace: !!o?.replace, kind: KINDS.includes(o?.kind) ? o.kind : null })),
+        back: () => live() && (m.host ? m.host.visible && m.host.back?.() : F.nav.back()),
+        section: (id, o) => live() && (m.host ? m.host.visible && m.host.section?.(id, o) : F.nav.section(app, id, o)), href: (k, arg = null) => format({ app, key: k, arg }), depth: () => m.host ? m.host.depth?.() || 0 : curDepth(),
       },
-      sheet: { open: (spec) => live() ? F.sheet.open({ app, ...spec }) : closedSheet() },
+      sheet: { open: (spec) => live() && (!m.host || m.host.visible) ? F.sheet.open({ app, ...spec }) : closedSheet() },
       toast: (text, o) => { if (live()) return toast(text, { ...o, app }); },
       send: (spec) => live() ? F.send.send(spec) : Promise.resolve(false),
       sendButton: (spec) => ui.btn("Send", { icon: "send", act: "send", label: `Send ${spec.what || "this"} to a friend`, run: () => live() && F.send.send(typeof spec === "function" ? spec() : spec) }),
@@ -481,19 +573,19 @@ export function createFrame(opts = {}) {
           return drop;
         },
       },
-      changed: () => { if (live()) T(() => opts.changed?.(app)); },
+      changed: () => { if (live()) { T(() => opts.changed?.(app)); emit("changed", app); } },
       session: { get user() { const u = live() ? sess().view?.user || {} : {}; return { id: u.id ?? null, name: u.name ?? null }; }, lost: () => live() ? lost() : Promise.resolve(false), hubAgain: () => live() ? F.hubAgain() : Promise.resolve() },
-      visible: () => live() && doc.visibilityState === "visible",
+      visible: () => live() && (!m.host || m.host.visible) && doc.visibilityState === "visible",
       on(ev, fn) {
         if (!live()) return () => {};
-        const off = F.on(ev === "push" ? "push:" + app : ev, (x) => { if (live()) fn(x); });
+        const off = F.on(ev === "push" ? "push:" + app : ev, (x) => { if (live() && (ev !== "visible" || !m.host || m.host.visible)) fn(x); });
         const drop = () => { off(); m.offs = m.offs.filter((f) => f !== drop); };
         m.offs.push(drop); return drop;
       },
       theme: () => themeNow(),
       motion: () => (reduced() ? "reduced" : "full"),
       zoomTarget: () => dropClone(m),
-      fill(v) { if (mine()) F.fill(v); },
+      fill(v) { if (live() && m.host) { if (m.host.visible) m.host.fill?.(!!v); } else if (mine()) F.fill(v); },
       lazy(fn) {
         if (!live()) return Promise.reject(released());
         if (stale && !F.busy()) { reloadStale(); return new Promise(() => {}); }
@@ -543,7 +635,7 @@ export function createFrame(opts = {}) {
   F.sheet = createSheets(F, { beforeOpen: () => cancelMotion(true) });
   F.search = createSearch(F);
   F.send = createSend(F);
-  for (const id of ["today", "apps", "you"]) if (opts[id]) F.screen(id, opts[id]);
+  for (const id of ["today", "apps", "you", "workspace"]) if (opts[id]) F.screen(id, opts[id]);
 
   // ---- listeners
   // links: same-origin, ours, not modified, not a new window or a download, not a hash the host page keeps for itself
@@ -553,10 +645,12 @@ export function createFrame(opts = {}) {
     if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
     const u = T(() => new URL(a.href, L.href));
     if (u?.origin !== L.origin) return;
-    if ((u.pathname === "/" || u.pathname === "/index.html") && u.hash && !/^#(apps|you(=[\w-]*)?)?$/.test(u.hash)) return;
-    const p = u.pathname + u.search + u.hash, r = parse(p, { roof: roofs() });
+    if ((u.pathname === "/" || u.pathname === "/index.html") && u.hash && !/^#(apps|you(=[\w-]*)?)?$/.test(u.hash) && !(opts.workspace && /^#workspace(=[\w-]{1,40})?$/.test(u.hash))) return;
+    const p = u.pathname + u.search + u.hash, r = parse(p, { roof: roofs(), workspace: !!opts.workspace });
     if (!r) return;
     e.preventDefault();
+    const pane = a.closest(".ifl-pane-screen[data-app]"), host = pane && mods[pane.dataset.app]?.host;
+    if (host) { if (host.visible) host.navigate?.(p, {}); return; }
     const card = r.kind === "app" ? a.closest(".tcard") : null;
     F.nav.go(p, { zoomFrom: card });
   });

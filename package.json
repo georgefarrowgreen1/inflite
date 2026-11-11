@@ -5,11 +5,11 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test:web": "node --test --test-concurrency=1 tests/web-ui.test.cjs tests/today-mail-motion.test.cjs tests/today-mail-geometry.test.cjs",
+    "test:web": "node --test --test-concurrency=1 tests/web-ui.test.cjs tests/today-mail-motion.test.cjs tests/today-mail-geometry.test.cjs tests/workspace-ui.test.cjs tests/workspace-security-ui.test.cjs",
     "test:requests": "node tests/requests.test.cjs",
     "test": "npm run test:requests && npm run test:api && npm run test:framework && npm run test:web",
     "test:api": "node --test tests/body.test.cjs tests/not-found.test.cjs tests/upstream.test.cjs",
-    "test:framework": "node --test --test-concurrency=1 tests/*lifecycle.test.cjs tests/screens.test.cjs tests/tasks.test.cjs"
+    "test:framework": "node --test --test-concurrency=1 tests/*lifecycle.test.cjs tests/screens.test.cjs tests/tasks.test.cjs tests/workspace-state.test.cjs tests/workspace-security-model.test.cjs tests/workspace-worker-security.test.cjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0",

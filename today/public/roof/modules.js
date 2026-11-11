@@ -44,6 +44,7 @@ function css(href) {
   styles.set(href, p);
   return p;
 }
+export { css as loadStyles };
 
 export async function loadModule(app, F) {
   const R = REGISTRY[app];
@@ -100,7 +101,7 @@ export async function loadModule(app, F) {
 function failed(app, F, root, n) {
   const R = REGISTRY[app], ui = F.ui, links = F.session.links || {};
   const own = () => {
-    const ln = R.link || app, base = links[ln] || `${location.protocol}//${ln}.${location.host.replace(/^next\./, "")}`;
+    const ln = R.link || app, host = location.hostname === "os.inflite.ai" ? "inflite.ai" : location.host.replace(/^next\./, ""), base = links[ln] || `${location.protocol}//${ln}.${host}`;
     location.assign(base.replace(/\/$/, "") + location.pathname.slice(R.path.length - 1) + location.search + location.hash);
   };
   const again = n > 1

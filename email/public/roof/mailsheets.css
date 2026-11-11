@@ -88,5 +88,5 @@
 
 @media (prefers-reduced-motion: reduce) { .ifl-sheet[data-app=mail] .mc-chip:active { transform: none; } .ifl-sheet[data-app=mail] .mc-opt { transition: none; } }
 @media (forced-colors: active) {
-  .ifl-sheet[data-app=mail] .mc-row:focus-within { outline: 2px solid Highlight; outline-offset: -2px; }
+  .ifl-sheet[data-app=mail] .mc-row:focus-within { outline: 2px solid Highlight; outline-offset: -2px; box-shadow: none; }
 }

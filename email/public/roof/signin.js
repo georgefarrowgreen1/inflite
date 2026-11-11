@@ -11,8 +11,8 @@ import { SESSION } from "./store.js";
 
 const CODE = /^[\w-]{8,200}$/;
 const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-// (InFlite's sign-in page: auth. beside this site, next. dropped, as api.js's MAIL rule; Today's DEFAULT_LINKS.auth)
-export const authOrigin = (l = location) => `${l.protocol}//auth.${l.host.replace(/^next\./, "")}`;
+// (InFlite's sign-in page: auth. beside this site, next./os. dropped, as api.js's MAIL rule.)
+export const authOrigin = (l = location) => `${l.protocol}//auth.${(l.protocol === "https:" && l.host === "os.inflite.ai" || /^https?:$/.test(l.protocol) && /^os\.ifl\.test(?::\d{1,5})?$/.test(l.host)) ? l.host.slice(3) : l.host.replace(/^next\./, "")}`;
 
 export async function signIn(ctx) {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));

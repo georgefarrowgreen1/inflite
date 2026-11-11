@@ -1,13 +1,16 @@
-# inflite.ai: InFlite Today (today/): its page and files are today/public; only /api/*, /version and the hub's paths
+# inflite.ai and os.inflite.ai: InFlite Today and its workspace shell (today/): their files are today/public;
+# only /api/*, /version and the hub's paths
 # run the Worker (today/src/index.js), which passes the account's cookie on to account.inflite.ai (the georgefarrowgreen repo's
 # functions/_todayapp.js). Workers Builds deploys it from here. Mail is a Worker of its own (email/).
 name = "inflite"
 main = "today/src/index.js"
 compatibility_date = "2026-10-01"
-# (only at inflite.ai: not at inflite.<account>.workers.dev too, where every write would be refused anyway, its Origin
+# (only at these custom domains: not at inflite.<account>.workers.dev too, where every write would be refused, its Origin
 # not Today's; and no per-version preview addresses)
 workers_dev = false
 preview_urls = false
+# Both hosts use the existing Worker's bindings and secrets. Wrangler provisions the OS hostname's DNS and certificate.
+routes = [{ pattern = "inflite.ai", custom_domain = true }, { pattern = "os.inflite.ai", custom_domain = true }]
 
 [assets]
 directory = "./today/public"
@@ -19,6 +22,8 @@ run_worker_first = ["/_errors/404", "/api/*", "/version", "/chats", "/chats/*", 
 
 [vars]
 ACCOUNT_ORIGIN = "https://account.inflite.ai"
+# After each host's own same-origin write checks, use the established Today identity at the account service.
+TODAY_AS = "https://inflite.ai"
 # (InFlite's hub, today/src/hub.js: each app's own address, which the hub speaks as and connects to; Markets is
 # finance.'s. HUB_KEY, which the apps' hosts know the hub by, is a secret: npx wrangler secret put HUB_KEY, the same
 # value as the Pages project's HUB_KEY secret. Until both are set, and match, every hub path answers 503 and Today
