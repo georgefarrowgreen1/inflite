@@ -8,7 +8,7 @@
 // The rows by day (Today, Yesterday, Earlier); several from one app that open in the same place (a conversation, a
 // share, a place's weather) on the same day are one row, the newest, with "+2" to show the rest; cleared or tapped, a
 // stack goes as one.
-//   createBell(F, { count(n), go(url), settings() }) → { open(), refresh(), destroy() }
+//   createBell(F, { count(n), go(url), settings(), actions(note) → [{ id, label, icon?, run() }] }) → { open(), refresh(), destroy() }
 //   when(at, now, spoken) → "Now" | "5m" | "11:02" | "Yesterday" | "Mon" | "7 Nov"
 //   group(list, now) → [{ key: "today" | "yesterday" | "earlier", label, stacks: [{ key, head, rest }] }]
 //   draw(box, list, { ui, now, fresh, shown, open(ns), clear(ns, row, dir), more(key) })
@@ -49,7 +49,7 @@ export function group(list, now = Date.now()) {
 
 // the list into box: a section a day, a row a stack (or, with the stack shown, a row each), or the bell and "No
 // notifications"; fresh: the ids unseen as the sheet opened (a dot); shown: the stacks opened out
-export function draw(box, list, { ui, now = Date.now(), fresh = new Set(), shown = new Set(), open, clear, more = () => {} }) {
+export function draw(box, list, { ui, now = Date.now(), fresh = new Set(), shown = new Set(), open, clear, more = () => {}, actions = () => [], act = (_n, action) => action.run() }) {
   if (!list.length) return box.replaceChildren(ui.el("div", { class: "ifl-nt-none", role: "status" }, ui.icon("bell"), ui.el("p", { text: "No notifications" })));
   const row = (n, ns, st, sub) => {
     const k = ns.length - 1, isNew = ns.some((x) => fresh.has(x.id)), app = NAME[n.app] || "";
@@ -66,6 +66,16 @@ export function draw(box, list, { ui, now = Date.now(), fresh = new Set(), shown
         shown.has(st.key) ? ui.icon("chev") : ui.el("span", { text: `+${st.rest.length}` }))
       : null;
     const card = ui.el("div", { class: "ifl-nt-card" }, main, plus, x);
+    let offered = [];
+    try { const value = actions(n); if (Array.isArray(value)) offered = value.filter(a => a && typeof a.id === "string" && /^[a-z][a-z0-9-]{0,47}$/.test(a.id) && typeof a.label === "string" && a.label.trim() && typeof a.run === "function").slice(0, 3); } catch (_) {}
+    if (offered.length) {
+      card.classList.add("has-actions");
+      card.append(ui.el("div", { class: "ifl-nt-actions", role: "group", "aria-label": "Notification actions" }, ...offered.map(a => {
+        const button = ui.el("button", { class: "ifl-nt-action", type: "button", "aria-label": `${a.label.slice(0, 80)} · ${String(n.title || app).slice(0, 120)}` }, a.icon ? ui.icon(a.icon) : null, ui.el("span", { text: a.label.slice(0, 80) }));
+        button.addEventListener("click", () => { if (!li.dataset.dragged && !li.classList.contains("gone")) act(ns, a, li); });
+        return button;
+      })));
+    }
     const side = () => ui.el("span", {}, ui.icon("trash"), ui.el("span", { text: "Clear" }));
     const li = ui.el("li", { class: `ifl-nt-row${k ? " stack" : ""}${sub ? " sub" : ""}`, data: { id: n.id, stack: st?.key || null, fresh: isNew ? "1" : null } },
       ui.el("div", { class: "ifl-nt-back", "aria-hidden": "true" }, side(), side()), card);
@@ -94,7 +104,7 @@ const give = (d) => { const a = Math.abs(d); return Math.sign(d) * (a <= 40 ? a 
 function swipe(row, card, done) {
   let dragging = false;
   card.addEventListener("pointerdown", (e) => {
-    if (dragging || e.isPrimary === false || e.button || row.classList.contains("gone") || e.target.closest?.(".ifl-nt-more, .ifl-nt-x")) return;
+    if (dragging || e.isPrimary === false || e.button || row.classList.contains("gone") || e.target.closest?.(".ifl-nt-more, .ifl-nt-x, .ifl-nt-action")) return;
     dragging = true;
     const x0 = e.clientX, y0 = e.clientY, t0 = performance.now(), w = card.offsetWidth || 1, id = e.pointerId;
     let dx = 0, axis = null;
@@ -137,31 +147,38 @@ function swipe(row, card, done) {
   });
 }
 
-export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from: "notification" }), settings = () => go("/#you=phone") } = {}) {
+export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from: "notification" }), settings = () => go("/#you=phone"), actions = () => [] } = {}) {
+  const owner = F.session?.view?.user?.id;
   let list = [], unread = 0, h = null, box = null, all = null, said = null, gone = false, busy = 0, tick = 0;
   // (for this sheet's showing only: those unseen as it opened, the stacks opened out, the rows just put back)
   let fresh = new Set(), shown = new Set(), back = new Set();
   // (the last clearing, for the toast's Undo: what's cleared within its few seconds joins it)
   let undo = null, toasted = null;
+  const pending = new Set();
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const sw = navigator.serviceWorker;
   const newest = (a, b) => b.at - a.at;
+  const owned = () => !gone && !F.signal?.aborted && (!owner || F.session?.view?.user?.id === owner);
   // (the worker asked, answered on a port; null for no worker or no answer in 3 s)
   function ask(msg) {
     return new Promise((ok) => {
-      const t = setTimeout(() => ok(null), 3000);
-      const fin = (v) => { clearTimeout(t); ok(v); };
+      let done = false, ch = null;
+      const fin = (v) => { if (done) return; done = true; clearTimeout(t); pending.delete(fin); ch?.port1.close?.(); ch?.port2.close?.(); ok(v); };
+      const t = setTimeout(() => fin(null), 3000);
+      pending.add(fin);
+      if (!owned()) return fin(null);
       Promise.resolve(sw?.getRegistration?.("/")).then((r) => {
+        if (done || !owned()) return fin(null);
         const w = r?.active;
         if (!w) return fin(null);
-        const ch = new MessageChannel();
+        ch = new MessageChannel();
         ch.port1.onmessage = (e) => fin(e.data?.ifl === "notes" ? e.data : null);
-        w.postMessage(msg, [ch.port2]);
+        try { w.postMessage(msg, [ch.port2]); } catch (_) { fin(null); }
       }, () => fin(null));
     });
   }
   function take(d) {
-    if (gone || !d || !Array.isArray(d.list)) return;
+    if (!owned() || !d || !Array.isArray(d.list)) return;
     list = d.list.filter((n) => n && typeof n.id === "string").sort(newest);
     unread = Math.max(0, Number(d.unread) || 0);
     if (h) {
@@ -180,7 +197,17 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
     if (!box) return;
     const a = document.activeElement, r = box.contains(a) && a.closest(".ifl-nt-row");
     if (!focus && r) focus = [`.ifl-nt-row[data-id="${CSS.escape(r.dataset.id)}"] .${a.classList[0]}`, ".ifl-nt-main"];
-    draw(box, list, { ui: F.ui, fresh, shown, open: tapped, clear, more });
+    const sheet = h;
+    const activeRow = (ns, row) => owned() && h === sheet && !!sheet && !sheet.closed && row?.isConnected && !row.classList.contains("gone") && sheet.el.contains(row) && list.some(n => n.id === ns[0]?.id);
+    draw(box, list, { ui: F.ui, fresh, shown, open: (ns, row) => { if (activeRow(ns, row)) tapped(ns); }, clear: (ns, row, dir) => { if (activeRow(ns, row)) clear(ns, row, dir); }, more: key => { if (owned() && h === sheet && !sheet?.closed) more(key); }, actions: n => owned() ? actions(n) : [], act: (ns, action, row) => {
+      if (!activeRow(ns, row)) return;
+      const ids = ns.map(n => n.id);
+      ask({ ifl: "notes-clear", ids }).then(take);
+      list = list.filter(n => !ids.includes(n.id));
+      unlift(); sheet.now();
+      try { Promise.resolve(action.run()).catch(() => { if (owned()) F.toast("That action couldn’t open. Try again."); }); }
+      catch (_) { if (owned()) F.toast("That action couldn’t open. Try again."); }
+    } });
     for (const id of back) box.querySelector(`.ifl-nt-row[data-id="${CSS.escape(id)}"]`)?.classList.add("back");
     back = new Set();
     if (all) all.hidden = !list.length;
@@ -191,16 +218,19 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
     for (const t of box?.querySelectorAll(".ifl-nt-when") || []) t.textContent = when(Date.parse(t.getAttribute("datetime")));
   }
   function more(key) {
+    if (!owned()) return;
     if (shown.has(key)) shown.delete(key); else shown.add(key);
     paint(`.ifl-nt-row[data-stack="${CSS.escape(key)}"] .ifl-nt-more`);
   }
   // (cleared: the row slides away, the rows below close up into its place, and the worker clears them, their
   // notifications too; the toast offers them back)
   function clear(ns, row, dir = "left") {
+    if (!owned()) return;
     const ids = ns.map((n) => n.id);
     const next = row?.nextElementSibling || row?.closest(".ifl-nt-sec")?.nextElementSibling?.querySelector(".ifl-nt-row");
     const to = next?.dataset.id ? `.ifl-nt-row[data-id="${CSS.escape(next.dataset.id)}"] .ifl-nt-main` : ".ifl-nt-main";
     const out = () => {
+      if (!owned()) return;
       list = list.filter((x) => !ids.includes(x.id));
       paint(to);
     };
@@ -227,6 +257,7 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
     if (h && toasted) { h.el.append(toasted); if (said) { said.textContent = ""; requestAnimationFrame(() => { if (said) said.textContent = text; }); } }
   }
   function putBack(b) {
+    if (!owned()) return;
     if (undo === b) undo = null;
     const have = new Set(list.map((n) => n.id)), add = b.list.filter((n) => !have.has(n.id));
     if (!add.length) return;
@@ -239,6 +270,7 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
   // (the toast let go of the sheet as it shuts, so it's still there to Undo with, if it's still up)
   function unlift() { if (toasted?.classList.contains("on") && h?.el.contains(toasted)) document.body.append(toasted); }
   function tapped(ns) {
+    if (!owned()) return;
     const n = ns[0], ids = ns.map((x) => x.id);
     ask({ ifl: "notes-clear", ids }).then(take);
     list = list.filter((x) => !ids.includes(x.id));
@@ -247,6 +279,7 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
     if (typeof n.url === "string" && n.url.startsWith("/") && !n.url.startsWith("//")) go(n.url);
   }
   function clearAll() {
+    if (!owned()) return;
     const was = list.slice();
     if (!was.length) return;
     list = [];
@@ -258,12 +291,12 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
     setTimeout(() => { busy--; box?.classList.remove("out"); paint("h2"); }, 200);
   }
   function open() {
+    if (!owned()) return null;
     if (h) return h;
     fresh = new Set(list.filter((n) => !n.seen).map((n) => n.id));
     shown = new Set();
     box = F.ui.el("div", { class: "ifl-nts" });
     const set = F.ui.el("button", { class: "ifl-nt-set", type: "button", text: "Notification Settings" });
-    set.addEventListener("click", () => { unlift(); h?.now(); settings(); });
     said = F.ui.el("p", { class: "vh", role: "status" });
     const body = F.ui.el("div", { class: "ifl-nts-wrap" }, box, F.ui.el("div", { class: "ifl-nt-foot" }, set), said);
     h = F.sheet.open({ sheet: "notifications", title: "Notifications", body, onClose: () => {
@@ -271,8 +304,11 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
       clearInterval(tick);
       h = null; box = null; all = null; said = null; fresh = new Set(); shown = new Set(); count(unread);
     } });
+    const sheet = h;
+    const active = () => owned() && h === sheet && !sheet.closed;
+    set.addEventListener("click", () => { if (!active()) return; unlift(); sheet.now(); settings(); });
     all = F.ui.el("button", { class: "ifl-nt-all", type: "button", text: "Clear All" });
-    all.addEventListener("click", clearAll);
+    all.addEventListener("click", () => { if (active()) clearAll(); });
     h.el.querySelector(".ifs-head [data-close]")?.before(all);
     paint();
     count(0);
@@ -284,9 +320,14 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
   const seen = () => { if (document.visibilityState === "visible") refresh(); };
   sw?.addEventListener?.("message", heard);
   document.addEventListener("visibilitychange", seen);
-  refresh();
+  F.signal?.addEventListener?.("abort", destroy, { once: true });
+  if (F.signal?.aborted) destroy(); else refresh();
+  function destroy() {
+    if (gone) return;
+    gone = true; clearInterval(tick); for (const fin of [...pending]) fin(null); sw?.removeEventListener?.("message", heard); document.removeEventListener("visibilitychange", seen); F.signal?.removeEventListener?.("abort", destroy); h?.now(); count(0);
+  }
   return {
     open, refresh,
-    destroy() { gone = true; clearInterval(tick); sw?.removeEventListener?.("message", heard); document.removeEventListener("visibilitychange", seen); h?.now(); count(0); },
+    destroy,
   };
 }

@@ -9,7 +9,7 @@ const models = Promise.all([
 test('adversarial route mutations cannot change URL origin, pathname or carry query data', async () => {
   const [{ safeWorkspaceRoute }] = await models;
   const origin = 'https://os.inflite.ai';
-  const bases = [['fitness', '/fitness/#today'], ['weather', '/weather/#days']];
+  const bases = [['fitness', '/fitness/#today'], ['weather', '/weather/#days'], ['markets', '/markets/#s=TSCO.L'], ['chats', '/chats/#open=friend-123'], ['mail', '/mail/#thread=thread_9']];
   const payloads = [
     '?code=fixture-secret', '?lat=52&lon=1', '%3Fcode%3Dfixture-secret', '%23today',
     '../', '/..', '\\..', '%2f..', '%252f..', '\n', '\r', '\t', '\0',
@@ -65,7 +65,7 @@ test('maximum supported Unicode metadata remains restorable within the stated st
   const storage = { getItem: key => entries.get(key), setItem: (key, value) => entries.set(key, value) };
   let id = 0;
   const store = createWorkspaceStore({ userId: 'a'.repeat(128), storage, now: () => Number.MAX_SAFE_INTEGER, makeId: () => 'w' + (++id).toString().padEnd(39, 'a') });
-  const panes = [{ app: 'fitness', route: '/fitness/#act=' + 'x'.repeat(40) }, { app: 'weather', route: '/weather/#day=2028-02-29' }];
+  const panes = [{ app: 'fitness', route: '/fitness/#act=' + 'x'.repeat(40) }, { app: 'weather', route: '/weather/#day=2028-02-29' }, { app: 'markets', route: '/markets/#s=' + 'X'.repeat(40) }, { app: 'chats', route: '/chats/#open=' + 'x'.repeat(40) }, { app: 'mail', route: '/mail/#thread=' + 'x'.repeat(40) }];
   store.update('ride', { name: '🚲'.repeat(60), panes });
   for (let n = 1; n < WORKSPACE_LIMITS.workspaces; n++) assert.ok(store.create({ name: '🚲'.repeat(60), panes }));
   const encoded = [...entries.values()][0];

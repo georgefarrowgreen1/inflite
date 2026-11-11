@@ -7,7 +7,7 @@
 //   one commit, S4-D19); SECTIONS = the router's REGISTRY.mail.sections = connector.sections; mount(root, fw) →
 //   Promise<instance>. This file never imports connector.js (it isn't in the static graph, §4.4).
 // instance = { show(route, hint), hide(), back() → boolean, busy() → boolean, flush() → Promise<{ lost }>,
-//   sendable() → null, unmount() }
+//   sendable() → null, workspace() → optional OS provider, unmount() }
 //   show(route): the header set synchronously first, before any await (§2.1, RI14); route.section → the lens (on the
 //     first show a bare People route goes to the remembered lens, mail:lens, S4-D25); key "thread" + arg → the reader
 //     (phone: the history entry stays, the switcher hidden, "Back to Mail"; iPad: the pane, the address tidied to the
@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.85";
-export const NEWS = "Sign in and open Mail from InFlite OS";
+export const BUILD = "1.86";
+export const NEWS = "Mail windows and attachment files";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
@@ -86,11 +86,11 @@ export async function mount(root, fw) {
   };
   const signinJs = () => fw.lazy((q) => import("./signin.js" + q));
   Object.assign(ctx.open, {
-    compose: opener(() => fw.lazy((q) => import("./compose.js" + q)), (m, init) => m.openCompose(ctx, init || {})),
+    compose: opener(() => fw.lazy((q) => import("./compose.js" + q)), (m, init, current = () => true) => current() ? m.openCompose(ctx, init || {}) : null),
     later: (ids) => openLater(ctx, ids), views: () => openViews(ctx), rowMenu: (t) => openRowMenu(ctx, t), unsub: (t) => openUnsub(ctx, t),
     settings: opener(() => fw.lazy((q) => import("./mailsettings.js" + q)), (m, page) => m.openSettings(ctx, page ?? null)),
-    viewer: opener(() => fw.lazy((q) => import("./viewer.js" + q)), (m, files, i) => m.openViewer(ctx, files, i)),
-    signin: opener(signinJs, (m) => m.signIn(ctx)),
+    viewer: opener(() => fw.lazy((q) => import("./viewer.js" + q)), (m, files, i, current = () => true) => current() ? m.openViewer(ctx, files, i) : null),
+    signin: opener(signinJs, (m, current = () => true) => current() ? m.signIn(ctx) : null),
     confirm: (spec) => confirmSheet(ctx, spec),
   });
   ctx.leave = (id, next) => {
@@ -119,17 +119,27 @@ export async function mount(root, fw) {
 
   // ---- layout: phone or iPad, by Mail's own rule
   const mq = win.matchMedia ? win.matchMedia(PHONE) : null;
-  const layout = () => (mq ? (mq.matches ? "phone" : "pad") : "phone");
+  const layout = () => {
+    if (fw.workspace?.enabled && root.classList.contains("ifl-in-pane")) {
+      const b = root.getBoundingClientRect();
+      const slot = root.closest(".ws-module-slot"), height = slot ? slot.clientHeight : b.height;
+      if (b.width > 0 && height > 0) return b.width < 700 || height < 500 && b.width < 1000 ? "phone" : "pad";
+      return store.get().layout;
+    }
+    return mq ? (mq.matches ? "phone" : "pad") : "phone";
+  };
   store.set({ layout: layout() });
   root.dataset.layout = store.get().layout;
-  if (mq) on(mq, "change", () => {
+  const syncLayout = (navigate = true) => {
     const l = layout(), s = store.get();
+    if (l === s.layout) return;
     store.set({ layout: l }, "layout");
     root.dataset.layout = l;
     // (an iPad window made narrow with a thread open: pushed over the list, as a phone has it)
-    if (onScreen && l === "phone" && s.threadId && route?.key !== "thread") fw.nav.go(fw.nav.href("thread", s.threadId));
+    if (navigate !== false && onScreen && l === "phone" && s.threadId && route?.key !== "thread") fw.nav.go(fw.nav.href("thread", s.threadId));
     drawState();
-  });
+  };
+  if (mq) on(mq, "change", syncLayout);
   for (const ev of ["pointerdown", "keydown", "wheel", "scroll"]) on(readerEl, ev, () => ctx.touched(), { passive: true, capture: true });
 
   const list = listView(listEl, ctx), reader = readerView(readerEl, ctx);
@@ -302,8 +312,21 @@ export async function mount(root, fw) {
     if (s.access === "ok") actions.load();
   }
 
+  let workspace = null, workspaceAsked = null;
+  const workspaceReady = () => {
+    if (!fw.workspace?.enabled || !alive || fw.signal?.aborted) return Promise.resolve(null);
+    return workspaceAsked ||= fw.lazy((q) => import("./workspace.js" + (q || ""))).then((m) => {
+      if (!alive || fw.signal?.aborted) return null;
+      workspace ||= m.createWorkspace(root, ctx, { current: () => alive && !fw.signal?.aborted, ready: () => bootState.started ||= start(), resize: () => { if (onScreen && fw.visible()) syncLayout(); } });
+      syncLayout(); workspace.observeLayout(); return workspace;
+    }).catch((e) => { workspaceAsked = null; if (alive && !fw.signal?.aborted) { console.error(e); fw.toast("Mail workspace tools couldn’t open. Try again."); } return null; });
+  };
   return {
+    workspace: workspaceReady,
     show(r) {
+      seen++;
+      syncLayout(false); workspace?.observeLayout();
+      if (fw.workspace?.enabled) workspaceReady();
       const s0 = store.get();
       const thread = r?.key === "thread" && logic.idOk(r.arg) ? r.arg : null;
       // (back from the phone's reader to the list, in Mail all along: the row that opened it, C7)
@@ -357,6 +380,7 @@ export async function mount(root, fw) {
       onScreen = false;
       seen++;
       stopPoll();
+      workspace?.pauseLayout();
       // (the header back to the lens's: nothing of the thread left behind for the next show)
       fw.header.set(headOf(store.get(), { lensOnly: true }));
       try { list.hide(); reader.hide(); } catch (e) { console.error(e); }
@@ -380,6 +404,7 @@ export async function mount(root, fw) {
       onScreen = false;
       seen++;
       stopPoll();
+      workspace?.destroy();
       ctx.outbox.flush({ keepalive: true }).catch(() => {}).finally(() => ctx.outbox.destroy());
       unprovide();
       for (const f of offs.splice(0)) try { f(); } catch {}

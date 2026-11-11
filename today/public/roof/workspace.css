@@ -229,3 +229,66 @@ html.ifl-os:not(.os-workspace) .ifl-workspace.ws-dock-host .ws-dock { position: 
   .ifl-workspace .ws-primary { background: Highlight; color: HighlightText; }
   .ifl-workspace .ws-busy-mark { border-color: CanvasText; border-top-color: Highlight; }
 }
+
+/* Desktop window ownership is independent of presentation. No window ancestor
+   transforms or establishes containment: native composers stay correctly scoped. */
+.ifl-workspace .ws-canvas { position: relative; }
+.ifl-workspace .ws-pane-grid { position: relative; overflow: auto; scrollbar-width: thin; }
+.ifl-workspace .ws-pane-grid > .ifl-workspace-pane { min-height: 360px; }
+.ifl-workspace[data-window-count="3"] .ws-pane-grid,
+.ifl-workspace[data-window-count="4"] .ws-pane-grid,
+.ifl-workspace[data-window-count="5"] .ws-pane-grid { grid-auto-rows: minmax(360px, 1fr); align-content: start; }
+.ifl-workspace[data-window-count="1"] .ws-pane-grid { grid-template-columns: minmax(0, 1fr); }
+.ifl-workspace .ifl-workspace-pane { position: relative; }
+.ifl-workspace .ws-window-options { flex: none; }
+.ifl-workspace .ws-layout-mark { position: relative; width: 22px; height: 22px; }
+.ifl-workspace .ws-layout-mark::before, .ifl-workspace .ws-layout-mark::after { content: ""; position: absolute; width: 15px; height: 13px; border: 1.7px solid currentColor; border-radius: 4px; background: var(--ws-surface); }
+.ifl-workspace .ws-layout-mark::before { top: 1px; left: 1px; }
+.ifl-workspace .ws-layout-mark::after { bottom: 1px; right: 1px; }
+.ifl-workspace[data-layout="float"] .ws-layout-mark::before, .ifl-workspace[data-layout="float"] .ws-layout-mark::after { top: 3px; bottom: 3px; width: 9px; height: 16px; }
+.ifl-workspace .ws-resize-handle { display: none; }
+.ifl-workspace .ws-window-menu { position: absolute; z-index: 70; left: var(--ws-menu-x, 8px); top: var(--ws-menu-y, 8px); width: var(--ws-menu-width, 260px); max-height: min(440px, calc(100% - var(--ws-menu-y, 8px) - 8px)); overflow: auto; padding: 6px; border: 1px solid var(--ws-line); border-radius: 22px; background: var(--ws-surface); color: var(--ws-text); box-shadow: var(--ifl-shadow-sheet, 0 18px 48px -22px #0007); }
+.ifl-workspace .ws-window-option { display: flex; align-items: center; gap: 12px; min-height: 44px; width: 100%; padding: 10px 14px; border: 0; border-radius: 16px; background: transparent; color: var(--ws-text); font-size: 14px; line-height: 1.35; text-align: left; }
+.ifl-workspace .ws-window-option > span:not(.ifl-glyph) { min-width: 0; overflow-wrap: anywhere; }
+.ifl-workspace .ws-window-option .ifl-glyph { display: grid; place-items: center; width: 24px; height: 24px; flex: none; }
+.ifl-workspace .ws-window-option svg { display: block; width: 20px; height: 20px; }
+.ifl-workspace .ws-window-option img { flex: none; width: 28px; height: 28px; border-radius: 8px; }
+.ifl-workspace .ws-window-option small { flex: none; margin-left: auto; font-size: 11px; color: var(--ws-muted); }
+.ifl-workspace .ws-window-option:hover, .ifl-workspace .ws-window-option:focus-visible { background: var(--ws-well); }
+.ifl-workspace .ws-window-hint { position: absolute; z-index: 60; left: 50%; bottom: 100px; width: max-content; max-width: calc(100% - 32px); margin: 0; padding: 12px 18px; border: 1px solid var(--ws-line); border-radius: 20px; background: var(--ws-surface); color: var(--ws-text); font-size: 14px; line-height: 1.4; box-shadow: var(--ws-shadow); transform: translateX(-50%); pointer-events: none; }
+.ifl-workspace .ws-windows-empty { display: grid; align-content: center; justify-items: center; gap: 12px; flex: 1; padding: 32px 24px; text-align: center; color: var(--ws-muted); }
+.ifl-workspace .ws-windows-empty h2 { margin: 0; color: var(--ws-text); font-size: 22px; line-height: 1.25; }
+.ifl-workspace .ws-windows-empty p { margin: 0; max-width: 35ch; line-height: 1.5; }
+.ifl-workspace[data-window-count="0"] .ws-pane-grid { display: none; }
+.ifl-workspace .ws-dock-button[data-running] .ws-dock-symbol { position: relative; }
+.ifl-workspace .ws-dock-button[data-running] .ws-dock-symbol::after { content: ""; position: absolute; bottom: -4px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.ifl-workspace .ws-dock-button[data-minimized] .ws-dock-symbol { opacity: .7; }
+@media (min-width: 960px) {
+  .ifl-workspace .ws-dock { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .ifl-workspace.ws-window-manager .ws-pane-header { cursor: grab; user-select: none; }
+  .ifl-workspace.ws-window-manager .ws-pane-header :is(button, a, input) { cursor: pointer; }
+  .ifl-workspace[data-layout="float"] .ws-pane-grid { display: block; overflow: hidden; }
+  .ifl-workspace[data-layout="float"] .ws-pane-grid > .ifl-workspace-pane { position: absolute; left: var(--ws-x, 0px); top: var(--ws-y, 0px); width: var(--ws-w, 100%); height: var(--ws-h, 100%); min-height: 0; z-index: var(--ws-z, 1); box-shadow: var(--ifl-shadow-sheet, 0 18px 48px -28px #0006); }
+  .ifl-workspace[data-layout="float"] .ifl-workspace-pane.is-front { border-color: color-mix(in srgb, var(--ws-accent) 40%, var(--ws-line)); }
+  .ifl-workspace[data-layout="float"] .ws-resize-handle { display: block; position: absolute; z-index: 3; right: 0; bottom: 0; width: 24px; height: 24px; cursor: nwse-resize; touch-action: none; border-radius: 8px 0 20px 0; background: repeating-linear-gradient(135deg, transparent 0 4px, var(--ws-muted) 4px 5px, transparent 5px 8px); opacity: .8; }
+  .ifl-workspace.is-window-dragging, .ifl-workspace.is-window-dragging * { cursor: grabbing !important; user-select: none !important; }
+  .ifl-workspace .ifl-workspace-pane.is-adjusting { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+}
+@media (max-width: 959px) {
+  .ifl-workspace .ws-pane-tabs { overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .ifl-workspace .ws-pane-tab { flex: 1 0 auto; min-width: 100px; }
+  .ifl-workspace .ws-pane-tab[data-minimized="true"] { border-style: dashed; }
+  .ifl-workspace .ws-pane-grid > .ifl-workspace-pane { min-height: 0; }
+  .ifl-workspace .ws-switch-button { display: grid; }
+  .ifl-workspace .ws-window-menu { max-height: min(440px, calc(100% - var(--ws-menu-y, 8px) - 8px)); }
+  .ifl-workspace .ws-window-hint { bottom: 84px; }
+}
+@media (forced-colors: active) {
+  .ifl-workspace .ws-window-menu, .ifl-workspace .ws-window-hint { border: 1px solid CanvasText; box-shadow: none; }
+  .ifl-workspace .ws-window-option { background: Canvas; color: CanvasText; }
+  .ifl-workspace .ws-window-option:focus-visible { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+@media (min-width: 960px) {
+  .ifl-workspace .ifl-workspace-pane.is-compact .ws-pane-symbol { display: none; }
+  .ifl-workspace .ifl-workspace-pane.is-compact .ws-pane-header { gap: 4px; padding: 8px; }
+}

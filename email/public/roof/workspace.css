@@ -1,0 +1,14 @@
+/* OS presentation only. Mail's body remains its own isolated frame. */
+.m-mail.ml-workspace.ifl-in-pane { --tabs-h: 0px; --gutter: 12px; padding: 0 12px 20px; min-width: 0; min-height: 100%; }
+.m-mail.ml-workspace.ifl-in-pane .ml-state { padding: 24px 0; }
+.m-mail.ml-workspace.ifl-in-pane .ml-list { min-width: 0; }
+.m-mail.ml-workspace.ifl-in-pane .ml-reader { padding: 4px 0 20px; }
+.m-mail.ml-workspace.ifl-in-pane.ml-split { grid-template-columns: minmax(260px, 34%) minmax(0, 1fr); gap: 12px; }
+.m-mail.ml-workspace.ifl-in-pane.ml-split > .ml-reader { position: relative; top: auto; height: auto; min-height: 0; overflow: visible; padding-left: 12px; }
+.m-mail.ml-workspace.ifl-in-pane .mr-subject { font-size: 19px; }
+.m-mail.ml-workspace.ifl-in-pane .mr-qr { gap: 6px; padding-left: 12px; }
+.m-mail.ml-workspace.ifl-in-pane .ml-top { gap: 4px; }
+.m-mail.ml-workspace.ifl-in-pane .ml-date { font-size: 12px; }
+.ifl-sheet[data-app="mail"] .ml-workspace-file { display: grid; gap: 14px; }
+.ifl-sheet[data-app="mail"] .ml-workspace-file p { margin: 0; overflow-wrap: anywhere; }
+.ifl-sheet[data-app="mail"] .ml-workspace-file .ifl-btn { justify-content: center; min-height: 44px; padding: 12px 16px; border-radius: 999px; text-decoration: none; }

@@ -88,6 +88,27 @@ async function open(mode = {}) {
   return { ctx, page, errors, clean };
 }
 
+test('a pending native exit cannot hide the same app after it is already presented in the destination pane', async () => {
+  const { ctx, page, clean } = await open();
+  try {
+    await page.evaluate(() => work.F.nav.go('/weather/#days'));
+    await page.locator('#views #m-weather:not([hidden]) input').waitFor();
+    await page.getByRole('textbox', { name: 'weather draft' }).fill('A native draft before the immediate move');
+    const hides = await page.evaluate(async () => {
+      work.F.nav.go('/#apps');
+      work.attach('weather');
+      await work.show('weather', '/weather/#days');
+      return work.stats.weather.hides;
+    });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const after = await page.evaluate(() => ({ hides: work.stats.weather.hides, same: work.F.view('weather') === work.views.weather,
+      route: work.F.route.tab, visible: work.views.weather.fw.visible(), parent: work.views.weather.el.parentNode.id,
+      draft: work.views.weather.root.querySelector('input').value }));
+    assert.deepEqual(after, { hides, same: true, route: 'apps', visible: true, parent: 'slot-weather', draft: 'A native draft before the immediate move' });
+    await clean();
+  } finally { await ctx.close(); }
+});
+
 test('controlled app views reuse one instance and draft through split, reparent, hide and return to Today navigation', async () => {
   const { ctx, page, clean } = await open();
   try {

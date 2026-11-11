@@ -1,8 +1,8 @@
-# InFlite OS workspaces v1
+# InFlite OS workspaces v2
 
 `os.inflite.ai` uses Today's existing session, app services and domain engines through an optional workspace host. The apex retains its ordinary Today surface. An explicit `?os=1` flag is available only on localhost and test hosts. It does not enable OS on the production apex or another production subdomain.
 
-The first workspace combines real Fitness and Weather views. Desktop presents both; a narrow viewport presents one foreground pane. Expanding an app and returning reparents the same app instance, so stores, drafts and chart owners remain attached to their original module lifetime. Markets, Chats and Mail open as full apps. Workspace v1 supports one or two unique pane apps, not arbitrary duplicate instances of a module.
+The default Ride workspace combines real Fitness and Weather views. Saved workspaces support one to five unique panes from Fitness, Weather, Markets, Chats and Mail. Desktop supports tiled or floating windows with move, resize, snap, minimize and restore controls; a narrow viewport presents one foreground pane with an app switcher. Expanding an app and returning reparents the same app instance, so stores, drafts and chart owners remain attached to their original module lifetime. A workspace never creates a second instance of the same app.
 
 ## Ownership
 
@@ -10,7 +10,10 @@ The first workspace combines real Fitness and Weather views. Desktop presents bo
 | --- | --- |
 | `workspace.js` | Workspace navigation, active panes, providers, global actions and explicit cross-app intents |
 | `workspace-view.js` / `workspace.css` | Stable DOM slots, dock, workspace list and responsive presentation |
-| `workspace-state.js` | Validated, account-scoped workspace metadata |
+| `workspace-state.js` | Validated, account-scoped workspace metadata and legacy migration |
+| `workspace-windows.js` | Pure viewport-bounded geometry and window ordering |
+| `workspace-commands.js` / `workspace-commands.css` | Existing global search integration and validated notification actions |
+| `workspace-files.js` / `workspace-files.css` | Federated, account-owned file metadata and explicit native file actions |
 | `workspace-context.js` | Ephemeral location/time selection and subscriptions for one workspace |
 | `workspace-catalog.js` | Versioned first-party manifests and allowlisted persisted routes |
 | `frame.js` | The single module instance, account lifetime, scoped framework handles, loading and flush |
@@ -43,7 +46,7 @@ A module gets the account-owned `fw.workspace` capability only under the OS host
 workspace = {
   enabled: true,
   active() → boolean,
-  provide({ snapshot(), run(intent, objectId?, { current }) }) → owned cleanup,
+  provide({ snapshot(), run(intent, objectId?, { current }), files?({ query?, current }) }) → owned cleanup,
   changed(),
   context: { get(), capture() → currentContextPredicate, subscribe(fn) → cleanup, update(patch, { source }) → boolean }
 }
@@ -55,7 +58,9 @@ Asynchronous intents check the host's `current()` predicate after awaited reads 
 
 ## Metadata, context and explicit actions
 
-Only account ID, workspace ID/name, known app/route references, active pane and update time are persisted under `ifl:workspace:v1:<account-id>`. Stored input is bounded and sanitized on restore. Eight workspaces and two unique eligible panes are the limits. Storage failure falls back to in-memory metadata. Other accounts' records are neither adopted nor cleared by an old owner.
+Only account ID, workspace ID/name, known app/route references, active pane, normalized window layout and update time are persisted under `ifl:workspace:v2:<account-id>`. Layout contains tile/float mode, app ordering, normalized x/y/width/height and a minimized flag; unknown fields are removed, numeric bounds are finite and clamped, and windows for removed apps are dropped. Eight workspaces and five unique eligible panes are the limits. Stored input is bounded and sanitized on restore. Storage failure falls back to in-memory metadata. Other accounts' records are neither adopted nor cleared by an old owner.
+
+When no v2 record exists, the store reads `ifl:workspace:v1:<account-id>` and migrates valid metadata in memory. Opening does not write; the first user edit saves v2. A present malformed v2 record starts fresh rather than importing an older v1 layout. Retired tabs write a separate key and cannot overwrite or merge current v2 state. Reset writes a default v2 snapshot so retained legacy metadata cannot reappear on reload; it leaves the v1 record intact.
 
 Persisted routes reject queries, encoded values, external URLs, auth/settings flows and share payloads. Live query-based place navigation remains ephemeral. Location, forecast data, ride content, GPX contents and auth material are absent from saved metadata. The live history owner is checked before restoring a workspace; context and live query memory are cleared on account teardown.
 
@@ -63,12 +68,33 @@ Each workspace's location/time context stays in memory. Coordinates are validate
 
 Changing Weather's place or choosing “Weather for ride” is an explicit context action. Routine forecast refreshes do not silently write a ride location. Scheduling opens Fitness's existing editor and writes only on its confirmed action. Ride sharing uses the existing supported workout card. GPX references resolve against the current account's saved route and export a real escaped GPX file; the host does not fabricate a Chat route-card schema or place GPX contents into a URL.
 
+## Commands, Files and notification actions
+
+Global search uses the existing search UI for apps, saved workspaces, currently available provider actions and Files metadata already loaded into RAM. Search does not silently query Mail or download Chat media. Opening Files explicitly asks eligible app providers for bounded metadata; unavailable, locked or signed-out sources are reported and their cached metadata is removed. Background metadata loading uses the same singleton module in a hidden, inert slot, without giving it foreground navigation or modal authority.
+
+Fitness resolves existing saved routes and planned workouts to actual GPX, FIT or ZWO exports. Mail lists attachment metadata through its existing authenticated API and opens the native viewer or download action. Chat’s transient source reconciles its complete eligible metadata snapshot immediately on conversation changes and recalls, without fetching content. Chat lists ordinary media only from the currently open decrypted conversation; view-once, disappearing, recalled, sealed or in-flight media are excluded. Providers revalidate account, availability, resource and `current()` after asynchronous reads. File bytes, message bodies, decrypted media and the Files index are not written to workspace storage or the service worker cache.
+
+Notification buttons use validated same-app references and recheck the current account and app availability on activation. Reply and ride-time actions open the existing native composer or schedule editor; the user confirms sending or saving there. Opening a workspace restores the relevant pane when a saved workspace contains that app, with native full-app navigation as the fallback. Ordinary Today notifications retain their existing behavior.
+
 ## Optional assets and checks
 
-The five root workspace scripts, `workspace.css` and `os.webmanifest` form the OS-only shell closure. Host updater and service worker agree on the exact list. Ordinary HTML does not preload them. The service worker enables this closure only on the exact OS host or explicit local preview, and retains only static assets, never account/API responses.
+The eight root workspace scripts, three workspace stylesheets and `os.webmanifest` form the exact OS-only shell closure. Host updater and service worker agree on the exact list. Ordinary HTML does not preload them. The service worker enables this closure only on the exact OS host or explicit local preview, and retains only static assets, never account/API responses.
 
-Fitness and Weather adapters are literal lazy imports. Their exact `roof/workspace.js` and `roof/workspace.css` paths belong to `connector.lazy`, not the app's ordinary first-open `connector.files`. Once used in OS, the host asks the root worker to retain the static graph plus these curated optional files. Existing installed-app idle caching and network-only exclusions continue to apply. The worker accepts only JS/CSS assets for module build caches and rejects API path segments, documents and data files; it also refuses to replay an old malformed API cache entry.
+All five app adapters are literal lazy imports. Their exact `roof/workspace.js` and `roof/workspace.css` paths belong to `connector.lazy`, not the app's ordinary first-open `connector.files`. Once used in OS, the host asks the root worker to retain the static graph plus these curated optional files. Existing installed-app idle caching and network-only exclusions continue to apply. The worker accepts only JS/CSS assets for module build caches and rejects API path segments, documents and data files; it also refuses to replay an old malformed API cache entry.
 
-The core framework budget is 35 KiB gzip with comments stripped; its request coordinator has a separate 2 KiB + 128 byte ceiling. Optional OS JS plus both adapters has a 24 KiB served-gzip ceiling and its CSS an 8 KiB ceiling. Ordinary app budgets remain unchanged. The exact optional file exclusion prevents future unrelated files from escaping the core budget.
+The core framework budget remains 35 KiB gzip with comments stripped; its request coordinator retains a separate 2 KiB + 128 byte ceiling. Ordinary app budgets are unchanged. The v1 aggregate covered a two-app shell; v2 adds five-app window management, Commands and Files. The base ceiling includes an explicit 0.5 KiB allowance for per-workspace scroll ownership, asynchronous content restoration and activation guards; the Commands ceiling includes action ownership checks. The optional Mail adapter also owns its coalesced pane observer to keep responsive layout writes out of ResizeObserver delivery. Commands includes an account-scoped Cmd/Ctrl+K handler that preserves native editor shortcuts and removes its listener on teardown. Its optional served-gzip graph therefore has explicit component ceilings as well as a 46 KiB JS / 10 KiB CSS aggregate ceiling:
 
-`roofworkspace.test.mjs` checks host selection, updater/worker closure, manifest, static versus lazy graphs, cache path rejection, route opt-in and served sizes. Workspace model tests exercise hostile storage, account replacement, immutable snapshots and context ownership. Real-frame fixtures cover interrupted imports and stale handles. The app composition browser suite uses the actual Fitness/Weather modules, controls and chart lifecycle with synthetic API data; it does not write production accounts.
+| Optional component | JS ceiling | CSS ceiling |
+| --- | --- | --- |
+| Base shell and window management | 24.5 KiB | 5.5 KiB |
+| Commands | 3.5 KiB | 1 KiB |
+| Files | 4.25 KiB | 1 KiB |
+| Fitness adapter | 3.75 KiB | 1 KiB |
+| Weather adapter | 2.75 KiB | 1 KiB |
+| Markets adapter | 1.5 KiB | 1 KiB |
+| Chats adapter | 2.75 KiB | 1 KiB |
+| Mail adapter | 3.5 KiB | 1 KiB |
+
+The audit measured 24,684 bytes for the base/window JS, 3,372 for Commands, 4,217 for Files and 13,496 across the five adapters: 45,769 bytes total JS. CSS measured 9,509 bytes. These are served-size measurements using the same in-memory minifier and gzip settings as the app budget contracts, not source-file sizes. The core measured 34,872 bytes with its existing comment-stripped metric. The exact optional file exclusion prevents future unrelated files from escaping the core budget; new assets must be reviewed and added to the closure explicitly.
+
+`roofworkspace.test.mjs` checks host selection, updater/worker closure, manifest, static versus lazy graphs, cache path rejection, route opt-in and served sizes. Workspace model tests exercise hostile storage, account replacement, immutable snapshots and context ownership. Real-frame fixtures cover interrupted imports and stale handles. The browser suites use actual module controls and lifecycle with synthetic API data, including native Mail compose/viewer flows, window behavior and account replacement; they do not write production accounts. Model coverage includes legacy migration and retired-writer isolation, three-to-five-app restoration, all-minimized windows, unknown-field stripping, hostile geometry and adversarial route mutations.

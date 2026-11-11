@@ -1,0 +1,22 @@
+.ifl-files { display: grid; gap: 16px; min-width: 0; }
+.ifl-files > input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--line, #8884); border-radius: 24px; padding: 14px 18px; background: var(--inset, #8881); color: inherit; font: inherit; font-size: 16px; }
+.ifl-files-filters { display: flex; flex-wrap: wrap; gap: 10px; }
+.ifl-files-filter { display: grid; flex: 1 1 100px; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text-2, #888); }
+.ifl-files-filter > span { padding-inline: 12px; }
+.ifl-files-filter select { min-width: 0; max-width: 100%; padding: 12px; border-radius: 18px; border: 1px solid var(--line, #8884); color: var(--text, inherit); background: var(--inset, #8881); font: inherit; font-size: 14px; }
+.ifl-files-status:empty { display: none; }
+.ifl-files-source { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 20px; background: var(--inset, #8881); font-size: 13px; margin-bottom: 8px; }
+.ifl-files-source > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ifl-files-source .ifl-btn { flex-shrink: 0; }
+.ifl-files-item { min-width: 0; padding: 5px; border-radius: 24px; background: var(--inset, #8881); margin-bottom: 10px; overflow: hidden; }
+.ifl-files-item .ifl-row { width: 100%; min-height: 64px; border: 0; border-radius: 20px; background: transparent; text-align: start; }
+.ifl-files-item .ifl-tx { min-width: 0; }
+.ifl-files-item .ifl-tx b { display: block; white-space: normal; overflow-wrap: anywhere; }
+.ifl-files-item .ifl-tx small { overflow-wrap: anywhere; }
+.ifl-files-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 0 10px 10px; }
+.ifl-files-actions .ifl-btn { min-height: 40px; }
+.ifl-files-count { margin: 0 12px 10px; color: var(--text-2, #888); font-size: 12px; }
+.ifl-files-empty { padding: 24px 16px; margin: 0; text-align: center; color: var(--text-2, #888); overflow-wrap: anywhere; }
+.ifl-sheet[data-sheet="workspace-files"] { width: min(680px, calc(100% - 24px)); margin-inline: auto; }
+.ifl-files :is(button,input,select):focus-visible { outline: 2px solid var(--acc-ink, #2979dd); outline-offset: 3px; }
+@media (prefers-reduced-motion: no-preference) { .ifl-files-item .ifl-row { transition: background .16s ease, transform .16s ease; } .ifl-files-item .ifl-row:active { transform: scale(.99); } }

@@ -1,0 +1,12 @@
+/* Loaded with OS command search; ordinary Today notification rows stay intact. */
+.ifl-sheet[data-sheet="notifications"] .ifl-nt-card.has-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.ifl-sheet[data-sheet="notifications"] .has-actions .ifl-nt-main { grid-column: 1; }
+.ifl-sheet[data-sheet="notifications"] .has-actions .ifl-nt-x { grid-column: 2; grid-row: 1; }
+.ifl-sheet[data-sheet="notifications"] .has-actions .ifl-nt-more { bottom: auto; top: 34px; }
+.ifl-sheet[data-sheet="notifications"] .ifl-nt-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; padding: 0 14px 12px 66px; }
+.ifl-sheet[data-sheet="notifications"] .ifl-nt-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--ifl-line, var(--line)); border-radius: 999px; color: var(--ifl-text, var(--text)); background: var(--ifl-surface-2, var(--glass)); font: 600 13px/1.3 var(--font); }
+.ifl-sheet[data-sheet="notifications"] .ifl-nt-action svg { display: block; width: 16px; height: 16px; }
+.ifl-sheet[data-sheet="notifications"] .ifl-nt-action:focus-visible { outline: 2px solid var(--ifl-accent-ink, var(--tint-text)); outline-offset: -2px; }
+.ifl-sheet[data-sheet="notifications"] .ifl-nt-action:active { background: var(--press); }
+@media (max-width: 359px) { .ifl-sheet[data-sheet="notifications"] .ifl-nt-actions { padding-left: 14px; } }
+@media (forced-colors: active) { .ifl-sheet[data-sheet="notifications"] .ifl-nt-action { color: ButtonText; background: ButtonFace; border-color: ButtonText; } }

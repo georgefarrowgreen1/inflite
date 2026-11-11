@@ -10,9 +10,9 @@ const app = (id, name, href, pane, capabilities) => Object.freeze({
 export const WORKSPACE_APPS = Object.freeze([
   app("fitness", "Fitness", "/fitness/#today", true, ["view", "local-search", "share-on-request"]),
   app("weather", "Weather", "/weather/#now", true, ["view", "local-search", "location-on-request"]),
-  app("markets", "Markets", "/markets/#today", false, ["view", "local-search"]),
-  app("chats", "Chats", "/chats/", false, ["view", "encrypted-messaging"]),
-  app("mail", "Mail", "/mail/", false, ["view", "isolated-message-body"]),
+  app("markets", "Markets", "/markets/#today", true, ["view", "local-search"]),
+  app("chats", "Chats", "/chats/", true, ["view", "encrypted-messaging"]),
+  app("mail", "Mail", "/mail/", true, ["view", "isolated-message-body"]),
 ]);
 export const getWorkspaceApp = (id) => WORKSPACE_APPS.find((a) => a.id === id) || null;
 

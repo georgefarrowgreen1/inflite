@@ -1,13 +1,19 @@
 // Presentational OS shell. Slot elements are stable; the host owns module data,
 // routes, persistence, mounting and cleanup. No screen below invents account data.
-// createWorkspaceView(root, callbacks) -> { slots, dock, update(model), setPane(key,spec), destroy() }
+// createWorkspaceView(root, callbacks) -> { slots, dock, update(model), setPane(key,spec),
+//   getViewport(), isPaneVisible(app), revealPane(app), windowAction(app, command), destroy() }
 // dock is a self-scoped movable element; restore it with slots.dockAnchor.append(dock).
 // model: { mode:"today"|"workspace"|"app", activeId, activeApp, foregroundApp, paneApps?,
 //   title?, subtitle?, workspaces:[{id,name,icon?}], apps:[{id,name,icon?,available?}],
-//   user?:{name,photo?}, summary?:{title,line,facts?:[{label,value}]}, resource? }
+//   user?:{name,photo?}, summary?:{title,line,facts?:[{label,value}]}, resource?, layout? }
+// layout: { mode:"tile"|"float", windows:{[app]:{x,y,w,h,minimized}}, order:[app] }.
+// Window bounds are normalized. onWindowChange(app,bounds) commits only a completed
+// gesture; onWindowFocus(app), onLayoutMode(mode), onViewportChange() notify the host.
+// onBeforePaneFocus(app) runs before a user switch hides the previous app slot.
 // resource: { name, app, intent, objectId, secondary?:{label,icon?,app,intent,objectId}, share? }.
-// setPane("fitness"|"weather"|"app", {title,line,pick?,actions,sections,section,busy,error}).
+// setPane("fitness"|"weather"|"markets"|"chats"|"mail"|"app", {title,line,pick?,actions,sections,section,busy,error}).
 import { el, icon, avatar } from "./ui.js";
+import { WINDOW_APPS, normalizeLayout, normalizeWindow, pixelBounds, relativeBounds, snapWindow } from "./workspace-windows.js";
 
 let serial = 0;
 const APP_NAMES = { fitness: "Fitness", weather: "Weather", markets: "Markets", chats: "Chats", mail: "Mail" };
@@ -19,7 +25,8 @@ const appSymbol = app => icon(null, { app: APP_ICONS[app] || app, size: 32 });
 
 export function createWorkspaceView(root, callbacks = {}) {
   const uid = `ifl-workspace-${++serial}`, actions = new Map(), cleanups = [], panes = new Map();
-  let gone = false, model = {}, focusedApp = "", avatarKey = "";
+  let gone = false, model = {}, focusedApp = "", avatarKey = "", gesture = null, frame = 0, menuEpoch = 0;
+  const windowsEnabled = callable(callbacks.onWindowChange);
   const listen = (node, type, fn, options) => { node.addEventListener(type, fn, options); cleanups.push(() => node.removeEventListener(type, fn, options)); };
   const action = (key, run) => { if (callable(run)) actions.set(key, run); else actions.delete(key); return key; };
   const button = (label, glyph, key, cls = "ws-icon-button") => el("button", { type: "button", class: cls, "aria-label": label, title: label, data: { wsAction: key } }, glyph ? icon(glyph) : null);
@@ -27,7 +34,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   const setCurrent = (node, selected) => { if (!node) return; if (selected) node.setAttribute("aria-current", "page"); else node.removeAttribute("aria-current"); };
   const paneApp = key => key === "app" ? model.activeApp : key;
   const paneApps = () => {
-    const list = Array.isArray(model.paneApps) ? [...new Set(model.paneApps.filter(app => app === "fitness" || app === "weather"))] : [];
+    const list = Array.isArray(model.paneApps) ? [...new Set(model.paneApps.filter(app => WINDOW_APPS.includes(app)))] : [];
     return list.length ? list : ["fitness", "weather"];
   };
   const invoke = (name, ...args) => { if (!gone && callable(callbacks[name])) return callbacks[name](...args); };
@@ -75,12 +82,17 @@ export function createWorkspaceView(root, callbacks = {}) {
   const appsHeader = callable(callbacks.onApps) ? bindButton("Open apps", "grid", "apps", opener => invoke("onApps", opener), "ws-icon-button ws-phone-only") : null;
   const manage = callable(callbacks.onManageWorkspace) ? bindButton("Workspace options", "more", "manage-workspace", opener => invoke("onManageWorkspace", model.activeId, opener), "ws-icon-button") : null;
   if (manage) manage.hidden = true;
+  const layoutButton = windowsEnabled ? button("Float windows", null, action("window-layout", () => changeMode(model.layout?.mode === "float" ? "tile" : "float")), "ws-icon-button ws-layout-button ws-desktop-only") : null;
+  layoutButton?.append(el("span", { class: "ws-layout-mark", "aria-hidden": "true" }));
+  const switchButton = windowsEnabled ? button("Open windows", "grid", action("window-switcher", opener => openSwitcher(opener)), "ws-icon-button ws-switch-button") : null;
+  if (layoutButton) layoutButton.hidden = true;
+  if (switchButton) switchButton.hidden = true;
   const notifications = callable(callbacks.onNotifications) ? bindButton("Notifications", "bell", "notifications", opener => invoke("onNotifications", opener), "ws-icon-button ws-desktop-only") : null;
   const notificationCount = el("span", { class: "ws-notification-count", hidden: true, "aria-hidden": "true" });
   notifications?.append(notificationCount);
   const account = callable(callbacks.onAccount) ? button("Your account", null, action("account", opener => invoke("onAccount", opener)), "ws-icon-button ws-account") : null;
   account?.append(icon("person"));
-  const toolbar = el("header", { class: "ws-toolbar", role: "banner" }, back, headingBox, search, el("div", { class: "ws-header-actions" }, appsHeader, manage, notifications, account));
+  const toolbar = el("header", { class: "ws-toolbar", role: "banner" }, back, headingBox, search, el("div", { class: "ws-header-actions" }, appsHeader, layoutButton, switchButton, manage, notifications, account));
 
   const phoneChips = el("nav", { class: "ws-workspace-chips", "aria-label": "Workspaces" }), chipRecords = new Map();
   const cardTitle = el("h3", { class: "ws-summary-title" }), cardLine = el("p", { class: "ws-summary-line" }), cardFacts = el("dl", { class: "ws-summary-facts" });
@@ -96,8 +108,8 @@ export function createWorkspaceView(root, callbacks = {}) {
 
   const foregroundTabs = el("div", { class: "ws-pane-tabs", role: "tablist", "aria-label": "Ride workspace apps" });
   const foregroundButtons = new Map();
-  for (const app of ["fitness", "weather"]) {
-    const b = button(APP_NAMES[app], null, action(`focus:${app}`, () => { foreground(app); invoke("onPaneFocus", app); }), "ws-pane-tab");
+  for (const app of WINDOW_APPS) {
+    const b = button(APP_NAMES[app], null, action(`focus:${app}`, () => { if (windowsEnabled && layoutOf().windows[app]?.minimized) restoreWindow(app); else { foreground(app); focusWindow(app); invoke("onPaneFocus", app); } }), "ws-pane-tab");
     b.setAttribute("role", "tab"); b.append(appSymbol(app), el("span", { text: APP_NAMES[app] }));
     foregroundTabs.append(b); foregroundButtons.set(app, b);
   }
@@ -112,18 +124,21 @@ export function createWorkspaceView(root, callbacks = {}) {
     const pickText = el("span"); pick.append(pickText, icon("down")); pick.hidden = true;
     const buttons = el("div", { class: "ws-pane-actions" });
     const open = callable(callbacks.onPaneOpen) ? button(`Open ${name}`, "open", action(`expand:${key}`, opener => invoke("onPaneOpen", paneApp(key), opener))) : null;
+    const windowOptions = key !== "app" && windowsEnabled ? button(`${name} window options`, "down", action(`window-menu:${key}`, opener => openWindowMenu(key, opener)), "ws-icon-button ws-window-options") : null;
+    windowOptions?.setAttribute("aria-haspopup", "menu"); windowOptions?.setAttribute("aria-expanded", "false");
+    const resizeHandle = key !== "app" && windowsEnabled ? el("span", { class: "ws-resize-handle", "aria-hidden": "true", data: { resizeWindow: key } }) : null;
     const busyMark = el("span", { class: "ws-busy-mark", "aria-hidden": "true", hidden: true });
     const sectionNav = el("div", { class: "ws-pane-sections", role: "tablist", "aria-label": `${name} sections`, hidden: true });
     const statusTitle = el("b"), statusText = el("p"), statusActions = el("div", { class: "ws-status-actions" });
     const status = el("div", { class: "ws-pane-status", role: "status", hidden: true }, statusTitle, statusText, statusActions);
     const slot = el("div", { class: "ws-module-slot", data: { workspaceSlot: key } });
-    const pane = el("section", { class: "ifl-workspace-pane", id: `${uid}-${key}`, data: { pane: key }, "aria-labelledby": title.id },
-      el("header", { class: "ws-pane-header" }, paneBack, symbol, el("div", { class: "ws-pane-heading" }, title, pick, line), busyMark, buttons, open), sectionNav, status, slot);
-    const record = { el: pane, slot, title, line, symbol, pick, pickText, buttons, open, paneBack, busyMark, sectionNav, status, statusTitle, statusText, statusActions,
+    const pane = el("section", { class: "ifl-workspace-pane", id: `${uid}-${key}`, tabindex: "-1", data: { pane: key }, "aria-label": `${name} workspace window` },
+      el("header", { class: "ws-pane-header" }, paneBack, symbol, el("div", { class: "ws-pane-heading" }, title, pick, line), busyMark, buttons, windowOptions, open), sectionNav, status, slot, resizeHandle);
+    const record = { el: pane, slot, title, line, symbol, pick, pickText, buttons, open, windowOptions, resizeHandle, paneBack, busyMark, sectionNav, status, statusTitle, statusText, statusActions,
       spec: { title: name, busy: true }, actionRecords: new Map(), sectionRecords: new Map() };
     panes.set(key, record); return pane;
   }
-  const paneGrid = el("div", { class: "ws-pane-grid" }, makePane("fitness"), makePane("weather"));
+  const paneGrid = el("div", { class: "ws-pane-grid" }, ...WINDOW_APPS.map(makePane));
   for (const [app, b] of foregroundButtons) b.setAttribute("aria-controls", panes.get(app).el.id);
   const rideView = el("section", { class: "ws-ride", "aria-label": "Ride workspace", hidden: true }, foregroundTabs, paneGrid);
   const appView = el("section", { class: "ws-single-app", "aria-label": "App", hidden: true }, makePane("app"));
@@ -133,6 +148,11 @@ export function createWorkspaceView(root, callbacks = {}) {
   const share = button("Workspace file action", null, "share-resource", "ws-resource-share"); share.append(secondaryIcon, secondaryLabel);
   const resource = el("section", { class: "ws-resource", "aria-label": "Workspace file", hidden: true }, resourceMain, share);
   const canvas = el("div", { class: "ws-canvas" }, todayView, rideView, appView, resource);
+  const windowMenu = el("div", { class: "ws-window-menu", role: "menu", hidden: true });
+  const keyboardHint = el("p", { class: "ws-window-hint", role: "status", hidden: true });
+  const closedWindows = el("div", { class: "ws-windows-empty", hidden: true }, el("h2", { text: "Your windows are minimised" }), el("p", { text: "Choose a window to pick up where you left off." }), button("Open windows", "grid", "window-switcher", "ws-secondary"));
+  rideView.append(closedWindows);
+  canvas.append(windowMenu, keyboardHint);
   const main = el("div", { class: "ws-main" }, toolbar, canvas);
   const dock = el("nav", { class: "ws-dock", "aria-label": "Apps" }), dockRecords = new Map();
   const dockToday = callable(callbacks.onToday) ? button("Today", null, "today", "ws-dock-button") : null;
@@ -145,22 +165,247 @@ export function createWorkspaceView(root, callbacks = {}) {
   const shell = el("div", { class: "ws-shell" }, sidebar, main, dockAnchor);
   root.classList.add("ifl-workspace"); root.replaceChildren(shell);
 
-  function foreground(app) {
+  const desktop = () => matchMedia("(min-width: 960px)").matches;
+  const layoutOf = () => normalizeLayout(model.layout, paneApps());
+  function getViewport() {
+    const r = paneGrid.getBoundingClientRect();
+    return { width: r.width, height: r.height, left: r.left, top: r.top };
+  }
+  function isPaneVisible(app) {
+    const pane = panes.get(app)?.el;
+    if (gone || model.mode !== "workspace" || !pane || pane.hidden || !paneApps().includes(app) || layoutOf().windows[app]?.minimized) return false;
+    if (!desktop()) return root.dataset.foregroundApp === app;
+    const r = pane.getBoundingClientRect(), box = paneGrid.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.right > box.left && r.left < box.right && r.bottom > box.top && r.top < box.bottom;
+  }
+  function revealPane(app) {
+    const pane = panes.get(app)?.el;
+    if (gone || model.mode !== "workspace" || !pane || pane.hidden || !paneApps().includes(app)) return false;
+    if (!desktop() || layoutOf().mode !== "tile") return isPaneVisible(app);
+    const r = pane.getBoundingClientRect(), box = paneGrid.getBoundingClientRect();
+    let top = paneGrid.scrollTop, left = paneGrid.scrollLeft;
+    if (r.top < box.top || r.height > box.height) top += r.top - box.top;
+    else if (r.bottom > box.bottom) top += r.bottom - box.bottom;
+    if (r.left < box.left || r.width > box.width) left += r.left - box.left;
+    else if (r.right > box.right) left += r.right - box.right;
+    // Only the workspace canvas moves. Native composers and document scroll stay
+    // anchored, and scroll listeners can wake the newly visible real app host.
+    paneGrid.scrollTop = Math.max(0, top); paneGrid.scrollLeft = Math.max(0, left);
+    return isPaneVisible(app);
+  }
+  function paintWindows() {
+    const layout = layoutOf(), available = paneApps(), visible = available.filter(app => !layout.windows[app].minimized);
+    root.dataset.layout = layout.mode; root.dataset.windowCount = String(visible.length);
+    root.classList.toggle("ws-window-manager", windowsEnabled);
+    const size = getViewport();
+    for (const app of WINDOW_APPS) {
+      const p = panes.get(app), exists = available.includes(app), minimized = exists && !!layout.windows[app].minimized;
+      p.el.dataset.minimized = String(minimized);
+      p.el.hidden = !exists || minimized;
+      p.el.inert = p.el.hidden || (!desktop() && root.dataset.foregroundApp !== app);
+      p.el.style.setProperty("--ws-z", String(layout.order.indexOf(app) + 1));
+      p.el.classList.toggle("is-front", app === layout.order.filter(id => visible.includes(id)).at(-1));
+      if (exists && layout.mode === "float" && desktop()) {
+        const b = pixelBounds(layout.windows[app], size.width, size.height);
+        for (const [name, value] of Object.entries(b)) p.el.style.setProperty(`--ws-${name}`, `${value}px`);
+        p.el.classList.toggle("is-compact", b.w < 420);
+      } else p.el.classList.toggle("is-compact", desktop() && (visible.length > 1 ? (size.width - 16) / 2 : size.width) < 420);
+      p.resizeHandle?.toggleAttribute("hidden", !exists || layout.mode !== "float" || !desktop());
+      const b = foregroundButtons.get(app);
+      b.dataset.minimized = String(minimized); b.setAttribute("aria-label", minimized ? `Restore ${APP_NAMES[app]}` : APP_NAMES[app]);
+    }
+    closedWindows.hidden = model.mode !== "workspace" || visible.length > 0;
+    if (layoutButton) {
+      layoutButton.hidden = model.mode !== "workspace";
+      layoutButton.setAttribute("aria-label", layout.mode === "float" ? "Tile windows" : "Float windows");
+      layoutButton.title = layoutButton.getAttribute("aria-label"); layoutButton.setAttribute("aria-pressed", String(layout.mode === "float"));
+    }
+    if (switchButton) switchButton.hidden = model.mode !== "workspace";
+    if (appsHeader) appsHeader.hidden = model.mode === "workspace" && windowsEnabled;
+  }
+  function focusWindow(app) {
+    if (!windowsEnabled || !paneApps().includes(app)) return;
+    const layout = layoutOf();
+    model.layout = { ...layout, order: [...layout.order.filter(id => id !== app), app] };
+    paintWindows(); invoke("onWindowFocus", app);
+  }
+  function changeMode(mode) {
+    if (!windowsEnabled || gone || model.mode !== "workspace") return;
+    finishGesture(false); closeWindowMenu();
+    model.layout = { ...layoutOf(), mode: mode === "float" ? "float" : "tile" };
+    paintWindows(); invoke("onLayoutMode", model.layout.mode);
+  }
+  function setWindow(app, patch, { commit = true, floating = false } = {}) {
+    if (!windowsEnabled || gone || !paneApps().includes(app)) return;
+    const layout = layoutOf(), next = normalizeWindow({ ...layout.windows[app], ...patch }, layout.windows[app]), changedMode = floating && layout.mode !== "float";
+    model.layout = { ...layout, mode: floating ? "float" : layout.mode, windows: { ...layout.windows, [app]: next } };
+    paintWindows();
+    if (commit) { if (changedMode) invoke("onLayoutMode", "float"); invoke("onWindowChange", app, next); }
+  }
+  function restoreWindow(app) {
+    if (!paneApps().includes(app)) return;
+    setWindow(app, { minimized: false }); foreground(app); focusWindow(app); invoke("onPaneFocus", app);
+    closeWindowMenu(); panes.get(app)?.el.focus({ preventScroll: true });
+  }
+  function windowAction(app, command) {
+    command = ({ minimize: "minimise", maximize: "maximise", "snap-left": "left", "snap-right": "right" })[command] || command;
+    if (!windowsEnabled || gone || !paneApps().includes(app)) return false;
+    closeWindowMenu();
+    if (command === "restore") { restoreWindow(app); return true; }
+    if (command === "minimise") {
+      const next = paneApps().find(id => id !== app && !layoutOf().windows[id].minimized);
+      invoke("onBeforePaneFocus", next || app);
+      setWindow(app, { minimized: true });
+      if (next) { foreground(next, false); invoke("onPaneFocus", next); panes.get(next).el.focus({ preventScroll: true }); }
+      else switchButton?.focus({ preventScroll: true });
+      return true;
+    }
+    if (["left", "right", "maximise", "restore-size"].includes(command)) {
+      setWindow(app, snapWindow(command), { floating: true }); foreground(app); focusWindow(app); invoke("onPaneFocus", app); panes.get(app).el.focus({ preventScroll: true }); return true;
+    }
+    if (command === "move" || command === "resize") { startKeyboard(app, command); return true; }
+    return false;
+  }
+  function closeWindowMenu(restoreFocus = false) {
+    ++menuEpoch;
+    const opener = windowMenu._opener;
+    windowMenu.hidden = true; windowMenu.replaceChildren();
+    opener?.setAttribute("aria-expanded", "false"); windowMenu._opener = null;
+    if (restoreFocus && opener?.isConnected && !opener.closest("[hidden],[inert]")) opener.focus({ preventScroll: true });
+  }
+  function showWindowMenu(app, opener, switcher) {
+    if (!windowMenu.hidden && windowMenu._opener === opener) { closeWindowMenu(true); return; }
+    closeWindowMenu();
+    windowMenu.setAttribute("aria-label", switcher ? "Open windows" : `${APP_NAMES[app]} window`);
+    windowMenu._opener = opener; opener?.setAttribute("aria-expanded", "true"); opener?.setAttribute("aria-haspopup", "menu");
+    const epoch = menuEpoch, owner = model.activeId, owned = () => !gone && !windowMenu.hidden && menuEpoch === epoch && model.activeId === owner && model.mode === "workspace";
+    const option = (label, fn, glyph) => {
+      const b = el("button", { type: "button", role: "menuitem", class: "ws-window-option" }, glyph ? icon(glyph) : null, el("span", { text: label }));
+      b.addEventListener("click", () => { if (owned()) fn(); }); windowMenu.append(b);
+    };
+    if (switcher) for (const id of paneApps()) {
+      const minimized = layoutOf().windows[id].minimized;
+      const b = el("button", { type: "button", role: "menuitem", class: "ws-window-option", "aria-label": `${minimized ? "Restore" : "Switch to"} ${APP_NAMES[id]}` }, appSymbol(id), el("span", { text: APP_NAMES[id] }), el("small", { text: minimized ? "Minimised" : "Open" }));
+      b.addEventListener("click", () => { if (owned()) restoreWindow(id); }); windowMenu.append(b);
+    } else {
+      if (desktop()) {
+        option("Snap left", () => windowAction(app, "left")); option("Snap right", () => windowAction(app, "right"));
+        option("Maximise", () => windowAction(app, "maximise")); option("Restore size", () => windowAction(app, "restore-size"));
+        option("Move with arrow keys", () => windowAction(app, "move")); option("Resize with arrow keys", () => windowAction(app, "resize"));
+      }
+      option("Minimise", () => windowAction(app, "minimise"));
+    }
+    windowMenu.hidden = false;
+    const box = canvas.getBoundingClientRect(), r = opener?.getBoundingClientRect() || box, width = Math.min(284, Math.max(160, box.width - 24));
+    windowMenu.style.setProperty("--ws-menu-x", `${Math.max(8, Math.min(box.width - width - 8, r.right - box.left - width))}px`);
+    windowMenu.style.setProperty("--ws-menu-y", `${Math.max(8, Math.min(box.height - 100, r.bottom - box.top + 8))}px`);
+    windowMenu.style.setProperty("--ws-menu-width", `${width}px`);
+    windowMenu.querySelector("button")?.focus({ preventScroll: true });
+  }
+  const openWindowMenu = (app, opener) => showWindowMenu(app, opener, false);
+  const openSwitcher = (opener) => showWindowMenu(null, opener, true);
+  function startKeyboard(app, type) {
+    if (!desktop()) return;
+    finishGesture(false);
+    const layout = layoutOf(), size = getViewport(), before = layout.windows[app];
+    gesture = { app, type, keyboard: true, owner: model.activeId, before, beforeMode: layout.mode, size };
+    setWindow(app, before, { commit: false, floating: true });
+    keyboardHint.hidden = false; keyboardHint.textContent = `${type === "move" ? "Move" : "Resize"} ${APP_NAMES[app]}. Use arrow keys, Enter to save, Escape to cancel.`;
+    panes.get(app).el.classList.add("is-adjusting"); panes.get(app).el.tabIndex = -1; panes.get(app).el.focus({ preventScroll: true });
+  }
+  function finishGesture(commit = true) {
+    const g = gesture; if (!g) return;
+    gesture = null; g.abort?.abort(); cancelAnimationFrame(frame); frame = 0;
+    root.classList.remove("is-window-dragging"); keyboardHint.hidden = true; keyboardHint.textContent = "";
+    panes.get(g.app)?.el.classList.remove("is-adjusting");
+    if (gone || g.owner !== model.activeId || model.mode !== "workspace") return;
+    if (!commit) { setWindow(g.app, g.before, { commit: false }); model.layout.mode = g.beforeMode; paintWindows(); return; }
+    const completed = layoutOf().windows[g.app], mode = model.layout.mode;
+    if (g.beforeMode !== mode) invoke("onLayoutMode", mode);
+    invoke("onWindowChange", g.app, completed);
+  }
+  function pointerGesture(event) {
+    if (!windowsEnabled || !desktop() || model.mode !== "workspace" || event.button || event.isPrimary === false) return;
+    const target = event.target, handle = target.closest?.("[data-resize-window]"), header = target.closest?.(".ws-pane-header"), pane = target.closest?.(".ws-pane-grid > .ifl-workspace-pane");
+    if (!pane || (!handle && (!header || target.closest("button,a,input,textarea,select")))) return;
+    const app = pane.dataset.pane; if (!paneApps().includes(app)) return;
+    finishGesture(false); closeWindowMenu();
+    const size = getViewport(), r = pane.getBoundingClientRect(), before = layoutOf().windows[app], mode = layoutOf().mode, rect = { x: r.left - size.left, y: r.top - size.top, w: r.width, h: r.height };
+    const ac = new AbortController(), id = event.pointerId, sx = event.clientX, sy = event.clientY;
+    let moved = false;
+    const g = gesture = { app, type: handle ? "resize" : "move", owner: model.activeId, before, beforeMode: mode, size, abort: ac };
+    const move = e => {
+      if (e.pointerId !== id || gesture !== g) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (!moved && Math.hypot(dx, dy) < 5) return;
+      moved = true; e.preventDefault(); root.classList.add("is-window-dragging");
+      const next = g.type === "resize" ? { ...rect, w: rect.w + dx, h: rect.h + dy } : { ...rect, x: rect.x + dx, y: rect.y + dy };
+      const bounded = pixelBounds(relativeBounds(next, size.width, size.height), size.width, size.height);
+      cancelAnimationFrame(frame); frame = requestAnimationFrame(() => { frame = 0; if (gesture === g) setWindow(app, relativeBounds(bounded, size.width, size.height), { commit: false, floating: true }); });
+    };
+    const up = e => {
+      if (e.pointerId !== id || gesture !== g) return;
+      if (frame) { cancelAnimationFrame(frame); frame = 0; }
+      if (moved && e.type !== "pointercancel") {
+        const dx = e.clientX - sx, dy = e.clientY - sy;
+        let next = g.type === "resize" ? { ...rect, w: rect.w + dx, h: rect.h + dy } : { ...rect, x: rect.x + dx, y: rect.y + dy };
+        let bounds = relativeBounds(pixelBounds(relativeBounds(next, size.width, size.height), size.width, size.height), size.width, size.height);
+        if (g.type === "move") { if (e.clientY - size.top < 18) bounds = snapWindow("maximise"); else if (e.clientX - size.left < 18) bounds = snapWindow("left"); else if (size.left + size.width - e.clientX < 18) bounds = snapWindow("right"); }
+        setWindow(app, bounds, { commit: false, floating: true }); focusWindow(app); finishGesture(true);
+      } else finishGesture(false);
+    };
+    const opts = { signal: ac.signal };
+    window.addEventListener("pointermove", move, { ...opts, passive: false }); window.addEventListener("pointerup", up, opts); window.addEventListener("pointercancel", up, opts);
+    window.addEventListener("blur", () => finishGesture(false), opts);
+    try { header?.setPointerCapture(id); } catch (_) {}
+  }
+  listen(root, "pointerdown", pointerGesture);
+  listen(window, "pointerdown", e => { if (!windowMenu.hidden && !windowMenu.contains(e.target) && !windowMenu._opener?.contains(e.target)) closeWindowMenu(); }, { passive: true });
+  listen(paneGrid, "scroll", () => { closeWindowMenu(); invoke("onViewportChange"); }, { passive: true });
+  listen(window, "resize", () => { if (gesture) finishGesture(false); closeWindowMenu(); paintWindows(); invoke("onViewportChange"); }, { passive: true });
+  listen(document, "visibilitychange", () => { if (document.hidden) { finishGesture(false); closeWindowMenu(); } });
+  listen(windowMenu, "focusout", e => {
+    if (windowMenu.contains(e.relatedTarget)) return;
+    const epoch = menuEpoch;
+    requestAnimationFrame(() => { if (epoch === menuEpoch && !windowMenu.hidden && !windowMenu.contains(document.activeElement)) closeWindowMenu(); });
+  });
+  listen(root, "focusout", e => { const g = gesture; if (g?.keyboard && e.relatedTarget && !panes.get(g.app).el.contains(e.relatedTarget)) finishGesture(false); });
+  listen(root, "keydown", e => {
+    if (!windowMenu.hidden && windowMenu.contains(e.target)) {
+      const bs = [...windowMenu.querySelectorAll("button")], at = bs.indexOf(e.target);
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeWindowMenu(true); }
+      else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) { e.preventDefault(); const n = e.key === "Home" ? 0 : e.key === "End" ? bs.length - 1 : (at + (e.key === "ArrowDown" ? 1 : -1) + bs.length) % bs.length; bs[n]?.focus(); }
+      return;
+    }
+    const g = gesture;
+    if (!g?.keyboard || e.target !== panes.get(g.app)?.el) return;
+    if (e.key === "Escape" || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); finishGesture(e.key === "Enter"); return; }
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+    e.preventDefault(); e.stopPropagation(); const b = pixelBounds(layoutOf().windows[g.app], g.size.width, g.size.height), step = e.shiftKey ? 64 : 16, dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0, dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+    const next = g.type === "resize" ? { ...b, w: b.w + dx, h: b.h + dy } : { ...b, x: b.x + dx, y: b.y + dy };
+    setWindow(g.app, relativeBounds(pixelBounds(relativeBounds(next, g.size.width, g.size.height), g.size.width, g.size.height), g.size.width, g.size.height), { commit: false, floating: true });
+  });
+
+  function foreground(app, notify = true) {
     const available = paneApps();
-    if (!available.includes(app)) app = available[0];
+    const visible = available.filter(id => !layoutOf().windows[id].minimized);
+    if (!available.includes(app) || layoutOf().windows[app]?.minimized) app = visible[0] || available[0];
+    if (notify && app !== root.dataset.foregroundApp) invoke("onBeforePaneFocus", app);
     model.foregroundApp = app;
     root.dataset.foregroundApp = app;
     root.dataset.paneCount = String(available.length);
     for (const [id, b] of foregroundButtons) {
-      const selected = available.includes(id); b.hidden = !selected; panes.get(id).el.hidden = !selected;
+      const selected = available.includes(id); b.hidden = !selected; panes.get(id).el.hidden = !selected || !!layoutOf().windows[id]?.minimized;
+      panes.get(id).el.inert = panes.get(id).el.hidden || (!desktop() && id !== app);
       b.setAttribute("aria-selected", String(id === app)); b.tabIndex = id === app ? 0 : -1; panes.get(id).el.dataset.foreground = String(id === app);
     }
   }
 
   function markFocus(key) {
-    const app = paneApp(key); if (!app || focusedApp === app) return;
-    if (app === "fitness" || app === "weather") foreground(app);
-    focusedApp = app; root.dataset.focusedApp = app; invoke("onPaneFocus", app);
+    const app = paneApp(key); if (!app || focusedApp === app && (model.mode !== "workspace" || layoutOf().order.at(-1) === app)) return;
+    if (WINDOW_APPS.includes(app)) foreground(app);
+    focusedApp = app; root.dataset.focusedApp = app;
+    focusWindow(app); invoke("onPaneFocus", app);
   }
 
   function setPane(key, patch = {}) {
@@ -202,7 +447,12 @@ export function createWorkspaceView(root, callbacks = {}) {
 
   function update(next = {}) {
     if (gone) return;
+    if (next.activeId && next.activeId !== model.activeId || next.mode && next.mode !== "workspace") closeWindowMenu();
+    if (gesture && (next.activeId && next.activeId !== model.activeId || next.mode && next.mode !== "workspace")) finishGesture(false);
+    if (next.activeId && next.activeId !== model.activeId) focusedApp = "";
+    const heldLayout = gesture ? model.layout : null;
     model = { ...model, ...next };
+    if (heldLayout) model.layout = heldLayout;
     const mode = /^(workspace|app)$/.test(model.mode) ? model.mode : "today", spaces = (Array.isArray(model.workspaces) ? model.workspaces : []).filter(w => w?.id && w.name && callable(callbacks.onWorkspace));
     const current = spaces.find(w => w.id === model.activeId), ride = spaces.find(w => w.id === "ride") || spaces.find(w => {
       const apps = Array.isArray(w.panes) ? w.panes.map(p => p.app) : Array.isArray(w.apps) ? w.apps : [];
@@ -221,11 +471,11 @@ export function createWorkspaceView(root, callbacks = {}) {
     if (back) back.hidden = mode === "today" || !callable(callbacks.onPaneBack);
     if (manage) manage.hidden = mode !== "workspace" || !current;
     todayView.hidden = mode !== "today"; rideView.hidden = mode !== "workspace"; appView.hidden = mode !== "app";
-    foreground(model.foregroundApp || "fitness");
+    foreground(model.foregroundApp || "fitness", false);
     if (todaySide) setCurrent(todaySide, mode === "today");
     const paintWorkspace = (b, w) => { words(b.lastElementChild, w.name); setCurrent(b, mode === "workspace" && w.id === model.activeId); };
     const makeWorkspace = (w, cls) => {
-      const b = button(w.name, w.icon || "ride", action(`workspace:${w.id}`, opener => invoke("onWorkspace", w.id, opener)), cls);
+      const b = button(w.name, (w.icon || (w.id === "ride" ? "ride" : "grid")), action(`workspace:${w.id}`, opener => invoke("onWorkspace", w.id, opener)), cls);
       b.append(el("span", { text: w.name })); return b;
     };
     reconcile(savedNav, savedRecords, spaces, w => w.id, w => makeWorkspace(w, "ws-sidebar-button"), paintWorkspace);
@@ -247,9 +497,9 @@ export function createWorkspaceView(root, callbacks = {}) {
     cardFacts.hidden = !facts.length;
     setCurrent(dockToday, mode === "today");
     reconcile(dockApps, dockRecords, apps, a => a.id, a => {
-      const b = button(a.name || APP_NAMES[a.id] || a.id, null, action(`app:${a.id}`, opener => invoke("onApp", a.id, opener)), "ws-dock-button");
+      const b = button(a.name || APP_NAMES[a.id] || a.id, null, action(`app:${a.id}`, opener => { if (model.mode === "workspace" && layoutOf().windows[a.id]?.minimized) restoreWindow(a.id); else invoke("onApp", a.id, opener); }), "ws-dock-button");
       b.append(el("span", { class: "ws-dock-symbol" }, appSymbol(a.icon || a.id)), el("span", { class: "ws-dock-label" })); return b;
-    }, (b, a) => { const name = a.name || APP_NAMES[a.id] || a.id; words(b.lastElementChild, name); b.setAttribute("aria-label", name); b.title = name; setCurrent(b, mode === "app" && a.id === model.activeApp); });
+    }, (b, a) => { const name = a.name || APP_NAMES[a.id] || a.id, inWorkspace = mode === "workspace" && paneApps().includes(a.id), minimized = inWorkspace && layoutOf().windows[a.id].minimized; words(b.lastElementChild, name); b.setAttribute("aria-label", minimized ? `Restore ${name}` : name); b.title = minimized ? `Restore ${name}` : name; b.toggleAttribute("data-running", inWorkspace); b.toggleAttribute("data-minimized", minimized); setCurrent(b, mode === "app" && a.id === model.activeApp || inWorkspace && !minimized && a.id === model.foregroundApp); });
     const user = model.user || {}, userKey = JSON.stringify([user.name || "", user.photo || ""]);
     if (account && userKey !== avatarKey) { avatarKey = userKey; account.replaceChildren(user.name || user.photo ? avatar(user.name || "", { photo: user.photo }) : icon("person")); account.setAttribute("aria-label", user.name ? `Account for ${user.name}` : "Your account"); }
     const count = Math.max(0, Math.floor(Number(model.notifications) || 0)); notificationCount.hidden = !count; words(notificationCount, count > 99 ? "99+" : count);
@@ -265,6 +515,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     secondaryIcon.hidden = !secondary?.icon;
     action("share-resource", !share.hidden ? () => invoke("onIntent", secondary.app, secondary.intent, secondary.objectId) : null);
     for (const key of panes.keys()) setPane(key);
+    paintWindows();
   }
 
   const activate = event => {
@@ -293,14 +544,15 @@ export function createWorkspaceView(root, callbacks = {}) {
 
   function destroy() {
     if (gone) return;
-    gone = true; for (const off of cleanups.splice(0)) off(); actions.clear();
+    finishGesture(false); closeWindowMenu();
+    gone = true; cancelAnimationFrame(frame); for (const off of cleanups.splice(0)) off(); actions.clear();
     dockHost.remove();
     root.replaceChildren(); root.classList.remove("ifl-workspace");
-    for (const key of ["mode", "foregroundApp", "focusedApp", "paneCount"]) delete root.dataset[key];
+    for (const key of ["mode", "foregroundApp", "focusedApp", "paneCount", "layout", "windowCount"]) delete root.dataset[key];
   }
   if (callbacks.signal) { const abort = () => destroy(); callbacks.signal.addEventListener("abort", abort, { once: true }); cleanups.push(() => callbacks.signal.removeEventListener("abort", abort)); }
-  const slots = { today: todaySlot, fitness: panes.get("fitness").slot, weather: panes.get("weather").slot, app: panes.get("app").slot, dockAnchor };
+  const slots = { today: todaySlot, ...Object.fromEntries(WINDOW_APPS.map(app => [app, panes.get(app).slot])), app: panes.get("app").slot, dockAnchor };
   update();
   if (callbacks.signal?.aborted) destroy();
-  return { slots, dock: dockHost, update, setPane, destroy };
+  return { slots, dock: dockHost, update, setPane, destroy, getViewport, isPaneVisible, revealPane, windowAction };
 }

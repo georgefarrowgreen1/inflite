@@ -318,7 +318,10 @@ export function createFrame(opts = {}) {
     html.dataset.route = format(r);
     const change = () => {
       if (prev && !same) {
-        if (prev.id.startsWith("m:")) mods[prev.id.slice(2)]?.instance?.hide?.();
+        if (prev.id.startsWith("m:")) {
+          const previous = mods[prev.id.slice(2)];
+          if (!(previous?.host?.visible && previous.host.screen === id)) previous?.instance?.hide?.();
+        }
         else screens[prev.id]?.spec.onHide?.();
       }
       for (const [k, s] of Object.entries(screens)) if (s.el && k !== id) { s.el.hidden = true; s.el.inert = true; }

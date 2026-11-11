@@ -15,10 +15,10 @@ const setup = async (extra = {}) => {
   return { store, storage };
 };
 
-test('catalogue v1 distinguishes supported panes from full apps and makes no isolation claim', async () => {
+test('catalogue v1 exposes all five first-party panes without an isolation claim', async () => {
   const { WORKSPACE_APPS, WORKSPACE_MANIFEST_VERSION, getWorkspaceApp } = await catalogModule;
   assert.equal(WORKSPACE_MANIFEST_VERSION, 1);
-  assert.deepEqual(WORKSPACE_APPS.filter(a => a.pane).map(a => a.id), ['fitness', 'weather']);
+  assert.deepEqual(WORKSPACE_APPS.filter(a => a.pane).map(a => a.id), ['fitness', 'weather', 'markets', 'chats', 'mail']);
   for (const app of WORKSPACE_APPS) {
     assert.equal(app.trust, 'first-party');
     assert.equal(app.manifestVersion, 1);
@@ -59,7 +59,7 @@ test('route injection, auth state, share payloads, bodies and encoded routes can
 
 test('the first account starts with the real Ride pair without writing storage or inventing other apps', async () => {
   const { store, storage } = await setup();
-  assert.equal(store.read().version, 1);
+  assert.equal(store.read().version, 2);
   assert.equal(store.read().userId, 'account-a');
   assert.equal(store.read().activeId, 'ride');
   assert.deepEqual(store.read().workspaces[0].panes, [
@@ -90,7 +90,7 @@ test('create and update save only whitelisted route metadata, never copied domai
 
 test('unsupported, duplicate or excessive panes and workspace limits reject without partial writes', async () => {
   const { store, storage } = await setup();
-  for (const panes of [[], [pane('markets')], [pane('mail')], [pane('chats')], [pane('files')], [pane(), pane()], [pane(), pane('weather'), pane()]]) assert.equal(store.create({ name: 'Test', panes }), null);
+  for (const panes of [[], [pane('files')], [pane(), pane()], [pane(), pane('weather'), pane()], ['fitness', 'weather', 'markets', 'chats', 'mail', 'fitness'].map(app => pane(app))]) assert.equal(store.create({ name: 'Test', panes }), null);
   assert.equal(storage.writes.length, 0);
   for (let i = 1; i < 8; i++) assert.ok(store.create({ name: 'Ride ' + i, panes: [pane()] }));
   const before = storage.writes.length;
@@ -104,16 +104,16 @@ test('restoring saved metadata filters malformed records and fixes missing activ
   const valid = { id: 'one', name: 'One', panes: [pane()], activePane: 'missing', updatedAt: NaN, body: 'not copied' };
   const restored = restoreWorkspaceState({ version: 1, userId: 'a', activeId: 'missing', workspaces: [
     { ...valid, id: '__proto__' }, { ...valid, name: '' }, { ...valid, panes: [pane('weather', '/weather/?auth=secret')] },
-    valid, { ...valid, name: 'Duplicate should not replace first' }, { ...valid, id: 'two', panes: [pane('markets')] },
+    valid, { ...valid, name: 'Duplicate should not replace first' }, { ...valid, id: 'two', panes: [pane('files')] },
   ], auth: 'secret' }, 'a', 42);
-  assert.deepEqual(restored, { version: 1, userId: 'a', activeId: 'one', workspaces: [{ id: 'one', name: 'One', panes: [{ id: 'fitness', app: 'fitness', route: '/fitness/#today' }], activePane: 'fitness', updatedAt: 42 }] });
+  assert.deepEqual(restored, { version: 2, userId: 'a', activeId: 'one', workspaces: [{ id: 'one', name: 'One', panes: [{ id: 'fitness', app: 'fitness', route: '/fitness/#today' }], activePane: 'fitness', layout: { mode: 'tile', windows: { fitness: { x: .025, y: .025, w: .65, h: .8, minimized: false } }, order: ['fitness'] }, updatedAt: 42 }] });
 });
 
 test('foreign account, unsupported version, malformed or excessive storage safely starts fresh', async () => {
   const { createWorkspaceStore, WORKSPACE_LIMITS } = await stateModule;
   const { store } = await setup(), good = JSON.parse(JSON.stringify(store.read()));
   for (const text of [
-    '{broken', 'null', '[]', JSON.stringify({ ...good, userId: 'another-account' }), JSON.stringify({ ...good, version: 2 }),
+    '{broken', 'null', '[]', JSON.stringify({ ...good, userId: 'another-account' }), JSON.stringify({ ...good, version: 999 }),
     JSON.stringify({ ...good, workspaces: new Array(9).fill(good.workspaces[0]) }), ' '.repeat(WORKSPACE_LIMITS.storedBytes + 1),
   ]) {
     const storage = memory(); storage.data.set('ifl:workspace:v1:account-a', text);
@@ -159,8 +159,8 @@ test('account switches and late callbacks cannot overwrite or clear another acco
   a.clear(); a.dispose(); a.dispose();
   assert.deepEqual([...storage.data], before);
   b.clear();
-  assert.ok(storage.data.has('ifl:workspace:v1:account-a'));
-  assert.equal(storage.data.has('ifl:workspace:v1:account-b'), false);
+  assert.ok(storage.data.has('ifl:workspace:v2:account-a'));
+  assert.deepEqual(JSON.parse(storage.data.get('ifl:workspace:v2:account-b')), b.read(), 'reset persists a v2 tombstone without touching another owner');
 });
 
 test('a pre-aborted lifetime is inert and explicit disposal fences every mutation', async () => {

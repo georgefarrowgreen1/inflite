@@ -14,12 +14,12 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.13";
+const BUILD = "2.14";
 // (what's new in it, said once it's in)
-const NEWS = "Saved workspaces, shared app views and InFlite OS";
+const NEWS = "Windows, Files and commands in InFlite OS";
 // OS is a separate surface. The query switch is reserved for local/test previews.
 const OS_MODE = location.hostname === "os.inflite.ai" || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-state.js", "/roof/workspace-catalog.js", "/roof/workspace-context.js", "/roof/workspace.css", "/os.webmanifest"];
+const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-state.js", "/roof/workspace-catalog.js", "/roof/workspace-context.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite OS";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/os.webmanifest");
@@ -1936,7 +1936,7 @@ function frame() {
   const f = F;
   bellReady = import("/bell.js").then((m) => {
     if (F !== f || bell) return;
-    bell = m.createBell(f, { count: (n) => { if (F !== f || f.signal.aborted) return; notificationCount = n; f.header.count?.("bell", n); workspaceHost?.update(); }, go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); }, settings: () => go("/#you=phone") });
+    bell = m.createBell(f, { count: (n) => { if (F !== f || f.signal.aborted) return; notificationCount = n; f.header.count?.("bell", n); workspaceHost?.update(); }, go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); }, settings: () => go("/#you=phone"), actions: OS_MODE ? (note) => F === f && !f.signal.aborted ? workspaceHost?.notificationActions(note) || [] : [] : undefined });
   }, (e) => console.error(e));
   return F;
 }
