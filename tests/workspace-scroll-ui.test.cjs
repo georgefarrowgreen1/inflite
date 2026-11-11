@@ -63,13 +63,17 @@ const scroll = (page, app = 'fitness') => slot(page, app).evaluate(n => Math.rou
 async function putScroll(t, top, app = 'fitness') { await slot(t.page, app).evaluate((n, y) => n.scrollTop = y, top); await t.settle(); assert.equal(await scroll(t.page, app), top); }
 async function go(t, path) { await t.page.evaluate(p => T.F.nav.go(p, { kind: 'section' }), path); await t.settle(); }
 async function waitPane(t, app = 'fitness') { await t.page.waitForFunction(app => T.slot(app)?.contains(T.F.view(app).el) && T.F.view(app).fw.visible(), app); await t.settle(); }
+async function waitNative(t, app = 'fitness') {
+  await t.page.waitForFunction(app => { const handle = T.F.view(app); return T.F.route.kind === 'app' && T.F.route.app === app && handle.el.parentElement === document.getElementById('views') && !handle.el.hidden && !handle.root.classList.contains('ifl-in-pane'); }, app);
+  await t.settle();
+}
 
 test('pane scroll survives an empty native reparent and return to the same workspace without remounting or persisting it', async () => {
   const t = await open(); try {
     await putScroll(t, 761);
     await t.page.evaluate(() => { T.original = T.F.view('fitness').root; });
     await t.page.getByRole('button', { name: 'Open Fitness', exact: true }).first().click();
-    await t.page.waitForFunction(() => T.F.route.kind === 'app' && document.querySelector('#views #m-fitness:not([hidden])'));
+    await waitNative(t);
     assert.equal(await scroll(t.page), 0, 'empty pane physically loses its scroll position');
     await go(t, '/#workspace=ride'); await waitPane(t);
     await t.page.waitForFunction(() => Math.abs(T.slot('fitness').scrollTop - 761) < 2);
@@ -114,7 +118,7 @@ test('a different pane route starts at its own position and its native round tri
     assert.equal(await scroll(t.page), 0, 'Today scroll cannot leak into Activities');
     await putScroll(t, 263);
     await t.page.getByRole('button', { name: 'Open Fitness', exact: true }).first().click();
-    await t.page.waitForFunction(() => T.F.route.kind === 'app');
+    await waitNative(t);
     await go(t, '/#workspace=ride'); await waitPane(t);
     await t.page.waitForFunction(() => Math.abs(T.slot('fitness').scrollTop - 263) < 2);
     assert.equal(await t.page.evaluate(() => T.F.view('fitness').route.key), 'activities');
@@ -128,7 +132,7 @@ test('a different pane route starts at its own position and its native round tri
 test('user input cancels a delayed scroll restoration and an account teardown retires remaining callbacks', async () => {
   const t = await open(); try {
     await putScroll(t, 733);
-    await go(t, '/fitness/#today'); await t.page.waitForFunction(() => T.F.route.kind === 'app');
+    await go(t, '/fitness/#today'); await waitNative(t);
     await t.page.evaluate(() => { T.hold('fitness'); T.F.nav.go('/#workspace=ride', { kind: 'section' }); });
     await t.page.waitForFunction(() => T.waiting === 1);
     await slot(t.page).evaluate(n => { n.dispatchEvent(new WheelEvent('wheel', { deltaY: 95, bubbles: true })); n.scrollTop = 95; });
@@ -155,7 +159,7 @@ test('late app content restores the waiting position once, and user input cancel
   const t = await open(); try {
     await putScroll(t, 877);
     await t.page.getByRole('button', { name: 'Open Fitness', exact: true }).first().click();
-    await t.page.waitForFunction(() => T.F.route.kind === 'app');
+    await waitNative(t);
     await t.page.evaluate(() => { T.short = 'fitness'; });
     await go(t, '/#workspace=ride'); await waitPane(t);
     assert.equal(await scroll(t.page), 0, 'content too short to restore yet');
@@ -164,7 +168,7 @@ test('late app content restores the waiting position once, and user input cancel
       throw new Error('Fitness should restore 877 after content growth: ' + JSON.stringify(await t.page.evaluate(() => ({ top: T.slot('fitness').scrollTop, height: T.slot('fitness').scrollHeight, client: T.slot('fitness').clientHeight, classes: T.stats.fitness.content.className, contentHeight: T.stats.fitness.content.getBoundingClientRect().height, connected: T.stats.fitness.content.isConnected, contains: T.F.view('fitness').root.contains(T.stats.fitness.content), shows: T.stats.fitness.shows, snapshots: T.stats.fitness.snapshots }))), { cause: e });
     });
     await t.page.getByRole('button', { name: 'Open Fitness', exact: true }).first().click();
-    await t.page.waitForFunction(() => T.F.route.kind === 'app');
+    await waitNative(t);
     await t.page.evaluate(() => { T.short = 'fitness'; });
     await go(t, '/#workspace=ride'); await waitPane(t);
     assert.equal(await scroll(t.page), 0);
