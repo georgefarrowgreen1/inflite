@@ -78,6 +78,9 @@ html.ifl-os.os-workspace #workspace.ifl-screen { width: 100%; max-width: none; m
 .ifl-workspace .ws-pane-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1; gap: 16px; min-width: 0; min-height: 0; }
 .ifl-workspace[data-pane-count="1"] .ws-pane-grid { grid-template-columns: minmax(0, 1fr); }
 .ifl-workspace .ws-single-app { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.ifl-workspace .ws-files-view { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.ifl-workspace .ws-files-slot { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.ifl-workspace .ws-files-slot > [role="status"] { margin: 0; padding: 24px; color: var(--ws-muted); }
 .ifl-workspace .ws-single-app > .ifl-workspace-pane { flex: 1; }
 .ifl-workspace .ifl-workspace-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; border: 1px solid var(--ws-line); border-radius: var(--ifl-radius-card, 26px); overflow: hidden; background: var(--ws-surface); box-shadow: var(--ws-shadow); }
 .ifl-workspace .ws-pane-header { display: flex; align-items: center; flex: none; min-width: 0; min-height: 64px; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--ws-line); background: var(--ws-surface); }
@@ -152,7 +155,7 @@ html.ifl-os:not(.os-workspace) .ifl-workspace.ws-dock-host .ws-dock { position: 
   .ifl-workspace .ws-phone-only { display: grid; }
   .ifl-workspace .ws-icon-button.ws-phone-only { display: grid; }
   .ifl-workspace .ws-main { min-height: 100dvh; overflow: visible; }
-  .ifl-workspace[data-mode="workspace"] .ws-main, .ifl-workspace[data-mode="app"] .ws-main { height: max(100dvh, 680px); min-height: 0; overflow: hidden; }
+  .ifl-workspace:is([data-mode="workspace"], [data-mode="app"], [data-mode="files"]) .ws-main { height: max(100dvh, 680px); min-height: 0; overflow: hidden; }
   .ifl-workspace .ws-toolbar { flex-wrap: wrap; gap: 12px; padding: max(16px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) 14px max(20px, env(safe-area-inset-left, 0px)); border: 0; background: var(--ws-page); }
   .ifl-workspace .ws-heading { min-width: 0; }
   .ifl-workspace .ws-phone-mark { display: block; flex: none; width: 36px; height: 36px; border-radius: 11px; }
@@ -164,7 +167,7 @@ html.ifl-os:not(.os-workspace) .ifl-workspace.ws-dock-host .ws-dock { position: 
   .ifl-workspace .ws-search { order: 5; flex: 1 0 100%; max-width: none; min-width: 0; min-height: 44px; padding: 10px 16px; }
   .ifl-workspace .ws-shortcut-key { display: none; }
   .ifl-workspace .ws-toolbar > .ws-icon-button { margin-right: -4px; }
-  .ifl-workspace[data-mode="workspace"] .ws-phone-mark, .ifl-workspace[data-mode="app"] .ws-phone-mark { display: none; }
+  .ifl-workspace:is([data-mode="workspace"], [data-mode="app"], [data-mode="files"]) .ws-phone-mark { display: none; }
   .ifl-workspace .ws-canvas { gap: 14px; padding: 0 max(20px, env(safe-area-inset-right, 0px)) calc(100px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px)); overflow: visible; }
   .ifl-workspace .ws-home { display: block; }
   .ifl-workspace .ws-home-overview { display: grid; gap: 14px; margin-bottom: 18px; }
@@ -191,7 +194,7 @@ html.ifl-os:not(.os-workspace) .ifl-workspace.ws-dock-host .ws-dock { position: 
   .ifl-workspace .ws-summary-facts dd { margin: 3px 0 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
   .ifl-workspace .ws-open-workspace { width: 100%; }
   .ifl-workspace .ws-today-slot { overflow: visible; }
-  .ifl-workspace[data-mode="workspace"] .ws-canvas, .ifl-workspace[data-mode="app"] .ws-canvas { flex: 1; min-height: 0; overflow: hidden; }
+  .ifl-workspace:is([data-mode="workspace"], [data-mode="app"], [data-mode="files"]) .ws-canvas { flex: 1; min-height: 0; overflow: hidden; }
   .ifl-workspace .ws-pane-tabs { display: flex; align-items: center; flex: none; gap: 8px; margin-bottom: 12px; }
   .ifl-workspace .ws-pane-tab { display: flex; align-items: center; justify-content: center; flex: 1; min-width: 0; gap: 8px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--ws-line); border-radius: 999px; background: var(--ws-surface); color: var(--ws-text); font-size: 14px; font-weight: 600; }
   .ifl-workspace .ws-pane-tab img { display: block; width: 24px; height: 24px; border-radius: 7px; }

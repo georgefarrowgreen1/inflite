@@ -2,73 +2,39 @@
 // with the owning app. Global search reads RAM only; opening Files asks the apps.
 import { loadStyles } from "./modules.js";
 
-const APPS = new Set(["fitness", "weather", "markets", "chats", "mail"]), LIMIT = 100;
-const STATES = new Set(["loading", "ready", "locked", "signin", "error"]);
-const opaque = (v) => typeof v === "string" && /^[\w:-]{1,220}$/.test(v) ? v : null;
-const text = (v, max) => typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "";
-const fold = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-const queryText = (v) => text(v, 160);
-export function normalizeWorkspaceFile(value, app) {
-  if (!value || !APPS.has(app) || value.app !== app) return null;
-  const id = opaque(value.id), objectId = opaque(value.objectId), intent = opaque(value.intent), name = text(value.name, 255);
-  const mime = typeof value.mime === "string" && /^[\w.+-]+\/[\w.+-]+$/.test(value.mime) && value.mime.length <= 100 ? value.mime.toLowerCase() : "";
-  if (!id || !objectId || !intent || !name || !mime) return null;
-  const out = { id, app, name, mime, objectId, intent };
-  if (["image", "audio", "document", "route", "workout"].includes(value.category)) out.category = value.category;
-  for (const key of ["downloadIntent", "shareIntent"]) if (opaque(value[key])) out[key] = value[key];
-  if (Number.isSafeInteger(value.size) && value.size >= 0) out.size = value.size;
-  if (Number.isFinite(value.modifiedAt) && value.modifiedAt > 0) out.modifiedAt = value.modifiedAt;
-  if (text(value.source, 140)) out.source = text(value.source, 140);
-  return out;
-}
-const kind = (f) => f.category === "route" || /\.gpx$/i.test(f.name) || f.mime === "application/gpx+xml" ? "routes" : f.category === "workout" || /\.(fit|tcx|zwo|erg|mrc)$/i.test(f.name) ? "workouts" : f.category === "image" || f.mime.startsWith("image/") ? "images" : f.category === "audio" || f.mime.startsWith("audio/") ? "audio" : "documents";
-export function filterWorkspaceFiles(files, { query = "", type = "all", source = "all", sort = "recent" } = {}) {
-  const words = fold(queryText(query)).split(/\s+/).filter(Boolean);
-  return files.filter((f) => (source === "all" || f.app === source) && (type === "all" || kind(f) === type) && words.every((w) => fold(f.name + " " + (f.source || "")).includes(w)))
-    .sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name) : sort === "size" ? (b.size || 0) - (a.size || 0) : (b.modifiedAt || 0) - (a.modifiedAt || 0)) || a.name.localeCompare(b.name));
-}
+import { createAppFilesIndex } from "./files-apps.js";
+import { fileText as text, fileQuery as queryText, normalizeWorkspaceFile, filterWorkspaceFiles } from "./files-metadata.js";
+export { normalizeWorkspaceFile, filterWorkspaceFiles };
 const sizeText = (n) => n == null ? "" : n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 
-export function createWorkspaceFiles(F, { sources, load, runIntent, openApp }) {
-  const owner = F.session.view?.user?.id, ui = F.ui, cache = new Map();
+export function createWorkspaceFiles(F, options = {}) {
+  const { sources, load, runIntent, openApp } = options;
+  const owner = F.session.view?.user?.id, ui = F.ui, cache = new Map(), rows = new Map(), pending = new Set();
   let dead = false, handle = null, input, results, status, sourcePick, typePick, sortPick, debounce = 0, queryGen = 0, opGen = 0, q = "";
   const live = () => typeof owner === "string" && !!owner && !dead && !F.signal?.aborted && F.session.view?.user?.id === owner;
-  const descriptors = () => {
-    if (!live()) return [];
-    try { return (sources() || []).filter((s) => s && APPS.has(s.app)).slice(0, APPS.size); } catch (_) { return []; }
-  };
-  const validFiles = (values, app) => {
-    const seen = new Set();
-    return (Array.isArray(values) ? values : []).slice(0, LIMIT).map((f) => normalizeWorkspaceFile(f, app)).filter((f) => f && !seen.has(f.id) && seen.add(f.id));
-  };
+  const owned = !options.index, index = options.index || createAppFilesIndex(F, { sources, load, runIntent, openApp, onFind: query => open(query) });
   function sync() {
-    const list = descriptors(), present = new Set(list.map((s) => s.app));
-    for (const app of cache.keys()) if (!present.has(app)) cache.delete(app);
-    for (const s of list) {
-      const old = cache.get(s.app), blocked = s.status === "locked" || s.status === "signin";
-      // A transient source publishes its entire currently eligible index. Chats
-      // must release recalled media and the previous conversation immediately.
-      if (s.transient === true) {
-        const state = STATES.has(s.status) ? s.status : "loading";
-        if (!old || old.sourceState !== state || state === "ready" && old.sourceFiles !== s.files) cache.set(s.app, { status: state, files: state === "ready" ? validFiles(s.files, s.app) : [], token: (old?.token || 0) + 1, more: false, query: "", loaded: true, pending: false, sourceState: state, sourceFiles: state === "ready" ? s.files : null });
-      }
-      else if (blocked) cache.set(s.app, { status: s.status, files: [], token: (old?.token || 0) + 1, more: false, query: q });
-      else if (!old) cache.set(s.app, { status: STATES.has(s.status) ? s.status : "loading", files: validFiles(s.files, s.app), token: 0, query: "", loaded: false });
+    const list = index.snapshot(), present = new Set(list.map(s => s.app)), eligible = new Set(index.retain([...rows.values()].flatMap(row => row.files))); cache.clear();
+    for (const app of rows.keys()) if (!present.has(app)) rows.delete(app);
+    for (const source of list) {
+      const local = rows.get(source.app), current = local && local.files.filter(file => eligible.has(file));
+      const stale = local && current.length !== local.files.length;
+      cache.set(source.app, ["locked", "signin"].includes(source.status) || !local || local.query !== q || stale ? source : { ...source, ...local, files: current });
     }
     return list;
   }
+  const descriptors = () => sync();
   const allFiles = () => [...cache.values()].flatMap((s) => s.files || []);
   const clearSheet = () => { clearTimeout(debounce); queryGen++; handle = null; input = results = status = sourcePick = typePick = sortPick = null; };
   function close() { const h = handle; clearSheet(); h?.now?.(); }
   async function act(f, intent) {
     sync();
-    const entry = cache.get(f.app), present = entry?.files?.some((x) => x.id === f.id && x.objectId === f.objectId && x[intent === f.intent ? "intent" : intent === f.downloadIntent ? "downloadIntent" : "shareIntent"] === intent);
+    const entry = cache.get(f.app), present = entry?.files?.some(x => x === f && [x.intent, x.downloadIntent, x.shareIntent].includes(intent));
     if (!live() || !present || ["locked", "signin"].includes(entry.status)) return;
     const mine = ++opGen, current = () => live() && mine === opGen;
-    // Closing our own dialog is presentation housekeeping, not cancellation.
     close();
-    try { const answer = await runIntent(f.app, intent, f.objectId, { current }); if (current() && answer?.ok === false && answer.error) F.toast(text(answer.error, 240)); }
-    catch (_) { if (current()) F.toast("That file didn’t open. Try again in its app."); }
+    const answer = await index.run(f, intent, { current });
+    if (current() && answer?.ok === false && answer.error) F.toast?.(text(answer.error, 240));
   }
   async function addFiles() {
     if (!live() || !descriptors().some((s) => s.app === "fitness")) return;
@@ -77,7 +43,7 @@ export function createWorkspaceFiles(F, { sources, load, runIntent, openApp }) {
     try { const answer = await runIntent("fitness", "import-files", undefined, { current }); if (current() && answer?.ok === false && answer.error) F.toast(text(answer.error, 240)); }
     catch (_) { if (current()) F.toast("Open Fitness to add your files."); }
   }
-  function gate(app) { if (!live() || !descriptors().some((s) => s.app === app)) return; opGen++; close(); openApp(app); }
+  function gate(app) { if (!live()) return; opGen++; close(); index.gate(app); }
   function draw() {
     if (!live() || !handle || !results) return;
     const list = sync(), previous = sourcePick.value, keys = list.map((s) => s.app).join(":");
@@ -115,21 +81,14 @@ export function createWorkspaceFiles(F, { sources, load, runIntent, openApp }) {
     const count = ui.el("p", { class: "ifl-files-count", text: `${filtered.length} ${filtered.length === 1 ? "file" : "files"}` });
     results.prepend(count);
   }
-  async function fetchSource(app, query, generation) {
-    const list = sync(), source = list.find((s) => s.app === app), old = cache.get(app);
-    if (!live() || !handle || !source || ["locked", "signin"].includes(source.status)) return;
-    if (source.transient === true && source.status === "ready") { draw(); return; }
-    const token = (old?.token || 0) + 1, current = () => live() && !!handle && generation === queryGen && cache.get(app)?.token === token;
-    cache.set(app, { ...old, token, status: "loading", pending: true, query, files: old?.query === query ? old.files : [] }); draw();
+  async function fetchSource(app, query, generation, refresh = true) {
+    const current = () => live() && !!handle && generation === queryGen;
+    if (!current()) return;
+    pending.add(app);
     try {
-      const answer = await load(app, query, current);
-      if (!current()) return;
-      const latest = descriptors().find((s) => s.app === app);
-      if (!latest || ["locked", "signin"].includes(latest.status)) { sync(); draw(); return; }
-      const state = STATES.has(answer?.status) ? answer.status : "error";
-      cache.set(app, { token, query, loaded: true, pending: false, status: state, more: answer?.more === true || Array.isArray(answer?.files) && answer.files.length > LIMIT, files: ["locked", "signin"].includes(state) ? [] : validFiles(answer?.files, app) });
-    } catch (_) { if (current()) cache.set(app, { ...cache.get(app), status: "error", pending: false, loaded: true }); }
-    if (current()) draw();
+      const answer = await index.read({ app, query, current, refresh });
+      if (current() && answer.sources[0]) rows.set(app, { ...answer.sources[0], query });
+    } catch (_) {} finally { pending.delete(app); if (current()) draw(); }
   }
   function fetchAll() { const mine = queryGen; for (const s of sync()) fetchSource(s.app, q, mine); }
   function select(label, options, change) {
@@ -156,19 +115,16 @@ export function createWorkspaceFiles(F, { sources, load, runIntent, openApp }) {
   }
   function update(app) {
     if (!live()) { destroy(); return; }
-    const was = new Map([...cache].map(([id, s]) => [id, s.status]));
+    index.update(app); draw();
+  }
+  async function search(query) { if (!live()) return []; return index.search(query); }
+  const off = index.subscribe(() => {
+    if (!live()) return destroy();
     const list = sync(); draw();
-    if (handle) for (const s of list) if ((!app || app === s.app) && was.get(s.app) === "loading" && s.status === "ready" && cache.get(s.app)?.loaded && !cache.get(s.app)?.pending) fetchSource(s.app, q, queryGen);
-  }
-  async function search(query) {
-    if (!live()) { cache.clear(); return []; }
-    sync(); const typed = queryText(query); if (!typed) return [];
-    const found = filterWorkspaceFiles(allFiles(), { query: typed }).slice(0, 15).map((f) => ({ app: f.app, title: f.name, sub: [f.source, "Files"].filter(Boolean).join(" · "), icon: f.app, run: () => act(f, f.intent) }));
-    found.push({ app: null, title: `Find “${typed}” in Files`, sub: "Routes, workouts and attachments from your apps", icon: "fitness", run: () => open(typed) });
-    return found;
-  }
-  function destroy() { if (dead) return; dead = true; opGen++; close(); cache.clear(); F.signal?.removeEventListener("abort", destroy); }
+    if (handle) for (const source of list) if (source.status === "ready" && rows.get(source.app)?.status === "loading" && !pending.has(source.app)) fetchSource(source.app, q, queryGen, false);
+  });
+  function destroy() { if (dead) return; dead = true; opGen++; close(); rows.clear(); cache.clear(); off(); if (owned) index.destroy(); F.signal?.removeEventListener("abort", destroy); }
   F.signal?.addEventListener("abort", destroy, { once: true });
   if (F.signal?.aborted) destroy();
-  return { open, search, update, changed: update, destroy };
+  return { open, search, update, changed: app => { index.changed(app); update(app); }, destroy };
 }

@@ -85,6 +85,7 @@ const BASE = "https://router.invalid";
 const argOf = (s) => (typeof s === "string" && ARG.test(s) ? s : null);
 // (You's arg and Weather's, as stage 1 had them: [\w-] only, never decoded)
 const arg1 = (s) => (typeof s === "string" && /^[\w-]{1,40}$/.test(s) ? s : null);
+const filesFolder = (s) => typeof s === "string" && /^[A-Za-z0-9_-]{32}$/.test(s) ? s : null;
 // (an arg as the address writes it: decoded once; a bad % → null)
 const argIn = (s) => { try { return argOf(decodeURIComponent(s)); } catch (_) { return null; } };
 // (whether an app's routes are ours: roof true (every app) or a map with the app's flag true)
@@ -122,6 +123,10 @@ export function parse(href, { roof = false, origin, workspace = false } = {}) {
   }
   const path = u.pathname, hash = u.hash.slice(1);
   if (path === "/" || path === "/index.html") {
+    if (workspace && (hash === "files" || hash.startsWith("files="))) {
+      const folder = hash === "files" ? null : filesFolder(hash.slice(6));
+      return hash === "files" || folder ? { kind: "tab", tab: "workspace", tool: "files", folder } : null;
+    }
     if (workspace && (!hash || hash === "workspace" || hash.startsWith("workspace=") && arg1(hash.slice(10)))) return { kind: "tab", tab: "workspace", arg: !hash || hash === "workspace" ? null : arg1(hash.slice(10)) };
     if (hash === "apps") return { kind: "tab", tab: "apps", arg: null };
     if (hash === "you") return { kind: "tab", tab: "you", arg: null };
@@ -167,6 +172,7 @@ export function format(route) {
   if (!route || typeof route !== "object") return "/";
   const kind = route.kind ?? (route.app != null ? "app" : route.tab != null ? "tab" : null);
   if (kind === "tab") {
+    if (route.tab === "workspace" && route.tool === "files") { const folder = filesFolder(route.folder); return folder ? `/#files=${folder}` : "/#files"; }
     if (route.tab === "workspace") { const a = arg1(route.arg); return a ? `/#workspace=${a}` : "/#workspace"; }
     if (route.tab === "apps") return "/#apps";
     if (route.tab === "you") { const a = arg1(route.arg); return a ? `/#you=${a}` : "/#you"; }

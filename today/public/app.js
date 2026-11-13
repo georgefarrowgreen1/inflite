@@ -14,12 +14,12 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.14";
+const BUILD = "2.15";
 // (what's new in it, said once it's in)
-const NEWS = "Windows, Files and commands in InFlite OS";
+const NEWS = "InFlite Files: your private drive and app files, together";
 // OS is a separate surface. The query switch is reserved for local/test previews.
 const OS_MODE = location.hostname === "os.inflite.ai" || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-state.js", "/roof/workspace-catalog.js", "/roof/workspace-context.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/os.webmanifest"];
+const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-state.js", "/roof/workspace-catalog.js", "/roof/workspace-context.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite OS";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/os.webmanifest");

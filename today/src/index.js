@@ -10,6 +10,7 @@ import { isHubPath, hub } from "./hub.js";
 import { mailPage } from "./mailhost.js";
 import { bodyUpTo } from "./body.js";
 import { renderNotFound, withLocalNotFound } from "./not-found.js";
+import { isFilesAPI, filesAPI } from "./files.js";
 
 // Today's API, each route as the account has it: its path there, how long it's waited for, and whether the account's
 // Set-Cookie comes back with it (signing in, its renewal, signing out: never anywhere else)
@@ -81,6 +82,7 @@ const worker = {
     try {
       if (hubbed) return await hub(request, env, ctx);
       if (mail) return await mailPage(request, env);
+      if (isFilesAPI(url.pathname)) return await filesAPI(request, env);
       if (url.pathname === "/api/bugs") return await bugReport(request, env);
       if (url.pathname === "/api/vitals") return await vitals(request, env, ctx);
       if (url.pathname === "/api/status-banner") return await statusBanner(request, env, url);

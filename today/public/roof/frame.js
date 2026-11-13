@@ -23,7 +23,7 @@ const released = () => new DOMException("This screen was let go of", "AbortError
 
 export function createFrame(opts = {}) {
   const H = history, L = location, doc = document, html = doc.documentElement;
-  const offs = [], subs = {}, screens = {}, mods = {}, lifetime = new AbortController();
+  const offs = [], subs = {}, screens = {}, mods = {}, lifetime = new AbortController(), systemTasks = new Set();
   const on = (t, ev, fn, o) => { if (!t) return; t.addEventListener(ev, fn, o); offs.push(() => t.removeEventListener(ev, fn, o)); };
   const emit = (ev, x) => { for (const f of [...(subs[ev] || [])]) try { f(x); } catch (e) { console.error(e); } };
   const sess0 = () => ({ view: null, hub: false, roof: false, links: {}, ...(opts.session?.() || {}) });
@@ -123,20 +123,78 @@ export function createFrame(opts = {}) {
     f.then(null, () => {}).then(() => { if (!gone && !isOn(a) && mods[a] === m && shown?.id !== "m:" + a) unmount(a); });
   };
 
+  // Account-lived work, such as Files transfers, can outlive a visible screen.
+  // A failed flush stays busy until a successful retry or explicit disposal;
+  // automatic reload must not infer that an uncertain write has finished.
+  const taskOwner = () => T(() => sess().view?.user?.id, null);
+  const taskLive = (record) => {
+    if (!systemTasks.has(record)) return false;
+    if (gone || lifetime.signal.aborted || record.signal?.aborted || taskOwner() !== record.owner) { record.dispose(); return false; }
+    return true;
+  };
+  function registerSystemTask(task, { signal } = {}) {
+    for (const record of [...systemTasks]) taskLive(record);
+    const owner = taskOwner();
+    if (gone || lifetime.signal.aborted || signal?.aborted || typeof owner !== "string" || !owner || !task ||
+        signal != null && (typeof signal.addEventListener !== "function" || typeof signal.removeEventListener !== "function") ||
+        ![task.busy, task.flush].some((method) => typeof method === "function") ||
+        [task.busy, task.flush].some((method) => method != null && typeof method !== "function")) return () => {};
+    const record = { task, signal, owner, pending: 0, blocked: false, epoch: 0, waiters: new Set(), dispose: null };
+    const dispose = record.dispose = () => {
+      if (!systemTasks.delete(record)) return;
+      lifetime.signal.removeEventListener("abort", dispose); signal?.removeEventListener("abort", dispose);
+      for (const finish of [...record.waiters]) finish({ lost: 0 });
+    };
+    systemTasks.add(record);
+    lifetime.signal.addEventListener("abort", dispose, { once: true }); signal?.addEventListener("abort", dispose, { once: true });
+    return dispose;
+  }
+  const taskBusy = (record) => taskLive(record) && (record.pending > 0 || record.blocked || !!T(() => record.task.busy?.(), true));
+  const taskLost = (answer) => {
+    const n = T(() => Number(answer?.lost || 0), 1);
+    return Number.isFinite(n) && n >= 0 ? Math.min(1e6, Math.ceil(n)) : 1;
+  };
+  function flushSystemTask(record, timeoutMs) {
+    if (!taskLive(record)) return Promise.resolve({ lost: 0 });
+    const epoch = ++record.epoch;
+    ++record.pending;
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (answer) => {
+        if (done) return;
+        done = true; clearTimeout(timer); record.waiters.delete(finish); --record.pending;
+        const current = taskLive(record), lost = current ? taskLost(answer) : 0;
+        if (current && record.epoch === epoch) record.blocked = lost > 0;
+        resolve({ lost });
+      };
+      const timer = setTimeout(() => finish({ lost: 1 }), timeoutMs);
+      record.waiters.add(finish);
+      Promise.resolve().then(() => {
+        if (!taskLive(record)) return { lost: 0 };
+        if (typeof record.task.flush === "function") return record.task.flush({ timeoutMs });
+        return { lost: T(() => record.task.busy?.(), true) ? 1 : 0 };
+      }).then(finish, () => finish({ lost: 1 }));
+    });
+  }
+
   const F = {
     route: null,
     signal: lifetime.signal,
     ui, toast,
     get session() { return gone ? { view: null, hub: false, roof: false, apps: {}, links: {}, lost } : { ...sess(), lost }; },
-    flush() {
-      return Promise.all(Object.values(mods).map((m) => Promise.race([Promise.resolve().then(() => m.instance?.flush?.()).catch(() => null), new Promise((ok) => setTimeout(ok, 2000))])))
+    systemTasks: Object.freeze({ register: registerSystemTask }),
+    flush(options = {}) {
+      const timeoutMs = typeof options?.timeoutMs === "number" && Number.isFinite(options.timeoutMs) ? Math.max(1, Math.min(2000, options.timeoutMs)) : 2000;
+      const modules = Object.values(mods).map((m) => Promise.race([Promise.resolve().then(() => m.instance?.flush?.()).catch(() => null), new Promise((ok) => setTimeout(ok, 2000))]));
+      const tasks = [...systemTasks].map((record) => flushSystemTask(record, timeoutMs));
+      return Promise.all([...modules, ...tasks])
         .then((a) => ({ lost: a.reduce((n, x) => n + (Number(x?.lost) || 0), 0) }));
     },
     get stale() { return stale; },
     set stale(v) { if (!gone) stale = !!v; },
     on(ev, fn) { if (gone) return () => {}; (subs[ev] ||= []).push(fn); return () => { subs[ev] = (subs[ev] || []).filter((f) => f !== fn); }; },
     hubAgain: () => gone ? Promise.resolve() : Promise.resolve(opts.hubAgain?.()).catch(() => {}),
-    busy: () => !!F.sheet.top() || Object.values(mods).some((m) => !!T(() => m.instance?.busy?.(), false)),
+    busy: () => !!F.sheet.top() || Object.values(mods).some((m) => !!T(() => m.instance?.busy?.(), false)) || [...systemTasks].some(taskBusy),
     restamp() { if (!gone && !H.state?.ifl) stamp(); },
     fill(v) { if (!gone) { html.classList.toggle("ifl-fill", !!v); F.header.compact?.(); } },
     screen(id, spec = {}) {

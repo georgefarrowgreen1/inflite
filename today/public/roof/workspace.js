@@ -7,7 +7,8 @@ import { WORKSPACE_APPS, getWorkspaceApp, safeWorkspaceRoute } from "./workspace
 import { createWorkspaceStore } from "./workspace-state.js";
 import { createWorkspaceContext } from "./workspace-context.js";
 import { createWorkspaceCommands, notificationActions } from "./workspace-commands.js";
-import { createWorkspaceFiles } from "./workspace-files.js";
+import { createFilesService } from "./files-service.js";
+import { safeFilesLocation } from "./files-location.js";
 
 export const WORKSPACE_VERSION = 2;
 const EMPTY_CONTEXT = Object.freeze({ location: null, interval: null });
@@ -29,6 +30,7 @@ export async function createWorkspace(F, options = {}) {
   const background = F.ui.el("div", { hidden: true, inert: true, "aria-hidden": "true" });
   options.dockRoot?.append(background);
   let files = null, commands = null;
+  let explorer = null, explorerLoad = null, filesLocation = safeFilesLocation({ kind: "drive" }), pendingFilesQuery = null;
   const presentations = new WeakMap(), waiting = new Set();
   let paneRoutes = new Map(), pendingHistory = null, presented = Promise.resolve();
   let shown = false, gone = false, currentId = null, current = null, route = null, foreground = "fitness", scene = 0, paintPending = false, resize = 0, relayed = null, relayOff = () => {}, relayEpoch = 0;
@@ -169,7 +171,7 @@ export async function createWorkspace(F, options = {}) {
       paintPending = false; if (!live()) return;
       rememberAll();
       const state = store.read(), file = current?.panes.some(p => p.app === "fitness") ? snapshots.get("fitness")?.files?.[0] : null;
-      view.update({ mode: F.route?.kind === "app" ? "app" : shown && current ? "workspace" : "today", activeApp: F.route?.app, activeId: currentId, foregroundApp: foreground,
+      view.update({ mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : shown && current ? "workspace" : "today", activeApp: F.route?.app, activeId: currentId, foregroundApp: foreground,
         paneApps: current?.panes.map((p) => p.app) || ["fitness", "weather"], workspaces: state.workspaces,
         apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id) })), user: { name: F.session.view?.user?.name || "" }, notifications: options.notifications?.() || 0,
         title: current ? `${current.name} workspace` : "Today", summary: summary(), layout: current?.layout,
@@ -304,7 +306,7 @@ export async function createWorkspace(F, options = {}) {
     const safe = safeWorkspaceRoute(app, path) || target.panes.find(p => p.app === app).route;
     store.update(target.id, { panes: target.panes.map(p => p.app === app ? { ...p, route: safe } : p), activePane: app,
       layout: { ...target.layout, windows: { ...target.layout.windows, [app]: { ...target.layout.windows[app], minimized: false } } } });
-    if (shown && currentId === target.id) {
+    if (shown && current && currentId === target.id) {
       if ((paneRoutes.get(app) || "") !== safe) navigatePane(app, safe);
       else { current = store.read().workspaces.find(w => w.id === target.id); focusPane(app); paint(); layout(); }
     } else openWorkspace(target.id);
@@ -398,7 +400,67 @@ export async function createWorkspace(F, options = {}) {
     if (!body.firstChild) body.append(F.ui.el("p", { text: "App actions will appear when it is ready." }));
     menu = F.sheet.open({ app, sheet: "workspace-actions", title: `${REGISTRY[app].name} actions`, body });
   }
-  const openFiles = (query) => files?.open(query);
+  function navigateFiles(next, { query } = {}) {
+    next = safeFilesLocation(next);
+    if (!live() || !next) return false;
+    const path = format({ tab: "workspace", tool: "files", folder: next.kind === "drive" && next.view === "folder" ? next.folderId : null });
+    const prefill = typeof query === "string" ? { query: query.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 160), location: JSON.stringify(next), route: null } : null;
+    pendingFilesQuery = prefill;
+    const replace = F.route?.tool === "files" && JSON.stringify(filesLocation) === JSON.stringify(next);
+    F.nav.go(path, { kind: "section", replace, state: { files: { userId: owner, location: next } } });
+    if (prefill && pendingFilesQuery === prefill) prefill.route = F.route;
+    return true;
+  }
+  const openFiles = (query = "", location = null) => {
+    const destination = location === null ? { kind: "drive", folderId: null, view: "folder" } : safeFilesLocation(location);
+    return destination ? navigateFiles(destination, { query }) : false;
+  };
+  function filesLocationAt(r) {
+    const direct = safeFilesLocation({ kind: "drive", folderId: r?.folder || null });
+    if (r?.folder) return direct;
+    const saved = history.state?.files;
+    const kept = saved?.userId === owner ? safeFilesLocation(saved.location) : null;
+    return kept && !(kept.kind === "drive" && kept.folderId) ? kept : direct;
+  }
+  function loadExplorer() {
+    if (!explorerLoad) explorerLoad = Promise.all([import("./files-explorer.js"), loadStyles("/roof/files-view.css")]).then(([m]) => {
+      if (!live()) return null;
+      explorer = m.createFilesExplorer(view.slots.files, F, { service: files, onNavigate: next => navigateFiles(next), onChanged() {} });
+      explorer.hide(); return explorer;
+    }).catch(error => { explorerLoad = null; throw error; });
+    return explorerLoad;
+  }
+  async function showFiles(nextRoute, episode) {
+    filesLocation = filesLocationAt(nextRoute);
+    const pending = pendingFilesQuery;
+    const prefill = pending && (!pending.route || pending.route === nextRoute) && pending.location === JSON.stringify(filesLocation) ? pending.query : undefined;
+    pendingFilesQuery = null;
+    current = null; currentId = store.read().activeId;
+    restoring.clear();
+    for (const app of displayed.keys()) handles.get(app)?.hide({ detach: true }); displayed.clear();
+    restoreToday(); today.hidden = true; today.inert = true;
+    if (!explorer) {
+      view.slots.files.hidden = false; view.slots.files.inert = false;
+      view.slots.files.replaceChildren(F.ui.el("p", { role: "status", text: "Opening InFlite Files…" }));
+    }
+    bindContext(); paint();
+    const active = () => live() && shown && route === nextRoute && F.route === nextRoute && scene === episode;
+    if (active()) document.title = "InFlite Files — InFlite OS";
+    try {
+      const host = await loadExplorer();
+      if (!active() || !host) return false;
+      host.show(filesLocation, prefill === undefined ? {} : { query: prefill });
+      document.title = "InFlite Files — InFlite OS";
+      if (prefill) host.focusSearch?.();
+      return true;
+    } catch (_) {
+      if (active()) {
+        view.slots.files.hidden = false; view.slots.files.inert = false;
+        view.slots.files.replaceChildren(F.ui.error({ title: "Files couldn’t open", body: "Try again to open InFlite Files.", acts: [{ label: "Try again", run: () => { if (active()) show(nextRoute); } }] }));
+      }
+      return false;
+    }
+  }
   function openApps() {
     const body = F.ui.el("div", { class: "ifs-page" }); let menu;
     body.append(F.ui.btn("Today", { icon: "sun", run: () => { menu.now(); F.nav.go(wsURL()); } }), F.ui.btn("Files", { icon: "file", run: () => { menu.now(); openFiles(); } }));
@@ -454,8 +516,11 @@ export async function createWorkspace(F, options = {}) {
   async function showWorkspace(nextRoute) {
     if (!live()) return false;
     rememberAll();
+    explorer?.hide();
     route = nextRoute; shown = true; const episode = ++scene; html.classList.add("ifl-os", "os-workspace");
     view.slots.dockAnchor.append(view.dock);
+    if (nextRoute?.tool === "files") return showFiles(nextRoute, episode);
+    pendingFilesQuery = null;
     const state = store.read(), chosen = state.workspaces.find((w) => w.id === nextRoute?.arg);
     current = chosen || null; currentId = current?.id || state.activeId || null;
     if (current) {
@@ -491,6 +556,7 @@ export async function createWorkspace(F, options = {}) {
   function hide() {
     if (!live()) return;
     rememberAll(); restoring.clear();
+    explorer?.hide(); pendingFilesQuery = null;
     shown = false; ++scene; html.classList.remove("os-workspace");
     for (const app of displayed.keys()) handles.get(app)?.hide({ detach: true }); displayed.clear(); restoreToday();
     options.dockRoot?.append(view.dock);
@@ -500,11 +566,12 @@ export async function createWorkspace(F, options = {}) {
     gone = true; ++scene; cancelAnimationFrame(resize); relayOff();
     for (const pending of [...waiting]) pending.finish(false);
     for (const off of offs.splice(0)) off();
+    explorer?.destroy(); pendingFilesQuery = null;
     for (const ctx of contexts.values()) ctx.dispose(); contexts.clear(); contextListeners.clear(); paneObservers.clear(); paneScroll.clear(); restoring.clear(); providers.clear(); snapshots.clear(); historyViews.clear(); paneRoutes.clear(); store.dispose(); files?.destroy(); commands?.destroy(); background.remove();
     restoreToday(); anchor.remove(); view.destroy(); html.classList.remove("ifl-os", "os-workspace"); html.removeAttribute("data-os-dock-away"); document.title = originalTitle;
     if (F.tabs.away === dockAway) F.tabs.away = nativeAway;
     const state = history.state;
-    if (state?.workspace?.userId === owner) { const clean = { ...state }; delete clean.workspace; guarded(() => history.replaceState(clean, "")); }
+    if (state?.workspace?.userId === owner || state?.files?.userId === owner) { const clean = { ...state }; if (state.workspace?.userId === owner) delete clean.workspace; if (state.files?.userId === owner) delete clean.files; guarded(() => history.replaceState(clean, "")); }
     F.signal.removeEventListener("abort", destroy);
   }
   F.signal.addEventListener("abort", destroy, { once: true });
@@ -528,10 +595,11 @@ export async function createWorkspace(F, options = {}) {
   window.addEventListener("resize", resized, { passive: true }); offs.push(() => window.removeEventListener("resize", resized));
   if (typeof ResizeObserver === "function") { const ro = new ResizeObserver(resized); ro.observe(root); offs.push(() => ro.disconnect()); }
   offs.push(F.search.provide({ id: "workspaces", group: "Workspaces", order: 1, search(q) { const query = String(q).toLocaleLowerCase(); return store.read().workspaces.filter((w) => w.name.toLocaleLowerCase().includes(query)).map((w) => ({ title: w.name + " workspace", sub: "Open your saved apps", icon: "grid", href: wsURL(w.id) })); } }));
-  files = createWorkspaceFiles(F, {
+  files = createFilesService(F, {
     sources: () => WORKSPACE_APPS.filter(a => ["fitness", "mail", "chats", "markets"].includes(a.id) && appOn(a.id)).map(a => ({ app: a.id, name: a.name, transient: a.id === "chats", status: snapshots.get(a.id)?.status || (snapshots.get(a.id)?.loading ? "loading" : providers.has(a.id) ? "ready" : "loading"), files: snapshots.get(a.id)?.files || [] })),
-    load: loadFiles, runIntent, openApp,
+    load: loadFiles, runIntent, openApp, openExplorer: openFiles,
   });
+  if (F.systemTasks?.register) offs.push(F.systemTasks.register(files, { signal: F.signal }));
   commands = createWorkspaceCommands(F, {
     apps: () => WORKSPACE_APPS.map(a => ({ ...a, available: appOn(a.id) })), workspaces: () => store.read().workspaces,
     files: q => files.search(q), actions: () => [...snapshots].flatMap(([app, snapshot]) => (snapshot?.actions || []).map(action => ({ app, ...action }))),
@@ -539,5 +607,5 @@ export async function createWorkspace(F, options = {}) {
   });
   currentId = store.read().activeId;
   bindContext(); paint(); activate(F.route).catch(() => {});
-  return { show, hide, update: paint, destroy, notificationActions: note => notificationActions(note, { origin: location.origin, enabled: appOn, workspaces: () => store.read().workspaces, openWorkspace: openWorkspaceFor, openApp, runIntent, current: live }), focus: () => { const heading = root.querySelector("h1") || root; heading.tabIndex = -1; return heading; }, store };
+  return { show, hide, update: paint, destroy, openFiles, busy: () => live() && !!files?.busy(), flush: options => live() ? files?.flush(options) || Promise.resolve({ lost: 0 }) : Promise.resolve({ lost: 0 }), notificationActions: note => notificationActions(note, { origin: location.origin, enabled: appOn, workspaces: () => store.read().workspaces, openWorkspace: openWorkspaceFor, openApp, runIntent, current: live }), focus: () => { if (shown && route?.tool === "files") { const target = explorer?.focus(); if (target) return target; } const heading = root.querySelector("h1") || root; heading.tabIndex = -1; return heading; }, store };
 }

@@ -5,7 +5,7 @@ const {chromium,webkit}=require('playwright'),{readFileSync,existsSync}=require(
 const PUBLIC=resolve(__dirname,'../today/public'),ORIGIN='http://files.test';let browser;
 before(async()=>{browser=process.env.WEB_UI_BROWSER==='webkit'?await webkit.launch():await chromium.launch({executablePath:existsSync('/usr/bin/chromium')?'/usr/bin/chromium':undefined,args:['--no-sandbox']});});
 after(async()=>browser?.close());
-const fixture=`import * as ui from '/roof/ui.js';import {createSheets} from '/roof/sheet.js';import {createWorkspaceFiles} from '/roof/workspace-files.js';
+const fixture=`import * as ui from '/roof/ui.js';import {createSheets} from '/roof/sheet.js';import {createWorkspaceFiles} from '/roof/workspace-files.js';import {createAppFilesIndex} from '/roof/files-apps.js';
  const controller=new AbortController(),T=window.T={calls:[],runs:[],effects:[],gates:{},status:{fitness:'ready',mail:'ready',chats:'locked'},answers:{},toasts:[],opens:[]};
  const entry=(app,id,name,mime)=>({id:app+':file:'+id,app,name,mime,objectId:id,intent:'open-file',downloadIntent:'download-file',source:app==='mail'?'Maya':app,modifiedAt:100,size:2048});
  T.answers.fitness={status:'ready',files:[entry('fitness','route','Norwich.gpx','application/gpx+xml'),entry('fitness','workout','Endurance.fit','application/vnd.ant.fit')]};
@@ -13,7 +13,7 @@ const fixture=`import * as ui from '/roof/ui.js';import {createSheets} from '/ro
  T.wait=(app,q)=>new Promise(resolve=>T.gates[app+':'+q]=resolve);T.release=(key,answer)=>{const fn=T.gates[key];delete T.gates[key];fn(answer)};
  T.F={ui,signal:controller.signal,session:{view:{user:{id:'ann'}}},route:{kind:'tab',tab:'workspace'},toast:s=>T.toasts.push(s)};T.F.sheet=createSheets(T.F);
  T.load=async(app,q,current)=>{T.calls.push({app,q});if(T.delays?.includes(app+':'+q))return T.wait(app,q);const a=T.answers[app];return {...a,files:a.files.filter(f=>!q||f.name.toLowerCase().includes(q.toLowerCase()))}};
- T.files=createWorkspaceFiles(T.F,{sources:()=>Object.entries(T.status).map(([app,status])=>({app,status,name:app==='mail'?'Mail':app==='chats'?'Chats':'Fitness',...(T.transient?.[app]?{transient:true,files:status==='ready'?T.answers[app].files:[]}:{})})),load:(...args)=>T.load(...args),runIntent:async(app,intent,id,{current})=>{T.runs.push({app,intent,id,current:current()});if(T.delayRun)await new Promise(r=>T.finishRun=r);if(!current())return{ok:false};T.effects.push({app,intent,id});return{ok:true}},openApp:app=>T.opens.push(app)});
+ T.options={sources:()=>Object.entries(T.status).map(([app,status])=>({app,status,name:app==='mail'?'Mail':app==='chats'?'Chats':'Fitness',...(T.transient?.[app]?{transient:true,files:status==='ready'?T.answers[app].files:[]}:{})})),load:(...args)=>T.load(...args),runIntent:async(app,intent,id,{current})=>{T.runs.push({app,intent,id,current:current()});if(T.delayRun)await new Promise(r=>T.finishRun=r);if(!current())return{ok:false};T.effects.push({app,intent,id});return{ok:true}},openApp:app=>T.opens.push(app)};T.files=createWorkspaceFiles(T.F,T.options);T.share=()=>{T.files.destroy();T.index=createAppFilesIndex(T.F,{...T.options,onFind:q=>T.files.open(q)});T.files=createWorkspaceFiles(T.F,{...T.options,index:T.index});};
  T.abort=()=>controller.abort();document.getElementById('open').onclick=()=>T.files.open();
 `;
 async function open(width=390){
@@ -90,5 +90,27 @@ test('Chat recall and conversation changes release transient rows and reject sav
   assert.equal(await t.page.evaluate(()=>T.calls.filter(c=>c.app==='chats').length),1,'a cold source can initialise once; canonical transient snapshots do not refetch');
   await t.page.evaluate(()=>{T.status.chats='loading';T.files.changed('chats')});
   assert.equal(await t.page.getByRole('button',{name:'Open Other chat photo',exact:true}).count(),0);
+ }finally{await t.close();}
+});
+
+test('Explorer and quick Files share a cold metadata request and destroying the quick view preserves the account index',async()=>{
+ const t=await open();try{
+  await t.page.evaluate(()=>{T.share();T.delays=['mail:'];T.files.open();T.explorerRead=T.index.read({app:'mail'}).then(value=>T.explorerAnswer=value);});
+  await t.page.waitForFunction(()=>!!T.gates['mail:']);assert.equal(await t.page.evaluate(()=>T.calls.filter(c=>c.app==='mail').length),1);
+  await t.page.evaluate(()=>T.release('mail:',T.answers.mail));await t.page.getByRole('button',{name:'Open Invoice.pdf',exact:true}).waitFor();
+  await t.page.evaluate(()=>T.explorerRead);assert.equal(await t.page.evaluate(()=>T.explorerAnswer.files[0].name),'Invoice.pdf');
+  await t.page.evaluate(()=>T.files.destroy());assert.equal(await t.page.locator('dialog[open]').count(),0);
+  assert.ok((await t.page.evaluate(async()=>(await T.index.search('Invoice')).map(e=>e.title))).includes('Invoice.pdf'));
+  await t.page.evaluate(()=>T.index.run(T.explorerAnswer.files[0],'open-file'));assert.equal(await t.page.evaluate(()=>T.effects.length),1);
+ }finally{await t.close();}
+});
+
+test('another Explorer query cannot replace quick Files rows or cancel their native handoff',async()=>{
+ const t=await open(1200);try{
+  await t.page.evaluate(()=>{T.share();T.files.open();});await t.page.getByRole('button',{name:'Open Invoice.pdf',exact:true}).waitFor();
+  await t.page.evaluate(()=>T.index.read({app:'mail',query:'no matching files'}));
+  assert.equal(await t.page.getByRole('button',{name:'Open Invoice.pdf',exact:true}).count(),1,'quick view retains its own result selection');
+  await t.page.getByRole('button',{name:'Open Invoice.pdf',exact:true}).click();await t.page.waitForFunction(()=>T.effects.length===1);
+  assert.equal(await t.page.locator('dialog[open]').count(),0);assert.deepEqual(await t.page.evaluate(()=>T.effects[0]),{app:'mail',intent:'open-file',id:'invoice'});
  }finally{await t.close();}
 });

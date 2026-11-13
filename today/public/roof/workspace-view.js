@@ -3,7 +3,7 @@
 // createWorkspaceView(root, callbacks) -> { slots, dock, update(model), setPane(key,spec),
 //   getViewport(), isPaneVisible(app), revealPane(app), windowAction(app, command), destroy() }
 // dock is a self-scoped movable element; restore it with slots.dockAnchor.append(dock).
-// model: { mode:"today"|"workspace"|"app", activeId, activeApp, foregroundApp, paneApps?,
+// model: { mode:"today"|"workspace"|"app"|"files", activeId, activeApp, foregroundApp, paneApps?,
 //   title?, subtitle?, workspaces:[{id,name,icon?}], apps:[{id,name,icon?,available?}],
 //   user?:{name,photo?}, summary?:{title,line,facts?:[{label,value}]}, resource?, layout? }
 // layout: { mode:"tile"|"float", windows:{[app]:{x,y,w,h,minimized}}, order:[app] }.
@@ -147,7 +147,9 @@ export function createWorkspaceView(root, callbacks = {}) {
   const secondaryIcon = el("span", { class: "ws-resource-secondary-icon", "aria-hidden": "true" }), secondaryLabel = el("span");
   const share = button("Workspace file action", null, "share-resource", "ws-resource-share"); share.append(secondaryIcon, secondaryLabel);
   const resource = el("section", { class: "ws-resource", "aria-label": "Workspace file", hidden: true }, resourceMain, share);
-  const canvas = el("div", { class: "ws-canvas" }, todayView, rideView, appView, resource);
+  const filesSlot = el("div", { class: "ws-files-slot", data: { workspaceSlot: "files" } });
+  const filesView = el("div", { class: "ws-files-view", hidden: true, inert: true }, filesSlot);
+  const canvas = el("div", { class: "ws-canvas" }, todayView, rideView, appView, filesView, resource);
   const windowMenu = el("div", { class: "ws-window-menu", role: "menu", hidden: true });
   const keyboardHint = el("p", { class: "ws-window-hint", role: "status", hidden: true });
   const closedWindows = el("div", { class: "ws-windows-empty", hidden: true }, el("h2", { text: "Your windows are minimised" }), el("p", { text: "Choose a window to pick up where you left off." }), button("Open windows", "grid", "window-switcher", "ws-secondary"));
@@ -453,13 +455,13 @@ export function createWorkspaceView(root, callbacks = {}) {
     const heldLayout = gesture ? model.layout : null;
     model = { ...model, ...next };
     if (heldLayout) model.layout = heldLayout;
-    const mode = /^(workspace|app)$/.test(model.mode) ? model.mode : "today", spaces = (Array.isArray(model.workspaces) ? model.workspaces : []).filter(w => w?.id && w.name && callable(callbacks.onWorkspace));
+    const mode = /^(workspace|app|files)$/.test(model.mode) ? model.mode : "today", spaces = (Array.isArray(model.workspaces) ? model.workspaces : []).filter(w => w?.id && w.name && callable(callbacks.onWorkspace));
     const current = spaces.find(w => w.id === model.activeId), ride = spaces.find(w => w.id === "ride") || spaces.find(w => {
       const apps = Array.isArray(w.panes) ? w.panes.map(p => p.app) : Array.isArray(w.apps) ? w.apps : [];
       return apps.includes("fitness") && apps.includes("weather");
     });
     const apps = (Array.isArray(model.apps) ? model.apps : []).filter(a => a?.id && a.available !== false && callable(callbacks.onApp));
-    const activeApp = apps.find(a => a.id === model.activeApp), title = model.title || (mode === "workspace" ? `${current?.name || "Ride"} workspace` : mode === "app" ? activeApp?.name || APP_NAMES[model.activeApp] || "App" : "Today");
+    const activeApp = apps.find(a => a.id === model.activeApp), title = mode === "files" ? "InFlite Files" : model.title || (mode === "workspace" ? `${current?.name || "Ride"} workspace` : mode === "app" ? activeApp?.name || APP_NAMES[model.activeApp] || "App" : "Today");
     root.dataset.mode = mode;
     if (mode === "today") canvas.removeAttribute("role"); else canvas.setAttribute("role", "main");
     words(heading.querySelector(".ws-title-desktop"), title);
@@ -468,11 +470,13 @@ export function createWorkspaceView(root, callbacks = {}) {
     rideView.setAttribute("aria-label", `${current?.name || "Ride"} workspace`);
     foregroundTabs.setAttribute("aria-label", `${current?.name || "Ride"} workspace apps`);
     appView.setAttribute("aria-label", activeApp?.name || APP_NAMES[model.activeApp] || "App");
-    if (back) back.hidden = mode === "today" || !callable(callbacks.onPaneBack);
+    if (back) back.hidden = mode === "today" || mode === "files" || !callable(callbacks.onPaneBack);
     if (manage) manage.hidden = mode !== "workspace" || !current;
     todayView.hidden = mode !== "today"; rideView.hidden = mode !== "workspace"; appView.hidden = mode !== "app";
+    filesView.hidden = mode !== "files"; filesView.inert = mode !== "files";
     foreground(model.foregroundApp || "fitness", false);
     if (todaySide) setCurrent(todaySide, mode === "today");
+    setCurrent(files, mode === "files");
     const paintWorkspace = (b, w) => { words(b.lastElementChild, w.name); setCurrent(b, mode === "workspace" && w.id === model.activeId); };
     const makeWorkspace = (w, cls) => {
       const b = button(w.name, (w.icon || (w.id === "ride" ? "ride" : "grid")), action(`workspace:${w.id}`, opener => invoke("onWorkspace", w.id, opener)), cls);
@@ -505,7 +509,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     const count = Math.max(0, Math.floor(Number(model.notifications) || 0)); notificationCount.hidden = !count; words(notificationCount, count > 99 ? "99+" : count);
     notifications?.setAttribute("aria-label", count ? `Notifications, ${count} unread` : "Notifications");
     const file = model.resource;
-    resource.hidden = !file?.name || !file.app || !file.intent || !callable(callbacks.onIntent);
+    resource.hidden = mode === "files" || !file?.name || !file.app || !file.intent || !callable(callbacks.onIntent);
     words(resourceName, file?.name); resourceMain.setAttribute("aria-label", file?.name ? `Open ${file.name}` : "Open file");
     action("resource", file?.app && file.intent ? () => invoke("onIntent", file.app, file.intent, file.objectId) : null);
     const secondary = file?.secondary || (file?.share ? { label: "Share in Chats", icon: "bubble", ...file.share } : null);
@@ -551,7 +555,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     for (const key of ["mode", "foregroundApp", "focusedApp", "paneCount", "layout", "windowCount"]) delete root.dataset[key];
   }
   if (callbacks.signal) { const abort = () => destroy(); callbacks.signal.addEventListener("abort", abort, { once: true }); cleanups.push(() => callbacks.signal.removeEventListener("abort", abort)); }
-  const slots = { today: todaySlot, ...Object.fromEntries(WINDOW_APPS.map(app => [app, panes.get(app).slot])), app: panes.get("app").slot, dockAnchor };
+  const slots = { today: todaySlot, files: filesSlot, ...Object.fromEntries(WINDOW_APPS.map(app => [app, panes.get(app).slot])), app: panes.get("app").slot, dockAnchor };
   update();
   if (callbacks.signal?.aborted) destroy();
   return { slots, dock: dockHost, update, setPane, destroy, getViewport, isPaneVisible, revealPane, windowAction };

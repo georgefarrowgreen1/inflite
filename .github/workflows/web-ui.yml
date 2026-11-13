@@ -9,15 +9,20 @@ permissions:
   contents: read
 jobs:
   browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Matching production app fixtures
-        run: git clone --quiet --depth 1 https://github.com/georgefarrowgreen1/georgefarrowgreen ../georgefarrowgreen
+      - name: Matching app fixtures
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          R=https://github.com/georgefarrowgreen1/georgefarrowgreen
+          if [ -n "$BRANCH" ] && git ls-remote --exit-code --heads "$R" "refs/heads/$BRANCH" >/dev/null 2>&1; then B=$BRANCH; else B=$(git ls-remote --symref "$R" HEAD | sed -n 's@^ref: refs/heads/\([^[:space:]]*\).*@\1@p'); fi
+          git clone --quiet --depth 1 --branch "$B" "$R" ../georgefarrowgreen
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm ci --prefix email --omit=dev --no-audit --no-fund
@@ -36,17 +41,22 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   contracts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           path: inflite
-      - name: Production app modules
-        run: git clone --quiet --depth 1 https://github.com/georgefarrowgreen1/georgefarrowgreen georgefarrowgreen
+      - name: Matching app modules
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          R=https://github.com/georgefarrowgreen1/georgefarrowgreen
+          if [ -n "$BRANCH" ] && git ls-remote --exit-code --heads "$R" "refs/heads/$BRANCH" >/dev/null 2>&1; then B=$BRANCH; else B=$(git ls-remote --symref "$R" HEAD | sed -n 's@^ref: refs/heads/\([^[:space:]]*\).*@\1@p'); fi
+          git clone --quiet --depth 1 --branch "$B" "$R" georgefarrowgreen
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - run: npm ci --prefix inflite/email --omit=dev --no-audit --no-fund
       - run: npm ci --prefix georgefarrowgreen/.tools/tests --no-audit --no-fund
       - name: Framework, modules, offline assets and worker boundaries

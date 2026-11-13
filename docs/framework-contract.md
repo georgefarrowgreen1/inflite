@@ -36,12 +36,17 @@ F (§3.2):
   F.session                              { view, hub, roof, apps, links, lost() → Promise<boolean> } (D3); apps: each
                                          app's flag ANDed with hub ({} with the hub off)
   F.setRoof(roof, apps)                  D14 per app, from app.js when /api/hub answers differently (s24 §2, §7)
-  F.flush() → Promise<{ lost }>          every mounted module's instance.flush(), 2 s each at most (s24 §4)
+  F.flush({ timeoutMs? }) → Promise<{ lost }> mounted modules plus registered system tasks; modules keep their
+                                         2 s limit, system tasks receive a bounded 1–2000 ms timeout
+  F.systemTasks.register(task, { signal? }) → dispose
+                                         account-owned busy()/flush({timeoutMs}) work that survives navigation;
+                                         captures the signed-in owner and retires on owner/frame/signal release
   F.restamp()                            re-writes a missing history.state.ifl (RI1)
   F.stale                                boolean, D21 (set by modules.js watchVersion)
   F.fill(on)                             D20 (html.ifl-fill)
   F.on(evt, fn) → off                    "route", "visible", "hidden", "theme", "signedout", "apps", "changed"
-  F.busy() → boolean                     a sheet open, or any mounted module's busy() (hidden drafts still block unsafe reload)
+  F.busy() → boolean                     an open sheet, mounted busy module, or active/pending/failed system task;
+                                         a failed task flush remains busy until a successful flush or disposal
   F.refresh()                            the shown tab screen's header asked for again (its title, crumb, line, acts)
   F.hubAgain() → Promise                 opts.hubAgain (modules.js asks before loading a module)
   F.forModule(app) → fw                  §5.2, below
@@ -118,9 +123,13 @@ what this returns. Written in full by B0 and frozen: every batch builds on these
 .tools/tests/unit/roofrouter.test.mjs pins them).
 
 Route = { kind: "tab", tab: "today" | "apps" | "you" | "workspace", arg: string | null }
+      | { kind: "tab", tab: "workspace", tool: "files", folder: string | null }
       | { kind: "app", app: <a REGISTRY key>, section: <one of its section ids>, key: string, arg: string | null, query: string }
   workspace: only with parse(href, { workspace: true }); /#workspace or /#workspace=<bounded id>.
     Without that opt-in the ordinary Today routing remains unchanged.
+  files: the same workspace screen and chrome at /#files or /#files=<32-character base64url folder id>.
+    Virtual app/recent locations stay in account-owned history state. Filenames, queries and content never go
+    into routes or history; an explicit search prefill remains in the Files host's account-owned memory.
   tab arg: You's, from /#you=<arg> (notify, quiet, rules, phone, apps, account, notify-weather, …).
   app key: the hash's key as written, a section id or one of the app's aliases, else the app's first section;
   app hash: only where key is one of the app's raw keys (REGISTRY[app].raw: Chats' share), the address's whole hash

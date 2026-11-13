@@ -32,3 +32,11 @@ test('transient Chat metadata is reconciled on recall and conversation switch, i
  status='ready';library.update('chats');assert.ok((await library.search('Other')).some(e=>e.title==='Other conversation voice'));
  ac.abort();assert.deepEqual(await library.search('Other'),[]);
 });
+
+test('app display metadata strips bidi overrides and isolates while preserving Arabic and Hebrew text and opaque references',async()=>{
+ const {normalizeWorkspaceFile:clean}=await fileModule;
+ const value=file({name:'דוח\u202epdf.exe\u2066',source:'تقرير\u2069 Maya'}),parsed=clean(value,'mail');
+ assert.equal(/[\u202a-\u202e\u2066-\u2069]/.test(parsed.name+parsed.source),false);
+ assert.ok(parsed.name.includes('דוח'));assert.ok(parsed.source.includes('تقرير'));
+ assert.equal(parsed.id,value.id);assert.equal(parsed.objectId,value.objectId);assert.equal(parsed.intent,value.intent);
+});
