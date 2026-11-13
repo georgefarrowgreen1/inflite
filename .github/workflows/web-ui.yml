@@ -13,13 +13,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Matching app fixtures
-        env:
-          BRANCH: ${{ github.head_ref || github.ref_name }}
-        run: |
-          R=https://github.com/georgefarrowgreen1/georgefarrowgreen
-          if [ -n "$BRANCH" ] && git ls-remote --exit-code --heads "$R" "refs/heads/$BRANCH" >/dev/null 2>&1; then B=$BRANCH; else B=$(git ls-remote --symref "$R" HEAD | sed -n 's@^ref: refs/heads/\([^[:space:]]*\).*@\1@p'); fi
-          git clone --quiet --depth 1 --branch "$B" "$R" ../georgefarrowgreen
+      - name: Production app fixtures
+        run: git clone --quiet --depth 1 --branch main https://github.com/georgefarrowgreen1/georgefarrowgreen ../georgefarrowgreen
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -47,13 +42,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: inflite
-      - name: Matching app modules
-        env:
-          BRANCH: ${{ github.head_ref || github.ref_name }}
-        run: |
-          R=https://github.com/georgefarrowgreen1/georgefarrowgreen
-          if [ -n "$BRANCH" ] && git ls-remote --exit-code --heads "$R" "refs/heads/$BRANCH" >/dev/null 2>&1; then B=$BRANCH; else B=$(git ls-remote --symref "$R" HEAD | sed -n 's@^ref: refs/heads/\([^[:space:]]*\).*@\1@p'); fi
-          git clone --quiet --depth 1 --branch "$B" "$R" georgefarrowgreen
+      - name: Production app modules
+        run: git clone --quiet --depth 1 --branch main https://github.com/georgefarrowgreen1/georgefarrowgreen georgefarrowgreen
       - uses: actions/setup-node@v4
         with:
           node-version: 24
