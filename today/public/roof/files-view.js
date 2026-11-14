@@ -52,7 +52,7 @@ export function filesIcon(name, doc = document) {
   const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
   const requested = GLYPHS[name] || name, glyph = Object.hasOwn(PATHS, requested) ? requested : 'file';
   svg.setAttribute('data-icon', glyph);
-  for (const [key, value] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', focusable: 'false' })) svg.setAttribute(key, value);
+  for (const [key, value] of Object.entries({ width: '20', height: '20', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', focusable: 'false' })) svg.setAttribute(key, value);
   for (const d of PATHS[glyph]) { const path = doc.createElementNS(svg.namespaceURI, 'path'); path.setAttribute('d', d); svg.append(path); }
   return svg;
 }

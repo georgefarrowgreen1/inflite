@@ -26,7 +26,7 @@ export function createWorkspaceActivity(F, { registry } = {}) {
     const focused = document.activeElement;
     const entries = registry.snapshot(), active = entries.filter(item => ACTIVE.has(item.status)).length;
     const attention = entries.filter(item => item.status === "failed" || item.status === "waiting").length;
-    summary.textContent = entries.length ? [active ? `${active} in progress` : "No active tasks", attention ? `${attention} need attention` : null].filter(Boolean).join(" · ") : "Uploads, downloads and workspace tasks appear here.";
+    summary.textContent = entries.length ? [active ? `${active} in progress` : "Recent activity", attention ? `${attention} ${attention === 1 ? "needs" : "need"} attention` : null].filter(Boolean).join(" · ") : "Uploads, downloads and workspace tasks appear here.";
     clear.hidden = !entries.some(item => FINISHED.has(item.status) && !item.pending);
     const keep = new Set();
     let position = list.firstElementChild;

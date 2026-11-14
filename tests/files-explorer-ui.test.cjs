@@ -256,3 +256,34 @@ test('selection controls retain focus through a held refresh and shift-click sel
   await t.page.getByRole('button',{name:'Select <img onerror=alert(1)>.txt',exact:true}).click({modifiers:['Shift']});assert.equal(await t.page.getByRole('checkbox',{checked:true}).count(),3);await t.clean();
  }finally{await t.ctx.close();}
 });
+
+
+for (const [width, theme] of [[320, 'dark'], [390, 'dark'], [1440, 'light']]) test(`folder action sheets keep icons bounded and labels readable at ${width}px ${theme}`, async () => {
+  const t = await open(width);
+  try {
+    await t.page.evaluate(theme => { document.documentElement.dataset.theme = theme; const folder = T.items.get(null)[0]; folder.name = 'Documents'; folder.actions[0].icon = 'folder'; T.explorer.refresh(); }, theme);
+    const more = t.page.getByRole('button', { name: 'Actions for Documents', exact: true }); await more.click();
+    const menu = t.page.getByRole('dialog', { name: 'Documents', exact: true });
+    for (const label of ['Open', 'Rename', 'Move', 'Delete']) {
+      const row = menu.getByRole('button', { name: label, exact: true });
+      const box = await row.boundingBox(), glyph = await row.locator('svg').boundingBox(), text = await row.locator('span').boundingBox();
+      assert.ok(box.height >= 44 && box.height <= 64, `${label} is one comfortable row`);
+      assert.deepEqual([glyph.width, glyph.height], [20, 20]);
+      assert.ok(Math.abs(glyph.y + glyph.height / 2 - box.y - box.height / 2) < 1, 'the icon is vertically centred');
+      assert.ok(text.x - glyph.x - glyph.width >= 11, 'label has space beside the icon');
+      assert.ok(text.height <= 24, `${label} fits on one line`);
+      const style = await row.evaluate(n => ({ round: parseFloat(getComputedStyle(n).borderRadius), inset: parseFloat(getComputedStyle(n).paddingLeft) }));
+      assert.ok(style.round >= 16 && style.inset >= 16);
+    }
+    assert.equal(await menu.evaluate(n => n.scrollWidth > n.clientWidth + 1), false);
+    assert.ok((await menu.boundingBox()).height < 500, 'actions do not turn into oversized panels');
+    await screenshot(t.page, `folder-actions-${width}-${theme}`);
+    await menu.getByRole('button', { name: 'Rename', exact: true }).click();
+    const rename = t.page.getByRole('dialog', { name: 'Rename', exact: true });
+    assert.equal(await rename.getByRole('textbox', { name: 'File name', exact: true }).inputValue(), 'Documents');
+    await rename.getByRole('button', { name: 'Close', exact: true }).click();
+    await more.click(); await t.page.getByRole('dialog', { name: 'Documents', exact: true }).getByRole('button', { name: 'Open', exact: true }).click();
+    await t.page.getByText('This folder is empty.', { exact: true }).waitFor();
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});
