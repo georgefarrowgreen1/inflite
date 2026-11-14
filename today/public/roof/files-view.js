@@ -45,8 +45,8 @@ function fileKind(item) {
   const extension = /\.([a-z0-9]{1,8})$/i.exec(item?.name || '')?.[1];
   return extension ? `${extension.toUpperCase()} file` : 'File';
 }
-export const fileDetailsSignature = item => item ? JSON.stringify([item.key, item.version, item.name, item.kind, item.mime, item.size, item.modifiedAt, item.sourceLabel, item.source?.kind,
-  (Array.isArray(item.actions) ? item.actions : []).filter(actionOK).slice(0, 12).map(action => [action.id, action.label, action.icon, !!action.destructive])]) : '';
+export const fileDetailsSignature = item => item ? JSON.stringify([item.key, item.version, item.name, item.kind, item.mime, item.size, item.modifiedAt, item.sourceLabel, item.source?.kind, item.primaryAction,
+  (Array.isArray(item.actions) ? item.actions : []).filter(actionOK).slice(0, 12).map(action => [action.id, action.label, action.icon, !!action.destructive, !!action.primary])]) : '';
 
 export function filesIcon(name, doc = document) {
   const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -78,17 +78,17 @@ export function createFileDetails(ui, item, { preview = null, onAction = () => {
   for (const [label, value] of facts) dl.append(el('div', {}, el('dt', { text: label }), el('dd', { text: value })));
   box.append(dl);
   const controls = el('div', { class: 'ifx-details-actions' });
-  for (const a of actions) controls.append(el('button', { type: 'button', class: `ifx-action${a.destructive ? ' is-destructive' : ''}`, data: { fileAction: a.id }, on: { click: () => onAction(item, a.id) } }, filesIcon(a.icon || a.id), el('span', { text: clean(a.label, 80) })));
+  for (const a of actions) controls.append(el('button', { type: 'button', class: `ifx-action${a.destructive ? ' is-destructive' : a.primary || a.id === item.primaryAction ? ' is-primary' : ''}`, data: { fileAction: a.id }, on: { click: () => onAction(item, a.id) } }, filesIcon(a.icon || a.id), el('span', { text: clean(a.label, 80) })));
   box.append(controls);
   return box;
 }
 
 export function createFilesView(root, { ui, ...callbacks }) {
-  const el = ui.el, doc = root.ownerDocument, records = new Map(), locationRecords = new Map(), offs = [];
+  const el = ui.el, doc = root.ownerDocument, records = new Map(), locationRecords = new Map(), transferRecords = new Map(), offs = [];
   let model = {}, gone = false, visible = true, compact = false, resize = 0, dragDepth = 0, focusedKey = null, inspectorSignature = null, inspectorPreview = null;
   const call = (name, ...args) => { if (!gone && typeof callbacks[name] === 'function') return callbacks[name](...args); };
   const listen = (node, type, fn, options) => { node.addEventListener(type, fn, options); offs.push(() => node.removeEventListener(type, fn, options)); };
-  const button = (label, glyph, run, cls = 'ifx-button') => { const control=el('button', { type: 'button', class: cls, 'aria-label': label, title: label, on: { click: event=>{if(control.getAttribute('aria-disabled')==='true'){event.preventDefault();return;}run(event);} } }, filesIcon(glyph, doc), el('span', { text: label })); return control; };
+  const button = (label, glyph, run, cls = 'ifx-button', text = label) => { const control=el('button', { type: 'button', class: cls, 'aria-label': label, title: label, on: { click: event=>{if(control.getAttribute('aria-disabled')==='true'){event.preventDefault();return;}run(event);} } }, filesIcon(glyph, doc), el('span', { text })); return control; };
   root.classList.add('ifl-files-explorer');
   const locations = el('nav', { class: 'ifx-locations', 'aria-label': 'File locations' });
   const locationList = el('div', { class: 'ifx-location-list' });
@@ -172,7 +172,7 @@ export function createFilesView(root, { ui, ...callbacks }) {
     selecting.setAttribute('aria-label',model.selecting?'Finish selection':'Select files');selecting.querySelector('span').textContent=model.selecting?'Done':'Select';
     bulk.hidden=!model.selecting;
     const bulkNext=JSON.stringify([model.selectedKeys?.length||0,model.bulkActions||[]]);
-    if(bulkNext!==bulkSignature){bulkSignature=bulkNext;bulk.replaceChildren(el('span',{role:'status',text:`${model.selectedKeys?.length||0} selected`}),button('Select this page','check',()=>call('onSelectAll')),button('Clear selection','close',()=>call('onClearSelection')),...(model.bulkActions||[]).map(action=>button(action.label,action.icon||action.id,()=>call('onBulk',action.id))));}
+    if(bulkNext!==bulkSignature){bulkSignature=bulkNext;bulk.replaceChildren(el('span',{role:'status',text:`${model.selectedKeys?.length||0} selected`}),button('Select this page','check',()=>call('onSelectAll'),'ifx-button','Select all'),button('Clear selection','close',()=>call('onClearSelection'),'ifx-button','Clear'),...(model.bulkActions||[]).map(action=>button(action.label,action.icon||action.id,()=>call('onBulk',action.id))));}
     for(const control of [selecting,...bulk.querySelectorAll('button')])control.setAttribute('aria-disabled',String(model.status!=='ready'));
     const placeKeys = new Set(); let placePosition = locationList.firstElementChild;
     for (const location of (Array.isArray(model.locations) ? model.locations : []).slice(0, 12)) {
@@ -205,7 +205,7 @@ export function createFilesView(root, { ui, ...callbacks }) {
         const menu = button('File actions', 'more', () => {}, 'ifx-icon-button ifx-file-menu');
         const checkbox=el('input',{type:'checkbox',class:'ifx-select-check',hidden:true});
         const node = el('article', { class: 'ifx-file', role: 'listitem', data: { fileKey: item.key } }, checkbox, select, modified, bytes, source, menu);
-        record = { node, select, checkbox, symbol, name, sub, modified, bytes, source, menu, item };
+        record = { node, select, checkbox, symbol, name, sub, modified, bytes, source, menu, item, glyph: null };
         const current = () => !gone && model.status === 'ready' && node.isConnected && records.get(item.key) === record;
         select.addEventListener('click', event => { if (current()) call('onSelect', record.item,{multiple:event.ctrlKey||event.metaKey||event.shiftKey,range:event.shiftKey}); });
         checkbox.addEventListener('click',event=>{if(model.status!=='ready')event.preventDefault();});
@@ -218,15 +218,18 @@ export function createFilesView(root, { ui, ...callbacks }) {
         records.set(item.key, record);
       }
       record.item = item;
-      const selected = model.selection === item.key;
+      const selected = model.selecting ? (model.selectedKeys || []).includes(item.key) : model.selection === item.key;
       record.node.dataset.selected = String(selected);
       record.node.dataset.selecting=String(!!model.selecting);record.checkbox.hidden=!model.selecting||item.source?.kind!=='drive';record.checkbox.checked=(model.selectedKeys||[]).includes(item.key);record.checkbox.setAttribute('aria-disabled',String(model.status!=='ready'));record.checkbox.setAttribute('aria-label',`Include ${clean(item.name)} in selection`);record.node.draggable=model.status==='ready'&&item.source?.kind==='drive'&&!item.trashedAt;
       record.node.dataset.kind = item.kind === 'folder' ? 'folder' : 'file';
+      record.node.dataset.favourite = String(!!item.favourite);
       record.name.textContent = clean(item.name); record.name.title = clean(item.name);
-      record.symbol.replaceChildren(filesIcon(fileGlyph(item), doc));
+      const glyph = fileGlyph(item);
+      if (record.glyph !== glyph) { record.symbol.replaceChildren(filesIcon(glyph, doc)); record.glyph = glyph; }
       record.sub.textContent = [item.kind === 'folder' ? 'Folder' : size(item.size), clean(item.sourceLabel, 100)].filter(Boolean).join(' · ');
       record.modified.textContent = date(item.modifiedAt); record.bytes.textContent = item.kind === 'folder' ? '—' : size(item.size); record.source.textContent = clean(item.sourceLabel, 100);
       record.select.setAttribute('aria-disabled', String(model.status !== 'ready')); record.menu.setAttribute('aria-disabled', String(model.status !== 'ready'));
+      record.select.setAttribute('aria-description', item.favourite ? 'Favourite' : '');
       record.select.setAttribute('aria-label', `Select ${clean(item.name)}`); record.select.setAttribute('aria-pressed', String(selected)); record.select.tabIndex = focusedKey === item.key ? 0 : -1;
       record.menu.setAttribute('aria-label', `Actions for ${clean(item.name)}`); record.menu.setAttribute('aria-haspopup', 'dialog'); record.menu.hidden = !Array.isArray(item.actions) || !item.actions.some(actionOK); record.menu.tabIndex = focusedKey === item.key ? 0 : -1;
       if (record.node !== position) items.insertBefore(record.node, position);
@@ -255,13 +258,33 @@ export function createFilesView(root, { ui, ...callbacks }) {
     for (const control of inspector.querySelectorAll('[data-file-action]')) control.setAttribute('aria-disabled', String(model.status !== 'ready'));
     const transfersList = (Array.isArray(model.transfers) ? model.transfers : []).slice(0, 5);
     transfers.hidden = !transfersList.length;
-    transfers.replaceChildren(...transfersList.map(transfer => {
-      const progress = el('progress', { max: 1, 'aria-label': `Upload ${clean(transfer.name)}` });
-      if (Number.isFinite(transfer.progress) && transfer.progress >= 0 && transfer.progress <= 1) progress.value = transfer.progress;
-      return el('div', { class: 'ifx-transfer' }, filesIcon(transfer.status === 'done' ? 'check' : 'upload', doc), el('div', {}, el('b', { text: clean(transfer.name) }), el('span', { text: clean(transfer.label || transfer.status, 140) }), progress), transfer.cancelable ? button(`Cancel upload of ${clean(transfer.name)}`, 'close', () => call('onCancelTransfer', transfer.id), 'ifx-icon-button') : null);
-    }));
+    const transferKeys = new Set(); let transferPosition = transfers.firstElementChild;
+    for (const transfer of transfersList) {
+      const id = transfer.id; if (typeof id !== 'string' || transferKeys.has(id)) continue; transferKeys.add(id);
+      let record = transferRecords.get(id);
+      if (!record) {
+        const name = el('b'), label = el('span'), progress = el('progress', { max: 1 });
+        const node = el('div', { class: 'ifx-transfer' }, filesIcon('upload', doc), el('div', {}, name, label, progress));
+        record = { node, name, label, progress, transfer, done: false };
+        record.cancel = button('', 'close', () => { if (transferRecords.get(id) === record && record.transfer.cancelable) call('onCancelTransfer', id); }, 'ifx-icon-button');
+        transferRecords.set(id, record);
+      }
+      record.transfer = transfer;
+      const done = transfer.status === 'done';
+      if (record.done !== done) { record.node.firstElementChild.replaceWith(filesIcon(done ? 'check' : 'upload', doc)); record.done = done; }
+      record.name.textContent = clean(transfer.name); record.label.textContent = clean(transfer.label || transfer.status, 140);
+      record.progress.setAttribute('aria-label', `Upload ${clean(transfer.name)}`);
+      if (Number.isFinite(transfer.progress) && transfer.progress >= 0 && transfer.progress <= 1) record.progress.value = transfer.progress;
+      else record.progress.removeAttribute('value');
+      const cancelLabel = `Cancel upload of ${clean(transfer.name)}`;
+      record.cancel.setAttribute('aria-label', cancelLabel); record.cancel.title = cancelLabel;
+      if (transfer.cancelable) { if (!record.cancel.isConnected) record.node.append(record.cancel); }
+      else { if (record.cancel === doc.activeElement) main.focus({ preventScroll: true }); record.cancel.remove(); }
+      if (record.node !== transferPosition) transfers.insertBefore(record.node, transferPosition); transferPosition = record.node.nextElementSibling;
+    }
+    for (const [id, record] of transferRecords) if (!transferKeys.has(id)) { if (record.node.contains(doc.activeElement)) main.focus({ preventScroll: true }); record.node.remove(); transferRecords.delete(id); }
   }
-  function destroy() { if (gone) return; gone = true; observer?.disconnect(); cancelAnimationFrame(resize); for (const off of offs.splice(0)) off(); records.clear(); locationRecords.clear(); items.replaceChildren(); inspector.replaceChildren(); locationList.replaceChildren(); breadcrumbs.replaceChildren(); transfers.replaceChildren(); notices.replaceChildren(); query.value = ''; status.textContent = ''; model = {}; inspectorSignature = inspectorPreview = focusedKey = null; root.replaceChildren(); root.classList.remove('ifl-files-explorer'); delete root.dataset.fileView; delete root.dataset.details; delete root.dataset.compact; }
+  function destroy() { if (gone) return; gone = true; observer?.disconnect(); cancelAnimationFrame(resize); for (const off of offs.splice(0)) off(); records.clear(); locationRecords.clear(); transferRecords.clear(); items.replaceChildren(); inspector.replaceChildren(); locationList.replaceChildren(); breadcrumbs.replaceChildren(); transfers.replaceChildren(); notices.replaceChildren(); query.value = ''; status.textContent = ''; model = {}; inspectorSignature = inspectorPreview = focusedKey = null; root.replaceChildren(); root.classList.remove('ifl-files-explorer'); delete root.dataset.fileView; delete root.dataset.details; delete root.dataset.compact; }
   return { update, isCompact: () => compact || root.getBoundingClientRect().width < 1000, focus: () => main, focusSearch: () => query.focus({ preventScroll: true }), focusKey: () => focusedKey,
     focusResource(key) { const record = records.get(key); if (record) { record.select.focus({ preventScroll: true }); record.select.scrollIntoView?.({ block: 'nearest' }); } },
     setVisible(value) { visible = !!value; if (visible) { observer?.observe(root); measure(); } else { observer?.disconnect(); cancelAnimationFrame(resize); } }, destroy };

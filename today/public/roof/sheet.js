@@ -63,6 +63,7 @@ export function createSheets(F, { beforeOpen } = {}) {
     const h = { el: d, body, close: () => close(true), now: () => close(false), push, pop, setBusy, closed: false };
     function done() {
       if (h.closed) return;
+      shut = true;
       h.closed = true;
       const current = !F?.signal?.aborted && F?.route === page.route && location.href === page.url;
       const position = current ? page : { x: scrollX, y: scrollY };
@@ -113,7 +114,7 @@ export function createSheets(F, { beforeOpen } = {}) {
     function grab(e) {
       if (shut || drag || e.button || e.isPrimary === false || e.target.closest("button, input, select, textarea, a")) return;
       sizeMotion?.cancel();
-      const y0 = e.clientY, t0 = Date.now();
+      const x0 = e.clientX, y0 = e.clientY, t0 = Date.now();
       let dy = 0;
       const a = drag = new AbortController(), o = { signal: a.signal };
       const cancelDrag = () => { a.abort(); drag = null; d.classList.remove("dragging"); d.style.removeProperty("--drag"); };
@@ -124,9 +125,10 @@ export function createSheets(F, { beforeOpen } = {}) {
         if (p.type !== "pointercancel" && (dy > 120 || (dy > 40 && dy / Math.max(1, Date.now() - t0) > 0.6))) close(true);
         else d.style.removeProperty("--drag");
       };
-      addEventListener("pointermove", (m) => { if (m.pointerId !== e.pointerId) return; dy = Math.max(0, m.clientY - y0); d.classList.add("dragging", "ifs-touched"); d.style.setProperty("--drag", `${dy}px`); }, o);
+      addEventListener("pointermove", (m) => { if (m.pointerId !== e.pointerId) return; dy = Math.max(0, m.clientY - y0); if (Math.abs(m.clientX - x0) > Math.max(12, dy)) return cancelDrag(); d.classList.add("dragging", "ifs-touched"); d.style.setProperty("--drag", `${dy}px`); }, o);
       addEventListener("pointerup", up, o); addEventListener("pointercancel", up, o);
       addEventListener("blur", cancelDrag, o);
+      for (const target of [v, globalThis]) target?.addEventListener("resize", cancelDrag, o);
       document.addEventListener("visibilitychange", () => { if (document.hidden) cancelDrag(); }, o);
     }
     // Tab and Shift-Tab go round the sheet, never out of it to the browser's own bar
@@ -150,24 +152,26 @@ export function createSheets(F, { beforeOpen } = {}) {
       try { sizeMotion = d.animate([{ height: `${height}px` }, { height: `${d.offsetHeight}px` }], { duration: 280, easing: "cubic-bezier(0.32, 0.72, 0, 1)" }); sizeMotion.finished.catch(() => {}); } catch (_) {}
     }
     function push(page = {}) {
+      if (shut) return;
       const height = sizeBefore();
       clearTimeout(pageTimer); body.classList.remove("ifl-enter-pop");
       const kids = [...body.children].filter((c) => !c.hidden);
-      for (const c of kids) c.hidden = true;
       const pg = el("div", { class: "ifs-page ifl-enter-push", data: { page: page.page } });
-      stack.push({ pg, kids, title: h2?.textContent, acts: d.querySelector(".ifs-acts") });
+      stack.push({ pg, kids, title: h2?.textContent, acts: d.querySelector(".ifs-acts"), y: d.scrollTop, by: body.scrollTop, focus: document.activeElement });
+      for (const c of kids) c.hidden = true;
       d.classList.add("pushed");
       if (h2 && page.title != null) h2.textContent = page.title;
       setActs(d, page.acts);
       body.append(pg);
       if (typeof page.body === "function") page.body(pg, h);
       else if (page.body) pg.append(page.body);
-      body.scrollTop = 0;
+      d.scrollTop = body.scrollTop = 0;
       resizeFrom(height);
       h2?.focus({ preventScroll: true });
       return pg;
     }
     function pop(quiet) {
+      if (shut && !quiet) return;
       const s = stack.pop();
       if (!s) return;
       const height = sizeBefore();
@@ -181,10 +185,12 @@ export function createSheets(F, { beforeOpen } = {}) {
         resizeFrom(height);
         body.classList.add("ifl-enter-pop");
         clearTimeout(pageTimer); pageTimer = setTimeout(() => body.classList.remove("ifl-enter-pop"), 450);
-        h2?.focus({ preventScroll: true });
+        d.scrollTop = s.y; body.scrollTop = s.by;
+        (s.focus?.isConnected && d.contains(s.focus) ? s.focus : h2)?.focus({ preventScroll: true });
       }
     }
     function setBusy(on) {
+      if (shut) return;
       if (on) d.setAttribute("aria-busy", "true"); else d.removeAttribute("aria-busy");
       for (const b of d.querySelectorAll(".ifs-acts button")) b.disabled = !!on;
     }

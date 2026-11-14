@@ -108,21 +108,23 @@ export function createTabs(nav, F, { me: meOf } = {}) {
     pill.style.setProperty("--py", `${a.offsetTop}px`);
     pill.style.setProperty("--ph", `${a.offsetHeight}px`);
   }
+  const top = () => scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   function click(e) {
+    if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const r0 = e.target.closest?.("a.ifl-rail-app, a.ifl-rail-me");
-    if (r0 && F?.nav && !(e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) {
+    if (r0 && F?.nav) {
       e.preventDefault();
       if (r0.dataset.me) return F.nav.go("/#you", { kind: "tab" });
-      if (F.route?.kind === "app" && F.route.app === r0.dataset.app) return scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      if (F.route?.kind === "app" && F.route.app === r0.dataset.app) return top();
       return F.nav.go(r0.getAttribute("href"), { kind: "tab" });
     }
     const a = e.target.closest?.("a.ifl-tab");
     const k = a?.dataset.tab;
-    if (!a || !(TAB_SCREENS.includes(k) || (k === "chats" && chats())) || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (!a || !(TAB_SCREENS.includes(k) || (k === "chats" && chats()))) return;
     if (!F?.nav) return;
     e.preventDefault();
     const r = F.route;
-    if (k === "chats" ? current === k && r?.key === k : r?.kind === "tab" && r.tab === k && !r.arg) return scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    if (k === "chats" ? current === k && r?.key === k : r?.kind === "tab" && r.tab === k && !r.arg) return top();
     if (k === "apps" && r?.kind === "app" && current === "apps") {
       const prev = F.nav.prev?.();
       if (prev?.kind === "tab" && prev.tab === "apps") return history.back();

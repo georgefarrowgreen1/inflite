@@ -177,8 +177,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
   }
   addEventListener("scroll", compact, { passive: true });
   IFL.watch?.();
-  const onResize = () => lens();
-  addEventListener("resize", onResize);
+  addEventListener("resize", lens);
   document.fonts?.ready?.then(lens, () => {});
   let ro = null;
   if (globalThis.ResizeObserver) {
@@ -187,6 +186,6 @@ export function createHeader(host, F, { me, onMe } = {}) {
   }
   return {
     el: hd, set, lens, compact, count,
-    destroy() { removeEventListener("scroll", compact); removeEventListener("resize", onResize); ro?.disconnect(); },
+    destroy() { removeEventListener("scroll", compact); removeEventListener("resize", lens); ro?.disconnect(); },
   };
 }

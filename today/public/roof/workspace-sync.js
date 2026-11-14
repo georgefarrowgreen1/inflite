@@ -109,6 +109,6 @@ export function createWorkspaceSync(F,{store,onChange=()=>{},onStatus=()=>{},sto
   const unsafe=()=>writing||!!store.storageChanged||!!(store.hasLocalData&&!store.persisted);
   return api={start,sync,resolve,reviewSaved(){if(!live()||writing||!store.reloadSaved?.())return false;try{onChange(store.read());}catch(_){}return true;},status:()=>live()?state:null,subscribe(fn){if(!live()||typeof fn!=="function")return()=>{};const entry={fn};listeners.add(entry);return()=>listeners.delete(entry);},destroy,busy:()=>live()&&unsafe(),
     async flush({timeoutMs=2000}={}){if(!writing)return{lost:live()&&unsafe()?1:0};let timer;try{await Promise.race([flight,new Promise(r=>timer=setTimeout(r,Math.min(10000,Math.max(0,timeoutMs))))]);}finally{clearTimeout(timer);}return{lost:live()&&unsafe()?1:0};},
-    open(){check();if(dialog&&!dialog.closed){dialog.el?.querySelector("h2")?.focus?.();return Promise.resolve(dialog);}return dialogPromise||=(import("./workspace-sync-view.js").then(module=>{check();return dialog=module.openWorkspaceSync(F,api);}).finally(()=>{dialogPromise=null;}));}
+    open(){check();const route=F.route;if(dialog&&!dialog.closed){dialog.el?.querySelector("h2")?.focus?.();return Promise.resolve(dialog);}return dialogPromise||=(import("./workspace-sync-view.js").then(module=>{check();return F.route===route?dialog=module.openWorkspaceSync(F,api):null;}).finally(()=>{dialogPromise=null;}));}
   };
 }

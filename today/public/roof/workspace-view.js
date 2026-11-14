@@ -25,7 +25,7 @@ const appSymbol = app => icon(null, { app: APP_ICONS[app] || app, size: 32 });
 
 export function createWorkspaceView(root, callbacks = {}) {
   const uid = `ifl-workspace-${++serial}`, actions = new Map(), cleanups = [], panes = new Map();
-  let gone = false, model = {}, focusedApp = "", avatarKey = "", gesture = null, frame = 0, menuEpoch = 0;
+  let gone = false, model = {}, focusedApp = "", avatarKey = "", gesture = null, frame = 0, menuEpoch = 0, motion = null;
   const windowsEnabled = callable(callbacks.onWindowChange);
   const listen = (node, type, fn, options) => { node.addEventListener(type, fn, options); cleanups.push(() => node.removeEventListener(type, fn, options)); };
   const action = (key, run) => { if (callable(run)) actions.set(key, run); else actions.delete(key); return key; };
@@ -439,9 +439,23 @@ export function createWorkspaceView(root, callbacks = {}) {
     focusWindow(app); invoke("onPaneFocus", app);
   }
 
+  // Animate retained elements only; cancellation never removes an app or editor.
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  const stopMotion = () => { motion?.cancel(); motion = null; };
+  listen(reduced, "change", () => { if (reduced.matches) stopMotion(); });
+  listen(document, "visibilitychange", () => { if (document.hidden) stopMotion(); });
+  function enter(node, spatial = false) {
+    stopMotion();
+    if (gone || document.hidden || document.documentElement.dataset.vt || reduced.matches || !node?.animate || !node.getClientRects().length) return;
+    try {
+      motion = node.animate([{ opacity: .6, transform: spatial ? "translateY(8px)" : "none" }, { opacity: 1, transform: "none" }], { duration: 220, easing: "cubic-bezier(.2,.8,.2,1)" });
+      motion.finished.catch(() => {});
+    } catch (_) {}
+  }
   function setPane(key, patch = {}) {
     if (gone) return;
     const p = panes.get(key); if (!p) return;
+    const previousSection = p.spec.section;
     p.spec = { ...p.spec, ...patch }; const s = p.spec, app = paneApp(key), name = APP_NAMES[app] || "App";
     words(p.title, s.title || name);
     p.title.title = asText(s.title || name);
@@ -465,6 +479,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     reconcile(p.sectionNav, p.sectionRecords, sections, a => asText(a[0]), a => {
       const b = button(a[1], null, action(`section:${key}:${a[0]}`, () => invoke("onPaneSection", paneApp(key), a[0])), "ws-section-button"); b.setAttribute("role", "tab"); return b;
     }, (b, a) => { words(b, a[1]); b.setAttribute("aria-selected", String(a[0] === selectedSection)); b.tabIndex = a[0] === selectedSection ? 0 : -1; });
+    if (previousSection && s.section !== previousSection && !p.el.hidden) enter(p.slot);
     p.el.setAttribute("aria-busy", String(!!s.busy)); p.busyMark.hidden = !s.busy;
     p.status.hidden = !s.error && (!s.busy || p.slot.childElementCount > 0);
     words(p.statusTitle, s.error?.title || (s.error ? `${name} couldn’t open` : `Opening ${name}…`));
@@ -482,6 +497,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     if (gesture && (next.activeId && next.activeId !== model.activeId || next.mode && next.mode !== "workspace")) finishGesture(false);
     if (next.activeId && next.activeId !== model.activeId) focusedApp = "";
     const heldLayout = gesture ? model.layout : null;
+    const previousPage = `${model.mode}:${model.mode === "workspace" && model.activeId}`;
     model = { ...model, ...next };
     if (heldLayout) model.layout = heldLayout;
     const mode = /^(workspace|app|files)$/.test(model.mode) ? model.mode : "today", spaces = (Array.isArray(model.workspaces) ? model.workspaces : []).filter(w => w?.id && w.name && callable(callbacks.onWorkspace));
@@ -527,6 +543,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     todayView.hidden = mode !== "today"; rideView.hidden = mode !== "workspace"; appView.hidden = mode !== "app";
     filesView.hidden = mode !== "files"; filesView.inert = mode !== "files";
     foreground(model.foregroundApp || "fitness", false);
+    if (previousPage !== `${model.mode}:${model.mode === "workspace" && model.activeId}`) enter(mode === "today" ? todayView : mode === "files" ? filesView : rideView, true);
     if (todaySide) setCurrent(todaySide, mode === "today");
     setCurrent(files, mode === "files");
     const paintWorkspace = (b, w) => { words(b.lastElementChild, w.name); setCurrent(b, mode === "workspace" && w.id === model.activeId); };
@@ -640,7 +657,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   function destroy() {
     if (gone) return;
     finishGesture(false); closeWindowMenu();
-    gone = true; cancelAnimationFrame(frame); for (const off of cleanups.splice(0)) off(); actions.clear();
+    gone = true; stopMotion(); cancelAnimationFrame(frame); for (const off of cleanups.splice(0)) off(); actions.clear();
     dockHost.remove();
     root.replaceChildren(); root.classList.remove("ifl-workspace");
     for (const key of ["mode", "foregroundApp", "focusedApp", "paneCount", "layout", "windowCount"]) delete root.dataset[key];

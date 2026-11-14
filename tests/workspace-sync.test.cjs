@@ -49,3 +49,6 @@ test('a tab edit arriving during a cloud read cannot cause a stale automatic upl
 
 
 test('offline sync still exposes a newer saved tab layout without sending HTTP',async()=>{await harness(async({sync,store,storage,calls,setOnline})=>{store.update('ride',{name:'This device'});const other=structuredClone(store.read());other.workspaces[0].name='Saved in another tab';storage.setItem('ifl:workspace:v2:ann',JSON.stringify(other));setOnline(false);assert.equal(await sync.sync(),false);assert.equal(sync.status().localConflict,true);assert.equal(calls.length,0);assert.equal(sync.reviewSaved(),true);assert.equal(store.read().workspaces[0].name,'Saved in another tab');assert.equal(await sync.sync(),false);assert.equal(sync.status().state,'offline');assert.equal(sync.status().localConflict,false);});});
+
+
+test('a lazily opened Sync panel cannot appear on a replacement route',async()=>{await harness(async({F,sync})=>{F.route={path:'/fitness/'};const opening=sync.open();F.route={path:'/weather/'};assert.equal(await opening,null);});});

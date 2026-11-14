@@ -765,6 +765,10 @@ export function createFrame(opts = {}) {
   // edge-swipe Back, from the left 20 px, only on the Home Screen (D19)
   const standalone = () => T(() => navigator.standalone === true || matchMedia("(display-mode: standalone)").matches, false);
   let sw0 = null;
+  const cancelSwipe = () => { sw0 = null; };
+  on(doc, "touchcancel", cancelSwipe, { passive: true });
+  on(globalThis, "resize", cancelSwipe);
+  on(globalThis, "blur", cancelSwipe);
   on(doc, "touchstart", (e) => {
     const t = e.touches[0];
     sw0 = e.touches.length === 1 && t.clientX <= 20 && standalone() && !e.target.closest?.("[data-no-edge], dialog") && (shownMod() || curDepth() > 0) ? { x: t.clientX, y: t.clientY } : null;
@@ -772,7 +776,7 @@ export function createFrame(opts = {}) {
   on(doc, "touchend", (e) => {
     const t = e.changedTouches[0], s = sw0;
     sw0 = null;
-    if (s && t.clientX - s.x > 70 && Math.abs(t.clientY - s.y) < 60) F.nav.back();
+    if (s && t && t.clientX - s.x > 70 && Math.abs(t.clientY - s.y) < 60) F.nav.back();
   }, { passive: true });
 
   // ---- the first render (no transition, no focus move), and where you were across a round trip (D20)

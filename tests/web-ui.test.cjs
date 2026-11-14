@@ -257,6 +257,90 @@ test('motion: opening Search flushes pending route snapshots before the dialog a
   } finally { await ctx.close(); }
 });
 
+for (const width of [390, 1440]) test(`motion: nested sheet Back restores its scroll and invoking control at ${width}px`, async () => {
+  const { ctx, page, errors } = await open({ width, motion: 'no-preference' });
+  try {
+    await page.evaluate(async () => {
+      const { createSheets } = await import('/roof/sheet.js'), { el } = await import('/roof/ui.js');
+      const body = el('div', {}, ...Array.from({ length: 30 }, (_, i) => el('p', { text: `Settings row ${i}` })));
+      const button = el('button', { type: 'button', text: 'Open details' }); body.append(button);
+      window.__nested = createSheets({}).open({ title: 'Settings', body });
+      __nested.el.scrollTop = 280; button.focus({ preventScroll: true });
+      window.__parentPosition = __nested.el.scrollTop;
+      __nested.push({ page: 'details', title: 'Details', body: el('p', { text: 'Details content' }) });
+    });
+    const sheet = page.getByRole('dialog', { name: 'Details', exact: true });
+    assert.equal(await sheet.evaluate(d => d.scrollTop), 0, 'a nested page starts at its heading');
+    await sheet.locator('[data-back]').click();
+    await page.waitForFunction(() => document.activeElement?.textContent === 'Open details');
+    assert.ok(await page.evaluate(() => Math.abs(__nested.el.scrollTop - __parentPosition) < 2), 'Back restores the original settings position');
+    await page.keyboard.press('Escape'); await sheet.waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
+  } finally { await ctx.close(); }
+});
+
+test('motion: closed sheet handles cannot change a reused dialog', async () => {
+  const { ctx, page, errors } = await open();
+  try {
+    const result = await page.evaluate(async () => {
+      const { createSheets } = await import('/roof/sheet.js'), { el } = await import('/roof/ui.js');
+      const sheets = createSheets({}), first = sheets.open({ title: 'Settings', body: el('p', { text: 'Original' }) });
+      const dialog = first.el; first.now();
+      const second = sheets.openEl(dialog);
+      first.push({ page: 'old', title: 'Stale', body: el('p', { text: 'Old content' }) });
+      first.setBusy(true); first.pop();
+      const unchanged = dialog.querySelector('h2').textContent === 'Settings' && !dialog.hasAttribute('aria-busy') && !dialog.querySelector('.ifs-page');
+      second.push({ page: 'current', title: 'Current', body: el('p', { text: 'Current content' }) });
+      const usable = dialog.querySelector('h2').textContent === 'Current'; second.now(); dialog.remove();
+      return { unchanged, usable };
+    });
+    assert.deepEqual(result, { unchanged: true, usable: true });
+    assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
+  } finally { await ctx.close(); }
+});
+
+test('motion: cancelled Home Screen edge gestures never navigate a later touch', async () => {
+  const { ctx, page, errors } = await open({ iosHomeScreen: true, motion: 'no-preference' });
+  try {
+    await page.locator('#tabs [data-tab="apps"]').click();
+    await page.waitForFunction(() => document.documentElement.dataset.route === '/#apps' && !document.querySelector('#apps').hidden);
+    for (const reason of ['touchcancel', 'resize', 'blur']) {
+      await page.evaluate(reason => {
+        const touch = (type, x) => { const e = new Event(type, { bubbles: true }); Object.defineProperties(e, { touches: { value: [{ clientX: x, clientY: 160 }] }, changedTouches: { value: [{ clientX: x, clientY: 160 }] } }); document.dispatchEvent(e); };
+        touch('touchstart', 5); (reason === 'touchcancel' ? document : window).dispatchEvent(new Event(reason)); touch('touchend', 180);
+      }, reason);
+      await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+      assert.equal(await page.evaluate(() => document.documentElement.dataset.route), '/#apps', `${reason} releases the abandoned edge gesture`);
+    }
+    await page.evaluate(() => {
+      const touch = (type, x) => { const e = new Event(type, { bubbles: true }); Object.defineProperties(e, { touches: { value: [{ clientX: x, clientY: 160 }] }, changedTouches: { value: [{ clientX: x, clientY: 160 }] } }); document.dispatchEvent(e); };
+      touch('touchstart', 5); touch('touchend', 180);
+    });
+    await page.waitForFunction(() => document.documentElement.dataset.route === '/');
+    assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
+  } finally { await ctx.close(); }
+});
+
+test('motion: horizontal gestures and viewport changes cancel sheet dismissal safely', async () => {
+  const { ctx, page, errors } = await open({ motion: 'no-preference', iphoneViewport: true });
+  try {
+    await page.evaluate(async () => {
+      const { createSheets } = await import('/roof/sheet.js');
+      window.__gesture = createSheets({}).open({ title: 'Gesture check' });
+      window.__drag = (id, x, y, type, head = false) => (head ? __gesture.el.querySelector('.ifs-head') : window).dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: id, clientX: x, clientY: y, isPrimary: true }));
+      __drag(1, 100, 100, 'pointerdown', true); __drag(1, 300, 180, 'pointermove'); __drag(1, 300, 320, 'pointerup');
+    });
+    const sheet = page.getByRole('dialog', { name: 'Gesture check' });
+    assert.equal(await sheet.evaluate(d => d.classList.contains('closing')), false, 'a horizontal swipe does not dismiss a sheet');
+    await page.evaluate(() => {
+      __drag(2, 100, 100, 'pointerdown', true); __drag(2, 100, 280, 'pointermove'); __viewport(480); __drag(2, 100, 320, 'pointerup');
+    });
+    assert.deepEqual(await sheet.evaluate(d => [d.classList.contains('closing'), d.classList.contains('dragging'), d.style.getPropertyValue('--drag')]), [false, false, ''], 'keyboard/viewport changes release the gesture');
+    await page.keyboard.press('Escape'); await sheet.waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
+  } finally { await ctx.close(); }
+});
+
 test('motion: reduced motion removes spatial feedback and decorative loops pause in the background', async () => {
   const { ctx, page, errors } = await open({ motion: 'no-preference' });
   try {

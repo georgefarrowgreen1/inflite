@@ -159,9 +159,11 @@ export async function createWorkspace(F, options = {}) {
   dockAway(!!document.getElementById("tabs")?.classList.contains("away"));
   const restoreToday = () => { if (anchor.parentNode && today.parentNode !== anchor.parentNode) anchor.parentNode.insertBefore(today, anchor.nextSibling); };
   const historyData = () => current ? { userId: owner, id: current.id, activePane: foreground, routes: Object.fromEntries(current.panes.map((p) => [p.app, safeWorkspaceRoute(p.app, p.route) || getWorkspaceApp(p.app).href])) } : null;
+  const historyMemory = () => ({ id: current.id, routes: new Map(paneRoutes), foreground,
+    stacks: new Map(current.panes.map(p => [p.app, [...(stackFor(p.app) || [paneRoutes.get(p.app) || p.route])]])) });
   function recordHistory(replace = false) {
     if (live() && shown && current) {
-      pendingHistory = { id: current.id, routes: new Map(paneRoutes), foreground };
+      pendingHistory = { ...historyMemory(), backKey: history.state?.ifl?.k };
       F.nav.go(wsURL(current.id), { replace, kind: "section", state: { workspace: historyData() } });
     }
   }
@@ -223,8 +225,8 @@ export async function createWorkspace(F, options = {}) {
   function rememberScroll(app) {
     const task = displayed.get(app), slot = view.slots[app];
     if (!task?.visible || !slot?.clientHeight || !slot.contains(handles.get(app)?.el) || restoring.has(app)) return;
-    const key = `${task.id}:${app}`;
-    paneScroll.delete(key); paneScroll.set(key, { path: task.path, top: slot.scrollTop });
+    const key = `${task.id}:${app}:${task.key}`;
+    paneScroll.delete(key); paneScroll.set(key, { top: slot.scrollTop });
     if (paneScroll.size > 40) paneScroll.delete(paneScroll.keys().next().value);
   }
   const rememberAll = () => { for (const app of displayed.keys()) rememberScroll(app); };
@@ -261,9 +263,9 @@ export async function createWorkspace(F, options = {}) {
         header: (spec) => header(app, spec), fill: (value) => slot.closest(".ifl-workspace-pane")?.classList.toggle("is-filled", value),
         depth: () => Math.max(0, (stackFor(app)?.length || 1) - 1) });
     }
-    const task = { id, path, visible, rendered: false, episode }; displayed.set(app, task);
-    const saved = paneScroll.get(`${id}:${app}`);
-    if (visible && saved?.path === path && saved.top > 0) restoring.set(app, { task, top: saved.top });
+    const task = { id, path, key: format(r) + r.query, visible, rendered: false, episode }; displayed.set(app, task);
+    const saved = paneScroll.get(`${id}:${app}:${task.key}`);
+    if (visible && saved?.top > 0) restoring.set(app, { task, top: saved.top });
     else if (!old || old.id !== id || old.path !== path) slot.scrollTop = 0;
     if (!visible) { handle.hide(); task.ready = Promise.resolve(true); return task.ready; }
     view.setPane(app, { busy: true, error: null });
@@ -381,12 +383,17 @@ export async function createWorkspace(F, options = {}) {
     // A newer saved layout blocks persistence, not navigation inside an app.
     // Ephemeral pane routes/history remain RAM-only until its layout is reviewed.
     current = store.update(current.id, { panes, activePane: target }) || current;
-    paneRoutes.set(target, next); foreground = target; recordHistory();
+    paneRoutes.set(target, next); foreground = target; recordHistory(!!opts.replace);
   }
   function paneBack(app) {
+    if (!live()) return;
     const stack = stackFor(app);
-    if (current && stack?.length > 1) { stack.pop(); navigatePane(app, stack.at(-1), { replace: true }); return; }
-    if (shown) F.nav.go(wsURL()); else F.nav.back();
+    if (shown && current && stack?.length > 1) {
+      const previous = historyViews.get(historyViews.get(history.state?.ifl?.k)?.backKey);
+      if (previous?.id === currentId && previous.foreground === app && previous.routes.get(app) === stack.at(-2)) return F.nav.back();
+      stack.pop(); navigatePane(app, stack.at(-1), { replace: true }); return;
+    }
+    if (shown && !(history.state?.ifl?.d > 0)) F.nav.go(wsURL(), { replace: true }); else F.nav.back();
   }
   function paintNativeRecovery() {
     if (!live() || F.route?.kind !== "app" || !recovery) return;
@@ -421,7 +428,7 @@ export async function createWorkspace(F, options = {}) {
   }
   async function openApp(app, destination = null, expand = false, wake = false, lease = {}) {
     const manifest = getWorkspaceApp(app); if (!live() || !manifest) return;
-    const path = destination || paneRoutes.get(app) || current?.panes.find((p) => p.app === app)?.route || manifest.href;
+    const path = destination || (!shown && recentApps.get(app)) || paneRoutes.get(app) || current?.panes.find((p) => p.app === app)?.route || manifest.href;
     rememberAll();
     F.nav.go(path, wake ? { kind: "section" } : undefined);
     const expected = F.route, handle = handles.get(app);
@@ -626,7 +633,8 @@ export async function createWorkspace(F, options = {}) {
       paneRoutes = new Map(current.panes.map((p) => [p.app, memory?.id === current.id ? memory.routes.get(p.app) || p.route : p.route]));
       if (memory?.id === current.id && current.panes.some((p) => p.app === memory.foreground)) foreground = memory.foreground;
       if (selected) store.update(current.id, { panes: current.panes, activePane: foreground });
-      if (entryKey) historyViews.set(entryKey, { id: current.id, routes: new Map(paneRoutes), foreground });
+      for (const pane of current.panes) if (memory?.stacks?.has(pane.app)) paneHistory.set(paneKey(pane.app), [...memory.stacks.get(pane.app)]);
+      if (entryKey) historyViews.set(entryKey, { ...historyMemory(), backKey: memory?.backKey });
       if (historyViews.size > 40) historyViews.delete(historyViews.keys().next().value);
       for (const pane of current.panes) if (!paneHistory.has(paneKey(pane.app))) paneHistory.set(paneKey(pane.app), [pane.route]);
       restoreToday(); today.hidden = true; today.inert = true;

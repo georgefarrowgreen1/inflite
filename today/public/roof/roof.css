@@ -315,7 +315,7 @@ dialog.ifl-sheet[data-sheet="search"] .ifs-body { display: flex; flex-direction:
 @media (max-width: 360px) { .ifl-provides-row { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
 
 /* ---- transitions (§3.7): View Transitions by kind on html[data-vt]; CSS animations where there are none ---- */
-::view-transition-group(ifl-hd), ::view-transition-group(ifl-tabs) { animation: none; }
+::view-transition-group(ifl-tabs) { animation: none; }
 /* (the header's title and line change with the page: the old words gone quickly before the new come in, so the two
    never show over each other; its band and buttons stay put) */
 ::view-transition-old(ifl-hd) { animation: none; opacity: 0; }
@@ -349,8 +349,6 @@ html[data-vt="zoom"]::view-transition-new(root) { animation: var(--motion-releas
 @keyframes ifl-tab-out { to { opacity: 0; } }
 @keyframes ifl-in-right { from { opacity: 0.72; transform: translateX(24px); } }
 @keyframes ifl-in-left { from { opacity: 0.72; transform: translateX(-16px); } }
-@keyframes ifl-out-left { to { opacity: 0; transform: translateX(-30%); } }
-@keyframes ifl-out-right { to { opacity: 0; transform: translateX(100%); } }
 /* (where there are no View Transitions: the page coming in, the same way) */
 .ifl-enter-push { animation: var(--dur-push) var(--ease-ios) ifl-in-right; }
 .ifl-enter-pop { animation: var(--dur-push) var(--ease-ios) ifl-in-left; }

@@ -287,3 +287,40 @@ for (const [width, theme] of [[320, 'dark'], [390, 'dark'], [1440, 'light']]) te
     await t.clean();
   } finally { await t.ctx.close(); }
 });
+
+test('favourites and multi-selection stay legible in compact grid cards while progress keeps row icons stable',async()=>{
+ const t=await open(390);try{
+  await t.page.evaluate(()=>{const file=T.items.get(null).find(item=>item.id===T.file);file.favourite=true;file.name='A long coastal training route with a descriptive filename.gpx';T.emit({kind:'resources'});});
+  const row=t.page.getByRole('button',{name:'Select A long coastal training route with a descriptive filename.gpx',exact:true});await row.waitFor();
+  assert.equal(await row.getAttribute('aria-description'),'Favourite');
+  await row.evaluate(node=>window.heldFileIcon=node.querySelector('.ifx-file-symbol svg'));
+  await t.page.evaluate(()=>T.emit({kind:'transfers'}));assert.equal(await row.evaluate(node=>node.querySelector('.ifx-file-symbol svg')===heldFileIcon),true);
+  await t.page.getByRole('button',{name:'Grid view',exact:true}).click();
+  assert.equal(await row.locator('.ifx-file-name').evaluate(node=>getComputedStyle(node).webkitLineClamp),'2');
+  assert.equal(await t.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+  await t.page.getByRole('button',{name:'Select files',exact:true}).click();
+  await t.page.getByRole('checkbox',{name:'Include A long coastal training route with a descriptive filename.gpx in selection',exact:true}).check();await t.page.getByRole('checkbox',{name:'Include <img onerror=alert(1)>.txt in selection',exact:true}).check();
+  assert.equal(await t.page.locator('.ifx-file[data-selected=true]').count(),2);assert.equal(await row.getAttribute('aria-pressed'),'true');
+  assert.ok(await row.evaluate(node=>getComputedStyle(node).transitionDuration.split(',').every(value=>parseFloat(value)<.001)),'reduced motion keeps controls still');await screenshot(t.page,'phone390-refined-grid-selection');await t.clean();
+ }finally{await t.ctx.close();}
+});
+
+test('upload progress preserves the focused cancel control and retires it safely when a transfer finishes',async()=>{
+ const t=await open();try{
+  await t.page.evaluate(()=>{T.transfer=[{id:'stable-upload',name:'Private route.gpx',status:'uploading',label:'Uploading',progress:.2,cancelable:true}];T.emit({kind:'transfers'});});
+  const cancel=t.page.getByRole('button',{name:'Cancel upload of Private route.gpx',exact:true});await cancel.focus();await cancel.evaluate(node=>window.heldCancel=node);
+  await t.page.evaluate(()=>{T.transfer[0]={...T.transfer[0],progress:.7};T.emit({kind:'transfers'});});
+  assert.equal(await cancel.evaluate(node=>node===heldCancel&&node===document.activeElement),true);assert.equal(await t.page.locator('.ifx-transfer progress').evaluate(node=>node.value),.7);
+  await t.page.evaluate(()=>{T.transfer[0]={...T.transfer[0],status:'done',label:'Uploaded',progress:1,cancelable:false};T.emit({kind:'transfers'});heldCancel.click();});
+  assert.equal(await cancel.count(),0);assert.equal(await t.page.locator('.ifx-main').evaluate(node=>node===document.activeElement),true);assert.equal(await t.page.evaluate(()=>T.calls.some(call=>call.cancel==='stable-upload')),false);await t.clean();
+ }finally{await t.ctx.close();}
+});
+
+test('rename from a contextual menu returns focus to the same updated row action control',async()=>{
+ const t=await open();try{
+  const menu=t.page.getByRole('button',{name:'Actions for Training notes.txt',exact:true});await menu.click();
+  await t.page.locator('dialog[data-sheet=files-actions][open]').getByRole('button',{name:'Rename',exact:true}).click();
+  const rename=t.page.locator('dialog[data-sheet=files-rename][open]');await rename.getByRole('textbox',{name:'File name',exact:true}).fill('Renamed route notes.txt');await rename.getByRole('button',{name:'Save name',exact:true}).click();await rename.waitFor({state:'detached'});
+  const updated=t.page.getByRole('button',{name:'Actions for Renamed route notes.txt',exact:true});await updated.waitFor();assert.equal(await updated.evaluate(node=>node===document.activeElement),true);await t.clean();
+ }finally{await t.ctx.close();}
+});

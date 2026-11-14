@@ -144,7 +144,7 @@ button.row:active, a.row:active { background: var(--press); }
 .ic.app img { display: block; width: 100%; height: 100%; }
 .row .tx { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .row .tx b { font-weight: 600; font-size: 17px; overflow-wrap: anywhere; }
-.row .tx small { font-size: 13.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.row .tx small { font-size: 13.5px; line-height: 1.4; color: var(--text-2); overflow-wrap: anywhere; }
 .row .val { flex: none; color: var(--text-2); font-size: 16px; font-variant-numeric: tabular-nums; }
 .row .chev { flex: none; display: grid; color: var(--text-3); }
 .row .chev svg { width: 16px; height: 16px; }
@@ -554,6 +554,7 @@ label.row:active { background: var(--press); }
 .you-h { margin: 0 18px 8px; font: 600 13px/1.2 var(--font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-2); }
 .you-foot { margin: 8px 18px 0; font-size: 13.5px; line-height: 1.4; color: var(--text-2); }
 .you-sec .row { min-height: 56px; }
+.you-sec .row .val { max-width: 45%; overflow-wrap: anywhere; text-align: right; }
 .you-sec .group:not(.icons) .row + .row::before { left: 18px; }
 /* (a group whose rows lead with an icon: the lines between them start where the words do; a row that belongs to the one
    above it (Quiet Hours' times, Markets' Evening Wrap) set in to the words, without an icon of its own) */
@@ -1211,7 +1212,7 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 .ifl-nt-row.gone.to-right .ifl-nt-card { --dx: 110%; }
 .ifl-nt-row.gone { height: var(--h); overflow: hidden; pointer-events: none; }
 .ifl-nt-row.gone.shut { height: 0; margin-bottom: -8px; opacity: 0; }
-.ifl-nt-main { position: relative; flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 0; border-radius: inherit; font: inherit; text-align: left; color: var(--text); background: none; cursor: pointer; }
+.ifl-nt-main { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 14px; border: 0; border-radius: inherit; font: inherit; text-align: left; color: var(--text); background: none; cursor: pointer; }
 .ifl-nt-main:active { background: var(--press); }
 .ifl-nt-main:focus-visible { outline: 2px solid var(--tint-text); outline-offset: -2px; }
 .ifl-nt-main .ifl-appic { margin-top: 1px; }
@@ -1219,9 +1220,9 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 .ifl-nt-row[data-fresh] .ifl-nt-main::before { content: ""; position: absolute; left: 4px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--tint-text); }
 .ifl-nt-row[data-fresh] .ifl-nt-t { font-weight: 700; }
 .ifl-nt-tx { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.ifl-nt-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.ifl-nt-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 600; }
-.ifl-nt-meta { flex: none; display: flex; gap: 0; font-size: 13px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ifl-nt-top { display: grid; gap: 4px; min-width: 0; }
+.ifl-nt-t { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; font-size: 15px; line-height: 1.35; font-weight: 600; }
+.ifl-nt-meta { display: flex; gap: 0; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ifl-nt-app::after { content: "\00a0·\00a0"; }
 .ifl-nt-b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; font-size: 15px; line-height: 1.3; color: var(--text-2); overflow-wrap: anywhere; }
 /* (the rest of a stack: its count, a small pill at the card's foot, as a chevron once opened out) */
@@ -1245,11 +1246,11 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 .ifl-nt-none .ifl-glyph svg { width: 34px; height: 34px; stroke-width: 1.8; }
 .ifl-nt-none p { margin: 0; font-size: 15px; }
 .ifl-nt-foot { display: flex; justify-content: center; padding: 14px 0 2px; }
-.ifl-nt-set { min-height: 32px; padding: 0 10px; border: 0; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 500; color: var(--text-3); background: none; cursor: pointer; }
+.ifl-nt-set { min-height: 44px; padding: 0 14px; border: 0; border-radius: 999px; font: inherit; font-size: 14px; font-weight: 500; color: var(--text-2); background: var(--ifl-surface-2, var(--glass-ctl)); cursor: pointer; }
 .ifl-nt-set:hover { color: var(--text-2); }
 .ifl-nt-set:active { background: var(--press); }
 .ifl-nt-set:focus-visible { outline: 2px solid var(--tint-text); outline-offset: 1px; }
-.ifl-nt-all { flex: none; min-height: 40px; padding: 0 14px; border: 0; border-radius: 999px; font: inherit; font-size: 15px; font-weight: 600; color: var(--tint-text); background: rgba(120, 120, 128, 0.2); cursor: pointer; }
+.ifl-nt-all { flex: none; min-height: 44px; padding: 0 14px; border: 0; border-radius: 999px; font: inherit; font-size: 14px; font-weight: 600; color: var(--tint-text); background: var(--ifl-surface-2, var(--glass-ctl)); cursor: pointer; }
 .ifl-nt-all:active { transform: scale(0.95); }
 .ifl-nt-all:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .ifl-nt-all[hidden] { display: none; }

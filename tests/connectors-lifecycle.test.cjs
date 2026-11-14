@@ -17,9 +17,11 @@ async function fixture() {
   const result = deferred(), started = deferred();
   gates.set(file, { promise: result.promise, started: started.resolve });
   const source = await readFile(resolve(__dirname, '../today/public/roof/connectors.js'), 'utf8');
+  const { REGISTRY } = await import(pathToFileURL(resolve(__dirname, '../today/public/roof/router.js')));
+  const registry = { ...REGISTRY, weather: { ...REGISTRY.weather, connector: file } };
   await Promise.all([
     writeFile(join(dir, 'connectors.mjs'), source.replace('"./router.js"', '"./router.mjs"').replace('"./search.js"', '"./search.mjs"')),
-    writeFile(join(dir, 'router.mjs'), `export const REGISTRY = { weather: { app: 'weather', name: 'Weather', path: '/weather/', sections: [['now', 'Now']], aliases: {}, connector: ${JSON.stringify(file)} } };`),
+    writeFile(join(dir, 'router.mjs'), `export const REGISTRY = ${JSON.stringify(registry)};`),
     writeFile(join(dir, 'search.mjs'), 'export const match = () => null;'),
     writeFile(join(dir, 'descriptor.mjs'), 'const gate = globalThis.__infliteConnectorLifecycleGates.get(import.meta.url); gate.started(); export const connector = await gate.promise;'),
   ]);

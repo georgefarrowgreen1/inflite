@@ -43,10 +43,10 @@
 .ifx-notices { display: grid; gap: 10px; }.ifx-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--ifx-line); border-radius: 18px; background: var(--ifx-well); }.ifx-notice p { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .ifx-list-heading { display: grid; grid-template-columns: minmax(180px, 1fr) 110px 80px 110px 44px; gap: 12px; padding: 10px 12px 10px 58px; color: var(--ifx-muted); font-size: 11px; }
 .ifx-items { display: flex; flex-direction: column; gap: 4px; }
-.ifx-file { display: grid; grid-template-columns: minmax(180px, 1fr) 110px 80px 110px 44px; align-items: center; gap: 12px; min-width: 0; min-height: 64px; padding: 4px 8px; border: 1px solid transparent; border-radius: 18px; transition: background-color 150ms ease, border-color 150ms ease; }
+.ifx-file { display: grid; grid-template-columns: minmax(180px, 1fr) 110px 80px 110px 44px; align-items: center; gap: 12px; min-width: 0; min-height: 60px; padding: 4px 8px; border: 1px solid transparent; border-radius: 18px; transition: background-color 150ms ease, border-color 150ms ease; }
 .ifx-file[data-selected=true] { border-color: color-mix(in srgb, var(--ifx-accent) 65%, var(--ifx-line)); background: color-mix(in srgb, var(--ifx-accent) 14%, var(--ifx-bg)); }
-.ifx-file-main { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 54px; padding: 6px 4px; border: 0; border-radius: 14px; background: transparent; text-align: left; }
-.ifx-file-symbol { display: grid; place-items: center; flex: none; width: 38px; height: 44px; border-radius: 12px; background: var(--ifx-well); color: var(--ifx-muted); }
+.ifx-file-main { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 48px; padding: 6px 4px; border: 0; border-radius: 14px; background: transparent; text-align: left; }
+.ifx-file-symbol { position: relative; display: grid; place-items: center; flex: none; width: 38px; height: 40px; border-radius: 12px; background: var(--ifx-well); color: var(--ifx-muted); }
 .ifx-file[data-kind=folder] .ifx-file-symbol { color: var(--ifl-accent-ink, #5c821d); background: color-mix(in srgb, var(--ifx-accent) 20%, var(--ifx-well)); }
 .ifx-file-copy { display: grid; gap: 5px; min-width: 0; }
 .ifx-file-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; line-height: 1.35; }
@@ -95,3 +95,16 @@
 .ifx-file[draggable=true] { touch-action:pan-y; }
 
 .ifx-bulk [aria-disabled=true], .ifx-select-check[aria-disabled=true] { opacity:.58;cursor:progress; }
+
+/* Quiet feedback stays local; progress repaints keep row and icon nodes intact. */
+.ifx-file[data-favourite=true] .ifx-file-symbol::after { content:"★";position:absolute;inset:auto -4px -3px auto;display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--ifx-bg);color:var(--ifl-accent-ink,#4d771b);font-size:13px; }
+.ifx-action.is-primary { background:var(--ifl-surface-2,#f3f5f2);font-weight:650; }
+.ifx-details-actions .is-destructive { margin-top:8px; }
+.ifx-button,.ifx-icon-button,.ifx-action { transition:transform var(--motion-release,.42s) var(--motion-spring,ease),background-color var(--motion-fade,.16s) ease; }
+:is(.ifx-button,.ifx-icon-button,.ifx-action):active:not(:disabled):not([aria-disabled=true]) { transform:scale(.97);transition-duration:var(--motion-press,.09s); }
+.ifx-items { transition:opacity var(--motion-fade,.16s) ease; }
+.ifx-results[aria-busy=true] .ifx-items { opacity:.65; }
+.ifx-preview { animation:ifl-fade-in var(--motion-fade,.16s) ease; }
+.ifl-files-explorer[data-file-view=grid] .ifx-file-copy { min-height:60px; }
+.ifl-files-explorer[data-file-view=grid] .ifx-file-name { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere; }
+@media (prefers-reduced-motion:reduce) { .ifx-button,.ifx-icon-button,.ifx-action,.ifx-items { transition:none; }.ifx-preview { animation:none; } }

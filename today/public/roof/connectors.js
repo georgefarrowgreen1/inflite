@@ -27,20 +27,24 @@ import { match } from "./search.js";
 
 export const WORDS = [["cards", "Cards"], ["search", "Search"], ["notifications", "Notifications"], ["actions", "Actions"], ["screens", "Screens"]];
 const sec = (path, list) => list.map(([id, l]) => [id, l, `${path}#${id}`]);
+const staticApp = (app, options) => {
+  const R = REGISTRY[app];
+  return { app, name: R.name, icon: R.id || app, href: R.path, sections: sec(R.path, R.sections), ...options };
+};
 export const STATIC = Object.freeze({
-  chats: { app: "chats", name: "Chats", icon: "chat", href: "/chats/", sections: [],
-    shares: { cards: "Who’s waiting for you, and letters on their way", notifications: "New messages, and letters as they land", screens: "Chats, on its own page for now" } },
-  fitness: { app: "fitness", name: "Fitness", icon: "fitness", href: "/fitness/", sections: sec("/fitness/", [["today", "Today"], ["activities", "Activities"], ["progress", "Progress"]]),
-    shares: { cards: "Today’s session or the ride you’ve done", notifications: "Your session, in the morning notification", actions: "Open Today, Activities or Progress; send a session", screens: "Today · Activities · Progress, on its own page for now" },
-    mini: (a) => { const c = a?.cards?.fitness; return c && Number.isFinite(Number(c.ctl)) ? { kind: "num", num: String(Math.round(Number(c.ctl))), label: "Fitness" } : null; } },
-  markets: { app: "markets", name: "Markets", icon: "markets", href: "/markets/", sections: sec("/markets/", [["today", "Today"], ["holdings", "Holdings"], ["news", "News"]]),
-    shares: { cards: "How your holdings are doing today", notifications: "Price alerts and the evening wrap", screens: "Today · Holdings · News, on its own page for now" },
+  chats: staticApp("chats", { sections: [],
+    shares: { cards: "Waiting messages and letters in flight", notifications: "Messages and arriving letters", screens: "Chats · Friends" } }),
+  fitness: staticApp("fitness", {
+    shares: { cards: "Planned sessions and completed rides", notifications: "Your daily session", actions: "Open or send a session", screens: "Today · Activities · Routes · Progress" },
+    mini: (a) => { const c = a?.cards?.fitness; return c && Number.isFinite(Number(c.ctl)) ? { kind: "num", num: String(Math.round(Number(c.ctl))), label: "Fitness" } : null; } }),
+  markets: staticApp("markets", {
+    shares: { cards: "Your holdings today", notifications: "Price alerts and daily wrap", screens: "Today · Holdings · News" },
     mini: (a) => {
       const c = a?.cards?.markets, p = Number(c?.pct), v = (c?.spark?.vals || []).map(Number).filter(Number.isFinite), lo = Math.min(...v), d = Math.max(...v) - lo || 1;
       return c?.traded && Number.isFinite(p) ? { kind: "pct-spark", pct: p, spark: v.length > 1 ? v.map((x) => (x - lo) / d) : null } : null;
-    } },
-  mail: { app: "mail", name: "Mail", icon: "mail", href: "/mail/", sections: [],
-    shares: { notifications: "New mail, from Mail’s own notifications", screens: "Mail, framed in InFlite" } },
+    } }),
+  mail: staticApp("mail", { sections: [],
+    shares: { notifications: "Incoming mail", screens: "People · Updates · Later · Done" } }),
 });
 for (const c of Object.values(STATIC)) c.links = c.sections.map(([, l, h]) => [l, h]);
 
@@ -48,7 +52,7 @@ for (const c of Object.values(STATIC)) c.links = c.sections.map(([, l, h]) => [l
 const fallback = (app) => {
   const R = REGISTRY[app];
   return { app, name: R.name, icon: app, href: R.path, sections: R.sections, aliases: R.aliases,
-    shares: { cards: "Today’s weather card, rain on your ride, warnings", notifications: "Rain alerts, warnings, the morning briefing and sunshine for your panels, through InFlite", screens: R.sections.map((s) => s[1]).join(" · ") } };
+    shares: { cards: "Forecasts, ride weather and warnings", notifications: "Rain, warnings, briefings and solar alerts", screens: R.sections.map((s) => s[1]).join(" · ") } };
 };
 let F0 = null;
 export async function connectorOf(app, F = F0) {
@@ -87,9 +91,9 @@ export async function openConnector(F, app) {
   if (app === "fitness" && on) acts.push({ label: "Fitness Settings", href: `${REGISTRY.fitness.path}#settings`, act: "settings" });
   return F.sheet.open({
     sheet: "connector", app: app === "chats" ? "chat" : app, title: `${c.name}’s connector`,
-    hero: { app: c.icon || app, name: `${c.name}’s connector`, line: app === "weather" || on ? "Its own module, under one roof" : "An app beside InFlite" },
+    hero: { app: c.icon || app, name: c.name },
     body: ui.el("div", { class: "ifl-connector" },
-      ui.el("p", { class: "ifl-sub", text: `${c.name} keeps its own server and data. This is all it shares with InFlite:` }),
+      ui.el("p", { class: "ifl-sub", text: `${c.name} shares these features with InFlite:` }),
       ui.el("div", { class: "ifl-provides" }, rows)),
     acts,
   });

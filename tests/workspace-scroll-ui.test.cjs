@@ -13,16 +13,16 @@ after(async () => browser?.close());
 function moduleSource(app) {
   return `export const CONTRACT=1,BUILD='scroll-fixture';export async function mount(root,fw){
     const T=window.T,s=T.stats.${app};s.mounts++;s.root=root;s.fw=fw;
-    const heading=fw.ui.el('h2',{text:'${app} content'}),routeLabel=fw.ui.el('output',{class:'fixture-route'}),content=fw.ui.el('div',{class:'fixture-long',text:'Long ${app} content'});
-    root.replaceChildren(heading,routeLabel,content);s.content=content;let off=()=>{},provided=false;
+    const heading=fw.ui.el('h2',{text:'${app} content'}),draft=fw.ui.el('input',{'aria-label':'${app} draft'}),routeLabel=fw.ui.el('output',{class:'fixture-route'}),content=fw.ui.el('div',{class:'fixture-long',text:'Long ${app} content'});
+    root.replaceChildren(heading,draft,routeLabel,content);s.content=content;let off=()=>{},provided=false;
     return{workspace(){if(provided||!fw.workspace)return;provided=true;off=fw.workspace.provide({snapshot:()=>{s.snapshots=(s.snapshots||0)+1;return{status:'ready',files:[],actions:[]}},run:()=>({ok:true})});},
     async show(route){this.workspace();s.shows++;s.route=route;routeLabel.textContent=route.key;content.classList.toggle('fixture-short',T.short==='${app}'&&root.classList.contains('ifl-in-pane'));fw.header.set({title:'${app} '+route.key});
       if(T.delay==='${app}'&&root.classList.contains('ifl-in-pane')){T.waiting++;await T.wait;}},
     hide(){s.hides++;},flush:async()=>({lost:0}),unmount(){off();s.unmounts++;root.replaceChildren();}};
   }`;
 }
-async function open({ width = 1440 } = {}) {
-  const ctx = await browser.newContext({ viewport: { width, height: 1000 }, reducedMotion: 'reduce', serviceWorkers: 'block' }), unknown = [];
+async function open({ width = 1440, motion = 'reduce' } = {}) {
+  const ctx = await browser.newContext({ viewport: { width, height: 1000 }, reducedMotion: motion, serviceWorkers: 'block' }), unknown = [];
   let workspaceCloud={revision:0,state:null,updatedAt:0};await ctx.route('**/*', r => {
     const u = new URL(r.request().url()), p = u.pathname;
     if (u.origin !== ORIGIN) { unknown.push(u.href); return r.abort(); }
@@ -110,7 +110,7 @@ test('scroll is owned by its workspace and app through switching workspaces and 
   } finally { await t.ctx.close(); }
 });
 
-test('a different pane route starts at its own position and its native round trip retains only the matching route', async () => {
+test('each pane route retains its own scroll position through native round trips and revisits', async () => {
   const t = await open(); try {
     await putScroll(t, 703);
     await t.page.evaluate(() => T.stats.fitness.fw.nav.go('/fitness/#activities'));
@@ -124,7 +124,7 @@ test('a different pane route starts at its own position and its native round tri
     assert.equal(await t.page.evaluate(() => T.F.view('fitness').route.key), 'activities');
     await t.page.evaluate(() => T.stats.fitness.fw.nav.section('today'));
     await t.page.waitForFunction(() => T.F.view('fitness').route?.key === 'today'); await t.settle();
-    assert.equal(await scroll(t.page), 0);
+    assert.equal(await scroll(t.page), 703, 'revisiting Today restores its own position');
     await t.clean();
   } finally { await t.ctx.close(); }
 });
@@ -175,6 +175,62 @@ test('late app content restores the waiting position once, and user input cancel
     await slot(t.page).evaluate(n => n.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true })));
     await t.page.evaluate(() => { T.short = null; T.stats.fitness.content.classList.remove('fixture-short'); T.stats.fitness.fw.workspace.changed(); }); await t.settle();
     assert.equal(await scroll(t.page), 0, 'metadata refresh cannot undo user cancellation');
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});
+
+
+test('browser Back restores the pane Back stack and pane Back consumes the real prior entry', async () => {
+  const t = await open(); try {
+    await t.page.getByRole('textbox', { name:'fitness draft', exact:true }).fill('keep this draft');
+    await t.page.evaluate(() => T.stats.fitness.fw.nav.go('/fitness/#activities'));
+    await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'activities');
+    await t.page.evaluate(() => T.stats.fitness.fw.nav.go('/fitness/#routes'));
+    await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'routes');
+    const length = await t.page.evaluate(() => history.length);
+    await t.page.goBack(); await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'activities');
+    await t.page.getByRole('button', {name:'Back in Fitness',exact:true}).click();
+    await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'today');
+    assert.equal(await t.page.evaluate(() => history.length), length, 'Back does not push another entry');
+    await t.page.goForward(); await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'activities');
+    assert.equal(await t.page.getByRole('textbox', {name:'fitness draft',exact:true}).inputValue(),'keep this draft');
+    assert.equal(await t.page.evaluate(() => T.stats.fitness.mounts),1);
+    await t.page.goBack(); await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'today');
+    await t.page.evaluate(() => T.stats.fitness.fw.nav.back());
+    await t.page.waitForFunction(() => T.F.route.tab === 'workspace' && !T.F.route.arg);
+    assert.equal(await t.page.evaluate(() => history.length),length); await t.clean();
+  } finally { await t.ctx.close(); }
+});
+
+test('reopening a native app resumes its last native section and preserves its one editor', async () => {
+  const t = await open(); try {
+    await t.page.locator('.ws-dock-button[aria-label="Fitness"]').click(); await waitNative(t);
+    await t.page.getByRole('textbox', {name:'fitness draft',exact:true}).fill('native draft');
+    await t.page.evaluate(() => T.stats.fitness.fw.nav.section('activities'));
+    await t.page.waitForFunction(() => T.F.route.app === 'fitness' && T.F.route.key === 'activities');
+    await t.page.locator('.ws-dock-button[aria-label="Weather"]').click(); await waitNative(t,'weather');
+    await t.page.locator('.ws-dock-button[aria-label="Fitness"]').click(); await waitNative(t);
+    assert.equal(await t.page.evaluate(() => T.F.route.key),'activities');
+    assert.equal(await t.page.getByRole('textbox', {name:'fitness draft',exact:true}).inputValue(),'native draft');
+    assert.equal(await t.page.evaluate(() => T.stats.fitness.mounts),1); await t.clean();
+  } finally { await t.ctx.close(); }
+});
+
+for (const motion of ['reduce','no-preference']) test(`workspace transitions cancel cleanly on rapid navigation and teardown (${motion})`, async () => {
+  const t = await open({motion}); try {
+    await t.page.evaluate(() => T.stats.fitness.fw.nav.go('/fitness/#activities'));
+    await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'activities');
+    if(motion === 'reduce') assert.equal(await slot(t.page).evaluate(n=>n.getAnimations().length),0);
+    else {
+      await t.page.emulateMedia({reducedMotion:'reduce'}); await t.settle();
+      assert.equal(await slot(t.page).evaluate(n=>n.getAnimations().length),0,'changing Reduce Motion cancels the current element animation');
+      await t.page.emulateMedia({reducedMotion:'no-preference'});
+    }
+    await t.page.evaluate(() => { for(const section of ['routes','today','activities','today']) T.stats.fitness.fw.nav.go('/fitness/#'+section); });
+    await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'today');
+    await t.page.evaluate(() => { T.ws.destroy(); T.F.destroy(); });
+    await t.settle();
+    assert.equal(await t.page.locator('#workspace').evaluate(n=>n.getAnimations({subtree:true}).length),0);
     await t.clean();
   } finally { await t.ctx.close(); }
 });

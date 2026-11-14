@@ -8,10 +8,12 @@ const GLYPHS = Object.freeze({ succeeded: "check", failed: "warn", waiting: "war
 export function createWorkspaceActivity(F, { registry } = {}) {
   if (!registry?.snapshot || !registry?.invoke) throw new TypeError("Activity requires its account registry.");
   const ui = F.ui, rows = new Map();
-  let dead = false, handle = null, list, summary, clear, error;
+  let dead = false, handle = null, styles = null, epoch = 0, list, summary, clear, error;
   const live = () => !dead && !F.signal?.aborted && registry.live();
   const cleanSheet = () => { handle = null; list = summary = clear = error = null; rows.clear(); };
-  function close() { const previous = handle; cleanSheet(); previous?.now?.(); }
+  function close() { epoch++; const previous = handle; cleanSheet(); previous?.now?.(); }
+  const styled = () => styles ||= loadStyles("/roof/workspace-activity.css").catch(error => { styles = null; throw error; });
+  styled().catch(() => {});
   async function act(row, id) {
     if (!live() || !handle || !row.item) return;
     const mine = handle, item = row.item;
@@ -61,9 +63,12 @@ export function createWorkspaceActivity(F, { registry } = {}) {
     if (focused === clear && clear.hidden) summary.focus({ preventScroll: true });
     else if (focused?.isConnected && document.activeElement === document.body) focused.focus?.({ preventScroll: true });
   }
-  function open() {
+  async function open() {
     if (!live()) return;
-    close(); loadStyles("/roof/workspace-activity.css").catch(() => {});
+    close(); const at = epoch, route = F.route;
+    const current = () => live() && epoch === at && F.route === route;
+    try { await styled(); } catch { if (current()) F.toast?.("Activity couldn’t load. Try again."); return; }
+    if (!current()) return;
     summary = ui.el("p", { class: "wsa-summary", role: "status", "aria-live": "polite", tabindex: -1 });
     error = ui.el("p", { class: "wsa-error", role: "status", hidden: true });
     clear = ui.btn("Clear completed", { small: true, run: () => { if (live()) registry.clearCompleted(); } });
