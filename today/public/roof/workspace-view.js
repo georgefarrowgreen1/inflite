@@ -598,6 +598,45 @@ export function createWorkspaceView(root, callbacks = {}) {
   listen(root, "keydown", event => { if (!dockHost.contains(event.target)) navigateKeys(event); });
   listen(dockHost, "keydown", navigateKeys);
 
+  function appLauncher(close) {
+    const body = el("div", { class: "ws-launcher" });
+    const launchButton = (label, mark, callback, cls, args = [], allowed = () => true) => {
+      const node = el("button", { type: "button", class: cls, "aria-label": label, on: { click() {
+        if (gone || !body.isConnected || !allowed()) return;
+        close?.(); invoke(callback, ...args);
+      } } }, mark, el("span", { text: label }));
+      return node;
+    };
+    const quick = el("div", { class: "wsl-quick" });
+    if (callable(callbacks.onToday)) quick.append(launchButton("Today", icon("calendar"), "onToday", "wsl-home"));
+    if (callable(callbacks.onSearch)) quick.append(launchButton("Search InFlite", icon("search"), "onSearch", "wsl-search"));
+    const grid = el("div", { class: "wsl-apps", role: "group", "aria-label": "Apps" });
+    if (callable(callbacks.onFiles)) grid.append(launchButton("Files", el("span", { class: "wsl-files-mark", "aria-hidden": "true" }, icon("file")), "onFiles", "wsl-app"));
+    for (const id of ["chats", "mail", "fitness", "weather", "markets"]) {
+      const app = model.apps?.find(a => a.id === id); if (!app || !callable(callbacks.onApp)) continue;
+      const allowed = () => model.apps?.some(a => a.id === id && a.available !== false);
+      const node = launchButton(app.name, icon(null, { app: APP_ICONS[id] || id, size: 40 }), "onApp", "wsl-app", [id], allowed);
+      node.disabled = !allowed(); setCurrent(node, model.mode === "app" && model.activeApp === id); grid.append(node);
+    }
+    body.append(quick, grid);
+    const section = (title, content) => el("section", { class: "wsl-section", "aria-label": title }, el("h3", { text: title }), content);
+    const saved = el("div", { class: "wsl-workspaces" });
+    for (const item of model.workspaces || []) {
+      const node = launchButton(item.name + " workspace", icon("grid"), "onWorkspace", "wsl-workspace", [item.id]);
+      node.lastElementChild.textContent = item.name; setCurrent(node, model.mode === "workspace" && model.activeId === item.id); saved.append(node);
+    }
+    if (callable(callbacks.onCreateWorkspace)) saved.append(launchButton("New workspace", icon("plus"), "onCreateWorkspace", "wsl-workspace wsl-create"));
+    if (saved.childElementCount) body.append(section("Workspaces", saved));
+    const controls = el("div", { class: "wsl-controls" });
+    for (const [label, glyph, callback, text] of [["Activity", "clock", "onActivity"], ["Workspace sync", "swap", "onSync", "Sync"], ["App status", "info", "onRecovery"], ["Notifications", "bell", "onNotifications"], ["Settings", "settings", "onSettings"]]) {
+      if (!callable(callbacks[callback])) continue;
+      const node = launchButton(label, icon(glyph), callback, "wsl-control"); if (text) node.lastElementChild.textContent = text;
+      controls.append(node);
+    }
+    if (controls.childElementCount) body.append(section("Controls", controls));
+    return body;
+  }
+
   function destroy() {
     if (gone) return;
     finishGesture(false); closeWindowMenu();
@@ -610,5 +649,5 @@ export function createWorkspaceView(root, callbacks = {}) {
   const slots = { today: todaySlot, files: filesSlot, ...Object.fromEntries(WINDOW_APPS.map(app => [app, panes.get(app).slot])), app: panes.get("app").slot, dockAnchor, sidebarAnchor };
   update();
   if (callbacks.signal?.aborted) destroy();
-  return { slots, sidebar, dock: dockHost, update, setPane, destroy, getViewport, isPaneVisible, revealPane, windowAction };
+  return { slots, sidebar, dock: dockHost, launcher: appLauncher, update, setPane, destroy, getViewport, isPaneVisible, revealPane, windowAction };
 }

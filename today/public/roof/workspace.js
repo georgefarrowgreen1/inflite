@@ -549,12 +549,9 @@ export async function createWorkspace(F, options = {}) {
     }
   }
   function openApps() {
-    const body = F.ui.el("div", { class: "ifs-page" }); let menu;
-    body.append(F.ui.btn("Today", { icon: "sun", run: () => { menu.now(); F.nav.go(wsURL()); } }), F.ui.btn("Files", { icon: "file", run: () => { menu.now(); openFiles(); } }));
-    for (const [label, glyph, open] of [["Search InFlite", "search", () => F.search.open()], ["Activity", "clock", () => activityView.open()], ["Workspace sync", "swap", () => sync?.open()], ["App status", "info", () => recoveryView.open()]]) body.append(F.ui.btn(label, { icon: glyph, run: () => { if (live()) { menu.now(); open(); } } }));
-    if (options.onNotifications) body.append(F.ui.btn("Notifications", { icon: "bell", run: () => { if (live()) { menu.now(); options.onNotifications(); } } }));
-    for (const saved of store.read().workspaces) body.append(F.ui.btn(saved.name + " workspace", { icon: "grid", run: () => { menu.now(); openWorkspace(saved.id); } }));
-    for (const app of WORKSPACE_APPS) body.append(F.ui.btn(app.name, { disabled: !appOn(app.id), run: () => { menu.now(); openApp(app.id); } }));
+    if (!live()) return;
+    let menu;
+    const body = view.launcher(() => menu?.now());
     menu = F.sheet.open({ sheet: "workspace-apps", title: "Your apps", body });
   }
   function editWorkspace() {

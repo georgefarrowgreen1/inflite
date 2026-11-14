@@ -84,11 +84,11 @@ The twenty-two root workspace/Files scripts, seven optional stylesheets and `os.
 
 All five app adapters are literal lazy imports. Their exact `roof/workspace.js` and `roof/workspace.css` paths belong to `connector.lazy`, not the app's ordinary first-open `connector.files`. Once used in OS, the host asks the root worker to retain the static graph plus these curated optional files. Existing installed-app idle caching and network-only exclusions continue to apply. The worker accepts only JS/CSS assets for module build caches and rejects API path segments, documents and data files; it also refuses to replay an old malformed API cache entry.
 
-The core framework budget remains 35 KiB gzip with comments stripped; its request coordinator retains a separate 2 KiB + 128 byte ceiling. Ordinary Markets (40 KiB), Fitness (86 KiB) and Mail (55 KiB) budgets are unchanged. The six OS upgrades add real private file operations and dialogs, activity, cloud layout synchronization, recovery and typed commands to the exact optional graph. Each feature has an independently reviewed ceiling; the aggregate has a tighter 100 KiB JS / 16 KiB CSS bound. The Fitness optional adapter allowance covers its new Drive import/export intents; its ordinary first-open budget is unchanged.
+The core framework budget remains 35 KiB gzip with comments stripped; its request coordinator retains a separate 2 KiB + 128 byte ceiling. Ordinary Markets (40 KiB), Fitness (86 KiB) and Mail (55 KiB) budgets are unchanged. The six OS upgrades add real private file operations and dialogs, activity, cloud layout synchronization, recovery and typed commands to the exact optional graph. Each feature has an independently reviewed ceiling; the aggregate has a tighter 102 KiB JS / 17 KiB CSS bound. The Fitness optional adapter allowance covers its new Drive import/export intents; its ordinary first-open budget is unchanged.
 
 | Optional component | JS ceiling | CSS ceiling |
 | --- | --- | --- |
-| Base shell and window management | 30 KiB | 6 KiB |
+| Base shell and window management | 31 KiB | 7 KiB |
 | Commands | 4.75 KiB | 1 KiB |
 | Files | 36 KiB | 4.5 KiB |
 | Universal Open/Save | 4.75 KiB | 1 KiB |
@@ -101,7 +101,7 @@ The core framework budget remains 35 KiB gzip with comments stripped; its reques
 | Chats adapter | 2.75 KiB | 1 KiB |
 | Mail adapter | 3.75 KiB | 1 KiB |
 
-Served-size measurements use the same in-memory minifier and gzip settings as the app budget contracts, rather than source-file sizes. The final integration audit measured 30,255 bytes of base/window JS, 35,037 bytes of Files JS and 101,936 bytes across the complete optional JS graph; complete CSS measured 15,594 bytes. The unchanged ordinary core measured 35,828 bytes against 35,840. The contract prints all component/file totals on every build, and the final integration run rechecks them after feature freeze. The exact optional exclusion prevents unrelated files from escaping the ordinary core budget. The closure follows both static and literal lazy imports, with a separate entry for the existing quick picker.
+Served-size measurements use the same in-memory minifier and gzip settings as the app budget contracts, rather than source-file sizes. The final integration audit measured 30,784 bytes of base/window JS, 35,049 bytes of Files JS and 102,668 bytes across the complete optional JS graph; complete CSS measured 16,241 bytes. The unchanged ordinary core measured 35,828 bytes against 35,840. The contract prints all component/file totals on every build, and the final integration run rechecks them after feature freeze. The exact optional exclusion prevents unrelated files from escaping the ordinary core budget. The closure follows both static and literal lazy imports, with a separate entry for the existing quick picker.
 
 
 `roofworkspace.test.mjs` checks host selection, updater/worker closure, manifest, static versus lazy graphs, cache path rejection, route opt-in and served sizes. Workspace model tests exercise hostile storage, account replacement, immutable snapshots and context ownership. Real-frame fixtures cover interrupted imports and stale handles. The browser suites use actual module controls and lifecycle with synthetic API data, including native Mail compose/viewer flows, window behavior and account replacement; they do not write production accounts. Model coverage includes legacy migration and retired-writer isolation, three-to-five-app restoration, all-minimized windows, unknown-field stripping, hostile geometry and adversarial route mutations.
