@@ -118,7 +118,7 @@ export async function mailPage(request, env) {
   const roofed = await mailRoof(request, env);
   if (roofed) return roofed;
   const url = new URL(request.url), method = request.method;
-  const known = url.pathname === "/mail" || url.pathname === "/mail/" || url.pathname === "/mail/host.css";
+  const known = url.pathname === "/mail" || url.pathname === "/mail/" || url.pathname === "/mail/standalone/" || url.pathname === "/mail/host.css";
   if (!known) return said(404, "Not found.");
   if (method !== "GET" && method !== "HEAD") return said(405, "Mail’s page doesn’t do that.", { Allow: "GET, HEAD" });
   if (url.pathname === "/mail") return new Response(null, { status: 301, headers: { Location: "/mail/" + url.search, ...SAFE } });

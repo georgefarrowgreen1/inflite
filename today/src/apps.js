@@ -4,7 +4,7 @@
 // Pages project's gone; so those are asked through the service binding APPS (wrangler config), straight to that
 // Worker, as the same address (it decides what each address is by its host, as ever). Anything else, and anywhere
 // there's no APPS (tests, a local copy), is a plain fetch.
-const APP_HOSTS = /^(account|auth|chat|weather|fitness|finance)\.inflite\.ai$/;
+const APP_HOSTS = /^(account|auth|chat|weather|fitness|finance|status)\.inflite\.ai$/;
 export function appFetch(env, url, init) {
   const u = new URL(url);
   if (typeof env?.APPS?.fetch === "function" && u.protocol === "https:" && APP_HOSTS.test(u.hostname)) return env.APPS.fetch(new Request(u, init));

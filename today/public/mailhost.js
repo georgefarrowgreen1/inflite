@@ -35,7 +35,7 @@
   const ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i;
   const root = document.documentElement;
   const MAIL = ORIGIN.test(root.dataset.mail || "") ? root.dataset.mail : null;
-  const AUTH = ORIGIN.test(root.dataset.auth || "") ? root.dataset.auth : null;
+  const AUTH = /(^|\.)inflite\.ai$/.test(location.hostname) ? "https://inflite.ai/auth" : ORIGIN.test(root.dataset.auth || "") ? root.dataset.auth : null;
   const APPS = "/#apps";
 
   // (the code from #signin=<code>, as the sign-in page puts it, with anything after it; null when there's none or it
@@ -61,7 +61,7 @@
   // (the frame, as it is now: a fresh one when a notification opens a conversation here)
   let frame = null;
   // (the sign-in page, for Mail, back here)
-  const signInAt = (ask) => `${AUTH}/#signin=mail&ask=${ask}&back=${encodeURIComponent(location.origin + "/mail/")}`;
+  const signInAt = (ask) => `${AUTH}/#signin=mail&ask=${ask}&back=${encodeURIComponent(location.origin + (location.pathname === "/mail/standalone/" ? "/mail/standalone/" : "/mail/"))}`;
   // (a path of this site's: starts /, not //, no \ and nothing unseen, no more than 200 characters)
   const ownPath = (p) => typeof p === "string" && p.length <= 200 && /^\/(?!\/)/.test(p) && !/[\\\u0000-\u001f\u007f]/.test(p);
   const store = () => { try { return sessionStorage; } catch (_) { return null; } };
