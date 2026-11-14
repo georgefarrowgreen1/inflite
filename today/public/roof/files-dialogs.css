@@ -1,0 +1,12 @@
+.ifd,.ifd-form{display:grid;gap:16px;min-width:0;color:var(--ifl-text)}
+.ifd-path{display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0;font-size:14px}.ifd-path>span{overflow-wrap:anywhere;padding:10px}
+.ifd-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.ifd-tools>input{flex:1;min-width:140px}
+.ifd input,.ifd-form input{width:100%;box-sizing:border-box;min-height:48px;padding:12px 16px;border:1px solid var(--ifl-line);border-radius:18px;background:var(--ifl-surface-2);color:inherit;font:inherit}
+.ifd-name,.ifd-form label{display:grid;gap:8px;font-size:14px;font-weight:600}.ifd-list{max-height:min(44svh,440px);overflow:auto;overscroll-behavior:contain;border:1px solid var(--ifl-line);border-radius:22px;padding:6px;min-height:80px}
+.ifd-entry{display:flex;align-items:center;gap:12px;min-width:0;width:100%;min-height:58px;padding:12px;border:0;border-radius:16px;background:transparent;color:inherit;text-align:left;font:inherit}.ifd-entry>svg{flex:none;width:22px;height:22px}.ifd-entry>span{display:grid;gap:4px;min-width:0;flex:1}.ifd-entry b{font-size:14px;overflow-wrap:anywhere}.ifd-entry small{font-size:12px;color:var(--ifl-muted)}.ifd-entry[aria-pressed=true]{background:color-mix(in srgb,var(--ifl-accent-fill) 16%,var(--ifl-surface))}.ifd-entry:disabled,.ifd-entry[aria-disabled=true]{opacity:.55}
+.ifd-status{min-height:1.5em;margin:0;color:var(--ifl-muted);font-size:13px;line-height:1.5;overflow-wrap:anywhere}.ifd-pages,.ifd-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}.ifd-actions>.ifl-btn{flex:1;min-height:46px}.ifd-form .ifl-btn{min-height:46px}
+.ifd-entry:focus-visible,.ifd input:focus-visible,.ifd-form input:focus-visible{outline:2px solid var(--ifl-accent-ink);outline-offset:2px}
+@media(hover:hover){.ifd-entry:not(:disabled):hover{background:var(--ifl-surface-2)}}
+@media(max-width:380px){.ifd-tools{gap:8px}.ifd-tools>input{min-width:100%;flex-basis:100%}.ifd-list{max-height:36svh}.ifd-entry{padding:12px 10px}}
+
+.ifd .ifl-btn,.ifd-form .ifl-btn{min-height:44px}

@@ -64,10 +64,10 @@ test('canonical renderer and hub unknown documents use one design with absolute 
   assert.equal(await (await worker.fetch(new Request('https://inflite.ai/_errors/404', {method:'HEAD'}),env,{})).text(), '');
 });
 
-test('Mail retains root and hash links, errors for files and APIs, and non-fetch entrypoints', async () => {
+test('Mail canonicalizes human root/hash documents, retains errors for files/APIs and non-fetch entrypoints', async () => {
   const {default: worker} = await import('../email/src/index.js');
   const env = {ASSETS:{fetch: async request => new URL(request.url).pathname === '/' ? new Response('<h1>Mail</h1>', {headers:{'Content-Type':'text/html'}}) : missing()}, TODAY_APP:{fetch:async () => page()}};
-  for (const path of ['/', '/#settings', '/#thread=example']) assert.equal((await worker.fetch(new Request('https://email.inflite.ai'+path, {headers:{Accept:'text/html'}}),env,{})).status,200);
+  for (const path of ['/', '/#settings', '/#thread=example']) { const response=await worker.fetch(new Request('https://email.inflite.ai'+path, {headers:{Accept:'text/html'}}),env,{}); assert.equal(response.status,308);assert.equal(response.headers.get('Location'),'https://inflite.ai/mail/standalone/'); }
   assert.equal((await worker.fetch(req(),env,{})).headers.get('X-Inflite-Error'),'404');
   assert.equal(await (await worker.fetch(req('/missing.js'),env,{})).text(),'original');
   assert.equal(typeof worker.email, 'function');

@@ -204,3 +204,55 @@ test('Move can choose destinations beyond the first folder page without replacin
   assert.equal(await t.page.evaluate(()=>T.reads.some(read=>read.foldersOnly&&read.cursor==='1:100')),true);await t.clean();
  }finally{await t.ctx.close();}
 });
+
+test('multi-selection preserves observed versions and reports partial batch outcomes without discarding successes',async()=>{
+ const t=await open(390);try{
+  await t.page.evaluate(()=>{for(const item of T.items.get(null))if(item.kind==='file')item.actions.push({id:'trash',label:'Move to Trash',destructive:true});T.service.batch=async(refs,action,input,lease)=>{T.batch={refs,action,input,current:lease.current()};return{ok:false,results:refs.map((value,index)=>({key:value.key,ok:index===0,...(index?{error:'Changed elsewhere. Refresh this file.'}:{})}))};};T.emit({kind:'resources'});});
+  await t.page.getByRole('button',{name:'Select files',exact:true}).click();
+  await t.page.getByRole('checkbox',{name:'Include Training notes.txt in selection',exact:true}).check();
+  await t.page.getByRole('checkbox',{name:'Include <img onerror=alert(1)>.txt in selection',exact:true}).check();
+  const bulk=t.page.getByRole('group',{name:'Selected files',exact:true});await bulk.getByRole('button',{name:'Move to Trash',exact:true}).click();
+  const confirm=t.page.locator('dialog[data-sheet=files-batch][open]');await confirm.getByRole('button',{name:'Move to Trash',exact:true}).click();
+  const result=t.page.getByRole('dialog',{name:'Some items need attention',exact:true});await result.waitFor();assert.match(await result.innerText(),/1 updated\. 1 need attention/);assert.match(await result.innerText(),/Changed elsewhere/);
+  assert.deepEqual(await t.page.evaluate(()=>T.batch),{refs:[{key:'drive:'+'B'.repeat(32),version:1},{key:'drive:'+'C'.repeat(32),version:1}],action:'trash',input:{},current:true});
+  assert.equal(await result.locator('img[onerror]').count(),0);assert.equal(await t.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);await t.clean();
+ }finally{await t.ctx.close();}
+});
+
+test('Copy selects an independent destination and name while keeping the original observed version',async()=>{
+ const t=await open();try{
+  await t.page.evaluate(()=>{const file=T.items.get(null).find(item=>item.kind==='file');file.actions.push({id:'copy',label:'Copy'});T.emit({kind:'resources'});});
+  await t.page.getByRole('button',{name:'Select Training notes.txt',exact:true}).click();await t.page.locator('.ifx-inspector').getByRole('button',{name:'Copy',exact:true}).click();
+  const copy=t.page.getByRole('dialog',{name:'Copy Training notes.txt',exact:true});await copy.getByRole('textbox',{name:'Copy name',exact:true}).fill('Ride notes copy.txt');
+  await copy.getByRole('button',{name:'Cycling',exact:true}).click();await copy.getByRole('button',{name:'Copy here',exact:true}).click();
+  await t.page.waitForFunction(()=>T.calls.some(call=>call.action==='copy'));
+  const call=await t.page.evaluate(()=>T.calls.find(call=>call.action==='copy'));assert.deepEqual(call.input,{parentId:'A'.repeat(32),version:1,name:'Ride notes copy.txt'});assert.equal(call.current,true);await t.clean();
+ }finally{await t.ctx.close();}
+});
+
+test('internal drag emits only an opaque account token and real folder-drop batches keep observed references',async()=>{
+ const t=await open();try{
+  const payload=await t.page.evaluate(()=>{
+   T.service.prepareDrag=refs=>{T.dragRefs=refs;return'd'.repeat(32)};T.service.resolveDrag=token=>token==='d'.repeat(32)?[T.items.get(null).find(item=>item.id===T.file)]:[];
+   T.service.batch=async(refs,action,input,lease)=>{T.dropped={refs,action,input,current:lease.current()};return{ok:true,results:refs.map(value=>({key:value.key,ok:true}))}};
+   const data=new DataTransfer(),source=document.querySelector('[data-file-key="drive:'+T.file+'"]'),target=document.querySelector('[data-file-key="drive:'+T.folder+'"]');
+   source.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:data}));target.dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:data}));return{types:[...data.types],token:data.getData('application/x-inflite-files-token'),plain:data.getData('text/plain')};
+  });
+  assert.deepEqual(payload,{types:['application/x-inflite-files-token'],token:'d'.repeat(32),plain:''});
+  await t.page.waitForFunction(()=>!!T.dropped);assert.deepEqual(await t.page.evaluate(()=>T.dropped),{refs:[{key:'drive:'+'B'.repeat(32),version:1}],action:'move',input:{parentId:'A'.repeat(32)},current:true});await t.clean();
+ }finally{await t.ctx.close();}
+});
+
+test('selection controls retain focus through a held refresh and shift-click selects a real bounded range',async()=>{
+ const t=await open();try{
+  await t.page.getByRole('button',{name:'Select files',exact:true}).click();const checkbox=t.page.getByRole('checkbox',{name:'Include Training notes.txt in selection',exact:true});await checkbox.check();
+  await t.page.evaluate(()=>{T.delays.root=true;T.emit({kind:'resources'});});await t.page.waitForFunction(()=>!!T.pending.root);
+  assert.equal(await checkbox.evaluate(node=>node===document.activeElement),true);assert.equal(await checkbox.getAttribute('aria-disabled'),'true');
+  await checkbox.evaluate(node=>node.click());assert.equal(await checkbox.isChecked(),true);
+  const bulk=t.page.getByRole('group',{name:'Selected files',exact:true}),move=bulk.getByRole('button',{name:'Move',exact:true});await move.evaluate(node=>{node.focus();node.click();});assert.equal(await t.page.locator('dialog[open]').count(),0);
+  await t.page.evaluate(()=>{delete T.delays.root;T.pending.root();});await t.page.waitForFunction(()=>document.querySelector('.ifx-select-check[aria-label="Include Training notes.txt in selection"]')?.getAttribute('aria-disabled')==='false');
+  assert.equal(await move.evaluate(node=>node===document.activeElement),true);
+  await t.page.getByRole('button',{name:'Finish selection',exact:true}).click();await t.page.getByRole('button',{name:'Select Cycling',exact:true}).click();
+  await t.page.getByRole('button',{name:'Select <img onerror=alert(1)>.txt',exact:true}).click({modifiers:['Shift']});assert.equal(await t.page.getByRole('checkbox',{checked:true}).count(),3);await t.clean();
+ }finally{await t.ctx.close();}
+});

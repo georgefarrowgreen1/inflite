@@ -7,12 +7,28 @@ import { loadStyles } from "./modules.js";
 const APPS = new Set(["fitness", "weather", "markets", "chats", "mail"]);
 const ACTION = /^[a-z][a-z0-9-]{0,47}$/;
 const OBJECT = /^[A-Za-z0-9_-]{1,40}$/;
-const clean = (value, max = 160) => typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "";
+const clean = (value, max = 160) => typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ").trim().slice(0, max) : "";
 const get = (fn, fallback) => { try { return typeof fn === "function" ? fn() : fallback; } catch (_) { return fallback; } };
 const list = value => Array.isArray(value) ? value : [];
 const iconOf = app => app === "chats" ? "chat" : app;
+const FILE_ACTIONS = new Set(["compose-attach", "import-drive", "save-route-drive", "save-workout-drive"]);
+const FILE_ALIASES = {
+  "compose-attach": ["attach a file", "attach from Drive", "email a document", "send file in Mail"],
+  "import-drive": ["import route", "import activity", "open GPX", "open FIT", "import from Drive"],
+  "save-route-drive": ["save export", "save route", "export GPX to Drive"],
+  "save-workout-drive": ["save export", "save workout", "export FIT to Drive"],
+};
+const SYSTEMS = {
+  "open-activity": ["Activity", "Show activity progress uploads downloads background tasks"],
+  "sync-workspaces": ["Sync workspaces", "Sync my workspaces update layouts across devices"],
+  "resolve-workspace-sync": ["Review workspace sync", "Resolve workspace conflict choose local cloud layout"],
+  "open-recovery": ["App status", "Show connection offline app status recovery"],
+};
+const revisionOf = value => value == null ? null : typeof value === "string" && value.length <= 80 || Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const DEFAULTS = [
   { app: "mail", id: "compose", label: "Compose Mail", keywords: ["new message", "write email", "new email"] },
+  { app: "mail", id: "compose-attach", label: "Attach a file in Mail" },
+  { app: "fitness", id: "import-drive", label: "Import a route or activity" },
   { app: "chats", id: "new-chat", label: "New chat", keywords: ["compose message", "send message", "start conversation"] },
   { app: "chats", id: "new-group", label: "New group", keywords: ["group chat", "create group"] },
   { app: "fitness", id: "schedule", label: "Set ride time", keywords: ["reschedule ride", "schedule training", "plan ride"] },
@@ -26,34 +42,87 @@ const DEFAULTS = [
 export function createWorkspaceCommands(F, options = {}) {
   const owner = F.session?.view?.user?.id, signal = F.signal, doc = globalThis.document;
   let gone = false;
+  const running = new Map();
   const live = () => !gone && !signal?.aborted && !!owner && F.session?.view?.user?.id === owner;
   const available = app => live() && APPS.has(app) && F.session?.apps?.[app] === true
     && (app !== "mail" || F.session?.view?.apps?.mail === true)
     && list(get(options.apps, [])).some(a => a?.id === app && a.available !== false);
   const invoke = fn => {
     if (!live()) return false;
-    try { return Promise.resolve(fn()).catch(() => { if (live()) F.toast?.("That action couldn’t open. Try again."); return false; }); }
+    try { return Promise.resolve(fn()).catch(error => { if (live() && error?.name !== "AbortError") F.toast?.("That action couldn’t open. Try again."); return false; }); }
     catch (_) { if (live()) F.toast?.("That action couldn’t open. Try again."); return false; }
   };
+  function nativeActions() {
+    const dynamic = new Map();
+    for (const a of list(get(options.actions, [])).slice(0, 100)) if (a && APPS.has(a.app) && ACTION.test(a.id || "")) dynamic.set(`${a.app}:${a.id}`, a);
+    const actions = new Map(DEFAULTS.map(a => [`${a.app}:${a.id}`, a]));
+    for (const [key, a] of dynamic) actions.set(key, { ...actions.get(key), ...a });
+    return { actions, dynamic };
+  }
+  const filesReady = () => get(options.fileDialogsAvailable, false) === true;
+  const nativeAllowed = a => a && available(a.app) && (!FILE_ACTIONS.has(a.id) || filesReady()) && get(a.current, true) !== false;
+  const nativeEnabled = a => nativeAllowed(a) && a.enabled !== false;
+  function systems() {
+    const result = new Map();
+    for (const a of list(get(options.systemActions, [])).slice(0, 40)) {
+      const retry = typeof a?.id === "string" && /^retry-(fitness|weather|markets|chats|mail)$/.exec(a.id);
+      const app = retry ? retry[1] : null;
+      if (!a || !Object.hasOwn(SYSTEMS, a.id) && !retry || a.app != null && a.app !== app || typeof a.run !== "function" || typeof a.current !== "function" || revisionOf(a.revision) === undefined) continue;
+      if (a.enabled !== false && (!app || available(app)) && get(a.current, false) === true) result.set(a.id, { ...a, app });
+    }
+    return result;
+  }
+  // Callers receive a lease that remains live through native imports/pickers.
+  // Repeated Enter/click cannot run a second copy of the same pending action.
+  function owned(key, current, run, continuing = current) {
+    if (!live() || !current() || running.has(key)) return false;
+    const controller = new AbortController(), stop = () => controller.abort();
+    const lease = { signal: controller.signal, current: () => live() && !controller.signal.aborted && continuing() };
+    signal?.addEventListener("abort", stop, { once: true }); running.set(key, controller);
+    if (signal?.aborted) stop();
+    let result;
+    try { result = lease.current() ? run(lease) : false; }
+    catch (error) { result = Promise.reject(error); }
+    return Promise.resolve(result).catch(error => {
+      if (lease.current() && error?.name !== "AbortError") F.toast?.("That action couldn’t open. Try again.");
+      return false;
+    }).finally(() => {
+      signal?.removeEventListener("abort", stop);
+      if (running.get(key) === controller) running.delete(key);
+    });
+  }
   const entry = (title, sub, app, run) => ({ title, sub, icon: iconOf(app), run: () => invoke(run) });
   const provider = {
     id: "workspace-commands", group: "Actions and files", order: 0,
     async search(value) {
       const query = clean(value);
       if (!live() || !query) return [];
-      const commandQuery = query.replace(/^(open|show|find|search)\s+my\s+/i, "$1 ");
-      const results = [], dynamic = new Map();
-      for (const a of list(get(options.actions, []))) if (a && APPS.has(a.app) && ACTION.test(a.id || "")) dynamic.set(`${a.app}:${a.id}`, a);
-      const actions = new Map(DEFAULTS.map(a => [`${a.app}:${a.id}`, a]));
-      for (const [key, a] of dynamic) actions.set(key, { ...actions.get(key), ...a });
-      for (const a of actions.values()) {
-        if (!available(a.app) || a.enabled === false || typeof options.runIntent !== "function") continue;
-        const label = clean(a.label, 100), aliases = list(a.keywords).map(k => clean(k, 80)).filter(Boolean);
+      const commandQuery = query.replace(/^(open|show|find|search|attach|import|save|sync|retry|resume|email|send)\s+(?:my|the|a|this)\s+/i, "$1 ");
+      const results = [], { actions, dynamic } = nativeActions();
+      for (const [key, a] of actions) {
+        if (!nativeEnabled(a) || typeof options.runIntent !== "function" || a.objectId != null && (typeof a.objectId !== "string" || !a.objectId || a.objectId.length > 200 || /[\u0000-\u001f\u007f]/.test(a.objectId))) continue;
+        const label = clean(a.label, 100), aliases = [...list(a.keywords), ...list(FILE_ALIASES[a.id])].map(k => clean(k, 80)).filter(Boolean);
         const text = [label, REGISTRY[a.app].name, ...aliases].join(" · ");
         if (!label || !match(commandQuery, text)) continue;
         const objectId = typeof a.objectId === "string" && a.objectId.length <= 200 ? a.objectId : undefined;
+        const wasDynamic = dynamic.has(key), current = (selection = true) => {
+          const latest = nativeActions();
+          if (wasDynamic && !latest.dynamic.has(key)) return false;
+          const next = latest.actions.get(key), ref = typeof next?.objectId === "string" && next.objectId.length <= 200 ? next.objectId : undefined;
+          return (selection ? nativeEnabled(next) : nativeAllowed(next)) && ref === objectId;
+        };
         results.push(entry(label, [REGISTRY[a.app].name, ...aliases].join(" · "), a.app,
-          () => available(a.app) ? options.runIntent(a.app, a.id, objectId) : false));
+          () => owned("native:" + key, current, lease => options.runIntent(a.app, a.id, objectId, lease), () => current(false))));
+      }
+      for (const [id, a] of systems()) {
+        const spec = SYSTEMS[id] || [`Retry ${REGISTRY[a.app].name}`, `Retry ${REGISTRY[a.app].name} recover app connection`];
+        const title = clean(a.label, 100) || spec[0], sub = clean(a.detail, 180) || "InFlite OS";
+        if (!match(commandQuery, [title, spec[1], ...list(a.keywords).map(k => clean(k, 80))].join(" · "))) continue;
+        const revision = revisionOf(a.revision), current = () => {
+          const next = systems().get(id);
+          return !!next && next.app === a.app && revisionOf(next.revision) === revision;
+        };
+        results.push(entry(title, sub, a.app, () => owned("system:" + id, current, lease => systems().get(id)?.run(lease), () => (!a.app || available(a.app)) && get(a.current, false) === true)));
       }
       if (typeof options.openFiles === "function" && match(commandQuery, "Find attachments and files documents PDF downloads")) results.push(entry("Find attachments and files", "Open your Files library", undefined, () => options.openFiles("")));
       if (/^(open|show|switch)\b/i.test(query) && typeof options.openApp === "function") for (const app of APPS) {
@@ -101,7 +170,8 @@ export function createWorkspaceCommands(F, options = {}) {
   const off = F.search.provide(provider);
   const keydown = event => {
     if (!live() || event.defaultPrevented || event.repeat || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey) || event.key?.toLowerCase() !== "k") return;
-    if (event.target?.closest?.("input,textarea,select,[contenteditable]:not([contenteditable=false])") || doc.querySelector("dialog[open]")) return;
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [event.target];
+    if (path.some(node => node?.closest?.("input,textarea,select,[contenteditable]:not([contenteditable=false])")) || doc.querySelector("dialog[open]")) return;
     event.preventDefault(); F.search.open();
   };
   doc?.addEventListener("keydown", keydown);
@@ -109,7 +179,7 @@ export function createWorkspaceCommands(F, options = {}) {
   // The host waits for this before offering notification action rows. Handle a
   // rejection here too so a missing optional stylesheet never becomes unhandled.
   ready.catch(() => {});
-  function destroy() { if (gone) return; gone = true; off?.(); doc?.removeEventListener("keydown", keydown); signal?.removeEventListener?.("abort", destroy); }
+  function destroy() { if (gone) return; gone = true; for (const controller of running.values()) controller.abort(); running.clear(); off?.(); doc?.removeEventListener("keydown", keydown); signal?.removeEventListener?.("abort", destroy); }
   signal?.addEventListener?.("abort", destroy, { once: true });
   if (signal?.aborted) destroy();
   return { ready, destroy };

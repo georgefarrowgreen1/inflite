@@ -12,11 +12,11 @@ const keyOf = node => "drive:" + node.id;
 const appKey = file => `app:${file.app}:${file.id}`;
 const operation = () => crypto.randomUUID().replace(/-/g, "");
 const valid = fn => { try { return !fn || fn() !== false; } catch (_) { return false; } };
-const previewable = node => node.status === "ready" && PREVIEW.test(node.mime) && (!/^(?:text\/|application\/json$)/.test(node.mime) || node.size <= 262144);
+const previewable = node => !node.trashedAt && node.status === "ready" && PREVIEW.test(node.mime) && (!/^(?:text\/|application\/json$)/.test(node.mime) || node.size <= 262144);
 
 export function createFilesService(F, options = {}) {
-  const owner = F.session.view?.user?.id, listeners = new Set(), nodes = new Map(), appRefs = new Map(), transfers = new Map(), writes = new Set();
-  let dead = false, driveClient = null, drivePromise = null, activeUploads = 0, appReads = 0, sourceSignature = "", pendingAppEvent = false;
+  const owner = F.session.view?.user?.id, listeners = new Set(), nodes = new Map(), appRefs = new Map(), transfers = new Map(), writes = new Set(), drags = new Map();
+  let dead = false, driveClient = null, drivePromise = null, activeUploads = 0, appReads = 0, sourceSignature = "", pendingAppEvent = false, driveEpoch = 0;
   const live = () => !dead && !!owner && !F.signal.aborted && F.session.view?.user?.id === owner;
   const current = lease => live() && !lease?.signal?.aborted && valid(lease?.current);
   const assert = lease => { if (!current(lease)) throw abort(); };
@@ -38,11 +38,12 @@ export function createFilesService(F, options = {}) {
   }
   function driveResource(value) {
     const node = remember(value), ready = node.status === "ready";
+    if(node.trashedAt) return { key:keyOf(node),...node,source:{kind:"drive",id:"drive"},sourceLabel:"Trash",actions:[label("restore","Restore","restore",{primary:true}),label("restore-to","Restore somewhere else","folder"),label("delete","Delete forever","delete",{destructive:true})],primaryAction:"restore" };
     const actions = node.kind === "folder" ? [label("open", "Open", "folder", { primary: true })] : ready ? [
       ...(previewable(node) ? [label("preview", "Preview", "preview", { primary: true })] : []), label("download", "Download", "download", { primary: !previewable(node) }),
     ] : [];
-    if (ready) actions.push(label("rename", "Rename", "rename"), label("move", "Move", "folder"));
-    actions.push(label("delete", ready ? "Delete" : "Remove pending upload", "delete", { destructive: true }));
+    if (ready) actions.push(label("rename", "Rename", "rename"), label("move", "Move", "folder"), ...(node.kind === "file" ? [label("copy","Copy","copy")] : []), label("favourite",node.favourite?"Remove favourite":"Add favourite","star"));
+    actions.push(label(ready?"trash":"delete",ready?"Move to Trash":"Remove pending upload","delete",{destructive:true}));
     return { key: keyOf(node), ...node, source: { kind: "drive", id: "drive" }, sourceLabel: "My Drive", actions,
       primaryAction: node.kind === "folder" ? "open" : ready ? previewable(node) ? "preview" : "download" : null,
       ...(node.kind === "folder" ? { location: { kind: "drive", folderId: node.id, view: "folder" } } : {}) };
@@ -71,8 +72,10 @@ export function createFilesService(F, options = {}) {
   function locations(location) {
     if (!live()) return [];
     return [
-      { name: "My Drive", icon: "folder", kind: "drive", selected: location?.kind === "drive" && location.view !== "recent", location: { kind: "drive", folderId: null, view: "folder" } },
+      { name: "My Drive", icon: "folder", kind: "drive", selected: location?.kind === "drive" && location.view === "folder", location: { kind: "drive", folderId: null, view: "folder" } },
       { name: "Recent", icon: "clock", kind: "drive", selected: location?.kind === "drive" && location.view === "recent", location: { kind: "drive", folderId: null, view: "recent" } },
+      { name:"Favourites",icon:"star",kind:"drive",selected:location?.kind==="drive"&&location.view==="favourites",location:{kind:"drive",folderId:null,view:"favourites"} },
+      { name:"Trash",icon:"delete",kind:"drive",selected:location?.kind==="drive"&&location.view==="trash",location:{kind:"drive",folderId:null,view:"trash"} },
       { name: "From apps", icon: "grid", kind: "apps", selected: location?.kind === "apps" && !location.app, location: { kind: "apps", app: null } },
       ...index.snapshot().map(source => ({ name: source.name, kind: "apps", icon: "folder", selected: location?.kind === "apps" && location.app === source.app, location: { kind: "apps", app: source.app } })),
     ];
@@ -104,13 +107,14 @@ export function createFilesService(F, options = {}) {
       }
     }
     const api = await drive(lease);
-    const answer = await api.browse({ parentId: selected.folderId, view: query && selected.view === "folder" && !selected.folderId ? "search" : selected.view, sort, cursor, query, ...(foldersOnly ? { kind: "folder" } : {}), signal: lease.signal, current: lease.current }); assert(lease);
+    const epoch = driveEpoch;
+    const answer = await api.browse({ parentId: selected.folderId, view: query && selected.view === "folder" && !selected.folderId ? "search" : selected.view, sort, cursor, query, ...(foldersOnly ? { kind: "folder" } : {}), signal: lease.signal, current: lease.current }); assert(lease); if(epoch!==driveEpoch) throw abort();
     if (!query && !cursor && !answer.cursor && !foldersOnly && selected.view === "folder") {
       const ids = new Set(answer.items.map(item => item.id));
       for (const [id, node] of nodes) if (node.parentId === selected.folderId && !ids.has(id)) nodes.delete(id);
     }
     const items = answer.items.filter(item => !foldersOnly || item.kind === "folder").map(driveResource);
-    return { ...answer, ancestors: answer.ancestors.filter(item => item.id !== answer.folder?.id), status: "ready", items,
+    return { ...answer, name: ({trash:"Trash",favourites:"Favourites",recent:"Recent"})[selected.view], ancestors: answer.ancestors.filter(item => item.id !== answer.folder?.id), status: "ready", items,
       capabilities: { upload: selected.view === "folder" && !query, newFolder: selected.view === "folder" && !query },
       cursor: foldersOnly && answer.items.some(item => item.kind !== "folder") ? null : answer.cursor };
   }
@@ -123,6 +127,7 @@ export function createFilesService(F, options = {}) {
     assert(lease);
     const anchor = F.ui.el("a", { href: `/api/files/content?id=${encodeURIComponent(node.id)}&download=1`, download: node.name, hidden: true });
     document.body.append(anchor); anchor.click(); anchor.remove();
+    try{options.activity?.put("download:"+operation(),{title:node.name,detail:"Sent to your browser’s downloads.",status:"handed-off",kind:"download"});}catch(_){}
   }
   async function run(key, action, { input = {}, ...lease } = {}) {
     assert(lease);
@@ -134,13 +139,13 @@ export function createFilesService(F, options = {}) {
     const id = typeof key === "string" && key.startsWith("drive:") ? key.slice(6) : null;
     const node = id && ID.test(id) ? nodes.get(id) : null;
     if (action !== "create-folder" && !node) return { ok: false, error: "That file is no longer available. Refresh to check." };
-    if (action === "download" && node.kind === "file" && node.status === "ready") { download(node, lease); return { ok: true }; }
+    if (action === "download" && node.kind === "file" && node.status === "ready" && !node.trashedAt) { download(node, lease); return { ok: true }; }
     if (action === "preview") {
       const api = await drive(lease); assert(lease);
       if (!Number.isSafeInteger(input.version) || input.version < 1 || node.version !== input.version) return { ok: false, error: "That file changed. Refresh before opening it." };
       if (!previewable(node)) return { ok: false, error: "Download this file to open it." };
       const fresh = await api.item(id, lease); assert(lease);
-      if (fresh.version !== input.version || fresh.status !== "ready") return { ok: false, error: "That file changed. Refresh to open the latest version." };
+      if (fresh.version !== input.version || fresh.status !== "ready" || fresh.trashedAt) return { ok: false, error: "That file changed. Refresh to open the latest version." };
       const blob = await api.content(id, lease); assert(lease);
       return { ok: true, blob: blob.slice(0, blob.size, node.mime) };
     }
@@ -149,17 +154,60 @@ export function createFilesService(F, options = {}) {
       if (action === "create-folder" && key == null) result = await api.createFolder(input.name, input.parentId ?? null, operation(), lease);
       else if (action === "rename") result = await api.rename(id, input.version, input.name, lease);
       else if (action === "move") result = await api.move(id, input.version, input.parentId ?? null, lease);
-      else if (action === "delete") { await api.remove(id, input.version, lease); nodes.delete(id); resourceEvent(node.parentId); return { ok: true }; }
+      else if (action === "trash") result = await api.trash(id,input.version,lease);
+      else if (action === "restore") result = await api.restore(id,input.version,input,lease);
+      else if (action === "favourite") result = await api.favourite(id,input.version,!node.favourite,lease);
+      else if (action === "copy" && node.kind === "file") result = await api.copy(id,input.version,input.parentId??null,input.name||"Copy of "+node.name,operation(),lease);
+      else if (action === "delete") { await api.remove(id, input.version, lease); driveEpoch++; nodes.clear(); resourceEvent(node.parentId); return { ok: true }; }
       else return { ok: false, error: "That action is unavailable for this file." };
-      assert(lease); remember(result); resourceEvent(result.parentId); if (action === "move") resourceEvent(node.parentId); return { ok: true };
+      assert(lease); driveEpoch++; if(["trash","restore"].includes(action))nodes.clear(); remember(result); resourceEvent(result.parentId); if (action === "move") resourceEvent(node.parentId); return { ok: true };
     });
+  }
+  async function read(key,{version,...lease}={}) {
+    assert(lease);
+    const id=typeof key==="string"&&key.startsWith("drive:")?key.slice(6):null,node=id&&nodes.get(id);
+    if(!node||node.kind!=="file"||node.trashedAt||node.status!=="ready"||node.version!==version)throw new Error("That file changed. Refresh before opening it.");
+    const api=await drive(lease),fresh=await api.item(id,lease);assert(lease);
+    if(fresh.version!==version||fresh.trashedAt||fresh.status!=="ready")throw new Error("That file changed. Refresh before opening it.");
+    const blob=await api.content(id,lease);assert(lease);
+    if(blob.size!==fresh.size)throw new Error("The file could not be read completely.");
+    return {file:new File([blob],fresh.name,{type:fresh.mime,lastModified:fresh.modifiedAt}),item:driveResource(fresh)};
+  }
+  async function save(file,{folderId=null,name=file?.name,...lease}={}) {
+    assert(lease);if(!(file instanceof Blob)||file.size>MAX_FILE||typeof name!=="string"||!name.trim())throw new Error("Choose a named file no larger than 25 MB.");
+    return writing(async()=>{
+      const api=await drive(lease),spec={name,parentId:folderId,mime:file.type||"application/octet-stream",size:file.size,operationId:operation()};let reserved;
+      const note=(status,detail,progress)=>{try{if(live())options.activity?.put(spec.operationId,{title:name,kind:"upload",status,detail,...(Number.isFinite(progress)?{progress}:{}),actions:[]});}catch(_){}};
+      note("running","Preparing save");
+      try { reserved=await api.reserve(spec,lease);assert(lease); const ready=await api.uploadContent(reserved.id,file,{...lease,onProgress:value=>note("running","Saving",value)});assert(lease);driveEpoch++; const item=driveResource(ready);resourceEvent(folderId);note("succeeded","Saved to My Drive",1);return{item}; }
+      catch(error){if(live()&&error?.name==="AbortError")try{const node=reserved||await api.reserve(spec),fresh=await api.item(node.id);if(fresh.version<=2&&(reserved||fresh.version===1&&fresh.status==="pending"))await api.remove(fresh.id,fresh.version);}catch(_){}note(error?.name==="AbortError"?"cancelled":"failed",error?.name==="AbortError"?"Cancelled":fileText(error?.message,240)||"Refresh Files to check the save.");throw error;}
+    });
+  }
+  async function batch(values,action,input={},lease={}) {
+    assert(lease);if(!Array.isArray(values)||!values.length||values.length>100||!["move","copy","trash","restore","delete","favourite"].includes(action))throw new Error("Choose up to 100 supported files.");
+    const captured=new Map(values.map(value=>[value.key,nodes.get(value.key?.slice(6))]));
+    const results=[];for(const value of values){assert(lease);try{const saved=captured.get(value.key);if(saved&&!nodes.has(saved.id))remember(saved);const result=await run(value.key,action,{...lease,input:{...input,version:value.version}});results.push({key:value.key,...result});}catch(error){assert(lease);results.push({key:value.key,ok:false,error:fileText(error?.message,240)||"That action failed."});}}
+    if(["trash","restore","delete"].includes(action)){nodes.clear();resourceEvent(null);}
+    return{ok:results.every(result=>result.ok!==false),results};
+  }
+  function prepareDrag(values) {
+    if(!live()||!Array.isArray(values)||!values.length||values.length>100)return null;
+    const refs=[];for(const value of values){const node=typeof value.key==="string"&&nodes.get(value.key.slice(6));if(!node||!value.key.startsWith("drive:")||node.trashedAt||node.status!=="ready"||node.version!==value.version)return null;refs.push({key:value.key,version:value.version});}
+    const token=operation();drags.set(token,{refs,at:Date.now()});while(drags.size>16)drags.delete(drags.keys().next().value);return token;
+  }
+  function resolveDrag(token,lease={}) {
+    assert(lease);const drag=drags.get(token);if(!drag||Date.now()-drag.at>60000){drags.delete(token);return[];}
+    const items=[];for(const ref of drag.refs){const node=nodes.get(ref.key.slice(6));if(!node||node.trashedAt||node.status!=="ready"||node.version!==ref.version)return[];items.push(driveResource(node));}return items;
   }
   function publicTransfers() {
     if (!live()) return [];
     return [...transfers.values()].map(record => ({ id: record.id, name: record.name, status: record.status, progress: record.progress,
       label: record.error || ({ queued: "Waiting", uploading: record.progress >= 1 ? "Finishing…" : "Uploading", reserving: "Preparing…", done: "Uploaded", cancelled: "Cancelled", failed: "Upload failed" })[record.status], cancelable: ["queued", "reserving", "uploading"].includes(record.status) }));
   }
-  const transferEvent = () => emit({ kind: "transfers" });
+  const transferEvent = () => {
+    if(live())for(const record of transfers.values())try{options.activity?.put(record.id,{title:record.name,detail:record.error||({queued:"Waiting",reserving:"Preparing upload",uploading:"Uploading",done:"Uploaded",cancelled:"Cancelled",failed:"Refresh Files to check before choosing the file again."})[record.status],kind:"upload",status:({queued:"queued",reserving:"running",uploading:"running",done:"succeeded",cancelled:"cancelled",failed:"failed"})[record.status],...(["uploading","done"].includes(record.status)&&Number.isFinite(record.progress)?{progress:record.progress}:{}),actions:["queued","reserving","uploading"].includes(record.status)?[{id:"cancel",label:"Cancel",run:()=>cancelTransfer(record.id)}]:record.status==="failed"?[{id:"refresh",label:"View in Files",run:()=>open("",{kind:"drive",folderId:record.folderId,view:"folder"})}]:[]});}catch(_){}
+    emit({ kind: "transfers" });
+  };
   function trimTransfers() { for (const [id, record] of transfers) { if (transfers.size <= 40) break; if (["done", "cancelled", "failed"].includes(record.status)) transfers.delete(id); } }
   async function uploadOne(record) {
     activeUploads++;
@@ -227,18 +275,18 @@ export function createFilesService(F, options = {}) {
     const typed = fileText(query, 160); if (!typed) return [];
     const appEntries = await index.search(typed); if (!live()) return [];
     const words = typed.toLocaleLowerCase().split(/\s+/).filter(Boolean);
-    const driveEntries = [...nodes.values()].filter(node => node.status === "ready" && words.every(word => node.name.toLocaleLowerCase().includes(word))).slice(0, 10).map(node => ({ app: null, title: node.name, sub: "My Drive", icon: "file", run: () => live() && nodes.has(node.id) && open(node.kind === "folder" ? "" : node.name, { kind: "drive", folderId: node.kind === "folder" ? node.id : node.parentId, view: "folder" }) }));
+    const driveEntries = [...nodes.values()].filter(node => node.status === "ready" && !node.trashedAt && words.every(word => node.name.toLocaleLowerCase().includes(word))).slice(0, 10).map(node => ({ app: null, title: node.name, sub: "My Drive", icon: "file", run: () => live() && nodes.has(node.id) && open(node.kind === "folder" ? "" : node.name, { kind: "drive", folderId: node.kind === "folder" ? node.id : node.parentId, view: "folder" }) }));
     return [...driveEntries, ...appEntries, { app: null, title: `Find “${typed}” in InFlite Files`, sub: "Search My Drive", icon: "file", run: () => open(typed) },
       ...(index.snapshot().length ? [{ app: null, title: `Find “${typed}” in app files`, sub: "Attachments, routes and workouts", icon: "file", run: () => open(typed, { kind: "apps", app: null }) }] : [])];
   }
   function destroy() {
     if (dead) return; dead = true; off(); index.destroy(); driveClient?.destroy();
     for (const record of transfers.values()) { record.controller.abort(); record.file = null; }
-    transfers.clear(); nodes.clear(); appRefs.clear(); listeners.clear(); writes.clear();
+    transfers.clear(); drags.clear(); nodes.clear(); appRefs.clear(); listeners.clear(); writes.clear();
     F.signal.removeEventListener("abort", destroy);
   }
   F.signal.addEventListener("abort", destroy, { once: true }); if (F.signal.aborted) destroy();
-  return { browse, run, upload, locations, transfers: publicTransfers, cancelTransfer, busy, flush, search, open,
+  return { browse, run, read, save, batch, prepareDrag, resolveDrag, upload, locations, transfers: publicTransfers, cancelTransfer, busy, flush, search, open,
     update: app => index.update(app), changed: app => index.changed(app), destroy,
     subscribe(fn) { if (!live() || typeof fn !== "function") return () => {}; const registration = { fn }; listeners.add(registration); return () => listeners.delete(registration); } };
 }

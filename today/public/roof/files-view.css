@@ -80,3 +80,15 @@
 @container inflite-files (max-width: 759px) { .ifx-tools > .ifx-button { flex: none; width: 44px; padding: 11px; }.ifx-tools > .ifx-button span { display: none; }.ifx-tools > .ifx-details-toggle { display: none; }.ifx-tools .ifx-sort select { max-width: 102px; }.ifx-tools .ifx-view-options { margin-left: auto; }.ifx-notice { flex-direction: column; align-items: stretch; } }
 @media (prefers-reduced-motion: reduce) { .ifx-file { transition: none; } }
 @media (forced-colors: active) { .ifx-file[data-selected=true], .ifx-location[aria-current], .ifx-view-options [aria-pressed=true] { outline: 2px solid Highlight; }.ifx-file-symbol { border: 1px solid CanvasText; }.ifx-button, .ifx-icon-button, .ifx-action { border-color: ButtonText; } }
+
+/* Multi-selection keeps each native checkbox separate from the row button. */
+.ifx-bulk { display:flex;flex-wrap:wrap;align-items:center;gap:8px;grid-column:1/-1;padding-top:10px; }
+.ifx-bulk>span { font-size:13px;font-weight:600;margin-inline-end:8px; }
+.ifx-file { position:relative; }
+.ifx-select-check { position:absolute;inset-inline-start:10px;top:50%;translate:0 -50%;width:22px;height:22px;accent-color:var(--ifx-accent);z-index:1;cursor:pointer; }
+.ifx-file[data-selecting=true] .ifx-file-main { padding-inline-start:38px; }
+.ifl-files-explorer[data-file-view=grid] .ifx-file[data-selecting=true] .ifx-file-main { padding-inline-start:8px; }
+.ifl-files-explorer[data-file-view=grid] .ifx-select-check { top:20px;inset-inline-start:12px; }
+.ifx-file[draggable=true] { touch-action:pan-y; }
+
+.ifx-bulk [aria-disabled=true], .ifx-select-check[aria-disabled=true] { opacity:.58;cursor:progress; }

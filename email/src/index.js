@@ -1,3 +1,4 @@
+import { exportAttachment } from "./attachment-export.js";
 import { sharedNotFound } from "../../shared/not-found.js";
 import { accountView, accessOf, passOn, forgetCheck, accountCookie, quietNow } from "./auth.js";
 import {
@@ -29,6 +30,12 @@ const worker = {
     if (url.pathname === "/body" || url.pathname.startsWith("/body/")) return body(request, env);
     // (Mail's version as deployed, for anyone: status.inflite.ai's checks, as Today's /version; nothing of the mailbox's)
     if (url.pathname === "/version" && request.method === "GET") return json({ app: "mail", build: await appBuild(env, request), min: null }, 200, { "Cache-Control": "no-store" });
+    // Existing embedded/body surfaces remain isolated at Mail's origin. Only a
+    // person opening the standalone document moves to the unified app.
+    const destination = request.headers.get("Sec-Fetch-Dest");
+    if (url.hostname === "email.inflite.ai" && PAGE.has(url.pathname) && ["GET", "HEAD"].includes(request.method)
+        && (destination ? destination === "document" : /text\/html/i.test(request.headers.get("Accept") || "")))
+      return new Response(null, { status: 308, headers: { Location: "https://inflite.ai/mail/standalone/" + url.search, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
     if (PAGE.has(url.pathname)) return page(request, env);
     // (the module InFlite's page runs Mail as, under the roof: its files, passed through at inflite.ai/mail/roof/)
     if (url.pathname.startsWith("/roof/")) return roofFile(request, env, url);
@@ -266,7 +273,7 @@ async function api(request, env, ctx, url, fromAccount = false, hub = null) {
 
   const res = await route(request, env, ctx, url, view, hub);
   // (anything that changed the mailbox moves its version on)
-  if (method !== "GET" && res.ok && !READ_POSTS.has(pathname)) ctx.waitUntil(bumpVersion(env).catch(() => {}));
+  if (method !== "GET" && res.ok && !READ_POSTS.has(pathname) && !/^\/api\/attachments\/[\w-]+\/export$/.test(pathname)) ctx.waitUntil(bumpVersion(env).catch(() => {}));
   return res;
 }
 
@@ -370,6 +377,7 @@ async function route(request, env, ctx, url, view, hub = null) {
     if (method === "DELETE") return deleteMessages(env, [m[1]]);
   }
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)\/raw$/)) && method === "GET") return rawMessage(env, m[1]);
+  if ((m = pathname.match(/^\/api\/attachments\/([\w-]+)\/export$/)) && method === "POST") return exportAttachment(env, m[1]);
   if ((m = pathname.match(/^\/api\/attachments\/([\w-]+)$/)) && method === "GET") return attachment(env, m[1], url, request, hub);
   if (pathname === "/api/contacts" && method === "GET") return contacts(env, url);
   if (pathname === "/api/contacts/find" && method === "POST") {

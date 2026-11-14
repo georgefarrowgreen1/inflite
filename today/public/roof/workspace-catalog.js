@@ -8,11 +8,11 @@ const app = (id, name, href, pane, capabilities) => Object.freeze({
   ...(pane ? { workspace: Object.freeze({ css: `/${id}/roof/workspace.css` }) } : {}),
 });
 export const WORKSPACE_APPS = Object.freeze([
-  app("fitness", "Fitness", "/fitness/#today", true, ["view", "local-search", "share-on-request"]),
+  app("fitness", "Fitness", "/fitness/#today", true, ["view", "local-search", "share-on-request", "open-from-files", "save-to-files"]),
   app("weather", "Weather", "/weather/#now", true, ["view", "local-search", "location-on-request"]),
   app("markets", "Markets", "/markets/#today", true, ["view", "local-search"]),
   app("chats", "Chats", "/chats/", true, ["view", "encrypted-messaging"]),
-  app("mail", "Mail", "/mail/", true, ["view", "isolated-message-body"]),
+  app("mail", "Mail", "/mail/", true, ["view", "isolated-message-body", "open-from-files", "save-to-files"]),
 ]);
 export const getWorkspaceApp = (id) => WORKSPACE_APPS.find((a) => a.id === id) || null;
 

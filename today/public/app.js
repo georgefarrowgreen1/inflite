@@ -14,16 +14,16 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "2.15";
+const BUILD = "3.00";
 // (what's new in it, said once it's in)
-const NEWS = "InFlite Files: your private drive and app files, together";
-// OS is a separate surface. The query switch is reserved for local/test previews.
-const OS_MODE = location.hostname === "os.inflite.ai" || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-state.js", "/roof/workspace-catalog.js", "/roof/workspace-context.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/os.webmanifest"];
+const NEWS = "One InFlite: Today, workspaces and Files";
+// Today and workspaces share one InFlite shell. Query opt-in is only for local previews.
+const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
+const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-state.js", "/roof/workspace-catalog.js", "/roof/workspace-context.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-sync.js", "/roof/workspace-sync-view.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
 if (OS_MODE) {
-  document.title = "InFlite OS";
-  document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/os.webmanifest");
-  document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute("content", "InFlite OS");
+  document.title = "InFlite";
+  document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
+  document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute("content", "InFlite");
 }
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
@@ -628,7 +628,9 @@ const IFL = (() => {
   // degraded: the apps' own addresses (degrade's links, else <app>.<site>), and a hub path back to its app's
   let links = {};
   const hubSite = () => location.hostname === "os.inflite.ai" ? "inflite.ai" : location.host.replace(/^next\./, "");
-  const origin = (sub) => links[sub] || `${location.protocol}//${sub}.${hubSite()}`;
+  const origin = (sub) => /(^|\.)inflite\.ai$/.test(location.hostname)
+    ? `https://inflite.ai${SUBS[sub]?.slice(0, -1) || "/" + sub}`
+    : links[sub] || `${location.protocol}//${sub}.${hubSite()}`;
   const ownAt = (p) => { const m = /^\/(chats|weather|fitness|markets|mail)(?=$|[/?#])\/?([\s\S]*)$/.exec(p); return m ? `${origin(OWN[m[1]])}/${m[2]}` : null; };
   const stillHere = (say) => (/still here/i.test(say) ? say : `${say.replace(/[.\s]+$/, "")}. You’re still here`);
   const hub = {
@@ -1118,7 +1120,8 @@ const IFL = (() => {
       if (typeof location === "undefined") return null;
       const { protocol, hostname, port } = location;
       if (!hostname.includes(".") || /(^|\.)localhost$/.test(hostname)) return null;
-      const site = hostname === "os.inflite.ai" ? "inflite.ai" : hostname.replace(/^(chat|weather|fitness|finance|email|account|auth|next|www)\./, "");
+      if (/(^|\.)inflite\.ai$/.test(hostname)) return "https://inflite.ai";
+      const site = hostname.replace(/^(chat|weather|fitness|finance|email|account|auth|next|www)\./, "");
       return `${protocol}//auth.${site}${port ? ":" + port : ""}`;
     };
     function warm() {
@@ -1188,9 +1191,12 @@ const standalone = () => matchMedia("(display-mode: standalone)").matches || nav
 const clock = (mins) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 const DEFAULT_LINKS = (() => {
   const live = /(^|\.)inflite\.ai$/.test(location.hostname);
-  const at = (n) => (live ? `https://${n}.inflite.ai` : `${location.protocol}//${n}.${location.hostname}${location.port ? ":" + location.port : ""}`);
-  return { chat: at("chat"), weather: at("weather"), fitness: at("fitness"), finance: at("finance"), email: at("email"), account: at("account"), auth: at("auth") };
+  const paths = { chat: "chats", weather: "weather", fitness: "fitness", finance: "markets", email: "mail", account: "account", auth: "auth" };
+  const at = (n) => live ? `https://inflite.ai/${paths[n]}` : `${location.protocol}//${n}.${location.hostname}${location.port ? ":" + location.port : ""}`;
+  return Object.fromEntries(Object.keys(paths).map(n => [n, at(n)]));
 })();
+// A session kept by an earlier app may still contain subdomain links.
+const publicLinks = (links) => /(^|\.)inflite\.ai$/.test(location.hostname) ? { ...links, ...DEFAULT_LINKS } : links || DEFAULT_LINKS;
 
 // ---------------------------------------------------------------- what the page knows
 const S = {
@@ -1413,6 +1419,13 @@ function signinHref() {
 function bootGone(state) {
   if (!BOOT_APP) return false;
   const rest = location.pathname + location.search + location.hash;
+  // The unified origin has no second app URL to fall back to. A failed probe
+  // must stay recoverable here instead of redirecting to the same document.
+  if (/(^|\.)inflite\.ai$/.test(location.hostname) && (state === "no" || state === "yes" && !appsSaid[BOOT_APP.app])) {
+    const name = { chats: "Chats", weather: "Weather", fitness: "Fitness", markets: "Markets", mail: "Mail" }[BOOT_APP.app] || "This app";
+    sessionWaiting(`${name} is temporarily unavailable. Try again in a moment.`);
+    return true;
+  }
   if (state === "no") {
     IFL.hub.degrade(ownLinks());
     location.replace(IFL.hub.go(rest));
@@ -1788,7 +1801,7 @@ function signedIn(view, { offline = false } = {}) {
     S.morning = null; S.asked5 = false; S.boundary = 0;
   }
   S.view = view;
-  S.links = view.links || S.links || DEFAULT_LINKS;
+  S.links = publicLinks(view.links || S.links);
   if (!S.hub) IFL.hub.degrade(ownLinks());
   // (the same account's order and hidden cards, unless a change made here is still on its way to the account)
   if (!(was === view.user.id && prefsBusy())) S.prefs = cleanPrefs(view.prefs, view);
@@ -1904,7 +1917,7 @@ function frame() {
     });
     return workspaceLoad;
   };
-  const workspaceScreen = OS_MODE ? { el: workspaceRoot, title: () => "InFlite OS", acts: [],
+  const workspaceScreen = OS_MODE ? { el: workspaceRoot, title: () => "InFlite", acts: [],
     onShow(r) { workspaceRoute = r; if (workspace) workspace.show(r).catch((e) => console.error(e)); else installWorkspace(); },
     onHide() { workspaceRoute = null; workspace?.hide(); }, focus: () => workspace?.focus() || workspaceRoot } : undefined;
   if (OS_MODE && location.pathname === "/" && !location.hash) history.replaceState(history.state, "", `/${location.search}#workspace`);
@@ -1918,7 +1931,7 @@ function frame() {
     onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
     today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you,
     workspace: workspaceScreen,
-    workspacePreview: OS_MODE && location.hostname !== "os.inflite.ai",
+    workspacePreview: OS_MODE && !["inflite.ai", "os.inflite.ai"].includes(location.hostname),
   });
   ownerFrame = F;
   if (OS_MODE) installWorkspace();
@@ -2757,7 +2770,7 @@ function chatFromToday(e) {
 }
 function wire() {
   document.addEventListener("click", chatFromToday, true);
-  $("#sessionRetry").addEventListener("click", (e) => { e.preventDefault(); load({ fresh: true }); });
+  $("#sessionRetry").addEventListener("click", (e) => { e.preventDefault(); hubAsked = askHub(); load({ fresh: true }); });
   // (Sign in: Today's own trip, on every device)
   // (and back to where you were: an app in this window, or a part of this page)
   $("#signin").addEventListener("click", (e) => { e.preventDefault(); signInHere(location.pathname + location.hash); });
@@ -2862,7 +2875,7 @@ function fromHash() {
 let syncT = 0;
 function worker() {
   if (!("serviceWorker" in navigator)) return;
-  navigator.serviceWorker.register(OS_MODE && location.hostname !== "os.inflite.ai" ? "/sw.js?os=1" : "/sw.js", { scope: "/" }).catch(() => {});
+  navigator.serviceWorker.register(OS_MODE && !["inflite.ai", "os.inflite.ai"].includes(location.hostname) ? "/sw.js?os=1" : "/sw.js", { scope: "/" }).catch(() => {});
   navigator.serviceWorker.addEventListener("message", (e) => {
     const d = e.data || {};
     if (d.ifl === "signedout") return signedOutNow();
@@ -2885,7 +2898,7 @@ function worker() {
 }
 
 // ---------------------------------------------------------------- opening
-const hubAsked = hubReady();
+let hubAsked = hubReady();
 // (a notification tapped while the hub couldn't serve its app (before its key, or rolled back): the root worker opens
 // Today with #go=<the app's path here>, and it's gone there from here, the hub's way where it's ready, else the app's own
 // address, as Today 1.08 would. Only a path of this site's)
@@ -3014,7 +3027,7 @@ async function load({ fresh = false } = {}) {
     return;
   }
   if (!current()) return;
-  if (view?.links) S.links = view.links;
+  if (view?.links) S.links = publicLinks(view.links);
   if (!(await known()) || !current()) return;
   if (view?.signedIn === false) return signedOutNow(true);
   if (view?.signedIn !== true || !view.user?.id) return sessionWaiting();

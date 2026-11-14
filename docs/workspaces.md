@@ -1,6 +1,6 @@
-# InFlite OS workspaces v2
+# Unified InFlite workspaces
 
-`os.inflite.ai` uses Today's existing session, app services and domain engines through an optional workspace host. The apex retains its ordinary Today surface. An explicit `?os=1` flag is available only on localhost and test hosts. It does not enable OS on the production apex or another production subdomain.
+`inflite.ai` unifies Today, app views, Files and saved workspaces under the existing account session and domain engines. Today is the default home; Workspaces opens the saved desktop or foreground phone app. Older `os.inflite.ai` document links redirect to the same canonical path without interrupting legacy API/static requests. An explicit `?os=1` flag remains available on localhost and test hosts; unrelated production subdomains cannot enable this host.
 
 The default Ride workspace combines real Fitness and Weather views. Saved workspaces support one to five unique panes from Fitness, Weather, Markets, Chats and Mail. Desktop supports tiled or floating windows with move, resize, snap, minimize and restore controls; a narrow viewport presents one foreground pane with an app switcher. Expanding an app and returning reparents the same app instance, so stores, drafts and chart owners remain attached to their original module lifetime. A workspace never creates a second instance of the same app.
 
@@ -80,24 +80,28 @@ Notification buttons use validated same-app references and recheck the current a
 
 ## Optional assets and checks
 
-The fifteen root workspace/Files scripts, four optional stylesheets and `os.webmanifest` form the exact OS-only shell closure. `files-service.js`, `files-apps.js`, `files-metadata.js`, `files-location.js`, `files-drive.js`, `files-explorer.js` and `files-view.js` are explicitly listed alongside the existing quick picker; unrelated scripts remain in the ordinary core budget. Host updater and service worker agree on the exact list. Ordinary HTML does not preload them. The service worker enables this closure only on the exact OS host or explicit local preview, and retains only static assets, never account/API responses.
+The twenty-two root workspace/Files scripts, seven optional stylesheets and `os.webmanifest` form the exact OS-only shell closure. The existing Files graph is joined by the explicit Open/Save dialog, Activity registry/view, workspace-sync controller/lazy view and recovery controller/view assets; unrelated scripts remain in the ordinary core budget. `unit/fixtures/workspace.mjs` lists every filename and separately groups each reviewed feature; no filename-prefix or regular-expression exclusion can hide new ordinary code. Host updater and service worker agree on the exact list. Ordinary HTML does not preload them. The service worker enables this closure only on the exact canonical InFlite host, legacy OS host or explicit local preview, and retains only static assets, never account/API responses.
 
 All five app adapters are literal lazy imports. Their exact `roof/workspace.js` and `roof/workspace.css` paths belong to `connector.lazy`, not the app's ordinary first-open `connector.files`. Once used in OS, the host asks the root worker to retain the static graph plus these curated optional files. Existing installed-app idle caching and network-only exclusions continue to apply. The worker accepts only JS/CSS assets for module build caches and rejects API path segments, documents and data files; it also refuses to replay an old malformed API cache entry.
 
-The core framework budget remains 35 KiB gzip with comments stripped; its request coordinator retains a separate 2 KiB + 128 byte ceiling. Ordinary Markets (40 KB), Fitness (86 KB) and Mail (55 KiB) budgets are unchanged. Files v3 adds a lazy private Drive, Explorer, upload/download lifecycle and account-owned folder history; its exact graph has a separate reviewed ceiling. The base allowance covers Files routing and transfer coordination as well as window scroll ownership. The optional Mail adapter owns its coalesced pane observer to keep responsive layout writes out of ResizeObserver delivery. Commands retains its bounded action ownership and account-scoped Cmd/Ctrl+K listener. The complete optional OS graph has a 74 KiB JS / 13 KiB CSS ceiling:
+The core framework budget remains 35 KiB gzip with comments stripped; its request coordinator retains a separate 2 KiB + 128 byte ceiling. Ordinary Markets (40 KiB), Fitness (86 KiB) and Mail (55 KiB) budgets are unchanged. The six OS upgrades add real private file operations and dialogs, activity, cloud layout synchronization, recovery and typed commands to the exact optional graph. Each feature has an independently reviewed ceiling; the aggregate has a tighter 100 KiB JS / 16 KiB CSS bound. The Fitness optional adapter allowance covers its new Drive import/export intents; its ordinary first-open budget is unchanged.
 
 | Optional component | JS ceiling | CSS ceiling |
 | --- | --- | --- |
-| Base shell and window management | 26 KiB | 5.5 KiB |
-| Commands | 3.5 KiB | 1 KiB |
-| Files | 32 KiB | 4 KiB |
-| Fitness adapter | 3.75 KiB | 1 KiB |
+| Base shell and window management | 30 KiB | 6 KiB |
+| Commands | 4.75 KiB | 1 KiB |
+| Files | 36 KiB | 4.5 KiB |
+| Universal Open/Save | 4.75 KiB | 1 KiB |
+| Activity Centre | 4.5 KiB | 1 KiB |
+| Workspace sync | 5 KiB | 0 KiB |
+| Recovery | 4 KiB | 0.5 KiB |
+| Fitness adapter | 4.5 KiB | 1 KiB |
 | Weather adapter | 2.75 KiB | 1 KiB |
 | Markets adapter | 1.5 KiB | 1 KiB |
 | Chats adapter | 2.75 KiB | 1 KiB |
-| Mail adapter | 3.5 KiB | 1 KiB |
+| Mail adapter | 3.75 KiB | 1 KiB |
 
-Served-size measurements use the same in-memory minifier and gzip settings as the app budget contracts, rather than source-file sizes. The final audit measured 25,765 bytes of base/window JS, 30,749 bytes of Files JS and 73,382 bytes across the complete optional JS graph; complete CSS measured 12,717 bytes. The unchanged ordinary core measured 35,828 bytes against 35,840. The contract prints component totals for each build. The exact optional file exclusion prevents future unrelated files from escaping the ordinary core budget; new assets must be reviewed and added to the closure explicitly. The closure follows both static and literal lazy imports, with a separate entry for the quick picker.
+Served-size measurements use the same in-memory minifier and gzip settings as the app budget contracts, rather than source-file sizes. The final integration audit measured 30,255 bytes of base/window JS, 35,037 bytes of Files JS and 101,936 bytes across the complete optional JS graph; complete CSS measured 15,594 bytes. The unchanged ordinary core measured 35,828 bytes against 35,840. The contract prints all component/file totals on every build, and the final integration run rechecks them after feature freeze. The exact optional exclusion prevents unrelated files from escaping the ordinary core budget. The closure follows both static and literal lazy imports, with a separate entry for the existing quick picker.
 
 
 `roofworkspace.test.mjs` checks host selection, updater/worker closure, manifest, static versus lazy graphs, cache path rejection, route opt-in and served sizes. Workspace model tests exercise hostile storage, account replacement, immutable snapshots and context ownership. Real-frame fixtures cover interrupted imports and stale handles. The browser suites use actual module controls and lifecycle with synthetic API data, including native Mail compose/viewer flows, window behavior and account replacement; they do not write production accounts. Model coverage includes legacy migration and retired-writer isolation, three-to-five-app restoration, all-minimized windows, unknown-field stripping, hostile geometry and adversarial route mutations.

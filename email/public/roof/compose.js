@@ -23,7 +23,7 @@
 // A quoteOld draft: its quote key is left out of every save here (Mail keeps the quote it has); only Send, after
 //   "Send Without the Quoted Text?", sends quote: null.
 import { STORAGE, CAP } from "./store.js";
-import { MAIL } from "./api.js";
+import { MAIL, MAIL_PAGE } from "./api.js";
 
 const MAX = 20 * 1024 * 1024;
 const LISTS = ["to", "cc", "bcc"];
@@ -94,7 +94,7 @@ function retryOnline(ctx) {
 
 export function openCompose(ctx, init = {}) {
   const { fw, api, store, logic } = ctx, ui = fw.ui, el = ui.el;
-  const me = store.get().me || {};
+  const me = store.get().me || {}, owner = fw.session.user.id, fileDialog = new AbortController();
   const sigFor = (from) => (me.addresses || []).find((a) => a.email === String(from || "").toLowerCase())?.signature || me.signature || "";
   const c = {
     from: init.from || me.defaultFrom || "", to: people(init.to), cc: people(init.cc), bcc: people(init.bcc),
@@ -237,7 +237,7 @@ export function openCompose(ctx, init = {}) {
   const quoteEl = el("div", { class: "mc-quote" });
   const drawQuote = () => {
     quoteEl.hidden = !c.quote && !c.quoteOld;
-    if (c.quoteOld) quoteEl.replaceChildren(el("p", { text: "This draft was started in Mail on its own. Its quoted text is added only when you send it there." }), ui.btn("Open Mail", { small: true, href: `${MAIL}/`, act: "open-mail" }));
+    if (c.quoteOld) quoteEl.replaceChildren(el("p", { text: "This draft was started in Mail on its own. Its quoted text is added only when you send it there." }), ui.btn("Open Mail", { small: true, href: `${MAIL_PAGE}/`, act: "open-mail" }));
     else if (c.quote) quoteEl.replaceChildren(el("b", { class: "mc-qk", text: "Quoted below" }), el("p", { class: "mc-qs", text: snippetOf() }));
     const a = quoteEl.querySelector("a");
     a?.setAttribute("target", "_blank");
@@ -250,10 +250,46 @@ export function openCompose(ctx, init = {}) {
   const tools = el("div", { class: "mc-tools" },
     ui.btn("Cc/Bcc", { small: true, act: "cc", run: () => { ccRow.hidden = !ccRow.hidden; if (!ccRow.hidden) fields.cc.input.focus(); } }),
     ui.btn("Add Files", { small: true, act: "files", run: () => pick.click() }),
+    ...(fw.workspace?.files?.open ? [ui.btn("From InFlite Files", { small: true, act: "drive-files", run: async () => {
+      const current = () => !ended && !sending && !h?.closed && !fw.signal.aborted && fw.session.user.id === owner && store.get().access === "ok";
+      if (!current() || h.el.getAttribute("aria-busy") === "true") return;
+      try {
+        const left = MAX - c.files.reduce((n, item) => n + (item.size || 0), 0);
+        if (left <= 0) return fw.toast("Files are limited to 20 MB");
+        const picked = await fw.workspace.files.open({ title: "Attach from InFlite Files", multiple: true, maxBytes: left, current, signal: fileDialog.signal });
+        if (!current() || !picked) return;
+        for (const file of picked) {
+          if (!(file instanceof File) || c.files.reduce((n, item) => n + (item.size || 0), 0) + file.size > MAX) { fw.toast("Files are limited to 20 MB"); break; }
+          c.files.push(file);
+        }
+        drawFiles(); changed();
+      } catch (error) { if (current() && error?.name !== "AbortError") fw.toast(error?.message || "Those files couldn’t attach."); }
+    } })] : []),
     moreBtn);
   moreBtn.replaceChildren(ctx.icon("more"));
   const prog = el("p", { class: "mc-prog", "aria-live": "polite" });
   const body = el("div", { class: "mc" }, el("div", { class: "mc-head" }, tokens("to", "To"), from), sugg, ccRow, subject, text, filesEl, quoteEl, tools, more, prog, pick);
+  if (fw.workspace?.files?.fromDrop) {
+    const isDriveDrop = event => [...(event.dataTransfer?.types || [])].includes("application/x-inflite-files-token");
+    body.addEventListener("dragover", event => { if (isDriveDrop(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } });
+    let receiving = false;
+    body.addEventListener("drop", async event => {
+      if (!isDriveDrop(event)) return; event.preventDefault(); event.stopPropagation();
+      const current = () => !ended && !sending && !h?.closed && !fw.signal.aborted && fw.session.user.id === owner && store.get().access === "ok";
+      if (!current() || receiving) return; receiving = true;
+      try {
+        const left = MAX - c.files.reduce((n, item) => n + (item.size || 0), 0);
+        const files = await fw.workspace.files.fromDrop(event.dataTransfer, { maxBytes: Math.max(0, left), current, signal: fileDialog.signal });
+        if (!current() || !files) return;
+        for (const file of files) {
+          if (!(file instanceof File) || c.files.reduce((n, item) => n + (item.size || 0), 0) + file.size > MAX) throw new Error("Files are limited to 20 MB");
+          c.files.push(file);
+        }
+        drawFiles(); changed();
+      } catch (error) { if (current() && error?.name !== "AbortError") fw.toast(error?.message || "Those files couldn’t attach."); }
+      finally { receiving = false; }
+    });
+  }
   drawFiles(); drawQuote();
   ccRow.after(sugg);
 
@@ -277,6 +313,7 @@ export function openCompose(ctx, init = {}) {
     h.close();
   }
   function closed() {
+    fileDialog.abort();
     clearTimeout(keepT); clearTimeout(suggT);
     try { off?.(); } catch (_) {}
     store.set({ compose: false }, "compose");

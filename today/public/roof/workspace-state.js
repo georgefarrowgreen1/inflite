@@ -5,7 +5,7 @@ export const WORKSPACE_STATE_VERSION = 2;
 export const WORKSPACE_LIMITS = Object.freeze({ workspaces: 8, panes: 5, name: 60, storedBytes: 16384 });
 const idOf = (v) => typeof v === "string" && /^[a-z][a-z0-9_-]{0,39}$/.test(v) ? v : null;
 const accountOf = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(v) ? v : null;
-const nameOf = (v) => typeof v === "string" ? [...v.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, "").trim().replace(/\s+/g, " ")].slice(0, WORKSPACE_LIMITS.name).join("") : "";
+const nameOf = (v) => typeof v === "string" ? [...v.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim().replace(/\s+/g, " ")].slice(0, WORKSPACE_LIMITS.name).join("") : "";
 const frozen = (v) => { if (v && typeof v === "object") { Object.values(v).forEach(frozen); Object.freeze(v); } return v; };
 const timestamp = (n) => Number.isSafeInteger(n) && n >= 0 ? n : 0;
 const clock = (now) => timestamp(now());
@@ -47,20 +47,27 @@ export function restoreWorkspaceState(value, userId, at = 0) {
 export function createWorkspaceStore({ userId, storage, now = Date.now, makeId = () => `ws-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`, signal } = {}) {
   if (!accountOf(userId)) throw new TypeError("A signed-in account is required for a workspace.");
   const key = `ifl:workspace:v2:${userId}`;
-  let state, dead = !!signal?.aborted, persisted = false;
+  const listeners = new Set();
+  let state, dead = !!signal?.aborted, persisted = false, hasLocalData = false, savedText = null;
   try { if (storage === undefined) storage = globalThis.localStorage; } catch (_) {}
   try {
-    const text = storage?.getItem(key) ?? storage?.getItem(`ifl:workspace:v1:${userId}`);
+    savedText = storage?.getItem(key) ?? null;
+    const text = savedText ?? storage?.getItem(`ifl:workspace:v1:${userId}`);
     if (typeof text === "string" && text.length <= WORKSPACE_LIMITS.storedBytes) {
       const value = JSON.parse(text);
       state = restoreWorkspaceState(value, userId, clock(now));
+      hasLocalData = !!value && value.userId === userId && [1, 2].includes(value.version) && Array.isArray(value.workspaces) && value.workspaces.length > 0;
       persisted = JSON.stringify(state) === JSON.stringify(value);
     }
   } catch (_) {}
   state ||= frozen(initial(userId, clock(now)));
-  const write = (next) => {
-    state = frozen(next); persisted = false;
-    try { if (storage?.setItem) { storage.setItem(key, JSON.stringify(state)); persisted = true; } } catch (_) {}
+  const emit = source => { for (const entry of [...listeners]) { if (dead) break; if (listeners.has(entry)) try { entry.fn(state, {source}); } catch (_) {} } };
+  const changed = () => { try { return (storage?.getItem(key) ?? null) !== savedText; } catch (_) { return false; } };
+  const write = (next, source = "local") => {
+    if (changed()) { persisted = false; emit("storage-conflict"); return false; }
+    state = frozen(next); persisted = false; hasLocalData = true;
+    try { if (storage?.setItem) { const text = JSON.stringify(state); storage.setItem(key, text); savedText = text; persisted = true; } } catch (_) {}
+    emit(source); return true;
   };
   const replace = (id, patch) => {
     if (dead || !patch || typeof patch !== "object") return null;
@@ -71,14 +78,30 @@ export function createWorkspaceStore({ userId, storage, now = Date.now, makeId =
     if (!name || !panes || !panes.some((p) => p.id === activePane)) return null;
     const layout = normalizeLayout(patch.layout === undefined ? old.layout : patch.layout, panes.map(p => p.app));
     const w = { id, name, panes, activePane, layout, updatedAt: clock(now) };
-    write({ ...state, workspaces: state.workspaces.map((x) => x.id === id ? w : x) });
-    return w;
+    return write({ ...state, workspaces: state.workspaces.map((x) => x.id === id ? w : x) }) ? w : null;
   };
-  const dispose = () => { dead = true; signal?.removeEventListener("abort", dispose); };
+  const dispose = () => { dead = true; listeners.clear(); signal?.removeEventListener("abort", dispose); };
   if (!dead) signal?.addEventListener("abort", dispose, { once: true });
   return Object.freeze({
     read: () => state,
     get persisted() { return persisted; },
+    get hasLocalData() { return hasLocalData; },
+    get storageChanged() { return changed(); },
+    reloadSaved() {
+      if (dead) return false;
+      try { const text = storage?.getItem(key); if (typeof text !== "string" || text.length > WORKSPACE_LIMITS.storedBytes) return false; const value = JSON.parse(text); if (value?.version !== 2 || value.userId !== userId) return false; const next = restoreWorkspaceState(value, userId, clock(now)); if (JSON.stringify(next) !== JSON.stringify(value)) return false; state = next; savedText = text; persisted = true; hasLocalData = true; emit("saved"); return true; } catch (_) { return false; }
+    },
+    subscribe(fn) {
+      if (dead || typeof fn !== "function") return () => {};
+      const entry = {fn}; listeners.add(entry); return () => listeners.delete(entry);
+    },
+    replaceSnapshot(value, {source = "cloud"} = {}) {
+      if (dead || !value || value.userId !== userId || value.version !== WORKSPACE_STATE_VERSION || !Array.isArray(value.workspaces) || !value.workspaces.length) return false;
+      if (source === "cloud") try { if ((storage?.getItem(key) ?? null) !== savedText) return false; } catch (_) {}
+      const next = restoreWorkspaceState(value, userId, clock(now));
+      if (JSON.stringify(next) !== JSON.stringify(value)) return false;
+      return write(next, source);
+    },
     create(spec = {}) {
       if (dead || !spec || typeof spec !== "object" || state.workspaces.length >= WORKSPACE_LIMITS.workspaces) return null;
       const title = nameOf(spec.name), list = panesOf(spec.panes);
@@ -87,21 +110,18 @@ export function createWorkspaceStore({ userId, storage, now = Date.now, makeId =
       for (let n = 0; n < 4; n++) { id = idOf(makeId()); if (id && !state.workspaces.some((w) => w.id === id)) break; id = null; }
       if (!id) return null;
       const w = { id, name: title, panes: list, activePane: list[0].id, layout: normalizeLayout(spec.layout, list.map(p => p.app)), updatedAt: clock(now) };
-      write({ ...state, activeId: id, workspaces: [...state.workspaces, w] });
-      return w;
+      return write({ ...state, activeId: id, workspaces: [...state.workspaces, w] }) ? w : null;
     },
     update: (id, patch = {}) => replace(id, patch),
     select(id) {
       if (dead || !state.workspaces.some((w) => w.id === id)) return false;
-      if (state.activeId !== id) write({ ...state, activeId: id });
-      return true;
+      if (changed()) { persisted = false; emit("storage-conflict"); return false; }
+      return state.activeId === id || write({ ...state, activeId: id });
     },
     remove(id) {
       if (dead || !state.workspaces.some((w) => w.id === id)) return false;
       const workspaces = state.workspaces.filter((w) => w.id !== id);
-      if (!workspaces.length) write(initial(userId, clock(now)));
-      else write({ ...state, activeId: state.activeId === id ? workspaces[0].id : state.activeId, workspaces });
-      return true;
+      return !workspaces.length ? write(initial(userId, clock(now))) : write({ ...state, activeId: state.activeId === id ? workspaces[0].id : state.activeId, workspaces });
     },
     clear() {
       if (dead) return;

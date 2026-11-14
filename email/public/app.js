@@ -299,9 +299,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.86";
+  const BUILD = "1.87";
   // (what's new in it, said once it's in)
-  const NEWS = "Mail windows and attachment files";
+  const NEWS = "Open and save with Files";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
@@ -905,7 +905,9 @@ const IFL = (() => {
   // degraded: the apps' own addresses (degrade's links, else <app>.<site>), and a hub path back to its app's
   let links = {};
   const hubSite = () => location.hostname === "os.inflite.ai" ? "inflite.ai" : location.host.replace(/^next\./, "");
-  const origin = (sub) => links[sub] || `${location.protocol}//${sub}.${hubSite()}`;
+  const origin = (sub) => /(^|\.)inflite\.ai$/.test(location.hostname)
+    ? `https://inflite.ai${SUBS[sub]?.slice(0, -1) || "/" + sub}`
+    : links[sub] || `${location.protocol}//${sub}.${hubSite()}`;
   const ownAt = (p) => { const m = /^\/(chats|weather|fitness|markets|mail)(?=$|[/?#])\/?([\s\S]*)$/.exec(p); return m ? `${origin(OWN[m[1]])}/${m[2]}` : null; };
   const stillHere = (say) => (/still here/i.test(say) ? say : `${say.replace(/[.\s]+$/, "")}. You’re still here`);
   const hub = {
@@ -1395,7 +1397,8 @@ const IFL = (() => {
       if (typeof location === "undefined") return null;
       const { protocol, hostname, port } = location;
       if (!hostname.includes(".") || /(^|\.)localhost$/.test(hostname)) return null;
-      const site = hostname === "os.inflite.ai" ? "inflite.ai" : hostname.replace(/^(chat|weather|fitness|finance|email|account|auth|next|www)\./, "");
+      if (/(^|\.)inflite\.ai$/.test(hostname)) return "https://inflite.ai";
+      const site = hostname.replace(/^(chat|weather|fitness|finance|email|account|auth|next|www)\./, "");
       return `${protocol}//auth.${site}${port ? ":" + port : ""}`;
     };
     function warm() {
@@ -4719,7 +4722,8 @@ pre{white-space:pre-wrap}
   // the hash of a word it keeps in this tab; the page sends you back with a code that's good once, and only with that
   // word. Signing out ends there too, which says so and offers the way back. (Locally, the account's page does both.)
   let accountOrigin = "";
-  const authOrigin = () => (/\/\/account\.localhost(:|$)/.test(accountOrigin) ? accountOrigin : accountOrigin.replace("//account.", "//auth."));
+  const MAIL_PAGE = location.hostname === "email.inflite.ai" ? "https://inflite.ai/mail/standalone/" : location.origin + "/";
+  const authOrigin = () => /(^|\.)inflite\.ai$/.test(location.hostname) ? "https://inflite.ai/auth" : (/\/\/account\.localhost(:|$)/.test(accountOrigin) ? accountOrigin : accountOrigin.replace("//account.", "//auth."));
   const VERIFIER_KEY = "inflite:signin-verifier";
 
   function onSignedOut(access) {
@@ -4737,7 +4741,7 @@ pre{white-space:pre-wrap}
   // With no hub answering there, Mail on its own, in a window of its own, to sign in as ever: no word's made, as it
   // couldn't go with it. → whether the trip was asked)
   async function goToAccount() {
-    if (EMBED && !hubHeard) return window.open(`${location.origin}/`, "_blank", "noopener"), false;
+    if (EMBED && !hubHeard) return window.open(MAIL_PAGE, "_blank", "noopener"), false;
     const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
     const ask = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
     try {
@@ -5095,7 +5099,7 @@ pre{white-space:pre-wrap}
         error = err.message;
       }
       s ||= await api.session();
-      accountOrigin = s.accountOrigin || accountOrigin;
+      accountOrigin = /(^|\.)inflite\.ai$/.test(location.hostname) ? "https://inflite.ai/account" : s.accountOrigin || accountOrigin;
       if (s.user?.appearance) lookOf(s.user.appearance);
       if (s.access !== "ok") return showGate(s.access, { user: s.user, error });
       await enter();

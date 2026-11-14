@@ -60,13 +60,19 @@ export function createWorkspaceView(root, callbacks = {}) {
   const create = callable(callbacks.onCreateWorkspace) ? bindButton("New workspace", "plus", "create-workspace", opener => invoke("onCreateWorkspace", opener), "ws-sidebar-button ws-create") : null;
   const files = callable(callbacks.onFiles) ? bindButton("Files", "file", "files", opener => invoke("onFiles", opener), "ws-sidebar-button") : null;
   if (files) files.append(el("span", { text: "Files" }));
+  const activity = callable(callbacks.onActivity) ? bindButton("Activity", "clock", "activity", () => invoke("onActivity"), "ws-sidebar-button") : null;
+  const activityCount = el("span", { class: "ws-system-count", hidden: true, "aria-hidden": "true" });
+  if (activity) activity.append(el("span", { text: "Activity" }), activityCount);
+  const sync = callable(callbacks.onSync) ? bindButton("Workspace sync", "swap", "sync", () => invoke("onSync"), "ws-sidebar-button") : null;
+  const syncState = el("span", { class: "ws-sync-state", text: "This device", "aria-hidden": "true" });
+  if (sync) sync.append(el("span", { text: "Sync" }), syncState);
   const settings = callable(callbacks.onSettings) ? bindButton("Settings", "settings", "settings", opener => invoke("onSettings", opener), "ws-sidebar-button") : null;
   if (settings) settings.append(el("span", { text: "Settings" }));
-  const sideFoot = el("div", { class: "ws-sidebar-foot" }, files, settings);
+  const sideFoot = el("div", { class: "ws-sidebar-foot" }, files, activity, sync, settings);
   const sidebar = el("aside", { class: "ws-sidebar", "aria-label": "InFlite workspace navigation" }, sideBrand,
     el("p", { class: "ws-nav-label", text: "Workspaces" }), sideNav, create, sideFoot);
   if (create) { create.hidden = !callable(callbacks.onCreateWorkspace); create.append(el("span", { text: "New workspace" })); }
-  sideFoot.hidden = !files && !settings;
+  sideFoot.hidden = !files && !activity && !sync && !settings;
 
   const heading = el("h1", { class: "ws-title", id: `${uid}-title` }, el("span", { class: "ws-title-desktop" }), el("span", { class: "ws-title-mobile" }));
   const headingLine = el("p", { class: "ws-heading-line", hidden: true });
@@ -74,6 +80,11 @@ export function createWorkspaceView(root, callbacks = {}) {
   const back = bindButton("Back", "back", "back", opener => invoke("onPaneBack", model.mode === "app" ? model.activeApp : model.foregroundApp || "fitness", opener), "ws-icon-button ws-phone-only");
   if (back) back.hidden = true;
   const headingBox = el("div", { class: "ws-heading" }, phoneBrand, el("div", { class: "ws-heading-copy" }, heading, headingLine));
+  const homeMode = callable(callbacks.onToday) ? bindButton("Show Today", null, "today-mode", () => invoke("onToday"), "ws-mode-button") : null;
+  const workspaceMode = callable(callbacks.onWorkspaceMode) ? bindButton("Open Workspaces", null, "workspace-mode", () => invoke("onWorkspaceMode"), "ws-mode-button") : null;
+  if (homeMode) homeMode.append(el("span", { text: "Today" }));
+  if (workspaceMode) workspaceMode.append(el("span", { text: "Workspaces" }));
+  const modes = el("div", { class: "ws-mode-switch", role: "group", "aria-label": "InFlite view" }, homeMode, workspaceMode);
   const search = callable(callbacks.onSearch) ? button("Search InFlite", "search", action("search", opener => invoke("onSearch", opener)), "ws-search") : null;
   if (search) {
     search.append(el("span", { text: "Search InFlite" }), el("kbd", { class: "ws-shortcut-key", text: /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || "") ? "⌘ K" : "Ctrl K" }));
@@ -102,9 +113,18 @@ export function createWorkspaceView(root, callbacks = {}) {
     el("div", { class: "ws-summary-head" }, el("div", { class: "ws-summary-copy" }, cardTitle, cardLine), summaryOpen), summarySymbols, cardFacts,
     button("Open ride workspace", null, "open-workspace", "ws-primary ws-open-workspace"));
   cardTitle.id = `${uid}-summary`; card.lastElementChild.textContent = "Open ride workspace";
-  const overview = el("section", { class: "ws-home-overview", "aria-label": "Your workspaces" }, el("h2", { class: "ws-home-title", text: "Your day, together" }), phoneChips, card);
+  const homeTitle = el("h2", { class: "ws-home-title", text: "Your day, together" });
+  const overview = el("section", { class: "ws-home-overview", "aria-label": "Your workspaces" }, homeTitle, phoneChips, card);
   const todaySlot = el("div", { class: "ws-today-slot", data: { workspaceSlot: "today" } });
-  const todayView = el("div", { class: "ws-home" }, overview, todaySlot);
+  const recentRows = el("div", { class: "ws-resume-rows" }), recentRecords = new Map();
+  const recentPanel = el("section", { class: "ws-home-panel", "aria-label": "Pick up where you left off", hidden: true }, el("h2", { text: "Pick up where you left off" }), recentRows);
+  const activityRows = el("div", { class: "ws-home-activity-rows" }), activityRecords = new Map();
+  const activityOpen = callable(callbacks.onActivity) ? bindButton("Open Activity", "chev", "home-activity", () => invoke("onActivity"), "ws-home-panel-open") : null;
+  activityOpen?.prepend(el("span", { text: "Activity" }));
+  const activityPanel = el("section", { class: "ws-home-panel", "aria-label": "Recent activity", hidden: true }, activityOpen || el("h2", { text: "Activity" }), activityRows);
+  const homeSide = el("aside", { class: "ws-home-side", "aria-label": "Continue and activity", hidden: true }, recentPanel, activityPanel);
+  const homeBody = el("div", { class: "ws-home-body" }, todaySlot, homeSide);
+  const todayView = el("div", { class: "ws-home" }, overview, homeBody);
 
   const foregroundTabs = el("div", { class: "ws-pane-tabs", role: "tablist", "aria-label": "Ride workspace apps" });
   const foregroundButtons = new Map();
@@ -155,7 +175,9 @@ export function createWorkspaceView(root, callbacks = {}) {
   const closedWindows = el("div", { class: "ws-windows-empty", hidden: true }, el("h2", { text: "Your windows are minimised" }), el("p", { text: "Choose a window to pick up where you left off." }), button("Open windows", "grid", "window-switcher", "ws-secondary"));
   rideView.append(closedWindows);
   canvas.append(windowMenu, keyboardHint);
-  const main = el("div", { class: "ws-main" }, toolbar, canvas);
+  if (homeMode && workspaceMode) toolbar.insertBefore(modes, search || toolbar.lastElementChild);
+  const offline = el("p", { class: "ws-offline", role: "status", hidden: true, text: "You’re offline. Your apps and drafts stay open; changes will wait for a connection." });
+  const main = el("div", { class: "ws-main" }, toolbar, offline, canvas);
   const dock = el("nav", { class: "ws-dock", "aria-label": "Apps" }), dockRecords = new Map();
   const dockToday = callable(callbacks.onToday) ? button("Today", null, "today", "ws-dock-button") : null;
   dockToday?.append(el("span", { class: "ws-dock-symbol ws-dock-today" }, icon("calendar")), el("span", { class: "ws-dock-label", text: "Today" }));
@@ -163,8 +185,15 @@ export function createWorkspaceView(root, callbacks = {}) {
   const launcher = callable(callbacks.onApps) ? button("All apps", "grid", "apps", "ws-dock-button ws-dock-launcher") : null;
   dock.append(...[dockToday, dockApps, launcher].filter(Boolean));
   const dockHost = el("div", { class: "ifl-workspace ws-dock-host" }, dock);
+  const fileToken = event => Array.from(event.dataTransfer?.types || []).includes("application/x-inflite-files-token");
+  const dropTarget = event => { const node = event.target?.closest?.("[data-app-drop]"); return node && dock.contains(node) && ["mail", "fitness"].includes(node.dataset.appDrop) ? node : null; };
+  listen(dock, "dragover", event => { const node = dropTarget(event); if (!node || !fileToken(event) || !callable(callbacks.onAppDrop)) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; node.dataset.dropReady = "true"; });
+  listen(dock, "dragleave", event => { const node = dropTarget(event); if (node && !node.contains(event.relatedTarget)) delete node.dataset.dropReady; });
+  listen(dock, "dragend", () => { for (const node of dock.querySelectorAll("[data-drop-ready]")) delete node.dataset.dropReady; });
+  listen(dock, "drop", event => { const node = dropTarget(event); if (!node || !fileToken(event) || !callable(callbacks.onAppDrop)) return; const token = event.dataTransfer.getData("application/x-inflite-files-token"); delete node.dataset.dropReady; if (!/^[a-f0-9]{32}$/.test(token)) return; event.preventDefault(); event.stopPropagation(); invoke("onAppDrop", node.dataset.appDrop, token); });
   const dockAnchor = el("div", { class: "ws-dock-anchor" }, dockHost);
-  const shell = el("div", { class: "ws-shell" }, sidebar, main, dockAnchor);
+  const sidebarAnchor = el("div", { class: "ws-sidebar-anchor" }, sidebar);
+  const shell = el("div", { class: "ws-shell" }, sidebarAnchor, main, dockAnchor);
   root.classList.add("ifl-workspace"); root.replaceChildren(shell);
 
   const desktop = () => matchMedia("(min-width: 960px)").matches;
@@ -463,6 +492,29 @@ export function createWorkspaceView(root, callbacks = {}) {
     const apps = (Array.isArray(model.apps) ? model.apps : []).filter(a => a?.id && a.available !== false && callable(callbacks.onApp));
     const activeApp = apps.find(a => a.id === model.activeApp), title = mode === "files" ? "InFlite Files" : model.title || (mode === "workspace" ? `${current?.name || "Ride"} workspace` : mode === "app" ? activeApp?.name || APP_NAMES[model.activeApp] || "App" : "Today");
     root.dataset.mode = mode;
+    root.dataset.unified = model.unifiedHome ? "true" : "false";
+    words(homeTitle, model.unifiedHome ? model.greeting || "Your day, together" : "Your day, together");
+    const recents = (Array.isArray(model.recentApps) ? model.recentApps : []).filter(item => APP_NAMES[item?.app] && callable(callbacks.onRecent)).slice(0, 4);
+    recentPanel.hidden = !model.unifiedHome || !recents.length;
+    reconcile(recentRows, recentRecords, recents, item => item.app, item => {
+      const node = bindButton(`Continue in ${APP_NAMES[item.app]}`, null, `recent:${item.app}`, () => invoke("onRecent", item.app), "ws-resume-row");
+      node.append(appSymbol(item.app), el("span", { text: APP_NAMES[item.app] }), icon("chev")); return node;
+    }, () => {});
+    const jobs = (Array.isArray(model.recentActivity) ? model.recentActivity : []).filter(item => item?.key && item?.title).slice(0, 3);
+    activityPanel.hidden = !model.unifiedHome || !jobs.length;
+    reconcile(activityRows, activityRecords, jobs, item => item.key, () => el("div", { class: "ws-home-activity-row" }, el("span", { class: "ws-home-job-icon", "aria-hidden": "true" }), el("div", {}, el("strong"), el("span"))), (node, item) => {
+      const glyph = item.status === "succeeded" ? "check" : item.status === "failed" ? "warn" : item.status === "handed-off" ? "download" : item.status === "cancelled" ? "x" : "clock";
+      if (node.dataset.status !== item.status) { node.dataset.status = item.status; node.firstChild.replaceChildren(icon(glyph)); }
+      words(node.querySelector("strong"), item.title); words(node.lastElementChild.lastElementChild, item.detail || item.status);
+    });
+    homeSide.hidden = recentPanel.hidden && activityPanel.hidden; homeBody.dataset.side = String(!homeSide.hidden);
+    modes.hidden = !homeMode || !workspaceMode;
+    homeMode?.setAttribute("aria-pressed", String(mode === "today"));
+    workspaceMode?.setAttribute("aria-pressed", String(mode === "workspace"));
+    offline.hidden = model.online !== false;
+    const syncLabel = ({ synced: "Synced", syncing: "Syncing…", conflict: "Review", waiting: "Waiting", offline: "Offline", error: "Needs attention" })[model.syncStatus?.state] || "This device";
+    words(syncState, syncLabel);
+    const tasks = Math.max(0, Math.floor(Number(model.activityCount) || 0)); activityCount.hidden = !tasks; words(activityCount, tasks > 99 ? "99+" : tasks);
     if (mode === "today") canvas.removeAttribute("role"); else canvas.setAttribute("role", "main");
     words(heading.querySelector(".ws-title-desktop"), title);
     words(heading.querySelector(".ws-title-mobile"), mode === "workspace" ? current?.name || "Ride" : title);
@@ -502,7 +554,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     setCurrent(dockToday, mode === "today");
     reconcile(dockApps, dockRecords, apps, a => a.id, a => {
       const b = button(a.name || APP_NAMES[a.id] || a.id, null, action(`app:${a.id}`, opener => { if (model.mode === "workspace" && layoutOf().windows[a.id]?.minimized) restoreWindow(a.id); else invoke("onApp", a.id, opener); }), "ws-dock-button");
-      b.append(el("span", { class: "ws-dock-symbol" }, appSymbol(a.icon || a.id)), el("span", { class: "ws-dock-label" })); return b;
+      b.append(el("span", { class: "ws-dock-symbol" }, appSymbol(a.icon || a.id)), el("span", { class: "ws-dock-label" })); if (callable(callbacks.onAppDrop) && ["mail", "fitness"].includes(a.id)) b.dataset.appDrop = a.id; return b;
     }, (b, a) => { const name = a.name || APP_NAMES[a.id] || a.id, inWorkspace = mode === "workspace" && paneApps().includes(a.id), minimized = inWorkspace && layoutOf().windows[a.id].minimized; words(b.lastElementChild, name); b.setAttribute("aria-label", minimized ? `Restore ${name}` : name); b.title = minimized ? `Restore ${name}` : name; b.toggleAttribute("data-running", inWorkspace); b.toggleAttribute("data-minimized", minimized); setCurrent(b, mode === "app" && a.id === model.activeApp || inWorkspace && !minimized && a.id === model.foregroundApp); });
     const user = model.user || {}, userKey = JSON.stringify([user.name || "", user.photo || ""]);
     if (account && userKey !== avatarKey) { avatarKey = userKey; account.replaceChildren(user.name || user.photo ? avatar(user.name || "", { photo: user.photo }) : icon("person")); account.setAttribute("aria-label", user.name ? `Account for ${user.name}` : "Your account"); }
@@ -555,8 +607,8 @@ export function createWorkspaceView(root, callbacks = {}) {
     for (const key of ["mode", "foregroundApp", "focusedApp", "paneCount", "layout", "windowCount"]) delete root.dataset[key];
   }
   if (callbacks.signal) { const abort = () => destroy(); callbacks.signal.addEventListener("abort", abort, { once: true }); cleanups.push(() => callbacks.signal.removeEventListener("abort", abort)); }
-  const slots = { today: todaySlot, files: filesSlot, ...Object.fromEntries(WINDOW_APPS.map(app => [app, panes.get(app).slot])), app: panes.get("app").slot, dockAnchor };
+  const slots = { today: todaySlot, files: filesSlot, ...Object.fromEntries(WINDOW_APPS.map(app => [app, panes.get(app).slot])), app: panes.get("app").slot, dockAnchor, sidebarAnchor };
   update();
   if (callbacks.signal?.aborted) destroy();
-  return { slots, dock: dockHost, update, setPane, destroy, getViewport, isPaneVisible, revealPane, windowAction };
+  return { slots, sidebar, dock: dockHost, update, setPane, destroy, getViewport, isPaneVisible, revealPane, windowAction };
 }

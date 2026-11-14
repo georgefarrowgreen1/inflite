@@ -7,7 +7,7 @@ import { bodyUpTo } from "./body.js";
 import { fetchUpstream } from "./upstream.js";
 
 const MAX_FILE = 25 * 1024 * 1024, MAX_JSON = 4096, MAX_REPLY = 128 * 1024;
-const ROUTES = new Set(["GET list", "GET item", "GET limits", "POST search", "POST folders", "POST uploads", "POST move", "PATCH item", "DELETE item", "GET content", "PUT content"]);
+const ROUTES = new Set(["GET list", "GET item", "GET limits", "POST search", "POST folders", "POST uploads", "POST move", "POST trash", "POST restore", "POST copy", "POST favourite", "PATCH item", "DELETE item", "GET content", "PUT content"]);
 const QUERY = new Set(["id", "parentId", "view", "sort", "kind", "cursor", "version", "download"]);
 const SAFE = { "Cache-Control": "private, no-store", "Content-Security-Policy": "sandbox; default-src 'none'; frame-ancestors 'none'", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin", "Referrer-Policy": "no-referrer" };
 const json = (status, error) => new Response(JSON.stringify({ error }), { status, headers: { ...SAFE, "Content-Type": "application/json; charset=utf-8" } });
@@ -62,7 +62,7 @@ export async function filesAPI(request, env) {
   }
   try {
     const suffix = query.size ? `?${query}` : "";
-    const response = await fetchUpstream((target, init) => appFetch(env, target, init), `${env.ACCOUNT_ORIGIN}/api/account/today/files/${action}${suffix}`, { method, headers, body: body ?? undefined, redirect: "manual", ...(body instanceof ReadableStream ? { duplex: "half" } : {}) }, { signal: request.signal, timeout: binary ? 120e3 : 20e3 });
+    const response = await fetchUpstream((target, init) => appFetch(env, target, init), `${env.ACCOUNT_ORIGIN}/api/account/today/files/${action}${suffix}`, { method, headers, body: body ?? undefined, redirect: "manual", ...(body instanceof ReadableStream ? { duplex: "half" } : {}) }, { signal: request.signal, timeout: binary || action === "copy" ? 120e3 : 20e3 });
     if (overflow) { response.body?.cancel().catch(() => {}); return json(413, "Choose a file no larger than 25 MB."); }
     if (response.status >= 300 && response.status < 400) { response.body?.cancel().catch(() => {}); return json(502, "Files couldn’t reach your account. Try again."); }
     const type = response.headers.get("Content-Type")?.split(";")[0].trim();

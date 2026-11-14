@@ -2,13 +2,13 @@
 // No changes to REGISTRY, native module instances or app-private stores.
 export type App = 'fitness' | 'weather' | 'markets' | 'chats' | 'mail';
 export type Location =
-  | { kind: 'drive'; folderId: string | null; view: 'folder' | 'recent' }
+  | { kind: 'drive'; folderId: string | null; view: 'folder' | 'recent' | 'favourites' | 'trash' }
   | { kind: 'apps'; app: App | null; category?: 'routes' | 'workouts' | 'images' | 'audio' | 'documents' };
 export interface Action { id: string; label: string; icon?: string; enabled?: boolean; destructive?: boolean; primary?: boolean }
 export interface Resource {
   key: string; id: string; source: { kind: 'drive'; id: 'drive' } | { kind: 'app'; id: App };
   kind: 'file' | 'folder'; name: string; parentId?: string | null; mime?: string;
-  size?: number; modifiedAt?: number; version?: number; sourceLabel?: string; category?: 'image' | 'audio' | 'route' | 'workout' | 'document';
+  size?: number; favourite?: boolean; trashedAt?: number; trashRoot?: string; modifiedAt?: number; version?: number; sourceLabel?: string; category?: 'image' | 'audio' | 'route' | 'workout' | 'document';
   actions: Action[]; primaryAction?: string; location?: Location;
 }
 export interface Listing {
@@ -42,6 +42,12 @@ export interface FilesService {
   // The service captures folderId before work, owns File references and releases
   // them on success/cancel/account abort. No silent retry of an uncertain write.
   upload(files: File[], options: { folderId: string | null; current(): boolean }): Promise<unknown>;
+  read(key:string,options:Lease & {version:number}):Promise<{file:File;item:Resource}>;
+  save(file:Blob,options:Lease & {name:string;folderId:string|null}):Promise<{item:Resource}>;
+  batch(values:Array<{key:string;version:number}>,action:'move'|'copy'|'trash'|'restore'|'delete'|'favourite',input:Record<string,unknown>,lease:Lease):Promise<{ok:boolean;results:Array<{key:string;ok:boolean;error?:string}>}>;
+  // Drag payload contains only this opaque RAM token, never filenames or bytes.
+  prepareDrag(values:Array<{key:string;version:number}>):string|null;
+  resolveDrag(token:string,lease?:Lease):Resource[];
   transfers(): Transfer[];
   cancelTransfer?(id: string): void;
   // Parent wires these system transfer hooks into frame busy()/flush(), so the

@@ -52,3 +52,25 @@ test('a native app wake with its original route intact runs the requested comman
     await t.clean();
   } finally { await t?.ctx.close(); await env.stop(); }
 });
+
+
+test('a command waits for its app account initialization and stops when navigation replaces it', async () => {
+  const env = fixture(); await env.start(); let t;
+  try {
+    t = await env.open();
+    await t.page.evaluate(() => { audit.loadingApp = 'weather'; audit.capabilities.weather.changed(); audit.F.search.open(); });
+    const query = t.page.getByRole('combobox', { name: 'Search everything' });
+    await query.fill('choose weather location');
+    await t.page.getByRole('option').filter({ hasText: /^Choose weather location/ }).click();
+    await t.settle(); assert.deepEqual(await t.page.evaluate(() => audit.runs), []);
+    await t.page.evaluate(() => { audit.loadingApp = null; audit.capabilities.weather.changed(); });
+    await t.page.waitForFunction(() => audit.runs.length === 1);
+    assert.deepEqual(await t.page.evaluate(() => audit.runs.map(x => x.intent)), ['places']);
+    await t.page.evaluate(() => { audit.loadingApp = 'weather'; audit.capabilities.weather.changed(); audit.F.search.open(); });
+    await query.fill('choose weather location');
+    await t.page.getByRole('option').filter({ hasText: /^Choose weather location/ }).click();
+    await t.page.evaluate(() => { audit.F.nav.go('/#workspace', { kind: 'section' }); audit.loadingApp = null; audit.capabilities.weather.changed(); });
+    await t.settle(); assert.equal(await t.page.evaluate(() => audit.runs.length), 1);
+    await t.clean();
+  } finally { await t?.ctx.close(); await env.stop(); }
+});

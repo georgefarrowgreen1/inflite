@@ -33,7 +33,7 @@ export const NEVER = /^\/api\/(pigeon\/notify-tick|weather\/tick|fitness\/(garmi
 const APPS = ["CHAT", "WEATHER", "FITNESS", "MARKETS"];
 const METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
 // (what of the browser's request goes on, besides the account's cookie and Chat's bearer)
-const PASS = ["Content-Type", "Accept", "If-None-Match", "If-Modified-Since", "Range", "User-Agent", "X-Home-Screen"];
+const PASS = ["Content-Type", "Accept", "If-None-Match", "If-Modified-Since", "Range", "User-Agent", "X-Home-Screen", "X-Inflite-Route-Owner"];
 // (where the browser is, as Cloudflare's edge saw it: the few things the apps read of it, functions/_sites.js cfOf)
 const PAGE_RE = /^\/(chats|weather|fitness|markets)(\/|$)/, API_RE = /^\/api\/(pigeon|weather|fitness|markets)\//;
 

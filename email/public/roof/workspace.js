@@ -51,6 +51,7 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
     return { status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(),
       actions: [
         { id: "compose", label: "Compose a message", keywords: ["write", "email", "new mail"], enabled: canUse },
+        ...(sdk.files?.open ? [{ id: "compose-attach", label: "Attach a Drive file to a new message", keywords: ["attach", "file", "drive", "email"], enabled: canUse }] : []),
         { id: "reply", label: "Reply to this conversation", keywords: ["reply", "email"], enabled: canUse && ID.test(s.threadId || "") },
         ...(!canUse && s.access && s.access !== "notadmin" ? [{ id: "signin", label: s.access === "signin" ? "Sign in to Mail" : "Confirm it’s you", enabled: true }] : []),
       ] };
@@ -123,6 +124,14 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
     if (!present()) return { ok: false, cancelled: true };
     if (blocked(store.get())) return { ok: false, error: store.get().access === "notadmin" ? "Mail is only available to its owner." : "Open Mail and confirm it’s you to continue." };
     const permitted = () => present() && store.get().access === "ok";
+    if (intent === "compose-attach") {
+      if (!sdk.files?.open) return { ok: false, error: "Open Mail in InFlite OS to attach Drive files." };
+      const token = typeof object === "string" && /^drop:[a-f0-9]{32}$/.test(object) ? object.slice(5) : null;
+      const options = { title: "Attach from InFlite Files", multiple: true, maxBytes: 20 * 1024 * 1024, current: permitted };
+      const files = token && sdk.files.fromDrop ? await sdk.files.fromDrop({ getData: type => type === "application/x-inflite-files-token" ? token : "" }, options) : await sdk.files.open(options);
+      if (!permitted() || !files?.length) return { ok: false, cancelled: true };
+      return { ok: !!(await ctx.open.compose({ files }, permitted)), pending: true };
+    }
     if (intent === "compose") return { ok: !!(await ctx.open.compose({}, permitted)), pending: true };
     if (intent === "reply") {
       const id = typeof object === "string" ? object : store.get().threadId;

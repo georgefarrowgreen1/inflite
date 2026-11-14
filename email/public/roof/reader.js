@@ -16,7 +16,7 @@
 // made only for logic.PICTURES, re-typed, used only in <img src> and revoked when the conversation goes.
 import { bodyFrame, listenFrames, themeAll } from "./bodyframe.js";
 import { STORAGE } from "./store.js";
-import { MAIL } from "./api.js";
+import { MAIL, MAIL_PAGE } from "./api.js";
 
 const PICTURES = /^image\/(png|jpeg|gif|webp|avif|heic|bmp)$/;
 const isPic = (a) => PICTURES.test(String(a?.type || "").toLowerCase());
@@ -32,6 +32,7 @@ const thr = (r) => (r && r.thread ? { ...r.thread, messages: r.messages || r.thr
 
 export function view(el, ctx) {
   const { store, api, logic, fw } = ctx, ui = fw.ui, E = ui.el;
+  const owner = fw.session.user.id;
   let cur = null, touched = 0;
   const offs = [];
   const off = listenFrames({
@@ -129,13 +130,13 @@ export function view(el, ctx) {
       E("b", { text: open ? who : who.split(/\s+/)[0] }), E("small", { text: open ? (to ? `to ${to}` : m.from?.email || "") : m.snippet || "" })),
       E("span", { class: "mr-date", text: m.date ? logic.fmtListDate?.(m.date) || "" : "" }));
     c.when.textContent = open && m.date ? logic.fmtLongDate?.(m.date) || "" : "";
-    if (!open) { dropFrame(m.id); c.body.replaceChildren(); c.files.replaceChildren(); c.banner.hidden = true; return; }
+    if (!open) { dropFrame(m.id); c.body.replaceChildren(); c.files.replaceChildren(); c.filesFor = null; c.banner.hidden = true; return; }
     if (!cur.frames.has(m.id)) {
       const f = bodyFrame(m, { theme: fw.theme(), images: remoteOn(), eager: early || m.id === store.get().thread.t?.messages?.[0]?.id });
       cur.frames.set(m.id, f);
       // (no frame: the shell can't be had here; never the body itself, only the snippet and a way to Mail)
       c.body.replaceChildren(f?.el || E("div", { class: "mr-noframe" }, m.snippet ? E("p", { text: m.snippet }) : null,
-        E("a", { href: `${MAIL}/#thread=${encodeURIComponent(cur.id)}`, target: "_blank", rel: "noopener", text: "Open in Mail" })));
+        E("a", { href: `${MAIL_PAGE}/#thread=${encodeURIComponent(cur.id)}`, target: "_blank", rel: "noopener", text: "Open in Mail" })));
     }
     files(c, m.attachments);
   }
@@ -161,6 +162,26 @@ export function view(el, ctx) {
     });
     c.files.replaceChildren(gal || "", ...rest.map((a) => E("a", { class: "mr-file", href: api.fileUrl(a.id), target: "_blank", rel: "noopener", data: { act: "file" } },
       ctx.icon("attachment"), E("span", {}, E("b", { text: a.filename || "File" }), E("small", { text: logic.fmtSize?.(a.size) || "" })))));
+    if (list.length && fw.workspace?.files?.save) {
+      const save = async attachment => {
+        const thread = cur?.id, current = () => !fw.signal.aborted && fw.session.user.id === owner && cur?.id === thread && cur?.cards.get(c.id) === c && cur.expanded.has(c.id) && store.get().access === "ok" && c.filesFor === list;
+        if (!current()) return;
+        try {
+          if (attachment.size > 25 * 1024 * 1024) throw new Error("Files are limited to 25 MB each.");
+          const blob = await api.picture(attachment.id, { export: true });
+          if (!current()) return;
+          if (!(blob instanceof Blob) || blob.size > 25 * 1024 * 1024) throw new Error("That attachment is too large to save.");
+          const file = new File([blob], attachment.filename || "Attachment", { type: attachment.type || blob.type || "application/octet-stream" });
+          const result = await fw.workspace.files.save(file, { title: "Save attachment to InFlite Files", current });
+          if (current() && result?.id) fw.toast("Saved to InFlite Files");
+        } catch (error) { if (current() && error?.name !== "AbortError") fw.toast(error?.message || "That attachment couldn’t be saved."); }
+      };
+      c.files.append(ui.btn("Save to InFlite Files", { small: true, act: "save-drive", run: () => {
+        if (list.length === 1) return save(list[0]);
+        let chooser;
+        chooser = fw.sheet.open({ sheet: "mail-save-attachment", title: "Choose an attachment", body: E("div", { class: "ml-workspace-file" }, ...list.map(attachment => ui.btn(attachment.filename || "Attachment", { run: () => { chooser.now(); save(attachment); } }))) });
+      } }));
+    }
   }
   async function picture(a) {
     const id = cur?.id, type = String(a.type).toLowerCase();

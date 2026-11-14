@@ -8,7 +8,7 @@ export function safeFilesLocation(value = {}) {
     if (value.app != null && !APPS.has(value.app) || value.category != null && !["routes", "workouts", "images", "audio", "documents"].includes(value.category)) return null;
     return { kind: "apps", app: value.app || null, ...(value.category ? { category: value.category } : {}) };
   }
-  if (value.kind !== undefined && value.kind !== "drive" || value.folderId != null && !filesFolder(value.folderId) || value.view != null && !["folder", "recent"].includes(value.view)) return null;
-  return { kind: "drive", folderId: value.view === "recent" ? null : value.folderId || null, view: value.view === "recent" ? "recent" : "folder" };
+  if (value.kind !== undefined && value.kind !== "drive" || value.folderId != null && !filesFolder(value.folderId) || value.view != null && !["folder", "recent", "trash", "favourites"].includes(value.view)) return null;
+  return { kind: "drive", folderId: value.view && value.view !== "folder" ? null : value.folderId || null, view: value.view || "folder" };
 }
 export { safeFilesLocation as filesLocation };

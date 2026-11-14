@@ -16,9 +16,10 @@ export function driveItem(value) {
     || value.kind === "folder" && (value.size !== 0 || value.status !== "ready")
     || !["pending", "ready"].includes(value.status) || !Number.isSafeInteger(value.version) || value.version < 1
     || !Number.isSafeInteger(value.size) || value.size < 0 || value.size > MAX || [value.createdAt, value.modifiedAt].some(at => !Number.isSafeInteger(at) || at < 0 || at > 864e13)
+    || value.favourite !== undefined && typeof value.favourite !== "boolean" || value.trashedAt !== undefined && (!Number.isSafeInteger(value.trashedAt) || value.trashedAt <= 0 || !driveId(value.trashRoot))
     || !value.name || value.name !== clean(value.name) || !/^[\w!#$&^_.+-]+\/[\w!#$&^_.+-]+$/.test(value.mime || "")) return null;
   return { id: value.id, parentId: value.parentId, kind: value.kind, name: value.name, mime: value.mime, size: value.size,
-    createdAt: value.createdAt, modifiedAt: value.modifiedAt, version: value.version, status: value.status };
+    createdAt: value.createdAt, modifiedAt: value.modifiedAt, version: value.version, status: value.status, ...(value.trashedAt ? { trashedAt:value.trashedAt, trashRoot:value.trashRoot } : {}), ...(value.favourite ? { favourite:true } : {}) };
 }
 function itemAnswer(value) {
   const item = driveItem(value?.item);
@@ -82,7 +83,7 @@ export function createDriveClient(F) {
   }
   const lost = status => { if (status === 401 && live()) Promise.resolve(F.session.lost?.()).catch(() => {}); };
   async function request(action, { method = "GET", query, body, ...lease } = {}) {
-    const task = scope(lease);
+    const task = scope(lease, action === "copy" ? 120000 : 20000);
     try {
       const params = new URLSearchParams();
       for (const [key, value] of Object.entries(query || {})) if (value != null && value !== "") params.set(key, String(value));
@@ -99,7 +100,7 @@ export function createDriveClient(F) {
   }
   const browse = async ({ parentId = null, view = "folder", cursor = null, query = "", sort = view === "recent" ? "modified" : "name", kind = null, ...lease } = {}) => {
     if (parentId !== null) checkedId(parentId);
-    if (kind !== null && kind !== "folder" || !["folder", "recent", "search"].includes(view) || !["name", "modified", "size"].includes(sort) || cursor !== null && (typeof cursor !== "string" || !/^\d{1,12}:\d{1,4}$/.test(cursor)) || typeof query !== "string" || query.length > 160) throw new FilesError("That folder request is invalid.", 400);
+    if (kind !== null && kind !== "folder" || !["folder", "recent", "search", "trash", "favourites"].includes(view) || !["name", "modified", "size"].includes(sort) || cursor !== null && (typeof cursor !== "string" || !/^\d{1,12}:\d{1,4}$/.test(cursor)) || typeof query !== "string" || query.length > 160) throw new FilesError("That folder request is invalid.", 400);
     const args = { parentId, view, cursor, sort, ...(kind ? { kind } : {}) };
     return listingAnswer(await request(query ? "search" : "list", query ? { method: "POST", body: { ...args, q: query }, ...leaseOf(lease) } : { query: args, ...leaseOf(lease) }));
   };
@@ -142,6 +143,10 @@ export function createDriveClient(F) {
     reserve: async (spec, lease = {}) => itemAnswer(await request("uploads", { method: "POST", body: spec, ...leaseOf(lease) })),
     rename: async (id, version, name, lease = {}) => itemAnswer(await request("item", { method: "PATCH", body: { id: checkedId(id), version: checkedVersion(version), name }, ...leaseOf(lease) })),
     move: async (id, version, parentId, lease = {}) => itemAnswer(await request("move", { method: "POST", body: { id: checkedId(id), version: checkedVersion(version), parentId }, ...leaseOf(lease) })),
+    trash: async (id, version, lease = {}) => itemAnswer(await request("trash", { method:"POST",body:{id:checkedId(id),version:checkedVersion(version)},...leaseOf(lease) })),
+    restore: async (id, version, input = {}, lease = {}) => itemAnswer(await request("restore", { method:"POST",body:{id:checkedId(id),version:checkedVersion(version),...(Object.hasOwn(input,"parentId")?{parentId:input.parentId}:{}),...(input.name===undefined?{}:{name:input.name})},...leaseOf(lease) })),
+    favourite: async (id, version, favourite, lease = {}) => itemAnswer(await request("favourite",{method:"POST",body:{id:checkedId(id),version:checkedVersion(version),favourite},...leaseOf(lease)})),
+    copy: async (id, version, parentId, name, operationId = fileOperationId(), lease = {}) => itemAnswer(await request("copy",{method:"POST",body:{id:checkedId(id),version:checkedVersion(version),parentId,name,operationId},...leaseOf(lease)})),
     remove: (id, version, lease = {}) => request("item", { method: "DELETE", query: { id: checkedId(id), version: checkedVersion(version) }, ...leaseOf(lease) }),
     destroy };
 }

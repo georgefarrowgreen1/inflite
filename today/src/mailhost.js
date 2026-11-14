@@ -48,6 +48,7 @@ const OUT = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path
 // The host page. The frame has no address of its own here: its script gives it Mail's (with the code coming back from
 // signing in, if there's one), so Mail is loaded once
 export function hostPage(mail, auth) {
+  const publicMail = mail === "https://email.inflite.ai" ? "https://inflite.ai/mail/standalone/" : mail + "/";
   return `<!doctype html>
 <html lang="en-GB" data-mail="${attr(mail)}" data-auth="${attr(auth)}">
 <head>
@@ -73,7 +74,7 @@ export function hostPage(mail, auth) {
   <header class="mh-bar">
     <button type="button" class="mh-back" aria-label="Back to Apps">${CHEVRON}<span>Apps</span></button>
     <h1 class="mh-t">Mail</h1>
-    <a class="mh-own" href="${attr(mail)}/" target="_blank" rel="noopener">Open Mail on Its Own${OUT}</a>
+    <a class="mh-own" href="${attr(publicMail)}" target="_blank" rel="noopener">Open Mail on Its Own${OUT}</a>
   </header>
   <iframe class="mh-frame" name="ifl-mail" title="Mail" allow="clipboard-write; web-share"></iframe>
 </body>

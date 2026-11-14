@@ -183,3 +183,27 @@ test('Mail late Files results cannot publish after an account switch, request ca
     t.workspace.destroy(); t.controller.abort(); assert.equal(t.state.removed, 1, change);
   }
 });
+
+test('Mail attaches actual Drive files to a native unsent compose only after the picker completes',async()=>{
+ const t=fixture(),file=new File(['private bytes'],'Invoice.txt',{type:'text/plain'}),requests=[];
+ t.fw.workspace.files={open:async options=>{requests.push(options);return[file];}};
+ assert.equal(t.workspace.snapshot().actions.find(a=>a.id==='compose-attach').enabled,true);
+ const result=await t.workspace.run('compose-attach');assert.equal(result.ok,true);
+ assert.equal(t.opened.length,1);assert.equal(t.opened[0].kind,'compose');assert.equal(t.opened[0].args[0].files[0],file);
+ assert.equal(requests[0].multiple,true);assert.equal(requests[0].maxBytes,20*1024*1024);assert.deepEqual(t.calls,[],'attaching never reads a message or sends mail');
+});
+test('Mail abandons a delayed Drive attachment when the caller, account or Mail access retires',async()=>{
+ for(const mode of ['owner','caller','access','abort']){
+  const t=fixture(),gate=deferred();let current=true;
+  t.fw.workspace.files={open:()=>gate.promise};
+  const pending=t.workspace.run('compose-attach',null,{current:()=>current});await tick();await tick();
+  if(mode==='owner')t.fw.session.user.id='bea';if(mode==='caller')current=false;if(mode==='access')t.store.set({access:'reauth'});if(mode==='abort')t.controller.abort();
+  gate.resolve([new File(['private'],'File.txt')]);assert.equal((await pending).ok,false,mode);assert.equal(t.opened.length,0,mode);
+ }
+});
+
+test('Mail dock handoff resolves only its opaque token and does not open a second picker or send',async()=>{
+ const t=fixture(),token='a'.repeat(32),file=new File(['private'],'Notes.txt'),calls=[];
+ t.fw.workspace.files={open:async()=>{throw Error('unexpected picker');},fromDrop:async(transfer,options)=>{calls.push({token:transfer.getData('application/x-inflite-files-token'),current:options.current()});return[file];}};
+ const result=await t.workspace.run('compose-attach','drop:'+token);assert.equal(result.ok,true);assert.deepEqual(calls,[{token,current:true}]);assert.equal(t.opened[0].args[0].files[0],file);assert.deepEqual(t.calls,[]);
+});

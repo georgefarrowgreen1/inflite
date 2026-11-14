@@ -55,7 +55,7 @@ async function open({ native = false, width, theme }) {
     await page.evaluate(async () => {
       const ui = await import('/roof/ui.js'), { createSheets } = await import('/roof/sheet.js'), { openCompose } = await import('/mail/roof/compose.js'), { createStore } = await import('/mail/roof/store.js');
       const sheets = createSheets({ route: { tab: 'today' } }); let slot = null;
-      const fw = { ui, toast() {}, sheet: { open: spec => sheets.open({ ...spec, app: 'mail' }) } };
+      const fw = { ui, session: { user: { id: "geometry-test-owner" } }, signal: new AbortController().signal, toast() {}, sheet: { open: spec => sheets.open({ ...spec, app: 'mail' }) } };
       window.__geometryCompose = openCompose({ fw, store: createStore({ me: { defaultFrom: 'george@example.com', identities: ['george@example.com', 'work@example.com'] } }), logic: {}, icon: name => ui.icon(name), open: {},
         api: { saveDraft: async () => ({ id: 'sample-draft' }) }, outbox: { unsent: () => slot, keepUnsent: f => (slot = f, true), dropUnsent: () => { slot = null; }, track: () => () => {} } },
       { subject: 'A clear subject', text: 'Hello,\n\nA little breathing room for every field.' });

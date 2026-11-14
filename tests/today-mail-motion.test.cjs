@@ -67,7 +67,7 @@ async function hostedCompose() {
     const ui = await import('/__compose-ui.js'), { openCompose } = await import('/roof/compose.js'), { createStore } = await import('/roof/store.js');
     let slot = null;
     const outbox = window.__composeOutbox = { sends: [], unsent: () => slot, keepUnsent: f => (slot = f, true), dropUnsent: () => { slot = null; }, track: () => () => {}, send: async (f, files) => { outbox.sends.push({ f, files }); return { ok: true }; } };
-    const fw = { ui, toast() {}, sheet: { open(spec) {
+    const fw = { ui, session: { user: { id: "geometry-test-owner" } }, signal: new AbortController().signal, toast() {}, sheet: { open(spec) {
       const el = ui.el('section', { class: 'ifl-sheet', data: { app: 'mail' } }, spec.body, spec.acts.map(a => ui.btn(a.label, a)));
       document.body.append(el);
       return { el, closed: false, setBusy() {}, close() { this.closed = true; el.remove(); spec.onClose?.(); } };

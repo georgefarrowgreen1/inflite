@@ -10,6 +10,8 @@
 //   message) (status 0: no answer). onLost: a 401 with an access word; onRefused: no answer while online (Mail's hub
 //   switch off: a CORS refusal looks like this), so the page asks /api/hub again (C1).
 export const MAIL = `${location.protocol}//email.${(location.protocol === "https:" && location.host === "os.inflite.ai" || /^https?:$/.test(location.protocol) && /^os\.ifl\.test(?::\d{1,5})?$/.test(location.host)) ? location.host.slice(3) : location.host.replace(/^next\./, "")}`;
+// Public fallback documents use the isolated Mail host within InFlite.
+export const MAIL_PAGE = /(^|\.)inflite\.ai$/.test(location.hostname) ? "https://inflite.ai/mail/standalone" : MAIL;
 
 export const METHODS = ["session", "me", "version", "counts", "settings", "handback", "threads", "search", "thread", "meta", "draft", "batch", "emptyTrash", "unsubInfo", "unsubscribe", "remove", "saveSettings", "updateAddress", "findContacts", "saveDraft", "sendDraft", "sent", "picture", "fileUrl", "rawUrl", "spot"];
 
@@ -112,7 +114,9 @@ export function createApi({ base = MAIL, onLost = null, onRefused = null } = {})
     saveDraft: (draft, onProgress, opts = {}) => req("POST", "/api/drafts", draft, { upload: true, onProgress, ...opts }),
     sendDraft: (draftId, key, opts = {}) => req("POST", "/api/send", { draftId, key }, opts),
     sent: (keys) => req("GET", `/api/sends?${qs({ keys: keys.join(",") })}`),
-    picture: (id) => req("GET", `/api/attachments/${enc(id)}`, undefined, { blob: true }),
+    picture: (id, options = {}) => options.export
+      ? req("POST", `/api/attachments/${enc(id)}/export`, {}, { blob: true })
+      : req("GET", `/api/attachments/${enc(id)}`, undefined, { blob: true }),
     fileUrl: (id) => `${base}/api/attachments/${enc(id)}`,
     rawUrl: (id) => `${base}/api/messages/${enc(id)}/raw`,
     // (Mail on Your Day's strip: Remove, Put It Back, Wrong: { hidden } or { wrong: true } → { ok, spots })

@@ -10,7 +10,7 @@ async function fixture(options = {}) {
     apps: () => Object.keys(F.session.apps).map(id => ({ id, available: true })),
     workspaces: () => [{ id: 'ride', name: 'Morning ride' }, { id: 'work', name: 'Work <private>' }],
     actions: () => [], files: () => [],
-    runIntent: (...args) => calls.push(['intent', ...args]),
+    runIntent: (...args) => calls.push(['intent', ...args.slice(0, 3)]),
     openWorkspace: id => calls.push(['workspace', id]), openFiles: q => calls.push(['files', q]), openApp: app => calls.push(['app', app]), ...options,
   });
   return { F, controller, calls, commands, provider: providers[0] };
@@ -163,4 +163,112 @@ test('only a supported current-day Fitness notification offers its real ride-tim
   assert.deepEqual(calls, [['fitness', 'schedule']]);
   assert.deepEqual(notificationActions({ app: 'fitness', url: '/fitness/#day=2026-11-12' }, options).map(a => a.id), ['workspace']);
   assert.deepEqual(notificationActions({ app: 'mail', url: '/mail/#thread=t' }, { ...options, enabled: () => false }), []);
+});
+
+test('cold file commands require the real optional picker and only native supported imports are offered', async () => {
+  let dialogs = false;
+  const f = await fixture({ fileDialogsAvailable: () => dialogs });
+  assert.equal((await f.provider.search('attach a file')).some(r => r.title === 'Attach a file in Mail'), false);
+  dialogs = true;
+  const attach = (await f.provider.search('attach a file')).find(r => r.title === 'Attach a file in Mail');
+  assert.ok(attach); await attach.run();
+  assert.deepEqual(f.calls, [['intent', 'mail', 'compose-attach', undefined]]);
+  assert.ok((await f.provider.search('import route')).some(r => r.title === 'Import a route or activity'));
+  assert.ok((await f.provider.search('import this route')).some(r => r.title === 'Import a route or activity'));
+  assert.ok((await f.provider.search('attach this file')).some(r => r.title === 'Attach a file in Mail'));
+  assert.equal((await f.provider.search('save export')).some(r => /Save/.test(r.title)), false, 'an unavailable route/workout cannot create a fake export');
+  f.F.session.view.apps.mail = false;
+  assert.equal((await f.provider.search('attach a file')).some(r => r.title === 'Attach a file in Mail'), false);
+  f.commands.destroy();
+});
+
+test('native file exports use live provider capabilities and retire after state or entitlement changes', async () => {
+  let actions = [{app:'fitness',id:'save-route-drive',label:'Save route to InFlite Files',objectId:'route-1'}];
+  const f = await fixture({ fileDialogsAvailable: () => true, actions: () => actions });
+  const first = (await f.provider.search('save export')).find(r => r.title === 'Save route to InFlite Files');
+  assert.ok(first); actions = [{...actions[0],objectId:'route-2'}];
+  await first.run(); assert.deepEqual(f.calls, [], 'an old export cannot switch to a newly selected route');
+  const next = (await f.provider.search('save export')).find(r => r.title === 'Save route to InFlite Files');
+  actions=[]; await next.run(); assert.deepEqual(f.calls, [], 'removed provider action cannot fall back to a built-in command');
+  f.commands.destroy();
+});
+
+test('typed system search discovers real capabilities without dispatching callbacks or executing arbitrary text', async () => {
+  const calls=[];
+  const f=await fixture({systemActions:()=>[
+    {id:'open-activity',current:()=>true,run:()=>calls.push('activity')},
+    {id:'sync-workspaces',current:()=>true,run:()=>calls.push('sync')},
+    {id:'resolve-workspace-sync',current:()=>true,run:()=>calls.push('resolve')},
+    {id:'open-recovery',current:()=>true,run:()=>calls.push('status')},
+    {id:'retry-mail',app:'mail',current:()=>true,run:()=>calls.push('retry')},
+    {id:'send-everything',label:'Send all files',current:()=>true,run:()=>calls.push('BAD')},
+    {id:'retry-weather',app:'mail',current:()=>true,run:()=>calls.push('BAD')},
+  ]});
+  for(const query of ['activity','sync my workspaces','resolve workspace conflict','connection status','retry mail']) assert.ok((await f.provider.search(query)).length,query);
+  assert.equal((await f.provider.search('send everything')).some(r=>r.title==='Send all files'),false);
+  assert.deepEqual(calls,[]);
+  await (await f.provider.search('activity')).find(r=>r.title==='Activity').run();
+  assert.deepEqual(calls,['activity']); assert.deepEqual(f.calls,[]);
+  f.commands.destroy();
+});
+
+test('system controls re-read policy, revision and owning app before every invocation', async () => {
+  let revision=1,enabled=true,current=true,present=true;
+  const calls=[];
+  const f=await fixture({systemActions:()=>present?[{id:'retry-mail',app:'mail',revision,enabled,current:()=>current,run:()=>calls.push('retry')}]:[]});
+  const retry=async()=> (await f.provider.search('retry mail')).find(r=>r.title==='Retry Mail');
+  const old=await retry(); revision=2; await old.run(); assert.deepEqual(calls,[]);
+  const disabled=await retry(); enabled=false; await disabled.run(); assert.deepEqual(calls,[]);
+  enabled=true; const locked=await retry(); current=false; await locked.run(); assert.deepEqual(calls,[]);
+  current=true; const removed=await retry(); present=false; await removed.run(); assert.deepEqual(calls,[]);
+  present=true; const revoked=await retry(); f.F.session.view.apps.mail=false; await revoked.run(); assert.deepEqual(calls,[]);
+  f.commands.destroy();
+});
+
+test('pending command leases are single-flight, cancelled on teardown and cannot complete in a new account', async () => {
+  let release,lease;const waiting=new Promise(r=>release=r),effects=[];
+  const f=await fixture({systemActions:()=>[{id:'sync-workspaces',current:()=>true,async run(scope){lease=scope;await waiting;if(scope.current())effects.push('saved');}}]});
+  const command=(await f.provider.search('sync workspaces')).find(r=>r.title==='Sync workspaces');
+  const running=command.run();assert.equal(lease.current(),true);assert.equal(await command.run(),false,'repeated Enter cannot duplicate a pending sync');
+  f.F.session.view.user.id='owner-b';f.controller.abort();assert.equal(lease.signal.aborted,true);assert.equal(lease.current(),false);
+  release();await running;assert.deepEqual(effects,[]);assert.deepEqual(f.calls,[['off']]);
+});
+
+test('native bootstrap receives a current lease that retires when its action disappears', async () => {
+  let release,lease;const waiting=new Promise(r=>release=r),effects=[];
+  let actions=[{app:'fitness',id:'save-workout-drive',label:'Save workout',objectId:'ride'}];
+  const f=await fixture({fileDialogsAvailable:()=>true,actions:()=>actions,async runIntent(app,id,ref,scope){lease=scope;await waiting;if(scope.current())effects.push([app,id,ref]);}});
+  const command=(await f.provider.search('save export')).find(r=>r.title==='Save workout');const running=command.run();
+  assert.equal(lease.current(),true);actions=[];assert.equal(lease.current(),false);release();await running;
+  assert.deepEqual(effects,[]);f.commands.destroy();
+});
+
+test('cancelled typed actions are quiet while a current failure is reported once and retry remains explicit', async () => {
+  let cancel=true;
+  const f=await fixture({systemActions:()=>[{id:'sync-workspaces',current:()=>true,run(){throw cancel?new DOMException('Cancelled','AbortError'):new Error('Offline');}}]});
+  const command=(await f.provider.search('sync workspaces')).find(r=>r.title==='Sync workspaces');
+  assert.equal(await command.run(),false);assert.deepEqual(f.calls,[]);
+  cancel=false;assert.equal(await command.run(),false);assert.deepEqual(f.calls,[['toast','That action couldn’t open. Try again.']]);
+  f.commands.destroy();
+});
+
+test('selection availability can turn off while the command keeps its durable owned task lease',async()=>{
+ let pending=false,release,systemLease,nativeLease;
+ const waiting=new Promise(r=>release=r),effects=[];
+ const f=await fixture({fileDialogsAvailable:()=>true,actions:()=>[{app:'fitness',id:'save-route-drive',label:'Save route',objectId:'route',enabled:!pending}],
+  systemActions:()=>pending?[]:[{id:'sync-workspaces',enabled:true,current:()=>true,async run(scope){systemLease=scope;pending=true;await waiting;if(scope.current())effects.push('sync');}}],
+  async runIntent(_app,_id,_ref,scope){nativeLease=scope;pending=true;await waiting;if(scope.current())effects.push('route');}});
+ const sync=(await f.provider.search('sync workspaces')).find(r=>r.title==='Sync workspaces');const systemRun=sync.run();
+ assert.equal(systemLease.current(),true,'own pending state does not cancel synchronization');pending=false;
+ const save=(await f.provider.search('save export')).find(r=>r.title==='Save route');const nativeRun=save.run();
+ assert.equal(nativeLease.current(),true,'temporary disabled provider controls do not revoke the selected export');release();await Promise.all([systemRun,nativeRun]);
+ assert.deepEqual(effects,['sync','route']);f.commands.destroy();
+});
+
+
+test('system identifiers cannot inherit object-prototype names and invalid native targets cannot fall back to another resource',async()=>{
+ const f=await fixture({systemActions:()=>['constructor','toString','__proto__'].map(id=>({id,label:'Forged '+id,current:()=>true,run(){assert.fail('prototype command');}})),actions:()=>[{app:'mail',id:'reply',label:'Reply forged',objectId:'x'.repeat(201)},{app:'fitness',id:'schedule',label:'Schedule malformed',objectId:{id:'different'}}]});
+ for(const word of ['constructor','toString','__proto__'])assert.equal((await f.provider.search(word)).some(r=>r.title.startsWith('Forged')),false);
+ assert.equal((await f.provider.search('forged')).some(r=>r.title==='Reply forged'),false);assert.equal((await f.provider.search('malformed')).some(r=>r.title==='Schedule malformed'),false);
+ f.commands.destroy();
 });

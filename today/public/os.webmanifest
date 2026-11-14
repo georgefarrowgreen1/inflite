@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "InFlite OS",
-  "short_name": "InFlite OS",
-  "start_url": "/#workspace",
+  "name": "InFlite",
+  "short_name": "InFlite",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f8f9f6",

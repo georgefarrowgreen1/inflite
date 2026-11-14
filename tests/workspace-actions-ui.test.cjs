@@ -38,7 +38,7 @@ async function open(width = 390) {
       { id: 'chat-note', app: 'chat', title: 'Message from Reuben', body: 'A private sample', url: '/chats/#open=friend-8', at: Date.now() - 10000, seen: false },
       { id: 'ride-note', app: 'fitness', title: 'Your ride', body: 'Ready to plan', url: '/fitness/#today', at: Date.now() - 20000, seen: false },
     ];
-    const s = window.actions = { requests: [], calls: [], counts: [], toasts: [], notes, ac, offline: false, defer: false, ports: [] };
+    const s = window.actions = { requests: [], calls: [], counts: [], toasts: [], notes, ac, offline: false, defer: false, ports: [], systems: [], fileDialogs: false };
     sw.getRegistration = async () => ({ active: { postMessage(msg, ports) {
       s.requests.push(msg);
       const answer = () => {
@@ -55,7 +55,7 @@ async function open(width = 390) {
       s.calls.push(['intent', app, intent, objectId, document.querySelector('dialog[data-sheet=notifications][open]') !== null]);
       F.sheet.open({ sheet: 'intent-target', title: intent === 'reply' ? 'Reply editor' : 'App editor', body: ui.el('textarea', { 'aria-label': 'Draft' }) });
     };
-    s.commands = createWorkspaceCommands(F, { apps: () => Object.keys(F.session.apps).map(id => ({ id })), actions: () => [], files: () => [], runIntent, openFiles(q) { s.calls.push(['files', q]); }, openWorkspace(id) { s.calls.push(['workspace', id]); } });
+    s.commands = createWorkspaceCommands(F, { apps: () => Object.keys(F.session.apps).map(id => ({ id })), actions: () => [], files: () => [], systemActions: () => s.systems, fileDialogsAvailable: () => s.fileDialogs, runIntent, openFiles(q) { s.calls.push(['files', q]); }, openWorkspace(id) { s.calls.push(['workspace', id]); } });
     await s.commands.ready;
     s.bell = createBell(F, { count(n) { s.counts.push(n); }, actions: note => notificationActions(note, { origin: location.origin, enabled: app => F.session.apps[app] === true, current: () => !ac.signal.aborted && F.session.view.user.id === 'owner-a', runIntent, openWorkspace(app, path) { s.calls.push(['workspace', app, path]); } }) });
     document.getElementById('bell').onclick = () => s.bell.open(); document.getElementById('search').onclick = () => F.search.open();
@@ -159,4 +159,51 @@ test('retired notification controls and Undo cannot mutate or navigate a replace
     assert.equal(await page.locator('dialog[open]').count(), 0);
     await clean();
   } finally { await ctx.close(); }
+});
+
+
+test('typed system and file commands use the shared search UI and keep their query out of persisted navigation', async () => {
+  const {ctx,page,clean}=await open(320);
+  try {
+    await page.evaluate(()=>{
+      actions.fileDialogs=true;
+      actions.systems=[{id:'open-activity',label:'Activity',current:()=>!actions.ac.signal.aborted,run(scope){
+        if(scope.current())actions.F.sheet.open({sheet:'typed-activity',title:'Activity',body:actions.F.ui.el('p',{text:'No background tasks'})});
+      }}];
+    });
+    await page.keyboard.press('Control+k');const input=page.getByRole('combobox',{name:'Search everything'});
+    await input.fill('show activity');const activity=page.getByRole('option').filter({hasText:'Activity'});await activity.waitFor();
+    await activity.click();await page.getByRole('dialog',{name:'Activity',exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>JSON.stringify(history.state).includes('show activity')||(localStorage.getItem('ifl:recent')||'').includes('show activity')),false);
+    await page.locator('dialog[data-sheet=typed-activity] [data-close]').click();
+    await page.getByRole('button',{name:'Search',exact:true}).click();await input.fill('attach a file');
+    await page.getByRole('option').filter({hasText:'Attach a file in Mail'}).click();await page.getByRole('dialog',{name:'App editor',exact:true}).waitFor();
+    assert.deepEqual(await page.evaluate(()=>actions.calls.at(-1).slice(0,4)),['intent','mail','compose-attach',undefined]);
+    assert.equal(await page.evaluate(()=>Object.keys({...localStorage,...sessionStorage}).some(key=>/attach a file/.test(key))),false);
+    await clean();
+  }finally{await ctx.close();}
+});
+
+test('retired system command controls cannot act after policy changes or account replacement',async()=>{
+  const {ctx,page,clean}=await open();
+  try{
+    await page.evaluate(()=>{actions.canSync=true;actions.systems=[{id:'sync-workspaces',label:'Sync workspaces',current:()=>actions.canSync,run(){actions.calls.push(['sync']);}}];});
+    await page.getByRole('button',{name:'Search',exact:true}).click();await page.getByRole('combobox',{name:'Search everything'}).fill('sync workspaces');
+    await page.getByRole('option').filter({hasText:'Sync workspaces'}).waitFor();
+    await page.evaluate(()=>{window.retiredSync=document.querySelector('[role=option]');actions.canSync=false;retiredSync.click();});
+    assert.deepEqual(await page.evaluate(()=>actions.calls),[]);
+    await page.evaluate(()=>{actions.canSync=true;actions.F.search.open();});
+    await page.getByRole('combobox',{name:'Search everything'}).fill('sync workspaces');await page.getByRole('option').filter({hasText:'Sync workspaces'}).waitFor();
+    await page.evaluate(()=>{window.retiredSync=document.querySelector('[role=option]');actions.F.session.view.user.id='replacement';actions.ac.abort();retiredSync.click();});
+    assert.deepEqual(await page.evaluate(()=>actions.calls),[]);await clean();
+  }finally{await ctx.close();}
+});
+
+test('global command shortcut preserves a native editor inside a shadow tree',async()=>{
+  const {ctx,page,clean}=await open();
+  try{
+    await page.evaluate(()=>{const host=document.createElement('div');host.id='shadow-editor';document.body.append(host);const field=document.createElement('textarea');field.setAttribute('aria-label','Shadow draft');host.attachShadow({mode:'open'}).append(field);field.focus();});
+    await page.keyboard.press('Control+k');assert.equal(await page.locator('dialog[data-sheet=search][open]').count(),0);
+    await page.evaluate(()=>document.getElementById('search').focus());await page.keyboard.press('Control+k');await page.getByRole('combobox',{name:'Search everything'}).waitFor();await clean();
+  }finally{await ctx.close();}
 });

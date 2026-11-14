@@ -9,11 +9,12 @@ const ACTION = /^[a-z][a-z0-9-]{0,47}$/;
 const clean = (value, max = 255) => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max) : '';
 const keyOf = location => JSON.stringify(filesLocation(location));
 const activeActions = item => (Array.isArray(item?.actions) ? item.actions : []).filter(action => action && ACTION.test(action.id || '') && action.enabled !== false && typeof action.label === 'string').slice(0, 12);
-const folderLocation = item => item?.location ? filesLocation(item.location) : item?.kind === 'folder' && item.source?.kind === 'drive' && FOLDER.test(item.id || '') ? filesLocation({ kind: 'drive', folderId: item.id }) : null;
+const folderLocation = item => item?.trashedAt ? null : item?.location ? filesLocation(item.location) : item?.kind === 'folder' && item.source?.kind === 'drive' && FOLDER.test(item.id || '') ? filesLocation({ kind: 'drive', folderId: item.id }) : null;
 const errorText = error => clean(error?.message || error?.error, 240) || 'That didn’t finish. Refresh to check before trying again.';
 
 export function createFilesExplorer(root, F, { service, onNavigate = () => false, onChanged = () => {} } = {}) {
   if (!service || typeof service.browse !== 'function' || typeof service.run !== 'function') throw new TypeError('InFlite Files needs its account-owned service.');
+  const multi = new Map(); let selecting = false;
   const ui = F.ui, owner = F.session?.view?.user?.id, signal = F.signal, popups = new Set(), operations = new Set();
   let gone = false, visible = false, episode = 0, readGen = 0, actionGen = 0, queryTimer = 0, refreshTimer = 0, read = null, previewRead = null, previewURL = null, detailsSheet = null, detailsState = null;
   let location = filesLocation(), listing = { items: [], status: 'loading', capabilities: {} }, query = '', sort = 'name', mode = 'list', selection = null, details = true, preview = null, uploadTarget = null;
@@ -46,7 +47,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   function breadcrumbs() {
     if (Array.isArray(listing.breadcrumbs)) return listing.breadcrumbs;
     if (location.kind === 'apps') return [{ name: 'From apps', location: filesLocation({ kind: 'apps' }) }, ...(location.app ? [{ name: listing.name || location.app, location }] : [])];
-    return [{ name: location.view === 'recent' ? 'Recent' : 'My Drive', location: filesLocation({ kind: 'drive', view: location.view }) },
+    return [{ name: ({recent:'Recent',trash:'Trash',favourites:'Favourites'})[location.view] || 'My Drive', location: filesLocation({ kind: 'drive', view: location.view }) },
       ...(Array.isArray(listing.ancestors) ? listing.ancestors.filter(folder => FOLDER.test(folder?.id || '')).map(folder => ({ name: folder.name, location: filesLocation({ kind: 'drive', folderId: folder.id }) })) : []),
       ...(listing.folder && FOLDER.test(listing.folder.id || '') ? [{ name: listing.folder.name, location }] : [])];
   }
@@ -56,9 +57,9 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   }
   function model() {
     const values = items();
-    return { ...listing, items: values, view: mode, query, sort, selection, details, preview, locations: locations(), breadcrumbs: breadcrumbs(), parentLocation: parentLocation(), transfers: transfers(),
+    return { ...listing, items: values, selecting, selectedKeys:[...multi.keys()],bulkActions:bulkActions(),view: mode, query, sort, selection, details, preview, locations: locations(), breadcrumbs: breadcrumbs(), parentLocation: parentLocation(), transfers: transfers(),
       page: page + 1, focusKey: pageMemory.get(page)?.focusKey,
-      locationName: listing.folder?.name || listing.name || (location.kind === 'apps' ? 'From apps' : location.view === 'recent' ? 'Recent' : 'My Drive'),
+      locationName: listing.folder?.name || listing.name || (location.kind === 'apps' ? 'From apps' : ({recent:'Recent',trash:'Trash',favourites:'Favourites'})[location.view] || 'My Drive'),
       capabilities: listing.status === 'ready' ? { ...listing.capabilities, upload: listing.capabilities?.upload === true && typeof service.upload === 'function' } : {} };
   }
   function paint() {
@@ -76,6 +77,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     }
   }
   function resetPages({ clearSelection = false } = {}) {
+    multi.clear();
     page = 0; pageCursors = [null]; pageMemory.clear();
     if (clearSelection) { selection = null; releasePreview(); }
   }
@@ -92,6 +94,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
       const state = ['ready', 'error', 'loading'].includes(answer?.status) ? answer.status : 'ready';
       const nextItems = Array.isArray(answer?.items) ? answer.items : [];
       listing = { ...answer, status: state, items: nextItems.slice(0, 500), capabilities: answer?.capabilities || {} };
+      for(const [key,version] of multi)if(!items().some(item=>item.key===key&&item.version===version))multi.delete(key);
       if (selection && !items().some(item => item.key === selection)) { selection = null; releasePreview(); }
       if (preview && items().find(item => item.key === preview.key)?.version !== preview.version) releasePreview();
       paint(); return true;
@@ -116,9 +119,10 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     closePopups();
     if (onNavigate(next) !== true) show(next);
   }
-  function select(item) {
+  function select(item, {multiple=false,range=false}={}) {
     const current = resource(item);
     if (!current) return;
+    if((selecting||multiple)&&current.source?.kind==='drive'){selecting=true;const rows=items(),anchor=[...multi.keys()].at(-1)||selection,a=rows.findIndex(value=>value.key===anchor),b=rows.findIndex(value=>value.key===current.key);if(range&&a>=0&&b>=0){for(const value of rows.slice(Math.min(a,b),Math.max(a,b)+1))if(value.source?.kind==='drive'&&multi.size<100)multi.set(value.key,value.version);}else if(multi.has(current.key))multi.delete(current.key);else if(multi.size<100)multi.set(current.key,current.version);paint();return;}
     if (view.isCompact() && folderLocation(current)) return navigate(folderLocation(current));
     if (selection !== current.key) releasePreview();
     selection = current.key; paint();
@@ -221,28 +225,29 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     handle = sheet({ sheet: newFolder ? 'files-new-folder' : 'files-rename', title: newFolder ? 'New folder' : 'Rename', focus: name, body, acts: [{ label: newFolder ? 'Create folder' : 'Save name', primary: true, run: save }] });
     name.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); save(); } });
   }
-  function remove(item) {
+  function remove(item,action='delete') {
     if (!resource(item) || item.source?.kind !== 'drive') return;
     closePopups(); let handle, pending = false;
     const error = ui.el('p', { role: 'status', hidden: true });
-    const body = ui.el('div', { class: 'ifx-form' }, ui.el('p', { text: item.kind === 'folder' ? 'Only empty folders can be deleted. This can’t be undone.' : 'This file will be removed from My Drive. This can’t be undone.' }), error);
-    handle = sheet({ sheet: 'files-delete', title: `Delete ${clean(item.name)}?`, body, acts: [{ label: 'Delete', destructive: true, run: async () => {
+    const body = ui.el('div', { class: 'ifx-form' }, ui.el('p', { text: action==='trash'?'This item and its contents will stay in Trash for 30 days. Storage remains in use until permanently deleted.':item.trashedAt?'This item and its contents will be permanently deleted. This cannot be undone.':item.kind === 'folder' ? 'Only empty folders can be deleted. This can’t be undone.' : 'This file will be removed from My Drive. This can’t be undone.' }), error);
+    handle = sheet({ sheet: 'files-delete', title: `${action==='trash'?'Move to Trash':item.trashedAt?'Delete forever':'Delete'}: ${clean(item.name)}?`, body, acts: [{ label: action==='trash'?'Move to Trash':item.trashedAt?'Delete forever':'Delete', destructive: true, run: async () => {
       if (pending || handle.closed) return; pending = true; handle.setBusy(true);
-      const answer = await execute(item, 'delete', { input: { version: item.version }, current: () => !handle.closed });
+      const answer = await execute(item, action, { input: { version: item.version }, current: () => !handle.closed });
       if (!active() || handle.closed) return; pending = false; handle.setBusy(false);
       if (answer?.ok === false) { error.hidden = false; error.textContent = clean(answer.error, 240) || 'That file couldn’t be deleted.'; return; }
       if (selection === item.key) { selection = null; releasePreview(); }
       handle.now(); refresh({ reset: true }); onChanged();
     } }] });
   }
-  function move(item) {
+  function move(item,action='move',batchItems=null) {
     if (!resource(item) || item.source?.kind !== 'drive') return;
     closePopups(); let target = filesLocation(), generation = 0, controller = null, handle, pending = false, destinationReady = false, pickerPage = 0, pickerCursors = [null], nextCursor = null;
     const path = ui.el('div', { class: 'ifx-path' }), folders = ui.el('div', { class: 'ifx-move-folders' }), status = ui.el('p', { role: 'status' });
     const previous = ui.el('button', { type: 'button', class: 'ifx-icon-button', 'aria-label': 'Previous folder page', on: { click: () => load(target, -1) } }, filesIcon('back'));
     const next = ui.el('button', { type: 'button', class: 'ifx-icon-button', 'aria-label': 'Next folder page', on: { click: () => load(target, 1) } }, filesIcon('chevron'));
     const pageNumber = ui.el('span', { class: 'ifx-page-number' }), pager = ui.el('nav', { class: 'ifx-pager', 'aria-label': 'Destination folder pages', hidden: true }, previous, pageNumber, next);
-    const body = ui.el('div', { class: 'ifx-form' }, path, status, folders, pager);
+    const copiedName=['copy','restore'].includes(action)&&!batchItems?ui.el('input',{type:'text',maxlength:255,value:action==='copy'?'Copy of '+item.name:item.name,'aria-label':action==='copy'?'Copy name':'Restored name'}):null;
+    const body = ui.el('div', { class: 'ifx-form' },...(copiedName?[ui.el('label',{},ui.el('span',{text:'Name'}),copiedName)]:[]), path, status, folders, pager);
     const load = async (location, direction = 0) => {
       location = filesLocation(location);
       if (!active() || handle?.closed || !location || location.kind !== 'drive' || direction < 0 && pickerPage === 0 || direction > 0 && !nextCursor) return;
@@ -261,17 +266,18 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
         const children = (answer.items || []).filter(folder => folder.kind === 'folder' && folder.id !== item.id && FOLDER.test(folder.id || ''));
         for (const folder of children) folders.append(ui.el('button', { type: 'button', class: 'ifx-action', on: { click: () => load(filesLocation({ kind: 'drive', folderId: folder.id })) } }, filesIcon('folder'), ui.el('span', { text: clean(folder.name) })));
         nextCursor = answer.cursor || null; previous.disabled = pickerPage === 0; next.disabled = !nextCursor; pager.hidden = pickerPage === 0 && !nextCursor; pageNumber.textContent = `Page ${pickerPage + 1}`;
-        destinationReady = item.parentId !== target.folderId && item.id !== target.folderId; handle.setBusy(!destinationReady);
+        destinationReady = (['copy','restore'].includes(action)||item.parentId!==target.folderId||batchItems)&&item.id!==target.folderId&&!batchItems?.some(value=>value.id===target.folderId); handle.setBusy(!destinationReady);
         status.textContent = !destinationReady ? 'Choose a different destination folder.' : children.length ? 'Choose a destination folder.' : 'No folders inside this location.';
       } catch (error) { if (current()) { if (error?.status === 409 && pickerPage > 0) return load(target); status.textContent = errorText(error); } }
     };
-    handle = sheet({ sheet: 'files-move', title: `Move ${clean(item.name)}`, body, onClose: () => controller?.abort(), acts: [{ label: 'Move here', primary: true, run: async () => {
+    handle = sheet({ sheet: 'files-move', title: `${action==='copy'?'Copy':action==='restore'?'Restore':'Move'} ${batchItems?batchItems.length+' selected items':clean(item.name)}`, body, onClose: () => controller?.abort(), acts: [{ label: action==='copy'?'Copy here':action==='restore'?'Restore here':'Move here', primary: true, run: async () => {
       if (pending || handle.closed || !destinationReady) return;
       pending = true; handle.setBusy(true);
-      const answer = await execute(item, 'move', { input: { parentId: target.folderId, version: item.version }, current: () => !handle.closed });
+      const input={parentId:target.folderId,version:item.version,...(copiedName?{name:clean(copiedName.value)}:{})};
+      const answer=batchItems?await executeBatch(batchItems,action,input,()=>!handle.closed):await execute(item,action,{input,current:()=>!handle.closed});
       if (!active() || handle.closed) return; pending = false; handle.setBusy(false);
-      if (answer?.ok === false) { status.textContent = clean(answer.error, 240) || 'This file couldn’t be moved.'; return; }
-      handle.now(); selection = null; releasePreview(); refresh({ reset: true }); onChanged();
+      if (answer?.ok === false&&!answer.results) { status.textContent = clean(answer.error, 240) || 'This file couldn’t be moved.'; return; }
+      handle.now();if(batchItems)reportBatch(answer,batchItems,action);multi.clear();selecting=false;selection = null; releasePreview(); refresh({ reset: true }); onChanged();
     } }] });
     load(target);
   }
@@ -280,11 +286,54 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     if (!current || !activeActions(current).some(action => action.id === id)) return;
     if (id === 'open' && folderLocation(current)) return navigate(folderLocation(current));
     if (id === 'rename' && current.source?.kind === 'drive') return nameForm(current);
-    if (id === 'move' && current.source?.kind === 'drive') return move(current);
-    if (id === 'delete' && current.source?.kind === 'drive') return remove(current);
+    if(id==='restore-to'&&current.source?.kind==='drive')return move(current,'restore');
+    if (['move','copy'].includes(id) && current.source?.kind === 'drive') return move(current,id);
+    if (['delete','trash'].includes(id) && current.source?.kind === 'drive') return remove(current,id);
     if (id === 'preview' && current.source?.kind === 'drive') return previewFile(current);
-    const answer = await execute(current, id);
+    const answer = await execute(current, id,{input:{version:current.version}});
+    if(active()&&answer?.ok!==false&&current.source?.kind==='drive'&&['restore','favourite'].includes(id))refresh({reset:true});
     if (active() && answer?.error) F.toast(clean(answer.error, 240));
+  }
+  const selectedItems=()=>items().filter(item=>multi.get(item.key)===item.version&&item.source?.kind==='drive');
+  function bulkActions(){
+    const values=selectedItems();if(!values.length)return[];
+    const common=id=>values.every(item=>activeActions(item).some(action=>action.id===id));
+    return [['move','Move','folder'],['copy','Copy','copy'],['trash','Move to Trash','delete'],['restore','Restore','restore'],['delete','Delete forever','delete']].filter(([id])=>common(id)).map(([id,label,icon])=>({id,label,icon}));
+  }
+  async function executeBatch(values,action,input={},permitted=()=>true){
+    if(!active()||typeof service.batch!=='function')return{ok:false,error:'Batch actions are not available.'};
+    const controller=new AbortController(),mine=++actionGen,at=episode;operations.add(controller);
+    const current=()=>active()&&episode===at&&mine===actionGen&&!controller.signal.aborted&&permitted();
+    try{return await service.batch(values.map(item=>({key:item.key,version:item.version})),action,input,{signal:controller.signal,current});}
+    catch(error){return current()?{ok:false,error:errorText(error)}:{ok:false,cancelled:true};}
+    finally{operations.delete(controller);}
+  }
+  function reportBatch(answer,values,action){
+    if(!active()||answer?.cancelled)return;
+    if(!answer?.results){if(answer?.error)F.toast(answer.error);return;}
+    const failed=answer.results.filter(result=>result.ok===false),done=answer.results.length-failed.length;
+    if(!failed.length){F.toast(`${done} ${done===1?'item':'items'} updated.`);return;}
+    const body=ui.el('div',{class:'ifx-form'},ui.el('p',{text:`${done} updated. ${failed.length} need attention; completed actions were kept.`}),...failed.map(result=>ui.el('p',{text:`${clean(values.find(item=>item.key===result.key)?.name||'Item')}: ${clean(result.error,240)||'Refresh before trying again.'}`})));
+    sheet({sheet:'files-batch-results',title:'Some items need attention',body});
+  }
+  function bulkAction(action){
+    const values=selectedItems();if(listing.status!=='ready'||!values.length||!bulkActions().some(value=>value.id===action))return;
+    if(['move','copy'].includes(action))return move(values[0],action,values);
+    closePopups();let handle,pending=false;
+    const words=action==='trash'?'These items and their contents will stay in Trash for 30 days.':action==='delete'?'These items and their contents will be permanently deleted. This cannot be undone.':'Restore these items to their original folders, or My Drive if those folders are gone.';
+    handle=sheet({sheet:'files-batch',title:`${action==='trash'?'Move to Trash':action==='delete'?'Delete forever':'Restore'} ${values.length} items?`,body:ui.el('p',{text:words}),acts:[{label:action==='trash'?'Move to Trash':action==='delete'?'Delete forever':'Restore',destructive:action!=='restore',primary:action==='restore',run:async()=>{if(pending||handle.closed)return;pending=true;handle.setBusy(true);const answer=await executeBatch(values,action,{},()=>!handle.closed);if(!active()||handle.closed)return;handle.now();multi.clear();selecting=false;refresh({reset:true});reportBatch(answer,values,action);}}]});
+  }
+  function startDrag(item,data){
+    const current=resource(item);if(!current||!data||typeof service.prepareDrag!=='function')return false;
+    const values=multi.has(item.key)?selectedItems():[current],token=service.prepareDrag(values.map(value=>({key:value.key,version:value.version})));if(!token)return false;
+    data.setData('application/x-inflite-files-token',token);data.effectAllowed='copyMove';return true;
+  }
+  async function folderDrop(item,data,copy){
+    const target=resource(item);if(!target||target.kind!=='folder'||target.trashedAt||typeof service.resolveDrag!=='function')return;
+    let values;try{values=service.resolveDrag(data.getData('application/x-inflite-files-token'),{current:active});}catch(_){return;}
+    if(!values?.length)return F.toast('Those files changed. Select them again.');
+    if(values.some(value=>value.id===target.id))return F.toast('A folder cannot be moved into itself.');
+    const answer=await executeBatch(values,copy?'copy':'move',{parentId:target.id});if(active()){multi.clear();selecting=false;refresh({reset:true});reportBatch(answer,values,copy?'copy':'move');}
   }
   const picker = ui.el('input', { type: 'file', multiple: true, hidden: true, 'aria-label': 'Choose files to upload' });
   root.after(picker);
@@ -311,6 +360,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     onSort(value) { if (['name', 'modified', 'size'].includes(value)) { sort = value; resetPages({ clearSelection: true }); refresh(); } },
     onView(value) { if (['list', 'grid'].includes(value)) { mode = value; paint(); } },
     onToggleDetails() { const selected = items().find(item => item.key === selection); if (!selected) return; if (view.isCompact()) showDetails(selected); else { details = !details; paint(); } },
+    onSelectionMode(){selecting=!selecting;multi.clear();paint();},onSelectAll(){if(!active()||listing.status!=='ready')return;selecting=true;for(const item of items())if(item.source?.kind==='drive'&&multi.size<100)multi.set(item.key,item.version);paint();},onClearSelection(){multi.clear();paint();},onBulk:bulkAction,onDragStart:startDrag,onFolderDrop:folderDrop,
     onNewFolder: () => nameForm(), onUpload: chooseUpload, onDrop: drop, onRetry: () => refresh({ reset: true }), onMore: () => changePage(1), onPrevious: () => changePage(-1), onPreviewError: previewError,
     onCancelTransfer: id => { if (live()) service.cancelTransfer?.(id); },
     onNotice: async (notice, id) => {
@@ -343,7 +393,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   }
   function destroy() {
     if (gone) return;
-    hide(); gone = true; actionGen++; off(); picker.remove(); view.destroy(); listing = { items: [], capabilities: {} }; selection = null; uploadTarget = null; query = ''; pageMemory.clear(); pageCursors = [null]; location = filesLocation(); signal?.removeEventListener?.('abort', destroy);
+    hide(); gone = true; actionGen++; multi.clear(); off(); picker.remove(); view.destroy(); listing = { items: [], capabilities: {} }; selection = null; uploadTarget = null; query = ''; pageMemory.clear(); pageCursors = [null]; location = filesLocation(); signal?.removeEventListener?.('abort', destroy);
   }
   signal?.addEventListener?.('abort', destroy, { once: true });
   if (signal?.aborted) destroy();

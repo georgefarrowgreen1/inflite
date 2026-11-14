@@ -5,11 +5,11 @@
 //   the filter, the address and the search, each with its ✕. Then what's being sent (the outbox, each with Undo or Try
 //   Again), the rows by day (none in Later), Updates as a digest, Load More; or the caught-up screen (the next back from
 //   Later, the newest Updates' senders), the empty words of each place (app.js emptyEl), a search's alternatives with
-//   their counts (POST, count), or "Couldn’t reach Mail" with Try Again and Open Mail on Its Own; the gate and offline words are mail.js's.
+//   their counts (POST, count), or "Couldn’t reach Mail" with Try Again and Open Mail; the gate and offline words are mail.js's.
 //   A row's tap: on a phone, the reader as a history entry (fw.nav.go("/mail/#thread=<id>"), S4-D6); on an iPad, the
 //   pane (store threadId). A draft's tap opens it in compose.
 import { threadRow, swipes } from "./rows.js";
-import { MAIL } from "./api.js";
+import { MAIL, MAIL_PAGE } from "./api.js";
 
 export function view(el, ctx) {
   const { store, fw, logic, actions } = ctx, ui = fw.ui;
@@ -121,7 +121,7 @@ export function view(el, ctx) {
 
   // (Mail unreachable, or its switch off: Try Again, or Mail at its own address, in a new tab, spec §8)
   function unreached(err) {
-    const e = ui.error({ title: "Couldn’t reach Mail", body: err, acts: [{ label: "Try Again", act: "retry", primary: true, run: () => actions.load() }, { label: "Open Mail on Its Own", act: "own", href: MAIL + "/" }] });
+    const e = ui.error({ title: "Couldn’t reach Mail", body: err, acts: [{ label: "Try Again", act: "retry", primary: true, run: () => actions.load() }, { label: "Open Mail", act: "own", href: MAIL_PAGE + "/" }] });
     const a = e.querySelector('a[data-act="own"]');
     if (a) { a.target = "_blank"; a.rel = "noopener"; }
     return e;

@@ -281,3 +281,46 @@ test('an uncertain non-cancelled reservation failure is not automatically replay
   await service.upload([new File(['data'],'Uncertain.txt')]);assert.deepEqual(await service.flush({timeoutMs:1000}),{lost:0});assert.equal(calls.filter(c=>c.action==='uploads').length,1);assert.equal(calls.some(c=>c.method==='DELETE'),false);assert.equal(nodes.has(id),true);assert.equal(service.transfers()[0].status,'failed');
  },{fetch:async(call,state)=>{if(call.action==='uploads'){state.nodes.set(id,node(id,{name:call.body.name,mime:call.body.mime,size:call.body.size,status:'pending'}));throw Error('Reservation committed but acknowledgement was lost');}}});
 });
+
+test('explicit Drive reads validate version and return a named immutable File rather than using the preview allowlist',async()=>{
+ await fixture(async({service,F,calls})=>{
+  const [resource]=(await service.browse(driveLocation())).items;
+  const read=await service.read(resource.key,{version:resource.version});assert.ok(read.file instanceof File);assert.equal(read.file.name,'Notes.txt');assert.equal(await read.file.text(),'data');assert.equal(read.item.key,resource.key);
+  const before=calls.length;await assert.rejects(service.read(resource.key,{version:9}),/changed/);assert.equal(calls.length,before);
+  F.session.view.user.id='other';await assert.rejects(service.read(resource.key,{version:1}),e=>e.name==='AbortError');assert.equal(calls.length,before);
+ },{nodes:[node(A,{mime:'application/pdf'})]});
+});
+
+test('universal Save stays busy until actual upload commit and preserves the destination/name captured by the dialog',async()=>{
+ await fixture(async({service,xhrs,nodes})=>{
+  const file=new File(['saved bytes'],'Original.txt',{type:'text/plain'}),pending=service.save(file,{name:'Chosen name.txt',folderId:B});assert.equal(service.busy(),true);
+  await until(()=>xhrs.length===1);const id=new URL(xhrs[0].url,'https://os.inflite.ai').searchParams.get('id');assert.equal(nodes.get(id).name,'Chosen name.txt');assert.equal(nodes.get(id).parentId,B);assert.equal(nodes.get(id).status,'pending');
+  xhrs[0].complete();const result=await pending;assert.equal(result.item.status,'ready');assert.equal(result.item.name,'Chosen name.txt');assert.equal(service.busy(),false);
+ },{nodes:[folder(B)]});
+});
+
+test('cancelled universal Save reconciles an unacknowledged reservation and releases quota without another byte upload',async()=>{
+ const id='s'.repeat(32);let first=true,original;
+ await fixture(async({service,calls,xhrs,nodes})=>{
+  const abort=new AbortController(),promise=service.save(new File(['data'],'Save.txt',{type:'text/plain'}),{name:'Save.txt',folderId:null,signal:abort.signal});
+  await until(()=>calls.some(call=>call.action==='uploads'));abort.abort();await assert.rejects(promise,e=>e.name==='AbortError');
+  assert.equal(xhrs.length,0);assert.equal(nodes.has(id),false);assert.equal(service.busy(),false);const reservations=calls.filter(call=>call.action==='uploads');assert.equal(reservations.length,2);assert.deepEqual(reservations[0].body,reservations[1].body);
+ },{fetch(call,state){if(call.action!=='uploads')return;const value=node(id,{name:call.body.name,status:'pending'});if(first){first=false;original=call.body;state.nodes.set(id,value);return new Promise(()=>{});}assert.deepEqual(call.body,original);return Response.json({item:value},{status:201});}});
+});
+
+test('drag tokens are RAM-only, expire and cannot survive a changed observed version or account',async()=>{
+ await fixture(async({service,F,calls})=>{
+  const [item]=(await service.browse(driveLocation())).items,token=service.prepareDrag([{key:item.key,version:item.version}]);assert.match(token,/^[a-f0-9]{32}$/);assert.equal(JSON.stringify(token).includes(item.name),false);const before=calls.length;
+  assert.equal(service.resolveDrag(token).at(0).id,item.id);assert.equal(calls.length,before);
+  await service.run(item.key,'rename',{input:{name:'Changed.txt',version:1}});assert.deepEqual(service.resolveDrag(token),[]);
+  F.session.view.user.id='other';assert.throws(()=>service.resolveDrag(token),e=>e.name==='AbortError');assert.equal(service.prepareDrag([{key:item.key,version:2}]),null);
+ },{nodes:[node()]});
+});
+
+test('Trash batches keep independent observed references after cache retirement and report each conflict',async()=>{
+ const A2='2'.repeat(32);let requests=0;
+ await fixture(async({service})=>{
+  const listing=await service.browse(driveLocation());const refs=listing.items.map(item=>({key:item.key,version:item.version}));
+  const result=await service.batch(refs,'trash');assert.equal(result.ok,false);assert.equal(result.results[0].ok,true);assert.equal(result.results[1].ok,false);assert.match(result.results[1].error,/changed/i);assert.equal(requests,2);
+ },{nodes:[node(A),node(A2,{name:'Other.txt'})],fetch(call,state){if(call.action!=='trash')return;requests++;if(call.body.id===A2)return Response.json({error:'Changed elsewhere'},{status:409});const old=state.nodes.get(call.body.id),value={...old,version:old.version+1,trashedAt:NOW,trashRoot:old.id};state.nodes.set(old.id,value);return Response.json({item:value});}});
+});

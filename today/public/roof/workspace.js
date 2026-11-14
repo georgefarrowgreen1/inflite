@@ -9,6 +9,11 @@ import { createWorkspaceContext } from "./workspace-context.js";
 import { createWorkspaceCommands, notificationActions } from "./workspace-commands.js";
 import { createFilesService } from "./files-service.js";
 import { safeFilesLocation } from "./files-location.js";
+import { createFilesDialogs } from "./files-dialogs.js";
+import { createActivityRegistry, createWorkspaceActivity } from "./workspace-activity.js";
+import { createWorkspaceRecovery } from "./workspace-recovery.js";
+import { createWorkspaceRecoveryView } from "./workspace-recovery-view.js";
+import { createWorkspaceSync } from "./workspace-sync.js";
 
 export const WORKSPACE_VERSION = 2;
 const EMPTY_CONTEXT = Object.freeze({ location: null, interval: null });
@@ -21,23 +26,43 @@ export async function createWorkspace(F, options = {}) {
   const { root, today } = options, owner = F.session.view?.user?.id;
   if (!root || !today || !owner) throw new Error("A workspace needs a signed-in owner");
   const html = document.documentElement, originalTitle = document.title;
+  html.classList.add("ifl-os");
   const anchor = document.createComment("Today returns here when its workspace closes");
   today.before(anchor);
   const storage = guarded(() => localStorage, null);
   const store = createWorkspaceStore({ userId: owner, storage, signal: F.signal });
   const handles = new Map(), providers = new Map(), snapshots = new Map(), contexts = new Map(), contextListeners = new Set(), offs = [], pending = new Set();
   const paneHistory = new Map(), displayed = new Map(), historyViews = new Map(), backgroundSlots = new Map(), paneScroll = new Map(), restoring = new Map(), paneObservers = new Map();
+  const recentApps = new Map();
   const background = F.ui.el("div", { hidden: true, inert: true, "aria-hidden": "true" });
   options.dockRoot?.append(background);
-  let files = null, commands = null;
+  let files = null, commands = null, dialogs = null, sync = null, recovery = null, recoveryView = null;
   let explorer = null, explorerLoad = null, filesLocation = safeFilesLocation({ kind: "drive" }), pendingFilesQuery = null;
   const presentations = new WeakMap(), waiting = new Set();
   let paneRoutes = new Map(), pendingHistory = null, presented = Promise.resolve();
   let shown = false, gone = false, currentId = null, current = null, route = null, foreground = "fitness", scene = 0, paintPending = false, resize = 0, relayed = null, relayOff = () => {}, relayEpoch = 0;
   const live = () => !gone && !F.signal.aborted && F.session.view?.user?.id === owner;
+  const activity = createActivityRegistry(F), activityView = createWorkspaceActivity(F, { registry: activity });
+  const fileActivity = activity.source("files", { current: live, signal: F.signal });
+  const syncActivity = activity.source("workspace-sync", { current: live, signal: F.signal });
+  recovery = createWorkspaceRecovery(F, { getHandle: app => handles.get(app), retry: retryApp,
+    activity: activity.source("recovery", { current: live, signal: F.signal }), onChange: () => { paintNativeRecovery(); paint(); } });
+  recoveryView = createWorkspaceRecoveryView(F, recovery);
+  const loadApp = (app, handle, lease = {}) => recovery.load(app, async () => {
+    const instance = await handle.load();
+    if (!live() || lease.signal?.aborted || !guarded(() => !lease.current || lease.current(), false)) return null;
+    await instance?.workspace?.(); return instance;
+  }, lease);
   const paneKey = (app) => `${currentId || ""}:${app}`;
   const stackFor = (app) => paneHistory.get(paneKey(app));
   const wsURL = (id) => id ? `/#workspace=${id}` : "/#workspace";
+  const layoutError = fallback => store.storageChanged ? "Another tab changed your saved layout. Review saved layout in Workspace sync before editing it." : fallback;
+  let layoutWarned = false;
+  function rejectLayoutEdit() {
+    paint();
+    if (store.storageChanged && !layoutWarned) { layoutWarned = true; F.toast(layoutError("That layout change couldn’t be saved.")); }
+    return false;
+  }
   function readiness(r) {
     if (!presentations.has(r)) {
       let resolve;
@@ -69,6 +94,7 @@ export async function createWorkspace(F, options = {}) {
     const usable = () => live() && appOn(app) && !signal.aborted;
     return Object.freeze({
       enabled: true,
+      get files() { return usable() ? dialogs?.forApp(app, { current: usable, signal }) || null : null; },
       active: () => usable() && document.visibilityState === "visible" && !!handles.get(app)?.fw.visible() && (F.route?.kind === "app" && F.route.app === app || shown && !!displayed.get(app)?.visible),
       provide(provider) {
         if (!usable() || !provider || typeof provider.snapshot !== "function" || typeof provider.run !== "function") return () => {};
@@ -108,9 +134,13 @@ export async function createWorkspace(F, options = {}) {
   }
   const view = createWorkspaceView(root, {
     onToday: () => F.nav.go(wsURL()), onWorkspace: (id) => openWorkspace(id), onApp: (app) => openApp(app),
+    onWorkspaceMode: () => openWorkspace(store.read().activeId),
+    onRecent: app => { if (live() && appOn(app)) openApp(app, recentApps.get(app) || getWorkspaceApp(app)?.href); },
+    onAppDrop: (app, token) => { if (live() && ["mail", "fitness"].includes(app) && /^[a-f0-9]{32}$/.test(token)) return runIntent(app, app === "mail" ? "compose-attach" : "import-drive", "drop:" + token); },
     onSearch: () => F.search.open(), onApps: () => openApps(),
     onNotifications: options.onNotifications, onAccount: options.onAccount, onSettings: options.onSettings,
     onCreateWorkspace: () => editWorkspace(), onFiles: () => openFiles(),
+    onActivity: () => activityView.open(), onSync: () => sync?.open(), onRecovery: () => recoveryView.open(),
     onManageWorkspace: (id) => manageWorkspace(id),
     onWindowFocus: (app) => focusPane(app), onWindowChange: (app, patch) => changeWindow(app, patch), onLayoutMode: (mode) => changeLayout(mode),
     onViewportChange: () => { cancelAnimationFrame(resize); resize = requestAnimationFrame(layout); },
@@ -148,7 +178,7 @@ export async function createWorkspace(F, options = {}) {
       if (!live() || !appOn(app) || entry.signal.aborted || providers.get(app) !== entry || entry.epoch !== epoch) return;
       snapshots.set(app, snapshot || null);
     } catch (_) { if (live() && appOn(app) && !entry.signal.aborted && providers.get(app) === entry && entry.epoch === epoch) snapshots.set(app, { status: "error", actions: [], files: [] }); }
-    if (live()) { const h = handles.get(app); if (h) header(app, h.header); files?.update?.(); files?.changed?.(app); restoreScroll(app); requestAnimationFrame(() => restoreScroll(app)); paint(); }
+    if (live()) { recovery.update(app, snapshots.get(app)?.status); const h = handles.get(app); if (h) header(app, h.header); files?.update?.(); files?.changed?.(app); restoreScroll(app); requestAnimationFrame(() => restoreScroll(app)); paint(); }
   }
   function summary() {
     const ride = snapshots.get("fitness")?.ride, card = options.day?.()?.cards?.fitness;
@@ -174,6 +204,10 @@ export async function createWorkspace(F, options = {}) {
       view.update({ mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : shown && current ? "workspace" : "today", activeApp: F.route?.app, activeId: currentId, foregroundApp: foreground,
         paneApps: current?.panes.map((p) => p.app) || ["fitness", "weather"], workspaces: state.workspaces,
         apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id) })), user: { name: F.session.view?.user?.name || "" }, notifications: options.notifications?.() || 0,
+        unifiedHome: true, online: recovery.snapshot().online, syncStatus: sync?.status(), activityCount: activityView.count(),
+        greeting: `${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}${F.session.view?.user?.name ? ", " + String(F.session.view.user.name).trim().split(/\s+/)[0] : ""}`,
+        recentApps: [...recentApps.keys()].reverse().filter(appOn).map(app => ({ app })), recentActivity: activity.snapshot().slice(0, 3),
+        subtitle: !current && route?.tool !== "files" ? guarded(() => new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(new Date()), "") : "",
         title: current ? `${current.name} workspace` : "Today", summary: summary(), layout: current?.layout,
         resource: file ? { name: file.name, app: "fitness", intent: "view-route", objectId: file.id,
           secondary: { label: "Download GPX", icon: "download", app: "fitness", intent: "export-route", objectId: file.id } } : null });
@@ -218,7 +252,7 @@ export async function createWorkspace(F, options = {}) {
     const r = parse(path, { roof: F.session.apps });
     if (!r || r.kind !== "app" || r.app !== app) { view.setPane(app, { busy: false, error: "This app is not available here yet.", retry: () => F.hubAgain().then(layout) }); return false; }
     const old = displayed.get(app), id = currentId, episode = scene;
-    if (old?.id === id && old.path === path && old.visible === visible) return old.ready || Promise.resolve(true);
+    if (old?.id === id && old.path === path && old.visible === visible && (old.rendered || old.episode === episode)) return old.ready || Promise.resolve(true);
     rememberScroll(app); restoring.delete(app);
     if (!old || old.id !== id) {
       handle.attach({ container: slot, workspace: handle.fw.workspace, labelledBy: paneLabel(app),
@@ -227,7 +261,7 @@ export async function createWorkspace(F, options = {}) {
         header: (spec) => header(app, spec), fill: (value) => slot.closest(".ifl-workspace-pane")?.classList.toggle("is-filled", value),
         depth: () => Math.max(0, (stackFor(app)?.length || 1) - 1) });
     }
-    const task = { id, path, visible, rendered: false }; displayed.set(app, task);
+    const task = { id, path, visible, rendered: false, episode }; displayed.set(app, task);
     const saved = paneScroll.get(`${id}:${app}`);
     if (visible && saved?.path === path && saved.top > 0) restoring.set(app, { task, top: saved.top });
     else if (!old || old.id !== id || old.path !== path) slot.scrollTop = 0;
@@ -235,12 +269,11 @@ export async function createWorkspace(F, options = {}) {
     view.setPane(app, { busy: true, error: null });
     task.ready = (async () => { try {
       await loadStyles(getWorkspaceApp(app).workspace.css);
-      if (!live() || !shown || scene !== episode || currentId !== id || displayed.get(app) !== task) return false;
+      if (!live() || !shown || F.route !== route || scene !== episode || currentId !== id || displayed.get(app) !== task) return false;
       view.setPane(app, { busy: false, error: null });
-      const instance = await handle.load();
-      if (!live() || !shown || scene !== episode || currentId !== id || displayed.get(app) !== task) return false;
-      await instance?.workspace?.();
-      if (!live() || !shown || scene !== episode || currentId !== id || displayed.get(app) !== task) return false;
+      const instance = await loadApp(app, handle, { current: () => live() && shown && F.route === route && scene === episode && displayed.get(app) === task });
+      if (!instance) throw new Error("This app is unavailable.");
+      if (!live() || !shown || F.route !== route || scene !== episode || currentId !== id || displayed.get(app) !== task) return false;
       const result = await handle.show(r, { visible: true });
       task.rendered = result !== false;
       if (live() && displayed.get(app) === task) {
@@ -276,7 +309,9 @@ export async function createWorkspace(F, options = {}) {
     if (foreground === app && oldOrder.at(-1) === app && !window?.minimized) { view.revealPane?.(app); layout(); return; }
     const nextLayout = { ...current.layout, order: [...oldOrder.filter(a => a !== app), app], windows: { ...current.layout?.windows, [app]: { ...window, minimized: false } } };
     rememberAll();
-    foreground = app; store.update(current.id, { activePane: app, layout: nextLayout }); current = store.read().workspaces.find((w) => w.id === current.id);
+    const updated = store.update(current.id, { activePane: app, layout: nextLayout });
+    if (!updated) { paint(); return false; }
+    layoutWarned = false; foreground = app; current = updated;
     view.update({ foregroundApp: app, layout: current.layout }); view.revealPane?.(app); paint(); layout();
   }
   function openWorkspace(id) {
@@ -287,15 +322,17 @@ export async function createWorkspace(F, options = {}) {
     if (!live() || !current?.panes.some(p => p.app === app)) return;
     rememberAll();
     const next = { ...current.layout, windows: { ...current.layout.windows, [app]: { ...current.layout.windows[app], ...patch } } };
-    store.update(current.id, { layout: next });
-    current = store.read().workspaces.find(w => w.id === current.id);
+    const updated = store.update(current.id, { layout: next });
+    if (!updated) return rejectLayoutEdit();
+    layoutWarned = false; current = updated;
     view.update({ layout: current.layout }); paint(); layout();
   }
   function changeLayout(mode) {
     if (!live() || !current || !["tile", "float"].includes(mode)) return;
     rememberAll();
-    store.update(current.id, { layout: { ...current.layout, mode } });
-    current = store.read().workspaces.find(w => w.id === current.id);
+    const updated = store.update(current.id, { layout: { ...current.layout, mode } });
+    if (!updated) return rejectLayoutEdit();
+    layoutWarned = false; current = updated;
     view.update({ layout: current.layout }); paint(); layout();
   }
   function openWorkspaceFor(app, path) {
@@ -304,8 +341,9 @@ export async function createWorkspace(F, options = {}) {
     const target = state.workspaces.find(w => w.id === currentId && eligible(w)) || state.workspaces.find(eligible);
     if (!target) return openApp(app, path || getWorkspaceApp(app)?.href, true);
     const safe = safeWorkspaceRoute(app, path) || target.panes.find(p => p.app === app).route;
-    store.update(target.id, { panes: target.panes.map(p => p.app === app ? { ...p, route: safe } : p), activePane: app,
-      layout: { ...target.layout, windows: { ...target.layout.windows, [app]: { ...target.layout.windows[app], minimized: false } } } });
+    if (!store.update(target.id, { panes: target.panes.map(p => p.app === app ? { ...p, route: safe } : p), activePane: app,
+      layout: { ...target.layout, windows: { ...target.layout.windows, [app]: { ...target.layout.windows[app], minimized: false } } } })) return rejectLayoutEdit();
+    layoutWarned = false;
     if (shown && current && currentId === target.id) {
       if ((paneRoutes.get(app) || "") !== safe) navigatePane(app, safe);
       else { current = store.read().workspaces.find(w => w.id === target.id); focusPane(app); paint(); layout(); }
@@ -319,9 +357,9 @@ export async function createWorkspace(F, options = {}) {
       if (!backgroundSlots.has(app)) { const slot = F.ui.el("div"); background.append(slot); backgroundSlots.set(app, slot); }
       handle.attach({ container: backgroundSlots.get(app), workspace: handle.fw.workspace, navigate() {}, back() {}, section() {}, header() {}, fill() {} });
     }
-    const instance = await handle.load();
+    const instance = await loadApp(app, handle, { current: valid });
+    if (!instance) return { status: "error", files: [] };
     if (!valid() || handle.signal.aborted) return { status: "error", files: [] };
-    await instance?.workspace?.();
     const entry = providers.get(app);
     const current = () => valid() && !handle.signal.aborted && providers.get(app) === entry;
     if (!current() || !entry) return { status: "loading", files: [] };
@@ -340,8 +378,9 @@ export async function createWorkspace(F, options = {}) {
     if (stack.length > 24) stack.shift(); paneHistory.set(paneKey(target), stack);
     const safe = safeWorkspaceRoute(target, next);
     const panes = current.panes.map((p) => p.app === target ? { ...p, route: safe || p.route } : p);
-    store.update(current.id, { panes, activePane: target });
-    current = store.read().workspaces.find((w) => w.id === current.id);
+    // A newer saved layout blocks persistence, not navigation inside an app.
+    // Ephemeral pane routes/history remain RAM-only until its layout is reviewed.
+    current = store.update(current.id, { panes, activePane: target }) || current;
     paneRoutes.set(target, next); foreground = target; recordHistory();
   }
   function paneBack(app) {
@@ -349,43 +388,91 @@ export async function createWorkspace(F, options = {}) {
     if (current && stack?.length > 1) { stack.pop(); navigatePane(app, stack.at(-1), { replace: true }); return; }
     if (shown) F.nav.go(wsURL()); else F.nav.back();
   }
-  async function openApp(app, destination = null, expand = false, wake = false) {
+  function paintNativeRecovery() {
+    if (!live() || F.route?.kind !== "app" || !recovery) return;
+    const app = F.route.app, handle = handles.get(app), status = recovery.snapshot().apps.find(item => item.app === app);
+    if (!handle || handle.build || status?.loaded || status?.phase !== "error" || status.pending || handle.root.querySelector("[data-os-recovery-error]")) return;
+    const body = F.ui.error({ title: `${REGISTRY[app].name} couldn’t open`, body: "Try again without closing your other apps.", acts: [{ label: "Try again", run: () => recovery.recover(app) }] });
+    body.dataset.osRecoveryError = app; handle.root.replaceChildren(body);
+  }
+  async function retryApp(app, lease = {}) {
+    const expected = F.route, episode = scene;
+    const valid = () => live() && !lease.signal?.aborted && guarded(() => !lease.current || lease.current(), false) && F.route === expected && scene === episode;
+    if (!valid() || !appOn(app)) return false;
+    const handle = acquire(app);
+    if (handle.busy()) return { ok: false, error: `Finish editing in ${REGISTRY[app].name} before refreshing it.` };
+    if (shown && route?.tool !== "files" && current?.panes.some(p => p.app === app)) {
+      focusPane(app); displayed.delete(app);
+      return !!await present(app, paneRoutes.get(app) || current.panes.find(p => p.app === app).route, true);
+    }
+    return !!await openApp(app, null, false, true, lease);
+  }
+  function nativeReady(app, expected, lease = {}) {
+    const handle = handles.get(app);
+    return new Promise(resolve => {
+      let frame = 0, done = false, offRoute = () => {};
+      const finish = value => { if (done) return; done = true; cancelAnimationFrame(frame); clearTimeout(timer); offRoute(); F.signal.removeEventListener("abort", stop); lease.signal?.removeEventListener("abort", stop); resolve(value); };
+      const stop = () => finish(false), valid = () => live() && !handle?.signal.aborted && !lease.signal?.aborted && guarded(() => !lease.current || lease.current(), false) && F.route === expected;
+      const check = () => { if (!valid()) return finish(false); if (handle?.el.isConnected && !handle.el.hidden && !handle.el.inert && !handle.el.classList.contains("ifl-pane-screen") && handle.fw.workspace.active()) return finish(true); frame = requestAnimationFrame(check); };
+      const timer = setTimeout(stop, 5000);
+      F.signal.addEventListener("abort", stop, { once: true }); lease.signal?.addEventListener("abort", stop, { once: true });
+      offRoute = F.on("route", () => { if (F.route !== expected) stop(); }); check();
+    });
+  }
+  async function openApp(app, destination = null, expand = false, wake = false, lease = {}) {
     const manifest = getWorkspaceApp(app); if (!live() || !manifest) return;
     const path = destination || paneRoutes.get(app) || current?.panes.find((p) => p.app === app)?.route || manifest.href;
     rememberAll();
     F.nav.go(path, wake ? { kind: "section" } : undefined);
     const expected = F.route, handle = handles.get(app);
-    if (handle) {
-      const instance = await handle.load();
-      if (live() && F.route === expected) await instance?.workspace?.();
+    try { if (handle) {
+      const instance = await loadApp(app, handle, { ...lease, current: () => live() && F.route === expected && guarded(() => !lease.current || lease.current(), false) });
+      if (!instance) return null;
     }
-    return live() && F.route === expected ? expected : null;
+    return live() && F.route === expected && await nativeReady(app, expected, lease) ? expected : null;
+    } catch (_) { return null; }
   }
-  async function runIntent(app, intent, objectId, { current: callerCurrent = () => true } = {}) {
-    if (!live() || !callerCurrent() || !appOn(app)) return false;
+  function providerReady(app, current, signal) {
+    return new Promise(resolve => {
+      let poll, deadline, done = false;
+      const finish = value => { if (done) return; done = true; clearTimeout(poll); clearTimeout(deadline); F.signal.removeEventListener("abort", stop); signal?.removeEventListener("abort", stop); resolve(value); };
+      const stop = () => finish(false);
+      const check = () => {
+        if (!current()) return stop();
+        if (snapshots.has(app) && snapshots.get(app)?.status !== "loading") return finish(true);
+        poll = setTimeout(check, 50);
+      };
+      F.signal.addEventListener("abort", stop, { once: true }); signal?.addEventListener("abort", stop, { once: true });
+      queueProvider(app); deadline = setTimeout(stop, 8000); poll = setTimeout(check, 0);
+    });
+  }
+  async function runIntent(app, intent, objectId, { current: callerCurrent = () => true, signal } = {}) {
+    if (!live() || signal?.aborted || !callerCurrent() || !appOn(app)) return false;
     let expectedRoute = F.route;
     if (!providers.has(app) || !handles.get(app)?.fw.workspace.active()) {
       const saved = store.read(), eligible = (w) => w?.panes.some((p) => p.app === app);
       const target = saved.workspaces.find((w) => w.id === currentId && eligible(w)) || saved.workspaces.find((w) => w.id === saved.activeId && eligible(w)) || saved.workspaces.find(eligible);
       if (!target) {
-        expectedRoute = await openApp(app, format({ app }), true, true);
+        expectedRoute = await openApp(app, format({ app }), true, true, { current: callerCurrent, signal });
         if (!expectedRoute || !callerCurrent()) return false;
       } else {
       const restored = { ...target.layout, windows: { ...target.layout.windows, [app]: { ...target.layout.windows[app], minimized: false } } };
-      store.update(target.id, { activePane: app, layout: restored });
+      if (!store.update(target.id, { activePane: app, layout: restored })) return rejectLayoutEdit();
+      layoutWarned = false;
       F.nav.go(wsURL(target.id), { kind: "section" });
       expectedRoute = F.route;
       if (!await readiness(expectedRoute).promise || !live() || F.route !== expectedRoute || currentId !== target.id) return false;
-      const handle = handles.get(app), instance = await handle?.load();
+      const handle = handles.get(app), instance = handle && await loadApp(app, handle, { current: () => live() && !signal?.aborted && F.route === expectedRoute && callerCurrent(), signal }).catch(() => null);
+      if (!instance) return false;
       if (!live() || F.route !== expectedRoute || currentId !== target.id) return false;
-      await instance?.workspace?.();
       }
     }
     const entry = providers.get(app), id = currentId, epoch = scene;
-    if (!entry || !live() || !callerCurrent() || F.route !== expectedRoute || !handles.get(app)?.fw.workspace.active()) return false;
-    const ownsAction = () => live() && callerCurrent() && !entry.signal.aborted && providers.get(app) === entry && id === currentId && epoch === scene && F.route === expectedRoute && handles.get(app)?.fw.workspace.active();
+    if (!entry || !live() || signal?.aborted || !callerCurrent() || F.route !== expectedRoute || !handles.get(app)?.fw.workspace.active()) return false;
+    const ownsAction = () => live() && !signal?.aborted && callerCurrent() && !entry.signal.aborted && providers.get(app) === entry && id === currentId && epoch === scene && F.route === expectedRoute && handles.get(app)?.fw.workspace.active();
+    if (!await providerReady(app, ownsAction, signal)) { if (ownsAction()) F.toast(`${REGISTRY[app].name} is still opening. Try again in a moment.`); return false; }
     try {
-      const result = await entry.provider.run(intent, objectId, { current: ownsAction });
+      const result = await entry.provider.run(intent, objectId, { current: ownsAction, signal });
       if (!ownsAction()) return false;
       if (result?.error) F.toast(result.error);
       queueProvider(app); return result;
@@ -445,12 +532,12 @@ export async function createWorkspace(F, options = {}) {
     }
     bindContext(); paint();
     const active = () => live() && shown && route === nextRoute && F.route === nextRoute && scene === episode;
-    if (active()) document.title = "InFlite Files — InFlite OS";
+    if (active()) document.title = "InFlite Files — InFlite";
     try {
       const host = await loadExplorer();
       if (!active() || !host) return false;
       host.show(filesLocation, prefill === undefined ? {} : { query: prefill });
-      document.title = "InFlite Files — InFlite OS";
+      document.title = "InFlite Files — InFlite";
       if (prefill) host.focusSearch?.();
       return true;
     } catch (_) {
@@ -464,6 +551,7 @@ export async function createWorkspace(F, options = {}) {
   function openApps() {
     const body = F.ui.el("div", { class: "ifs-page" }); let menu;
     body.append(F.ui.btn("Today", { icon: "sun", run: () => { menu.now(); F.nav.go(wsURL()); } }), F.ui.btn("Files", { icon: "file", run: () => { menu.now(); openFiles(); } }));
+    for (const [label, glyph, open] of [["Search InFlite", "search", () => F.search.open()], ["Activity", "clock", () => activityView.open()], ["Workspace sync", "swap", () => sync?.open()], ["App status", "info", () => recoveryView.open()]]) body.append(F.ui.btn(label, { icon: glyph, run: () => { if (live()) { menu.now(); open(); } } }));
     if (options.onNotifications) body.append(F.ui.btn("Notifications", { icon: "bell", run: () => { if (live()) { menu.now(); options.onNotifications(); } } }));
     for (const saved of store.read().workspaces) body.append(F.ui.btn(saved.name + " workspace", { icon: "grid", run: () => { menu.now(); openWorkspace(saved.id); } }));
     for (const app of WORKSPACE_APPS) body.append(F.ui.btn(app.name, { disabled: !appOn(app.id), run: () => { menu.now(); openApp(app.id); } }));
@@ -480,7 +568,8 @@ export async function createWorkspace(F, options = {}) {
     const save = F.ui.btn("Create workspace", { primary: true, run: () => {
       const panes = picks.filter((p) => p.input.checked).map((p) => ({ app: p.app.id, route: p.app.href }));
       const value = store.create({ name: name.value, panes });
-      if (!value) { error.hidden = false; error.textContent = "Give your workspace a name and choose up to five apps. Up to eight workspaces can be saved."; return; }
+      if (!value) { error.hidden = false; error.textContent = layoutError("Give your workspace a name and choose up to five apps. Up to eight workspaces can be saved."); return; }
+      layoutWarned = false;
       menu.now(); openWorkspace(value.id);
       if (!store.persisted) F.toast("Your browser couldn’t save this workspace. It will last for this session.");
     } });
@@ -495,12 +584,15 @@ export async function createWorkspace(F, options = {}) {
     let menu;
     body.append(F.ui.btn("Save name", { primary: true, run: () => {
       if (!live()) return;
-      if (!store.update(id, { name: name.value })) { error.hidden = false; error.textContent = "Give your workspace a name."; return; }
+      if (!store.update(id, { name: name.value })) { error.hidden = false; error.textContent = layoutError("Give your workspace a name."); return; }
+      layoutWarned = false;
       menu.now();
       if (shown && currentId === id) show(F.route); else paint();
     } }));
     if (store.read().workspaces.length > 1) body.append(F.ui.btn("Remove workspace", { run: () => {
-      if (!live() || !store.remove(id)) return;
+      if (!live()) return;
+      if (!store.remove(id)) { error.hidden = false; error.textContent = layoutError("That workspace couldn’t be removed."); return; }
+      layoutWarned = false;
       menu.now(); contexts.get(id)?.dispose(); contexts.delete(id);
       for (const key of paneHistory.keys()) if (key.startsWith(id + ":")) paneHistory.delete(key);
       for (const key of paneScroll.keys()) if (key.startsWith(id + ":")) paneScroll.delete(key);
@@ -519,12 +611,13 @@ export async function createWorkspace(F, options = {}) {
     explorer?.hide();
     route = nextRoute; shown = true; const episode = ++scene; html.classList.add("ifl-os", "os-workspace");
     view.slots.dockAnchor.append(view.dock);
+    view.slots.sidebarAnchor.append(view.sidebar);
     if (nextRoute?.tool === "files") return showFiles(nextRoute, episode);
     pendingFilesQuery = null;
     const state = store.read(), chosen = state.workspaces.find((w) => w.id === nextRoute?.arg);
     current = chosen || null; currentId = current?.id || state.activeId || null;
     if (current) {
-      store.select(current.id);
+      const selected = store.select(current.id);
       const entryKey = history.state?.ifl?.k;
       const memory = pendingHistory?.id === current.id ? pendingHistory : historyViews.get(entryKey);
       pendingHistory = null;
@@ -535,7 +628,7 @@ export async function createWorkspace(F, options = {}) {
       } else foreground = current.activePane;
       paneRoutes = new Map(current.panes.map((p) => [p.app, memory?.id === current.id ? memory.routes.get(p.app) || p.route : p.route]));
       if (memory?.id === current.id && current.panes.some((p) => p.app === memory.foreground)) foreground = memory.foreground;
-      store.update(current.id, { panes: current.panes, activePane: foreground });
+      if (selected) store.update(current.id, { panes: current.panes, activePane: foreground });
       if (entryKey) historyViews.set(entryKey, { id: current.id, routes: new Map(paneRoutes), foreground });
       if (historyViews.size > 40) historyViews.delete(historyViews.keys().next().value);
       for (const pane of current.panes) if (!paneHistory.has(paneKey(pane.app))) paneHistory.set(paneKey(pane.app), [pane.route]);
@@ -550,7 +643,7 @@ export async function createWorkspace(F, options = {}) {
     await Promise.resolve();
     if (live() && shown && route === nextRoute) { if (current) view.revealPane?.(foreground); await layout(); }
     if (!live() || !shown || scene !== episode || route !== nextRoute || F.route !== nextRoute) return false;
-    document.title = `${current ? current.name + " workspace" : "Today"} — InFlite OS`;
+    document.title = `${current ? current.name + " workspace" : "Today"} — InFlite`;
     return true;
   }
   function hide() {
@@ -559,6 +652,7 @@ export async function createWorkspace(F, options = {}) {
     explorer?.hide(); pendingFilesQuery = null;
     shown = false; ++scene; html.classList.remove("os-workspace");
     for (const app of displayed.keys()) handles.get(app)?.hide({ detach: true }); displayed.clear(); restoreToday();
+    view.dock.prepend(view.sidebar);
     options.dockRoot?.append(view.dock);
   }
   function destroy() {
@@ -566,8 +660,8 @@ export async function createWorkspace(F, options = {}) {
     gone = true; ++scene; cancelAnimationFrame(resize); relayOff();
     for (const pending of [...waiting]) pending.finish(false);
     for (const off of offs.splice(0)) off();
-    explorer?.destroy(); pendingFilesQuery = null;
-    for (const ctx of contexts.values()) ctx.dispose(); contexts.clear(); contextListeners.clear(); paneObservers.clear(); paneScroll.clear(); restoring.clear(); providers.clear(); snapshots.clear(); historyViews.clear(); paneRoutes.clear(); store.dispose(); files?.destroy(); commands?.destroy(); background.remove();
+    explorer?.destroy(); dialogs?.destroy(); sync?.destroy(); recoveryView?.destroy(); recovery?.destroy(); activityView.destroy(); activity.destroy(); pendingFilesQuery = null;
+    for (const ctx of contexts.values()) ctx.dispose(); contexts.clear(); contextListeners.clear(); paneObservers.clear(); paneScroll.clear(); restoring.clear(); providers.clear(); snapshots.clear(); historyViews.clear(); paneRoutes.clear(); recentApps.clear(); store.dispose(); files?.destroy(); commands?.destroy(); background.remove();
     restoreToday(); anchor.remove(); view.destroy(); html.classList.remove("ifl-os", "os-workspace"); html.removeAttribute("data-os-dock-away"); document.title = originalTitle;
     if (F.tabs.away === dockAway) F.tabs.away = nativeAway;
     const state = history.state;
@@ -577,8 +671,7 @@ export async function createWorkspace(F, options = {}) {
   F.signal.addEventListener("abort", destroy, { once: true });
   const activate = async (r) => {
     if (r?.kind !== "app" || !handles.has(r.app) || !live()) return;
-    const instance = await handles.get(r.app).load();
-    if (live() && F.route === r) await instance?.workspace?.();
+    const handle = handles.get(r.app), instance = await loadApp(r.app, handle, { current: () => live() && F.route === r });
   };
   offs.push(F.on("apps", () => {
     for (const app of handles.keys()) {
@@ -588,7 +681,7 @@ export async function createWorkspace(F, options = {}) {
     files?.update?.(); paint(); layout();
   }), F.on("changed", (app) => queueProvider(app)), F.on("visible", () => { for (const app of providers.keys()) queueProvider(app); }), F.on("route", (r) => {
     for (const pending of [...waiting]) if (pending.route !== r) pending.finish(false);
-    if (r.kind === "app") document.title = `${REGISTRY[r.app].name} — InFlite OS`;
+    if (r.kind === "app") { document.title = `${REGISTRY[r.app].name} — InFlite`; recentApps.delete(r.app); recentApps.set(r.app, safeWorkspaceRoute(r.app, format(r)) || getWorkspaceApp(r.app)?.href); }
     paint(); activate(r).catch(() => {});
   }));
   const resized = () => { cancelAnimationFrame(resize); resize = requestAnimationFrame(layout); };
@@ -596,16 +689,47 @@ export async function createWorkspace(F, options = {}) {
   if (typeof ResizeObserver === "function") { const ro = new ResizeObserver(resized); ro.observe(root); offs.push(() => ro.disconnect()); }
   offs.push(F.search.provide({ id: "workspaces", group: "Workspaces", order: 1, search(q) { const query = String(q).toLocaleLowerCase(); return store.read().workspaces.filter((w) => w.name.toLocaleLowerCase().includes(query)).map((w) => ({ title: w.name + " workspace", sub: "Open your saved apps", icon: "grid", href: wsURL(w.id) })); } }));
   files = createFilesService(F, {
+    activity: fileActivity,
     sources: () => WORKSPACE_APPS.filter(a => ["fitness", "mail", "chats", "markets"].includes(a.id) && appOn(a.id)).map(a => ({ app: a.id, name: a.name, transient: a.id === "chats", status: snapshots.get(a.id)?.status || (snapshots.get(a.id)?.loading ? "loading" : providers.has(a.id) ? "ready" : "loading"), files: snapshots.get(a.id)?.files || [] })),
     load: loadFiles, runIntent, openApp, openExplorer: openFiles,
   });
+  dialogs = createFilesDialogs(F, { service: files });
+  function cloudChanged(next) {
+    if (!live()) return;
+    const ids = new Set(next.workspaces.map(w => w.id));
+    for (const [id, context] of contexts) if (!ids.has(id)) { context.dispose(); contexts.delete(id); }
+    for (const [key, value] of historyViews) if (!ids.has(value.id)) historyViews.delete(key);
+    for (const map of [paneHistory, paneScroll]) for (const key of map.keys()) if (!ids.has(key.split(":")[0])) map.delete(key);
+    if (pendingHistory && !ids.has(pendingHistory.id)) pendingHistory = null;
+    if (!ids.has(currentId)) currentId = next.activeId;
+    if (shown && F.route?.tab === "workspace" && route?.tool !== "files") {
+      if (F.route.arg && !ids.has(F.route.arg)) F.nav.go(wsURL(next.activeId), { replace: true, kind: "section" });
+      else show(F.route).catch(() => {});
+    } else { bindContext(); paint(); }
+  }
+  sync = createWorkspaceSync(F, { store, onChange: cloudChanged, onStatus(status) {
+    if (!live()) return;
+    const phase = ({ syncing: "running", synced: "succeeded", error: "failed", offline: "waiting", waiting: "waiting", conflict: "waiting" })[status.state];
+    if (phase) syncActivity.put("layout", { title: "Workspace sync", detail: status.message, kind: "sync", status: phase,
+      actions: [{ id: "review", label: status.state === "conflict" ? "Review layouts" : "Open sync", current: live, run: () => sync?.open() }] });
+    paint();
+  } });
+  offs.push(activity.subscribe(paint));
   if (F.systemTasks?.register) offs.push(F.systemTasks.register(files, { signal: F.signal }));
+  if (F.systemTasks?.register) offs.push(F.systemTasks.register(sync, { signal: F.signal }));
   commands = createWorkspaceCommands(F, {
     apps: () => WORKSPACE_APPS.map(a => ({ ...a, available: appOn(a.id) })), workspaces: () => store.read().workspaces,
     files: q => files.search(q), actions: () => [...snapshots].flatMap(([app, snapshot]) => (snapshot?.actions || []).map(action => ({ app, ...action }))),
-    runIntent, openWorkspace, openApp, openFiles,
+    runIntent, openWorkspace, openApp, openFiles, fileDialogsAvailable: () => live() && !!dialogs,
+    systemActions: () => [
+      { id: "open-activity", label: "Open Activity", detail: "Uploads, downloads and background tasks", keywords: ["transfers", "progress"], current: live, run: () => activityView.open() },
+      { id: "sync-workspaces", label: "Sync workspaces", detail: "Your workspace layouts across devices", keywords: ["cloud", "devices"], current: live, run: () => sync.open() },
+      ...(sync.status()?.state === "conflict" || sync.status()?.localConflict ? [{ id: "resolve-workspace-sync", label: "Review workspace conflict", detail: "Choose which layout to keep", current: live, run: () => sync.open() }] : []),
+      { id: "open-recovery", label: "Open App status", detail: "Connection and recovery", keywords: ["offline", "recover"], current: live, run: () => recoveryView.open() },
+      ...recovery.actions(),
+    ],
   });
   currentId = store.read().activeId;
-  bindContext(); paint(); activate(F.route).catch(() => {});
-  return { show, hide, update: paint, destroy, openFiles, busy: () => live() && !!files?.busy(), flush: options => live() ? files?.flush(options) || Promise.resolve({ lost: 0 }) : Promise.resolve({ lost: 0 }), notificationActions: note => notificationActions(note, { origin: location.origin, enabled: appOn, workspaces: () => store.read().workspaces, openWorkspace: openWorkspaceFor, openApp, runIntent, current: live }), focus: () => { if (shown && route?.tool === "files") { const target = explorer?.focus(); if (target) return target; } const heading = root.querySelector("h1") || root; heading.tabIndex = -1; return heading; }, store };
+  bindContext(); paint(); activate(F.route).catch(() => {}); sync.start().catch(() => {});
+  return { show, hide, update: paint, destroy, openFiles, busy: () => live() && !!(files?.busy() || sync?.busy()), async flush(options) { if (!live()) return { lost: 0 }; const values = await Promise.all([files?.flush(options), sync?.flush(options)]); return { lost: values.reduce((sum, value) => sum + (Number(value?.lost) || 0), 0) }; }, notificationActions: note => notificationActions(note, { origin: location.origin, enabled: appOn, workspaces: () => store.read().workspaces, openWorkspace: openWorkspaceFor, openApp, runIntent, current: live }), focus: () => { if (shown && route?.tool === "files") { const target = explorer?.focus(); if (target) return target; } const heading = root.querySelector("h1") || root; heading.tabIndex = -1; return heading; }, store };
 }

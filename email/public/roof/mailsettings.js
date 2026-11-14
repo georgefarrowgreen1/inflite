@@ -11,7 +11,7 @@
 // Saves: ctx.api.saveSettings(patch) with only { signature }, { catchall } or { spot: { <one of SPOT>, tz } };
 //   ctx.api.updateAddress(email, patch) with only one of SAVES.address (never isDefault). Nothing else is written
 //   (roofmailviews.test).
-import { MAIL } from "./api.js";
+import { MAIL, MAIL_PAGE } from "./api.js";
 import { STORAGE } from "./store.js";
 
 export const REMOTE = STORAGE.remoteImages;
@@ -93,7 +93,7 @@ export function openSettings(ctx, page = null) {
         return r;
       })),
       group("This Phone", remote),
-      group("More", ui.row({ lead: { app: "mail" }, title: "New Address, Delete or Send From", sub: "Open Mail Settings at Mail’s own address", trail: "chevron", act: "own", href: `${MAIL}/#settings` }),
+      group("More", ui.row({ lead: { app: "mail" }, title: "New Address, Delete or Send From", sub: "Open all Mail settings", trail: "chevron", act: "own", href: `${MAIL_PAGE}/#settings` }),
         ui.row({ lead: { icon: "bubble" }, title: "Notifications", sub: "In You, with InFlite’s own", trail: "chevron", act: "notify", href: "/#you=notify-mail" })),
     );
     const own = root.querySelector("[data-act=own]");

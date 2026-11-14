@@ -23,6 +23,9 @@ const PATHS = {
   check: ['m5 12 4 4 10-10'], retry: ['M20 9a8 8 0 1 0 0 6M20 3v6h-6'],
   edit: ['m4 16 11-11 4 4L8 20H4Zm9-9 4 4'],
   move: ['M3 8h7l2 2h9v10H3Z', 'M15 2v6m-3-3 3-3 3 3'],
+  star: ['m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3L12 17.3 6.4 20.3l1.1-6.3L3 9.6l6.2-.9Z'],
+  copy: ['M8 8h13v13H8Z', 'M16 8V3H3v13h5'],
+  restore: ['M4 9a8 8 0 1 1 0 6M4 3v6h6'],
   delete: ['M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7'],
 };
 const clean = (value, max = 255) => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max) : '';
@@ -85,7 +88,7 @@ export function createFilesView(root, { ui, ...callbacks }) {
   let model = {}, gone = false, visible = true, compact = false, resize = 0, dragDepth = 0, focusedKey = null, inspectorSignature = null, inspectorPreview = null;
   const call = (name, ...args) => { if (!gone && typeof callbacks[name] === 'function') return callbacks[name](...args); };
   const listen = (node, type, fn, options) => { node.addEventListener(type, fn, options); offs.push(() => node.removeEventListener(type, fn, options)); };
-  const button = (label, glyph, run, cls = 'ifx-button') => el('button', { type: 'button', class: cls, 'aria-label': label, title: label, on: { click: run } }, filesIcon(glyph, doc), el('span', { text: label }));
+  const button = (label, glyph, run, cls = 'ifx-button') => { const control=el('button', { type: 'button', class: cls, 'aria-label': label, title: label, on: { click: event=>{if(control.getAttribute('aria-disabled')==='true'){event.preventDefault();return;}run(event);} } }, filesIcon(glyph, doc), el('span', { text: label })); return control; };
   root.classList.add('ifl-files-explorer');
   const locations = el('nav', { class: 'ifx-locations', 'aria-label': 'File locations' });
   const locationList = el('div', { class: 'ifx-location-list' });
@@ -98,6 +101,9 @@ export function createFilesView(root, { ui, ...callbacks }) {
   const search = el('label', { class: 'ifx-search' }, filesIcon('search', doc), query);
   const upload = button('Upload', 'upload', () => call('onUpload'), 'ifx-button is-primary');
   const newFolder = button('New folder', 'plus', () => call('onNewFolder'));
+  const selecting = button('Select files', 'check', () => call('onSelectionMode'));
+  const bulk = el('div', {class:'ifx-bulk',role:'group','aria-label':'Selected files',hidden:true});
+  let bulkSignature='';
   const sort = el('select', { 'aria-label': 'Sort files' });
   for (const [value, label] of [['name', 'Name'], ['modified', 'Newest'], ['size', 'Largest']]) sort.append(el('option', { value, text: label }));
   const list = button('List view', 'list', () => call('onView', 'list'), 'ifx-icon-button');
@@ -105,7 +111,7 @@ export function createFilesView(root, { ui, ...callbacks }) {
   const details = button('File details', 'info', () => call('onToggleDetails'), 'ifx-icon-button ifx-details-toggle');
   const views = el('div', { class: 'ifx-view-options', role: 'group', 'aria-label': 'File view' }, list, grid);
   const toolbar = el('header', { class: 'ifx-toolbar' }, el('div', { class: 'ifx-path' }, browse, up, breadcrumbs), search,
-    el('div', { class: 'ifx-tools' }, upload, newFolder, el('label', { class: 'ifx-sort' }, el('span', { class: 'ifx-sr-only', text: 'Sort files' }), sort), views, details));
+    el('div', { class: 'ifx-tools' }, upload, newFolder, selecting, el('label', { class: 'ifx-sort' }, el('span', { class: 'ifx-sr-only', text: 'Sort files' }), sort), views, details),bulk);
   const status = el('p', { class: 'ifx-status', role: 'status', 'aria-live': 'polite' });
   const notices = el('div', { class: 'ifx-notices' });
   const retry = button('Try again', 'retry', () => call('onRetry'));
@@ -138,7 +144,8 @@ export function createFilesView(root, { ui, ...callbacks }) {
     if (next >= 0) { event.preventDefault(); buttons.forEach((b, i) => b.tabIndex = i === next ? 0 : -1); buttons[next].focus({ preventScroll: true }); buttons[next].scrollIntoView?.({ block: 'nearest' }); return; }
     const record = records.get(button.closest('[data-file-key]')?.dataset.fileKey);
     if (!record || model.status !== 'ready') return;
-    if (event.key === 'Enter') { event.preventDefault(); call('onOpen', record.item); }
+    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='a'){event.preventDefault();call('onSelectAll');return;}
+    if (event.key === 'Enter') { event.preventDefault();if(model.selecting)call('onSelect',record.item,{multiple:true});else call('onOpen', record.item); }
     if (event.key === 'F2' && record.item.actions?.some(a => a.id === 'rename' && a.enabled !== false)) { event.preventDefault(); call('onAction', record.item, 'rename'); }
   });
   const canDrop = event => model.capabilities?.upload === true && event.dataTransfer?.types?.includes('Files');
@@ -161,6 +168,12 @@ export function createFilesView(root, { ui, ...callbacks }) {
     sort.value = ['name', 'modified', 'size'].includes(model.sort) ? model.sort : 'name';
     upload.hidden = model.capabilities?.upload !== true; newFolder.hidden = model.capabilities?.newFolder !== true;
     up.disabled = !model.parentLocation; details.disabled = !model.selection;
+    selecting.hidden=!(model.items||[]).some(item=>item.source?.kind==='drive');selecting.setAttribute('aria-pressed',String(!!model.selecting));
+    selecting.setAttribute('aria-label',model.selecting?'Finish selection':'Select files');selecting.querySelector('span').textContent=model.selecting?'Done':'Select';
+    bulk.hidden=!model.selecting;
+    const bulkNext=JSON.stringify([model.selectedKeys?.length||0,model.bulkActions||[]]);
+    if(bulkNext!==bulkSignature){bulkSignature=bulkNext;bulk.replaceChildren(el('span',{role:'status',text:`${model.selectedKeys?.length||0} selected`}),button('Select this page','check',()=>call('onSelectAll')),button('Clear selection','close',()=>call('onClearSelection')),...(model.bulkActions||[]).map(action=>button(action.label,action.icon||action.id,()=>call('onBulk',action.id))));}
+    for(const control of [selecting,...bulk.querySelectorAll('button')])control.setAttribute('aria-disabled',String(model.status!=='ready'));
     const placeKeys = new Set(); let placePosition = locationList.firstElementChild;
     for (const location of (Array.isArray(model.locations) ? model.locations : []).slice(0, 12)) {
       const key = JSON.stringify(location.location); if (placeKeys.has(key)) continue; placeKeys.add(key);
@@ -190,17 +203,24 @@ export function createFilesView(root, { ui, ...callbacks }) {
         const select = el('button', { type: 'button', class: 'ifx-file-main' }, symbol, el('span', { class: 'ifx-file-copy' }, name, sub));
         const modified = el('span', { class: 'ifx-file-date', 'aria-hidden': 'true' }), bytes = el('span', { class: 'ifx-file-size', 'aria-hidden': 'true' }), source = el('span', { class: 'ifx-file-source', 'aria-hidden': 'true' });
         const menu = button('File actions', 'more', () => {}, 'ifx-icon-button ifx-file-menu');
-        const node = el('article', { class: 'ifx-file', role: 'listitem', data: { fileKey: item.key } }, select, modified, bytes, source, menu);
-        record = { node, select, symbol, name, sub, modified, bytes, source, menu, item };
+        const checkbox=el('input',{type:'checkbox',class:'ifx-select-check',hidden:true});
+        const node = el('article', { class: 'ifx-file', role: 'listitem', data: { fileKey: item.key } }, checkbox, select, modified, bytes, source, menu);
+        record = { node, select, checkbox, symbol, name, sub, modified, bytes, source, menu, item };
         const current = () => !gone && model.status === 'ready' && node.isConnected && records.get(item.key) === record;
-        select.addEventListener('click', () => { if (current()) call('onSelect', record.item); });
-        select.addEventListener('dblclick', () => { if (current()) call('onOpen', record.item); });
+        select.addEventListener('click', event => { if (current()) call('onSelect', record.item,{multiple:event.ctrlKey||event.metaKey||event.shiftKey,range:event.shiftKey}); });
+        checkbox.addEventListener('click',event=>{if(model.status!=='ready')event.preventDefault();});
+        checkbox.addEventListener('change',()=>{if(current())call('onSelect',record.item,{multiple:true});});
+        node.addEventListener('dragstart',event=>{if(!current()||record.item.source?.kind!=='drive'||record.item.trashedAt)return event.preventDefault();if(call('onDragStart',record.item,event.dataTransfer)!==true)event.preventDefault();});
+        node.addEventListener('dragover',event=>{if(current()&&record.item.kind==='folder'&&record.item.source?.kind==='drive'&&!record.item.trashedAt&&event.dataTransfer?.types?.includes('application/x-inflite-files-token')){event.preventDefault();event.dataTransfer.dropEffect=event.ctrlKey||event.altKey?'copy':'move';}});
+        node.addEventListener('drop',event=>{if(current()&&record.item.kind==='folder'&&record.item.source?.kind==='drive'&&!record.item.trashedAt&&event.dataTransfer?.types?.includes('application/x-inflite-files-token')){event.preventDefault();event.stopPropagation();call('onFolderDrop',record.item,event.dataTransfer,event.ctrlKey||event.altKey);}});
+        select.addEventListener('dblclick', () => { if (current()&&!model.selecting) call('onOpen', record.item); });
         menu.addEventListener('click', () => { if (current()) call('onMenu', record.item); });
         records.set(item.key, record);
       }
       record.item = item;
       const selected = model.selection === item.key;
       record.node.dataset.selected = String(selected);
+      record.node.dataset.selecting=String(!!model.selecting);record.checkbox.hidden=!model.selecting||item.source?.kind!=='drive';record.checkbox.checked=(model.selectedKeys||[]).includes(item.key);record.checkbox.setAttribute('aria-disabled',String(model.status!=='ready'));record.checkbox.setAttribute('aria-label',`Include ${clean(item.name)} in selection`);record.node.draggable=model.status==='ready'&&item.source?.kind==='drive'&&!item.trashedAt;
       record.node.dataset.kind = item.kind === 'folder' ? 'folder' : 'file';
       record.name.textContent = clean(item.name); record.name.title = clean(item.name);
       record.symbol.replaceChildren(filesIcon(fileGlyph(item), doc));

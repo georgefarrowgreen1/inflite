@@ -21,7 +21,7 @@
 // A frame that hasn't said a height SILENT_MS after its load event, or after an IntersectionObserver first sees it, while
 // navigator.onLine, is covered with "Couldn’t show this message · Open in Mail" (RI10): the frame hidden, a
 // div.mail-body-cover put after it. Offline, the module's own offline state covers the reader instead.
-import { MAIL } from "./api.js";
+import { MAIL, MAIL_PAGE } from "./api.js";
 
 export const BODY = "/body/";
 export const MSG = { ifl: "mailbody", v: 1 };
@@ -58,7 +58,7 @@ function cover(r) {
   words.textContent = "Couldn’t show this message";
   const sep = document.createTextNode(" · ");
   const open = document.createElement("a");
-  open.href = `${MAIL}/${r.thread ? `#thread=${r.thread}` : ""}`;
+  open.href = `${MAIL_PAGE}/${r.thread ? `#thread=${r.thread}` : ""}`;
   open.target = "_blank";
   open.rel = "noopener noreferrer";
   open.textContent = "Open in Mail";
