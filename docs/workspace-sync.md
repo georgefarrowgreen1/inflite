@@ -1,4 +1,7 @@
-# Workspaces on devices
+# Retired: workspace sync
+
+The unified shell no longer loads saved workspaces, relays their context or starts cloud layout sync. Today, Files, direct app navigation and app-owned drafts remain available. Old workspace bookmarks return to Today. Existing local and cloud records are left untouched. The notes below document the retained compatibility modules and storage format, rather than active shell features.
+
 
 The OS synchronizes workspace names, app selections, active workspace/pane and normalized window layouts through the existing private account service. Each device retains its local layout while offline. App contents, unsent drafts, message/conversation IDs, file names/content, private searches, location coordinates, scroll positions and authentication state are excluded. Object routes remain local; only literal app sections travel between devices.
 

@@ -17,7 +17,6 @@ function fixture() {
 
 async function prepare(t) {
   await t.page.evaluate(() => {
-    audit.ws.store.update('ride', { panes: [{ app: 'fitness' }], activePane: 'fitness' });
     audit.F.nav.go('/#workspace=ride', { replace: true, kind: 'section' });
   });
   await t.settle();

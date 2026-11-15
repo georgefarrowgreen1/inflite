@@ -1,4 +1,7 @@
-# Unified InFlite workspaces
+# Retired: saved workspaces
+
+The unified shell no longer loads saved workspaces, relays their context or starts cloud layout sync. Today, Files, direct app navigation and app-owned drafts remain available. Old workspace bookmarks return to Today. Existing local and cloud records are left untouched. The notes below document the retained compatibility modules and storage format, rather than active shell features.
+
 
 `inflite.ai` unifies Today, app views, Files and saved workspaces under the existing account session and domain engines. Today is the default home; Workspaces opens the saved desktop or foreground phone app. Older `os.inflite.ai` document links redirect to the same canonical path without interrupting legacy API/static requests. An explicit `?os=1` flag remains available on localhost and test hosts; unrelated production subdomains cannot enable this host.
 

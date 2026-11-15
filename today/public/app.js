@@ -14,12 +14,12 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "3.05";
+const BUILD = "3.06";
 // (what's new in it, said once it's in)
-const NEWS = "Your profile photo in the Today header";
-// Today and workspaces share one InFlite shell. Query opt-in is only for local previews.
+const NEWS = "Simpler navigation: Today, Files and your apps, without workspaces";
+// Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-state.js", "/roof/workspace-catalog.js", "/roof/workspace-context.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-sync.js", "/roof/workspace-sync-view.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
+const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -1912,7 +1912,7 @@ function frame() {
       workspaceLoad = null;
       if (F !== ownerFrame || ownerFrame?.signal.aborted) return null;
       console.error(e);
-      workspaceRoot.replaceChildren(ownerFrame.ui.error({ title: "Workspace didn’t open", body: "Try again to open your saved apps.", acts: [{ label: "Try Again", run: installWorkspace }] }));
+      workspaceRoot.replaceChildren(ownerFrame.ui.error({ title: "InFlite didn’t open", body: "Try again to open your apps.", acts: [{ label: "Try Again", run: installWorkspace }] }));
       return null;
     });
     return workspaceLoad;
@@ -1920,7 +1920,7 @@ function frame() {
   const workspaceScreen = OS_MODE ? { el: workspaceRoot, title: () => "InFlite", acts: [],
     onShow(r) { workspaceRoute = r; if (workspace) workspace.show(r).catch((e) => console.error(e)); else installWorkspace(); },
     onHide() { workspaceRoute = null; workspace?.hide(); }, focus: () => workspace?.focus() || workspaceRoot } : undefined;
-  if (OS_MODE && location.pathname === "/" && !location.hash) history.replaceState(history.state, "", `/${location.search}#workspace`);
+  if (OS_MODE && location.pathname === "/" && /^#workspace(?:=[\w-]{1,40})?$/.test(location.hash)) history.replaceState(history.state, "", `/${location.search}`);
   F = createFrame({
     root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
     session: () => ({ view: S.view, hub: S.hub, roof: S.roof, apps: S.apps, links: S.links || DEFAULT_LINKS }),

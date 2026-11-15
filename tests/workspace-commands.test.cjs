@@ -165,6 +165,18 @@ test('only a supported current-day Fitness notification offers its real ride-tim
   assert.deepEqual(notificationActions({ app: 'mail', url: '/mail/#thread=t' }, { ...options, enabled: () => false }), []);
 });
 
+test('direct notification app navigation takes precedence over retired workspace navigation', async () => {
+  const { notificationActions } = await api, calls = [];
+  const actions = notificationActions({ app: 'chat', url: '/chats/#open=friend-8' }, {
+    origin: ORIGIN, enabled: () => true,
+    openApp: (...args) => calls.push(['app', ...args]),
+    openWorkspace: () => assert.fail('A retired workspace must not open'),
+  });
+  assert.deepEqual(actions.map(a => a.id), ['app']);
+  actions[0].run(); actions[0].run();
+  assert.deepEqual(calls, [['app', 'chats', '/chats/#open=friend-8']]);
+});
+
 test('cold file commands require the real optional picker and only native supported imports are offered', async () => {
   let dialogs = false;
   const f = await fixture({ fileDialogsAvailable: () => dialogs });

@@ -1,5 +1,4 @@
-// Real frame, workspace controller, slots and routing. Tall cooperative modules
-// keep their DOM so the host must own scroll through reparenting and hiding.
+// Real frame and unified shell: native app continuity and cancellable motion.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync, existsSync } = require('node:fs');
@@ -51,156 +50,17 @@ async function open({ width = 1440, motion = 'reduce' } = {}) {
     ws = T.ws = await createWorkspace(F, { root: byId('workspace'), today: byId('today'), dockRoot: byId('in') });
     T.slot = app => document.querySelector('[data-workspace-slot="' + app + '"]');
     T.hold = app => { T.delay = app; T.wait = new Promise(r => T.release = () => { T.delay = null; r(); }); };
-    F.nav.go('/#workspace=ride', { kind: 'section' });
+    F.nav.go('/fitness/', { kind: 'section' });
   });
-  await page.waitForFunction(() => T.stats.fitness.shows > 0 && T.stats.weather.shows > 0 && T.slot('fitness')?.scrollHeight > 3000);
+  await page.waitForFunction(() => T.stats.fitness.shows > 0 && T.F.view('fitness').fw.visible());
   const settle = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))); await settle();
   const clean = async () => { assert.deepEqual(errors, []); assert.deepEqual(unknown, []); assert.deepEqual(await page.evaluate(() => rejections), []); };
   return { ctx, page, settle, clean };
 }
-const slot = (page, app = 'fitness') => page.locator(`[data-workspace-slot="${app}"]`);
-const scroll = (page, app = 'fitness') => slot(page, app).evaluate(n => Math.round(n.scrollTop));
-async function putScroll(t, top, app = 'fitness') { await slot(t.page, app).evaluate((n, y) => n.scrollTop = y, top); await t.settle(); assert.equal(await scroll(t.page, app), top); }
-async function go(t, path) { await t.page.evaluate(p => T.F.nav.go(p, { kind: 'section' }), path); await t.settle(); }
-async function waitPane(t, app = 'fitness') { await t.page.waitForFunction(app => T.slot(app)?.contains(T.F.view(app).el) && T.F.view(app).fw.visible(), app); await t.settle(); }
 async function waitNative(t, app = 'fitness') {
   await t.page.waitForFunction(app => { const handle = T.F.view(app); return T.F.route.kind === 'app' && T.F.route.app === app && handle.el.parentElement === document.getElementById('views') && !handle.el.hidden && !handle.root.classList.contains('ifl-in-pane'); }, app);
   await t.settle();
 }
-
-test('pane scroll survives an empty native reparent and return to the same workspace without remounting or persisting it', async () => {
-  const t = await open(); try {
-    await putScroll(t, 761);
-    await t.page.evaluate(() => { T.original = T.F.view('fitness').root; });
-    await t.page.getByRole('button', { name: 'Open Fitness', exact: true }).first().click();
-    await waitNative(t);
-    assert.equal(await scroll(t.page), 0, 'empty pane physically loses its scroll position');
-    await go(t, '/#workspace=ride'); await waitPane(t);
-    await t.page.waitForFunction(() => Math.abs(T.slot('fitness').scrollTop - 761) < 2);
-    assert.equal(await t.page.evaluate(() => T.F.view('fitness').root === T.original && T.stats.fitness.mounts === 1), true);
-    const persisted = await t.page.evaluate(() => localStorage.getItem('ifl:workspace:v2:owner-a'));
-    assert.doesNotMatch(persisted, /scrollTop|paneScroll|"top"/);
-    await t.clean();
-  } finally { await t.ctx.close(); }
-});
-
-test('scroll is owned by its workspace and app through switching workspaces and mobile foreground panes', async () => {
-  const t = await open(); try {
-    await putScroll(t, 619); await putScroll(t, 273, 'weather');
-    const other = await t.page.evaluate(() => T.ws.store.create({ name: 'Other workspace', panes: [{ app: 'fitness' }, { app: 'weather' }] }).id);
-    await go(t, '/#workspace=' + other); await waitPane(t);
-    assert.equal(await scroll(t.page), 0, 'a new workspace starts at its own position');
-    await putScroll(t, 207);
-    await go(t, '/#workspace=ride'); await waitPane(t);
-    await t.page.waitForFunction(() => Math.abs(T.slot('fitness').scrollTop - 619) < 2 && Math.abs(T.slot('weather').scrollTop - 273) < 2);
-    await go(t, '/#workspace=' + other); await waitPane(t);
-    await t.page.waitForFunction(() => Math.abs(T.slot('fitness').scrollTop - 207) < 2);
-    await t.page.setViewportSize({ width: 390, height: 844 }); await t.settle();
-    await putScroll(t, 421);
-    await t.page.getByRole('tab', { name: 'Weather', exact: true }).click(); await waitPane(t, 'weather');
-    await putScroll(t, 215, 'weather');
-    await t.page.getByRole('tab', { name: 'Fitness', exact: true }).click(); await waitPane(t);
-    await t.page.waitForFunction(() => Math.abs(T.slot('fitness').scrollTop - 421) < 2).catch(async e => {
-      throw new Error('Fitness should restore 421: ' + JSON.stringify(await t.page.evaluate(() => ({ fitness: T.slot('fitness').scrollTop, weather: T.slot('weather').scrollTop, route: T.F.route, foreground: document.getElementById('workspace').dataset.foregroundApp, client: T.slot('fitness').clientHeight, contains: T.slot('fitness').contains(T.F.view('fitness').el) }))), { cause: e });
-    });
-    await t.page.getByRole('tab', { name: 'Weather', exact: true }).click(); await waitPane(t, 'weather');
-    await t.page.waitForFunction(() => Math.abs(T.slot('weather').scrollTop - 215) < 2);
-    assert.deepEqual(await t.page.evaluate(() => [T.stats.fitness.mounts, T.stats.weather.mounts]), [1, 1]);
-    await t.clean();
-  } finally { await t.ctx.close(); }
-});
-
-test('each pane route retains its own scroll position through native round trips and revisits', async () => {
-  const t = await open(); try {
-    await putScroll(t, 703);
-    await t.page.evaluate(() => T.stats.fitness.fw.nav.go('/fitness/#activities'));
-    await t.page.waitForFunction(() => T.F.view('fitness').route?.key === 'activities'); await t.settle();
-    assert.equal(await scroll(t.page), 0, 'Today scroll cannot leak into Activities');
-    await putScroll(t, 263);
-    await t.page.getByRole('button', { name: 'Open Fitness', exact: true }).first().click();
-    await waitNative(t);
-    await go(t, '/#workspace=ride'); await waitPane(t);
-    await t.page.waitForFunction(() => Math.abs(T.slot('fitness').scrollTop - 263) < 2);
-    assert.equal(await t.page.evaluate(() => T.F.view('fitness').route.key), 'activities');
-    await t.page.evaluate(() => T.stats.fitness.fw.nav.section('today'));
-    await t.page.waitForFunction(() => T.F.view('fitness').route?.key === 'today'); await t.settle();
-    assert.equal(await scroll(t.page), 703, 'revisiting Today restores its own position');
-    await t.clean();
-  } finally { await t.ctx.close(); }
-});
-
-test('user input cancels a delayed scroll restoration and an account teardown retires remaining callbacks', async () => {
-  const t = await open(); try {
-    await putScroll(t, 733);
-    await go(t, '/fitness/#today'); await waitNative(t);
-    await t.page.evaluate(() => { T.hold('fitness'); T.F.nav.go('/#workspace=ride', { kind: 'section' }); });
-    await t.page.waitForFunction(() => T.waiting === 1);
-    await slot(t.page).evaluate(n => { n.dispatchEvent(new WheelEvent('wheel', { deltaY: 95, bubbles: true })); n.scrollTop = 95; });
-    await t.page.evaluate(() => T.release()); await t.settle();
-    assert.equal(await scroll(t.page), 95, 'late show must not fight the user');
-    await putScroll(t, 533);
-    await go(t, '/fitness/#today');
-    await t.page.evaluate(() => { T.hold('fitness'); T.F.nav.go('/#workspace=ride', { kind: 'section' }); });
-    await t.page.waitForFunction(() => T.waiting === 2);
-    await t.page.evaluate(() => {
-      T.F.destroy(); T.user = { id: 'owner-b', name: 'Owner B' };
-      const replacement = document.createElement('div'); replacement.id = 'replacement'; replacement.style.cssText = 'height:200px;overflow:auto';
-      const content = document.createElement('div'); content.style.height = '3000px'; replacement.append(content); document.body.append(replacement); replacement.scrollTop = 81;
-      T.release();
-    }); await t.settle();
-    assert.equal(await t.page.locator('#replacement').evaluate(n => n.scrollTop), 81);
-    assert.equal(await t.page.locator('#m-fitness,#m-weather').count(), 0);
-    assert.equal(await t.page.evaluate(() => T.F.signal.aborted && T.stats.fitness.unmounts === 1 && T.stats.weather.unmounts === 1), true);
-    await t.clean();
-  } finally { await t.ctx.close(); }
-});
-
-test('late app content restores the waiting position once, and user input cancels later growth-based restoration', async () => {
-  const t = await open(); try {
-    await putScroll(t, 877);
-    await t.page.getByRole('button', { name: 'Open Fitness', exact: true }).first().click();
-    await waitNative(t);
-    await t.page.evaluate(() => { T.short = 'fitness'; });
-    await go(t, '/#workspace=ride'); await waitPane(t);
-    assert.equal(await scroll(t.page), 0, 'content too short to restore yet');
-    await t.page.evaluate(() => { T.short = null; T.stats.fitness.content.classList.remove('fixture-short'); T.stats.fitness.fw.workspace.changed(); });
-    await t.page.waitForFunction(() => Math.abs(T.slot('fitness').scrollTop - 877) < 2).catch(async e => {
-      throw new Error('Fitness should restore 877 after content growth: ' + JSON.stringify(await t.page.evaluate(() => ({ top: T.slot('fitness').scrollTop, height: T.slot('fitness').scrollHeight, client: T.slot('fitness').clientHeight, classes: T.stats.fitness.content.className, contentHeight: T.stats.fitness.content.getBoundingClientRect().height, connected: T.stats.fitness.content.isConnected, contains: T.F.view('fitness').root.contains(T.stats.fitness.content), shows: T.stats.fitness.shows, snapshots: T.stats.fitness.snapshots }))), { cause: e });
-    });
-    await t.page.getByRole('button', { name: 'Open Fitness', exact: true }).first().click();
-    await waitNative(t);
-    await t.page.evaluate(() => { T.short = 'fitness'; });
-    await go(t, '/#workspace=ride'); await waitPane(t);
-    assert.equal(await scroll(t.page), 0);
-    await slot(t.page).evaluate(n => n.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true })));
-    await t.page.evaluate(() => { T.short = null; T.stats.fitness.content.classList.remove('fixture-short'); T.stats.fitness.fw.workspace.changed(); }); await t.settle();
-    assert.equal(await scroll(t.page), 0, 'metadata refresh cannot undo user cancellation');
-    await t.clean();
-  } finally { await t.ctx.close(); }
-});
-
-
-test('browser Back restores the pane Back stack and pane Back consumes the real prior entry', async () => {
-  const t = await open(); try {
-    await t.page.getByRole('textbox', { name:'fitness draft', exact:true }).fill('keep this draft');
-    await t.page.evaluate(() => T.stats.fitness.fw.nav.go('/fitness/#activities'));
-    await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'activities');
-    await t.page.evaluate(() => T.stats.fitness.fw.nav.go('/fitness/#routes'));
-    await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'routes');
-    const length = await t.page.evaluate(() => history.length);
-    await t.page.goBack(); await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'activities');
-    await t.page.getByRole('button', {name:'Back in Fitness',exact:true}).click();
-    await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'today');
-    assert.equal(await t.page.evaluate(() => history.length), length, 'Back does not push another entry');
-    await t.page.goForward(); await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'activities');
-    assert.equal(await t.page.getByRole('textbox', {name:'fitness draft',exact:true}).inputValue(),'keep this draft');
-    assert.equal(await t.page.evaluate(() => T.stats.fitness.mounts),1);
-    await t.page.goBack(); await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'today');
-    await t.page.evaluate(() => T.stats.fitness.fw.nav.back());
-    await t.page.waitForFunction(() => T.F.route.tab === 'workspace' && !T.F.route.arg);
-    assert.equal(await t.page.evaluate(() => history.length),length); await t.clean();
-  } finally { await t.ctx.close(); }
-});
 
 test('reopening a native app resumes its last native section and preserves its one editor', async () => {
   const t = await open(); try {
@@ -216,18 +76,18 @@ test('reopening a native app resumes its last native section and preserves its o
   } finally { await t.ctx.close(); }
 });
 
-for (const motion of ['reduce','no-preference']) test(`workspace transitions cancel cleanly on rapid navigation and teardown (${motion})`, async () => {
+for (const motion of ['reduce','no-preference']) test(`app transitions cancel cleanly on rapid navigation and teardown (${motion})`, async () => {
   const t = await open({motion}); try {
     await t.page.evaluate(() => T.stats.fitness.fw.nav.go('/fitness/#activities'));
-    await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'activities');
-    if(motion === 'reduce') assert.equal(await slot(t.page).evaluate(n=>n.getAnimations().length),0);
+    await t.page.waitForFunction(() => T.F.route.key === 'activities');
+    if(motion === 'reduce') assert.equal(await t.page.locator('#m-fitness').evaluate(n=>n.getAnimations().length),0);
     else {
       await t.page.emulateMedia({reducedMotion:'reduce'}); await t.settle();
-      assert.equal(await slot(t.page).evaluate(n=>n.getAnimations().length),0,'changing Reduce Motion cancels the current element animation');
+      assert.equal(await t.page.locator('#m-fitness').evaluate(n=>n.getAnimations().length),0,'changing Reduce Motion cancels the current element animation');
       await t.page.emulateMedia({reducedMotion:'no-preference'});
     }
     await t.page.evaluate(() => { for(const section of ['routes','today','activities','today']) T.stats.fitness.fw.nav.go('/fitness/#'+section); });
-    await t.page.waitForFunction(() => T.F.view('fitness').route.key === 'today');
+    await t.page.waitForFunction(() => T.F.route.key === 'today');
     await t.page.evaluate(() => { T.ws.destroy(); T.F.destroy(); });
     await t.settle();
     assert.equal(await t.page.locator('#workspace').evaluate(n=>n.getAnimations({subtree:true}).length),0);

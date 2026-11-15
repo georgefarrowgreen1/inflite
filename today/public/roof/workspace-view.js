@@ -56,7 +56,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   const todaySide = callable(callbacks.onToday) ? bindButton("Today", "calendar", "today", opener => invoke("onToday", opener), "ws-sidebar-button") : null;
   if (todaySide) todaySide.append(el("span", { text: "Today" }));
   const savedNav = el("div", { class: "ws-saved-nav" }), savedRecords = new Map();
-  const sideNav = el("nav", { class: "ws-workspace-nav", "aria-label": "Workspaces" }, todaySide, savedNav);
+  const sideNav = el("nav", { class: "ws-workspace-nav", "aria-label": "InFlite" }, todaySide, savedNav);
   const create = callable(callbacks.onCreateWorkspace) ? bindButton("New workspace", "plus", "create-workspace", opener => invoke("onCreateWorkspace", opener), "ws-sidebar-button ws-create") : null;
   const files = callable(callbacks.onFiles) ? bindButton("Files", "file", "files", opener => invoke("onFiles", opener), "ws-sidebar-button") : null;
   if (files) files.append(el("span", { text: "Files" }));
@@ -69,8 +69,8 @@ export function createWorkspaceView(root, callbacks = {}) {
   const settings = callable(callbacks.onSettings) ? bindButton("Settings", "settings", "settings", opener => invoke("onSettings", opener), "ws-sidebar-button") : null;
   if (settings) settings.append(el("span", { text: "Settings" }));
   const sideFoot = el("div", { class: "ws-sidebar-foot" }, files, activity, sync, settings);
-  const sidebar = el("aside", { class: "ws-sidebar", "aria-label": "InFlite workspace navigation" }, sideBrand,
-    el("p", { class: "ws-nav-label", text: "Workspaces" }), sideNav, create, sideFoot);
+  const sidebar = el("aside", { class: "ws-sidebar", "aria-label": "InFlite navigation" }, sideBrand,
+    el("p", { class: "ws-nav-label", text: callable(callbacks.onWorkspace) ? "Workspaces" : "Navigate" }), sideNav, create, sideFoot);
   if (create) { create.hidden = !callable(callbacks.onCreateWorkspace); create.append(el("span", { text: "New workspace" })); }
   sideFoot.hidden = !files && !activity && !sync && !settings;
 

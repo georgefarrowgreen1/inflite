@@ -34,8 +34,10 @@ async function open(){
   s.wait=new Promise(r=>s.release=r);let ws;
   const F=s.F=createFrame({root:byId('in'),header:byId('hd'),views:byId('views'),tabs:byId('tabs'),session:()=>({view:{user:s.user},hub:true,apps:s.enabled}),hubAgain:async()=>{},today:{el:byId('today'),title:'Today'},workspace:{el:byId('workspace'),title:'Workspace',onShow:r=>ws?.show(r),onHide:()=>ws?.hide()}});
   s.nativeAway=F.tabs.away;s.toasts=[];const toast=F.toast;F.toast=(text,...rest)=>{s.toasts.push(text);return toast(text,...rest)};
-  ws=s.ws=await createWorkspace(F,{root:byId('workspace'),today:byId('today'),dockRoot:byId('in')});F.nav.go('/#workspace=ride',{kind:'section'});
+  ws=s.ws=await createWorkspace(F,{root:byId('workspace'),today:byId('today'),dockRoot:byId('in')});F.nav.go('/weather/',{kind:'section'});
  });
+ await page.waitForFunction(()=>audit.mounts.weather===1&&audit.capabilities.weather);
+ await page.evaluate(()=>audit.F.nav.go('/fitness/',{kind:'section'}));
  await page.waitForFunction(()=>audit.mounts.fitness===1&&audit.mounts.weather===1&&audit.capabilities.fitness&&audit.capabilities.weather);
  const settle=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));await settle();
  return {ctx,page,settle,clean:async()=>{assert.deepEqual(errors,[]);assert.deepEqual(unknown,[])}};
@@ -45,12 +47,12 @@ async function routeDownload(page){
  await page.getByRole('button',{name:'Select Private route.gpx',exact:true}).click();
  await page.locator('.ifx-inspector').getByRole('button',{name:'Download',exact:true}).click();
 }
-test('a disabled pane cannot reappear and re-enabling after disposal mounts one fresh owned view',async()=>{
+test('a disabled app cannot reappear and re-enabling after disposal mounts one fresh owned view',async()=>{
  const {ctx,page,settle,clean}=await open();try{
   await page.evaluate(()=>{audit.oldWeather=audit.F.view('weather');audit.oldCapability=audit.capabilities.weather;audit.enabled.weather=false;audit.F.setRoof(undefined,audit.enabled)});
   await page.waitForFunction(()=>audit.oldWeather.signal.aborted);
   assert.equal(await page.locator('#m-weather').count(),0);
-  await page.evaluate(()=>{audit.enabled.weather=true;audit.F.setRoof(undefined,audit.enabled)});
+  await page.evaluate(()=>{audit.enabled.weather=true;audit.F.setRoof(undefined,audit.enabled);audit.F.nav.go('/weather/',{kind:'section'})});
   await page.waitForFunction(()=>audit.mounts.weather===2);await settle();
   const stale=await page.evaluate(async()=>{let reads=0,deliveries=0;const old=audit.oldCapability;old.provide({snapshot(){reads++;return{files:[{name:'Obsolete route.gpx'}]}},run(){audit.runs.push('obsolete')}});old.context.subscribe(()=>deliveries++);const update=old.context.update({location:{name:'Obsolete location',lat:52,lon:1}},{source:'weather:place'});audit.capabilities.fitness.context.update({location:{name:'New location',lat:53,lon:2}},{source:'fitness:weather-for-ride'});old.changed();await Promise.resolve();return{reads,deliveries,update,old:old.context.get()}});assert.deepEqual(stale,{reads:0,deliveries:0,update:false,old:{location:null,interval:null}});
   assert.deepEqual(await page.evaluate(()=>({weather:audit.mounts.weather,fitness:audit.mounts.fitness,connected:!audit.F.view('weather').el.hidden&&!audit.F.view('weather').signal.aborted,count:document.querySelectorAll('#m-weather').length})),{weather:2,fitness:1,connected:true,count:1});await clean();
@@ -58,37 +60,37 @@ test('a disabled pane cannot reappear and re-enabling after disposal mounts one 
 });
 test('a quick entitlement return preserves the same module while an older flush is outstanding',async()=>{
  const {ctx,page,settle,clean}=await open();try{
-  await page.evaluate(()=>{audit.delayFlush='weather';audit.oldWeather=audit.F.view('weather');audit.enabled.weather=false;audit.F.setRoof(undefined,audit.enabled);audit.enabled.weather=true;audit.F.setRoof(undefined,audit.enabled);audit.release()});await settle();
+  await page.evaluate(()=>{audit.delayFlush='weather';audit.oldWeather=audit.F.view('weather');audit.enabled.weather=false;audit.F.setRoof(undefined,audit.enabled);audit.enabled.weather=true;audit.F.setRoof(undefined,audit.enabled);audit.F.nav.go('/weather/',{kind:'section'});audit.release()});await settle();
   assert.deepEqual(await page.evaluate(()=>({same:audit.oldWeather===audit.F.view('weather'),dead:audit.oldWeather.signal.aborted,mounts:audit.mounts.weather,visible:audit.F.view('weather').fw.visible()})),{same:true,dead:false,mounts:1,visible:true});
-  await page.getByRole('button',{name:'Weather actions',exact:true}).click();await page.locator('dialog[open]').getByRole('button',{name:'Inspect app',exact:true}).click();await page.waitForFunction(()=>audit.runs.length===1);assert.equal(await page.evaluate(()=>audit.runs[0].app==='weather'&&audit.runs[0].intent==='inspect'),true,'idempotent adapter provider and its actions survive the entitlement round trip');await clean();
+  await page.evaluate(()=>audit.F.search.open());await page.getByRole('combobox',{name:'Search everything'}).fill('inspect weather');await page.getByRole('option').filter({hasText:'Inspect app'}).click();await page.waitForFunction(()=>audit.runs.length===1);assert.equal(await page.evaluate(()=>audit.runs[0].app==='weather'&&audit.runs[0].intent==='inspect'),true,'idempotent adapter provider and its actions survive the entitlement round trip');await clean();
  }finally{await ctx.close()}
 });
-test('account disposal scrubs shared coordinates and makes old providers and callbacks inert',async()=>{
+test('account disposal scrubs retired context and makes old providers and callbacks inert',async()=>{
  const {ctx,page,settle,clean}=await open();try{
   const result=await page.evaluate(async()=>{const cap=audit.capabilities.fitness;cap.context.update({location:{name:'Private start',lat:51.1,lon:-.2}},{source:'fitness:weather-for-ride'});audit.delaySnapshot='fitness';cap.changed();await Promise.resolve();audit.F.destroy();audit.user={id:'owner-b',name:'Owner B'};audit.release();await Promise.resolve();const old=cap.context.get();const update=cap.context.update({location:{name:'Wrong account',lat:52,lon:1}},{source:'fitness:weather-for-ride'});cap.provide({snapshot:()=>({files:[{name:'Old private route'}]}),run:()=>audit.runs.push('obsolete')});return{old,update,disposed:audit.F.signal.aborted,views:document.querySelectorAll('#m-fitness,#m-weather').length}});await settle();
   assert.deepEqual(result,{old:{location:null,interval:null},update:false,disposed:true,views:0});assert.equal(await page.locator('body').innerText().then(x=>x.includes('Old private route')),false);await clean();
  }finally{await ctx.close()}
 });
-test('an intent waiting for a pane cannot run in a different workspace after navigation',async()=>{
+test('an intent waiting for an app cannot run after replacement navigation',async()=>{
  const {ctx,page,settle,clean}=await open();try{
-  await page.evaluate(()=>{audit.other=audit.ws.store.create({name:'Other ride',panes:[{app:'fitness'},{app:'weather'}]});audit.ws.store.select('ride');audit.F.nav.go('/#workspace',{kind:'section'})});await settle();
+  await page.evaluate(()=>audit.F.nav.go('/#workspace',{kind:'section'}));await settle();
   await page.getByRole('button',{name:'Files',exact:true}).click();await page.evaluate(()=>{audit.delayShow='fitness'});
   await routeDownload(page);await page.waitForFunction(()=>audit.waitingShows>0);
-  await page.evaluate(()=>{audit.F.nav.go('/#workspace='+audit.other.id,{kind:'section'});audit.release()});await settle();
+  await page.evaluate(()=>{audit.F.nav.go('/weather/',{kind:'section'});audit.release()});await settle();
   assert.deepEqual(await page.evaluate(()=>audit.runs),[],'a route/file intent belongs to its initiating workspace episode');await clean();
  }finally{await ctx.close()}
 });
 
-test('Files can wake its owning pane from Today and complete the requested action once ready',async()=>{
+test('Files can wake its owning app from Today and complete the requested action once ready',async()=>{
  const {ctx,page,settle,clean}=await open();try{
   await page.evaluate(()=>audit.F.nav.go('/#workspace',{kind:'section'}));await settle();
   await page.getByRole('button',{name:'Files',exact:true}).click();
   await routeDownload(page);
   await page.waitForFunction(()=>audit.runs.length===1);
-  assert.deepEqual(await page.evaluate(()=>({intents:audit.runs.map(r=>r.intent),route:audit.F.route.arg,active:audit.capabilities.fitness.active()})),{intents:['export-route'],route:'ride',active:true});await clean();
+  assert.deepEqual(await page.evaluate(()=>({intents:audit.runs.map(r=>r.intent),route:audit.F.route.app,active:audit.capabilities.fitness.active()})),{intents:['export-route'],route:'fitness',active:true});await clean();
  }finally{await ctx.close()}
 });
-test('replacing the same workspace route cancels a pending action from its older episode',async()=>{
+test('returning home cancels a pending native action',async()=>{
  const {ctx,page,settle,clean}=await open();try{
   await page.evaluate(()=>audit.F.nav.go('/#workspace',{kind:'section'}));await settle();
   await page.getByRole('button',{name:'Files',exact:true}).click();await page.evaluate(()=>{audit.delayShow='fitness'});
@@ -97,7 +99,7 @@ test('replacing the same workspace route cancels a pending action from its older
   assert.deepEqual(await page.evaluate(()=>audit.runs),[],'same workspace id does not make an older presentation current again');await clean();
  }finally{await ctx.close()}
 });
-test('a slow abandoned workspace presentation cannot overwrite the active full-app title',async()=>{
+test('a slow abandoned app presentation cannot overwrite the active full-app title',async()=>{
  const {ctx,page,settle,clean}=await open();try{
   await page.evaluate(()=>{audit.F.nav.go('/#workspace',{kind:'section'});audit.delayShow='fitness'});await settle();
   await page.getByRole('button',{name:'Files',exact:true}).click();
@@ -106,7 +108,7 @@ test('a slow abandoned workspace presentation cannot overwrite the active full-a
   assert.equal(await page.title(),'Weather — InFlite');assert.deepEqual(await page.evaluate(()=>audit.runs),[]);await clean();
  }finally{await ctx.close()}
 });
-test('account release keeps the restored title after an old workspace finally resolves',async()=>{
+test('account release keeps the restored title after an old app finally resolves',async()=>{
  const {ctx,page,settle,clean}=await open();try{
   await page.evaluate(()=>{audit.F.nav.go('/#workspace',{kind:'section'});audit.delayShow='fitness'});await settle();
   await page.getByRole('button',{name:'Files',exact:true}).click();
@@ -116,22 +118,24 @@ test('account release keeps the restored title after an old workspace finally re
  }finally{await ctx.close()}
 });
 
-test('nested context delivery never sends an older location after its replacement',async()=>{
+test('retired workspace context cannot relay locations between apps',async()=>{
  const {ctx,page,clean}=await open();try{
   const seen=await page.evaluate(()=>{const cap=audit.capabilities.fitness,seen=[];cap.context.subscribe(value=>{if(value.location?.name==='Original')cap.context.update({location:{name:'Replacement',lat:53,lon:2}},{source:'fitness:weather-for-ride'})});audit.capabilities.weather.context.subscribe(value=>seen.push(value.location?.name));cap.context.update({location:{name:'Original',lat:52,lon:1}},{source:'fitness:weather-for-ride'});return seen});
-  assert.deepEqual(seen,['Replacement']);await clean();
+  assert.deepEqual(seen,[]);await clean();
  }finally{await ctx.close()}
 });
-test('Files wakes the currently selected eligible workspace rather than an unrelated first workspace',async()=>{
- const {ctx,page,settle,clean}=await open();try{
-  const id=await page.evaluate(()=>{const other=audit.ws.store.create({name:'Current ride',panes:[{app:'fitness'},{app:'weather'}]});audit.F.nav.go('/#workspace',{kind:'section'});return other.id});await settle();
-  await page.getByRole('button',{name:'Files',exact:true}).click();await routeDownload(page);await page.waitForFunction(()=>audit.runs.length===1);
-  assert.equal(await page.evaluate(()=>audit.F.route.arg),id);await clean();
+
+test('search omits app actions that require the retired shared workspace context',async()=>{
+ const {ctx,page,clean}=await open();try{
+  await page.evaluate(()=>{audit.capabilities.fitness.provide({snapshot:()=>({status:'ready',files:[],actions:[{id:'weather-for-ride',label:'Weather at route start'},{id:'inspect',label:'Inspect route'}]}),run:()=>{throw Error('Retired context action')}});audit.F.search.open()});
+  await page.getByRole('combobox',{name:'Search everything'}).fill('route');
+  await page.getByRole('option').filter({hasText:'Inspect route'}).waitFor();
+  assert.equal(await page.getByRole('option').filter({hasText:'Weather at route start'}).count(),0);await clean();
  }finally{await ctx.close()}
 });
-test('an action rejected after its workspace was left cannot toast in the new screen',async()=>{
+test('an action rejected after its app was left cannot toast in the new screen',async()=>{
  const {ctx,page,settle,clean}=await open();try{
-  await page.evaluate(()=>{audit.failRun=true});await page.getByRole('button',{name:'Weather actions',exact:true}).click();await page.locator('dialog[open]').getByRole('button',{name:'Inspect app',exact:true}).click();await page.waitForFunction(()=>audit.runs.length===1);
+  await page.evaluate(()=>{audit.failRun=true});await page.evaluate(()=>audit.F.search.open());await page.getByRole('combobox',{name:'Search everything'}).fill('inspect weather');await page.getByRole('option').filter({hasText:'Inspect app'}).click();await page.waitForFunction(()=>audit.runs.length===1);
   await page.evaluate(()=>{audit.F.nav.go('/#workspace',{kind:'section'});audit.release()});await settle();
   assert.deepEqual(await page.evaluate(()=>audit.toasts),[]);await clean();
  }finally{await ctx.close()}

@@ -226,6 +226,7 @@ export function notificationActions(note, options = {}) {
   };
   if (target.objectId && (target.app === "chats" || target.app === "mail") && typeof options.runIntent === "function") result.push(action("reply", "Reply", "reply", () => options.runIntent(target.app, "reply", target.objectId)));
   if (target.app === "fitness" && target.key === "today" && typeof options.runIntent === "function") result.push(action("schedule", "Change ride time", "clock", () => options.runIntent("fitness", "schedule")));
-  if (typeof options.openWorkspace === "function") result.push(action("workspace", "Open workspace", "grid", () => options.openWorkspace(target.app, target.path)));
+  if (typeof options.openApp === "function") result.push(action("app", "Open app", "open", () => options.openApp(target.app, target.path)));
+  else if (typeof options.openWorkspace === "function") result.push(action("workspace", "Open workspace", "grid", () => options.openWorkspace(target.app, target.path)));
   return result;
 }

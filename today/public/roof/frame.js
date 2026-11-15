@@ -324,7 +324,7 @@ export function createFrame(opts = {}) {
       m.root.setAttribute("aria-labelledby", `ifl-sec-${id}`);
       scrollTo(0, y);
       const sh = () => liveModule(m) && F.route === r && m.instance?.show(r, null);
-      Promise.resolve(m.instance ? sh() : m.loading?.then(sh)).then(() => { if (F.route === r && y) scrollTo(0, y); }, (e) => console.error(e));
+      Promise.resolve(m.instance ? sh() : m.loading?.then(sh)).then(() => { if (liveModule(m) && F.route === r) { m.readyRoute = r; if (y) scrollTo(0, y); } }, (e) => console.error(e));
       emit("route", r);
     },
     prev: () => routes[curDepth() - 1] || null,
@@ -414,6 +414,7 @@ export function createFrame(opts = {}) {
   }
   function showApp(r, o) {
     const m = modOf(r.app);
+    m.readyRoute = null;
     if (m.host) m.view?.hide({ detach: true });
     m.host = null;
     if (m.el.parentNode !== opts.views) opts.views?.append(m.el);
@@ -430,6 +431,7 @@ export function createFrame(opts = {}) {
       return Promise.resolve(m.instance.show(r, o.hint || null)).then(() => {
         dropClone(m);
         if (!liveModule(m) || F.route !== r) return;
+        m.readyRoute = r;
         const y = o.y || o.popY;
         if (y && Math.abs(scrollY - y) > 2) scrollTo(0, y);
         tidy(r);
@@ -565,6 +567,7 @@ export function createFrame(opts = {}) {
         return () => { if (live() && m.host === host) handle.hide({ detach: true }); };
       },
       load: () => live() ? ensureApp(m) : Promise.resolve(null),
+      ready: r => live() && F.route === r && m.readyRoute === r,
       async show(route, { container, visible = true } = {}) {
         if (!live()) return false;
         const r = valid(route);
