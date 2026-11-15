@@ -14,9 +14,9 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "3.08";
+const BUILD = "3.09";
 // (what's new in it, said once it's in)
-const NEWS = "Choose a colour palette for all your apps in Appearance";
+const NEWS = "Open InFlite while your day refreshes in the background";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
@@ -2926,14 +2926,15 @@ async function hubKnown() {
 }
 let loadSequence = 0;
 async function load({ fresh = false } = {}) {
+  globalThis.__iflSessionStarted = true;
   const attempt = ++loadSequence;
   if (!S.view && !$("#sessionState").hidden) {
     $("#sessionState").setAttribute("aria-busy", "true");
     $("#sessionSaid").textContent = "Opening InFlite…";
+    $("#sessionRetry").hidden = true;
   }
-  let scope = requests.generation, pendingCards = null;
+  let scope = requests.generation;
   const current = () => attempt === loadSequence && scope === requests.generation;
-  const devP = findDevice();
   // (the hub's answer, asked once for this load however many wait on it)
   let knownP = null;
   const known = () => (knownP ||= hubKnown());
@@ -2966,50 +2967,9 @@ async function load({ fresh = false } = {}) {
       return;
     }
   }
-  // The combined boot below pairs cards with its authenticated view. Other reads
-  // start after that view has been adopted into the coordinator's account scope.
-  let asked = false;
-  const acceptCards = (answer, owner) => {
-    if (!current() || !owner) return;
-    if (S.view?.user?.id === owner) gotCards(answer);
-    else pendingCards = { answer, owner };
-  };
-  const askCards = (owner = view?.user?.id) => {
-    asked = true;
-    return devP.then((device) => {
-      if (!current()) return;
-      const q = new URLSearchParams({ v: "2", with: "morning" });
-      if (device) q.set("device", device);
-      S.loadedAt = Date.now();
-      return call(`/api/today?${q}`, { latestKey: "today" }).then((a) => acceptCards(a, owner), (e) => { if (current()) cardsFailed(e); });
-    });
-  };
-  // Signed in here last time (and no sign-in just finished): who and the day in one trip (/api/boot: the account asked
-  // once, the sign-in looked up once), on this device's name (findDevice: at most 800 ms, as the cards were asked
-  // before). Anyone else: who, alone, first.
-  const ks0 = view ? null : readJSON(KEPT);
-  if (view) sessionAsked = Promise.resolve(view);
-  else if (ks0) {
-    asked = true;
-    sessionAsked = devP.then((device) => {
-      if (!current()) return;
-      const q = new URLSearchParams({ v: "2", with: "morning" });
-      if (device) q.set("device", device);
-      S.loadedAt = Date.now();
-      return call(`/api/boot?${q}`, { fresh }).then((r) => (r?.view && typeof r.view === "object" ? r : Promise.reject(Object.assign(new Error(""), { status: 502 })))).then((r) => {
-        if (!current()) return null;
-        if (r.cards) acceptCards(r.cards, r.view.user?.id);
-        else if (r.view.signedIn) asked = false;
-        return r.view;
-      }, (e) => {
-        // (an account from before the way in in one trip (Today and the account go live apart), or any trouble but no
-        // network: who, alone, as before, and then the day. Even a boot 401 is
-        // checked against the session before showing sign-in controls.)
-        if (!current() || isRequestCancelled(e) || e?.status === 0) throw e;
-        return call("/api/session", { fresh }).then((v) => { if (current() && v?.signedIn) asked = false; return v; });
-      });
-    });
-  } else sessionAsked = call("/api/session", { fresh });
+  // Session confirmation is the only account request on the opening path.
+  // Device lookup and day generation must never delay access to the shell.
+  sessionAsked = view ? Promise.resolve(view) : call("/api/session", { fresh });
   try {
     view = await sessionAsked;
   } catch (e) {
@@ -3033,12 +2993,21 @@ async function load({ fresh = false } = {}) {
   if (view?.signedIn === false) return signedOutNow(true);
   if (view?.signedIn !== true || !view.user?.id) return sessionWaiting();
   signedIn(view);
-  // signedIn may adopt a different account. Its pending work was cancelled; only
-  // the boot data explicitly paired with this view is allowed to cross that reset.
-  if (scope !== requests.generation) { scope = requests.generation; asked = false; }
-  if (pendingCards?.owner === view.user?.id) { gotCards(pendingCards.answer); pendingCards = null; asked = true; }
+  // Adopt the account before requesting its day. A newer load, sign-out or
+  // account replacement cancels this response before it can reach the page.
+  scope = requests.generation;
+  const owner = view.user.id;
+  const devP = findDevice();
   wireLinks();
-  if (!asked) askCards();
+  devP.then((device) => {
+    if (!current() || S.view?.user?.id !== owner) return;
+    const q = new URLSearchParams({ v: "2", with: "morning" });
+    if (device) q.set("device", device);
+    S.loadedAt = Date.now();
+    return call(`/api/today?${q}`, { latestKey: "today" }).then((answer) => {
+      if (current() && S.view?.user?.id === owner) gotCards(answer);
+    }, (e) => { if (current() && S.view?.user?.id === owner) cardsFailed(e); });
+  }).catch(() => {});
   fromHash();
   devP.then(() => current() && deviceMoved()).then(() => current() && syncPush({ force: true })).catch(() => {});
   const at = IFL.here("today");
@@ -3052,19 +3021,11 @@ const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui",
 // Give that shell the same neutral state before asking anything about the account.
 function ensureSessionUI() {
   if ($("#sessionState")) return;
-  const out = $("#out"), state = out.cloneNode(true);
-  state.id = "sessionState"; state.hidden = false;
+  const out = $("#out"), state = document.createElement("main");
+  state.id = "sessionState"; state.className = "today-start";
   state.setAttribute("aria-label", "Opening InFlite"); state.setAttribute("aria-busy", "true");
-  // The neutral shell uses the static mark: never clone an animated SVG's IDs into the document.
-  const logo = state.querySelector(".ifl-logo");
-  if (logo?.querySelector("svg")) {
-    const img = document.createElement("img"); img.src = "/icon.svg"; img.alt = ""; img.width = img.height = 96;
-    logo.classList.remove("ifl-arrival"); logo.replaceChildren(img);
-  }
-  const said = document.createElement("p"), retry = document.createElement("a");
-  said.id = "sessionSaid"; said.className = "today-said"; said.setAttribute("role", "status"); said.textContent = "Opening InFlite…";
-  retry.id = "sessionRetry"; retry.className = "ifl-go pill primary"; retry.href = ""; retry.textContent = "Try Again";
-  state.querySelector(".ifl-cta").replaceChildren(said, retry);
+  // Static public markup only: never clone the sign-in page or its SVG IDs.
+  state.innerHTML = `<header class="opening-head" aria-hidden="true"><img src="/icon.svg" alt="" width="40" height="40"><span>InFlite</span></header><div class="opening-feedback"><p id="sessionSaid" role="status">Opening InFlite…</p><a class="pill primary" id="sessionRetry" href="" hidden>Try Again</a></div>`;
   out.before(state); out.hidden = true;
 }
 function start() {

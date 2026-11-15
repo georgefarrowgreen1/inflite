@@ -452,7 +452,7 @@ for (const width of [390, 1440]) test(`Today account control uses the saved prof
   } finally { await fallback.ctx.close(); }
 });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, initialPath = '/', waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedHub, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
+async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, initialPath = '/', waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedCards, seedHub, blockBootstrap = false, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: motion,
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
   if (noViewTransitions) await ctx.addInitScript(() => { delete Document.prototype.startViewTransition; });
@@ -484,7 +484,8 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
   if (viewApps) view.apps = viewApps;
   if (preferences) view.prefs = preferences;
   view.links = { ...view.links, account: origin, auth: origin };
-  if (seedSession) await ctx.addInitScript(view => localStorage.setItem('today:session', JSON.stringify({ id: view.user.id, at: Date.now(), view })), seedSession);
+  if (seedSession) await ctx.addInitScript(view => {if(window===window.top)localStorage.setItem('today:session', JSON.stringify({ id: view.user.id, at: Date.now(), view }));}, seedSession);
+  if (seedCards) await ctx.addInitScript(({id,answer}) => {if(window===window.top)localStorage.setItem('today:cards:'+id,JSON.stringify({id,at:Date.now(),answer}));},seedCards);
   if (seedHub) await ctx.addInitScript(values => { for (const [key, value] of Object.entries(values)) sessionStorage.setItem(key, value); }, seedHub);
   await ctx.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
@@ -495,6 +496,7 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
       return route.fulfill({ body: html, headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': /Content-Security-Policy: (.*)/.exec(policy)[1] } });
     }
     if (url.pathname === '/version') return route.fulfill({ json: { build } });
+    if (blockBootstrap && url.pathname === '/app.js') return route.abort();
     if (!url.pathname.startsWith('/api/')) return route.continue();
     requests.push({ path: url.pathname, method: req.method(), body: req.postDataJSON() });
     if (intercept && await intercept(route, { url, request: req, view, answer })) return;
@@ -846,13 +848,13 @@ test('slow cold and returning starts never reveal sign-in before the session ans
     const gate = new Promise(r => release = r), seen = new Promise(r => observed = r);
     const { ctx, page, errors } = await open({ waitForReady: false, seedSession: returning ? fixture('session') : undefined,
       intercept: async (route, { url, view, answer }) => {
-        if (url.pathname !== (returning ? '/api/boot' : '/api/session')) return false;
-        observed(); await gate; await route.fulfill({ json: returning ? { view, cards: answer } : view }); return true;
+        if (url.pathname !== '/api/session') return false;
+        observed(); await gate; await route.fulfill({ json: view }); return true;
       } });
     try {
       await seen; await page.waitForTimeout(4500);
       assert.equal(await page.locator('#sessionSaid').isVisible(), true);
-      assert.equal(await page.locator('#sessionRetry').isVisible(), true);
+      assert.equal(await page.locator('#sessionRetry').isVisible(), false, 'an active session check has no retry control');
       assert.equal(await page.locator('#signin').isVisible(), false, 'the four-second fallback must not show login');
       release(); await page.locator('#top .day-top').waitFor();
       assert.equal(await page.locator('#sessionSaid').isVisible(), false);
@@ -1000,24 +1002,90 @@ test('an unavailable day shows an explicit retry and recovers without replaying 
   } finally { await ctx.close(); }
 });
 
-test('a combined boot paints cards only with its authenticated view and falls back on older endpoints', async () => {
-  for (const unavailable of [false, 404, 401]) {
-    const { ctx, page, requests, errors } = await open({ seedSession: fixture('session'), user: { id: 'd84670f1-1b2c-4321-8e9f-123456789abc', name: 'Jordan Patel', first: 'Jordan' }, intercept: async (route, { url }) => {
-      if (url.pathname !== '/api/boot' || !unavailable) return false;
-      await route.fulfill({ status: unavailable, json: { error: 'Boot unavailable' } }); return true;
-    } });
-    try {
-      await page.locator('#top .dt-h').waitFor();
-      assert.match(await page.locator('#in').innerText(), /Your day, joined up/);
-      await page.evaluate(() => { location.hash = 'you'; }); await page.locator('#youAcct').waitFor();
-      assert.match(await page.locator('#youAcct').innerText(), /Jordan Patel/);
-      assert.doesNotMatch(await page.locator('#youAcct').innerText(), /Alex Morgan/);
-      assert.equal(requests.filter(r => r.path === '/api/boot').length, 1);
-      assert.equal(requests.filter(r => r.path === '/api/session').length, unavailable ? 1 : 0);
-      assert.equal(requests.filter(r => r.path === '/api/today').length, unavailable ? 1 : 0);
-      assert.deepEqual(errors, []);
-    } finally { await ctx.close(); }
-  }
+test('returning startup validates the account without waiting for the combined day endpoint', async () => {
+  const { ctx, page, requests, errors } = await open({ seedSession: fixture('session'), user: { id: 'd84670f1-1b2c-4321-8e9f-123456789abc', name: 'Jordan Patel', first: 'Jordan' } });
+  try {
+    await page.locator('#top .dt-h').waitFor();
+    await page.evaluate(() => { location.hash = 'you'; }); await page.locator('#youAcct').waitFor();
+    assert.match(await page.locator('#youAcct').innerText(), /Jordan Patel/);
+    assert.doesNotMatch(await page.locator('#youAcct').innerText(), /Alex Morgan/);
+    assert.equal(requests.filter(r => r.path === '/api/boot').length, 0);
+    assert.equal(requests.filter(r => r.path === '/api/session').length, 1);
+    assert.equal(requests.filter(r => r.path === '/api/today').length, 1);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+for (const width of [390, 1440]) test(`slow day data cannot block the dock, You or cached owner content at ${width}px`, async () => {
+  let release, observed;
+  const gate = new Promise(r => release = r), seen = new Promise(r => observed = r);
+  const cached=structuredClone(day);delete cached.v;delete cached.cards.markets;delete cached.cards.mail;cached.cards.weather.lead='Cached owner forecast';
+  const t = await open({ width, initialPath:'/?os=1', waitForReady: false, seedSession: fixture('session'), seedCards:{id:fixture('session').user.id,answer:cached}, intercept: async (route, {url, answer}) => {
+    if (url.pathname !== '/api/today') return false;
+    observed(); await gate; await route.fulfill({json:answer}); return true;
+  }});
+  try {
+    await seen;
+    await t.page.locator('#in:not([hidden])').waitFor();
+    assert.equal(await t.page.locator('#sessionState').isVisible(), false);
+    assert.ok((await t.page.locator('#rest').innerText()).includes('Cached owner forecast'));
+    await t.page.locator('.ws-dock').waitFor({timeout:5000});
+    assert.equal(await t.page.locator('.ws-dock').isVisible(), true);
+    await t.page.evaluate(()=>{location.hash='you';});
+    await t.page.locator('#youAcct').waitFor();
+    assert.match(await t.page.locator('#youAcct').innerText(), /Alex Morgan/);
+    assert.equal(t.requests.filter(r=>r.path==='/api/boot').length,0);
+    assert.deepEqual(t.errors,[]);
+    release();
+  } finally { release(); await t.ctx.close(); }
+});
+
+test('a cached day stays hidden until identity is confirmed and is discarded for a different account', async () => {
+  let releaseSession, releaseCards, seenSession;
+  const sessionGate=new Promise(r=>releaseSession=r), cardsGate=new Promise(r=>releaseCards=r), seen=new Promise(r=>seenSession=r);
+  const old=fixture('session'), cached=structuredClone(day);delete cached.v;cached.cards.weather.lead='PRIVATE PREVIOUS OWNER';
+  const t=await open({waitForReady:false,seedSession:old,seedCards:{id:old.user.id,answer:cached},intercept:async(route,{url,view,answer})=>{
+    if(url.pathname==='/api/session'){seenSession();await sessionGate;await route.fulfill({json:{...view,user:{...view.user,id:'different-owner',name:'Jordan New',first:'Jordan'}}});return true;}
+    if(url.pathname==='/api/today'){await cardsGate;await route.fulfill({json:answer});return true;}
+    return false;
+  }});
+  try {
+    await seen;assert.equal(await t.page.locator('#in').isVisible(),false);assert.doesNotMatch(await t.page.locator('body').innerText(),/PRIVATE PREVIOUS OWNER|Alex Morgan/);
+    releaseSession();await t.page.locator('#in:not([hidden])').waitFor();
+    assert.doesNotMatch(await t.page.locator('body').innerText(),/PRIVATE PREVIOUS OWNER/);
+    assert.equal(await t.page.evaluate(id=>localStorage.getItem('today:cards:'+id),old.user.id),null);
+    releaseCards();assert.deepEqual(t.errors,[]);
+  } finally {releaseSession();releaseCards();await t.ctx.close();}
+});
+
+test('a failed bootstrap script keeps a public shell and eventually offers recovery', async () => {
+  const t=await open({waitForReady:false,blockBootstrap:true});
+  try {
+    await t.page.locator('.opening-preview').waitFor();
+    assert.equal(await t.page.locator('#signin').isVisible(),false);
+    assert.equal(await t.page.locator('#sessionRetry').isVisible(),false);
+    await t.page.locator('#sessionRetry').waitFor({timeout:15000});
+    assert.equal(await t.page.locator('#sessionState').getAttribute('aria-busy'),'false');
+    assert.equal(await t.page.locator('#signin').isVisible(),false);
+    assert.equal(t.requests.some(r=>r.path==='/api/session'),false);
+  } finally {await t.ctx.close();}
+});
+
+test('Retry is hidden again while a replacement session request is pending', async () => {
+  let count=0, release, observed;
+  const gate=new Promise(r=>release=r), seen=new Promise(r=>observed=r);
+  const t=await open({waitForReady:false, intercept:async(route,{url,view})=>{
+    if(url.pathname!=='/api/session')return false;
+    if(++count===1){await route.fulfill({status:503,json:{error:'Temporarily unavailable'}});return true;}
+    observed();await gate;await route.fulfill({json:view});return true;
+  }});
+  try {
+    await t.page.locator('#sessionRetry').waitFor();await t.page.locator('#sessionRetry').click();await seen;
+    assert.equal(await t.page.locator('#sessionRetry').isVisible(),false);
+    assert.equal(await t.page.locator('#sessionState').getAttribute('aria-busy'),'true');
+    assert.equal(await t.page.locator('#signin').isVisible(),false);
+    release();await t.page.locator('#top .day-top').waitFor();assert.deepEqual(t.errors,[]);
+  } finally {release();await t.ctx.close();}
 });
 
 test('revalidating an offline session replaces every module lifetime before showing a different account', async () => {
