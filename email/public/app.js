@@ -299,7 +299,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.87";
+  const BUILD = "1.88";
   // (what's new in it, said once it's in)
   const NEWS = "Open and save with Files";
 
@@ -5015,6 +5015,7 @@ pre{white-space:pre-wrap}
         return null;
       } });
     if (v?.app) IFL.offer(v.app, v.min);
+    globalThis.InFliteAppearance?.fromApp(me.account);
     if (me.account?.appearance) lookOf(me.account.appearance);
     S.counts = counts;
     if (!els.list || !els.list.isConnected) build();

@@ -5,7 +5,7 @@ import { bodyUpTo } from "./body.js";
 import { fetchUpstream } from "./upstream.js";
 const API = /^\/api\/status(?:\/(?:day|hours|code|push-key|subscribe|unsubscribe))?$/;
 const PAGE = /^\/status(?:\/|$)/;
-const FILE = /^\/(?:index\.html|app\.js|styles\.css|icon\.svg|icon-180\.png|icons\/(?:today|chat|weather|fitness|markets|mail|account|home)\.svg|sw\.js|manifest\.webmanifest|feed\.xml)?$/;
+const FILE = /^\/(?:index\.html|app\.js|theme\.js|styles\.css|icon\.svg|icon-180\.png|icons\/(?:today|chat|weather|fitness|markets|mail|account|home)\.svg|sw\.js|manifest\.webmanifest|feed\.xml)?$/;
 const SAFE = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin", "Referrer-Policy": "no-referrer" };
 const fail = (status) => new Response("Couldn’t open Status.", { status, headers: SAFE });
 export const isExtraPath = (path) => PAGE.test(path) || path === "/api/status" || path.startsWith("/api/status/");

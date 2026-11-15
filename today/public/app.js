@@ -14,9 +14,9 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "3.07";
+const BUILD = "3.08";
 // (what's new in it, said once it's in)
-const NEWS = "The app dock stays in place as you move between pages";
+const NEWS = "Choose a colour palette for all your apps in Appearance";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
@@ -1808,7 +1808,7 @@ function signedIn(view, { offline = false } = {}) {
   // (a copy kept for anyone else: gone)
   forgetKept(CARDS_KEY(view.user.id));
   if (!offline) keepSession(view);
-  appearance(view.user.appearance);
+  appearance(view.user.appearance, view.user.palette, view.user.id);
   if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; }
   if (!S.morning || !("lines" in S.morning)) S.morning = view.morning || S.morning;
   $("#out").hidden = true;
@@ -2742,7 +2742,8 @@ function toMorning() {
 }
 
 // ---------------------------------------------------------------- the account's appearance, kept for theme.js
-function appearance(a) {
+function appearance(a, palette, id) {
+  if (globalThis.InFliteAppearance) { InFliteAppearance.accept({ appearance: ["light", "dark"].includes(a) ? a : "auto", palette: palette || "inflite", id }); return; }
   const t = a === "light" || a === "dark" ? a : null;
   try { if (t) localStorage.setItem("today:appearance", t); else localStorage.removeItem("today:appearance"); } catch {}
   if (t) document.documentElement.dataset.theme = t;

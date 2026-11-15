@@ -45,7 +45,7 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.87";
+export const BUILD = "1.88";
 export const NEWS = "Open and save with Files";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 

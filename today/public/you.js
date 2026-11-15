@@ -151,6 +151,7 @@ function paint(root, ctx) {
   // You: your picture and name, a tap from your account
   const photo = typeof ctx.photo === "function" ? ctx.photo(u) : esc([...String(u.first || u.name || "?")][0] || "?");
   out.push(sec("youAccount", "", `<button class="row go you-me" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Password, Passkeys and Devices</small></span><span class="chev">${G.chev}</span></button>`));
+  out.push(sec("youAppearance", "", `<button class="row go" type="button" id="youAppearanceOpen"><span class="tx"><b>Appearance</b><small>Colours, light and dark</small></span><span class="chev">${G.chev}</span></button>`));
   // Notifications: this phone, Today's morning, quiet hours
   const n = Y.notify;
   {
@@ -292,6 +293,7 @@ function openFolder(k, root, ctx) {
 function wire(root, ctx) {
   const $ = (s) => root.querySelector(s);
   $("#youAcct")?.addEventListener("click", () => ctx.openAccount());
+  $("#youAppearanceOpen")?.addEventListener("click", () => ctx.openAccount("appearance"));
   for (const b of root.querySelectorAll("[data-folder]")) b.addEventListener("click", () => openFolder(b.dataset.folder, document.getElementById("you") || root, ctx));
   for (const b of root.querySelectorAll(".you-tab")) b.addEventListener("click", () => {
     if (b.dataset.act === "chat") return ctx.chatSettings();
