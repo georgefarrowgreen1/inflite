@@ -202,10 +202,10 @@ export async function createWorkspace(F, options = {}) {
     queueMicrotask(() => {
       paintPending = false; if (!live()) return;
       rememberAll();
-      const state = store.read(), file = current?.panes.some(p => p.app === "fitness") ? snapshots.get("fitness")?.files?.[0] : null;
+      const state = store.read(), user = F.session.view?.user || {}, file = current?.panes.some(p => p.app === "fitness") ? snapshots.get("fitness")?.files?.[0] : null;
       view.update({ mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : shown && current ? "workspace" : "today", activeApp: F.route?.app, activeId: currentId, foregroundApp: foreground,
         paneApps: current?.panes.map((p) => p.app) || ["fitness", "weather"], workspaces: state.workspaces,
-        apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id) })), user: { name: F.session.view?.user?.name || "" }, notifications: options.notifications?.() || 0,
+        apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id) })), user: { name: user.name || "", photo: user.photoAt && /^[\w-]{8,64}$/.test(owner) ? `/api/avatar?id=${encodeURIComponent(owner)}&v=${encodeURIComponent(String(user.photoAt))}` : null }, notifications: options.notifications?.() || 0,
         unifiedHome: true, online: recovery.snapshot().online, syncStatus: sync?.status(), activityCount: activityView.count(),
         greeting: `${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}${F.session.view?.user?.name ? ", " + String(F.session.view.user.name).trim().split(/\s+/)[0] : ""}`,
         recentApps: [...recentApps.keys()].reverse().filter(appOn).map(app => ({ app })), recentActivity: activity.snapshot().slice(0, 3),

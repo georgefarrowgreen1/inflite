@@ -425,6 +425,33 @@ test('motion: cancelled and interrupted notification swipes never clear a row', 
   } finally { await ctx.close(); }
 });
 
+for (const width of [390, 1440]) test(`Today account control uses the saved profile photo and retains its initial fallback at ${width}px`, async () => {
+  const t = await open({ width, initialPath: '/?os=1', intercept: async (route, { url }) => {
+    if (url.pathname !== '/api/avatar') return false;
+    await route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQmHDgPwAEtAJwv2DoAwAAAABJRU5ErkJggg==', 'base64') }); return true;
+  } });
+  try {
+    const account = t.page.locator('.ws-account'), photo = account.locator('img');
+    await photo.waitFor(); await photo.evaluate(n => n.decode());
+    const url = new URL(await photo.getAttribute('src'), t.page.url());
+    assert.equal(url.pathname, '/api/avatar'); assert.equal(url.searchParams.get('id'), fixture('session').user.id); assert.equal(url.searchParams.get('v'), String(fixture('session').user.photoAt));
+    const image = await photo.boundingBox(), circle = await account.locator('.ifl-avatar').boundingBox();
+    assert.deepEqual(image, circle, 'the photo fills the existing circular avatar');
+    await account.click(); await t.page.locator('.ifm-layer.open').waitFor();
+    await t.page.keyboard.press('Escape'); await t.page.locator('.ifm-layer.open').waitFor({ state: 'detached' });
+    await photo.evaluate(n => n.dispatchEvent(new Event('error')));
+    assert.equal(await account.locator('img').count(), 0); assert.equal(await account.locator('.ifl-avatar').textContent(), 'A');
+    assert.deepEqual(t.errors, []); assert.deepEqual(await t.page.evaluate(() => [__csp, __rejections]), [[], []]);
+  } finally { await t.ctx.close(); }
+  const fallback = await open({ width, initialPath: '/?os=1', user: { photoAt: null } });
+  try {
+    await fallback.page.locator('.ws-account .ifl-avatar').waitFor();
+    assert.equal(await fallback.page.locator('.ws-account img').count(), 0);
+    assert.equal(await fallback.page.locator('.ws-account .ifl-avatar').textContent(), 'A');
+    assert.deepEqual(fallback.errors, []);
+  } finally { await fallback.ctx.close(); }
+});
+
 async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, initialPath = '/', waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedHub, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: motion,
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
