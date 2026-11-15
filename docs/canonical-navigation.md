@@ -7,3 +7,5 @@ A forced cross-origin redirect cannot transfer browser storage. Legacy Chat keep
 Mail's `/mail/standalone/` is a canonical outer page for legacy features and origin-local drafts. The existing Mail document stays in a separate-origin iframe. A top-level visit to email.inflite.ai moves to this wrapper; iframe documents, API requests and `/body/*` stay isolated. The wrapper's sign-in return path is explicitly allowlisted.
 
 A canonical app boot whose availability probe fails shows a recoverable status with an explicit Retry. It never redirects or reloads itself as its own fallback. Retry asks the server again before choosing the next state.
+
+The app dock mounts once outside the animated page containers. Today, Files and native apps share its viewport anchor; page changes do not move or remount it. Its separate View Transition layer stays stationary while the page animates. Keyboard and native full-screen chrome policies can still hide it, and account teardown removes it.

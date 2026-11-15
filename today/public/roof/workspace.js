@@ -78,6 +78,9 @@ export async function createWorkspace(F, options = {}) {
     onFiles: () => openFiles(),
     onActivity: () => activityView.open(), onRecovery: () => recoveryView.open(),
   });
+  // Chrome has one account-owned home outside animated page containers.
+  // Keep the dock mounted here through Today, Files and native app navigation.
+  (options.dockRoot || root.ownerDocument.body).append(view.dock);
   // Full-screen composers and keyboards retain the native app's chrome policy.
   const nativeAway = F.tabs.away;
   const dockAway = (value) => {
@@ -277,7 +280,7 @@ export async function createWorkspace(F, options = {}) {
     if (nextRoute?.arg && nextRoute.tool !== "files") { F.nav.go("/", { replace: true, kind: "section" }); return false; }
     explorer?.hide(); route = nextRoute; shown = true; const episode = ++scene;
     html.classList.add("ifl-os", "os-workspace");
-    view.slots.dockAnchor.append(view.dock); view.slots.sidebarAnchor.append(view.sidebar);
+    view.slots.sidebarAnchor.append(view.sidebar);
     if (nextRoute?.tool === "files") return showFiles(nextRoute, episode);
     pendingFilesQuery = null;
     view.slots.today.append(today); today.hidden = false; today.inert = false;
@@ -290,7 +293,6 @@ export async function createWorkspace(F, options = {}) {
     shown = false; ++scene; html.classList.remove("os-workspace");
     restoreToday();
     view.dock.prepend(view.sidebar);
-    options.dockRoot?.append(view.dock);
   }
   function destroy() {
     if (gone) return;

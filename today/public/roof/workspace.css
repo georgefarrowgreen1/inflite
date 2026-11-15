@@ -117,9 +117,11 @@ html.ifl-os.os-workspace #workspace.ifl-screen { width: 100%; max-width: none; m
 .ifl-workspace .ws-secondary { background: var(--ws-well); }
 .ifl-workspace .ws-resource-share svg { width: 18px; height: 18px; }
 .ifl-workspace .ws-resource-secondary-icon { display: grid; place-items: center; flex: none; width: 18px; height: 18px; }
-.ifl-workspace .ws-dock { position: absolute; z-index: 8; left: calc(var(--ws-sidebar) + (100% - var(--ws-sidebar)) / 2); bottom: 16px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; width: max-content; max-width: calc(100% - var(--ws-sidebar) - 32px); padding: 8px; border: 1px solid var(--ws-line); border-radius: 30px; background: var(--ws-surface); box-shadow: var(--ws-shadow); overflow-x: auto; scrollbar-width: none; touch-action: pan-x; }
+.ifl-workspace .ws-dock { position: fixed; z-index: 8; left: 50vw; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: center; gap: 6px; width: max-content; max-width: calc(100vw - 32px); padding: 8px; border: 1px solid var(--ws-line); border-radius: 30px; background: var(--ws-surface); box-shadow: var(--ws-shadow); overflow-x: auto; scrollbar-width: none; touch-action: pan-x; }
 .ifl-workspace .ws-dock::-webkit-scrollbar, .ifl-workspace .ws-pane-sections::-webkit-scrollbar { display: none; }
-html.ifl-os:not(.os-workspace) .ifl-workspace.ws-dock-host .ws-dock { position: fixed; left: 50%; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 32px); }
+.ifl-workspace.ws-dock-host .ws-dock { view-transition-name: inflite-dock; }
+html.ifl-os::view-transition-group(inflite-dock), html.ifl-os::view-transition-new(inflite-dock) { animation: none; }
+html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 .ifl-workspace .ws-dock-apps { display: flex; align-items: center; gap: 6px; }
 .ifl-workspace .ws-dock-button { display: grid; justify-items: center; align-content: center; flex: none; min-width: 60px; min-height: 64px; gap: 5px; padding: 4px 7px; border: 0; border-radius: 18px; color: var(--ws-text); background: transparent; }
 .ifl-workspace .ws-dock-symbol { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; }
@@ -209,7 +211,7 @@ html.ifl-os:not(.os-workspace) .ifl-workspace.ws-dock-host .ws-dock { position: 
   .ifl-workspace .ws-pane-header .ws-icon-button { width: 44px; min-width: 44px; height: 44px; }
   .ifl-workspace .ws-resource { flex-wrap: wrap; padding: 10px 12px; border-radius: 22px; }
   .ifl-workspace .ws-resource-share { margin-left: auto; }
-  .ifl-workspace .ws-dock { position: fixed; left: 50%; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 24px); padding: 6px; gap: 2px; border-radius: 999px; }
+  .ifl-workspace .ws-dock { max-width: calc(100vw - 24px); padding: 6px; gap: 2px; border-radius: 999px; }
   .ifl-workspace .ws-dock-apps { gap: 2px; }
   .ifl-workspace .ws-dock-button { min-width: 44px; min-height: 44px; width: 44px; height: 44px; padding: 4px; border-radius: 999px; }
   .ifl-workspace .ws-dock-symbol, .ifl-workspace .ws-dock-symbol img { width: 32px; height: 32px; border-radius: 9px; }
@@ -267,7 +269,6 @@ html.ifl-os:not(.os-workspace) .ifl-workspace.ws-dock-host .ws-dock { position: 
 .ifl-workspace .ws-dock-button[data-running] .ws-dock-symbol::after { content: ""; position: absolute; bottom: -4px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
 .ifl-workspace .ws-dock-button[data-minimized] .ws-dock-symbol { opacity: .7; }
 @media (min-width: 960px) {
-  .ifl-workspace .ws-dock { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
   .ifl-workspace.ws-window-manager .ws-pane-header { cursor: grab; user-select: none; }
   .ifl-workspace.ws-window-manager .ws-pane-header :is(button, a, input) { cursor: pointer; }
   .ifl-workspace[data-layout="float"] .ws-pane-grid { display: block; overflow: hidden; }
@@ -343,7 +344,7 @@ html.ifl-os:not(.os-workspace) .ifl-workspace.ws-dock-host .ws-dock { position: 
 @media (min-width: 960px) {
   html.ifl-os:not(.os-workspace) .today-in { padding-left: 232px; }
   html.ifl-os:not(.os-workspace) .ws-dock-host > .ws-sidebar { position: fixed; z-index: 9; inset: 16px auto 16px 16px; width: 216px; border: 1px solid var(--ws-line); border-radius: var(--ws-round); overflow: auto; }
-  html.ifl-os:not(.os-workspace) .ifl-workspace.ws-dock-host .ws-dock { left: calc(232px + (100% - 232px) / 2); max-width: calc(100% - 264px); }
+  .ifl-workspace.ws-dock-host .ws-dock { left: calc(232px + (100vw - 232px) / 2); max-width: calc(100vw - 264px); }
 }
 
 /* Short phone landscapes keep the native pane usable. Open windows retains
