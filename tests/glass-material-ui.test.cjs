@@ -43,6 +43,7 @@ async function open({preference=null,motion='no-preference',width=1100}={}){
  const page=await ctx.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(ORIGIN);await page.waitForFunction(()=>window.T?.ready);await settle(page);return{ctx,page,errors};
 }
 async function settle(page){await page.evaluate(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));await Promise.allSettled(document.getAnimations({subtree:true}).filter(a=>a.effect?.getTiming().iterations!==Infinity).map(a=>a.finished));await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))})}
+async function pointerText(page,selector){await page.locator(selector).first().hover();await settle(page)}
 async function theme(page,palette,appearance){await page.evaluate(p=>InFliteAppearance.accept(p),{palette,appearance});await settle(page)}
 
 async function contrastSamples(page,selectors){
@@ -71,13 +72,13 @@ async function contrastSamples(page,selectors){
 }
 function readable(samples,label){for(const sample of samples)assert.ok(sample.contrast>=4.5,`${label} ${sample.selector} ${JSON.stringify(sample.text)} contrast ${sample.contrast.toFixed(2)} < 4.5 ${JSON.stringify(sample.worst)}`)}
 
-test('all palettes keep actual material text readable over busy light and dark content',async()=>{
+test('all palettes and glass intensity extremes keep actual material text readable over busy light and dark content',async()=>{
  const t=await open();try{
-  for(const palette of palettes)for(const appearance of ['light','dark'])for(const backdrop of ['light','dark']){
-   await theme(t.page,palette,appearance);await t.page.locator('.material-backdrop').evaluate((n,v)=>n.dataset.busy=v,backdrop);const label=palette+'/'+appearance+'/'+backdrop;
-   readable(await contrastSamples(t.page,['.ifl-card-t','.ifl-card>.ifl-sub','.ifl-field input','.ws-dock-label']),label+'/shell');
-   await t.page.evaluate(()=>T.menu());await settle(t.page);readable(await contrastSamples(t.page,['.ifm-who b','.ifm-who small','.ifm-l','.ifm-val']),label+'/menu');await t.page.evaluate(()=>IFL.close(true));
-   await t.page.evaluate(()=>T.sheet());await settle(t.page);readable(await contrastSamples(t.page,['.ifl-sheet h2','.ifl-sheet .ifl-sub','.ifl-sheet .ifl-field input']),label+'/sheet');await t.page.evaluate(()=>T.handle.now());
+  for(const strength of (process.env.GLASS_TEST_STRENGTHS||'0,70,100').split(',').map(Number))for(const palette of palettes)for(const appearance of ['light','dark'])for(const backdrop of ['light','dark']){
+   await theme(t.page,palette,appearance);await t.page.evaluate(glassStrength=>InFliteAppearance.setGlass({glass:true,glassStrength}),strength);await t.page.locator('.material-backdrop').evaluate((n,v)=>n.dataset.busy=v,backdrop);const label=palette+'/'+appearance+'/'+backdrop+'/'+strength;
+   await pointerText(t.page,'.ifl-card-t');readable(await contrastSamples(t.page,['.ifl-card-t','.ifl-card>.ifl-sub','.ifl-field input','.ws-dock-label']),label+'/shell');
+   await t.page.evaluate(()=>T.menu());await settle(t.page);await pointerText(t.page,'.ifm-who small');readable(await contrastSamples(t.page,['.ifm-who b','.ifm-who small','.ifm-l','.ifm-val']),label+'/menu');await t.page.evaluate(()=>IFL.close(true));
+   await t.page.evaluate(()=>T.sheet());await settle(t.page);await pointerText(t.page,'.ifl-sheet .ifl-sub');readable(await contrastSamples(t.page,['.ifl-sheet h2','.ifl-sheet .ifl-sub','.ifl-sheet .ifl-field input']),label+'/sheet');await t.page.evaluate(()=>T.handle.now());
    assert.equal(await t.page.getByRole('textbox',{name:'Material field',exact:true}).inputValue(),'Keep this draft');
   }
   assert.deepEqual(t.errors,[]);

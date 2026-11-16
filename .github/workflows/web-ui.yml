@@ -10,7 +10,8 @@ permissions:
 jobs:
   browser:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # The full six-palette, light/dark, three-intensity material matrix runs here.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Production app fixtures
