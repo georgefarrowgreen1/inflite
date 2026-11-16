@@ -324,3 +324,18 @@ test('rename from a contextual menu returns focus to the same updated row action
   const updated=t.page.getByRole('button',{name:'Actions for Renamed route notes.txt',exact:true});await updated.waitFor();assert.equal(await updated.evaluate(node=>node===document.activeElement),true);await t.clean();
  }finally{await t.ctx.close();}
 });
+
+
+test('an explicit Files refresh consumes pending query and resource invalidations without disabling its fresh rows again',async()=>{
+ const t=await open();try{
+  const search=t.page.getByRole('searchbox').first();await search.fill('Training');
+  const count=await t.page.evaluate(()=>{const n=T.reads.length;T.emit({kind:'resources',source:{kind:'drive'}});T.explorer.refresh();return n});
+  await t.page.waitForFunction(()=>T.reads.at(-1).query==='Training'&&document.querySelector('.ifx-results').getAttribute('aria-busy')==='false');
+  // Both former deadlines (80ms invalidation, 250ms query) must pass without
+  // another read. This checks timer cancellation, not visual settling.
+  await t.page.waitForTimeout(320);
+  assert.equal(await t.page.evaluate(()=>T.reads.length),count+1);
+  assert.equal(await t.page.locator('.ifx-results').getAttribute('aria-busy'),'false');
+  assert.equal(await search.inputValue(),'Training');await t.clean();
+ }finally{await t.ctx.close()}
+});

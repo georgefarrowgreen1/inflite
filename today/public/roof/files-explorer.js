@@ -83,6 +83,10 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   }
   async function refresh({ reset = false } = {}) {
     if (!active()) return false;
+    // This read already captures the latest query and resource state. Pending
+    // invalidations must not restart it or disable freshly rendered rows again.
+    clearTimeout(queryTimer); queryTimer = 0;
+    clearTimeout(refreshTimer); refreshTimer = 0;
     if (reset) resetPages();
     const mine = ++readGen, currentLocation = location, typed = query, sorted = sort, currentPage = page, cursor = pageCursors[page];
     read?.abort(); const controller = read = new AbortController();

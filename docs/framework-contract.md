@@ -184,3 +184,6 @@ Drafts remain native app data. Mail keeps its existing bounded, sign-out-cleared
 Files adds Attach in Mail and Import into Fitness only for eligible, ready, nontrashed files with current versions and app access. These reuse the version-checked private Drive bytes and existing native attachment/import-review workflows via an expiring transfer token. They do not send, save a route, or replay writes. File picker code/styles now load only when a picker/drop action needs them. Weather's normal forecast no longer waits for its optional integration bridge.
 
 The controlled browser profile held Weather's optional bridge response for two seconds. Forecast readiness changed from 2,517 ms to 529 ms, and the file picker left the boot module graph. This is a repeatable local transport comparison, not production network performance. Authenticated Admin Insights remains the source of field timing percentiles; no admin session was available during this release.
+
+
+Files refreshes (3.12) consume pending search and resource-invalidation timers before starting their read. A folder creation's explicit refresh therefore supersedes the queued invalidation, keeping the fresh listing usable and avoiding a duplicate request. Later invalidations still schedule a fresh read; cancellation, version and owner checks remain authoritative.
