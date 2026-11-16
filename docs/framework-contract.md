@@ -25,7 +25,7 @@ createFrame(opts) → F. opts (from app.js):
 
 F (§3.2):
   F.screen(id, spec)                     a built-in screen "today" | "apps" | "you" | "workspace" (again: replaced, header redrawn)
-  F.nav.go(path, { replace, zoomFrom, from, kind })   in-page if router.owns(path) (not while F.stale into an app:
+  F.nav.go(path, { replace, zoomFrom, from, kind, resume })   in-page if router.owns(path) (not while F.stale into an app:
                                          then location.assign, D21), else IFL.hub.go(path) (the crumb) + location.assign
   F.nav.back()                           the Back rule, §3.4
   F.nav.section(app, id, { arg })        replaceState to router.format({ app, section: id, arg }); header follows
@@ -155,3 +155,19 @@ Stage 3 (Chats; roof/s3/spec.md §5.1, S3-C1), optional too:
            a path starting with one of paths (Chat's own page at /chats/in/), or a query with one of query's names
            (/chats/?engine=1, the milestone-1 engine)
 ```
+
+## App continuity and loading
+
+`resume: true` is for app-switching controls, including the dock and rail. It resumes that account frame's last safe route and window scroll position; an already-active destination is a no-op. Explicit links and app actions omit `resume`, so notifications and deep links still open their requested destination. Each return has a new route object: an old asynchronous action cannot become current again. One-use share payloads and action/settings aliases are excluded from remembered destinations. Back/Forward continue to use entry-specific scroll positions. The route-scroll map is bounded to 96 entries, stays in memory and is cleared with the frame. App instances, internal scrollers and drafts remain owned by their modules; switching never serializes or discards them.
+
+Files' ordinary launcher retains the current location, search, filters and selection in its existing account-owned Explorer. An explicit search or location still overrides that view. Only opaque folder IDs and allowed source/view metadata enter history; searches and filenames remain private memory.
+
+Code and styles load concurrently after the app's availability check; mounting waits for both and retains cancellation, stylesheet failure recovery and version guards. The account-owned speculative preloader queues one app at a time, allows two idle app preparations, and fetches at most four public JavaScript hints per app. Hover, touch and focus may prioritise another app; they never mount it, start its service or request its account data. Save Data, 2G/3G, low reported bandwidth, offline and hidden pages defer speculation. Account teardown cancels timers and invalidates late imports. The existing Chats service still owns message delivery and unread updates.
+
+Today retains its content and focused controls while refreshing. Its small status line reserves its height, so pending and failed-update text do not move cards. Initial failures retain the existing explicit recovery action; failed background updates keep the last successful day.
+
+## Performance measurements
+
+`roof/performance.js` reports startup-to-usable and ready app views (first open versus return), plus a binary unsuccessful-opening flag, through the existing `/api/vitals` endpoint. Timings finish after paint; superseded routes, aborted account frames and background episodes are excluded. Each app summary keeps the slowest observed foreground timing before page hide. At most two summaries per app and twelve per page may be sent, with no retry loop. Only an allowlisted app ID, phone/computer class and bounded numbers leave the browser; routes, account IDs, queries, filenames, content and drafts are never reported.
+
+The existing server origin checks, body cap, rate limit, daily histogram cap and 60-day retention apply. Admin Insights shows timing percentiles and the fraction of summaries containing a failed open. These are sampled observations, not a promise of a fixed speed or an exact per-navigation failure rate. The framework's executable gzip budget is capped at 37 KiB (2 KiB added for bounded continuity, scheduling and measurement); optional OS layers retain their separate budgets.

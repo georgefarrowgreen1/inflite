@@ -58,11 +58,14 @@ export async function loadModule(app, F) {
     check(fw.signal);
     const s = F.session;
     if (!s.apps?.[app]) throw new Error(`the hub or the roof is off (${app}'s switch)`);
-    const m = await until(import(n ? `${R.entry}?retry=${n}` : R.entry), 12e3, "the module", fw.signal);
+    // Code and styles are independent once the app switch is confirmed. Fetch
+    // them together; mounting still waits for both and the same lifetime checks.
+    const [m] = await Promise.all([
+      until(import(n ? `${R.entry}?retry=${n}` : R.entry), 12e3, "the module", fw.signal),
+      until(Promise.all(R.css.map(css)), 0, "the stylesheets", fw.signal),
+    ]);
     check(fw.signal);
     if (m?.CONTRACT !== 1 || typeof m.mount !== "function") throw new Error(`${app}: contract ${m?.CONTRACT} isn't 1`);
-    await until(Promise.all(R.css.map(css)), 0, "the stylesheets", fw.signal);
-    check(fw.signal);
     root.replaceChildren();
     const mounting = Promise.resolve(m.mount(root, fw)).then((value) => {
       if (fw.signal?.aborted) { dispose(value); throw released(); }
@@ -127,9 +130,14 @@ export async function loadService(app, F, { signal = F.signal } = {}) {
   return m.startService({ path: R.path, ui, signal, onStale: () => { if (!signal?.aborted && !ui.signal?.aborted) F.stale = true; } });
 }
 
-export function preload(app) {
+export function preload(app, { signal, current = () => true } = {}) {
+  if (signal?.aborted || !current() || !REGISTRY[app]) return Promise.resolve(null);
   return loadConnector(app).then((c) => {
-    for (const f of c.preload || c.files || []) {
+    if (signal?.aborted || !current()) return null;
+    // Only the entry and a few first-view helpers; never an entire app's lazy
+    // graph, editors, maps or data. Real navigation owns the rest.
+    const files = [REGISTRY[app].entry, ...(c.preload || c.files || [])].filter(f => /\.js$/.test(f));
+    for (const f of [...new Set(files)].slice(0, 4)) {
       if (!/\.js$/.test(f)) continue;
       const href = abs(f);
       if (document.querySelector(`link[rel=modulepreload][href="${href}"]`)) continue;

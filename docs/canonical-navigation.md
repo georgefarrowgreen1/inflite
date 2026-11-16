@@ -12,6 +12,6 @@ The app dock mounts once outside the animated page containers. Today, Files and 
 
 ## Startup
 
-The opening layout is public and contains no cached account content. Every online start confirms `/api/session` first, including returning installed users. It does not use the legacy combined `/api/boot` response or wait for device/subscription lookup. Once the account is adopted, its redacted saved cards may render and the dock and routes become usable; the fresh day and notification/device work continue in the background. Day responses retain both the load-attempt and account-generation guards.
+The opening layout is public and contains no cached account content. Every online start confirms `/api/session` first, including returning installed users. It does not use the legacy combined `/api/boot` response or wait for device/subscription lookup. Once the account is adopted, its redacted saved cards may render and the dock and routes become usable; the fresh day and notification/device work continue in the background. Subsequent day requests retain existing cards and show a small status line instead of replacing the page. Day responses retain both the load-attempt and account-generation guards.
 
 Retry is hidden during an active session request and shown on failure. A slow check stays neutral without revealing sign-in. The early script offers a reload if the main module never starts, including when older cached HTML lacks the opening layout. The existing bounded same-account offline policy is preserved.

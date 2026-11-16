@@ -76,6 +76,20 @@ export function createFrame(opts = {}) {
   const cancelMotion = (finish) => { stopMotion(finish); ++motion; stopMotion = () => {}; };
   const newKey = () => Math.random().toString(36).slice(2, 10);
   const ys = new Map(), backTo = new Map();
+  // Account-owned memory only. History entries keep their own Back positions;
+  // switching apps resumes the last route and scroll without replacing stores.
+  const resumeRoutes = new Map(), routeScroll = new Map();
+  const resumeKey = (r) => r.tool === "files" ? "files" : r.kind === "app" ? "m:" + r.app : r.tab;
+  let finishMeasure = null;
+  const rememberScroll = (r, y) => {
+    if (!r) return;
+    const path = format(r);
+    routeScroll.delete(path); routeScroll.set(path, Math.max(0, Number(y) || 0));
+    if (routeScroll.size > 96) routeScroll.delete(routeScroll.keys().next().value);
+    // One-use share payloads and action/settings aliases must not be replayed.
+    const safe = r.kind !== "app" || !REGISTRY[r.app].raw?.includes(r.key) && (!REGISTRY[r.app].aliases[r.key] || REGISTRY[r.app].stay?.includes(r.key));
+    if (safe) resumeRoutes.set(resumeKey(r), r);
+  };
   let depth = 0, key = "", routes = [], stale = false, gone = false, shown = null, lastApps = sess().apps, lazyAt = {}, fails = {};
 
   // (b: the name of the entry before, so a reload there still says where Back goes, C6: kept by a replace)
@@ -254,6 +268,8 @@ export function createFrame(opts = {}) {
     destroy() {
       if (gone) return;
       gone = true; lifetime.abort();
+      finishMeasure?.("cancelled"); finishMeasure = null;
+      resumeRoutes.clear(); routeScroll.clear(); ys.clear(); backTo.clear();
       cancelMotion();
       for (const a of Object.keys(svcs)) F.releaseService(a, { terminate: true });
       unlater();
@@ -276,12 +292,21 @@ export function createFrame(opts = {}) {
     go(path, o = {}) {
       if (gone) return;
       F.sheet.closeAll();
-      const u = T(() => new URL(String(path), L.href));
+      let u = T(() => new URL(String(path), L.href));
       if (!u) return;
       if (u.origin !== L.origin) return /^https?:$/.test(u.protocol) && L.assign(u.href);
-      const p = u.pathname + u.search + u.hash;
-      const r = parse(p, { roof: roofs(), workspace: !!opts.workspace });
+      let p = u.pathname + u.search + u.hash;
+      let r = parse(p, { roof: roofs(), workspace: !!opts.workspace });
       if (!r) return L.assign(globalThis.IFL?.hub?.go ? globalThis.IFL.hub.go(p) : p);
+      if (o.resume) {
+        if (shown && idOf(r) === shown.id && resumeKey(r) === resumeKey(shown.route)) return;
+        const kept = resumeRoutes.get(resumeKey(r));
+        if (kept && (kept.kind !== "app" || isOn(kept.app))) {
+          // A new route identity keeps old asynchronous show/action callbacks
+          // retired even when we return to exactly the same destination.
+          r = { ...kept }; p = format(r); u = new URL(p, L.href);
+        }
+      }
       if (r.kind === "app" && stale && shown?.id !== "m:" + r.app && !F.busy()) return L.assign(p);
       const cur = shown?.route;
       const zoom = o.zoomFrom && r.kind === "app" && !reduced() ? o.zoomFrom : null;
@@ -291,7 +316,7 @@ export function createFrame(opts = {}) {
       if (!o.replace) { depth++; key = newKey(); routes.length = depth; }
       put(p, !o.replace, o.state);
       routes[depth] = r;
-      render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom && r.app === "weather" ? hintOf(o.zoomFrom, u) : null, y: o.replace && shown?.id === idOf(r) ? scrollY : 0 });
+      render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom && r.app === "weather" ? hintOf(o.zoomFrom, u) : null, y: o.resume ? routeScroll.get(format(r)) || 0 : o.replace && shown?.id === idOf(r) ? scrollY : 0 });
     },
     back() {
       if (gone) return;
@@ -309,6 +334,7 @@ export function createFrame(opts = {}) {
       if (r0.section === id && !arg && r0.key === id) return;
       F.sheet.closeAll();
       ys.set(`${key}:${r0.section}`, scrollY);
+      rememberScroll(r0, scrollY);
       const p = format({ app, section: id, arg });
       const r = parse(p, { roof: true });
       put(p);
@@ -342,6 +368,7 @@ export function createFrame(opts = {}) {
   const isTab = (r) => r?.kind === "tab" || tabRoot(r);
   function leaveEntry() {
     ys.set(key, scrollY);
+    rememberScroll(F.route, scrollY);
     if (F.route?.kind === "app") ys.set(`${key}:${F.route.section}`, scrollY);
     backTo.set(key, doc.activeElement);
   }
@@ -371,6 +398,8 @@ export function createFrame(opts = {}) {
     const id = idOf(r), prev = shown, same = prev?.id === id;
     if (r.kind === "app" && stale && prev && !same && !F.busy()) return reloadStale();
     const pop = o.kind === "pop", k = key;
+    finishMeasure?.("cancelled");
+    finishMeasure = r.kind === "app" ? opts.performance?.begin(r.app, { cold: !mods[r.app]?.instance, signal: lifetime.signal }) : null;
     F.route = r;
     shown = { id, route: r };
     html.dataset.route = format(r);
@@ -414,6 +443,8 @@ export function createFrame(opts = {}) {
   }
   function showApp(r, o) {
     const m = modOf(r.app);
+    const measured = finishMeasure;
+    const measure = (result) => { if (!gone && F.route === r) measured?.(result); };
     m.readyRoute = null;
     if (m.host) m.view?.hide({ detach: true });
     m.host = null;
@@ -427,7 +458,8 @@ export function createFrame(opts = {}) {
     if (o.zoomFrom) clone(m, o.zoomFrom);
     ensureApp(m);
     Promise.resolve(m.loading).then(() => {
-      if (!liveModule(m) || F.route !== r || !m.instance) return dropClone(m);
+      if (!liveModule(m) || F.route !== r) return dropClone(m);
+      if (!m.instance) { measure("failure"); return dropClone(m); }
       return Promise.resolve(m.instance.show(r, o.hint || null)).then(() => {
         dropClone(m);
         if (!liveModule(m) || F.route !== r) return;
@@ -435,8 +467,10 @@ export function createFrame(opts = {}) {
         const y = o.y || o.popY;
         if (y && Math.abs(scrollY - y) > 2) scrollTo(0, y);
         tidy(r);
+        const ready = F.route;
+        requestAnimationFrame(() => requestAnimationFrame(() => { if (!gone && F.route === ready) measured?.("ready"); }));
       });
-    }).catch((e) => { console.error(e); dropClone(m); });
+    }).catch((e) => { measure(e?.name === "AbortError" ? "cancelled" : "failure"); console.error(e); dropClone(m); });
     return m.el;
   }
   function ensureApp(m) {

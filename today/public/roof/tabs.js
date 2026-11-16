@@ -114,9 +114,9 @@ export function createTabs(nav, F, { me: meOf } = {}) {
     const r0 = e.target.closest?.("a.ifl-rail-app, a.ifl-rail-me");
     if (r0 && F?.nav) {
       e.preventDefault();
-      if (r0.dataset.me) return F.nav.go("/#you", { kind: "tab" });
+      if (r0.dataset.me) return F.nav.go("/#you", { kind: "tab", resume: true });
       if (F.route?.kind === "app" && F.route.app === r0.dataset.app) return top();
-      return F.nav.go(r0.getAttribute("href"), { kind: "tab" });
+      return F.nav.go(r0.getAttribute("href"), { kind: "tab", resume: true });
     }
     const a = e.target.closest?.("a.ifl-tab");
     const k = a?.dataset.tab;
@@ -130,7 +130,7 @@ export function createTabs(nav, F, { me: meOf } = {}) {
       if (prev?.kind === "tab" && prev.tab === "apps") return history.back();
       return F.nav.go("/#apps", { kind: "pop" });
     }
-    F.nav.go(k === "today" ? "/" : k === "chats" ? "/chats/" : `/#${k}`, { kind: "tab" });
+    F.nav.go(k === "today" ? "/" : k === "chats" ? "/chats/" : `/#${k}`, { kind: "tab", resume: true });
   }
   nav.addEventListener("click", click);
   addEventListener("resize", place);

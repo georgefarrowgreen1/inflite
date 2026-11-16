@@ -70,8 +70,8 @@ export async function createWorkspace(F, options = {}) {
   }
   for (const app of WORKSPACE_APPS.filter((a) => a.pane)) acquire(app.id);
   const view = createWorkspaceView(root, {
-    onToday: () => F.nav.go("/"), onApp: (app) => openApp(app),
-    onRecent: app => { if (live() && appOn(app)) openApp(app, recentApps.get(app) || getWorkspaceApp(app)?.href); },
+    onToday: () => F.nav.go("/", { resume: true }), onApp: (app) => openApp(app),
+    onRecent: app => { if (live() && appOn(app)) openApp(app); },
     onAppDrop: (app, token) => { if (live() && ["mail", "fitness"].includes(app) && /^[a-f0-9]{32}$/.test(token)) return runIntent(app, app === "mail" ? "compose-attach" : "import-drive", "drop:" + token); },
     onSearch: () => F.search.open(), onApps: () => openApps(),
     onNotifications: options.onNotifications, onAccount: options.onAccount, onSettings: options.onSettings,
@@ -167,7 +167,7 @@ export async function createWorkspace(F, options = {}) {
   async function openApp(app, destination = null, expand = false, wake = false, lease = {}) {
     const manifest = getWorkspaceApp(app); if (!live() || !manifest || !appOn(app)) return null;
     const path = destination || recentApps.get(app) || manifest.href;
-    F.nav.go(path, wake ? { kind: "section" } : undefined);
+    F.nav.go(path, { ...(wake ? { kind: "section" } : {}), resume: !destination && !wake });
     const expected = F.route, handle = handles.get(app);
     if (expected?.kind !== "app" || expected.app !== app) return null;
     try { if (handle) {
@@ -210,20 +210,20 @@ export async function createWorkspace(F, options = {}) {
       queueProvider(app); return result;
     } catch (_) { if (ownsAction()) F.toast("That action couldn’t finish. Try again."); return false; }
   }
-  function navigateFiles(next, { query } = {}) {
+  function navigateFiles(next, { query, resume = false } = {}) {
     next = safeFilesLocation(next);
     if (!live() || !next) return false;
     const path = format({ tab: "workspace", tool: "files", folder: next.kind === "drive" && next.view === "folder" ? next.folderId : null });
     const prefill = typeof query === "string" ? { query: query.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 160), location: JSON.stringify(next), route: null } : null;
     pendingFilesQuery = prefill;
     const replace = F.route?.tool === "files" && JSON.stringify(filesLocation) === JSON.stringify(next);
-    F.nav.go(path, { kind: "section", replace, state: { files: { userId: owner, location: next } } });
+    F.nav.go(path, { kind: "section", replace, resume, state: { files: { userId: owner, location: next } } });
     if (prefill && pendingFilesQuery === prefill) prefill.route = F.route;
     return true;
   }
-  const openFiles = (query = "", location = null) => {
-    const destination = location === null ? { kind: "drive", folderId: null, view: "folder" } : safeFilesLocation(location);
-    return destination ? navigateFiles(destination, { query }) : false;
+  const openFiles = (query = null, location = null) => {
+    const destination = location === null ? query === null ? filesLocation : { kind: "drive", folderId: null, view: "folder" } : safeFilesLocation(location);
+    return destination ? navigateFiles(destination, { query, resume: query === null && location === null }) : false;
   };
   function filesLocationAt(r) {
     const direct = safeFilesLocation({ kind: "drive", folderId: r?.folder || null });

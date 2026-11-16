@@ -320,3 +320,13 @@ for (const destroy of [false, true]) test(`pending service startup is inert afte
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
+
+test('first app opening fetches styles while its module import is still pending',async()=>{
+ const {ctx,page,errors}=await open({import:true});try{
+  await page.evaluate(()=>trial.load());await page.waitForFunction(()=>trial.importStarted);
+  await page.waitForFunction(()=>[...document.querySelectorAll('link[rel="stylesheet"]')].filter(n=>n.href.includes('/weather/')&&n.sheet).length===4);
+  assert.equal(await page.evaluate(()=>trial.mounts),0,'mount waits for the module as well as its styles');
+  await page.evaluate(()=>trial.gates.import.resolve());await page.waitForFunction(()=>trial.result);
+  assert.equal(await page.evaluate(()=>trial.mounts),1);assert.deepEqual(errors,[]);await page.evaluate(()=>trial.frame.destroy());
+ }finally{await ctx.close()}
+});

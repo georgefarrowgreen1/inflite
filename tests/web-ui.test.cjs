@@ -1712,3 +1712,32 @@ for (const width of [320, 390, 1440]) test(`shared header removes repeated words
     await page.evaluate(()=>{reviewHeader.destroy();document.querySelector('#header-review').remove();});assert.deepEqual(errors,[]);
   } finally {await ctx.close();}
 });
+
+test('a quiet day refresh keeps cached cards and focused controls in place, including on failure',async()=>{
+ const cached=structuredClone(day);delete cached.v;delete cached.cards.markets;delete cached.cards.mail;
+ let release;const gate=new Promise(resolve=>release=resolve);
+ const t=await open({initialPath:'/?os=1',seedSession:fixture('session'),seedCards:{id:fixture('session').user.id,answer:cached},waitForDay:false,intercept:async(route,{url})=>{
+  if(url.pathname!=='/api/today')return false;await gate;await route.fulfill({status:503,json:{error:'Temporarily unavailable'}});return true;
+ }});
+ try{
+  await t.page.locator('.ws-dock').waitFor();await t.page.getByText('Updating your day…',{exact:true}).waitFor();
+  await t.page.evaluate(()=>{const card=document.querySelector('.tcard[data-app="weather"]');window.keptRefreshCard=card;window.keptRefreshAction=card.querySelector('a');keptRefreshAction.focus({preventScroll:true})});
+  const before=await t.page.locator('.tcard[data-app="weather"]').boundingBox();
+  release();await t.page.getByText('Couldn’t update. Showing your last saved day.',{exact:true}).waitFor();
+  const after=await t.page.locator('.tcard[data-app="weather"]').boundingBox();
+  assert.equal(await t.page.evaluate(()=>keptRefreshCard===document.querySelector('.tcard[data-app="weather"]')&&document.activeElement===keptRefreshAction),true);
+  assert.ok(Math.abs(before.y-after.y)<=1,'refresh status does not shift existing cards');
+  assert.equal(await t.page.locator('#sessionState').isVisible(),false);assert.equal(await t.page.locator('.ws-dock').isVisible(),true);assert.deepEqual(t.errors,[]);
+ }finally{release();await t.ctx.close()}
+});
+
+test('the live shell records a bounded anonymous startup sample after the interface paints',async()=>{
+ const t=await open({initialPath:'/?os=1'});try{
+  await t.page.locator('.ws-dock').waitFor();await t.page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  await t.page.evaluate(()=>dispatchEvent(new Event('pagehide')));
+  await t.page.waitForFunction(()=>true);await t.page.waitForTimeout(100);
+  const sample=t.requests.find(r=>r.path==='/api/vitals'&&typeof r.body?.m?.startup==='number');
+  assert.ok(sample,'a ready startup reaches the existing vitals transport');assert.equal(sample.body.app,'today');assert.ok(sample.body.m.startup>=0&&sample.body.m.startup<=60000);
+  assert.deepEqual(Object.keys(sample.body).sort(),['app','dev','m']);assert.deepEqual(Object.keys(sample.body.m).sort(),['open_fail','startup']);assert.deepEqual(t.errors,[]);
+ }finally{await t.ctx.close()}
+});

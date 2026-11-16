@@ -56,3 +56,34 @@ test('keyboard and native full-screen chrome policy still control the permanent 
   await t.clean();
  }finally{await t.ctx.close()}
 });
+
+for(const width of [390,1440])test(`dock resumes routes, scroll and the same draft nodes at ${width}px`,async()=>{
+ const t=await m.exports.open({width}),{page}=t;try{
+  await page.evaluate(()=>T.F.nav.go('/weather/#radar',{kind:'section'}));
+  const draft=page.getByRole('textbox',{name:'weather draft',exact:true});await draft.fill('Keep this draft');
+  await page.evaluate(()=>{window.keptDraft=document.querySelector('[aria-label="weather draft"]');const root=keptDraft.parentElement;root.style.minHeight='2600px';const scroller=document.createElement('div');scroller.id='kept-inner';scroller.style.cssText='height:90px;overflow:auto';scroller.innerHTML='<div style="height:600px">Inner view</div>';root.append(scroller);scroller.scrollTop=180;scrollTo(0,520)});
+  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(r)));
+  const before=await page.evaluate(()=>{window.leftRoute=T.F.route;return scrollY});assert.ok(before>400);
+  await page.evaluate(()=>document.querySelector('[data-ws-action="app:fitness"]').click());await page.getByRole('textbox',{name:'fitness draft',exact:true}).fill('Second draft');
+  await page.evaluate(()=>document.querySelector('[data-ws-action="app:weather"]').click());
+  await page.waitForFunction(()=>location.hash==='#radar'&&scrollY>400);
+  assert.equal(await page.evaluate(()=>T.F.route!==leftRoute),true,'resume creates a new route identity so old asynchronous work stays retired');assert.equal(await draft.inputValue(),'Keep this draft');assert.equal(await page.evaluate(()=>keptDraft===document.querySelector('[aria-label="weather draft"]')),true);
+  assert.equal(await page.locator('#kept-inner').evaluate(n=>n.scrollTop),180);assert.ok(Math.abs(await page.evaluate(()=>scrollY)-before)<=2);
+  const same=await page.evaluate(async()=>{const length=history.length,route=T.F.route;await document.querySelector('[data-ws-action="app:weather"]').click();return length===history.length&&T.F.route===route});assert.equal(same,true,'reselecting the active app does not add history or restart its view');
+  await page.evaluate(()=>T.F.nav.go('/weather/#days',{kind:'section'}));assert.equal(new URL(page.url()).hash,'#days','explicit destinations override the remembered view');
+  await page.evaluate(()=>document.querySelector('[data-ws-action="app:weather"]').click());assert.equal(new URL(page.url()).hash,'#days','an active app never jumps back to an older remembered section');
+  await page.evaluate(()=>document.querySelector('[data-ws-action="app:fitness"]').click());assert.equal(await page.getByRole('textbox',{name:'fitness draft',exact:true}).inputValue(),'Second draft');
+  await t.clean();
+ }finally{await t.ctx.close()}
+});
+
+test('Files resumes its folder and private search without putting either text into history',async()=>{
+ const t=await m.exports.open({width:390}),{page}=t;try{
+  await page.evaluate(()=>T.ws.openFiles());await page.getByRole('button',{name:'Select Private folder',exact:true}).click();await page.getByRole('button',{name:'Select Private note.txt',exact:true}).waitFor();
+  const search=page.getByRole('searchbox');await search.fill('Private note');await page.waitForFunction(()=>T.reads.some(r=>r.query==='Private note'));
+  await page.evaluate(()=>document.querySelector('[data-ws-action="app:weather"]').click());await page.getByRole('textbox',{name:'weather draft',exact:true}).waitFor();await page.evaluate(()=>T.ws.openFiles());await search.waitFor();
+  assert.equal(await search.inputValue(),'Private note');assert.equal(new URL(page.url()).hash,'#files='+'a'.repeat(32));
+  const safe=await page.evaluate(()=>JSON.stringify({url:location.href,history:history.state,storage:{...localStorage,...sessionStorage}}));assert.equal(safe.includes('Private note'),false);
+  await page.evaluate(()=>T.F.nav.go('/',{resume:true}));await page.locator('#workspace[data-mode=today]').waitFor();assert.equal(new URL(page.url()).hash.includes('files'),false,'Today and Files keep separate resume routes');await t.clean();
+ }finally{await t.ctx.close()}
+});

@@ -12,11 +12,14 @@ import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
+import { createPreloader } from "/roof/preload.js";
+import { createShellPerformance } from "/roof/performance.js";
+const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "3.09";
+const BUILD = "3.10";
 // (what's new in it, said once it's in)
-const NEWS = "Open InFlite while your day refreshes in the background";
+const NEWS = "Pick up where you left off, with quieter refreshes and smarter app loading";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
@@ -1229,6 +1232,8 @@ const requests = createRequestCoordinator();
 let accountTasks = createTaskScope(requests.signal);
 function resetRequests() {
   requests.reset();
+  preloader?.dispose(); preloader = null;
+  dayRequest++; dayPending = false; dayError = false;
   accountTasks = createTaskScope(requests.signal);
   sessionCheck = null;
   sessionCheckPending = false;
@@ -1445,35 +1450,32 @@ function bootGone(state) {
   }
   return false;
 }
-// A module's files asked for ahead (D2, s2 §4.6): its connector, then a modulepreload for each of its files. On a
-// module's boot, at once (beside /api/session) where the hub's known ready; else once Today's drawn, at idle, where the
-// app's been used here (USED's key kept), or as a link to it is touched
+// Prepare a small amount of public code after entry, or when a link is approached.
+// Slow connections and Save Data keep all bandwidth for explicit navigation.
 const USED = { weather: "wx:places", markets: "markets:last", fitness: "fitness:meAt", chats: "ifl-build:chat" };
-const preloaded = new Set();
-function preload(app) {
-  if (preloaded.has(app)) return;
-  preloaded.add(app);
-  import("/roof/modules.js").then((m) => m.preload(app)).catch(() => {});
-}
-let armed = false;
+let preloader = null;
+function preload(app) { preloader?.request(app, { intent: true }); }
 function preloadSoon() {
-  if (armed || !S.hub) return;
-  armed = true;
-  const on = (a) => S.hub && !!S.apps[a];
-  for (const a of Object.keys(REGISTRY)) {
+  if (preloader || !S.hub || !S.view) return;
+  const signal = requests.signal;
+  preloader = createPreloader({ signal, eligible: app => S.hub && !!S.apps[app] && !signal.aborted,
+    idle: fn => accountTasks.idle(fn), load: (app, options) => import("/roof/modules.js").then(m => m.preload(app, options)) });
+  for (const app of Object.keys(REGISTRY)) {
     let used = false;
-    try { used = !!USED[a] && localStorage.getItem(USED[a]) != null; } catch {}
-    if (used && on(a)) idle(() => { if (on(a)) preload(a); });
+    try { used = !!USED[app] && localStorage.getItem(USED[app]) != null; } catch (_) {}
+    if (used) preloader.request(app);
   }
-  // (Chats, a tab of its own: its module fetched and its core started at idle once Today's drawn, used here before or
-  // not, so the tab opens on your chats at once, not on placeholder rows while the core starts and catches up)
-  if (on("chats")) idle(() => { if (!on("chats")) return; preload("chats"); IFL.hub.chat?.(); });
-  const touched = (e) => {
-    const a = e.target?.closest?.("a[href^='/']"), app = a && Object.keys(REGISTRY).find((k) => a.getAttribute("href").startsWith(REGISTRY[k].path));
-    if (app && on(app)) preload(app);
+  const touched = e => {
+    const node = e.target?.closest?.("a[href^='/'], [data-ws-action^='app:']");
+    const href = node?.getAttribute("href"), key = node?.dataset.wsAction?.slice(4);
+    const app = key && REGISTRY[key] ? key : href && Object.keys(REGISTRY).find(k => href.startsWith(REGISTRY[k].path));
+    if (app) preloader?.request(app, { intent: true });
   };
-  document.addEventListener("pointerdown", touched, true);
-  document.addEventListener("focusin", touched, true);
+  for (const type of ["pointerover", "pointerdown", "focusin"]) document.addEventListener(type, touched, { capture: true, passive: true, signal });
+  const wake = () => preloader?.wake();
+  document.addEventListener("visibilitychange", wake, { signal });
+  addEventListener("online", wake, { signal });
+  navigator.connection?.addEventListener?.("change", wake, { signal });
 }
 
 // ---------------------------------------------------------------- this browser's copy of your day, per account
@@ -1815,6 +1817,7 @@ function signedIn(view, { offline = false } = {}) {
   $("#sessionState").hidden = true;
   $("#in").hidden = false;
   frame();
+  shellPerformance.startup(F.signal);
   if (waitingAnswer) { const a = waitingAnswer; waitingAnswer = null; gotCards(a); }
   else if (!S.answer) {
     const k = keptFor(view.user.id);
@@ -1929,7 +1932,7 @@ function frame() {
     // answer late) is waited for too)
     retired: { then: (ok, no) => retiredSoon().then(ok, no) }, serviceState,
     onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
-    today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you,
+    today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you, performance: shellPerformance,
     workspace: workspaceScreen,
     workspacePreview: OS_MODE && !["inflite.ai", "os.inflite.ai"].includes(location.hostname),
   });
@@ -2227,8 +2230,14 @@ function drawDayNow() {
 }
 function drawKept() {
   const k = $("#kept"), old = S.kept && Date.now() - S.answerAt > 10 * MIN;
-  k.hidden = !old;
-  if (old) k.textContent = `Updated ${hm(S.answerAt, S.answer?.tz || browserTz())}`;
+  const pending = dayPending && !!S.answer, failed = dayError && !!S.answer;
+  // Reserve this small line once content exists, so refresh status never moves
+  // cards or the user's scroll position.
+  k.hidden = !S.answer;
+  if (pending) k.textContent = "Updating your day…";
+  else if (failed) k.textContent = "Couldn’t update. Showing your last saved day.";
+  else if (old) k.textContent = `Updated ${hm(S.answerAt, S.answer?.tz || browserTz())}`;
+  else k.textContent = "";
 }
 // each minute, on the minute (the answer's clock), or at the answer's next moment if that's sooner (its until, a step of
 // its timeline, a Coming Up row's time, an Undo's end), with no request: the day's next phase at its minute (from the
@@ -2259,9 +2268,11 @@ function minute() {
   if (document.visibilityState === "visible" && Date.now() - S.loadedAt >= every) refresh();
 }
 // the same answer again (with the morning, worked out from the same cards), or one card's alone (Try Again)
+let dayRequest = 0, dayPending = false, dayError = false;
 async function refresh(only = null) {
   if (!S.view) return;
-  const scope = requests.generation, user = S.view.user.id;
+  const scope = requests.generation, user = S.view.user.id, ticket = ++dayRequest;
+  dayPending = true; dayError = false; drawKept();
   const q = new URLSearchParams();
   if (only) q.set("only", only);
   else { q.set("v", "2"); q.set("with", "morning"); }
@@ -2282,7 +2293,9 @@ async function refresh(only = null) {
   } catch (e) {
     if (scope !== requests.generation || S.view?.user?.id !== user) return;
     if (!S.answer) return cardsFailed(e);
-    if (!isRequestCancelled(e) && e.status !== 401 && only) toast(e.message);
+    if (!isRequestCancelled(e) && e.status !== 401) { dayError = true; if (only) toast(e.message); }
+  } finally {
+    if (scope === requests.generation && S.view?.user?.id === user && ticket === dayRequest) { dayPending = false; drawKept(); }
   }
 }
 function cardsFailed(error) {
@@ -2999,14 +3012,8 @@ async function load({ fresh = false } = {}) {
   const owner = view.user.id;
   const devP = findDevice();
   wireLinks();
-  devP.then((device) => {
-    if (!current() || S.view?.user?.id !== owner) return;
-    const q = new URLSearchParams({ v: "2", with: "morning" });
-    if (device) q.set("device", device);
-    S.loadedAt = Date.now();
-    return call(`/api/today?${q}`, { latestKey: "today" }).then((answer) => {
-      if (current() && S.view?.user?.id === owner) gotCards(answer);
-    }, (e) => { if (current() && S.view?.user?.id === owner) cardsFailed(e); });
+  devP.then(() => {
+    if (current() && S.view?.user?.id === owner) return refresh();
   }).catch(() => {});
   fromHash();
   devP.then(() => current() && deviceMoved()).then(() => current() && syncPush({ force: true })).catch(() => {});
@@ -3016,7 +3023,7 @@ async function load({ fresh = false } = {}) {
 
 // (where the page was: what the updater's reload, and the frame's reload for a new Weather (D21), bring back)
 const save = () => ({ y: Math.round(scrollY) });
-const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors", "requests", "tasks", "screens"].map((f) => `/roof/${f}.js`);
+const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors", "requests", "tasks", "screens", "preload", "performance"].map((f) => `/roof/${f}.js`);
 // An installed copy can briefly have the previous cached HTML with this script.
 // Give that shell the same neutral state before asking anything about the account.
 function ensureSessionUI() {
