@@ -10,3 +10,10 @@
 @media(max-width:380px){.ifd-tools{gap:8px}.ifd-tools>input{min-width:100%;flex-basis:100%}.ifd-list{max-height:36svh}.ifd-entry{padding:12px 10px}}
 
 .ifd .ifl-btn,.ifd-form .ifl-btn{min-height:44px}
+
+.ifd input,.ifd-form input{border-color:var(--ifl-glass-line,var(--ifl-line));border-radius:var(--ifl-radius-row,16px);background:var(--ifl-glass-control,var(--ifl-surface-2));font-size:16px}
+.ifd-list{border-color:var(--ifl-glass-line,var(--ifl-line));border-radius:var(--ifl-radius-group,22px);background-color:var(--ifl-surface);background-image:linear-gradient(155deg,var(--ifl-glass-highlight,transparent),transparent 65%)}
+.ifd-entry{border-radius:var(--ifl-radius-row,16px);line-height:1.4}
+@media(prefers-reduced-motion:no-preference){.ifd-entry{transition:background-color var(--ifl-motion-fast,.16s) ease}}
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.ifd input,.ifd-form input{background:var(--ifl-surface-2)}.ifd-list{background-image:none}}
+@media(forced-colors:active){.ifd input,.ifd-form input{background:Field;color:FieldText;border-color:ButtonText}.ifd-list{background:Canvas;color:CanvasText;border-color:CanvasText}.ifd-entry[aria-pressed=true]{outline:2px solid Highlight;outline-offset:-2px}}

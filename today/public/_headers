@@ -1,3 +1,11 @@
+/organise/*
+  Cache-Control: no-cache
+/calendar/roof/*
+  Cache-Control: no-cache
+/notes/roof/*
+  Cache-Control: no-cache
+/people/roof/*
+  Cache-Control: no-cache
 /sw.js
   Cache-Control: no-cache
 /

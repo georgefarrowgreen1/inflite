@@ -106,3 +106,13 @@
 .m-mail .mr-spot-btns .ifl-btn { flex: 1; }
 
 @media (prefers-reduced-motion: reduce) { .m-mail .mr-body { animation: none; } .m-mail .mr-mhead, .m-mail .mr-qr, .m-mail .mr-spot { transition: none; } }
+
+/* Reading layers stay solid; the floating toolbar carries the optical glass. */
+.m-mail .mr-bar { border: 1px solid var(--ifl-glass-line, var(--line)); background: var(--ifl-glass-strong, var(--ifl-surface)); box-shadow: var(--ifl-glass-shadow, var(--ifl-shadow-control)); -webkit-backdrop-filter: var(--ifl-glass-blur, none); backdrop-filter: var(--ifl-glass-blur, none); }
+.m-mail .mr-card, .m-mail .mr-spot { border-color: var(--ifl-glass-line, var(--line)); background-image: linear-gradient(155deg, var(--ifl-glass-highlight, transparent), transparent 56%); }
+.m-mail .mr-qr { border-color: var(--ifl-glass-line, var(--line)); border-radius: var(--ifl-radius-card, 26px); background-color: var(--ifl-surface); background-image: linear-gradient(155deg, var(--ifl-glass-highlight, transparent), transparent 58%); }
+.m-mail .mr-file, .m-mail .mr-later { border: 1px solid var(--ifl-glass-line, var(--line)); border-radius: var(--ifl-radius-row, 16px); background: var(--ifl-glass-control, var(--glass-ctl)); }
+.m-mail .mr-qr-text { font: inherit; font-size: 16px; line-height: 1.45; color: var(--ifl-text, var(--text)); }
+.m-mail .mr-meta, .m-mail .mr-who small { line-height: 1.45; }
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .m-mail .mr-bar { background: var(--ifl-surface); -webkit-backdrop-filter: none; backdrop-filter: none; } .m-mail .mr-card, .m-mail .mr-spot, .m-mail .mr-qr { background-image: none; } .m-mail .mr-file, .m-mail .mr-later { background: var(--ifl-surface-2); } }
+@media (forced-colors: active) { .m-mail .mr-bar, .m-mail .mr-card, .m-mail .mr-spot, .m-mail .mr-qr, .m-mail .mr-file, .m-mail .mr-later { background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; } .m-mail .mr-qr:focus-within { outline: 2px solid Highlight; box-shadow: none; } }

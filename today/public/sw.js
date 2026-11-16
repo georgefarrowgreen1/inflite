@@ -134,7 +134,8 @@ const KEEP_APPS = MOD_APPS, KEEP_MAX = 60;
 const NET = { weather: /^\/weather\/(radar|radarmix|mapstyle|mapgl|mapleaf|rainmap|radarrain)\.js$/, fitness: /^\/fitness\/(map|mapstyle|share|formats|fit|reader)\.js$/, chats: /^\/chats\/(roof\/flight|roof\/scan|moon|space|land|placegrid|places|countries|shapes|jsqr|argon2|argon2w)\.js$/ };
 // Only static code/styles may enter a build cache. API aliases and documents
 // must never become a retained response, even after a mistaken keep message.
-const ORGANISE_ASSETS = new Set(["/organise/app.js", "/organise/store.js", "/organise/model.js", "/organise/editor.js", "/organise/links.js", "/organise/organise.css"]);
+const ORGANISE_ASSETS = new Set(["/organise/app.js", "/organise/store.js", "/organise/model.js", "/organise/editor.js", "/organise/links.js", "/organise/organise.css", "/organise/editor.css", "/organise/import.js"]);
+const organiseAsset = (p) => ORGANISE_ASSETS.has(p) || /^\/organise\/releases\/\d+\.\d{2}\/[\w.-]+$/.test(p) && ORGANISE_ASSETS.has('/organise/'+p.split('/').at(-1));
 const ORGANISE_APPS = ["calendar","notes","people"];
 const moduleAsset = (p) => /\.(?:js|css)$/.test(p) && !/\/api(?:\/|$)/i.test(p);
 const keeping = new Map(), keepQueue = new Map();
@@ -142,7 +143,7 @@ function keepList(d) {
   if (!d || !KEEP_APPS.includes(d.app) || typeof d.build !== "string" || !/^\d+\.\d{2}$/.test(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
   const base = `/${d.app}/`, out = new Set();
   for (const f of d.files) {
-    if (typeof f !== "string" || (!f.startsWith(base) && !(ORGANISE_APPS.includes(d.app) && ORGANISE_ASSETS.has(f))) || !moduleAsset(f) || !/^\/[\w./-]+$/.test(f) || /\/vendor\//.test(f) || NET[d.app]?.test(f) || f === base + "sw.js" || f === base + "version" || f.endsWith("/")) return null;
+    if (typeof f !== "string" || (!f.startsWith(base) && !(ORGANISE_APPS.includes(d.app) && organiseAsset(f))) || !moduleAsset(f) || !/^\/[\w./-]+$/.test(f) || /\/vendor\//.test(f) || NET[d.app]?.test(f) || f === base + "sw.js" || f === base + "version" || f.endsWith("/")) return null;
     let u;
     try { u = new URL(f, self.location.origin); } catch { return null; }
     if (u.origin !== self.location.origin || u.pathname !== f) return null;
@@ -214,14 +215,15 @@ const moduleFile = (u) => {
   if (!moduleAsset(u.pathname)) return false;
   const a = modOf(u);
   if (a === "chats") return (!u.search || /^\?v=[0-9a-f]{12}$/.test(u.search)) && chatsFile(u.pathname);
-  if(ORGANISE_ASSETS.has(u.pathname)&&!u.search)return true;
+  if(organiseAsset(u.pathname)&&!u.search)return true;
   return !!a && !u.search && u.pathname !== `/${a}/sw.js` && u.pathname !== `/${a}/version` && !u.pathname.endsWith("/");
 };
 async function fromModule(e, u) {
   const prefix = `roof-${modOf(u)}-`;
   const kept = async () => {
     try {
-      for (const k of await caches.keys()) if (k.startsWith(prefix) || ORGANISE_ASSETS.has(u.pathname) && ORGANISE_APPS.some(app=>k.startsWith(`roof-${app}-`))) { const m = await (await caches.open(k)).match(u.pathname); if (m) return m; }
+      const release=/\/releases\/(\d+\.\d{2})\//.exec(u.pathname)?.[1];
+      for (const k of (await caches.keys()).sort().reverse()) if ((!release||k.endsWith('-'+release)) && (k.startsWith(prefix) || organiseAsset(u.pathname) && ORGANISE_APPS.some(app=>k.startsWith(`roof-${app}-`)))) { const m = await (await caches.open(k)).match(u.pathname); if (m) return m; }
     } catch {}
     return null;
   };

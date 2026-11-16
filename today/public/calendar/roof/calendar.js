@@ -1,6 +1,6 @@
 import {mountApp} from '/organise/app.js';
 export const CONTRACT=1;
-export const BUILD='4.01';
-export const NEWS='A clearer Calendar, Notes library and People profiles';
-export const SECTIONS=[["agenda", "Agenda"], ["week", "Week"]];
+export const BUILD='4.02';
+export const NEWS='Redesigned Calendar, Notes and People with Liquid Glass';
+export const SECTIONS=[["week", "Week"], ["agenda", "Month"]];
 export const mount=(root,F)=>mountApp(root,F,'calendar');

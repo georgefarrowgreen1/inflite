@@ -8,7 +8,7 @@ const app = (id, name, href, pane, capabilities) => Object.freeze({
   ...(pane ? { workspace: Object.freeze({ css: `/${id}/roof/workspace.css` }) } : {}),
 });
 export const WORKSPACE_APPS = Object.freeze([
-  app("calendar", "Calendar", "/calendar/#agenda", true, ["view", "local-search", "save-to-files"]),
+  app("calendar", "Calendar", "/calendar/#week", true, ["view", "local-search", "save-to-files"]),
   app("notes", "Notes", "/notes/#all", true, ["view", "local-search", "save-to-files"]),
   app("people", "People", "/people/#contacts", true, ["view", "local-search"]),
   app("fitness", "Fitness", "/fitness/#today", true, ["view", "local-search", "share-on-request", "open-from-files", "save-to-files"]),
@@ -20,7 +20,7 @@ export const WORKSPACE_APPS = Object.freeze([
 export const getWorkspaceApp = (id) => WORKSPACE_APPS.find((a) => a.id === id) || null;
 
 const sections = Object.freeze({
-  calendar: ["agenda", "week"], notes: ["all"], people: ["contacts"],
+  calendar: ["week", "agenda"], notes: ["all"], people: ["contacts"],
   fitness: ["today", "activities", "routes", "progress"],
   weather: ["now", "days", "radar", "warnings"],
   markets: ["today", "holdings", "news"],

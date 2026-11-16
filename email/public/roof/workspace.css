@@ -12,3 +12,6 @@
 .ifl-sheet[data-app="mail"] .ml-workspace-file { display: grid; gap: 14px; }
 .ifl-sheet[data-app="mail"] .ml-workspace-file p { margin: 0; overflow-wrap: anywhere; }
 .ifl-sheet[data-app="mail"] .ml-workspace-file .ifl-btn { justify-content: center; min-height: 44px; padding: 12px 16px; border-radius: 999px; text-decoration: none; }
+
+.ifl-sheet[data-app="mail"] .ml-workspace-file { line-height: 1.45; }
+.m-mail.ml-workspace.ifl-in-pane.ml-split > .ml-reader { border-left-color: var(--ifl-glass-line, var(--line)); }

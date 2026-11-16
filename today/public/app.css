@@ -945,11 +945,29 @@ html.ifl-colour-change::view-transition-new(inflite-dock) { animation: none; mix
   --ifl-press-scale: 0.97; --ifl-press-icon: 0.94; --ifl-press-card: 0.985;
   --ifl-motion-glide: cubic-bezier(0.32, 0.72, 0, 1);
   --ifl-motion-spring: cubic-bezier(0.22, 1, 0.36, 1);
-  --ifl-chrome-blur: none;
+  /* Liquid Glass materials inherit the selected palette. Content uses the
+     strong material; floating chrome alone samples the backdrop. */
+  --ifl-glass: color-mix(in srgb, var(--ifl-surface) 86%, transparent);
+  --ifl-glass-strong: color-mix(in srgb, var(--ifl-surface) 96%, transparent);
+  --ifl-glass-control: color-mix(in srgb, var(--ifl-surface-2) 90%, transparent);
+  --ifl-glass-line: color-mix(in srgb, var(--ifl-text) 11%, transparent);
+  --ifl-glass-highlight: color-mix(in srgb, var(--ifl-raised) 62%, transparent);
+  --ifl-glass-shadow: inset 0 1px 0 var(--ifl-glass-highlight), inset 0 0 0 .5px var(--ifl-glass-line), 0 10px 30px -22px rgb(0 0 0 / .25);
+  --ifl-glass-blur: blur(20px) saturate(135%);
+  --ifl-chrome-blur: var(--ifl-glass-blur);
   --ifl-chrome-solid: var(--ifl-surface);
   --r-card: var(--ifl-radius-card); --r-group: var(--ifl-radius-group); --r-sheet: var(--ifl-radius-sheet);
   --ease-glide: var(--ifl-motion-glide); --ease-spring: var(--ifl-motion-spring);
   --dur-press: var(--ifl-motion-press); --dur-release: var(--ifl-motion-release);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --ifl-glass: var(--ifl-surface); --ifl-glass-strong: var(--ifl-surface); --ifl-glass-control: var(--ifl-surface-2); --ifl-glass-blur: none; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root { --ifl-glass: var(--ifl-surface); --ifl-glass-strong: var(--ifl-surface); --ifl-glass-control: var(--ifl-surface-2); --ifl-glass-line: color-mix(in srgb, var(--ifl-text) 25%, transparent); --ifl-glass-blur: none; }
+}
+@media (forced-colors: active) {
+  :root { --ifl-glass: Canvas; --ifl-glass-strong: Canvas; --ifl-glass-control: Canvas; --ifl-glass-line: ButtonText; --ifl-glass-highlight: transparent; --ifl-glass-shadow: none; --ifl-glass-blur: none; }
 }
 @supports (transition-timing-function: linear(0, 1)) {
   :root { --ifl-motion-spring: linear(0, 0.12, 0.36, 0.59, 0.77, 0.89, 0.96, 0.994, 1.006, 1.008, 1.005, 1.002, 1); }
@@ -1019,6 +1037,21 @@ html.ifl-colour-change::view-transition-new(inflite-dock) { animation: none; mix
 html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion-paused] *::after { animation-play-state: paused !important; }
 
 /* Accessibility preferences apply to the shared chrome in every standalone app. */
+.ifm-pop, .ifm-note, .ifa-sheet, .ifb {
+  background: var(--ifl-glass-strong); border: 1px solid var(--ifl-glass-line);
+  box-shadow: var(--ifl-glass-shadow), 0 18px 54px -28px rgb(0 0 0 / .3);
+  -webkit-backdrop-filter: var(--ifl-glass-blur); backdrop-filter: var(--ifl-glass-blur);
+}
+.ifm-grp { background: var(--ifl-glass-control); border: 1px solid var(--ifl-glass-line); }
+.ifh-acts, .ifl-back, .ifl-tabs, .ifs-btn {
+  background: var(--ifl-glass); border-color: var(--ifl-glass-line);
+  box-shadow: var(--ifl-glass-shadow);
+  -webkit-backdrop-filter: var(--ifl-glass-blur); backdrop-filter: var(--ifl-glass-blur);
+}
+.ifh-act, .ifh-me, .ifs-btn, .ifm-ic { display: grid; place-items: center; }
+.ifh-act svg, .ifs-btn svg { display: block; }
+.ifm-card:hover, .ifm-row:hover { background: var(--ifl-press); }
+.ifm-card, .ifm-row { transition: background-color var(--ifl-motion-fast) ease, transform var(--ifl-motion-release) var(--ifl-motion-spring); }
 @media (prefers-reduced-motion: reduce) {
   .ifm-pop, .ifm-pop.closing, .ifa-sheet, .ifm-note { transform: none !important; transition: opacity 0.12s ease !important; }
   .ifh-me, .ifh-act, .ifl-back, .ifs-btn, .ifm-switch::after, .ifm-row, .ifm-card, .ifa-go, .ifa-later, .ifb-btn { transition: none; }
@@ -1118,10 +1151,11 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
   font-weight: 500;
   line-height: 22px;
   color: var(--ifl-muted);
-  background: var(--ifl-surface);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  box-shadow: var(--ifl-shadow-control);
+  background: var(--ifl-glass-strong, var(--ifl-surface));
+  border: 1px solid var(--ifl-glass-line, var(--ifl-line));
+  -webkit-backdrop-filter: var(--ifl-glass-blur, none);
+  backdrop-filter: var(--ifl-glass-blur, none);
+  box-shadow: var(--ifl-glass-shadow, var(--ifl-shadow-control));
 }
 
 .ifl-in .ifl-brand img {
@@ -1298,3 +1332,46 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 
 /* Calendar's lazy summary shares the existing Today surface. */
 .org-today{padding:20px;margin-block:16px;grid-column:1/-1;border-radius:30px;min-width:0}.org-today-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}.org-today-head h2{font-size:20px;min-width:0;flex:1;margin:0}.org-today .ifl-row{min-width:0}.org-today .ifl-row-t{overflow-wrap:anywhere}
+
+/* Liquid Glass content stays still: depth is painted, with no live filter per card. */
+:is(.glass, .tcard.wx, .apps-shortcut, .opening-card, .continuation-card, .ride-overview section) {
+  background-color: var(--ifl-surface);
+  background-image: linear-gradient(155deg, color-mix(in srgb, var(--ifl-glass-highlight, #fff) 22%, transparent), transparent 48%);
+  box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-glass-shadow, var(--ifl-shadow-card));
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.tcard { gap: 14px; }
+.tc-head { margin-bottom: 1px; }
+.tc-head .tc-app { letter-spacing: -.15px; }
+.tc-head img, .row .ic.app, .apps-list .ifl-lead img { box-shadow: 0 2px 5px color-mix(in srgb, var(--ifl-text) 10%, transparent); }
+.tc-foot { gap: 8px; }
+.seg, .tc-reply-f input { background: var(--ifl-glass-control, var(--ifl-surface-2)); box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)); }
+.seg button[aria-pressed="true"] { background: linear-gradient(175deg, #ffffff26, transparent 75%), var(--ifl-accent-gradient); box-shadow: inset 0 1px 0 #ffffff4d, var(--ifl-shadow-control); }
+.apps-edit, .ifl-nt-set, .ifl-nt-all {
+  background: var(--ifl-glass-control, var(--ifl-surface-2));
+  box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line));
+}
+:is(.wx-hour.now, .ft-stat, .mk-quote, .continuation-row, .opening-well) {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ifl-glass-highlight, #fff) 50%, transparent), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line));
+}
+.ifl-nt-card {
+  background: linear-gradient(150deg, color-mix(in srgb, var(--ifl-glass-highlight, #fff) 24%, transparent), transparent 58%), var(--ifl-surface);
+  box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-glass-shadow, var(--ifl-shadow-card));
+}
+.ifl-nt-more { background: var(--ifl-glass-control, var(--ifl-surface-2)); }
+@media (hover: hover) {
+  :is(.apps-shortcut, .continuation-row):hover { background-color: var(--ifl-surface-2); }
+  .tc-head:hover { background: var(--press); }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :is(.glass, .tcard.wx, .apps-shortcut, .opening-card, .continuation-card, .ride-overview section, .ifl-nt-card) {
+    background: var(--ifl-surface); box-shadow: inset 0 0 0 1px var(--ifl-line), var(--ifl-shadow-card);
+  }
+  :is(.apps-edit, .ifl-nt-set, .ifl-nt-all, .ifl-nt-more, .seg, .tc-reply-f input) { background: var(--ifl-surface-2); }
+}
+@media (forced-colors: active) {
+  :is(.glass, .tcard.wx, .apps-shortcut, .opening-card, .continuation-card, .ride-overview section, .ifl-nt-card) {
+    background: Canvas; color: CanvasText; box-shadow: inset 0 0 0 1px CanvasText;
+  }
+  :is(.apps-edit, .ifl-nt-set, .ifl-nt-all, .ifl-nt-more, .seg, .tc-reply-f input) { background: ButtonFace; color: ButtonText; box-shadow: inset 0 0 0 1px ButtonText; }
+}

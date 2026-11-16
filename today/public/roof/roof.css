@@ -481,3 +481,60 @@ html[data-motion-paused] :is(.aura, .pg-track .cb svg, .tcard.loading .sk i), ht
 .ifh-conversation .ifh-acts { gap: 2px; padding: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .ifh-conversation .ifh-act { min-width: 44px; min-height: 44px; }
 @media (max-width: 359px) { .ifh-conversation .ifh-t { padding-left: 40px; } .ifh-person, .ifh-person .ifl-avatar { width: 32px; height: 32px; } .ifh-conversation .ifh-name { font-size: 20px !important; } }
+
+/* Shared Liquid Glass surfaces: content uses a painted rim; only floating layers blur. */
+:is(.ifl-card, .ifl-card.hero, .ifl-list, .ifl-tile, .ifl-error) {
+  background-color: var(--ifl-surface);
+  background-image: linear-gradient(150deg, color-mix(in srgb, var(--ifl-glass-highlight, #fff) 22%, transparent), transparent 52%);
+  box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-glass-shadow, var(--ifl-shadow-card));
+}
+.ifl-sheet .ifl-list { background: var(--ifl-surface-2); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)); }
+:is(.ifl-segs, .ifl-seg-sm, .ifl-stat, .ifl-field, .ifl-chip.action, .ifl-icon-btn, .ifs-btn) {
+  background: var(--ifl-glass-control, var(--ifl-surface-2));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ifl-glass-highlight, #fff) 65%, transparent), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line));
+}
+.ifl-field:focus-within {
+  background: var(--ifl-surface-2);
+  box-shadow: inset 0 0 0 2px var(--ifl-accent-ink), 0 0 0 3px color-mix(in srgb, var(--ifl-accent-ink) 10%, transparent);
+}
+.ifl-icon-btn.filled { color: var(--ifl-on-accent); background: var(--ifl-accent-fill); }
+.ifl-lens, .ifl-tab-pill {
+  background: linear-gradient(175deg, #ffffff26, transparent 75%), var(--ifl-accent-gradient, var(--acc-fill));
+  box-shadow: inset 0 1px 0 #ffffff4d, inset 0 0 0 1px color-mix(in srgb, var(--ifl-accent-ink) 16%, transparent), var(--ifl-shadow-control);
+}
+dialog.ifl-sheet {
+  font-family: var(--font, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif);
+  background: var(--ifl-surface);
+  box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), 0 24px 80px -20px #00000040;
+}
+.ifl-sheet .ifs-head::before { background: var(--ifl-glass-strong, var(--ifl-surface)); box-shadow: 0 .5px 0 var(--ifl-glass-line, var(--ifl-line)); }
+.ifl-sheet .ifs-acts::before { background: var(--ifl-glass-strong, var(--ifl-surface)); box-shadow: 0 -.5px 0 var(--ifl-glass-line, var(--ifl-line)); }
+.ifl-sheet :is(.ifs-head h2, .ifs-title, .ifs-hd) { font-family: var(--font-d, var(--font, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif)); }
+.ifl-sheet :is(button, input, select, textarea) { font-family: inherit; }
+.ifs-grab { background: color-mix(in srgb, var(--ifl-text) 24%, transparent); }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  dialog.ifl-sheet {
+    background: var(--ifl-glass-strong, var(--ifl-surface));
+    -webkit-backdrop-filter: var(--ifl-glass-blur, none); backdrop-filter: var(--ifl-glass-blur, none);
+  }
+}
+@media (hover: hover) {
+  :is(.ifl-card.tappable, a.ifl-card, a.ifl-tile):hover { background-color: var(--ifl-surface-2); }
+  :is(.ifl-icon-btn, .ifl-chip.action):not(.filled):not(:disabled):hover { background: var(--ifl-raised, var(--ifl-surface-2)); }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :is(.ifl-card, .ifl-card.hero, .ifl-list, .ifl-tile, .ifl-error, dialog.ifl-sheet) {
+    background: var(--ifl-surface); -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+    box-shadow: inset 0 0 0 1px var(--ifl-line), var(--ifl-shadow-card);
+  }
+  :is(.ifl-segs, .ifl-seg-sm, .ifl-stat, .ifl-field, .ifl-chip.action, .ifl-icon-btn, .ifs-btn) { background: var(--ifl-surface-2); }
+  .ifl-sheet .ifs-head::before, .ifl-sheet .ifs-acts::before { background: var(--ifl-surface); }
+  .ifl-icon-btn.filled { background: var(--ifl-accent-fill); }
+}
+@media (forced-colors: active) {
+  :is(.ifl-card, .ifl-card.hero, .ifl-list, .ifl-tile, .ifl-error, dialog.ifl-sheet) { background: Canvas; color: CanvasText; box-shadow: inset 0 0 0 1px CanvasText; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+  :is(.ifl-segs, .ifl-seg-sm, .ifl-stat, .ifl-field, .ifl-chip.action, .ifl-icon-btn, .ifs-btn), .ifl-sheet .ifs-head::before, .ifl-sheet .ifs-acts::before { background: Canvas; color: CanvasText; box-shadow: inset 0 0 0 1px CanvasText; }
+  .ifl-field:focus-within { outline: 2px solid Highlight; box-shadow: none; }
+  .ifl-lens, .ifl-tab-pill { display: none; }
+  .ifl-icon-btn.filled { background: Highlight; color: HighlightText; }
+}
