@@ -429,7 +429,7 @@ function fitness(c, ctx) {
     ${profile(s.steps, `${s.name}: its shape, step by step`)}
     ${s.why ? `<p class="ft-why"><b>Why today:</b> ${esc(s.why)}</p>` : ""}
     ${bestBox(c.best, tz, now, sport)}
-    ${foot(linkPill("Details", c.href, { primary: true }), planPill("rest", "Rest Today", c), planPill("move", "Move to Tomorrow", c), send)}`;
+    ${foot(`<button type="button" class="pill primary" data-ride-overview>Ride overview</button>`, linkPill("Details", c.href, { primary: true }), planPill("rest", "Rest Today", c), planPill("move", "Move to Tomorrow", c), send)}`;
 }
 
 // ---------------------------------------------------------------- Markets

@@ -7,8 +7,8 @@ import { bodyUpTo } from "./body.js";
 import { fetchUpstream } from "./upstream.js";
 
 const MAX_FILE = 25 * 1024 * 1024, MAX_JSON = 4096, MAX_REPLY = 128 * 1024;
-const ROUTES = new Set(["GET list", "GET item", "GET limits", "POST search", "POST folders", "POST uploads", "POST move", "POST trash", "POST restore", "POST copy", "POST favourite", "PATCH item", "DELETE item", "GET content", "PUT content"]);
-const QUERY = new Set(["id", "parentId", "view", "sort", "kind", "cursor", "version", "download"]);
+const ROUTES = new Set(["GET list", "GET item", "GET limits", "POST search", "POST folders", "POST uploads", "POST move", "POST trash", "POST restore", "POST copy", "POST favourite", "PATCH item", "DELETE item", "GET content", "PUT content", "GET history", "POST replacements", "DELETE replacements", "PUT replacement-content", "POST restore-version", "GET continuity", "PUT continuity", "GET preferences", "PUT preferences"]);
+const QUERY = new Set(["id", "parentId", "view", "sort", "kind", "cursor", "version", "download", "versionId", "uploadId"]);
 const SAFE = { "Cache-Control": "private, no-store", "Content-Security-Policy": "sandbox; default-src 'none'; frame-ancestors 'none'", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin", "Referrer-Policy": "no-referrer" };
 const json = (status, error) => new Response(JSON.stringify({ error }), { status, headers: { ...SAFE, "Content-Type": "application/json; charset=utf-8" } });
 export const isFilesAPI = pathname => pathname === "/api/files" || pathname.startsWith("/api/files/");
@@ -27,7 +27,7 @@ export async function filesAPI(request, env) {
     if (!QUERY.has(key) || query.has(key) || value.length > 160 || /[\u0000-\u001f\u007f]/.test(value)) return json(400, "That file request is invalid.");
     query.set(key, value);
   }
-  const binary = method === "PUT" && action === "content";
+  const binary = method === "PUT" && ["content","replacement-content"].includes(action);
   const headers = forwardHeaders(request, todayOrigin(env, request), { accept: "application/json" });
   if (expectedOwner !== null) headers.set("X-Inflite-Files-Owner", expectedOwner);
   const ip = request.headers.get("CF-Connecting-IP");

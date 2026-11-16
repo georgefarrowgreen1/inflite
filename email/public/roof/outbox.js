@@ -175,35 +175,40 @@ export function createOutbox(ctx) {
   }
   const unsent = () => { const u = local.get(STORAGE.unsent, null); return u && typeof u === "object" ? u : null; };
   const dropUnsent = () => local.drop(STORAGE.unsent);
+  let draftTimer=0;
   function track(fn, onSaved) {
     tracked.set(fn, { onSaved: typeof onSaved === "function" ? onSaved : null, id: null, sig: null });
-    return () => tracked.delete(fn);
+    if(!draftTimer)draftTimer=setInterval(()=>{if(!dead&&online())flush({draftsOnly:true}).catch(()=>{})},5000);
+    return () => {tracked.delete(fn);if(!tracked.size){clearInterval(draftTimer);draftTimer=0}};
   }
 
-  async function flush({ keepalive = false } = {}) {
+  async function flush({ keepalive = false, draftsOnly = false } = {}) {
     let lost = 0;
     const jobs = [];
-    for (const it of [...items.values()]) {
+    for (const it of draftsOnly?[]:[...items.values()]) {
       if (it.state === "waiting") jobs.push(go(it, { keepalive }));
       else if (it.state === "queued") jobs.push(api.saveDraft(await payload(it.draft, []), null, { keepalive }).then(() => { items.delete(it.key); }, () => { lost++; }));
     }
     for (const [fn, t] of tracked) {
+      if(t.saving){jobs.push(t.saving);continue}
       let f = null;
       try { f = fn(); } catch {}
       if (!f) continue;
       const d = fieldsOf(f);
       d.draftId ||= t.id;
       const files = Array.isArray(f.files) ? f.files : [];
+      if(draftsOnly&&files.some(file=>file instanceof Blob))continue;
       const sigOf = (id) => JSON.stringify([{ ...d, draftId: id }, files.map((x) => x?.ref || `${x?.name}:${x?.size}`)]);
       if (sigOf(d.draftId) === t.sig) continue;
-      jobs.push(api.saveDraft(await payload(d, files), null, { keepalive }).then((r) => {
+      const saving=t.saving=Promise.resolve().then(async()=>api.saveDraft(await payload(d, files), null, { keepalive })).then((r) => {
         t.id = r?.id || d.draftId || null;
         t.sig = sigOf(t.id);
-        dropUnsent();
+        let latest;try{latest=fn()}catch(_){}
+        if(latest&&JSON.stringify({...fieldsOf(latest),draftId:t.id})===JSON.stringify({...d,draftId:t.id}))dropUnsent();
         if (t.id) try { t.onSaved?.(t.id); } catch {}
-      }, () => { lost++; }));
+      }, () => { lost++; }).finally(()=>{if(t.saving===saving)t.saving=null});jobs.push(saving);
     }
-    const u = !tracked.size && unsent();
+    const u = !draftsOnly && !tracked.size && unsent();
     if (u && (u.subject || u.text || u.to?.length)) jobs.push(api.saveDraft(await payload(fieldsOf(u), []), null, { keepalive }).then(() => dropUnsent(), () => { lost++; }));
     const n = jobs.length;
     let done = 0;
@@ -228,7 +233,7 @@ export function createOutbox(ctx) {
     send, retry, undo, keepUnsent, unsent, dropUnsent, track, flush,
     pending: () => [...items.values()].map(({ key, at, draft, state }) => ({ key, at, draft, state })),
     destroy() {
-      dead = true;
+      dead = true;clearInterval(draftTimer);
       for (const it of items.values()) clearTimeout(it.timer);
       for (const f of offs.splice(0)) try { f(); } catch {}
     },

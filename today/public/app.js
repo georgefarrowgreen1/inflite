@@ -18,12 +18,12 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "3.12";
+const BUILD = "3.13";
 // (what's new in it, said once it's in)
-const NEWS = "Resume after reopening, clearer offline status and direct app handoffs";
+const NEWS = "Continue across devices, recover file versions and keep offline work";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/connection.js", "/roof/handoffs.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
+const OS_FILES = ["/roof/continuity.js", "/roof/offline-store.js", "/roof/offline-prefs.js", "/roof/ride-overview.js", "/roof/files-history.js", "/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/connection.js", "/roof/handoffs.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -1514,6 +1514,10 @@ function forgetKept(except = null) {
       const k = localStorage.key(i);
       if (!k || k === except || k === (except && KEPT)) continue;
       if (k === KEPT || k.startsWith("today:cards:")) localStorage.removeItem(k);
+      if((k.startsWith('ifl:offline:v1:')||k.startsWith('ifl:device:'))&&(!except||k.split(':').at(-1)!==S.view?.user?.id)){
+        if(k.startsWith('ifl:offline:v1:')){window.dispatchEvent(new CustomEvent('inflite:purge-offline',{detail:{owner:k.slice('ifl:offline:v1:'.length)}}));try{indexedDB.deleteDatabase(k)}catch(_){}}
+        localStorage.removeItem(k);
+      }
       if (k.startsWith(RESUME_PREFIX) && (!except || k !== RESUME_PREFIX + S.view?.user?.id)) localStorage.removeItem(k);
     }
   } catch {}
@@ -1953,6 +1957,12 @@ function frame() {
   for (const b of $$(".ifl-sheet .ifs-btn[data-close]")) b.replaceChildren(F.ui.icon("x"));
   provide();
   const f = F;
+  if(OS_MODE){
+    prefsRecoveryLoad=import('/roof/offline-prefs.js').then(m=>F===f&&!f.signal.aborted?m.createOfflinePrefs(f,{owner:S.view.user.id,root:$('#today'),cloud:()=>cleanPrefs(S.view.prefs),apply:p=>{if(F!==f||f.signal.aborted)return;S.prefs=cleanPrefs(p);drawCards();if(sheetId==='sh-edit')drawEdit()},ack:p=>{if(F===f){S.view.prefs=cleanPrefs(p);keepSession(S.view)}}}):null).then(c=>prefsRecovery=c).catch(()=>null);
+    $('#today').addEventListener('click',e=>{if(e.target.closest('[data-ride-overview]')){import('/roof/ride-overview.js').then(m=>{if(F===f&&!f.signal.aborted)m.openRideOverview(f,S.answer?.cards||{})}).catch(()=>{})}},{signal:f.signal});
+    $('#edList').addEventListener('change',e=>{if(e.target.matches('[data-today-density]')){S.prefs={...S.prefs,density:e.target.checked?'compact':'comfortable'};prefsChanged()}else if(e.target.matches('[data-today-section]')){S.prefs={...S.prefs,sections:{...S.prefs.sections,[e.target.dataset.todaySection]:e.target.checked}};prefsChanged()}},{signal:f.signal});
+  }
+  if(OS_MODE)import('/roof/continuity.js').then(m=>{if(F===f&&!f.signal.aborted)m.connectContinuity(f,{owner:S.view.user.id,root:$('#today')})}).catch(()=>{});
   bellReady = import("/bell.js").then((m) => {
     if (F !== f || bell) return;
     bell = m.createBell(f, { count: (n) => { if (F !== f || f.signal.aborted) return; notificationCount = n; f.header.count?.("bell", n); workspaceHost?.update(); }, go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); }, settings: () => go("/#you=phone"), actions: OS_MODE ? (note) => F === f && !f.signal.aborted ? workspaceHost?.notificationActions(note) || [] : [] : undefined });
@@ -1964,6 +1974,7 @@ function unframe() {
   const f = F;
   F = null;
   workspaceHost = null;
+  prefsRecovery=null;prefsRecoveryLoad=null;
   notificationCount = 0;
   try { bell?.destroy(); } catch (e) { console.error(e); }
   bell = null;
@@ -2157,7 +2168,7 @@ function cleanPrefs(p, view = S.view) {
   const order = (Array.isArray(p?.order) ? p.order : []).filter((k) => keys.includes(k));
   for (const k of keys) if (!order.includes(k)) order.push(k);
   const hidden = (Array.isArray(p?.hidden) ? p.hidden : []).filter((k) => keys.includes(k));
-  return { order: [...new Set(order)], hidden: [...new Set(hidden)] };
+  return { order: [...new Set(order)], hidden: [...new Set(hidden)],...(p?.density==='compact'?{density:'compact'}:{}),...(p?.sections&&['waiting','coming','rest'].some(k=>p.sections[k]===false)?{sections:Object.fromEntries(['waiting','coming','rest'].filter(k=>p.sections[k]===false).map(k=>[k,false]))}:{}) };
 }
 // Today's day: a version 2 answer (Today First's, phase by phase) drawn by /day.js into #today (its top card, Waiting for
 // You, Coming Up, and The Rest of Today: the four cards); an answer without v (an account side from before it, or this
@@ -2165,6 +2176,7 @@ function cleanPrefs(p, view = S.view) {
 // all the same.
 function drawCards(anim) {
   if (!S.view) return;
+  $('#today').dataset.density=S.prefs.density||'comfortable';
   // (a reply being typed on Chat's card: the cards drawn again once it's sent or let go, so the words aren't lost)
   const rf = document.querySelector("#today .tc-reply-f input");
   if (rf && (rf.value.trim() || document.activeElement === rf)) { drawCards.later = true; return; }
@@ -2320,12 +2332,13 @@ function back() {
 // ---------------------------------------------------------------- Edit: hide and reorder, kept on your account
 function drawEdit() {
   const ord = S.prefs.order, n = ord.length;
+  $('#edList').dataset.density=S.prefs.density||'comfortable';
   $("#edList").innerHTML = ord.map((k, i) => {
     const name = APP[k].name;
     return `<div class="row ed-row" data-k="${k}"><span class="ic app"><img src="${APP[k].icon}" alt=""></span><span class="tx"><b>${name}</b></span>
       <button class="mv" type="button" data-mv="-1" ${i === 0 ? "disabled" : ""} aria-label="Move ${name} up">${G.up}</button><button class="mv" type="button" data-mv="1" ${i === n - 1 ? "disabled" : ""} aria-label="Move ${name} down">${G.down}</button>
       <input type="checkbox" class="switch" role="switch" data-show="${k}" ${S.prefs.hidden.includes(k) ? "" : "checked"} aria-label="Show ${name}"></div>`;
-  }).join("");
+  }).join("")+`<div class="row ed-row"><span class="tx"><b>Compact cards</b><small>Reduce detail spacing</small></span><input type="checkbox" class="switch" role="switch" data-today-density ${S.prefs.density==='compact'?'checked':''} aria-label="Compact cards"></div>`+[['waiting','Waiting for you'],['coming','Coming up'],['rest','App cards']].map(([k,name])=>`<div class="row ed-row"><span class="tx"><b>${name}</b></span><input type="checkbox" class="switch" role="switch" data-today-section="${k}" ${S.prefs.sections?.[k]===false?'':'checked'} aria-label="Show ${name}"></div>`).join('');
 }
 function openEdit() {
   if (!S.view) return;
@@ -2335,10 +2348,12 @@ function openEdit() {
 }
 // (sent 400 ms after the last change, one at a time, so the account has them in the order they were made. An answer
 // becomes the page's only if nothing's changed since it was sent: a newer change, still to go, isn't put back)
+let prefsRecovery=null,prefsRecoveryLoad=null;
 let prefsT = 0, prefsEdits = 0, prefsOut = 0, prefsGoing = Promise.resolve();
-const prefsBusy = () => !!prefsT || prefsOut > 0;
+const prefsBusy = () => !!prefsT || prefsOut > 0 || !!prefsRecovery?.busy?.();
 function prefsChanged(anim = "move") {
   prefsEdits++;
+  if(OS_MODE){const value=cleanPrefs(S.prefs);prefsRecoveryLoad?.then(controller=>controller?.change(value));drawCards(anim);return;}
   drawCards(anim);
   clearTimeout(prefsT);
   const scope = requests.generation;

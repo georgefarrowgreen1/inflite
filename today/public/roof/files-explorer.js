@@ -286,6 +286,9 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     load(target);
   }
   async function dispatch(item, id) {
+    // History reads the server's latest version. A refresh after replacement
+    // must not silently consume an action selected in the already-open menu.
+    if(id==='history'&&active()&&item.source?.kind==='drive'&&items().some(value=>value.id===item.id))return import('./files-history.js').then(m=>active()&&m.history({F,ui,service,active,live,sheet,refresh,root,resource,errorText},item));
     const current = resource(item);
     if (!current || !activeActions(current).some(action => action.id === id)) return;
     if (id === 'open' && folderLocation(current)) return navigate(folderLocation(current));
@@ -293,6 +296,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     if(id==='restore-to'&&current.source?.kind==='drive')return move(current,'restore');
     if (['move','copy'].includes(id) && current.source?.kind === 'drive') return move(current,id);
     if (['delete','trash'].includes(id) && current.source?.kind === 'drive') return remove(current,id);
+    if(id==='replace'&&current.source?.kind==='drive')return import('./files-history.js').then(m=>active()&&m.replaceFile({F,ui,service,active,live,sheet,refresh,root,resource,errorText},current));
     if (id === 'preview' && current.source?.kind === 'drive') return previewFile(current);
     const answer = await execute(current, id,{input:{version:current.version}});
     if(active()&&answer?.ok!==false&&current.source?.kind==='drive'&&['restore','favourite'].includes(id))refresh({reset:true});

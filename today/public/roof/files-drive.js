@@ -116,7 +116,7 @@ export function createDriveClient(F) {
     } catch (error) { task.check(); throw error; }
     finally { task.done(); }
   }
-  function uploadContent(id, file, { onProgress = () => {}, ...lease } = {}) {
+  function uploadContent(id, file, { onProgress = () => {}, replacement=false, ...lease } = {}) {
     checkedId(id);
     if (!(file instanceof Blob) || file.size > MAX) return Promise.reject(new FilesError("Choose a file no larger than 25 MB.", 413));
     const task = scope(lease, 120000);
@@ -124,7 +124,7 @@ export function createDriveClient(F) {
       let xhr, finished = false; const stop = () => xhr?.abort();
       const finish = (error, value) => { if (finished) return; try { task.check(); } catch (stale) { error = stale; } finished = true; task.signal.removeEventListener("abort", stop); task.done(); if (xhr) { xhr.onload = xhr.onerror = xhr.onabort = xhr.ontimeout = null; if (xhr.upload) xhr.upload.onprogress = null; } error ? reject(error) : resolve(value); };
       try {
-      xhr = new XMLHttpRequest(); xhr.open("PUT", `/api/files/content?id=${encodeURIComponent(id)}`, true); xhr.withCredentials = true; xhr.timeout = 120000;
+      xhr = new XMLHttpRequest(); xhr.open("PUT", `/api/files/${replacement?"replacement-content?uploadId=":"content?id="}${encodeURIComponent(id)}`, true); xhr.withCredentials = true; xhr.timeout = 120000;
       xhr.setRequestHeader("X-Inflite-Files-Owner", owner); xhr.setRequestHeader("X-Inflite", "1"); xhr.setRequestHeader("Content-Type", "application/octet-stream"); xhr.setRequestHeader("Accept", "application/json");
       xhr.upload.onprogress = event => { try { task.check(); onProgress(Number.isFinite(event.loaded) && event.loaded >= 0 ? Math.max(0, Math.min(1, file.size ? event.loaded / file.size : 1)) : 0); } catch (_) {} };
       xhr.onload = () => { try { task.check(); if (new TextEncoder().encode(xhr.responseText).length > 128 * 1024) throw failure(null, xhr.status); const value = JSON.parse(xhr.responseText); if (xhr.status < 200 || xhr.status >= 300) { lost(xhr.status); throw failure(value, xhr.status); } finish(null, itemAnswer(value)); } catch (error) { finish(error instanceof SyntaxError ? failure(null, xhr.status) : error); } };
@@ -138,6 +138,11 @@ export function createDriveClient(F) {
   function destroy() { if (dead) return; dead = true; for (const controller of pending) controller.abort(); pending.clear(); F.signal.removeEventListener("abort", destroy); }
   F.signal.addEventListener("abort", destroy, { once: true });
   return { browse, content, uploadContent,
+    cancelReplacement: (uploadId,lease={})=>request("replacements",{method:"DELETE",query:{uploadId},...leaseOf(lease)}),
+    history: (id,lease={})=>request('history',{query:{id:checkedId(id)},...leaseOf(lease)}),
+    reserveReplacement: (body,lease={})=>request('replacements',{method:'POST',body,...leaseOf(lease)}),
+    restoreVersion: async(body,lease={})=>itemAnswer(await request('restore-version',{method:'POST',body,...leaseOf(lease)})),
+    replaceContent: (uploadId,file,lease={})=>uploadContent(uploadId,file,{...lease,replacement:true}),
     item: async (id, lease = {}) => itemAnswer(await request("item", { query: { id: checkedId(id) }, ...leaseOf(lease) })),
     createFolder: async (name, parentId, operationId = fileOperationId(), lease = {}) => itemAnswer(await request("folders", { method: "POST", body: { name, parentId, operationId }, ...leaseOf(lease) })),
     reserve: async (spec, lease = {}) => itemAnswer(await request("uploads", { method: "POST", body: spec, ...leaseOf(lease) })),

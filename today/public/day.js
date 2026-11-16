@@ -293,7 +293,7 @@ function topHtml(t, phase, st, now) {
       ${undo.length || extraButtons.length ? `<div class="tc-foot">${[...extraButtons, ...undo].join("")}</div>` : ""}
     </details>` : ""}
     ${wrote.length ? `<div class="dt-wrote">${wrote.map((w) => `<p class="dt-said" data-wid="${esc(w.id)}" data-first="${esc(w.first)}" data-since="${num(w.at) ?? 0}" hidden></p>`).join("")}</div>` : ""}
-    ${buttons.length ? `<div class="tc-foot">${buttons.join("")}</div>` : ""}
+    ${buttons.length ? `<div class="tc-foot">${buttons.join("")}</div>` : ""}${["ride","weather"].includes(kind)?`<div class="tc-foot"><button type="button" class="pill" data-ride-overview>Ride overview</button></div>`:""}
   </article>`;
 }
 
@@ -544,6 +544,7 @@ function draw(root, st, phase, now) {
     applyVars(s.rest);
   }
   s.rest.hidden = !shows.includes("rest") || !s.rest.children.length;
+  for(const name of ['waiting','coming','rest'])if(st.ctx.prefs?.sections?.[name]===false)s[name].hidden=true;
   writeLine(st, phase, now);
   listen(root, st, w);
 }
