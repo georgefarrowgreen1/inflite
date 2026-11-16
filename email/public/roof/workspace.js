@@ -48,7 +48,7 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
   function snapshot() {
     if (!live()) return { status: "signin", actions: [], files: [] };
     const s = store.get(), status = blocked(s), canUse = s.access === "ok";
-    return { status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(),
+    return { status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(), availability: { local: canUse && !!s.list.rows.length, pending: (s.outbox || []).length, saving: s.sending > 0, draft: s.compose, error: (s.outbox || []).some(item => item.state === "failed"), updatedAt: s.updatedAt },
       actions: [
         { id: "compose", label: "Compose a message", keywords: ["write", "email", "new mail"], enabled: canUse },
         ...(sdk.files?.open ? [{ id: "compose-attach", label: "Attach a Drive file to a new message", keywords: ["attach", "file", "drive", "email"], enabled: canUse }] : []),
@@ -124,6 +124,10 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
     if (!present()) return { ok: false, cancelled: true };
     if (blocked(store.get())) return { ok: false, error: store.get().access === "notadmin" ? "Mail is only available to its owner." : "Open Mail and confirm it’s you to continue." };
     const permitted = () => present() && store.get().access === "ok";
+    if (intent === "handoff") {
+      const value = sdk.handoffs?.take(object);
+      return value?.kind === "text" ? { ok: !!(await ctx.open.compose({ subject: value.subject, text: value.text }, permitted)), pending: true } : { ok: false };
+    }
     if (intent === "compose-attach") {
       if (!sdk.files?.open) return { ok: false, error: "Open Mail in InFlite OS to attach Drive files." };
       const token = typeof object === "string" && /^drop:[a-f0-9]{32}$/.test(object) ? object.slice(5) : null;

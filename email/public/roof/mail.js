@@ -45,7 +45,7 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.88";
+export const BUILD = "1.89";
 export const NEWS = "Open and save with Files";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
@@ -112,10 +112,19 @@ export async function mount(root, fw) {
   const make = (tag, cls, label) => { const el = doc.createElement(tag); el.className = cls; if (label) el.setAttribute("aria-label", label); root.append(el); return el; };
   const stateEl = make("div", "ml-state");
   const listEl = make("section", "ml-list", "Conversations"), readerEl = make("section", "ml-reader", "Conversation");
+  const resumeDraft = fw.ui.el("aside", { class: "ml-resume-draft", hidden: true }, fw.ui.el("span", {}, fw.ui.el("b", { text: "Unsent draft" }), fw.ui.el("small", { text: "Kept on this device. Review before sending." })), fw.ui.btn("Continue", { run: () => {
+    if (alive && !fw.signal?.aborted && onScreen && store.get().access === "ok") ctx.open.compose({ restoreLocal: true });
+  } }));
+  root.prepend(resumeDraft);
   stateEl.hidden = true;
   readerEl.hidden = true;
   const offs = [];
   const on = (t, ev, fn, o) => { t.addEventListener(ev, fn, o); offs.push(() => t.removeEventListener(ev, fn, o)); };
+  const drawResume = () => {
+    const s = store.get(), draft = ctx.outbox.unsent();
+    resumeDraft.hidden = !alive || !onScreen || s.access !== "ok" || s.compose || !draft || !(draft.subject || draft.text || draft.to?.length);
+  };
+  offs.push(...["access", "compose", "outbox", "offline"].map(key => store.on(key, drawResume)));
 
   // ---- layout: phone or iPad, by Mail's own rule
   const mq = win.matchMedia ? win.matchMedia(PHONE) : null;
@@ -364,6 +373,7 @@ export async function mount(root, fw) {
       const code = r?.key === "signin" ? r.arg || hashCode() : null;
       if (code) signinJs().catch(failed).then((m) => m.finishSignIn(ctx, code)).then(() => Promise.resolve(bootState.started).catch(() => {})).then(() => start(), () => {});
       drawState();
+      drawResume();
       list.draw();
       reader.draw();
       // (the frame gives focus back as the pop is drawn, while the list is still hidden under the reader, so it lands on
@@ -397,6 +407,7 @@ export async function mount(root, fw) {
       const s = store.get();
       return !!(s.compose || s.sending > 0 || list.swiping?.() || Date.now() - readAt < 30e3);
     },
+    resumeRoute() { const s = store.get(); return s.access === "ok" && s.threadId && !readerEl.hidden ? `/mail/#thread=${s.threadId}` : null; },
     flush: () => ctx.outbox.flush(),
     sendable: () => null,
     unmount() {
@@ -410,7 +421,7 @@ export async function mount(root, fw) {
       for (const f of offs.splice(0)) try { f(); } catch {}
       try { list.destroy(); } catch (e) { console.error(e); }
       try { reader.destroy(); } catch (e) { console.error(e); }
-      stateEl.remove(); listEl.remove(); readerEl.remove();
+      resumeDraft.remove(); stateEl.remove(); listEl.remove(); readerEl.remove();
     },
   };
 }

@@ -191,7 +191,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   async function execute(item, action, { input, current: formCurrent = () => true } = {}) {
     const currentItem = item ? resource(item) : null;
     if (!active() || item && !currentItem || !ACTION.test(action)) return { ok: false, cancelled: true };
-    const mine = ++actionGen, openingEpisode = episode, appHandoff = currentItem?.source?.kind === 'app';
+    const mine = ++actionGen, openingEpisode = episode, appHandoff = currentItem?.source?.kind === 'app' || ['attach-mail', 'import-fitness'].includes(action);
     const controller = appHandoff ? null : new AbortController();
     if (controller) operations.add(controller);
     const current = () => live() && mine === actionGen && formCurrent() && !controller?.signal.aborted && (appHandoff || active() && episode === openingEpisode);

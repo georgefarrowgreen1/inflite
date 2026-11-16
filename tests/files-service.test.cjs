@@ -324,3 +324,14 @@ test('Trash batches keep independent observed references after cache retirement 
   const result=await service.batch(refs,'trash');assert.equal(result.ok,false);assert.equal(result.results[0].ok,true);assert.equal(result.results[1].ok,false);assert.match(result.results[1].error,/changed/i);assert.equal(requests,2);
  },{nodes:[node(A),node(A2,{name:'Other.txt'})],fetch(call,state){if(call.action!=='trash')return;requests++;if(call.body.id===A2)return Response.json({error:'Changed elsewhere'},{status:409});const old=state.nodes.get(call.body.id),value={...old,version:old.version+1,trashedAt:NOW,trashRoot:old.id};state.nodes.set(old.id,value);return Response.json({item:value});}});
 });
+
+
+test('explicit Drive handoffs check capabilities and file version and expire the transfer token afterwards',async()=>fixture(async({service,F,native})=>{
+ F.session.apps={fitness:true,mail:true};const result=await service.browse(driveLocation()),item=result.items[0];
+ assert.ok(item.actions.some(a=>a.id==='attach-mail'));assert.ok(item.actions.some(a=>a.id==='import-fitness'));
+ assert.equal((await service.run(item.key,'attach-mail',{input:{version:99}})).ok,false);assert.equal(native.length,0);
+ const sent=await service.run(item.key,'attach-mail',{input:{version:1}});assert.equal(sent.ok,true);
+ const action=native.find(v=>v.type==='run');assert.equal(action.app,'mail');assert.equal(action.intent,'compose-attach');assert.match(action.id,/^drop:/);
+ assert.deepEqual(service.resolveDrag(action.id.slice(5)),[]);F.session.view.apps.mail=false;
+ assert.equal((await service.run(item.key,'attach-mail',{input:{version:1}})).ok,false);
+},{nodes:[node(A,{name:'Route.gpx',mime:'application/gpx+xml'})]}));

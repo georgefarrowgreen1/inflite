@@ -1,4 +1,5 @@
 import { loadStyles } from "./modules.js";
+import { recoveryDetail } from "./workspace-recovery.js";
 const ICONS = { fitness: "fitness", weather: "weather", markets: "markets", chats: "chat", mail: "mail" };
 // Recovery is a system sheet, not a replacement screen or a new app instance.
 export function createWorkspaceRecoveryView(F, recovery) {
@@ -20,11 +21,11 @@ export function createWorkspaceRecoveryView(F, recovery) {
     const summary = ui.el("p", { class: "ws-recovery-summary", role: "status" });
     const list = ui.el("ul", { class: "ws-recovery-list", "aria-label": "App recovery" });
     const records = new Map();
-    const body = ui.el("div", { class: "ws-recovery" }, summary, ui.el("p", { class: "ws-recovery-help", text: "Your apps and drafts stay in place." }), list);
+    const body = ui.el("div", { class: "ws-recovery" }, summary, ui.el("p", { class: "ws-recovery-help", text: "Available content and unsynced changes are reported by each app. Cloud files and sending need a connection." }), list);
     const mine = sheet = F.sheet.open({ sheet: "workspace-recovery", title: "Connection & recovery", body, onClose() { if (sheet === mine) { off(); off = () => {}; sheet = null; } } });
     const render = value => {
       if (!live() || sheet !== mine || mine.closed) return;
-      summary.textContent = value.online ? "Connected" : "You’re offline";
+      summary.textContent = value.online ? "Network available" : "You’re offline";
       const keep = new Set();
       for (const app of value.apps) {
         if (!Object.hasOwn(ICONS, app.app)) continue;
@@ -41,7 +42,7 @@ export function createWorkspaceRecoveryView(F, recovery) {
           } });
           const element = ui.el("li", {}, ui.el("img", { src: `/apps/${ICONS[app.app]}.svg`, alt: "", width: 36, height: 36 }), ui.el("div", {}, title, detail), button); row = { element, detail, button }; records.set(app.app, row); list.append(element);
         }
-        row.detail.textContent = !value.online ? app.loaded ? "Current view kept" : "Connect to open" : app.pending ? "Resuming…" : ({ idle: "Not opened yet", loading: "Opening…", ready: "Ready to continue", error: "Couldn’t open", offline: "Reconnect to continue", signin: "Sign in to continue", locked: "Unlock to continue" })[app.phase];
+        row.detail.textContent = recoveryDetail(app, value.online);
         row.button.textContent = ["error", "offline"].includes(app.phase) ? "Try again" : app.loaded ? "Resume" : "Open";
         row.button.disabled = !app.retryable;
         row.button.setAttribute("aria-label", `${row.button.textContent} ${app.name}`);

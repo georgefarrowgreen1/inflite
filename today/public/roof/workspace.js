@@ -7,10 +7,11 @@ import { WORKSPACE_APPS, getWorkspaceApp, safeWorkspaceRoute } from "./workspace
 import { createWorkspaceCommands, notificationActions } from "./workspace-commands.js";
 import { createFilesService } from "./files-service.js";
 import { safeFilesLocation } from "./files-location.js";
-import { createFilesDialogs } from "./files-dialogs.js";
 import { createActivityRegistry, createWorkspaceActivity } from "./workspace-activity.js";
 import { createWorkspaceRecovery } from "./workspace-recovery.js";
 import { createWorkspaceRecoveryView } from "./workspace-recovery-view.js";
+import { createConnectionView } from "./connection.js";
+import { createHandoffs } from "./handoffs.js";
 
 export const WORKSPACE_VERSION = 2;
 const EMPTY_CONTEXT = Object.freeze({ location: null, interval: null });
@@ -32,6 +33,7 @@ export async function createWorkspace(F, options = {}) {
   const background = F.ui.el("div", { hidden: true, inert: true, "aria-hidden": "true" });
   options.dockRoot?.append(background);
   let files = null, commands = null, dialogs = null, recovery = null, recoveryView = null;
+  let dialogInstance = null, dialogLoad = null;
   let explorer = null, explorerLoad = null, filesLocation = safeFilesLocation({ kind: "drive" }), pendingFilesQuery = null;
   let shown = false, gone = false, route = null, scene = 0, paintPending = false;
   const live = () => !gone && !F.signal.aborted && F.session.view?.user?.id === owner;
@@ -40,16 +42,22 @@ export async function createWorkspace(F, options = {}) {
   recovery = createWorkspaceRecovery(F, { getHandle: app => handles.get(app), retry: retryApp,
     activity: activity.source("recovery", { current: live, signal: F.signal }), onChange: () => { paintNativeRecovery(); paint(); } });
   recoveryView = createWorkspaceRecoveryView(F, recovery);
+  const connection = createConnectionView(F, { root, recovery, open: () => recoveryView.open() });
   const loadApp = (app, handle, lease = {}) => recovery.load(app, async () => {
     const instance = await handle.load();
     if (!live() || lease.signal?.aborted || !guarded(() => !lease.current || lease.current(), false)) return null;
     await instance?.workspace?.(); return instance;
   }, lease);
   const appOn = (app) => !!F.session.apps?.[app] && (app !== "mail" || F.session.view?.apps?.mail === true);
+  const handoffs = createHandoffs(F, { available: appOn, deliver: async (app, token, lease) => {
+    const opened = await openApp(app, format({ app }), false, true, lease);
+    return opened && lease.current() ? runIntent(app, "handoff", token, lease) : { ok: false, cancelled: true };
+  } });
   function capability(app, signal) {
     const usable = () => live() && appOn(app) && !signal.aborted;
     return Object.freeze({
       enabled: true,
+      handoffs: handoffs.forApp(app, { signal, current: usable, active: () => usable() && F.route?.app === app && handles.get(app)?.fw.visible() }),
       get files() { return usable() ? dialogs?.forApp(app, { current: usable, signal }) || null : null; },
       active: () => usable() && document.visibilityState === "visible" && !!handles.get(app)?.fw.visible() && F.route?.kind === "app" && F.route.app === app,
       provide(provider) {
@@ -104,7 +112,7 @@ export async function createWorkspace(F, options = {}) {
       if (!live() || !appOn(app) || entry.signal.aborted || providers.get(app) !== entry || entry.epoch !== epoch) return;
       snapshots.set(app, snapshot || null);
     } catch (_) { if (live() && appOn(app) && !entry.signal.aborted && providers.get(app) === entry && entry.epoch === epoch) snapshots.set(app, { status: "error", actions: [], files: [] }); }
-    if (live()) { recovery.update(app, snapshots.get(app)?.status); files?.update?.(); files?.changed?.(app); paint(); }
+    if (live()) { recovery.update(app, snapshots.get(app)); files?.update?.(); files?.changed?.(app); paint(); }
   }
   function paint() {
     if (!live() || paintPending) return;
@@ -114,7 +122,7 @@ export async function createWorkspace(F, options = {}) {
       const user = F.session.view?.user || {};
       view.update({ mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : "today", activeApp: F.route?.app, workspaces: [],
         apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id) })), user: { name: user.name || "", photo: user.photoAt && /^[\w-]{8,64}$/.test(owner) ? `/api/avatar?id=${encodeURIComponent(owner)}&v=${encodeURIComponent(String(user.photoAt))}` : null }, notifications: options.notifications?.() || 0,
-        unifiedHome: true, online: recovery.snapshot().online, activityCount: activityView.count(),
+        unifiedHome: true, connectionManaged: true, online: recovery.snapshot().online, activityCount: activityView.count(),
         greeting: `${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}${F.session.view?.user?.name ? ", " + String(F.session.view.user.name).trim().split(/\s+/)[0] : ""}`,
         recentApps: [...recentApps.keys()].reverse().filter(appOn).map(app => ({ app })), recentActivity: activity.snapshot().slice(0, 3),
         subtitle: guarded(() => new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(new Date()), ""), title: "Today" });
@@ -298,7 +306,7 @@ export async function createWorkspace(F, options = {}) {
     if (gone) return;
     gone = true; ++scene;
     for (const off of offs.splice(0)) off();
-    explorer?.destroy(); dialogs?.destroy(); recoveryView?.destroy(); recovery?.destroy(); activityView.destroy(); activity.destroy(); pendingFilesQuery = null;
+    explorer?.destroy(); dialogs?.destroy(); handoffs.destroy(); connection.destroy(); recoveryView?.destroy(); recovery?.destroy(); activityView.destroy(); activity.destroy(); pendingFilesQuery = null;
     providers.clear(); snapshots.clear(); recentApps.clear(); files?.destroy(); commands?.destroy(); background.remove();
     restoreToday(); anchor.remove(); view.destroy(); html.classList.remove("ifl-os", "os-workspace"); html.removeAttribute("data-os-dock-away"); document.title = originalTitle;
     if (F.tabs.away === dockAway) F.tabs.away = nativeAway;
@@ -326,7 +334,22 @@ export async function createWorkspace(F, options = {}) {
     sources: () => WORKSPACE_APPS.filter(a => ["fitness", "mail", "chats", "markets"].includes(a.id) && appOn(a.id)).map(a => ({ app: a.id, name: a.name, transient: a.id === "chats", status: snapshots.get(a.id)?.status || (snapshots.get(a.id)?.loading ? "loading" : providers.has(a.id) ? "ready" : "loading"), files: snapshots.get(a.id)?.files || [] })),
     load: loadFiles, runIntent, openApp, openExplorer: openFiles,
   });
-  dialogs = createFilesDialogs(F, { service: files });
+  // A stable capability exists immediately; picker code/styles are fetched only
+  // after an explicit Open/Save/drop action, outside the boot's critical graph.
+  dialogs = { forApp(app, requester = {}) {
+    const api = {};
+    for (const method of ["open", "save", "fromDrop"]) api[method] = async (...args) => {
+      const valid = () => live() && !requester.signal?.aborted && guarded(() => !requester.current || requester.current(), false);
+      if (!valid()) return null;
+      dialogLoad ||= Promise.all([import("./files-dialogs.js"), loadStyles("/roof/files-dialogs.css")]).then(([m]) => {
+        if (live()) dialogInstance ||= m.createFilesDialogs(F, { service: files });
+        return dialogInstance;
+      }).catch(error => { dialogLoad = null; throw error; });
+      const instance = await dialogLoad;
+      return valid() && instance ? instance.forApp(app, requester)[method](...args) : null;
+    };
+    return Object.freeze(api);
+  }, destroy() { dialogInstance?.destroy(); } };
   offs.push(activity.subscribe(paint));
   if (F.systemTasks?.register) offs.push(F.systemTasks.register(files, { signal: F.signal }));
   commands = createWorkspaceCommands(F, {

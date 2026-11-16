@@ -5,6 +5,22 @@ const PHASES = new Set(["ready", "error", "loading", "signin", "locked", "offlin
 const aborted = () => new DOMException("This recovery request was released", "AbortError");
 const reason = value => typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, " ").trim().slice(0, 240) : "";
 const permits = fn => { try { return !fn || fn() !== false; } catch (_) { return false; } };
+export function availabilityOf(value) {
+  return { local: value?.local === true, pending: Number.isSafeInteger(value?.pending) ? Math.max(0, Math.min(1000, value.pending)) : 0,
+    saving: value?.saving === true, draft: value?.draft === true, error: value?.error === true,
+    updatedAt: Number.isSafeInteger(value?.updatedAt) && value.updatedAt > 0 ? value.updatedAt : null };
+}
+export function recoveryDetail(app, online) {
+  if (app.phase === "signin") return "Sign in to continue";
+  if (app.phase === "locked") return "Unlock to continue";
+  if (app.unsynced) return app.saving ? "Saving changes…" : !online ? "Unsynced changes in this tab. Keep it open." : "Changes still need to sync";
+  if (app.syncError) return "Some changes couldn’t save. Open the app to review.";
+  if (app.localDraft) return "Draft open in this tab";
+  if (!online) return app.availableOffline ? "Current content available; updates need a connection" : "A connection is needed to open this view";
+  if (app.phase === "offline") return app.availableOffline ? "Current content kept; service unavailable" : "Reconnect to continue";
+  if (app.pending) return "Resuming…";
+  return ({ idle: "Not opened yet", loading: "Opening…", ready: "Ready to continue", error: "Couldn’t open" })[app.phase] || "Open the app to check";
+}
 
 export function createWorkspaceRecovery(F, options = {}) {
   const owner = F.session.view?.user?.id, listeners = new Set(), records = new Map(), offs = [];
@@ -17,7 +33,9 @@ export function createWorkspaceRecovery(F, options = {}) {
   const handleLive = app => { try { return !options.getHandle?.(app)?.signal?.aborted; } catch (_) { return false; } };
   function row(app) {
     const record = state(app), phase = ["locked", "signin"].includes(record.provider) ? record.provider : record.phase === "loading" || record.provider === "loading" ? "loading" : record.phase === "error" || record.provider === "error" ? "error" : record.provider === "offline" ? "offline" : record.loaded ? "ready" : record.phase;
+    const a = availabilityOf(record.availability);
     return Object.freeze({ app, name: NAMES[app], phase, loaded: record.loaded, pending: !!record.pending,
+      availableOffline: record.loaded && a.local, unsynced: a.pending, saving: a.saving, localDraft: a.draft, syncError: a.error, updatedAt: a.updatedAt,
       retryable: online && !record.pending && !["locked", "signin", "loading"].includes(phase) && typeof options.retry === "function",
       error: phase === "error" ? `${NAMES[app]} couldn’t finish opening. Try again when you’re connected.` : null });
   }
@@ -60,10 +78,12 @@ export function createWorkspaceRecovery(F, options = {}) {
   }
   function update(app, value) {
     if (!enabled(app)) return;
-    const phase = typeof value === "string" ? value : value?.status;
+    const phase = typeof value === "string" ? value : value?.status || (value?.error ? "error" : value?.loading ? "loading" : value?.ready ? "ready" : null);
     if (!PHASES.has(phase)) return;
     const record = state(app);
-    if (record.provider === phase) return;
+    const availability = typeof value === "object" ? availabilityOf(value?.availability) : record.availability;
+    if (record.provider === phase && JSON.stringify(record.availability) === JSON.stringify(availability)) return;
+    record.availability = availability;
     record.provider = phase;
     if (phase === "ready") { record.loaded = true; if (record.phase !== "loading") record.phase = "ready"; }
     changed();

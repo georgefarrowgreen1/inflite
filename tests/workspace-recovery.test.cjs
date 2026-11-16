@@ -107,3 +107,19 @@ test('an owned busy-editor refusal retains its bounded product reason instead of
  assert.deepEqual(answer,{ok:false,error:'Finish editing in Fitness before refreshing it.'});
  assert.equal(activity.at(-1).value.detail,answer.error);assert.equal(recovery.snapshot().apps[0].phase,'ready');
 },{retry:()=>({ok:false,error:'Finish editing in Fitness before refreshing it.'})}));
+
+
+test('availability reports unsynced writes until producer confirmation, including after reconnect',async()=>fixture(async({recovery,network,events})=>{
+ const {recoveryDetail}=await source;await recovery.load('fitness',async()=>({}));
+ recovery.update('fitness',{status:'ready',availability:{local:true,pending:2,saving:true}});
+ let row=recovery.snapshot().apps[0];assert.equal(row.unsynced,2);assert.equal(recoveryDetail(row,true),'Saving changes…');
+ network.onLine=false;events.dispatchEvent(new Event('offline'));recovery.update('fitness',{status:'ready',availability:{local:true,pending:2}});
+ assert.match(recoveryDetail(recovery.snapshot().apps[0],false),/Keep it open/);
+ network.onLine=true;events.dispatchEvent(new Event('online'));row=recovery.snapshot().apps[0];assert.equal(row.unsynced,2);assert.match(recoveryDetail(row,true),/need to sync/);
+ recovery.update('fitness',{status:'ready',availability:{local:true,pending:0}});assert.equal(recovery.snapshot().apps[0].unsynced,0);
+}));
+test('availability is a bounded metadata allowlist and cannot bypass sign-in or lock states',async()=>fixture(async({recovery})=>{
+ const {availabilityOf,recoveryDetail}=await source;assert.deepEqual(availabilityOf({local:'yes',pending:99999,saving:true,draft:true,error:true,updatedAt:'bad',text:'private'}),{local:false,pending:1000,saving:true,draft:true,error:true,updatedAt:null});
+ await recovery.load('mail',async()=>({}));recovery.update('mail',{status:'locked',availability:{local:true,pending:1,draft:true}});
+ assert.equal(recoveryDetail(recovery.snapshot().apps.find(a=>a.app==='mail'),false),'Unlock to continue');
+}));

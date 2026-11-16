@@ -193,3 +193,15 @@ export function format(route) {
 
 // owns(path, { roof, origin }): the framework draws this address in-page. Callers pass roof: session.hub ? session.apps : false.
 export const owns = (path, opts = {}) => parse(path, opts) !== null;
+
+// Only opaque IDs and curated source/view enums may accompany a Files history
+// entry. Names, queries, resources and signed URLs remain in the account service.
+export function safeFilesLocation(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (value.kind === "apps") {
+    if (value.app != null && !Object.hasOwn(REGISTRY, value.app) || value.category != null && !["routes", "workouts", "images", "audio", "documents"].includes(value.category)) return null;
+    return { kind: "apps", app: value.app || null, ...(value.category ? { category: value.category } : {}) };
+  }
+  if (value.kind !== undefined && value.kind !== "drive" || value.folderId != null && !filesFolder(value.folderId) || value.view != null && !["folder", "recent", "trash", "favourites"].includes(value.view)) return null;
+  return { kind: "drive", folderId: value.view && value.view !== "folder" ? null : value.folderId || null, view: value.view || "folder" };
+}

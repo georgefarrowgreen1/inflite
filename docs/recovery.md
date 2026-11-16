@@ -24,3 +24,8 @@ Every operation checks captured account, frame signal, caller signal and optiona
 Offline mode keeps current native editors and their app-owned draft storage intact. Recovery cannot promise uncached applications will open offline; existing installed-app static caching decides that. API replies, Drive contents, previews and recovery metadata never enter a new cache or browser storage. Navigation and existing editors remain usable, while refresh/retry controls explain that a connection is needed.
 
 The recovery callback is bounded to fifteen seconds by default. A timed-out mount may finish through its normal account-owned loader later, but its expired user action lease cannot navigate or change a replacement screen. Recovery reports unavailable rather than claiming the operation succeeded.
+
+
+## Availability metadata (3.11)
+
+Each native provider may publish an `availability` allowlist: `local`, bounded `pending` count, `saving`, `draft`, `error`, and `updatedAt`. The account recovery controller normalizes these values and never copies content. Loaded content is described as current content, not as a guaranteed offline archive. A small, non-modal status row appears only offline or when the current app reports unsynced work/service failure. Files states explicitly that cloud bytes and uploads need a connection. Browser online events do not clear producer-reported unsynced work and do not trigger host writes. The Review sheet reports Network available, not a claim that all services are connected or saved. Locks and sign-in gates take priority over all availability detail. This rollout reports Fitness settings saves, Markets reorder status, Chat outbox and Mail outbox/composer state; it does not claim every local edit is an acknowledged cloud write.

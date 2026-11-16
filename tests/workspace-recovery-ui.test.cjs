@@ -96,7 +96,7 @@ for(const [width,theme] of [[320,'dark'],[1440,'light']])test(`Recovery loads it
  const t=await open(width,{theme});try{
   assert.equal(t.cssRequests(),1,'the production view primes its stylesheet without fixture injection');
   assert.equal(await t.page.locator('dialog[open]').count(),0,'priming does not open a sheet');
-  await t.page.evaluate(()=>T.view.open());await t.page.getByText('Your apps and drafts stay in place.',{exact:true}).waitFor();
+  await t.page.evaluate(()=>T.view.open());await t.page.getByText('Available content and unsynced changes are reported by each app. Cloud files and sending need a connection.',{exact:true}).waitFor();
   await t.page.getByRole('button',{name:'Open Markets',exact:true}).waitFor();
   assert.equal(await t.page.getByText('Ready to continue',{exact:true}).count(),1);
   const geometry=await t.page.locator('.ws-recovery-list').evaluate(list=>({style:getComputedStyle(list).listStyleType,display:getComputedStyle(list).display,overflow:document.documentElement.scrollWidth>innerWidth+1,rows:[...list.children].map(row=>{const img=row.querySelector('img'),copy=row.querySelector('div'),button=row.querySelector('button'),r=row.getBoundingClientRect(),i=img.getBoundingClientRect(),c=copy.getBoundingClientRect(),b=button.getBoundingClientRect();return{source:img.getAttribute('src'),loaded:img.complete&&img.naturalWidth>0,width:i.width,height:i.height,radius:parseFloat(getComputedStyle(row).borderRadius),gap:c.left-i.right,buttonGap:b.left-c.right,inside:r.left>=0&&r.right<=innerWidth&&b.right<=r.right&&b.top>=r.top&&b.bottom<=r.bottom,center:Math.abs((i.top+i.bottom-b.top-b.bottom)/2)}})}));

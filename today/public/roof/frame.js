@@ -23,6 +23,13 @@ const released = () => new DOMException("This screen was let go of", "AbortError
 
 export function createFrame(opts = {}) {
   const H = history, L = location, doc = document, html = doc.documentElement;
+  // The host supplies this only after the authoritative account check.
+  const restored = T(() => opts.resume?.restore(L.href, opts.session?.()?.apps || {}), null);
+  if (restored) T(() => {
+    const u = new URL(restored.path, L.href);
+    if (opts.workspacePreview) u.searchParams.set("os", "1");
+    H.replaceState({ ...H.state, ...restored.state }, "", u.pathname + u.search + u.hash);
+  });
   const offs = [], subs = {}, screens = {}, mods = {}, lifetime = new AbortController(), systemTasks = new Set();
   const on = (t, ev, fn, o) => { if (!t) return; t.addEventListener(ev, fn, o); offs.push(() => t.removeEventListener(ev, fn, o)); };
   const emit = (ev, x) => { for (const f of [...(subs[ev] || [])]) try { f(x); } catch (e) { console.error(e); } };
@@ -366,9 +373,18 @@ export function createFrame(opts = {}) {
   const stayR = (r) => r?.kind === "app" && !!REGISTRY[r.app].stay?.includes(r.key);
   const tabRoot = (r) => r?.kind === "app" && !!REGISTRY[r.app].tab && !stayR(r);
   const isTab = (r) => r?.kind === "tab" || tabRoot(r);
+  function rememberReopen(r, y = scrollY) {
+    if (!opts.resume) return;
+    const hint = r?.kind === "app" ? T(() => mods[r.app]?.instance?.resumeRoute?.(), null) : null;
+    const candidate = typeof hint === "string" ? parse(hint, { roof: true }) : null;
+    // Native panes may keep a conversation while their address shows the list.
+    // The account serializer still applies its route/opaque-ID allowlist.
+    opts.resume.remember(candidate?.kind === "app" && candidate.app === r?.app ? candidate : r, { y, state: H.state });
+  }
   function leaveEntry() {
     ys.set(key, scrollY);
     rememberScroll(F.route, scrollY);
+    rememberReopen(F.route);
     if (F.route?.kind === "app") ys.set(`${key}:${F.route.section}`, scrollY);
     backTo.set(key, doc.activeElement);
   }
@@ -424,6 +440,7 @@ export function createFrame(opts = {}) {
       if (pop && stays(r, prev?.route)) o.popY = y;
       const el = r.kind === "app" ? showApp(r, o) : showTab(r);
       if (!o.first) scrollTo(0, y);
+      rememberReopen(r);
       if (!o.first && (!same || stays(r, prev.route))) {
         const f = pop ? backTo.get(k) : null;
         (f?.isConnected && !f.closest("[hidden]") ? f : screens[id]?.spec.focus?.() || doc.querySelector("#hd h1.ifh-name"))?.focus?.({ preventScroll: true });
@@ -463,10 +480,11 @@ export function createFrame(opts = {}) {
       return Promise.resolve(m.instance.show(r, o.hint || null)).then(() => {
         dropClone(m);
         if (!liveModule(m) || F.route !== r) return;
-        m.readyRoute = r;
         const y = o.y || o.popY;
         if (y && Math.abs(scrollY - y) > 2) scrollTo(0, y);
         tidy(r);
+        m.readyRoute = F.route;
+        rememberReopen(F.route);
         const ready = F.route;
         requestAnimationFrame(() => requestAnimationFrame(() => { if (!gone && F.route === ready) measured?.("ready"); }));
       });
@@ -492,7 +510,9 @@ export function createFrame(opts = {}) {
   function tidy(r) {
     if (REGISTRY[r.app]?.stay?.includes(r.key)) return;
     const p = format({ app: r.app, section: r.section });
-    if (p === L.pathname + L.search + L.hash && r.key === r.section) return;
+    const address = new URL(p, L.href);
+    if (opts.workspacePreview) address.searchParams.set("os", "1");
+    if (address.href === L.href && r.key === r.section) return;
     put(p);
     const t = parse(p, { roof: true }) || r;
     F.route = t; shown.route = t; routes[depth] = t;
@@ -781,13 +801,14 @@ export function createFrame(opts = {}) {
   });
   let hiddenAt = 0;
   on(doc, "visibilitychange", () => {
-    if (doc.visibilityState === "hidden") { stopMotion(true); hiddenAt = Date.now(); return emit("hidden"); }
+    if (doc.visibilityState === "hidden") { rememberReopen(F.route); stopMotion(true); hiddenAt = Date.now(); return emit("hidden"); }
     const away = hiddenAt ? Date.now() - hiddenAt : 0;
     hiddenAt = 0;
     if (stale && away >= 60e3 && !F.busy()) return reloadStale();
     emit("visible");
   });
   on(globalThis, "pagehide", () => {
+    rememberReopen(F.route);
     ss("ifl-roof-y", JSON.stringify({ p: format(F.route), y: Math.round(scrollY) }));
   });
   on(globalThis, "pageshow", (e) => { if (e.persisted) emit("visible"); });
@@ -821,12 +842,14 @@ export function createFrame(opts = {}) {
   routes[depth] = r0;
   render(r0, { first: true });
   // (after first paint, and again each frame for a while as the screen fills in)
-  const kept = T(() => JSON.parse(sessionStorage.getItem("ifl-roof-y")), null), y0 = kept?.y;
+  const kept = T(() => JSON.parse(sessionStorage.getItem("ifl-roof-y")), null), y0 = kept?.p === format(F.route) ? kept.y : restored?.y;
   T(() => sessionStorage.removeItem("ifl-roof-y"));
   let n = 0;
   const keptKey = key;
-  const tryY = () => { if (gone || F.route !== r0 || key !== keptKey) return; scrollTo(0, y0); ys.set(key, y0); if (Math.abs(scrollY - y0) > 2 && ++n < 90) requestAnimationFrame(tryY); };
-  if (kept?.p === format(F.route) && y0 > 0) requestAnimationFrame(tryY);
+  let interrupted = false;
+  for (const event of ["wheel", "touchstart", "keydown"]) on(doc, event, () => { interrupted = true; }, { passive: true, once: true });
+  const tryY = () => { if (gone || interrupted || F.route !== r0 || key !== keptKey) return; scrollTo(0, y0); ys.set(key, y0); if (Math.abs(scrollY - y0) > 2 && ++n < 90) requestAnimationFrame(tryY); };
+  if (y0 > 0) requestAnimationFrame(tryY);
   (globalThis.requestIdleCallback || ((f) => setTimeout(f, 1200)))(() => providers());
   return F;
 }

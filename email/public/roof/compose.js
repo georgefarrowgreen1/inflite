@@ -94,6 +94,8 @@ function retryOnline(ctx) {
 
 export function openCompose(ctx, init = {}) {
   const { fw, api, store, logic } = ctx, ui = fw.ui, el = ui.el;
+  const restoring = init.restoreLocal === true;
+  if (restoring) init = { ...(ctx.outbox.unsent() || {}), restoreLocal: true };
   const me = store.get().me || {}, owner = fw.session.user.id, fileDialog = new AbortController();
   const sigFor = (from) => (me.addresses || []).find((a) => a.email === String(from || "").toLowerCase())?.signature || me.signature || "";
   const c = {
@@ -394,14 +396,30 @@ export function openCompose(ctx, init = {}) {
     onClose: closed,
   });
   store.set({ compose: true }, "compose");
+  // Save this app's bounded draft synchronously before a browser can suspend
+  // the page. File bytes remain with the existing upload/draft workflow.
+  const preserve = () => {
+    if (ended || sending || fw.signal?.aborted || fw.session.user.id !== owner) return;
+    for (const key of LISTS) fields[key].commit();
+    clearTimeout(keepT);
+    if (dirty()) keep();
+  };
+  const hidden = () => { if (document.visibilityState === "hidden") preserve(); };
+  globalThis.addEventListener("pagehide", preserve);
+  document.addEventListener("visibilitychange", hidden);
+  fileDialog.signal.addEventListener("abort", () => { globalThis.removeEventListener("pagehide", preserve); document.removeEventListener("visibilitychange", hidden); }, { once: true });
   // (flush, C10: saves these words as a draft and hands its id back; unchanged since, it isn't saved again)
   off = ctx.outbox.track?.(() => (!ended && dirty() && sigOf() !== saved ? { ...fieldsOf(c), files: c.files.slice() } : null),
     (id) => { c.draftId = id; saved = sigOf(); }) || null;
 
   // words an earlier compose left on this phone: saved to Mail first, else (offline) reopened here when this one's blank
   const left = ctx.outbox.unsent?.();
-  const ready = hasWords(left) ? saveLeft(ctx) : Promise.resolve(true);
-  if (hasWords(left)) {
+  const ready = !restoring && hasWords(left) ? saveLeft(ctx) : Promise.resolve(true);
+  if (restoring && c.draftId) {
+    unknown = true;
+    filesReady().catch(() => { if (!ended && !fw.signal?.aborted) fw.toast("Existing attachments need a connection before sending."); });
+  }
+  if (!restoring && hasWords(left)) {
     leftAt = stamp(left);
     ready.then((ok) => {
       if (ok || ended || !held()) return;

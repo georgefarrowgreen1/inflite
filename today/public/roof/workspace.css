@@ -391,3 +391,9 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 .ws-launcher [aria-current] { border-color: var(--ifl-accent-ink, var(--acc-ink)); background: var(--ifl-accent-wash, var(--acc-wash)); }
 @media (hover: hover) { .ws-launcher button:not(:disabled):hover { border-color: var(--ifl-muted, var(--text-2)); } }
 @media (prefers-reduced-motion: no-preference) { .ws-launcher button { transition: transform .15s ease, background-color .15s ease; }.ws-launcher button:not(:disabled):active { transform: scale(.97); } }
+
+/* Connection feedback stays in document flow; the app dock keeps its anchor. */
+.ws-connection { display: flex; min-height: 0; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 20px; padding: 12px 16px; border: 1px solid var(--ifl-line); border-radius: 16px; background: var(--ifl-surface-2); color: var(--ifl-text); font-size: 14px; }
+.ws-connection[hidden] { display: none; }
+.ws-connection p { min-width: 0; margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.ws-connection button { flex: none; min-height: 44px; }

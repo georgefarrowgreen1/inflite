@@ -16,7 +16,7 @@ const fixtures = {
   'list.js': `export function view(el, ctx) { trial.ctx = ctx; return { draw() {}, hide() {}, destroy() {}, swiping() { return false; } }; }`,
   'reader.js': `export const view = () => ({ draw() {}, hide() {}, destroy() {} });`,
   'menus.js': `export const openViews = () => {}, openLater = () => {}, openRowMenu = () => {}, openUnsub = () => {}, confirm = () => {};`,
-  'outbox.js': `export const createOutbox = () => ({ flush(options) { trial.flushes.push(options || {}); return Promise.resolve({ lost: false }); }, destroy() { ++trial.outboxDestroyed; } });`,
+  'outbox.js': `export const createOutbox = () => ({ unsent: () => JSON.parse(localStorage.getItem('mail:unsent') || 'null'), flush(options) { trial.flushes.push(options || {}); return Promise.resolve({ lost: false }); }, destroy() { ++trial.outboxDestroyed; } });`,
   'compose.js': `export function openCompose(ctx, init) { trial.opened.push(['compose', init]); return 'compose'; }`,
   'mailsettings.js': `export function openSettings(ctx, page) { trial.opened.push(['settings', page]); return 'settings'; }`,
   'viewer.js': `export function openViewer(ctx, files, i) { trial.opened.push(['viewer', files, i]); return 'viewer'; }`,
@@ -29,6 +29,7 @@ before(async () => {
       const path = new URL(req.url, 'http://test').pathname;
       let body, type = 'text/javascript';
       if (path === '/') { body = '<!doctype html><html><body><main id="mail"></main></body></html>'; type = 'text/html'; }
+      else if (path === '/roof/ui.js') body = await readFile(resolve(__dirname, '../today/public/roof/ui.js'));
       else {
         const name = path.replace(/^\/mail\/roof\//, '');
         if (name.includes('/') || name.includes('..')) throw new Error('outside Mail');
@@ -63,7 +64,7 @@ async function open({ show = true } = {}) {
       session: { lost() {}, hubAgain() {} },
       nav: { depth: () => 0, go() {}, section() {}, href: () => '/mail/' },
       header: { set() {} },
-      ui: { empty: () => document.createElement('div') },
+      ui: await import('/roof/ui.js'),
       on: () => () => {},
       search: { provide: () => () => {} },
     };

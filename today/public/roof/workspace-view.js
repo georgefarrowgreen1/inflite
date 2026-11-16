@@ -176,7 +176,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   rideView.append(closedWindows);
   canvas.append(windowMenu, keyboardHint);
   if (homeMode && workspaceMode) toolbar.insertBefore(modes, search || toolbar.lastElementChild);
-  const offline = el("p", { class: "ws-offline", role: "status", hidden: true, text: "You’re offline. Your apps and drafts stay open; changes will wait for a connection." });
+  const offline = el("p", { class: "ws-offline", role: "status", hidden: true, text: "You’re offline. Open apps keep their current view. Sending and cloud files need a connection." });
   const main = el("div", { class: "ws-main" }, toolbar, offline, canvas);
   const dock = el("nav", { class: "ws-dock", "aria-label": "Apps" }), dockRecords = new Map();
   const dockToday = callable(callbacks.onToday) ? button("Today", null, "today", "ws-dock-button") : null;
@@ -527,7 +527,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     modes.hidden = !homeMode || !workspaceMode;
     homeMode?.setAttribute("aria-pressed", String(mode === "today"));
     workspaceMode?.setAttribute("aria-pressed", String(mode === "workspace"));
-    offline.hidden = model.online !== false;
+    offline.hidden = model.connectionManaged || model.online !== false;
     const syncLabel = ({ synced: "Synced", syncing: "Syncing…", conflict: "Review", waiting: "Waiting", offline: "Offline", error: "Needs attention" })[model.syncStatus?.state] || "This device";
     words(syncState, syncLabel);
     const tasks = Math.max(0, Math.floor(Number(model.activityCount) || 0)); activityCount.hidden = !tasks; words(activityCount, tasks > 99 ? "99+" : tasks);

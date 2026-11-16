@@ -17,6 +17,8 @@ const previewable = node => !node.trashedAt && node.status === "ready" && PREVIE
 export function createFilesService(F, options = {}) {
   const owner = F.session.view?.user?.id, listeners = new Set(), nodes = new Map(), appRefs = new Map(), transfers = new Map(), writes = new Set(), drags = new Map();
   let dead = false, driveClient = null, drivePromise = null, activeUploads = 0, appReads = 0, sourceSignature = "", pendingAppEvent = false, driveEpoch = 0;
+  let handingOff = false;
+  const acceptsApp = (app, node) => typeof options.runIntent === "function" && !!F.session.apps?.[app] && node.kind === "file" && node.status === "ready" && !node.trashedAt && (app === "mail" ? F.session.view?.apps?.mail === true && node.size <= 20 * 1024 * 1024 : app === "fitness" && /\.(fit|gpx|tcx|zwo|erg|mrc|zip)$/i.test(node.name));
   const live = () => !dead && !!owner && !F.signal.aborted && F.session.view?.user?.id === owner;
   const current = lease => live() && !lease?.signal?.aborted && valid(lease?.current);
   const assert = lease => { if (!current(lease)) throw abort(); };
@@ -42,6 +44,8 @@ export function createFilesService(F, options = {}) {
     const actions = node.kind === "folder" ? [label("open", "Open", "folder", { primary: true })] : ready ? [
       ...(previewable(node) ? [label("preview", "Preview", "preview", { primary: true })] : []), label("download", "Download", "download", { primary: !previewable(node) }),
     ] : [];
+    if (acceptsApp("mail", node)) actions.push(label("attach-mail", "Attach in Mail", "mail"));
+    if (acceptsApp("fitness", node)) actions.push(label("import-fitness", "Import into Fitness", "fitness"));
     if (ready) actions.push(label("rename", "Rename", "rename"), label("move", "Move", "folder"), ...(node.kind === "file" ? [label("copy","Copy","copy")] : []), label("favourite",node.favourite?"Remove favourite":"Add favourite","star"));
     actions.push(label(ready?"trash":"delete",ready?"Move to Trash":"Remove pending upload","delete",{destructive:true}));
     return { key: keyOf(node), ...node, source: { kind: "drive", id: "drive" }, sourceLabel: "My Drive", actions,
@@ -139,6 +143,15 @@ export function createFilesService(F, options = {}) {
     const id = typeof key === "string" && key.startsWith("drive:") ? key.slice(6) : null;
     const node = id && ID.test(id) ? nodes.get(id) : null;
     if (action !== "create-folder" && !node) return { ok: false, error: "That file is no longer available. Refresh to check." };
+    if (action === "attach-mail" || action === "import-fitness") {
+      const app = action === "attach-mail" ? "mail" : "fitness";
+      if (handingOff || !acceptsApp(app, node) || node.version !== input.version) return { ok: false, error: "Refresh the file and try again." };
+      const token = prepareDrag([{ key, version: input.version }]);
+      if (!token) return { ok: false, error: "That file is no longer available." };
+      handingOff = true;
+      try { return await options.runIntent(app, app === "mail" ? "compose-attach" : "import-drive", "drop:" + token, { signal: lease.signal, current: () => current(lease) && acceptsApp(app, node) }); }
+      finally { drags.delete(token); handingOff = false; }
+    }
     if (action === "download" && node.kind === "file" && node.status === "ready" && !node.trashedAt) { download(node, lease); return { ok: true }; }
     if (action === "preview") {
       const api = await drive(lease); assert(lease);

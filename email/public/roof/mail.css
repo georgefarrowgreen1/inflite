@@ -69,3 +69,9 @@
 
 .m-mail .ml-row:not(.unread) .ml-snip { -webkit-line-clamp: 1; }
 .m-mail .ml-row.unread .ml-subj { font-weight: 600; }
+
+.m-mail .ml-resume-draft { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; padding: 16px; border-radius: 16px; background: var(--ifl-surface-2); }
+.m-mail .ml-resume-draft[hidden] { display: none; }
+.m-mail .ml-resume-draft span { min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.m-mail .ml-resume-draft small { color: var(--ifl-muted); }
+.m-mail .ml-resume-draft button { flex: none; min-height: 44px; }

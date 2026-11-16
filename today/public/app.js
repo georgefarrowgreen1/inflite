@@ -14,15 +14,16 @@ import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
 import { createPreloader } from "/roof/preload.js";
 import { createShellPerformance } from "/roof/performance.js";
+import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "3.10";
+const BUILD = "3.11";
 // (what's new in it, said once it's in)
-const NEWS = "Pick up where you left off, with quieter refreshes and smarter app loading";
+const NEWS = "Resume after reopening, clearer offline status and direct app handoffs";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
+const OS_FILES = ["/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/connection.js", "/roof/handoffs.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -1513,6 +1514,7 @@ function forgetKept(except = null) {
       const k = localStorage.key(i);
       if (!k || k === except || k === (except && KEPT)) continue;
       if (k === KEPT || k.startsWith("today:cards:")) localStorage.removeItem(k);
+      if (k.startsWith(RESUME_PREFIX) && (!except || k !== RESUME_PREFIX + S.view?.user?.id)) localStorage.removeItem(k);
     }
   } catch {}
 }
@@ -1934,6 +1936,7 @@ function frame() {
     onMe: (button) => openMenu(button), me: () => photoNode(S.view?.user || {}),
     today: SCREENS.today, apps: SCREENS.apps, you: SCREENS.you, performance: shellPerformance,
     workspace: workspaceScreen,
+    resume: OS_MODE ? createResumeState({ owner: S.view.user.id, signal: requests.signal }) : null,
     workspacePreview: OS_MODE && !["inflite.ai", "os.inflite.ai"].includes(location.hostname),
   });
   ownerFrame = F;
@@ -3023,7 +3026,7 @@ async function load({ fresh = false } = {}) {
 
 // (where the page was: what the updater's reload, and the frame's reload for a new Weather (D21), bring back)
 const save = () => ({ y: Math.round(scrollY) });
-const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors", "requests", "tasks", "screens", "preload", "performance"].map((f) => `/roof/${f}.js`);
+const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui", "search", "send", "modules", "connectors", "requests", "tasks", "screens", "preload", "performance", "restore"].map((f) => `/roof/${f}.js`);
 // An installed copy can briefly have the previous cached HTML with this script.
 // Give that shell the same neutral state before asking anything about the account.
 function ensureSessionUI() {
