@@ -77,6 +77,9 @@ async function roundedInset(locator) {
 async function roundedWindow(locator) {
   const radii = await locator.evaluate(el => { const s = getComputedStyle(el); return ['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius'].map(k => parseFloat(s[k])); });
   assert.ok(radii.every(r => r >= 30), 'every sheet corner remains rounded');
+  const material = await locator.evaluate(el => { const s = getComputedStyle(el), canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; const c = canvas.getContext('2d'); c.fillStyle = s.backgroundColor; c.fillRect(0,0,1,1); return {alpha:c.getImageData(0,0,1,1).data[3], filter:s.backdropFilter || s.webkitBackdropFilter || 'none'}; });
+  assert.ok(material.alpha >= 180 && material.alpha <= 240, 'native and hosted Mail share a visibly translucent, readable window');
+  assert.match(material.filter, /blur\(/, 'the outer compose window samples its backdrop');
 }
 async function centredIcons(locator) {
   const icons = await locator.evaluateAll(elements => elements.map(el => {
