@@ -72,6 +72,7 @@ export function createFrame(opts = {}) {
   // it's locked, signed out or let go of)
   const finds = {};
   const found = (app, s, v) => {
+    if(!v)F.search?.invalidate?.();if(opts.workspace)return;
     const f = finds[app];
     if (!v) { delete finds[app]; return f?.then((off) => off?.()); }
     if (f) return;
@@ -737,7 +738,7 @@ export function createFrame(opts = {}) {
     if (gone) return;
     const on = sess().apps;
     for (const a of Object.keys(REGISTRY)) {
-      const want = on[a] && !mods[a]?.provs.length;
+      const want = !opts.workspace && on[a] && !mods[a]?.provs.length;
       if (!want && provs[a]) { provs[a](); delete provs[a]; }
       else if (want && !provs[a]) {
         let off = null, dead = false;

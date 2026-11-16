@@ -48,7 +48,7 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
   function snapshot() {
     if (!live()) return { status: "signin", actions: [], files: [] };
     const s = store.get(), status = blocked(s), canUse = s.access === "ok";
-    return { status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(), availability: { local: canUse && !!s.list.rows.length, pending: (s.outbox || []).length, saving: s.sending > 0, draft: s.compose, error: (s.outbox || []).some(item => item.state === "failed"), updatedAt: s.updatedAt },
+    return {drafts:canUse?(s.counts?.drafts||0):0, status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(), availability: { local: canUse && !!s.list.rows.length, pending: (s.outbox || []).length, saving: s.sending > 0, draft: s.compose, error: (s.outbox || []).some(item => item.state === "failed"), updatedAt: s.updatedAt },
       actions: [
         { id: "compose", label: "Compose a message", keywords: ["write", "email", "new mail"], enabled: canUse },
         ...(sdk.files?.open ? [{ id: "compose-attach", label: "Attach a Drive file to a new message", keywords: ["attach", "file", "drive", "email"], enabled: canUse }] : []),
@@ -136,6 +136,7 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
       if (!permitted() || !files?.length) return { ok: false, cancelled: true };
       return { ok: !!(await ctx.open.compose({ files }, permitted)), pending: true };
     }
+    if(intent==='reveal-source'){const node=ID.test(object||'')&&root.querySelector('[data-message="'+CSS.escape(object)+'"],[data-mid="'+CSS.escape(object)+'"]');if(node){node.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});return {ok:true}}return {ok:true,pending:true}}
     if (intent === "compose") return { ok: !!(await ctx.open.compose({}, permitted)), pending: true };
     if (intent === "reply") {
       const id = typeof object === "string" ? object : store.get().threadId;
@@ -170,7 +171,13 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
     fw.sheet.open({ sheet: "mail-workspace-file", title: intent === "download-file" ? "Download attachment" : "Open attachment", body });
     return { ok: true, pending: true };
   }
-  const off = sdk.provide({ snapshot, files, run });
+  async function search(query,{current:asking=()=>true}={}){
+    const mine=generation;if(!live()||!asking())return {status:'error',entries:[]};await ready();if(!live()||!asking()||mine!==generation)return {status:'error',entries:[]};
+    const state=blocked(store.get());if(state)return {status:state,entries:[]};
+    const r=await api.search({q:String(query).slice(0,160)});if(!live()||!asking()||mine!==generation||blocked(store.get()))return {status:'locked',entries:[]};
+    return {status:'ready',entries:(r.threads||[]).filter(t=>ID.test(t.id||'')).slice(0,8).map(t=>({title:clean(t.subject)||'(No subject)',sub:logic.displayName(t.from||t.people?.[0])||'Conversation',path:'/mail/#thread='+t.id}))};
+  }
+  const off = sdk.provide({ snapshot, files, run,search });
   const changed = store.on("*", () => {
     if (!live()) return;
     const access = store.get().access;

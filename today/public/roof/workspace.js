@@ -32,7 +32,8 @@ export async function createWorkspace(F, options = {}) {
   const recentApps = new Map();
   const background = F.ui.el("div", { hidden: true, inert: true, "aria-hidden": "true" });
   options.dockRoot?.append(background);
-  let files = null, commands = null, dialogs = null, recovery = null, recoveryView = null;
+  let files = null, commands = null, dialogs = null, recovery = null, recoveryView = null,systemInstance=null,systemLoad=null;
+  const system=()=>systemLoad||=(import('./system350.js').then(m=>live()?m.createSystem350(F,{today,files,day:options.day,snapshots:()=>snapshots,activity:activity.source('reminders',{current:live,signal:F.signal}),openSource}):null).then(s=>{if(live())systemInstance=s;return s}).catch(error=>{systemLoad=null;throw error}));
   let dialogInstance = null, dialogLoad = null;
   let explorer = null, explorerLoad = null, filesLocation = safeFilesLocation({ kind: "drive" }), pendingFilesQuery = null;
   let shown = false, gone = false, route = null, scene = 0, paintPending = false;
@@ -43,11 +44,14 @@ export async function createWorkspace(F, options = {}) {
     activity: activity.source("recovery", { current: live, signal: F.signal }), onChange: () => { paintNativeRecovery(); paint(); } });
   recoveryView = createWorkspaceRecoveryView(F, recovery);
   const connection = createConnectionView(F, { root, recovery, open: () => recoveryView.open() });
-  const loadApp = (app, handle, lease = {}) => recovery.load(app, async () => {
-    const instance = await handle.load();
-    if (!live() || lease.signal?.aborted || !guarded(() => !lease.current || lease.current(), false)) return null;
-    await instance?.workspace?.(); return instance;
-  }, lease);
+  const loadApp = async (app, handle, lease = {}) => {
+    // A query may stop waiting; the singleton mount still belongs to the account.
+    const instance=await recovery.load(app,async()=>{
+      const value=await handle.load();if(!live()||handle.signal.aborted)return null;
+      await value?.workspace?.();return value;
+    },{current:()=>live()&&!handle.signal.aborted,signal:handle.signal});
+    return live()&&!lease.signal?.aborted&&guarded(()=>!lease.current||lease.current(),false)?instance:null;
+  };
   const appOn = (app) => !!F.session.apps?.[app] && (app !== "mail" || F.session.view?.apps?.mail === true);
   const handoffs = createHandoffs(F, { available: appOn, deliver: async (app, token, lease) => {
     const opened = await openApp(app, format({ app }), false, true, lease);
@@ -57,6 +61,9 @@ export async function createWorkspace(F, options = {}) {
     const usable = () => live() && appOn(app) && !signal.aborted;
     return Object.freeze({
       enabled: true,
+      discovery350:true,
+      actions:Object.freeze({capture(ref={}){const active=()=>usable()&&F.route?.app===app&&handles.get(app)?.fw.visible();if(!active())return Promise.resolve(false);const source={app,...(typeof ref.id==='string'?{id:ref.id}:{}),...(typeof ref.item==='string'?{item:ref.item}:{})};return system().then(s=>active()&&s?.capture(source,{current:active}))}}),
+      drafts:Object.freeze({device:()=>{try{return usable()?localStorage.getItem('ifl:device:'+owner):null}catch(_){return null}}}),
       handoffs: handoffs.forApp(app, { signal, current: usable, active: () => usable() && F.route?.app === app && handles.get(app)?.fw.visible() }),
       get files() { return usable() ? dialogs?.forApp(app, { current: usable, signal }) || null : null; },
       active: () => usable() && document.visibilityState === "visible" && !!handles.get(app)?.fw.visible() && F.route?.kind === "app" && F.route.app === app,
@@ -110,6 +117,7 @@ export async function createWorkspace(F, options = {}) {
     try {
       const snapshot = await entry.provider.snapshot();
       if (!live() || !appOn(app) || entry.signal.aborted || providers.get(app) !== entry || entry.epoch !== epoch) return;
+      const old=snapshots.get(app);if(old?.status==='ready'&&['locked','signin'].includes(snapshot?.status))F.search.invalidate?.();
       snapshots.set(app, snapshot || null);
     } catch (_) { if (live() && appOn(app) && !entry.signal.aborted && providers.get(app) === entry && entry.epoch === epoch) snapshots.set(app, { status: "error", actions: [], files: [] }); }
     if (live()) { recovery.update(app, snapshots.get(app)); files?.update?.(); files?.changed?.(app); paint(); }
@@ -120,6 +128,7 @@ export async function createWorkspace(F, options = {}) {
     queueMicrotask(() => {
       paintPending = false; if (!live()) return;
       const user = F.session.view?.user || {};
+      systemInstance?.update();
       view.update({ mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : "today", activeApp: F.route?.app, workspaces: [],
         apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id) })), user: { name: user.name || "", photo: user.photoAt && /^[\w-]{8,64}$/.test(owner) ? `/api/avatar?id=${encodeURIComponent(owner)}&v=${encodeURIComponent(String(user.photoAt))}` : null }, notifications: options.notifications?.() || 0,
         unifiedHome: true, connectionManaged: true, online: recovery.snapshot().online, activityCount: activityView.count(),
@@ -127,6 +136,22 @@ export async function createWorkspace(F, options = {}) {
         recentApps: [...recentApps.keys()].reverse().filter(appOn).map(app => ({ app })), recentActivity: activity.snapshot().slice(0, 3),
         subtitle: guarded(() => new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(new Date()), ""), title: "Today" });
     });
+  }
+  async function searchApp(app,query,lease={}){
+    const valid=()=>live()&&appOn(app)&&!lease.signal?.aborted&&guarded(()=>!lease.current||lease.current(),false);
+    if(!valid())return {status:'disabled',entries:[]};
+    const handle=acquire(app);
+    if(!handle.el.isConnected||handle.el.hidden){if(!backgroundSlots.has(app)){const slot=F.ui.el('div');background.append(slot);backgroundSlots.set(app,slot)}handle.attach({container:backgroundSlots.get(app),workspace:handle.fw.workspace,navigate(){},back(){},section(){},header(){},fill(){}})}
+    await loadApp(app,handle,lease);if(!valid())return {status:'error',entries:[]};
+    const entry=providers.get(app);if(!entry||typeof entry.provider.search!=='function')return {status:snapshots.get(app)?.status||'loading',entries:[]};
+    const result=await entry.provider.search(query,{...lease,current:()=>valid()&&providers.get(app)===entry});return valid()?result:{status:'error',entries:[]};
+  }
+  async function openSource(source){
+    if(!live()||!source||!['mail','chats','fitness','weather','markets','files'].includes(source.app))return false;
+    if(source.app==='files'){try{const item=await files.locate(source.id,{current:live});return live()&&item?openFiles(item.kind==='file'?item.name:'',{kind:'drive',folderId:item.kind==='folder'?item.id:item.parentId,view:'folder'}):false}catch(e){if(live())F.toast(e.message);return false}}
+    const {sourcePath}=await import('./actions-ui.js');if(!live())return false;
+    const expected=await openApp(source.app,sourcePath(source),false,true,{current:live});if(!expected||!live())return false;
+    if(source.item&&['mail','chats'].includes(source.app))return runIntent(source.app,'reveal-source',source.item,{current:()=>live()&&F.route===expected});return true;
   }
   async function loadFiles(app, query, callerCurrent = () => true) {
     const valid = () => live() && appOn(app) && callerCurrent();
@@ -330,7 +355,7 @@ export async function createWorkspace(F, options = {}) {
     paint(); activate(r).catch(() => {});
   }));
   files = createFilesService(F, {
-    activity: fileActivity,
+    activity: fileActivity,remind:source=>system().then(s=>live()&&s?.capture(source)),
     sources: () => WORKSPACE_APPS.filter(a => ["fitness", "mail", "chats", "markets"].includes(a.id) && appOn(a.id)).map(a => ({ app: a.id, name: a.name, transient: a.id === "chats", status: snapshots.get(a.id)?.status || (snapshots.get(a.id)?.loading ? "loading" : providers.has(a.id) ? "ready" : "loading"), files: snapshots.get(a.id)?.files || [] })),
     load: loadFiles, runIntent, openApp, openExplorer: openFiles,
   });
@@ -351,19 +376,25 @@ export async function createWorkspace(F, options = {}) {
     return Object.freeze(api);
   }, destroy() { dialogInstance?.destroy(); } };
   offs.push(activity.subscribe(paint));
+  offs.push(F.search.provide({id:'reminders350',group:'Reminders',order:12,scope:'account',search:(q,lease)=>q.trim().length<2?[]:system().then(s=>live()&&s?s.search(q,lease):[])}));
+  let discoveryLoad;offs.push(F.search.provide({id:'discovery350',group:'Across InFlite',order:22,scope:'account',search:async(q,lease)=>{if(q.trim().length<2||!live())return [];discoveryLoad||=import('./discovery350.js');const m=await discoveryLoad;return live()?m.discover(F,{query:q,lease,files,searchApp,openApp,runIntent}):[]}}));
+  queueMicrotask(()=>system().catch(()=>{}));
   if (F.systemTasks?.register) offs.push(F.systemTasks.register(files, { signal: F.signal }));
   commands = createWorkspaceCommands(F, {
     apps: () => WORKSPACE_APPS.map(a => ({ ...a, available: appOn(a.id) })),
     files: q => files.search(q), actions: () => [...snapshots].flatMap(([app, snapshot]) => (snapshot?.actions || []).filter(action => !retiredContextAction(app, action.id)).map(action => ({ app, ...action }))),
     runIntent, openApp, openFiles, fileDialogsAvailable: () => live() && !!dialogs,
     systemActions: () => [
+      {id:'queued-file-recovery',label:'Queued file recovery',detail:'Retry or save files kept on this device',keywords:['upload','recover'],current:live,run:()=>files.recovery()},
+      {id:'open-reminders',label:'Reminders',detail:'Actions linked to your apps',keywords:['tasks','todo','follow up'],current:live,run:()=>system().then(s=>live()&&s?.openList())},
+      {id:'remembered-devices',label:'Remembered devices',detail:'Continuation and encrypted draft copies',keywords:['devices','privacy'],current:live,run:()=>system().then(s=>live()&&s?.devices())},
       { id: "open-activity", label: "Open Activity", detail: "Uploads, downloads and background tasks", keywords: ["transfers", "progress"], current: live, run: () => activityView.open() },
       { id: "open-recovery", label: "Open App status", detail: "Connection and recovery", keywords: ["offline", "recover"], current: live, run: () => recoveryView.open() },
       ...recovery.actions(),
     ],
   });
   paint(); activate(F.route).catch(() => {});
-  return { show, hide, update: paint, destroy, openFiles, busy: () => live() && !!files?.busy(),
+  return { show, hide, update: paint, destroy, openFiles,reminders:()=>system().then(s=>live()&&s?.openList()),remembered:()=>system().then(s=>live()&&s?.devices()), busy: () => live() && !!files?.busy(),
     async flush(options) { return live() ? files?.flush(options) || { lost: 0 } : { lost: 0 }; },
     notificationActions: note => notificationActions(note, { origin: location.origin, enabled: appOn, openApp, runIntent, current: live }),
     focus: () => { if (shown && route?.tool === "files") { const target = explorer?.focus(); if (target) return target; } const heading = root.querySelector("h1") || root; heading.tabIndex = -1; return heading; } };

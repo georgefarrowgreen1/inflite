@@ -11,6 +11,7 @@ import { mailPage } from "./mailhost.js";
 import { bodyUpTo } from "./body.js";
 import { renderNotFound, withLocalNotFound } from "./not-found.js";
 import { isFilesAPI, filesAPI } from "./files.js";
+import { systemAPI } from "./system.js";
 import { workspacesAPI } from "./workspaces.js";
 import { isExtraPath, extraApp } from "./extra-apps.js";
 import { isIdentityPath, identity } from "./identity.js";
@@ -88,6 +89,7 @@ const worker = {
       if (hubbed) return await hub(request, env, ctx);
       if (mail) return await mailPage(request, env);
       if (isFilesAPI(url.pathname)) return await filesAPI(request, env);
+      if (url.pathname.startsWith("/api/system/")) return await systemAPI(request,env);
       if (url.pathname === "/api/workspaces") return await workspacesAPI(request, env);
       if (url.pathname === "/api/bugs") return await bugReport(request, env);
       if (url.pathname === "/api/vitals") return await vitals(request, env, ctx);

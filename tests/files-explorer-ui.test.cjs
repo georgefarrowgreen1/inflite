@@ -154,8 +154,8 @@ test('image preview is owner-scoped, revokes its URL on close, and unsupported a
  const t=await open(390);try{
   await t.page.evaluate(()=>{T.items.get(null).find(item=>item.id===T.file).mime='image/png';T.previewBlob=new Blob([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMouW/2HwAF3QKJUpbpuAAAAABJRU5ErkJggg=='),c=>c.charCodeAt(0))],{type:'application/octet-stream'});T.explorer.refresh()});
   await t.page.getByRole('button',{name:'Select Training notes.txt',exact:true}).click();const details=t.page.getByRole('dialog',{name:'File details',exact:true});
-  await details.getByRole('button',{name:'Preview',exact:true}).click();await details.locator('.ifx-preview img').waitFor();await t.page.waitForFunction(()=>T.created.length===1);
-  await details.getByRole('button',{name:'Close',exact:true}).click();assert.deepEqual(await t.page.evaluate(()=>T.revoked),await t.page.evaluate(()=>T.created));
+  await details.getByRole('button',{name:'Preview',exact:true}).click();const viewer=t.page.getByRole('dialog',{name:'Training notes.txt',exact:true});await viewer.locator('.fv350-stage img').waitFor();await t.page.waitForFunction(()=>T.created.length===1);
+  await viewer.getByRole('button',{name:'Close',exact:true}).click();await details.getByRole('button',{name:'Close',exact:true}).click();assert.deepEqual(await t.page.evaluate(()=>T.revoked),await t.page.evaluate(()=>T.created));
   await t.page.evaluate(()=>{T.items.get(null).find(item=>item.id===T.file).mime='text/html';T.explorer.refresh()});await t.page.getByRole('button',{name:'Select Training notes.txt',exact:true}).click();
   const unsupported=t.page.getByRole('dialog',{name:'File details',exact:true});await unsupported.getByRole('button',{name:'Preview',exact:true}).click();await unsupported.getByText('Preview isn’t supported for this file. Download it to open it.',{exact:true}).waitFor();
   assert.equal(await unsupported.locator('iframe,object,embed,script').count(),0);assert.equal(await t.page.evaluate(()=>T.created.length),1);await t.clean();
@@ -338,4 +338,7 @@ test('an explicit Files refresh consumes pending query and resource invalidation
   assert.equal(await t.page.locator('.ifx-results').getAttribute('aria-busy'),'false');
   assert.equal(await search.inputValue(),'Training');await t.clean();
  }finally{await t.ctx.close()}
+});
+test('touch hold selects once and keeps selection mode for a second file',async()=>{
+ const t=await open(390);try{const first=t.page.getByRole('button',{name:'Select Training notes.txt',exact:true});await first.dispatchEvent('pointerdown',{pointerType:'touch',clientX:100,clientY:300});await t.page.waitForTimeout(600);await first.dispatchEvent('pointerup',{pointerType:'touch',clientX:100,clientY:300});await first.dispatchEvent('click');assert.equal(await t.page.getByRole('checkbox',{name:'Include Training notes.txt in selection'}).isChecked(),true);const next=t.page.getByRole('button',{name:'Select Cycling',exact:true});await next.dispatchEvent('pointerdown',{pointerType:'touch',clientX:100,clientY:200});await t.page.waitForTimeout(600);await next.dispatchEvent('pointerup',{pointerType:'touch',clientX:100,clientY:200});await next.dispatchEvent('click');assert.equal(await t.page.locator('.ifx-select-check:checked').count(),2);await t.clean()}finally{await t.ctx.close()}
 });

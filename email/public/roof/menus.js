@@ -79,6 +79,7 @@ export function openRowMenu(ctx, t) {
   const other = t.category === "updates" ? "people" : "updates", where = other === "people" ? "People" : "Updates";
   const sender = t.from && !t.people?.every((p) => p.me) ? logic.displayName(t.from) : null;
   const rows = [
+    ...(fw.workspace?.actions?.capture&&store.get().access==='ok'?[ui.row({lead:{icon:'clock'},title:'Remind me',run:run(()=>fw.workspace.actions.capture({id:t.id,...(t.latestId||t.latest?.id?{item:t.latestId||t.latest.id}:{})}))})]:[]),
     ui.row({ lead: { icon: "send" }, title: "Reply", act: "reply", run: reply("reply") }),
     ui.row({ lead: { icon: "share" }, title: "Forward", act: "forward", run: reply("forward") }),
     ui.row({ title: lead.act === "done" ? "Done" : lead.label, act: lead.act, run: run(() => actions.act([t.id], lead.act)) }),

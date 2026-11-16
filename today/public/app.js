@@ -18,12 +18,12 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "3.13";
+const BUILD = "3.50";
 // (what's new in it, said once it's in)
-const NEWS = "Continue across devices, recover file versions and keep offline work";
+const NEWS = "Linked reminders, private discovery and richer Files";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/continuity.js", "/roof/offline-store.js", "/roof/offline-prefs.js", "/roof/ride-overview.js", "/roof/files-history.js", "/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/connection.js", "/roof/handoffs.js", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
+const OS_FILES = ["/roof/system350.js", "/roof/system-client.js", "/roof/actions-store.js", "/roof/actions-ui.js", "/roof/device-id.js", "/roof/devices-ui.js", "/roof/discovery350.js", "/roof/files-viewer350.js", "/roof/files-recovery350.js", "/roof/continuity.js", "/roof/offline-store.js", "/roof/offline-prefs.js", "/roof/ride-overview.js", "/roof/files-history.js", "/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/connection.js", "/roof/handoffs.js", "/roof/system350.css", "/roof/files-viewer350.css", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -1514,7 +1514,7 @@ function forgetKept(except = null) {
       const k = localStorage.key(i);
       if (!k || k === except || k === (except && KEPT)) continue;
       if (k === KEPT || k.startsWith("today:cards:")) localStorage.removeItem(k);
-      if((k.startsWith('ifl:offline:v1:')||k.startsWith('ifl:device:'))&&(!except||k.split(':').at(-1)!==S.view?.user?.id)){
+      if((k.startsWith('ifl:offline:v1:')||k.startsWith('ifl:device:')||k.startsWith('ifl:device-paused:'))&&(!except||k.split(':').at(-1)!==S.view?.user?.id)){
         if(k.startsWith('ifl:offline:v1:')){window.dispatchEvent(new CustomEvent('inflite:purge-offline',{detail:{owner:k.slice('ifl:offline:v1:'.length)}}));try{indexedDB.deleteDatabase(k)}catch(_){}}
         localStorage.removeItem(k);
       }
@@ -1958,7 +1958,7 @@ function frame() {
   provide();
   const f = F;
   if(OS_MODE){
-    prefsRecoveryLoad=import('/roof/offline-prefs.js').then(m=>F===f&&!f.signal.aborted?m.createOfflinePrefs(f,{owner:S.view.user.id,root:$('#today'),cloud:()=>cleanPrefs(S.view.prefs),apply:p=>{if(F!==f||f.signal.aborted)return;S.prefs=cleanPrefs(p);drawCards();if(sheetId==='sh-edit')drawEdit()},ack:p=>{if(F===f){S.view.prefs=cleanPrefs(p);keepSession(S.view)}}}):null).then(c=>prefsRecovery=c).catch(()=>null);
+    prefsRecoveryLoad=import('/roof/offline-prefs.js').then(m=>F===f&&!f.signal.aborted?m.createOfflinePrefs(f,{owner:S.view.user.id,root:$('#today'),cloud:()=>cleanPrefs(S.view.prefs),apply:p=>{if(F!==f||f.signal.aborted)return;S.prefs=cleanPrefs(p);drawCards();if(sheetId==='sh-edit')drawEdit()},ack:p=>{if(F===f){S.view.prefs=cleanPrefs(p);keepSession(S.view)}}}):null).then(c=>{if(F===f&&!f.signal.aborted)prefsRecovery=c;return c}).catch(()=>null);
     $('#today').addEventListener('click',e=>{if(e.target.closest('[data-ride-overview]')){import('/roof/ride-overview.js').then(m=>{if(F===f&&!f.signal.aborted)m.openRideOverview(f,S.answer?.cards||{})}).catch(()=>{})}},{signal:f.signal});
     $('#edList').addEventListener('change',e=>{if(e.target.matches('[data-today-density]')){S.prefs={...S.prefs,density:e.target.checked?'compact':'comfortable'};prefsChanged()}else if(e.target.matches('[data-today-section]')){S.prefs={...S.prefs,sections:{...S.prefs.sections,[e.target.dataset.todaySection]:e.target.checked}};prefsChanged()}},{signal:f.signal});
   }
@@ -2007,7 +2007,7 @@ const youCtx = (task) => ({
   sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, syncPush, offHere: () => offHere(), toMorning, openAccount, signOut, canPush, pushWhy,
   chatSettings: () => task.active() && (chatsHere ? task.frame.nav.go("/chats/#settings") : location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`)),
   openSheet: (id) => task.active() && openSheet(id), closeSheet: () => task.active() && closeSheet(), BUILD,
-  frame: task.frame, connectors, connector: (app) => connectors().then((m) => task.active() && m.openConnector(task.frame, app)), go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
+  reminders: () => task.active() && workspaceHost?.reminders(), remembered: () => task.active() && workspaceHost?.remembered(), frame: task.frame, connectors, connector: (app) => connectors().then((m) => task.active() && m.openConnector(task.frame, app)), go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
   icon: (app) => { try { return IFL.iconUrl(app) || ""; } catch { return ""; } },
 });
 
@@ -2176,6 +2176,7 @@ function cleanPrefs(p, view = S.view) {
 // all the same.
 function drawCards(anim) {
   if (!S.view) return;
+  workspaceHost?.update();
   $('#today').dataset.density=S.prefs.density||'comfortable';
   // (a reply being typed on Chat's card: the cards drawn again once it's sent or let go, so the words aren't lost)
   const rf = document.querySelector("#today .tc-reply-f input");

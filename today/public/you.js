@@ -152,6 +152,7 @@ function paint(root, ctx) {
   const photo = typeof ctx.photo === "function" ? ctx.photo(u) : esc([...String(u.first || u.name || "?")][0] || "?");
   out.push(sec("youAccount", "", `<button class="row go you-me" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Password, Passkeys and Devices</small></span><span class="chev">${G.chev}</span></button>`));
   out.push(sec("youAppearance", "", `<button class="row go" type="button" id="youAppearanceOpen"><span class="tx"><b>Appearance</b><small>Colours, light and dark</small></span><span class="chev">${G.chev}</span></button>`));
+  if(ctx.reminders)out.push(sec("youReminders","",`<button class="row go" type="button" id="youRemindersOpen"><span class="tx"><b>Reminders</b><small>Actions linked to your apps</small></span><span class="chev">${G.chev}</span></button><button class="row go" type="button" id="youRememberedOpen"><span class="tx"><b>Remembered devices</b><small>Continuation and encrypted draft copies</small></span><span class="chev">${G.chev}</span></button>`));
   // Notifications: this phone, Today's morning, quiet hours
   const n = Y.notify;
   {
@@ -292,6 +293,8 @@ function openFolder(k, root, ctx) {
 }
 function wire(root, ctx) {
   const $ = (s) => root.querySelector(s);
+  $("#youRemindersOpen")?.addEventListener("click",()=>ctx.reminders());
+  $("#youRememberedOpen")?.addEventListener("click",()=>ctx.remembered());
   $("#youAcct")?.addEventListener("click", () => ctx.openAccount());
   $("#youAppearanceOpen")?.addEventListener("click", () => ctx.openAccount("appearance"));
   for (const b of root.querySelectorAll("[data-folder]")) b.addEventListener("click", () => openFolder(b.dataset.folder, document.getElementById("you") || root, ctx));

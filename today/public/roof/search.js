@@ -25,7 +25,7 @@
 import { REGISTRY, ownPath } from "./router.js";
 
 const SLOW = 300, MAX = 20, SHOW = 3, RECENT = "ifl:recent", KEEP = 8, RECENT_SHOWN = 5;
-export function collect(providers, q, update, { slow = SLOW } = {}) {
+export function collect(providers, q, update, { slow = SLOW,signal,current } = {}) {
   const ps = [...providers].sort((a, b) => (a.order ?? 50) - (b.order ?? 50) || String(a.id).localeCompare(String(b.id)));
   const got = new Map();
   let shown = false, left = ps.length;
@@ -37,7 +37,7 @@ export function collect(providers, q, update, { slow = SLOW } = {}) {
     const t = setTimeout(() => { if (!shown) fire(); }, slow);
     for (const p of ps) {
       let r;
-      try { r = p.search(q); } catch (_) { r = []; }
+      try { r = p.search(q,{signal,current}); } catch (_) { r = []; }
       Promise.resolve(r).then(clean, () => []).then((list) => {
         got.set(p, list);
         left--;
@@ -308,7 +308,9 @@ export function createSearch(F) {
       if (!q) home();
       else if (last) drawn(rank(last.groups, q, { recent: recents(F) }), last.settled, q);
     }
+    let queryController=null;
     const run = () => {
+      queryController?.abort();queryController=new AbortController();
       const q = input.value.trim(), my = ++gen;
       waiting = false;
       clear.hidden = !input.value;
@@ -316,9 +318,9 @@ export function createSearch(F) {
       lastQ = q;
       if (!q) { last = null; return home(); }
       // (Mail's provider, the admin's alone, asked only for them)
-      asked = collect([...provs].filter((p) => p.id !== "mail" || yours("mail")), q, (g, s) => { if (my === gen && h) { last = { groups: g, settled: s }; draw(); } });
+      asked = collect([...provs].filter((p) => p.id !== "mail" || yours("mail")), q, (g, s) => { if (my === gen && h) { last = { groups: g, settled: s }; draw(); } },{signal:queryController.signal,current:()=>my===gen&&!!h});
     };
-    input.addEventListener("input", () => { clearTimeout(t); waiting = true; t = setTimeout(run, 80); });
+    input.addEventListener("input", () => { queryController?.abort();gen++;clearTimeout(t); waiting = true; t = setTimeout(run, 80); });
     input.addEventListener("keydown", (e) => {
       if (e.isComposing) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -338,14 +340,14 @@ export function createSearch(F) {
       if (i >= 0 && i !== at) mark(i, false);
     });
     clear.addEventListener("click", () => { input.value = ""; input.focus(); run(); });
-    h = F.sheet.open({ sheet: "search", title: "Search everything", focus: input, body: ui.el("div", { class: "ifl-search" }, box, say, list), onClose: () => { h = null; gen++; clearTimeout(t); } });
+    h = F.sheet.open({ sheet: "search", title: "Search everything", focus: input, body: ui.el("div", { class: "ifl-search" }, box, say, list), onClose: () => { queryController?.abort();h = null; gen++; clearTimeout(t); } });
     input.focus({ preventScroll: true });
     run();
     return h;
   }
   function close() { h?.close(); }
   return {
-    open, close,
+    open, close,invalidate(){if(h){h.body.replaceChildren();h.now();}},
     provide(p) {
       if (!p || typeof p.search !== "function") return () => {};
       provs.add(p);

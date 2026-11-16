@@ -207,14 +207,20 @@ export function createFilesView(root, { ui, ...callbacks }) {
         const node = el('article', { class: 'ifx-file', role: 'listitem', data: { fileKey: item.key } }, checkbox, select, modified, bytes, source, menu);
         record = { node, select, checkbox, symbol, name, sub, modified, bytes, source, menu, item, glyph: null };
         const current = () => !gone && model.status === 'ready' && node.isConnected && records.get(item.key) === record;
-        select.addEventListener('click', event => { if (current()) call('onSelect', record.item,{multiple:event.ctrlKey||event.metaKey||event.shiftKey,range:event.shiftKey}); });
+        let held=false;
+        select.addEventListener('click', event => { if(held){held=false;event.preventDefault();return}if (current()) call('onSelect', record.item,{multiple:event.ctrlKey||event.metaKey||event.shiftKey,range:event.shiftKey}); });
         checkbox.addEventListener('click',event=>{if(model.status!=='ready')event.preventDefault();});
         checkbox.addEventListener('change',()=>{if(current())call('onSelect',record.item,{multiple:true});});
         node.addEventListener('dragstart',event=>{if(!current()||record.item.source?.kind!=='drive'||record.item.trashedAt)return event.preventDefault();if(call('onDragStart',record.item,event.dataTransfer)!==true)event.preventDefault();});
         node.addEventListener('dragover',event=>{if(current()&&record.item.kind==='folder'&&record.item.source?.kind==='drive'&&!record.item.trashedAt&&event.dataTransfer?.types?.includes('application/x-inflite-files-token')){event.preventDefault();event.dataTransfer.dropEffect=event.ctrlKey||event.altKey?'copy':'move';}});
         node.addEventListener('drop',event=>{if(current()&&record.item.kind==='folder'&&record.item.source?.kind==='drive'&&!record.item.trashedAt&&event.dataTransfer?.types?.includes('application/x-inflite-files-token')){event.preventDefault();event.stopPropagation();call('onFolderDrop',record.item,event.dataTransfer,event.ctrlKey||event.altKey);}});
+        let hold=0,origin=null;
+        select.addEventListener('pointerdown',event=>{if(event.pointerType!=='touch'||!current()||record.item.source?.kind!=='drive')return;origin={x:event.clientX,y:event.clientY};hold=setTimeout(()=>{hold=0;if(current()){held=true;if(!model.selecting)call('onSelectionMode');call('onSelect',record.item,{multiple:true});}},550)});
+        const stopHold=()=>{clearTimeout(hold);hold=0;origin=null};
+        select.addEventListener('pointermove',event=>{if(origin&&Math.hypot(event.clientX-origin.x,event.clientY-origin.y)>9)stopHold()});
+        for(const type of ['pointerup','pointercancel','pointerleave'])select.addEventListener(type,stopHold);
         select.addEventListener('dblclick', () => { if (current()&&!model.selecting) call('onOpen', record.item); });
-        menu.addEventListener('click', () => { if (current()) call('onMenu', record.item); });
+        menu.addEventListener('click', event => { if (current()||event.isTrusted&&!gone&&node.isConnected) call('onMenu', record.item); });
         records.set(item.key, record);
       }
       record.item = item;

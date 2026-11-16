@@ -18,7 +18,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   const ui = F.ui, owner = F.session?.view?.user?.id, signal = F.signal, popups = new Set(), operations = new Set();
   let gone = false, visible = false, episode = 0, readGen = 0, actionGen = 0, queryTimer = 0, refreshTimer = 0, read = null, previewRead = null, previewURL = null, detailsSheet = null, detailsState = null;
   let location = filesLocation(), listing = { items: [], status: 'loading', capabilities: {} }, query = '', sort = 'name', mode = 'list', selection = null, details = true, preview = null, uploadTarget = null;
-  let page = 0, pageCursors = [null], pageMemory = new Map();
+  let pendingMenu=null;let page = 0, pageCursors = [null], pageMemory = new Map();
   const live = () => !gone && !!owner && !signal?.aborted && F.session?.view?.user?.id === owner;
   const active = () => live() && visible;
   const items = () => (Array.isArray(listing.items) ? listing.items : []).filter(item => item && typeof item.key === 'string' && typeof item.name === 'string').slice(0, 500);
@@ -101,7 +101,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
       for(const [key,version] of multi)if(!items().some(item=>item.key===key&&item.version===version))multi.delete(key);
       if (selection && !items().some(item => item.key === selection)) { selection = null; releasePreview(); }
       if (preview && items().find(item => item.key === preview.key)?.version !== preview.version) releasePreview();
-      paint(); return true;
+      paint();if(pendingMenu){const key=pendingMenu;pendingMenu=null;const item=items().find(x=>x.key===key);if(item)menu(item)}return true;
     } catch (error) {
       if (!current()) return false;
       if (error?.status === 409 && page > 0) { resetPages({ clearSelection: true }); listing = { items: [], status: 'loading', capabilities: {} }; return refresh(); }
@@ -120,7 +120,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   function navigate(next) {
     next = filesLocation(next);
     if (!active() || !next) return;
-    closePopups();
+    pendingMenu=null;closePopups();
     if (onNavigate(next) !== true) show(next);
   }
   function select(item, {multiple=false,range=false}={}) {
@@ -148,6 +148,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     detailsState = { sheet: detailsSheet, signature: fileDetailsSignature(item), preview };
   }
   function menu(item) {
+    if(active()&&listing.status==='loading'){pendingMenu=item.key;return}
     const current = resource(item);
     if (!current) return;
     closePopups();
@@ -297,7 +298,12 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     if (['move','copy'].includes(id) && current.source?.kind === 'drive') return move(current,id);
     if (['delete','trash'].includes(id) && current.source?.kind === 'drive') return remove(current,id);
     if(id==='replace'&&current.source?.kind==='drive')return import('./files-history.js').then(m=>active()&&m.replaceFile({F,ui,service,active,live,sheet,refresh,root,resource,errorText},current));
-    if (id === 'preview' && current.source?.kind === 'drive') return previewFile(current);
+    if (id === 'preview' && current.source?.kind === 'drive') {
+      if(current.mime==='application/pdf'||current.mime?.startsWith('image/')){
+        const mine=episode,m=await import('./files-viewer350.js');if(!active()||mine!==episode||!resource(current))return;
+        return m.openViewer(F,{item:current,items:items().filter(x=>x.source?.kind==='drive'&&x.mime?.startsWith('image/')&&!x.trashedAt),service,sheet,current:()=>active()&&mine===episode});
+      }return previewFile(current);
+    }
     const answer = await execute(current, id,{input:{version:current.version}});
     if(active()&&answer?.ok!==false&&current.source?.kind==='drive'&&['restore','favourite'].includes(id))refresh({reset:true});
     if (active() && answer?.error) F.toast(clean(answer.error, 240));
@@ -397,7 +403,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   }
   function hide() {
     if (gone) return;
-    visible = false; episode++; readGen++; read?.abort(); for (const controller of operations) controller.abort(); operations.clear(); clearTimeout(queryTimer); clearTimeout(refreshTimer); closePopups(); releasePreview(); view.setVisible(false); root.hidden = true; root.inert = true;
+    visible = false;pendingMenu=null; episode++; readGen++; read?.abort(); for (const controller of operations) controller.abort(); operations.clear(); clearTimeout(queryTimer); clearTimeout(refreshTimer); closePopups(); releasePreview(); view.setVisible(false); root.hidden = true; root.inert = true;
   }
   function destroy() {
     if (gone) return;

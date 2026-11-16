@@ -104,7 +104,7 @@ test('app categories survive resource projection for opaque-MIME images and audi
 });
 
 test('Drive preview actions match the Explorer MIME allowlist and text byte threshold',async()=>{
- const cases=[['image/png',4,true],['image/avif',4,true],['audio/mpeg',4,true],['audio/flac',4,true],['text/plain',262144,true],['text/csv',262145,false],['application/json',262145,false],['application/pdf',4,false],['text/html',4,false],['image/svg+xml',4,false],['audio/opus',4,false]];
+ const cases=[['image/png',4,true],['image/avif',4,true],['audio/mpeg',4,true],['audio/flac',4,true],['text/plain',262144,true],['text/csv',262145,false],['application/json',262145,false],['application/pdf',4,true],['text/html',4,false],['image/svg+xml',4,false],['audio/opus',4,false]];
  await fixture(async({service})=>{const resources=(await service.browse(driveLocation())).items;for(let i=0;i<cases.length;i++){const [mime,,yes]=cases[i],resource=resources.find(r=>r.id===String(i+1).padStart(32,'0'));assert.equal(resource.actions.some(a=>a.id==='preview'),yes,mime);assert.equal(resource.primaryAction,yes?'preview':'download',mime);assert.ok(resource.actions.some(a=>a.id==='download'));}},{nodes:cases.map(([mime,size],i)=>node(String(i+1).padStart(32,'0'),{mime,size,name:'File '+i}))});
 });
 

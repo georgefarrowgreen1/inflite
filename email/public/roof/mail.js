@@ -45,8 +45,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.90";
-export const NEWS = "Text drafts save while you write";
+export const BUILD = "1.91";
+export const NEWS = "Linked reminders and account search";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
@@ -254,7 +254,7 @@ export async function mount(root, fw) {
   // leaves this phone: by POST, to Mail)
   const VIEWS_RUN = [...SECTIONS.map(([id, l]) => [l, () => fw.nav.section(id)]), ["Drafts", () => go({ box: "drafts" })], ["Trash", () => go({ box: "trash" })]];
   function go(patch) { store.set({ query: "", address: null, ...patch }, "go"); actions.load(); }
-  const unprovide = fw.search?.provide?.({
+  const unprovide = (fw.workspace?.discovery350?null:fw.search?.provide?.({
     id: "mail", group: "Mail", order: 30,
     search(q) {
       const s = q.trim().toLowerCase();
@@ -265,7 +265,7 @@ export async function mount(root, fw) {
       const settings = "mail settings".includes(s) ? [{ title: "Mail Settings", sub: "Mail", icon: "mail", run: () => ctx.open.settings(null) }] : [];
       return [...hits, ...views, ...settings, { title: `Search Mail for “${q.trim()}”`, sub: "Asks Mail", icon: "mail", label: `Search Mail for ${q.trim()}`, run: () => searchMail(q) }];
     },
-  }) || (() => {});
+  })) || (() => {});
   function searchMail(q) {
     q = String(q || "").trim().slice(0, 300);
     if (!q) return;
