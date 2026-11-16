@@ -185,7 +185,7 @@ export function createFilesDialogs(F, { service } = {}) {
   function destroy() { if (dead) return; dead = true; pending?.cancel(); F.signal.removeEventListener("abort", destroy); }
   F.signal.addEventListener("abort", destroy, { once: true });
   return { open, save, fromDrop, destroy, forApp(app, requester = {}) {
-    if (!["mail", "fitness", "chats", "markets", "weather"].includes(app)) throw new TypeError("A known app is required for Files dialogs.");
+    if (!["mail", "fitness", "chats", "markets", "weather", "calendar", "notes", "people"].includes(app)) throw new TypeError("A known app is required for Files dialogs.");
     return Object.freeze({ open: options => show("open", null, options, requester), save: (file, options) => show("save", file, options, requester), fromDrop: (dataTransfer, options) => fromDrop(dataTransfer, options, requester) });
   } };
 }

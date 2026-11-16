@@ -1,0 +1,1 @@
+export const connector={app:'calendar',name:'Calendar',icon:'calendar',href:'/calendar/',sections:[["agenda", "Agenda", "/calendar/#agenda"], ["week", "Week", "/calendar/#week"]],files:['/calendar/roof/calendar.js','/organise/app.js','/organise/store.js','/organise/model.js','/organise/editor.js','/organise/links.js','/organise/organise.css'],shares:{screens:'Agenda · Week'}};

@@ -126,7 +126,7 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
     const permitted = () => present() && store.get().access === "ok";
     if (intent === "handoff") {
       const value = sdk.handoffs?.take(object);
-      return value?.kind === "text" ? { ok: !!(await ctx.open.compose({ subject: value.subject, text: value.text }, permitted)), pending: true } : { ok: false };
+      return value?.kind === "text" ? { ok: !!(await ctx.open.compose({ subject: value.subject, text: value.text, ...(value.to?{to:[{email:value.to}]}:{}) }, permitted)), pending: true } : { ok: false };
     }
     if (intent === "compose-attach") {
       if (!sdk.files?.open) return { ok: false, error: "Open Mail in InFlite OS to attach Drive files." };

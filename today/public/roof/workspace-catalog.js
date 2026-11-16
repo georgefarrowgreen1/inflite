@@ -8,6 +8,9 @@ const app = (id, name, href, pane, capabilities) => Object.freeze({
   ...(pane ? { workspace: Object.freeze({ css: `/${id}/roof/workspace.css` }) } : {}),
 });
 export const WORKSPACE_APPS = Object.freeze([
+  app("calendar", "Calendar", "/calendar/#agenda", true, ["view", "local-search", "save-to-files"]),
+  app("notes", "Notes", "/notes/#all", true, ["view", "local-search", "save-to-files"]),
+  app("people", "People", "/people/#contacts", true, ["view", "local-search"]),
   app("fitness", "Fitness", "/fitness/#today", true, ["view", "local-search", "share-on-request", "open-from-files", "save-to-files"]),
   app("weather", "Weather", "/weather/#now", true, ["view", "local-search", "location-on-request"]),
   app("markets", "Markets", "/markets/#today", true, ["view", "local-search"]),
@@ -17,6 +20,7 @@ export const WORKSPACE_APPS = Object.freeze([
 export const getWorkspaceApp = (id) => WORKSPACE_APPS.find((a) => a.id === id) || null;
 
 const sections = Object.freeze({
+  calendar: ["agenda", "week"], notes: ["all"], people: ["contacts"],
   fitness: ["today", "activities", "routes", "progress"],
   weather: ["now", "days", "radar", "warnings"],
   markets: ["today", "holdings", "news"],
@@ -35,6 +39,7 @@ export function safeWorkspaceRoute(id, route) {
   if (route === base) return a.href;
   if (!route.startsWith(base + "#")) return null;
   const hash = route.slice(base.length + 1), at = hash.indexOf("="), key = at < 0 ? hash : hash.slice(0, at), value = at < 0 ? null : hash.slice(at + 1);
+  if (["calendar", "notes", "people"].includes(id) && key === "item" && /^[a-f0-9]{32}$/.test(value || "")) return route;
   if (value === null && sections[id].includes(key)) return route;
   if ((id === "fitness" || id === "weather") && key === "day" && day(value || "")) return route;
   if ((id === "fitness" && key === "act" || id === "mail" && key === "thread" || id === "chats" && key === "open") && objectId(value || "")) return route;

@@ -2,6 +2,9 @@
 const fz = (o) => Object.freeze(o);
 const secs = (l) => fz(l.map((s) => fz(s)));
 export const REGISTRY = fz({
+  calendar: Object.freeze({app:"calendar", name: "Calendar", path: "/calendar/", entry: "/calendar/roof/calendar.js", connector: "/calendar/roof/connector.js", css: fz(["/organise/organise.css"]), sections: secs([["agenda", "Agenda"], ["week", "Week"]]), aliases: fz({item:"agenda",new:"agenda"}), stay:fz(["item"])}),
+  notes: Object.freeze({app:"notes", name: "Notes", path: "/notes/", entry: "/notes/roof/notes.js", connector: "/notes/roof/connector.js", css: fz(["/organise/organise.css"]), sections: secs([["all", "All notes"]]), aliases: fz({item:"all",new:"all"}), stay:fz(["item"])}),
+  people: Object.freeze({app:"people", name: "People", path: "/people/", entry: "/people/roof/people.js", connector: "/people/roof/connector.js", css: fz(["/organise/organise.css"]), sections: secs([["contacts", "Contacts"]]), aliases: fz({item:"contacts",new:"contacts"}), stay:fz(["item"])}),
   weather: fz({
     app: "weather",
     name: "Weather",

@@ -38,6 +38,7 @@ export async function createWorkspace(F, options = {}) {
   let explorer = null, explorerLoad = null, filesLocation = safeFilesLocation({ kind: "drive" }), pendingFilesQuery = null;
   let shown = false, gone = false, route = null, scene = 0, paintPending = false;
   const live = () => !gone && !F.signal.aborted && F.session.view?.user?.id === owner;
+  const organiseTimer=setTimeout(()=>{if(live())import('/organise/today.js').then(m=>{if(live())m.connectToday(F,today)}).catch(()=>{})},1500);F.signal.addEventListener('abort',()=>clearTimeout(organiseTimer),{once:true});
   const activity = createActivityRegistry(F), activityView = createWorkspaceActivity(F, { registry: activity });
   const fileActivity = activity.source("files", { current: live, signal: F.signal });
   recovery = createWorkspaceRecovery(F, { getHandle: app => handles.get(app), retry: retryApp,
@@ -62,6 +63,8 @@ export async function createWorkspace(F, options = {}) {
     return Object.freeze({
       enabled: true,
       discovery350:true,
+      today:()=>usable()?options.day?.():null,
+      openReference:source=>usable()?openSource(source):false,
       actions:Object.freeze({capture(ref={}){const active=()=>usable()&&F.route?.app===app&&handles.get(app)?.fw.visible();if(!active())return Promise.resolve(false);const source={app,...(typeof ref.id==='string'?{id:ref.id}:{}),...(typeof ref.item==='string'?{item:ref.item}:{})};return system().then(s=>active()&&s?.capture(source,{current:active}))}}),
       drafts:Object.freeze({device:()=>{try{return usable()?localStorage.getItem('ifl:device:'+owner):null}catch(_){return null}}}),
       handoffs: handoffs.forApp(app, { signal, current: usable, active: () => usable() && F.route?.app === app && handles.get(app)?.fw.visible() }),
@@ -147,7 +150,8 @@ export async function createWorkspace(F, options = {}) {
     const result=await entry.provider.search(query,{...lease,current:()=>valid()&&providers.get(app)===entry});return valid()?result:{status:'error',entries:[]};
   }
   async function openSource(source){
-    if(!live()||!source||!['mail','chats','fitness','weather','markets','files'].includes(source.app))return false;
+    if(!live()||!source||!['mail','chats','fitness','weather','markets','files','calendar','notes','people'].includes(source.app))return false;
+    if(['calendar','notes','people'].includes(source.app))return openApp(source.app,'/'+source.app+'/#item='+source.id);
     if(source.app==='files'){try{const item=await files.locate(source.id,{current:live});return live()&&item?openFiles(item.kind==='file'?item.name:'',{kind:'drive',folderId:item.kind==='folder'?item.id:item.parentId,view:'folder'}):false}catch(e){if(live())F.toast(e.message);return false}}
     const {sourcePath}=await import('./actions-ui.js');if(!live())return false;
     const expected=await openApp(source.app,sourcePath(source),false,true,{current:live});if(!expected||!live())return false;
@@ -356,7 +360,7 @@ export async function createWorkspace(F, options = {}) {
   }));
   files = createFilesService(F, {
     activity: fileActivity,remind:source=>system().then(s=>live()&&s?.capture(source)),
-    sources: () => WORKSPACE_APPS.filter(a => ["fitness", "mail", "chats", "markets"].includes(a.id) && appOn(a.id)).map(a => ({ app: a.id, name: a.name, transient: a.id === "chats", status: snapshots.get(a.id)?.status || (snapshots.get(a.id)?.loading ? "loading" : providers.has(a.id) ? "ready" : "loading"), files: snapshots.get(a.id)?.files || [] })),
+    sources: () => WORKSPACE_APPS.filter(a => ["fitness", "mail", "chats", "markets", "calendar", "notes", "people"].includes(a.id) && appOn(a.id)).map(a => ({ app: a.id, name: a.name, transient: a.id === "chats", status: snapshots.get(a.id)?.status || (snapshots.get(a.id)?.loading ? "loading" : providers.has(a.id) ? "ready" : "loading"), files: snapshots.get(a.id)?.files || [] })),
     load: loadFiles, runIntent, openApp, openExplorer: openFiles,
   });
   // A stable capability exists immediately; picker code/styles are fetched only

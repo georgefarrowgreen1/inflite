@@ -2,9 +2,10 @@
 // memory. They are never URLs, storage records, messages sent, or shared context.
 const clean = (s, n) => typeof s === "string" ? s.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, " ").trim().slice(0, n) : "";
 export function handoffPayload(source, target, kind, value) {
-  if (source === "weather" && target === "mail" && kind === "text") {
+  if (["weather","calendar","notes","people"].includes(source) && target === "mail" && kind === "text") {
     const subject = clean(value?.subject, 180), text = typeof value?.text === "string" ? value.text.replace(/[\u0000\u202a-\u202e\u2066-\u2069]/g, "").slice(0, 8000) : "";
-    return subject && text.trim() ? { subject, text } : null;
+    const to=typeof value?.to==='string'&&value.to.length<=254&&/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value.to)?value.to:null;
+    return subject && (text.trim()||source==='people'&&to) ? { subject, text, ...(to?{to}: {}) } : null;
   }
   if (source === "fitness" && target === "weather" && kind === "ride") {
     const p = value?.location, name = clean(p?.name, 120);
@@ -19,7 +20,7 @@ export function createHandoffs(F, { available, deliver, now = Date.now, timeoutM
   const owner = F.session.view?.user?.id;
   let record = null, busy = false, dead = false;
   const live = () => !dead && !!owner && !F.signal.aborted && F.session.view?.user?.id === owner;
-  const allowed = (source, target, kind) => live() && available(source) && available(target) && (source === "weather" && target === "mail" && kind === "text" || source === "fitness" && target === "weather" && kind === "ride");
+  const allowed = (source, target, kind) => live() && available(source) && available(target) && (["weather","calendar","notes","people"].includes(source) && target === "mail" && kind === "text" || source === "fitness" && target === "weather" && kind === "ride");
   const valid = r => live() && r === record && !r.controller.signal.aborted && !r.source.signal?.aborted && r.source.current?.() !== false && now() <= r.expires;
   const stop = () => { record?.controller.abort(); record = null; };
   F.signal.addEventListener("abort", stop, { once: true });

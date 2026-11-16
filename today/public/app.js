@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "3.50";
+const BUILD = "4.00";
 // (what's new in it, said once it's in)
-const NEWS = "Linked reminders, private discovery and richer Files";
+const NEWS = "Calendar, Notes and People — three new InFlite apps";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/system350.js", "/roof/system-client.js", "/roof/actions-store.js", "/roof/actions-ui.js", "/roof/device-id.js", "/roof/devices-ui.js", "/roof/discovery350.js", "/roof/files-viewer350.js", "/roof/files-recovery350.js", "/roof/continuity.js", "/roof/offline-store.js", "/roof/offline-prefs.js", "/roof/ride-overview.js", "/roof/files-history.js", "/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/connection.js", "/roof/handoffs.js", "/roof/system350.css", "/roof/files-viewer350.css", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
@@ -119,7 +119,7 @@ const IFL = (() => {
   // (an app's icon, by its name or the hub's for it (its sections: chats, finance); one it hasn't, no picture at all, never
   // a broken one)
   const APP_AS = { chats: "chat", finance: "markets", email: "mail" };
-  const iconUrl = (a) => { a = APP_AS[a] || a; return !ICONS[a] ? "" : urls[a] || (urls[a] = URL.createObjectURL(new Blob([ICONS[a]], { type: "image/svg+xml" }))); };
+  const iconUrl = (a) => { a = APP_AS[a] || a; if (["calendar","notes","people"].includes(a)) return "/apps/"+a+".svg"; return !ICONS[a] ? "" : urls[a] || (urls[a] = URL.createObjectURL(new Blob([ICONS[a]], { type: "image/svg+xml" }))); };
   const el = (tag, cls, ...kids) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;

@@ -25,7 +25,7 @@ export async function createSystem350(F,options){
  function paint(){
   if(!live()||gone)return;const focused=panel.contains(document.activeElement)?document.activeElement?.dataset?.s350Focus:null;
   const values=store.snapshot().filter(a=>a.status==='open'&&(a.dueAt==null||a.dueAt<Date.now()+2*864e5)).sort((a,b)=>(a.dueAt??Infinity)-(b.dueAt??Infinity)||b.createdAt-a.createdAt),queued=store.queued();
-  if(!values.length&&!queued.length&&!recommendations().length){panel.remove();return}panel.hidden=false;if(panel.parentNode!==root)root.prepend(panel);
+  if(!values.length&&!queued.length&&!recommendations().length){panel.remove();return}panel.hidden=false;if(panel.parentNode!==root)root.append(panel);
   const header=el('div',{class:'s350-toolbar'},el('h2',{text:'For your day'}),ui.btn('New reminder',{small:true,run:()=>capture()}));panel.replaceChildren(header);
   if(readError)panel.append(el('div',{class:'s350-inline-status',role:'status'},el('span',{text:readError}),ui.btn('Retry',{small:true,run:refresh})));
   if(queued.length)panel.append(ui.btn(queued.length+' changes kept on this device',{small:true,run:()=>views().then(v=>live()&&v?.queue())}));

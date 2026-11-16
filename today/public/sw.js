@@ -9,7 +9,7 @@
 
 // The apps that can be modules (one list: s24 §8): name, and the host of its own address (an address there is made the
 // hub's path for a notification). Stage 3 adds chats (Chat's pushes still say app "chat", below).
-const MODS = { weather: { name: "Weather", host: "weather" }, markets: { name: "Markets", host: "finance" }, fitness: { name: "Fitness", host: "fitness" }, mail: { name: "Mail", host: "email" }, chats: { name: "Chats", host: "chat" } };
+const MODS = { calendar:{name:"Calendar",host:"inflite"}, notes:{name:"Notes",host:"inflite"}, people:{name:"People",host:"inflite"}, weather: { name: "Weather", host: "weather" }, markets: { name: "Markets", host: "finance" }, fitness: { name: "Fitness", host: "fitness" }, mail: { name: "Mail", host: "email" }, chats: { name: "Chats", host: "chat" } };
 const MOD_APPS = Object.keys(MODS);
 // (Chats' exceptions, stage 3: /chats/?engine=1 is milestone 1's engine, framed by Today, and /chats/in/ Chat's own page
 // for signing in and keys; neither is ever the framework, nor answered here)
@@ -25,7 +25,7 @@ const engineAt = (u) => u.pathname.startsWith("/chats/") && u.searchParams.has("
 // before it loads it. Only these files: never the API, nor any page or file of Chats' or the apps'.
 const SHELL = "today-app-4";
 const FILES = ["/", "/app.js", "/cards.js", "/day.js", "/trip.js", "/mailday.js", "/apps.js", "/you.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg",
-  "/mailcard.js", "/mailnotify.js", "/layout.js", "/roof/requests.js", "/roof/tasks.js", "/roof/screens.js", "/roof/preload.js", "/roof/performance.js", "/roof/restore.js", "/apps/mail.svg",
+  "/mailcard.js", "/mailnotify.js", "/layout.js", "/roof/requests.js", "/roof/tasks.js", "/roof/screens.js", "/roof/preload.js", "/roof/performance.js", "/roof/restore.js", "/apps/mail.svg", "/apps/calendar.svg", "/apps/notes.svg", "/apps/people.svg",
   "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css", "/roof/controls.css", "/bell.js"];
 const OS_FILES = ["/roof/system350.js", "/roof/system-client.js", "/roof/actions-store.js", "/roof/actions-ui.js", "/roof/device-id.js", "/roof/devices-ui.js", "/roof/discovery350.js", "/roof/files-viewer350.js", "/roof/files-recovery350.js", "/roof/continuity.js", "/roof/offline-store.js", "/roof/offline-prefs.js", "/roof/ride-overview.js", "/roof/files-history.js", "/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/connection.js", "/roof/handoffs.js", "/roof/system350.css", "/roof/files-viewer350.css", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(self.location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(self.location.hostname) && new URL(self.location.href).searchParams.get("os") === "1";
@@ -134,13 +134,15 @@ const KEEP_APPS = MOD_APPS, KEEP_MAX = 60;
 const NET = { weather: /^\/weather\/(radar|radarmix|mapstyle|mapgl|mapleaf|rainmap|radarrain)\.js$/, fitness: /^\/fitness\/(map|mapstyle|share|formats|fit|reader)\.js$/, chats: /^\/chats\/(roof\/flight|roof\/scan|moon|space|land|placegrid|places|countries|shapes|jsqr|argon2|argon2w)\.js$/ };
 // Only static code/styles may enter a build cache. API aliases and documents
 // must never become a retained response, even after a mistaken keep message.
+const ORGANISE_ASSETS = new Set(["/organise/app.js", "/organise/store.js", "/organise/model.js", "/organise/editor.js", "/organise/links.js", "/organise/organise.css"]);
+const ORGANISE_APPS = ["calendar","notes","people"];
 const moduleAsset = (p) => /\.(?:js|css)$/.test(p) && !/\/api(?:\/|$)/i.test(p);
 const keeping = new Map(), keepQueue = new Map();
 function keepList(d) {
   if (!d || !KEEP_APPS.includes(d.app) || typeof d.build !== "string" || !/^\d+\.\d{2}$/.test(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
   const base = `/${d.app}/`, out = new Set();
   for (const f of d.files) {
-    if (typeof f !== "string" || !f.startsWith(base) || !moduleAsset(f) || !/^\/[\w./-]+$/.test(f) || /\/vendor\//.test(f) || NET[d.app]?.test(f) || f === base + "sw.js" || f === base + "version" || f.endsWith("/")) return null;
+    if (typeof f !== "string" || (!f.startsWith(base) && !(ORGANISE_APPS.includes(d.app) && ORGANISE_ASSETS.has(f))) || !moduleAsset(f) || !/^\/[\w./-]+$/.test(f) || /\/vendor\//.test(f) || NET[d.app]?.test(f) || f === base + "sw.js" || f === base + "version" || f.endsWith("/")) return null;
     let u;
     try { u = new URL(f, self.location.origin); } catch { return null; }
     if (u.origin !== self.location.origin || u.pathname !== f) return null;
@@ -212,13 +214,14 @@ const moduleFile = (u) => {
   if (!moduleAsset(u.pathname)) return false;
   const a = modOf(u);
   if (a === "chats") return (!u.search || /^\?v=[0-9a-f]{12}$/.test(u.search)) && chatsFile(u.pathname);
+  if(ORGANISE_ASSETS.has(u.pathname)&&!u.search)return true;
   return !!a && !u.search && u.pathname !== `/${a}/sw.js` && u.pathname !== `/${a}/version` && !u.pathname.endsWith("/");
 };
 async function fromModule(e, u) {
   const prefix = `roof-${modOf(u)}-`;
   const kept = async () => {
     try {
-      for (const k of await caches.keys()) if (k.startsWith(prefix)) { const m = await (await caches.open(k)).match(u.pathname); if (m) return m; }
+      for (const k of await caches.keys()) if (k.startsWith(prefix) || ORGANISE_ASSETS.has(u.pathname) && ORGANISE_APPS.some(app=>k.startsWith(`roof-${app}-`))) { const m = await (await caches.open(k)).match(u.pathname); if (m) return m; }
     } catch {}
     return null;
   };

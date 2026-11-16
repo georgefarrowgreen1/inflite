@@ -15,10 +15,10 @@ const setup = async (extra = {}) => {
   return { store, storage };
 };
 
-test('catalogue v1 exposes all five first-party panes without an isolation claim', async () => {
+test('catalogue v1 exposes all eight first-party panes without an isolation claim', async () => {
   const { WORKSPACE_APPS, WORKSPACE_MANIFEST_VERSION, getWorkspaceApp } = await catalogModule;
   assert.equal(WORKSPACE_MANIFEST_VERSION, 1);
-  assert.deepEqual(WORKSPACE_APPS.filter(a => a.pane).map(a => a.id), ['fitness', 'weather', 'markets', 'chats', 'mail']);
+  assert.deepEqual(WORKSPACE_APPS.filter(a => a.pane).map(a => a.id), ['calendar', 'notes', 'people', 'fitness', 'weather', 'markets', 'chats', 'mail']);
   for (const app of WORKSPACE_APPS) {
     assert.equal(app.trust, 'first-party');
     assert.equal(app.manifestVersion, 1);
@@ -29,7 +29,7 @@ test('catalogue v1 exposes all five first-party panes without an isolation claim
     assert.equal('permissionsGranted' in app, false);
   }
   assert.ok(Object.isFrozen(WORKSPACE_APPS));
-  for (const id of ['files', 'calendar', '__proto__', 'constructor', null]) assert.equal(getWorkspaceApp(id), null);
+  for (const id of ['files', 'unknown', '__proto__', 'constructor', null]) assert.equal(getWorkspaceApp(id), null);
 });
 
 test('saved routes admit only curated internal sections and bounded object references', async () => {

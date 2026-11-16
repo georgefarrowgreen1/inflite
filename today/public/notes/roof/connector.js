@@ -1,0 +1,1 @@
+export const connector={app:'notes',name:'Notes',icon:'notes',href:'/notes/',sections:[["all", "All notes", "/notes/#all"]],files:['/notes/roof/notes.js','/organise/app.js','/organise/store.js','/organise/model.js','/organise/editor.js','/organise/links.js','/organise/organise.css'],shares:{screens:'All notes'}};

@@ -67,9 +67,9 @@ const failure = (value, status) => new FilesError(clean(value?.error, 240) || (s
 export const fileOperationId = () => crypto.randomUUID().replace(/-/g, "");
 
 export function createDriveClient(F) {
-  const owner = F.session.view?.user?.id, pending = new Set();
+  const owner = (F.session.view?.user?.id||F.session.user?.id), pending = new Set();
   let dead = false;
-  const live = () => !dead && !!owner && !F.signal.aborted && F.session.view?.user?.id === owner;
+  const live = () => !dead && !!owner && !F.signal.aborted && (F.session.view?.user?.id||F.session.user?.id) === owner;
   const assertLive = current => { if (!live() || current && !current()) throw abort(); };
   function scope({ signal, current } = {}, timeout = 20000) {
     assertLive(current);

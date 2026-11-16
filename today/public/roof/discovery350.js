@@ -8,7 +8,7 @@ export async function discover(F,{query,lease={},files,searchApp,openApp,runInte
  const q=clean(query,160);if(q.length<2||!live())return [];
  // A short additional debounce avoids sending account searches for each key.
  await new Promise(resolve=>setTimeout(resolve,180));if(!live())return [];
- const apps=['mail','chats','fitness','markets','weather'].filter(a=>F.session.apps?.[a]&&(a!=='mail'||F.session.view?.apps?.mail===true));
+ const apps=['calendar','notes','people','mail','chats','fitness','markets','weather'].filter(a=>F.session.apps?.[a]&&(a!=='mail'||F.session.view?.apps?.mail===true));
  const work=[files.searchAccount(q,{...lease,current:live}).then(values=>values.slice(0,8).map(file=>({title:file.name,sub:'Files · My Drive',icon:'files',run:()=>owned()&&files.open(file.name,{kind:'drive',folderId:file.kind==='folder'?file.id:file.parentId,view:'folder'})}))).catch(()=>[{title:'Search Files',sub:navigator.onLine===false?'Connect to search your Drive':'Open Files to retry',icon:'files',run:()=>owned()&&files.open(q)}])];
  for(const app of apps)work.push((async()=>{
   const answer=await searchApp(app,q,{...lease,current:live});if(!live())return [];

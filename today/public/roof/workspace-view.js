@@ -16,7 +16,7 @@ import { el, icon, avatar } from "./ui.js";
 import { WINDOW_APPS, normalizeLayout, normalizeWindow, pixelBounds, relativeBounds, snapWindow } from "./workspace-windows.js";
 
 let serial = 0;
-const APP_NAMES = { fitness: "Fitness", weather: "Weather", markets: "Markets", chats: "Chats", mail: "Mail" };
+const APP_NAMES = { calendar:"Calendar", notes:"Notes", people:"People", fitness: "Fitness", weather: "Weather", markets: "Markets", chats: "Chats", mail: "Mail" };
 const APP_ICONS = { chats: "chat" };
 const asText = value => value == null ? "" : String(value);
 const words = (node, value) => { const text = asText(value); if (node.textContent !== text) node.textContent = text; };
@@ -629,7 +629,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     if (callable(callbacks.onSearch)) quick.append(launchButton("Search InFlite", icon("search"), "onSearch", "wsl-search"));
     const grid = el("div", { class: "wsl-apps", role: "group", "aria-label": "Apps" });
     if (callable(callbacks.onFiles)) grid.append(launchButton("Files", el("span", { class: "wsl-files-mark", "aria-hidden": "true" }, icon("file")), "onFiles", "wsl-app"));
-    for (const id of ["chats", "mail", "fitness", "weather", "markets"]) {
+    for (const id of ["calendar","notes","people","chats", "mail", "fitness", "weather", "markets"]) {
       const app = model.apps?.find(a => a.id === id); if (!app || !callable(callbacks.onApp)) continue;
       const allowed = () => model.apps?.some(a => a.id === id && a.available !== false);
       const node = launchButton(app.name, icon(null, { app: APP_ICONS[id] || id, size: 40 }), "onApp", "wsl-app", [id], allowed);

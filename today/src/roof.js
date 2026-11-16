@@ -18,8 +18,8 @@
 //                    retired (§8.4)
 // Stage 3 adds chats (ROOF_CHATS "1", opt-in as the others): its document /chats/, its files /chats/roof/* (MAIN's
 // pigeon/roof/, through the hub's Chat copy), its old worker /chats/sw.js (milestone 1's Chat at the hub)
-export const MODS = Object.freeze(["weather", "markets", "fitness", "mail", "chats"]);
-export const roofOn = (env, app = "weather") => env?.ROOF_OFF !== "1" && (app === "weather" ? env?.ROOF_OFF_WEATHER !== "1" : env?.["ROOF_" + String(app).toUpperCase()] === "1");
+export const MODS = Object.freeze(["weather", "markets", "fitness", "mail", "chats", "calendar", "notes", "people"]);
+export const roofOn = (env, app = "weather") => env?.ROOF_OFF !== "1" && (["calendar", "notes", "people"].includes(app) ? true : app === "weather" ? env?.ROOF_OFF_WEATHER !== "1" : env?.["ROOF_" + String(app).toUpperCase()] === "1");
 export const appsOn = (env) => Object.fromEntries(MODS.map((a) => [a, roofOn(env, a)]));
 export const docOf = (app) => new RegExp(`^/${app}/(index\\.html)?$`);
 export const filesOf = (app) => new RegExp(`^/${app}/roof/`);

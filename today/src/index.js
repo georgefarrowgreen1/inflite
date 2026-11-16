@@ -11,6 +11,7 @@ import { mailPage } from "./mailhost.js";
 import { bodyUpTo } from "./body.js";
 import { renderNotFound, withLocalNotFound } from "./not-found.js";
 import { isFilesAPI, filesAPI } from "./files.js";
+import { organiseAPI, organisePage } from './organise.js';
 import { systemAPI } from "./system.js";
 import { workspacesAPI } from "./workspaces.js";
 import { isExtraPath, extraApp } from "./extra-apps.js";
@@ -81,6 +82,7 @@ const worker = {
     const url = new URL(request.url);
     if (url.pathname === "/_errors/404" && ["GET", "HEAD"].includes(request.method)) return renderNotFound(request, env);
     if (url.pathname === "/version" && request.method === "GET") return version(env, request);
+    if (/^\/(calendar|notes|people)(?:\/|$)/.test(url.pathname)) return organisePage(request,env);
     if (isIdentityPath(url.pathname)) return identity(request, env);
     if (isExtraPath(url.pathname)) return extraApp(request, env);
     const hubbed = isHubPath(url.pathname), mail = url.pathname === "/mail" || url.pathname.startsWith("/mail/");
@@ -89,6 +91,7 @@ const worker = {
       if (hubbed) return await hub(request, env, ctx);
       if (mail) return await mailPage(request, env);
       if (isFilesAPI(url.pathname)) return await filesAPI(request, env);
+      if (url.pathname.startsWith("/api/organise/")) return await organiseAPI(request,env);
       if (url.pathname.startsWith("/api/system/")) return await systemAPI(request,env);
       if (url.pathname === "/api/workspaces") return await workspacesAPI(request, env);
       if (url.pathname === "/api/bugs") return await bugReport(request, env);

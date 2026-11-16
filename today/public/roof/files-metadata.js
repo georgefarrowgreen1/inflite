@@ -1,5 +1,5 @@
 // Pure, bounded app metadata. No URLs, body bytes or persistent state.
-export const FILE_APPS = Object.freeze(["fitness", "weather", "markets", "chats", "mail"]);
+export const FILE_APPS = Object.freeze(["fitness", "weather", "markets", "chats", "mail", "calendar", "notes", "people"]);
 const APPS = new Set(FILE_APPS);
 export const FILE_LIMIT = 100;
 const opaque = (v) => typeof v === "string" && /^[\w:-]{1,220}$/.test(v) ? v : null;

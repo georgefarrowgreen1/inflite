@@ -2,6 +2,9 @@
 // lines come from Today's answer; app destinations and Mail lenses retain the hub's
 // existing switches and standalone fallbacks. Chats has its own navigation tab.
 const APPS = [
+  {native:true,app:"calendar",name:"Calendar",what:"Events and linked plans",links:[["Agenda","agenda","calendar"],["Week","week","calendar"]]},
+  {native:true,app:"notes",name:"Notes",what:"Notes and checklists",links:[["All notes","all","file"]]},
+  {native:true,app:"people",name:"People",what:"Your private contacts",links:[["Contacts","contacts","people"]]},
   { app: "weather", name: "Weather", what: "Forecast, radar and warnings", links: [["Radar", "radar", "radar"], ["Warnings", "warnings", "warn"]] },
   { app: "fitness", name: "Fitness", what: "Your training and progress", links: [["Activities", "activities", "run"], ["Progress", "progress", "trend"]] },
   { app: "markets", name: "Markets", what: "Holdings, returns and news", links: [["Holdings", "holdings", "layers"], ["News", "news", "file"]] },
@@ -46,7 +49,7 @@ export function drawApps(root, ctx = {}) {
   if (!root || !ctx.ui || ctx.current?.() === false) return;
   const { ui } = ctx, { el } = ui, owner = ctx.view?.user?.id;
   const href = (app, section) => ctx.href?.(app, section) || `/${app}/${section ? "#" + section : ""}`;
-  const shown = APPS.filter((a) => !a.only || a.only(ctx.view));
+  const shown = APPS.filter((a) => (!a.native || switchedOn(ctx,a.app)) && (!a.only || a.only(ctx.view)));
   const choices = shown.flatMap((a) => a.app === "mail" && !switchedOn(ctx, "mail") ? [] : a.links.map(([label, section, icon]) =>
     ({ id: `${a.app}:${section}`, app: a.app, name: a.name, label, section, icon })));
   const available = new Map(choices.map((q) => [q.id, q]));

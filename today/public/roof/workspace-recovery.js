@@ -1,6 +1,6 @@
 // Account-owned OS recovery. A retry resumes the existing module; this service
 // never destroys an editor, replays a write, or treats online as proof of sync.
-const NAMES = Object.freeze({ fitness: "Fitness", weather: "Weather", markets: "Markets", chats: "Chats", mail: "Mail" });
+const NAMES = Object.freeze({ calendar:"Calendar",notes:"Notes",people:"People",fitness: "Fitness", weather: "Weather", markets: "Markets", chats: "Chats", mail: "Mail" });
 const PHASES = new Set(["ready", "error", "loading", "signin", "locked", "offline"]);
 const aborted = () => new DOMException("This recovery request was released", "AbortError");
 const reason = value => typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, " ").trim().slice(0, 240) : "";
