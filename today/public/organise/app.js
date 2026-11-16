@@ -8,20 +8,22 @@ export async function mountApp(root,F,kind){
  const safe=fn=>()=>{try{Promise.resolve(fn()).catch(e=>{if(live())F.toast(e.message)})}catch(e){if(live())F.toast(e.message)}};
  const button=(label,run,primary=false)=>ui.btn(label,{primary,run:safe(run)});
  const go=id=>F.nav.go('/'+kind+'/#item='+id),home=()=>F.nav.go('/'+kind+'/#'+section),fresh=()=>F.nav.go('/'+kind+'/#new');
- const heading=el('h2',{text:kind==='calendar'?'Your time, together':kind==='notes'?'A place for your thoughts':'Keep your people close'}),sub=el('p',{class:'org-muted',text:kind==='calendar'?'Your events and dated items from InFlite.':kind==='notes'?'Private notes and checklists, saved as you write.':'Private contacts, with links to the things you share.'});
- const search=el('input',{type:'search',class:'org-search',maxlength:160,placeholder:'Search '+NAMES[kind].toLowerCase()+' titles','aria-label':'Search '+NAMES[kind]}),status=el('p',{class:'org-status',role:'status'}),list=el('div',{class:'org-list'}),detail=el('section',{class:'org-detail',hidden:true,'aria-label':NAMES[kind]+' editor'}),more=button('Show more',()=>load(true)),retry=button('Refresh',()=>load());
- const actions=el('div',{class:'org-toolbar'},search,retry,button(kind==='calendar'?'New event':kind==='notes'?'New note':'Add person',fresh,true));
- const sidebar=el('section',{class:'org-browser'},el('div',{class:'org-intro'},heading,sub),actions,status,list,more);
- const weekStrip=el('nav',{class:'org-week-strip','aria-label':'Days this week',hidden:true});
- const viewSwitch=kind==='calendar'?ui.seg(SECTIONS.calendar,section,value=>{section=value;F.nav.go('/calendar/#'+value)},{label:'Calendar view'}):null;
- const dates=el('div',{class:'org-toolbar org-dates'}),day=el('input',{type:'date',value:date,'aria-label':'Calendar date'});
- const changeDate=n=>{date=addDays(date,n);day.value=date;load()};
+ const createLabel=kind==='calendar'?'New event':kind==='notes'?'New note':'Add person';
+ const search=el('input',{type:'search',class:'org-search',maxlength:160,placeholder:kind==='people'?'Search contacts':kind==='notes'?'Search notes':'Search events','aria-label':'Search '+NAMES[kind]}),status=el('p',{class:'org-status',role:'status'}),list=el('div',{class:'org-list'}),detail=el('section',{class:'org-detail',hidden:true,'aria-label':NAMES[kind]+' editor'}),more=button('Show more',()=>load(true)),retry=button('Try again',()=>load());
+ const count=el('span',{class:'org-library-count'}),createButton=ui.btn(createLabel,{icon:'plus',primary:true,run:fresh}),caption=el('div',{class:'org-library-caption'},el('h2',{text:kind==='notes'?'Library':kind==='people'?'Contacts':'Upcoming'}),count);
+ const actions=el('div',{class:'org-library-head'},caption,createButton),searchBox=el('label',{class:'org-search-box'},ui.icon('search'),search);
+ const sidebar=el('section',{class:'org-browser'},actions,searchBox,status,retry,list,more);retry.hidden=true;
+ const weekStrip=el('nav',{class:'org-week-strip','aria-label':'Choose a date'}),monthTitle=el('h2'),monthGrid=el('div',{class:'org-month-grid'});
+ const day=el('input',{type:'date',value:date,'aria-label':'Calendar date'}),datePicker=el('label',{class:'org-date-picker'},monthTitle,day);
+ const changeDate=n=>{const d=new Date(date+'T12:00:00');if(section==='week')date=addDays(date,n*7);else{d.setDate(1);d.setMonth(d.getMonth()+n);date=localDay(d)}day.value=date;load()};
+ const viewSwitch=kind==='calendar'?ui.seg([['agenda','Month'],['week','Week']],section,value=>{section=value;F.nav.go('/calendar/#'+value)},{label:'Calendar view'}):null;
  if(kind==='calendar'){
-  dates.append(button('Previous',()=>changeDate(section==='week'?-7:-1)),day,button('Next',()=>changeDate(section==='week'?7:1)),button('Today',()=>{date=localDay();day.value=date;load()}),viewSwitch);
-  sidebar.insertBefore(dates,actions);sidebar.insertBefore(weekStrip,actions);day.addEventListener('change',()=>{if(day.validity.valid&&day.value){date=day.value;load()}});
+  const nav=el('div',{class:'org-month-nav'},ui.iconBtn('back',{label:'Previous',run:()=>changeDate(-1)}),ui.iconBtn('chev',{label:'Next',run:()=>changeDate(1)}));
+  const dates=el('section',{class:'org-calendar-panel','aria-label':'Calendar dates'},el('div',{class:'org-month-head'},datePicker,nav),el('div',{class:'org-calendar-controls'},viewSwitch,button('Today',()=>{date=localDay();day.value=date;load()})),weekStrip,monthGrid);
+  sidebar.prepend(dates);day.addEventListener('change',()=>{if(day.validity.valid&&day.value){date=day.value;load()}});
  }
  const layout=el('div',{class:'org-layout'},sidebar,detail);root.replaceChildren(layout);
- function range(){const start=section==='week'?addDays(date,-((new Date(date+'T12:00:00').getDay()+6)%7)):date;return[start,addDays(start,section==='week'?7:30)]}
+ function range(){const first=section==='week'?date:date.slice(0,8)+'01',start=addDays(first,-((new Date(first+'T12:00:00').getDay()+6)%7));return[start,addDays(start,section==='week'?7:42)]}
  const currentRows=()=>{
   const pending=[...store.localForms(),...store.pending()],map=new Map([...ids].map(id=>[id,store.view(id)]));for(const v of pending)map.set(v.id,v);
   let rows=[...map.values()].filter(v=>v&&!v.deleted&&(!query||v.title.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
@@ -29,23 +31,43 @@ export async function mountApp(root,F,kind){
   else if(kind==='people')rows.sort((a,b)=>a.title.localeCompare(b.title));else rows.sort((a,b)=>b.updatedAt-a.updatedAt);
   return rows;
  };
- function header(){F.header.set({title:NAMES[kind],line:kind==='calendar'?'Events and linked plans':kind==='notes'?'Private notes and checklists':'Your private contacts',crumb:{text:'InFlite',app:kind},sections:null,section,onSection:value=>F.nav.go('/'+kind+'/#'+value),acts:[{icon:'plus',label:kind==='people'?'Add person':kind==='notes'?'New note':'New event',run:fresh}]})}
+ function header(){F.header.set({title:NAMES[kind],line:'',crumb:{text:'InFlite',app:kind},sections:null,section,acts:[]})}
+ function dateLabel(d,options){return new Date(d+'T12:00:00').toLocaleDateString([],options)}
+ function paintDates(rows){
+  monthTitle.textContent=dateLabel(date,{month:'long',year:'numeric'});weekStrip.hidden=section!=='week';monthGrid.hidden=section==='week';
+  const focusDate=root.contains(document.activeElement)?document.activeElement?.dataset.date:null;const [first]=range(),parent=section==='week'?weekStrip:monthGrid;parent.replaceChildren();
+  if(section!=='week')for(let i=0;i<7;i++)parent.append(el('span',{class:'org-weekday',text:dateLabel(addDays('2026-11-16',i),{weekday:'short'})}));
+  for(let i=0;i<(section==='week'?7:42);i++){
+   const d=addDays(first,i),n=rows.filter(v=>overlaps(v,d,addDays(d,1))).length,b=el('button',{type:'button',class:'org-date',data:{date:d,outside:d.slice(0,7)!==date.slice(0,7),today:d===localDay()},'aria-current':date===d?'date':null,'aria-label':dateLabel(d,{weekday:'long',day:'numeric',month:'long'})+' · '+n+' items',on:{click:()=>{date=d;day.value=d;load()}}},section==='week'?el('span',{text:dateLabel(d,{weekday:'short'})}):null,el('strong',{text:new Date(d+'T12:00:00').getDate()}),el('small',{class:n?'org-date-dot':'','aria-hidden':true}));parent.append(b);
+  }
+  if(focusDate)parent.querySelector('[data-date="'+CSS.escape(focusDate)+'"]')?.focus({preventScroll:true});
+ }
  function paint(){
   if(!live())return;const active=list.contains(document.activeElement)?document.activeElement?.closest('[data-record]')?.dataset.record:null;
-  status.textContent=error||(loading?'Refreshing…':store.pending().some(v=>v.state==='conflict')?'A change needs review. Open the marked item.':!store.ready()?'Private device storage is unavailable. Editing is paused.':'');
-  status.dataset.tone=error?'error':'';more.hidden=!cursor;more.disabled=loading;retry.disabled=loading;
-  const rows=currentRows();list.replaceChildren();let group='';
-  if(kind==='calendar'){weekStrip.hidden=section!=='week';if(section==='week'){const [first]=range();weekStrip.replaceChildren(...Array.from({length:7},(_,i)=>{const d=addDays(first,i),time=new Date(d+'T12:00:00'),count=rows.filter(v=>overlaps(v,d,addDays(d,1))).length,b=el('button',{type:'button','aria-current':date===d?'date':null,'aria-label':time.toLocaleDateString([],{weekday:'long',day:'numeric',month:'long'})+' · '+count+' items',on:{click:()=>{date=d;day.value=d;load()}}},el('span',{text:time.toLocaleDateString([],{weekday:'short'})}),el('strong',{text:time.getDate()}),el('small',{text:count?'•':' '}));return b}))}}
-
-  if(!rows.length)list.append(ui.empty({title:loading?'Opening '+NAMES[kind]+'…':query?'No matching titles':kind==='calendar'?'Your calendar is clear':kind==='notes'?'Your first note starts here':'Your people, in one place',body:loading?'':kind==='calendar'?'Add an event or open a dated plan from your InFlite apps.':kind==='notes'?'Capture a thought, make a checklist or link a file.':'Add someone and connect their notes, plans and conversations.'}));
+  status.textContent=error||(loading&&!loaded?'Opening…':store.pending().some(v=>v.state==='conflict')?'A change needs review. Open the marked item.':!store.ready()?'Private device storage is unavailable. Editing is paused.':'');
+  status.dataset.tone=error?'error':'';more.hidden=!cursor;more.disabled=loading;retry.hidden=!error;retry.disabled=loading;
+  const allRows=currentRows();let rows=allRows;if(kind==='calendar'){paintDates(allRows);const monthEnd=localDay(new Date(Number(date.slice(0,4)),Number(date.slice(5,7)),1));rows=allRows.filter(v=>overlaps(v,date,section==='week'?addDays(date,1):monthEnd));caption.firstChild.textContent=section==='week'?dateLabel(date,{weekday:'long',day:'numeric',month:'short'}):'Upcoming';}
+  count.textContent=rows.length?(rows.length+(cursor?'+':'')+' '+(kind==='notes'?(rows.length===1?'note':'notes'):kind==='people'?(rows.length===1?'person':'people'):(rows.length===1?'item':'items'))):'';
+  list.replaceChildren();let group='',groupBox=list;
+  if(!rows.length&&!loading){const empty=el('div',{class:'org-empty'},el('span',{class:'org-empty-icon'},ui.icon(kind==='notes'?'file':kind==='people'?'person':'calendar')),el('h3',{text:query?'No results':kind==='calendar'?'Nothing scheduled':kind==='notes'?'A little space to think':'Start with someone you know'}),el('p',{text:query?'Try another name or title.':kind==='calendar'?(section==='week'?'Your selected day is clear.':'Your calendar is clear for the rest of this month.'):kind==='notes'?'Ideas, lists and everything worth keeping.':'Add a contact to keep their details and linked items together.'}));list.append(empty);}
   for(const v of rows){
-   if(kind==='calendar'&&eventDay(v)!==group){group=eventDay(v);list.append(el('h3',{class:'org-day-label',text:new Date(group+'T12:00:00').toLocaleDateString([],{weekday:'long',day:'numeric',month:'long'})}))}
-   const b=el('button',{type:'button',class:'org-record',data:{record:v.id},'aria-current':editorId===v.id?'true':null,on:{click:safe(()=>v.source?openExternal(v):go(v.id))}}),lead=kind==='people'?ui.avatar(v.title):ui.icon(v.ride?'ride':kind==='calendar'?'calendar':'file');
-   b.append(el('span',{class:'org-record-icon'},lead),el('span',{class:'org-record-copy'},el('strong',{text:v.title}),el('span',{class:'org-muted',text:kind==='calendar'?when(v)+(v.label?' · '+v.label:''):kind==='notes'?(v.preview??v.text??'').slice(0,110)||(v.checkCount||v.checklist?.length?`${v.doneCount??v.checklist?.filter(x=>x.done).length??0}/${v.checkCount??v.checklist?.length} checked`:'Empty note'):[v.organisation,v.email||v.phone].filter(Boolean).join(' · ')})),ui.icon('chev'));
-   if(v.formDraft)b.append(el('span',{class:'org-pending',text:'Draft'}));if(v.pending)b.append(el('span',{class:'org-pending',text:v.state==='conflict'?'Review':v.state==='failed'?'Retry':'Saving'}));list.append(b);
+   const key=kind==='calendar'?eventDay(v)<date?date:eventDay(v):kind==='people'?(v.title.trim()[0]||'#').toLocaleUpperCase():'';
+   if(key&&key!==group){group=key;list.append(el('h3',{class:'org-day-label',text:kind==='calendar'?dateLabel(group,{weekday:'long',day:'numeric',month:'long'}):group}));groupBox=el('div',{class:'org-record-group'});list.append(groupBox)}
+   const b=el('button',{type:'button',class:'org-record',data:{record:v.id},'aria-current':editorId===v.id?'true':null,on:{click:safe(()=>v.source?openExternal(v):go(v.id))}}),copy=el('span',{class:'org-record-copy'},el('strong',{text:v.title}));
+   if(kind==='calendar'){
+    const time=v.ride?'To plan':v.allDay?(v.source?'Date only':'All day'):new Date(v.start).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+    b.append(el('span',{class:'org-event-time'},el('strong',{text:time}),!v.allDay&&v.end-v.start>60000?el('small',{text:new Date(v.end).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}):null));
+    const subtitle=v.source?(v.ride?'Fitness · choose a time':v.label):v.links?.length?v.links.length+' linked '+(v.links.length===1?'item':'items'):'';if(subtitle)copy.append(el('span',{class:'org-muted',text:subtitle}));
+    b.dataset.source=v.source?.app||'calendar';
+   }else if(kind==='notes'){
+    const preview=(v.preview??v.text??'').trim();copy.append(el('span',{class:'org-note-preview org-muted',text:preview||'No additional text'}));
+    const total=v.checkCount??v.checklist?.length??0,done=v.doneCount??v.checklist?.filter(x=>x.done).length??0;
+    copy.append(el('span',{class:'org-note-meta'},el('span',{text:v.updatedAt?new Date(v.updatedAt).toLocaleDateString([],{month:'short',day:'numeric'}):'Just now'}),total?el('span',{text:done+' / '+total+' checked'}):null));
+   }else{b.append(el('span',{class:'org-record-avatar'},ui.avatar(v.title)));copy.append(el('span',{class:'org-muted',text:v.organisation||v.email||v.phone||'Contact'}));}
+   b.append(copy);if(kind!=='notes')b.append(ui.icon('chev'));
+   if(v.formDraft)b.append(el('span',{class:'org-pending',text:'Draft'}));if(v.pending)b.append(el('span',{class:'org-pending',text:v.state==='conflict'?'Review':v.state==='failed'?'Retry':'Saving'}));groupBox.append(b);
   }
-  if(active)list.querySelector('[data-record="'+CSS.escape(active)+'"]')?.focus({preventScroll:true});
-  editor?.status();
+  if(active)list.querySelector('[data-record="'+CSS.escape(active)+'"]')?.focus({preventScroll:true});editor?.status();
  }
  async function load(append=false){
   if(!live())return;const mine=++reading;loading=true;error='';paint();
@@ -65,7 +87,7 @@ export async function mountApp(root,F,kind){
  }
  async function create(initial){if(!store.ready())throw Error('Enable private device storage before creating an item.');const id=operationId(),value=initial||{title:kind==='notes'?'Untitled note':'',links:[],...(kind==='notes'?{text:'',checklist:[]}:kind==='people'?{email:'',phone:'',organisation:'',details:''}:{description:'',allDay:false,start:new Date(date+'T09:00:00').getTime(),end:new Date(date+'T10:00:00').getTime(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})};
   if(kind==='notes')await store.save(id,value,{version:0});
-  await openEditor(id,{initial:{id,kind,...value,version:0}});F.nav.go('/'+kind+'/#item='+id,{replace:true});
+  if(!live()||!shown)return;await openEditor(id,{initial:{id,kind,...value,version:0}});if(!live()||!shown)return;F.nav.go('/'+kind+'/#item='+id,{replace:true});
  }
  async function openExternal(v){if(v.ride){const body=el('div',{class:'org'},el('h3',{text:v.title}),el('p',{text:'This ride has no confirmed start time. Review Fitness and Weather, or choose a time to create a linked calendar event.'}));let h;body.append(button('Open Fitness',()=>{h.now();F.nav.go(pathOf(v.source))}),button('Open forecast',()=>{h.now();F.nav.go('/weather/')}),button('Choose event time',()=>{h.now();create({title:v.title,description:'',allDay:false,start:new Date(v.startDate+'T09:00:00').getTime(),end:new Date(v.startDate+'T10:00:00').getTime(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,links:[v.source]})},true));h=F.sheet.open({sheet:'calendar-ride',title:'Plan this ride',body});return}
   F.nav.go(v.source.app==='reminders'?'/#you=action-'+v.source.id:pathOf(v.source));
@@ -85,5 +107,5 @@ export async function mountApp(root,F,kind){
  });
  const visibility=()=>{if(shown&&document.visibilityState==='visible')load()};document.addEventListener('visibilitychange',visibility,{signal:life});
  const clear=()=>{clearTimeout(searchTimer);editor?.destroy();unregister?.();root.replaceChildren()};life.addEventListener('abort',clear,{once:true});
- return{show(r){shown=true;route=r;section=r.section||section;viewSwitch?.set(section);header();if(!loaded&&!loading||kind==='calendar')load();if(r.key==='new'){create().catch(e=>F.toast(e.message));return}if(r.key==='item'&&/^[a-f0-9]{32}$/.test(r.arg||'')){openEditor(r.arg);return}const mine=++editorLoad,previous=editor;Promise.resolve(previous?.flush()).then(()=>{if(!live()||mine!==editorLoad)return;previous?.destroy();editor=null;editorId=null;detail.hidden=true;delete root.dataset.detail;paint()}).catch(e=>{if(live())F.toast(e.message)})},hide(){shown=false;editor?.flush()},back(){if(editor){editor.close();return true}return false},busy:()=>!!editor?.dirty()||store.busy(),flush:async()=>{await editor?.flush();return store.flush()},sendable:()=>null,workspace:()=>null,unmount:clear};
+ return{show(r){shown=true;route=r;if(!['item','new'].includes(r.key))section=r.section||section;viewSwitch?.set(section);header();if(!loaded&&!loading||kind==='calendar')load();if(r.key==='new'){create().catch(e=>F.toast(e.message));return}if(r.key==='item'&&/^[a-f0-9]{32}$/.test(r.arg||'')){openEditor(r.arg);return}const mine=++editorLoad,previous=editor;Promise.resolve(previous?.flush()).then(()=>{if(!live()||mine!==editorLoad)return;previous?.destroy();editor=null;editorId=null;detail.hidden=true;delete root.dataset.detail;paint()}).catch(e=>{if(live())F.toast(e.message)})},hide(){shown=false;editor?.flush()},back(){if(editor){editor.close();return true}return false},busy:()=>!!editor?.dirty()||store.busy(),flush:async()=>{await editor?.flush();return store.flush()},sendable:()=>null,workspace:()=>null,unmount:clear};
 }
