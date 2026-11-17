@@ -22,6 +22,7 @@ import { el, btn, icon } from "./ui.js";
 let n = 0;
 export function createSheets(F, { beforeOpen } = {}) {
   const open = [];
+  const focused = () => (document.activeElement?.shadowRoot || document).activeElement;
   let restoreFrame = 0, restoreAt = 0;
   // (the keyboard up: an open sheet no taller than what's in sight, and lifted above it. iOS lays the keyboard over the
   // page, not the page above the keyboard, so a sheet fixed to the page's foot sat under it, its field out of sight: it's
@@ -32,7 +33,7 @@ export function createSheets(F, { beforeOpen } = {}) {
     const foot = Math.max(0, Math.round(document.documentElement.clientHeight - height - top));
     const s = globalThis.screen, portrait = matchMedia("(orientation: portrait)").matches;
     const tall = s ? (portrait ? Math.max(s.width, s.height) : Math.min(s.width, s.height)) : height;
-    const typing = document.activeElement?.matches("input,textarea,[contenteditable]") && matchMedia("(any-pointer: coarse)").matches;
+    const typing = focused()?.matches("input,textarea,[contenteditable]") && matchMedia("(any-pointer: coarse)").matches;
     const up = Math.abs((v?.scale || 1) - 1) < 0.01 && (foot > 40 || (typing && tall - height > 260));
     for (const { el } of open) { el.style.setProperty("--vvh", `${Math.round(height)}px`); el.style.setProperty("--vv-top", `${Math.round(top)}px`); el.style.setProperty("--sheet-foot", `${foot}px`); el.classList.toggle("ifs-kb", up); }
     // (and the tab bar out of sight while it's up: iOS's bar above the keyboard is see-through, and it showed through it)
@@ -55,8 +56,8 @@ export function createSheets(F, { beforeOpen } = {}) {
   function make(d, { onClose, built, focus } = {}) {
     beforeOpen?.();
     cancelAnimationFrame(restoreFrame); restoreFrame = 0; restoreAt++;
-    const body = d.querySelector(".ifs-body"), head = d.querySelector(".ifs-head"), h2 = d.querySelector(".ifs-head h2");
-    const was = document.activeElement, page = { x: scrollX, y: scrollY, route: F?.route, url: location.href };
+    const body = d.querySelector(".ifs-body"), head = d.querySelector(".ifs-head"), h2 = head?.querySelector("h2");
+    const was = focused(), page = { x: scrollX, y: scrollY, route: F?.route, url: location.href };
     const stack = [];
     let shut = false, closeTimer = 0, drag = null, pageTimer = 0, sizeMotion = null;
     const ac = new AbortController(), sig = { signal: ac.signal };
@@ -72,8 +73,7 @@ export function createSheets(F, { beforeOpen } = {}) {
       body.classList.remove("ifl-enter-pop");
       d.style.removeProperty("--drag");
       try { if (d.open) d.close(); } catch (_) {}
-      const i = open.indexOf(h);
-      if (i >= 0) open.splice(i, 1);
+      open.splice(open.indexOf(h), 1);
       ac.abort();
       while (stack.length) pop(true);
       if (built) d.remove();
@@ -102,7 +102,6 @@ export function createSheets(F, { beforeOpen } = {}) {
       closeTimer = setTimeout(done, 400);
     }
     const cancel = (e) => { e.preventDefault(); h.back(); };
-    const closed = () => { if (!h.closed) done(); };
     const click = (e) => {
       if (e.target.closest?.("[data-close]")) return close(true);
       if (e.target.closest?.("[data-back]")) return pop();
@@ -137,7 +136,7 @@ export function createSheets(F, { beforeOpen } = {}) {
       if (e.key !== "Tab") return;
       const f = [...d.querySelectorAll('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.getClientRects().length && !x.closest("[hidden]"));
       if (!f.length) return;
-      const i = f.indexOf(document.activeElement);
+      const i = f.indexOf(focused());
       if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
       else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
     }
@@ -158,7 +157,7 @@ export function createSheets(F, { beforeOpen } = {}) {
       clearTimeout(pageTimer); body.classList.remove("ifl-enter-pop");
       const kids = [...body.children].filter((c) => !c.hidden);
       const pg = el("div", { class: "ifs-page ifl-enter-push", data: { page: page.page } });
-      stack.push({ pg, kids, title: h2?.textContent, acts: d.querySelector(".ifs-acts"), y: d.scrollTop, by: body.scrollTop, focus: document.activeElement });
+      stack.push({ pg, kids, title: h2?.textContent, acts: d.querySelector(".ifs-acts"), y: d.scrollTop, by: body.scrollTop, focus: focused() });
       for (const c of kids) c.hidden = true;
       d.classList.add("pushed");
       if (h2 && page.title != null) h2.textContent = page.title;
@@ -200,7 +199,7 @@ export function createSheets(F, { beforeOpen } = {}) {
       head.prepend(back);
     }
     const ended = (e) => { if (shut && e.target === d && /^(ifl-sheet-out|ifl-sheet-unpop)$/.test(e.animationName)) done(); };
-    for (const [t, e, f] of [[d, "cancel", cancel], [d, "close", closed], [d, "click", click], [d, "keydown", trap], [d, "animationend", ended], [head, "pointerdown", grab], [d.querySelector(".ifs-grab"), "pointerdown", grab]]) t?.addEventListener(e, f, sig);
+    for (const [t, e, f] of [[d, "cancel", cancel], [d, "close", done], [d, "click", click], [d, "keydown", trap], [d, "animationend", ended], [head, "pointerdown", grab], [d.querySelector(".ifs-grab"), "pointerdown", grab]]) t?.addEventListener(e, f, sig);
     d.classList.remove("closing");
     if (!d.isConnected) document.body.append(d);
     try { d.showModal(); } catch (_) { d.setAttribute("open", ""); }

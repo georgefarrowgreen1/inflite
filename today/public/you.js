@@ -62,7 +62,7 @@ const current = (ctx) => ctx.current?.() !== false && ctx.active?.() !== false;
 const Y = { rules: null, notify: null, devices: null, sub: null, shares: null, sharesRoof: null };
 let drawing = null;
 const accountSection = section => /^(?:settings-)?account(?:-(profile|security|data|confirm|units|appearance|notify-inflight))?$/.exec(section || "");
-export function releaseAccount() { document.getElementById("you")?.querySelector(".settings-account-frame")?.remove(); }
+export function releaseAccount() { document.getElementById("you")?.querySelector("inflite-settings-account")?.remove(); }
 export function forgetYou() { releaseAccount(); Y.rules = Y.notify = Y.devices = Y.sub = Y.shares = null; Y.synced = Y.notHere = Y.everyLost = false; drawing = null; }
 // (Connected Apps: each app, and the words of InFlite's connector contract its descriptor fills, and only those)
 const CONNECTED = [["weather", "Weather"], ["chats", "Chats"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"]];
@@ -143,7 +143,7 @@ function paint(root, ctx) {
   if (!current(ctx)) return;
   const u = ctx.view.user || {}, admin = ctx.view.apps?.mail === true;
   const account = accountSection(ctx.section);
-  if (account && root.dataset.settingsOwner === String(u.id) && root.dataset.settingsSection === ctx.section && root.querySelector(".settings-account-frame")) return;
+  if (account && root.dataset.settingsOwner === String(u.id) && root.dataset.settingsSection === ctx.section && root.querySelector("inflite-settings-account")) return;
   // (a section: its heading, one group, a line of small print under it; icons: its rows lead with an icon, the lines
   // between them start where the words do)
   const sec = (id, title, body, foot = "", icons = false) => body ? `<section class="you-sec" id="${id}">${title ? `<h2 class="you-h">${esc(title)}</h2>` : ""}<div class="group glass${icons ? " icons" : ""}">${body}</div>${foot ? `<p class="you-foot">${foot}</p>` : ""}</section>` : "";
@@ -298,26 +298,32 @@ function paint(root, ctx) {
   if (account) {
     root.querySelector(".settings-account-bar button").addEventListener("click", () => ctx.frame.search.open());
     const detail = root.querySelector('[data-group="account"]');
-    const frame = document.createElement("iframe");
-    frame.className = "settings-account-frame";
-    frame.title = "Account";
-    frame.dataset.owner = u.id;
-    frame.src = "/settings/account/?embed=1" + (account[1] ? "#open=" + account[1] : "");
-    frame.addEventListener("inflite-profile-updated", async () => {
+    const pane = document.createElement("inflite-settings-account");
+    pane.setAttribute("aria-label","Account");
+    pane.addEventListener("inflite-profile-updated", async () => {
       const user = await ctx.refreshProfile?.();
-      if (!user || !frame.isConnected) return;
+      if (!user || !pane.isConnected) return;
       const card = root.querySelector("#youAcct");
       card.querySelector(".tx b").textContent = user.name || user.handle;
       card.querySelector(".you-ph").innerHTML = ctx.photo(user);
     });
-    detail.append(frame);
+    detail.append(pane);
+    import("/settings-account.js").then(() => {
+      if (pane.isConnected) pane.mount({owner:String(u.id), part:account[1], sheets:ctx.frame.sheet});
+    }).catch(() => {
+      if (!pane.isConnected) return;
+      const retry = document.createElement("button");
+      retry.textContent = "Reload Account";
+      retry.onclick = () => location.reload();
+      pane.replaceChildren(retry);
+    });
   }
   const input = root.querySelector('.settings-search input');
   input.value = query;
   function filter() {
     const words = input.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     root.toggleAttribute("data-filtering", !!words.length);
-    const frame = root.querySelector(".settings-account-frame");
+    const frame = root.querySelector("inflite-settings-account");
     if (frame) frame.hidden = !!words.length;
     let count = 0;
     for (const section of root.querySelectorAll('[data-group]')) {
