@@ -241,18 +241,18 @@ test('motion: opening Search flushes pending route snapshots before the dialog a
     assert.equal(await page.evaluate(() => document.querySelector('#you').hidden), true, 'the current route snapshot is still pending');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     const search = page.getByRole('combobox', { name: 'Search everything', exact: true }); await search.waitFor();
-    assert.deepEqual(await page.evaluate(() => __beforeModal), { route: '/#you', motion: '', youVisible: true, skipped: true }, 'the latest route is rendered and snapshots are skipped before native dialog open');
+    assert.deepEqual(await page.evaluate(() => __beforeModal), { route: '/#settings', motion: '', youVisible: true, skipped: true }, 'the latest route is rendered and snapshots are skipped before native dialog open');
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Search everything');
     await page.evaluate(async () => {
       for (const task of [...__modalSnapshots].reverse()) { task.update(); task.finish(); }
       await Promise.resolve(); await Promise.resolve();
     });
-    assert.equal(await page.evaluate(() => document.documentElement.dataset.route), '/#you');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.route), '/#settings');
     assert.equal(await page.locator('#you').isVisible(), true);
     assert.equal(await search.evaluate(e => e === document.activeElement), true, 'late updates and completion cannot steal dialog focus');
     assert.equal(await page.evaluate(() => document.documentElement.dataset.vt || ''), '');
     await page.keyboard.press('Escape'); await page.locator('dialog[open]').waitFor({ state: 'detached' });
-    assert.equal(await page.evaluate(() => document.documentElement.dataset.route), '/#you');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.route), '/#settings');
     assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
   } finally { await ctx.close(); }
 });
@@ -534,14 +534,14 @@ for (const width of [390, 1440]) for (const tab of ['apps', 'you']) {
       await page.bringToFront();
       const content = tab === 'apps' ? '#apps [data-app-row="weather"]' : '#youAcct';
       await page.locator(content).waitFor({ timeout: 5000 });
-      await page.waitForFunction(title => document.querySelector('#hd h1')?.innerText.trim() === title, tab === 'apps' ? 'Apps' : 'You', { timeout: 5000 });
+      await page.waitForFunction(title => document.querySelector('#hd h1')?.innerText.trim() === title, tab === 'apps' ? 'Apps' : 'Settings', { timeout: 5000 });
       assert.equal(await page.locator(content).isVisible(), true);
-      assert.equal((await page.locator('#hd h1').innerText()).trim(), tab === 'apps' ? 'Apps' : 'You');
+      assert.equal((await page.locator('#hd h1').innerText()).trim(), tab === 'apps' ? 'Apps' : 'Settings');
       assert.equal(await page.locator('#views > :is(main,[role=main]):not([hidden])').count(), 1);
       assert.equal(await page.locator(`#tabs [data-tab="${tab}"]`).getAttribute('aria-current'), 'page');
       assert.equal(await page.evaluate(() => document.documentElement.dataset.route), `/#${tab}`);
       if (tab === 'apps') assert.equal(await page.locator('#apps .apps-shortcut').count(), 3);
-      else await page.locator('#youQuiet').waitFor({ timeout: 5000 });
+      else await page.getByRole('searchbox', { name: 'Search settings' }).waitFor({ timeout: 5000 });
       assert.deepEqual(errors, []);
       assert.deepEqual(await page.evaluate(() => [window.__csp, window.__rejections]), [[], []]);
     } finally { await ctx.close(); }
@@ -560,18 +560,16 @@ for (const width of [390, 1440]) {
     });
     try {
       await page.bringToFront();
-      await page.locator('#youAcct').waitFor({ timeout: 5000 });
-      await page.waitForFunction(() => document.querySelector('#hd h1')?.innerText.trim() === 'You', undefined, { timeout: 5000 });
-      assert.equal(await page.locator('#youAcct').isVisible(), true);
+      await page.getByRole('heading', {name:'Settings',exact:true}).waitFor({ timeout: 5000 });
+      await page.locator('[data-group="notifications"]').waitFor({ timeout: 5000 });
       assert.equal(await page.locator('#youQuiet').count(), 0, 'the screen renders before its delayed settings answer');
-      assert.equal((await page.locator('#hd h1').innerText()).trim(), 'You');
       release(); await page.locator('#youQuiet').waitFor({ timeout: 5000 });
       assert.equal(await page.locator('#youQuiet').isVisible(), true);
       assert.equal(await page.locator('#youQuiet').getAttribute('role'), 'switch');
       assert.equal(await page.evaluate(() => document.documentElement.dataset.route), '/#you=quiet');
       assert.equal(await page.locator('#views > :is(main,[role=main]):not([hidden])').count(), 1);
       assert.ok(requests.some(r => r.path === '/api/notify'));
-      if (width >= 1100) assert.equal(await page.locator('.you-tab[data-pane="youNotify"]').getAttribute('aria-current'), 'page');
+      if (width >= 1100) assert.equal(await page.locator('.settings-category[data-category="notifications"]').getAttribute('aria-current'), 'page');
       assert.deepEqual(errors, []);
       assert.deepEqual(await page.evaluate(() => [window.__csp, window.__rejections]), [[], []]);
     } finally { release(); await ctx.close(); }
@@ -764,6 +762,7 @@ test('Today, Apps and You fit phone and desktop widths in both themes', async ()
         if (screen === 'today' && width >= 1100) await settleLayout(page);
         if (screen === 'apps') await page.locator('#apps .apps-list .ifl-row').first().waitFor();
         if (screen === 'you') {
+          await page.locator('[data-category=notifications]').click();
           await page.locator('#youQuiet').waitFor();
           assert.match(await page.locator('#youPhoneRow').innerText(), /On This Device/);
           assert.equal(await page.locator('#youQuiet').getAttribute('role'), 'switch');
@@ -1776,4 +1775,54 @@ for (const width of [320, 390, 1440]) test(`Ride overview requires an available 
     assert.equal(guard.messages.length,1);
     assert.deepEqual(errors,[]);
   } finally {await ctx.close();}
+});
+
+for (const width of [390, 1440]) test(`unified settings search and appearance at ${width}px`, async () => {
+  const {page, ctx, errors} = await open({width,initialPath:'/#settings',waitForDay:false});
+  try {
+    const owner = fixture('session').user.id;
+    let pref = {appearance:'auto',palette:'inflite',glass:true,glassStrength:55};
+    await page.route('**/account/api/account/appearance', route => route.fulfill({json:{signedIn:true,id:owner,...pref}}));
+    await page.route('**/account/api/account/prefs', async route => {
+      assert.equal(route.request().headers()['x-inflite-owner'],owner);
+      Object.assign(pref,route.request().postDataJSON());
+      await route.fulfill({json:{id:owner,prefs:pref}});
+    });
+    const search = page.getByRole('searchbox',{name:'Search settings'});
+    await search.waitFor();
+    await save(page, `settings-home-${width}`);
+    await search.fill('liquid glass');
+    const appearance = page.getByRole('button',{name:/Appearance Theme/});
+    await appearance.waitFor();
+    assert.equal(await page.locator('[data-setting=security]').isVisible(),false);
+    await appearance.click();
+    const mode = page.getByRole('combobox',{name:'Mode',exact:true});
+    await mode.selectOption('dark');
+    await page.waitForFunction(() => !document.querySelector('.settings-appearance fieldset')?.disabled &&
+      document.querySelector('.settings-appearance select')?.value === 'dark');
+    assert.equal(pref.appearance,'dark');
+    await page.keyboard.press('Escape');
+    let email = {emailOk:true,chat:{emails:{},pigeons:true},weather:{email:{}},account:{fixed:true}};
+    await page.route('**/account/api/account/notify', async route => {
+      assert.equal(route.request().headers()['x-inflite-owner'],owner);
+      if (route.request().method() === 'PATCH') Object.assign(email,route.request().postDataJSON());
+      await route.fulfill({json:email});
+    });
+    await search.fill('email preferences');
+    await page.locator('[data-setting=emails]').click();
+    const fixed = page.getByRole('switch',{name:'When a reported problem is fixed'});
+    await fixed.uncheck();
+    await page.waitForFunction(() => !document.querySelector('.settings-preferences fieldset')?.disabled);
+    assert.equal(email.account.fixed,false);
+    await page.keyboard.press('Escape');
+    await search.fill('unfindable setting');
+    await page.getByText('No matching settings',{exact:true}).waitFor();
+    await search.fill('');
+    await page.locator('[data-category=notifications]').click();
+    await page.getByRole('switch',{name:'Quiet hours',exact:true}).waitFor();
+    assert.equal(new URL(page.url()).hash,'#settings=notifications');
+    await page.goBack();
+    await page.locator('[data-category=notifications]').waitFor();
+    assert.deepEqual(errors,[]);
+  } finally { await ctx.close(); }
 });

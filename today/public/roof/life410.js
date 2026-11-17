@@ -19,21 +19,144 @@ export async function createLifeTools(F,{system,files,organiseStore,today,editTo
  const apply=()=>{if(live())for(const k of ['calendar','reminders','continue','activity'])document.documentElement.toggleAttribute('data-life-hide-'+k,prefs.hidden.includes(k))};apply();
  async function readPrefs(){try{const r=await client.request('preferences');if(live()){prefs=r.prefs;apply();await journal?.put({id:'life-preferences',kind:'life-preferences',value:prefs})}}catch(_){}}
  readPrefs();
- function keepDraft(value){savedDraft=value;const payload=structuredClone(value);write=write.catch(()=>{}).then(()=>journal?journal.put(payload):Promise.reject(Error('Private device storage is unavailable. Keep this page open.')));return write}
- function capture(){
-  if(!live())return;if(captureSheet&&!captureSheet.closed)return captureSheet;
-  let kind=savedDraft?.mode||'note',saving=false,revision=0,acknowledged=false;
-  const text=el('textarea',{class:'life-capture-text',maxlength:64000,rows:6,placeholder:'What’s on your mind?','aria-label':'Capture text'}),status=el('p',{class:'life-status',role:'status'}),content=el('div',{class:'life-capture-content'}),fileInput=el('input',{type:'file',hidden:true,multiple:true,'aria-label':'Choose photos or files'});text.value=savedDraft?.text||'';
-  const controls=ui.seg([['note','Note'],['reminder','Reminder'],['file','File']],kind,value=>{kind=value;render();persist()},{label:'Capture type'}),save=button('Save note',commit,{primary:true}),body=el('div',{class:'life'},el('p',{class:'life-eyebrow',text:'Capture now. Organise later.'}),controls,content,status,fileInput,save);
-  const current=()=>live()&&!h.closed;
-  function render(){content.replaceChildren();if(kind==='file'){save.hidden=true;content.append(intro('file','Keep it in Files','Photos and documents are saved privately to My Drive.'),button('Choose photos or files',()=>fileInput.click(),{primary:true,icon:'plus'}))}else{save.hidden=false;text.placeholder=kind==='note'?'A thought worth keeping…':'What do you need to do?';save.querySelector('span:last-child').textContent=kind==='note'?'Save note':'Set reminder';content.append(text,el('p',{class:'life-hint',text:kind==='note'?'The first line becomes your title. Saved in Notes.':'Continue to choose a date, repeat schedule and linked items.'}))}}
-  async function persist(){if(!current())return;const mine=++revision;status.textContent='Keeping draft…';try{await keepDraft({id:'quick-capture',kind:'capture',mode:kind,text:text.value,recordId:savedDraft?.recordId||operationId(),updatedAt:Date.now()});if(current()&&mine===revision)status.textContent='Draft kept on this device'}catch(e){if(current())status.textContent=e.message}}
-  text.addEventListener('input',persist);
-  async function commit(){if(!current()||saving)return;const raw=text.value.trim();if(!raw){text.focus();status.textContent='Write something to capture first.';return}if(kind==='reminder'){await persist();if(!current())return;h.now();system.capture(null,{current:live,initial:{title:captureFields(raw).title,notes:captureFields(raw).text.slice(0,2000)},onCommitted:async()=>{savedDraft=null;await write.catch(()=>{});await journal?.remove('quick-capture')}});return}
-   saving=true;save.disabled=true;status.textContent='Keeping your note…';try{await persist();if(!current())return;const mine=revision,value={...captureFields(raw),checklist:[],links:[]},store=await organiseStore('notes');if(!current())return;if(!store?.ready())throw Error('Private device storage is unavailable. Your text is still here.');await store.save(savedDraft.recordId,value,{version:store.view(savedDraft.recordId)?.version||0});if(!current())return;if(mine!==revision||text.value.trim()!==raw){status.textContent='Your earlier text was saved. Save the newer text too.';return}await write;savedDraft=null;await journal?.remove('quick-capture');if(!current())return;acknowledged=true;h.now();F.toast(navigator.onLine===false?'Note kept on this device':'Saved to Notes',{action:{label:'Open Notes',run:()=>live()&&F.nav.go('/notes/')}})}catch(e){if(current())status.textContent=e.message}finally{saving=false;if(current())save.disabled=false}
+ function keepDraft(value) {
+  savedDraft = value;
+  write = write.catch(() => {}).then(() => {
+   if (!journal) throw Error('Private device storage is unavailable. Keep this page open.');
+   return value ? journal.put(value) : journal.remove('quick-capture');
+  });
+  return write;
+ }
+ function capture() {
+  if (!live()) return;
+  if (captureSheet && !captureSheet.closed) return captureSheet;
+
+  let kind = savedDraft?.text && savedDraft.mode === 'reminder' ? 'reminder' : 'note';
+  const recordId = savedDraft?.recordId || operationId();
+  let busy = false, h;
+  const current = () => live() && h && !h.closed;
+  const text = el('textarea', {class:'life-capture-text', rows:3, maxlength:64000, 'aria-label':'Capture text', 'aria-describedby':'capture-hint'});
+  text.value = savedDraft?.text || '';
+  const status = el('small', {class:'life-status', role:'status'});
+  const hint = el('small', {id:'capture-hint'});
+  const destination = el('strong');
+  const identity = el('div', {class:'life-calendar-head'}, el('span', {class:'life-action-icon'}), el('div', {}, destination, hint, status));
+  const editor = el('div', {class:'life-calendar'}, identity, text);
+  const fileInput = el('input', {type:'file', hidden:true, multiple:true, 'aria-label':'Choose photos or files'});
+  const modes = ui.seg([['note','Note'],['reminder','Reminder'],['file','File']], kind, next => {
+   if (next === kind || busy) return;
+   kind = next;
+   report('');
+   render();
+   if (kind !== 'file' && text.value.trim()) persist();
+  }, {label:'Capture type'});
+  const action = button('', () => kind === 'file' ? fileInput.click() : commit(), {primary:true});
+  const body = el('div', {class:'life life-capture'}, modes, editor, action, fileInput);
+
+  function report(message) {
+   if (status.textContent !== message) status.textContent = message;
+   hint.hidden = !!message;
   }
-  fileInput.addEventListener('change',async()=>{if(!current()||!fileInput.files?.length)return;save.disabled=true;try{const chosen=[...fileInput.files];await files.upload(chosen,{current});if(current()){h.now();F.toast(chosen.length===1?'File added to upload queue':chosen.length+' files added to upload queue')}}catch(e){if(current())status.textContent=e.message}finally{fileInput.value=''}});
-  const h=captureSheet=F.sheet.open({sheet:'quick-capture',title:'Quick Capture',body,focus:kind==='file'?null:text,onClose(){captureSheet=null;if(!acknowledged&&(text.value||savedDraft))keepDraft({id:'quick-capture',kind:'capture',mode:kind,text:text.value,recordId:savedDraft?.recordId||operationId(),updatedAt:Date.now()}).catch(()=>{})}});render();return h;
+
+  function updateAction() {
+   action.disabled = busy || (kind !== 'file' && !text.value.trim());
+   for (const radio of modes.children) radio.disabled = busy;
+   text.readOnly = busy;
+  }
+  function render() {
+   const file = kind === 'file', note = kind === 'note';
+   identity.firstChild.replaceChildren(ui.icon(file ? 'file' : note ? 'edit' : 'bell'));
+   destination.textContent = file ? 'My Drive' : note ? 'Notes' : 'Reminder';
+   hint.textContent = file ? 'Photos and documents · Up to 25 MB each' : note ? 'The first line becomes your title.' : 'Choose a date and repeat schedule next.';
+   text.hidden = file;
+   text.placeholder = note ? 'Write a note…' : 'What do you need to do?';
+   action.lastChild.textContent = file ? 'Choose photos or files' : note ? 'Save note' : 'Choose schedule';
+   updateAction();
+  }
+  async function persist() {
+   const draft = text.value.trim() ? {
+    id:'quick-capture', kind:'capture', mode:kind, text:text.value,
+    recordId, updatedAt:Date.now()
+   } : null;
+   if (!draft && !savedDraft) return;
+   try {
+    await keepDraft(draft);
+    if (current() && !busy && kind !== 'file' && savedDraft === draft)
+     report(draft ? 'Draft kept on this device' : '');
+   } catch (error) {
+    if (current() && kind !== 'file' && savedDraft === draft) report(error.message);
+   }
+  }
+  text.addEventListener('input', () => {
+   updateAction();
+   if (!text.value.trim()) report('');
+   persist();
+  });
+  text.addEventListener('keydown', event => {
+   if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing) {
+    event.preventDefault();
+    if (!event.repeat) commit();
+   }
+  });
+  async function commit() {
+   const raw = text.value.trim();
+   if (!current() || busy || !raw || kind === 'file') return;
+   busy = true;
+   updateAction();
+   const value = captureFields(raw), draft = savedDraft;
+   try {
+    if (kind === 'reminder') {
+     await write.catch(() => {});
+     if (!current()) return;
+     h.now();
+     await system.capture(null, {
+      current:live, initial:{title:value.title, notes:value.text.slice(0,2000)},
+      onCommitted:() => live() && draft && savedDraft === draft ? keepDraft(null) : undefined
+     });
+    } else {
+     report('Saving note…');
+     const store = await organiseStore('notes');
+     if (!current()) return;
+     if (!store?.ready()) throw Error('Private device storage is unavailable. Your text is still here.');
+     await store.save(recordId, {...value, checklist:[], links:[]}, {version:store.view(recordId)?.version || 0});
+     if (!live()) return;
+     if (savedDraft === draft) await keepDraft(null);
+     if (!current()) return;
+     h.now();
+     F.toast(navigator.onLine === false ? 'Note kept on this device' : 'Saved to Notes',
+      {action:{label:'Open Notes', run:() => live() && F.nav.go('/notes/')}});
+    }
+   } catch (error) {
+    if (current()) report(error.message);
+    else if (live()) F.toast(error.message);
+   } finally {
+    busy = false;
+    if (current()) updateAction();
+   }
+  }
+  fileInput.addEventListener('change', async () => {
+   if (!current() || busy || !fileInput.files.length) return;
+   busy = true;
+   updateAction();
+   report('Adding to the upload queue…');
+   try {
+    const chosen = [...fileInput.files];
+    await files.upload(chosen, {current});
+    if (current()) {
+     h.now();
+     F.toast(chosen.length === 1 ? 'File added to upload queue' : chosen.length + ' files added to upload queue');
+    }
+   } catch (error) {
+    if (current()) report(error.message);
+   } finally {
+    busy = false;
+    fileInput.value = '';
+    if (current()) updateAction();
+   }
+  });
+  render();
+  h = captureSheet = F.sheet.open({sheet:'quick-capture', title:'Quick Capture', body, focus:text, onClose(){captureSheet = null;}});
+  return h;
  }
  async function share(ref){
   if(!live()||!ref||!['notes','calendar','people','files'].includes(ref.app))return;const kind=ref.app,source={app:kind,id:ref.id},store=kind==='files'?null:await organiseStore(kind),v=kind==='files'?await files.locate(ref.id,{current:live}):await store.get(ref.id);if(!live()||!v)return;

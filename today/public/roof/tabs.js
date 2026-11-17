@@ -12,7 +12,7 @@
 //   away(on): the bar out of the way (.away), as a chat's composer is up (stage 3, S3-C4); badge(tab, n): a count on that
 //   tab (.ifl-tab-badge; a number only, none for 0). While Chats is in this page, the bar takes InFlite's indigo (.chats,
 //   roof.css; S3-D16).
-import { REGISTRY } from "./router.js";
+import { REGISTRY, TABS } from "./router.js";
 import { el } from "./ui.js";
 
 const TAB_SCREENS = ["today", "apps", "you"];
@@ -36,13 +36,13 @@ export function createTabs(nav, F, { me: meOf } = {}) {
   // On a computer (from 1100 px, roof.css) the bar is a rail down the left: InFlite's name at its head, the four tabs
   // (each with its key, 1–4), the apps in this page under them (each a way into it), and you at its foot (to You). All
   // of it is in the bar at every width and shown only there (.ifl-rail-x): on a phone the bar is as it was.
-  const RAIL_APPS = ["weather", "fitness", "markets", "mail"];
+  const shortcuts = ["today", "chats", "apps", "you"];
   let railKey = null;
   const mk = (tag, cls, text, attrs) => el(tag, { class: cls, text, ...attrs });
   // (Mail is the site admin's alone: listed only where the account's view says it's theirs, as Apps and You do)
   const yours = (a) => a !== "mail" || F?.session?.view?.apps?.mail === true;
   function rail() {
-    const apps = RAIL_APPS.filter((a) => F?.session?.apps?.[a] && REGISTRY[a] && yours(a));
+    const apps = ["weather", "fitness", "markets", "mail"].filter((a) => F?.session?.apps?.[a] && yours(a));
     const user = F?.session?.view?.user || {};
     const k = JSON.stringify([apps, user.name || "", !!IFL.hub.degraded]);
     if (k === railKey && nav.querySelector(".ifl-rail-brand")) return;
@@ -52,10 +52,9 @@ export function createTabs(nav, F, { me: meOf } = {}) {
     const logo = mk("img", "ifl-rail-logo", null, { src: "/icon.svg", alt: "", width: 28, height: 28 });
     brand.append(logo, mk("span", "", "InFlite"));
     pill.after(brand);
-    const keys = { today: "1", chats: "2", apps: "3", you: "4" };
     for (const a of nav.querySelectorAll(".ifl-tab")) {
-      const n = keys[a.dataset.tab];
-      if (n && !a.querySelector(".ifl-tab-k")) { const s = mk("kbd", "ifl-rail-x ifl-tab-k", n); s.setAttribute("aria-hidden", "true"); a.append(s); }
+      const n = shortcuts.indexOf(a.dataset.tab) + 1;
+      if (n && !a.querySelector(".ifl-tab-k")) a.append(mk("kbd", "ifl-rail-x ifl-tab-k", n, {"aria-hidden":"true"}));
     }
     const extra = [];
     if (apps.length) extra.push(mk("span", "ifl-rail-x ifl-rail-h", "Your Apps"));
@@ -65,7 +64,7 @@ export function createTabs(nav, F, { me: meOf } = {}) {
       a.append(img, mk("span", "ifl-tab-l", R.name));
       extra.push(a);
     }
-    const me = mk("a", "ifl-rail-x ifl-rail-me", null, { href: "/#you", "data-me": "1" });
+    const me = mk("a", "ifl-rail-x ifl-rail-me", null, { href: "/#settings=account", "data-me": "1" });
     const ph = mk("span", "ifl-rail-ph");
     const node = (() => { try { return meOf?.(); } catch (_) { return null; } })();
     if (node) ph.append(node);
@@ -76,12 +75,11 @@ export function createTabs(nav, F, { me: meOf } = {}) {
     extra.push(me);
     nav.append(...extra);
   }
-  const inApp = () => F?.route?.kind === "app";
   function set(c) {
     current = c;
     if (built !== IFL.hub.degraded || !nav.querySelector(".ifl-tab")) build();
     else if (IFL.hub.on) rail();
-    const app = inApp() ? F.route.app : null;
+    const app = F?.route?.app;
     for (const a of nav.querySelectorAll(".ifl-rail-app")) {
       if (a.dataset.app === app) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     }
@@ -89,7 +87,7 @@ export function createTabs(nav, F, { me: meOf } = {}) {
     nav.classList.toggle("chats", chats());
     for (const a of nav.querySelectorAll(".ifl-tab")) {
       if (a.dataset.tab !== c) a.removeAttribute("aria-current");
-      else a.setAttribute("aria-current", c === "apps" && inApp() ? "true" : "page");
+      else a.setAttribute("aria-current", c === "apps" && app ? "true" : "page");
       const n = counts[a.dataset.tab];
       let b = a.querySelector(".ifl-tab-badge");
       if (!n) b?.remove();
@@ -114,8 +112,7 @@ export function createTabs(nav, F, { me: meOf } = {}) {
     const r0 = e.target.closest?.("a.ifl-rail-app, a.ifl-rail-me");
     if (r0 && F?.nav) {
       e.preventDefault();
-      if (r0.dataset.me) return F.nav.go("/#you", { kind: "tab", resume: true });
-      if (F.route?.kind === "app" && F.route.app === r0.dataset.app) return top();
+      if (r0.dataset.app && F.route?.app === r0.dataset.app) return top();
       return F.nav.go(r0.getAttribute("href"), { kind: "tab", resume: true });
     }
     const a = e.target.closest?.("a.ifl-tab");
@@ -130,20 +127,19 @@ export function createTabs(nav, F, { me: meOf } = {}) {
       if (prev?.kind === "tab" && prev.tab === "apps") return history.back();
       return F.nav.go("/#apps", { kind: "pop" });
     }
-    F.nav.go(k === "today" ? "/" : k === "chats" ? "/chats/" : `/#${k}`, { kind: "tab", resume: true });
+    F.nav.go(TABS[k][1], { kind: "tab", resume: true });
   }
   nav.addEventListener("click", click);
   addEventListener("resize", place);
   // Keys, with a keyboard (a computer's, or one on a tablet): 1–4 the tabs (Today, Chats, Apps, You), "/" search. Not
   // while you're typing, a sheet's open, or with a modifier held.
-  const TAB_KEYS = { 1: "today", 2: "chats", 3: "apps", 4: "you" };
   function key(e) {
     if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || nav.inert || !IFL.hub.on) return;
     const t = e.target;
     if (t?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false]), dialog")) return;
     if (F?.busy?.() || document.querySelector("dialog[open]")) return;
     if (e.key === "/" && F?.search?.open) { e.preventDefault(); F.search.open(); return; }
-    const k = TAB_KEYS[e.key];
+    const k = shortcuts[Number(e.key) - 1];
     if (!k || e.shiftKey) return;
     const a = nav.querySelector(`a.ifl-tab[data-tab="${k}"]`);
     if (a) { e.preventDefault(); a.click(); }

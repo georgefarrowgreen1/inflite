@@ -565,7 +565,8 @@ export function createWorkspaceView(root, callbacks = {}) {
     filesView.hidden = mode !== "files"; filesView.inert = mode !== "files";
     foreground(model.foregroundApp || "fitness", false);
     if (previousPage !== `${model.mode}:${model.mode === "workspace" && model.activeId}`) enter(mode === "today" ? todayView : mode === "files" ? filesView : rideView, true);
-    if (todaySide) setCurrent(todaySide, mode === "today");
+    setCurrent(todaySide, mode === "today" && !model.settingsActive);
+    setCurrent(settings, model.settingsActive);
     setCurrent(files, mode === "files");
     const paintWorkspace = (b, w) => { words(b.lastElementChild, w.name); setCurrent(b, mode === "workspace" && w.id === model.activeId); };
     const makeWorkspace = (w, cls) => {
@@ -576,7 +577,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     const chips = [...(callable(callbacks.onToday) ? [{ id: "today", name: "Today", icon: "calendar" }] : []), ...spaces];
     reconcile(phoneChips, chipRecords, chips, w => w.id, w => {
       const b = makeWorkspace(w, "ws-workspace-chip"); if (w.id === "today") b.dataset.wsAction = "today"; return b;
-    }, (b, w) => { words(b.lastElementChild, w.name); setCurrent(b, w.id === "today" ? mode === "today" : mode === "workspace" && w.id === model.activeId); });
+    }, (b, w) => { words(b.lastElementChild, w.name); setCurrent(b, w.id === "today" ? mode === "today" && !model.settingsActive : mode === "workspace" && w.id === model.activeId); });
     card.hidden = !ride;
     action("open-workspace", ride ? opener => invoke("onWorkspace", ride.id, opener) : null);
     const openLabel = ride ? `Open ${ride.name} workspace` : "Open workspace";
@@ -589,7 +590,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     const factKey = JSON.stringify(facts.map(f => [f.label, f.value]));
     if (cardFacts.dataset.values !== factKey) { cardFacts.dataset.values = factKey; cardFacts.replaceChildren(...facts.map(f => el("div", {}, el("dt", { text: f.label }), el("dd", { text: f.value })))); }
     cardFacts.hidden = !facts.length;
-    setCurrent(dockToday, mode === "today");
+    setCurrent(dockToday, mode === "today" && !model.settingsActive);
     const candidates=[...(callable(callbacks.onFiles)?[{id:"files",name:"Files",available:true,indicator:model.fileIndicator}]:[]),...(Array.isArray(model.apps)?model.apps:[])];
     const ids=initialFavourites(model.favourites,id=>candidates.some(a=>a.id===id&&a.available!==false));
     const pinned=ids.map(id=>candidates.find(a=>a.id===id)).filter(Boolean);
@@ -691,9 +692,11 @@ export function createWorkspaceView(root, callbacks = {}) {
     input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!editing){event.preventDefault();grid.querySelector('button:not(:disabled)')?.click()}});
     const security=callable(callbacks.onSecurity)?launchButton('Security Module',icon('lock'),'onSecurity','wsl-security'):null;
     security?.append(icon('chev'));
+    const preferences = callable(callbacks.onSettings) ? launchButton('Settings',icon('settings'),'onSettings','wsl-settings') : null;
+    preferences?.append(icon('chev'));
     const more=el('details',{class:'wsl-more'},el('summary',{},icon('more'),el('span',{text:'More'}),icon('down'))),controls=el('div',{class:'wsl-controls'});
-    for(const[label,glyph,callback]of[['Today','sun','onToday'],['Quick Capture','plus','onCapture'],['Search InFlite','search','onSearch'],['Activity','clock','onActivity'],['App status','info','onRecovery'],['Notifications','bell','onNotifications'],['Settings','settings','onSettings']])if(callable(callbacks[callback]))controls.append(launchButton(label,icon(glyph),callback,'wsl-control'));
-    more.append(controls);const utilities=el('div',{class:'wsl-utilities'},security);if(controls.childElementCount)utilities.append(more);body.append(tools,favs,status,grid,utilities);
+    for(const[label,glyph,callback]of[['Today','sun','onToday'],['Quick Capture','plus','onCapture'],['Search InFlite','search','onSearch'],['Activity','clock','onActivity'],['App status','info','onRecovery'],['Notifications','bell','onNotifications']])if(callable(callbacks[callback]))controls.append(launchButton(label,icon(glyph),callback,'wsl-control'));
+    more.append(controls);const utilities=el('div',{class:'wsl-utilities'},preferences,security);if(controls.childElementCount)utilities.append(more);body.append(tools,favs,status,grid,utilities);
     const dispose=launcherInput(body,{current:liveBody,menu:(app,node)=>{if(!editing)return invoke('onAppMenu',app,node)},reorder:(id,target)=>{
       if(!liveBody()||!editing)return;const next=moveFavourite(favourites(),id,target);invoke('onFavourites',next);model.favourites=next;animateOrder(favs,paintGrid);favs.querySelector('[data-launcher-favourite="'+id+'"]')?.focus({preventScroll:true});
     }});

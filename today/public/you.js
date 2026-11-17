@@ -35,12 +35,14 @@ function liveVersions(root, ctx) {
   if (Date.now() - liveAt < 60e3) return;
   liveAt = Date.now();
   Promise.all(Object.entries(LIVE_PATH).map(([k, p]) => fetch(`${p}version`, { cache: "no-store", credentials: "same-origin" })
-    .then((r) => (r.ok ? r.json() : null)).then((j) => { if (j?.build) LIVE[k] = String(j.build); }, () => {}))).then(() => { if (root.isConnected) paint(root, ctx); });
+    .then((r) => (r.ok ? r.json() : null)).then((j) => { if (j?.build) LIVE[k] = String(j.build); }, () => {}))).then(() => { if (root.isConnected && current(ctx)) paint(root, ctx); });
 }
 // (each row's leading icon: a symbol on a colour, as Settings has, or the app's own icon)
 const sv = (d, w = 2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const GL = {
   bell: G.bell, sun: G.sun, info: G.info,
+  shield: sv('<path d="M12 3 4.5 6v5.5c0 4.8 3 7.8 7.5 10 4.5-2.2 7.5-5.2 7.5-10V6z"/><path d="m9 12 2 2 4-4"/>'),
+  devices: sv('<rect x="3" y="4" width="14" height="11" rx="2"/><path d="M7 19h5m-2-4v4"/><rect x="15" y="10" width="6" height="11" rx="1.5"/>'),
   moon: sv('<path d="M19.5 14.6A8 8 0 0 1 9.4 4.5a8 8 0 1 0 10.1 10.1z"/>'),
   spark: sv('<path d="M12 3.5 13.9 8.6 19 10.5 13.9 12.4 12 17.5 10.1 12.4 5 10.5 10.1 8.6z"/><path d="m18.4 16.4.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>', 1.8),
   apps: sv('<rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/>', 1.9),
@@ -147,14 +149,10 @@ function paint(root, ctx) {
   const go = (attrs, b, small, val = "", lead = "") => `<button class="row go" type="button" ${attrs}>${lead}${tx(b, small)}${val ? `<span class="val">${esc(val)}</span>` : ""}<span class="chev">${G.chev}</span></button>`;
   const sw = (attrs, b, small, on, aria, extra = "", lead = "") => `<label class="row"${extra}>${lead}${tx(b, small)}<input type="checkbox" class="switch" role="switch" ${attrs} ${on ? "checked" : ""} aria-label="${esc(aria)}"></label>`;
   const pick = (attrs, b, small, opts, on, aria, extra = "") => `<label class="row pick"${extra}><span class="tx"><b>${esc(b)}</b>${small ? `<small data-line>${esc(small)}</small>` : ""}</span><span class="val"><span>${esc((opts.find(([v]) => v === on) || opts[0])[1])}</span>${G.down}</span><select ${attrs} aria-label="${esc(aria)}">${opts.map(([v, l]) => `<option value="${v}" ${v === on ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
-  const out = [];
+  const sections = {};
   // You: your picture and name, a tap from your account
   const photo = typeof ctx.photo === "function" ? ctx.photo(u) : esc([...String(u.first || u.name || "?")][0] || "?");
-  out.push(sec("youAccount", "", `<button class="row go you-me" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Password, Passkeys and Devices</small></span><span class="chev">${G.chev}</span></button>`));
-  out.push(sec("youAppearance", "", `<button class="row go" type="button" id="youAppearanceOpen"><span class="tx"><b>Appearance</b><small>Colours, light and dark</small></span><span class="chev">${G.chev}</span></button>`));
-  if(ctx.security)out.push(sec("youSecurityModule","",`<button class="row go" type="button" id="youSecurityModuleOpen"><span class="tx"><b>Security Module</b><small>Sessions, app access and security activity</small></span><span class="chev">${G.chev}</span></button>`));
-  if(ctx.life)out.push(sec("youLife","",`<button class="row go" type="button" id="youCaptureOpen"><span class="tx"><b>Quick Capture</b><small>Thoughts, reminders, photos and files</small></span><span class="chev">${G.chev}</span></button><button class="row go" type="button" id="youTodayOpen"><span class="tx"><b>Customise Today</b><small>Your cards, your order</small></span><span class="chev">${G.chev}</span></button><button class="row go" type="button" id="youCalendarsOpen"><span class="tx"><b>Connected calendars</b><small>Google Calendar, Outlook and files</small></span><span class="chev">${G.chev}</span></button>`));
-  if(ctx.reminders)out.push(sec("youReminders","",`<button class="row go" type="button" id="youRemindersOpen"><span class="tx"><b>Reminders</b><small>Actions linked to your apps</small></span><span class="chev">${G.chev}</span></button><button class="row go" type="button" id="youRememberedOpen"><span class="tx"><b>Remembered devices</b><small>Continuation and encrypted draft copies</small></span><span class="chev">${G.chev}</span></button>`));
+  sections.youAccount = sec("youAccount", "", `<button class="row go you-me" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Edit profile</small></span><span class="chev">${G.chev}</span></button>`);
   // Notifications: this phone, Today's morning, quiet hours
   const n = Y.notify;
   {
@@ -178,7 +176,7 @@ function paint(root, ctx) {
       if (q.on) rows.push(pick(`id="youQfrom"`, "From", "", hours, String(q.from), "Quiet hours from", ` data-k="qfrom"`).replace('class="row pick"', 'class="row pick sub"'),
         pick(`id="youQto"`, "To", "", hours, String(q.to), "Quiet hours to", ` data-k="qto"`).replace('class="row pick"', 'class="row pick sub"'));
     }
-    out.push(sec("youNotify", "Notifications", rows.join(""), foot, true));
+    sections.youNotify = sec("youNotify", "Delivery", rows.join(""), foot, true);
   }
   // From each app: its own icon, a switch where it's one, else a tap to its own sheet
   if (n !== false) {
@@ -195,12 +193,12 @@ function paint(root, ctx) {
         sw(`data-k="alerts"`, "Markets", "When a price you watch moves", mktOn, "Markets price alerts", ` data-app="markets"`, appIc("markets")),
         sw(`data-k="wrap"`, "Evening Wrap", "How your holdings did, each weekday", wrapOn, "Markets: the Evening Wrap", ` data-app="markets"`).replace('<label class="row"', '<label class="row sub"'),
         ctx.frame?.session?.apps?.fitness === true
-          ? `<a class="row go" href="${esc(ctx.href?.("fitness", "settings") || "/fitness/#settings")}" data-k="fitness" data-app="fitness">${appIc("fitness")}${tx("Fitness", "In Today’s morning")}<span class="chev">${G.chev}</span></a>`
+          ? `<a class="row go" href="${esc("/#settings=fitness")}" data-k="fitness" data-app="fitness">${appIc("fitness")}${tx("Fitness", "In Today’s morning")}<span class="chev">${G.chev}</span></a>`
           : row("fitness", "Fitness", "In Today’s morning", "", appIc("fitness")),
         admin ? go(`id="youMail" data-k="mail" data-app="mail"`, "Mail", "Through InFlite, and which addresses", "", appIc("mail")) : "",
       ].join("");
     }
-    out.push(sec("youApps2", "From Each App", body, "", !!n));
+    sections.youApps2 = sec("youApps2", "From Each App", body, "", !!n);
   }
   // Rules: what Today may do for you, each Do, Suggest or Quiet (the ones still to come left out)
   if (Y.rules !== false) {
@@ -220,7 +218,7 @@ function paint(root, ctx) {
   }
   // Other devices
   const list = Array.isArray(Y.devices?.devices) ? Y.devices.devices : [];
-  if (ctx.hub && Y.devices && list.length) out.push(sec("youDevices", "Other Devices", list.map(deviceRow).join("")));
+  if (ctx.hub && Y.devices && list.length) sections.youDevices = sec("youDevices", "Other Devices", list.map(deviceRow).join(""));
   // About: each app's version as it is now (asked of each app as About opens), else as it last said it here
   const ver = APPS.filter(([k]) => k !== "mail" || admin).map(([k, name]) => {
     let b = k === "today" ? ctx.BUILD : LIVE[k] || null;
@@ -228,32 +226,114 @@ function paint(root, ctx) {
     return row(`v-${k}`, name, null, `<span class="val">${b ? `V${esc(b)}` : "—"}</span>`);
   }).join("");
   FOLDERS.versions = sec("youVersions", "About InFlite", ver);
-  // General: the three folders (one row each, its contents in a sheet of their own, as Settings does) and Chat's settings
-  const nRules = (Y.rules?.rules || []).filter((r) => !r.soon).length, nApps = CONNECTED.filter(([app]) => app !== "mail" || admin).length;
-  const folder = (k, b, small, lead) => `<button class="row go" type="button" data-folder="${k}">${lead}${tx(b, small)}<span class="chev">${G.chev}</span></button>`;
-  out.push(sec("youMore", "General", [
-    Y.rules !== false ? folder("rules", "What Today Does for You", nRules ? `${nRules} ${nRules === 1 ? "rule" : "rules"}, each Do, Suggest or Quiet` : "Its rules", ic("spark", "indigo")) : "",
-    folder("apps", "Connected Apps", `${nApps} apps and what each shares`, ic("apps", "blue")),
-    go(`id="youChatGo"`, "Chat Settings", ctx.chats ? "Pigeons, privacy and your loft" : "Typing, Pigeons, Names on the Lock Screen", "", appIc("chat")),
-    folder("versions", "About InFlite", ctx.BUILD ? `Today V${ctx.BUILD} and each app’s version` : "Each app’s version", ic("info", "grey")),
-  ].join(""), "", true));
-  out.push(`<section class="you-sec you-out"><div class="group glass"><button class="row you-signout" type="button" id="youOut">Sign Out</button></div></section>`);
-  // On a computer (from 1100 px, app.css) You is two panes: your account and a list of its parts on the left, the part
-  // you're on beside it (its folders too, in the pane rather than a sheet). On a phone the list and the folders' copies
-  // here aren't shown, and You is the one column it was.
-  const folds = ["rules", "apps", "versions"].map((k) => FOLDERS[k] && FOLDERS[k].replace(/^<section class="you-sec" id="(\w+)"/, `<section class="you-sec you-fold" id="$1-pane" data-fold="${k}"`)).join("");
-  const panes = PANES.filter(([id]) => out.some((h) => h.includes(`id="${id}"`)) || (id.endsWith("-pane") && folds.includes(`id="${id}"`)));
-  if (!panes.some(([id]) => id === pane)) pane = panes[0]?.[0] || "youNotify";
-  const tabs = panes.map(([id, label, k, tone]) => `<button class="row you-tab" type="button" data-pane="${id}"${id === pane ? ' aria-current="page"' : ""}>${ic(k, tone)}<span class="tx"><b>${esc(label)}</b></span></button>`).join("")
-    + `<button class="row you-tab" type="button" data-act="chat">${appIc("chat")}<span class="tx"><b>Chat Settings</b></span></button>`
-    + `<button class="row you-tab you-tab-out" type="button" data-act="out"><span class="tx"><b>Sign Out</b></span></button>`;
-  const nav = `<nav class="you-nav group glass icons" aria-label="Your account’s parts">${tabs}</nav>`;
-  root.innerHTML = `<div class="you-side">${out[0] || ""}${nav}</div><div class="you-main">${out.slice(1).join("")}<div class="you-folds">${folds}</div></div>`;
-  showPane(root, pane);
-  // (a folder open while You's drawn again: its contents drawn again too)
+  const link = (action, title, description, lead = "") => go(`data-setting="${action}"`, title, description, "", lead);
+  const options = ctx.frame?.session?.apps || {};
+  const appSettings = [
+    ["weather", "Weather", "Units, forecasts, commute and solar"],
+    ["fitness", "Fitness", "Training zones, units, devices and providers"],
+    ["markets", "Markets", "Live prices and portfolio notifications"],
+    ["chats", "Chats", "Delivery, location and privacy"],
+    ["mail", "Mail", "Addresses, signature and incoming mail"],
+  ].filter(([app]) => app !== "mail" || admin)
+   .map(([app, name, description]) => link(app, name, description, appIc(app === "chats" ? "chat" : app))).join("");
+  const shortcuts = [
+    ["weather","forecast","Forecast detail"], ["weather","solar","Solar panels"], ["weather","commute","Commute"],
+    ["weather","best","Best times for activities"], ["weather","arrange","Weather card order"],
+    ["fitness","numbers","Training zones and personal numbers"], ["fitness","units","Fitness units and maps"],
+    ["fitness","nights","Sleep and daily check-in"], ["fitness","devices","Fitness devices, Garmin and Strava"],
+    ["chats","location","Chat location sharing"], ["mail","signature","Email signature"],
+    ["mail","unknown","Unknown email addresses"]
+  ].filter(([app]) => options[app] && (app !== "mail" || admin)).map(([app,page,title]) =>
+    go(`data-editor="${app}" data-page="${page}"`,title,({chats:"Chats",mail:"Mail",weather:"Weather",fitness:"Fitness"})[app])
+  ).join("");
+  const groups = [
+    ["account", "Account & security", "Profile, sign-in and personal data", "shield", sec("youIdentity", "", [
+      link("profile","Edit profile","Name, photo and handle"),
+      link("security","Sign-in and security","Password, passkeys and sessions"),
+      ctx.security ? link("module","Security Module","App access and security activity") : "",
+      link("data","Your data","Export your information or manage your account"),
+      go('id="youOut"', "Sign out", "On this device")
+    ].join(""))],
+    ["personalise", "Appearance & Today", "Colours, Liquid Glass and your daily view", "sun",
+      sec("youPersonal", "", [link("appearance","Appearance","Theme, palette and Liquid Glass intensity"),
+        link("units","Weather units","Temperature, wind, rain, pressure and clock"),
+        ctx.life ? link("customise","Customise Today","Sections and card order") : ""].join("")) + FOLDERS.rules],
+    ["notifications", "Notifications", "Quiet hours, morning briefing and alerts", "bell",
+      (sections.youNotify || "") + (sections.youApps2 || "") + sec("youEmail", "", link("emails","Email preferences","Account and app email notifications"))],
+    ["apps", "Apps & connections", "App preferences, sharing and calendars", "apps",
+      sec("youPreferences","App preferences",appSettings + shortcuts) + sec("youConnections","Connections",
+        (ctx.life ? link("calendars","Connected calendars","Subscriptions and imports") : "") +
+        link("sharing","Connected apps","What each app shares with InFlite"))],
+    ["devices", "Devices", "Saved devices and notification delivery", "devices",
+      (ctx.remembered ? sec("youRemembered","",link("remembered","Remembered devices","Continuation and encrypted drafts")) : "") +
+      (sections.youDevices || sec("youDeviceInfo","",row("devices","Other notification devices",Y.devices === null ? "Checking your devices…" : "None listed")))],
+    ["about", "About InFlite", "App versions", "info", FOLDERS.versions]
+  ];
+  const selected = categoryFor(ctx.section);
+  const previous = root.querySelector('.settings-search input');
+  const sameVisit = root.dataset.settingsOwner === String(u.id) && root.dataset.settingsSection === (ctx.section || "");
+  const query = sameVisit ? previous?.value || "" : "";
+  const focused = sameVisit && root.contains(document.activeElement) ? document.activeElement : null;
+  root.dataset.settingsOwner = u.id;
+  root.dataset.settingsSection = ctx.section || "";
+  const currentCategory = selected || (matchMedia("(min-width: 900px)").matches ? "account" : null);
+  const nav = groups.map(([key,title,sub,icon]) =>
+    `<a class="row go settings-category" href="/#settings=${key}" data-category="${key}" ${currentCategory === key ? 'aria-current="page"' : ""}>${ic(icon,"grey")}${tx(title,sub)}<span class="chev">${G.chev}</span></a>`).join("");
+  const details = groups.map(([key,title,, ,html]) =>
+    `<section class="settings-detail" data-group="${key}" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${html}</section>`).join("");
+  root.innerHTML = `<div class="settings-sidebar">
+    ${sections.youAccount}<label class="settings-search">${sv('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>')}<input type="search" aria-label="Search settings" placeholder="Search settings" autocomplete="off"></label>
+    <nav class="group glass icons" aria-label="Settings categories">${nav}</nav></div>
+    <div class="settings-content"><a class="settings-back" href="/#settings"><span aria-hidden="true">‹</span> All settings</a>${details}<p class="settings-empty" role="status" hidden>No matching settings</p></div>`;
+  const input = root.querySelector('.settings-search input');
+  input.value = query;
+  function filter() {
+    const words = input.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    root.toggleAttribute("data-filtering", !!words.length);
+    let count = 0;
+    for (const section of root.querySelectorAll('[data-group]')) {
+      const key = section.dataset.group, title = section.getAttribute('aria-label');
+      let any = false;
+      for (const block of section.querySelectorAll('.you-sec')) {
+        let hits = 0;
+        for (const item of block.querySelectorAll('.row')) {
+          const line = [title,block.querySelector('.you-h')?.textContent,item.textContent].join(' ').toLocaleLowerCase();
+          item.hidden = (!words.length && !!item.dataset.editor) || !words.every(word => line.includes(word));
+          if (!item.hidden) hits++;
+        }
+        block.hidden = !hits;
+        any ||= !!hits;
+      }
+      section.hidden = words.length ? !any : key !== (selected || 'account');
+      if (!section.hidden) count++;
+    }
+    root.dataset.detail = selected ? "true" : "false";
+    root.querySelector('.settings-empty').hidden = count > 0;
+  }
+  filter();
+  input.addEventListener("input", filter);
+  if (focused === previous && previous) {
+    input.focus({preventScroll:true});
+  } else if (focused?.id) root.querySelector('#'+CSS.escape(focused.id))?.focus({preventScroll:true});
+  else if (focused?.dataset.category) root.querySelector(`[data-category="${focused.dataset.category}"]`)?.focus({preventScroll:true});
   const yf = document.getElementById("sh-youfolder");
   if (yf?.open && yf.dataset.folder) fillFolder(yf, root, ctx);
   wire(root, ctx);
+  for (const entry of root.querySelectorAll("[data-editor]")) entry.addEventListener("click", () => {
+    ctx.editApp(entry.dataset.editor,entry,entry.dataset.page);
+  });
+  for (const b of root.querySelectorAll('[data-setting]')) b.addEventListener('click', () => {
+    const key = b.dataset.setting;
+    if (key === 'sharing') return openFolder('apps',root,ctx);
+    if (key === 'module') return ctx.security();
+    if (key === 'remembered') return ctx.remembered();
+    if (key === 'calendars' || key === 'customise') return ctx.life(key);
+    if (key === 'emails') return emailPreferences(root,ctx);
+    if (key === 'appearance') return appearance(ctx);
+    if (key === 'units' && options.weather) return ctx.editApp('weather',b,'units');
+    if (["weather","fitness","markets","chats","mail"].includes(key)) return ctx.editApp(key,b);
+    ctx.openAccount(key);
+  });
 }
 
 function deviceRow(d) {
@@ -263,17 +343,15 @@ function deviceRow(d) {
 }
 
 const FOLDERS = { rules: "", apps: "", versions: "" };
-// (You's two panes on a computer: each part's section, its name in the list and its icon; the one you're on)
-const PANES = [["youNotify", "Notifications", "bell", "red"], ["youApps2", "From Each App", "every", "blue"], ["youDevices", "Other Devices", "every", "grey"],
-  ["youRules-pane", "What Today Does for You", "spark", "indigo"], ["youApps-pane", "Connected Apps", "apps", "blue"], ["youVersions-pane", "About InFlite", "info", "grey"]];
-let pane = "youNotify";
-const twoPanes = () => matchMedia("(min-width: 1100px)").matches;
-function showPane(root, id) {
-  const main = root.querySelector(".you-main");
-  if (!main) return;
-  pane = id;
-  for (const s of main.querySelectorAll(".you-sec")) s.classList.toggle("on", s.id === id);
-  for (const b of root.querySelectorAll(".you-tab[data-pane]")) { if (b.dataset.pane === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }
+function categoryFor(section) {
+  const key = (section || "").replace(/^settings-/, "");
+  if (["notifications","account","about","devices","apps","personalise"].includes(key)) return key;
+  if (["quiet","phone","notify","notify-weather","notify-mail","markets-alerts","emails"].includes(key)) return "notifications";
+  if (["weather","fitness","chats","mail","markets","calendars","sharing"].includes(key)) return "apps";
+  if (["appearance","customise","rules","units"].includes(key)) return "personalise";
+  if (key === "versions") return "about";
+  if (key === "signout") return "account";
+  return null;
 }
 const FOLDER_TITLE = { rules: "What Today Does for You", apps: "Connected Apps", versions: "About InFlite" };
 function fillFolder(sheet, root, ctx) {
@@ -293,24 +371,121 @@ function openFolder(k, root, ctx) {
   fillFolder(sheet, root, ctx);
   if (!sheet.open) ctx.openSheet("sh-youfolder");
 }
+async function accountPreference(ctx,path,method = "GET",patch) {
+  const headers = {"X-InFlite-Owner":ctx.view.user.id};
+  if (patch) headers["Content-Type"] = "application/json";
+  const response = await fetch("/account/api/account/" + path, {
+    method, headers, credentials:"same-origin", cache:"no-store", signal:ctx.frame.signal,
+    body: patch ? JSON.stringify(patch) : undefined
+  });
+  if (!response.ok) throw Error(response.status === 401 ? "Your account changed. Open Settings again." : "Couldn’t reach Account. Try again.");
+  return response.json();
+}
+
+function emailPreferences(root,ctx) {
+  const ui = ctx.frame.ui, el = ui.el, body = el("div",{class:"settings-preferences"});
+  const h = ctx.frame.sheet.open({sheet:"settings-emails",title:"Email preferences",body});
+  const active = () => current(ctx) && !h.closed;
+  async function load() {
+    body.replaceChildren(ui.skeleton("rows",3));
+    try {
+      const prefs = await accountPreference(ctx,"notify");
+      if (active()) draw(prefs);
+    } catch (error) {
+      if (active()) body.replaceChildren(ui.error({title:"Email preferences unavailable",body:error.message,acts:[{label:"Try again",run:load}]}));
+    }
+  }
+  function draw(prefs) {
+    const list = el("fieldset"), status = el("p",{class:"you-foot",role:"status"});
+    const toggle = (title,checked,patch) => ui.row({title,trail:ui.sw(checked,async value => {
+      if (list.disabled || !active()) return;
+      list.disabled = true;
+      status.textContent = "Saving…";
+      try {
+        const next = await accountPreference(ctx,"notify","PATCH",patch(value));
+        if (active()) {
+          Y.notify = next;
+          draw(next);
+          paint(root,ctx);
+        }
+      } catch (error) {
+        if (active()) { draw(prefs); body.querySelector('[role=status]').textContent = error.message; }
+      }
+    },{label:title})});
+    const chat = [["messages","Unread messages"],["landed","Letters arriving"],["requests","Friend requests"]];
+    if (prefs.chat.pigeons) chat.push(["weekly","Weekly flight summary"]);
+    list.append(ui.list(chat.map(([key,label]) => toggle(label,!!prefs.chat.emails[key],on=>({chat:{emails:{[key]:on}}}))),{label:"Chats"}),
+      ui.list([["warn","Official warnings"],["brief","Morning briefing"]].map(([key,label]) => toggle(label,!!prefs.weather.email[key],on=>({weather:{email:{[key]:on}}}))),{label:"Weather"}),
+      ui.list([toggle("When a reported problem is fixed",prefs.account.fixed,on=>({account:{fixed:on}}))],{label:"Account"}));
+    list.disabled = !prefs.emailOk;
+    body.replaceChildren(list,status,el("p",{class:"you-foot",text:"Security emails about sign-ins and account changes are always sent."}));
+    if (!prefs.emailOk) body.prepend(ui.row({title:"Verify your email to receive app updates",trail:"chevron",run:()=>ctx.openAccount("security")}));
+  }
+  load();
+}
+
+function appearance(ctx) {
+  if (!current(ctx)) return;
+  const theme = globalThis.InFliteAppearance, ui = ctx.frame.ui, el = ui.el;
+  if (!theme) return ctx.openAccount("appearance");
+  const owner = ctx.view.user.id, body = el("div", {class:"settings-appearance"});
+  const h = ctx.frame.sheet.open({sheet:"settings-appearance",title:"Appearance",body});
+  const active = () => current(ctx) && !h.closed;
+  async function load() {
+    body.replaceChildren(ui.skeleton("rows",3));
+    try {
+      const pref = await accountPreference(ctx,"appearance");
+      if (!active()) return;
+      if (!pref.signedIn || pref.id !== owner) throw Error("Sign in to Account to edit your appearance.");
+      theme.accept(pref);
+      draw(pref);
+    } catch (e) {
+      if (active()) body.replaceChildren(ui.error({title:"Appearance unavailable",body:e.message,acts:[
+        {label:"Try again",run:load},{label:"Open Account",run:()=>ctx.openAccount("appearance")}
+      ]}));
+    }
+  }
+  function draw(pref) {
+    const form = el("fieldset"), status = el("p",{class:"you-foot",role:"status"});
+    async function save(key,value) {
+      if (!active() || form.disabled) return;
+      form.disabled = true;
+      status.textContent = "Saving…";
+      try {
+        const result = await accountPreference(ctx,"prefs","PUT",{[key]:value});
+        if (!ctx.current() || result.id !== owner) return;
+        theme.accept({...result.prefs,id:owner},{animate:true});
+        if (active()) draw({...result.prefs,id:owner});
+      } catch (error) {
+        if (active()) { draw(pref); body.querySelector('[role=status]').textContent = error.message; }
+      } finally { form.disabled = false; }
+    }
+    const select = (label,key,items) => {
+      const input = el("select", {"aria-label":label},items.map(([value,text])=>el("option",{value,text})));
+      input.value = pref[key];
+      input.onchange = () => save(key,input.value);
+      return ui.row({title:label,trail:input});
+    };
+    const strength = el("input",{type:"range",min:0,max:100,value:pref.glassStrength,"aria-label":"Glass intensity",disabled:!pref.glass});
+    const amount = el("output",{text:pref.glassStrength+"%"});
+    strength.oninput = () => {amount.textContent = strength.value+"%";};
+    strength.onchange = () => save("glassStrength",Number(strength.value));
+    form.append(ui.list([
+      select("Mode","appearance",[["auto","System"],["light","Light"],["dark","Dark"]]),
+      select("Colour palette","palette",Object.entries(theme.palettes).map(([id,p])=>[id,p.name])),
+      ui.row({title:"Liquid Glass",trail:ui.sw(pref.glass,on=>save("glass",on),{label:"Liquid Glass"})}),
+      ui.row({title:"Glass intensity",trail:el("span",{class:"settings-range"},strength,amount)})
+    ]));
+    body.replaceChildren(form,status);
+  }
+  load();
+}
+
 function wire(root, ctx) {
   const $ = (s) => root.querySelector(s);
-  $('#youSecurityModuleOpen')?.addEventListener('click',()=>ctx.security());
-  for(const [id,action]of [['youCaptureOpen','capture'],['youTodayOpen','customise'],['youPrivacyOpen','privacy'],['youCalendarsOpen','calendars']])$('#'+id)?.addEventListener('click',()=>ctx.life(action));
-  $("#youRemindersOpen")?.addEventListener("click",()=>ctx.reminders());
-  $("#youRememberedOpen")?.addEventListener("click",()=>ctx.remembered());
-  $("#youAcct")?.addEventListener("click", () => ctx.openAccount());
-  $("#youAppearanceOpen")?.addEventListener("click", () => ctx.openAccount("appearance"));
+  $("#youAcct")?.addEventListener("click", () => ctx.openAccount("profile"));
   for (const b of root.querySelectorAll("[data-folder]")) b.addEventListener("click", () => openFolder(b.dataset.folder, document.getElementById("you") || root, ctx));
-  for (const b of root.querySelectorAll(".you-tab")) b.addEventListener("click", () => {
-    if (b.dataset.act === "chat") return ctx.chatSettings();
-    if (b.dataset.act === "out") { b.disabled = true; return ctx.signOut(); }
-    if (b.dataset.pane === "youVersions-pane") liveVersions(root, ctx);
-    showPane(root, b.dataset.pane);
-    if (root.getBoundingClientRect().top < 0) scrollTo({ top: 0, behavior: "auto" });
-  });
   $("#youMorning")?.addEventListener("click", () => ctx.toMorning());
-  $("#youChatGo")?.addEventListener("click", () => ctx.chatSettings());
   $("#youOut")?.addEventListener("click", (e) => { e.currentTarget.disabled = true; ctx.signOut(); });
   // (a rule's level: Do, Suggest or Quiet, set by you)
   for (const sel of root.querySelectorAll("[data-rulepick]")) sel.addEventListener("change", async () => {
@@ -425,33 +600,21 @@ function fillEvery(sheet, root, ctx) {
 }
 
 // ---------------------------------------------------------------- /#you=<id>: a section of You, or its sheet
-const SECTIONS = { notify: "youApps2", apps: "youApps", quiet: "youNotify", rules: "youRules", phone: "youNotify", account: "youAccount", versions: "youVersions" };
 export async function goTo(root, ctx, id, drawn) {
-  if (!root || !id || !current(ctx)) return;
-  if (id === "notify-weather") return openWxNotify(root, ctx);
-  if (id === "notify-mail") return openMailNotifyFrom(ctx);
-  // (on a computer, the part in the right-hand pane: a folder's too, rather than its sheet)
-  if (twoPanes()) {
-    const to = { rules: "youRules-pane", apps: "youApps-pane", versions: "youVersions-pane", notify: "youApps2", quiet: "youNotify", phone: "youNotify" }[id];
-    if (to) {
-      await Promise.resolve(drawn).catch(() => {});
-      if (!current(ctx) || !root.querySelector(`#${to}`)) return;
-      if (to === "youVersions-pane") liveVersions(root, ctx);
-      showPane(root, to);
-      root.querySelector(`.you-tab[data-pane="${to}"]`)?.focus({ preventScroll: true });
-      return;
-    }
-  }
-  if (id === "rules" || id === "apps" || id === "versions") { if (!FOLDERS[id]) await Promise.resolve(drawn).catch(() => {}); if (current(ctx)) openFolder(id, root, ctx); return; }
-  const at = () => (id === "signout" ? root.querySelector(".you-out") : SECTIONS[id] ? root.querySelector(`#${SECTIONS[id]}`) : null);
-  // (a section drawn only once its answer's in, Quiet Hours: waited for)
-  if (!at()) await Promise.resolve(drawn).catch(() => {});
   if (!current(ctx)) return;
-  const el = at();
-  if (!el) return;
-  el.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  const h = el.querySelector(".you-h, button");
-  if (h) { if (!h.matches("button")) h.tabIndex = -1; h.focus({ preventScroll: true }); }
+  const key = id.replace(/^settings-/, "");
+  if (key === "notify-weather") return openWxNotify(root, ctx);
+  if (key === "emails") return emailPreferences(root,ctx);
+  if (key === "notify-mail") return openMailNotifyFrom(ctx);
+  if (["weather","fitness","chats","markets","mail"].includes(key)) return ctx.editApp(key);
+  if (key === "appearance") return appearance(ctx);
+  if (key === "units") return ctx.frame.session.apps.weather ? ctx.editApp("weather",null,"units") : ctx.openAccount("units");
+  if (id === "apps" || key === "sharing") return openFolder("apps",root,ctx);
+  if (key === "about" || key === "versions") liveVersions(root,ctx);
+  if (["quiet","phone","notify","signout"].includes(key)) {
+    await drawn;
+    if (current(ctx)) root.querySelector(({quiet:"#youQuiet",phone:"#youPhone",notify:"#youApps2 .row",signout:"#youOut"})[key])?.focus({preventScroll:true});
+  }
 }
 
 // ---------------------------------------------------------------- Mail Notifications (#sh-mailnotify)

@@ -74,7 +74,7 @@ export const TABS = Object.freeze({
   today: Object.freeze(["Today", "/", "sun"]),
   chats: Object.freeze(["Chats", "/chats/", "bubble"]),
   apps: Object.freeze(["Apps", "/#apps", "grid"]),
-  you: Object.freeze(["You", "/#you", "person"]),
+  you: Object.freeze(["Settings", "/#settings", "sliders"]),
 });
 
 // A path of this site's, as the shared block's rule has it: starts /, not //, no \ and nothing unseen, ≤ 200 characters.
@@ -132,8 +132,8 @@ export function parse(href, { roof = false, origin, workspace = false } = {}) {
     }
     if (workspace && (!hash || hash === "workspace" || hash.startsWith("workspace=") && arg1(hash.slice(10)))) return { kind: "tab", tab: "workspace", arg: !hash || hash === "workspace" ? null : arg1(hash.slice(10)) };
     if (hash === "apps") return { kind: "tab", tab: "apps", arg: null };
-    if (hash === "you") return { kind: "tab", tab: "you", arg: null };
-    if (hash.startsWith("you=")) return { kind: "tab", tab: "you", arg: arg1(hash.slice(4)) };
+    if (/^settings(?:=[\w-]{1,31})?$/.test(hash)) return { kind: "tab", tab: "you", arg: hash.replace("=", "-") };
+    if (hash === "you" || hash.startsWith("you=")) return { kind: "tab", tab: "you", arg: arg1(hash.slice(4)) };
     return { kind: "tab", tab: "today", arg: null };
   }
   if (!roof) return null;
@@ -176,9 +176,12 @@ export function format(route) {
   const kind = route.kind ?? (route.app != null ? "app" : route.tab != null ? "tab" : null);
   if (kind === "tab") {
     if (route.tab === "workspace" && route.tool === "files") { const folder = filesFolder(route.folder); return folder ? `/#files=${folder}` : "/#files"; }
-    if (route.tab === "workspace") { const a = arg1(route.arg); return a ? `/#workspace=${a}` : "/#workspace"; }
     if (route.tab === "apps") return "/#apps";
-    if (route.tab === "you") { const a = arg1(route.arg); return a ? `/#you=${a}` : "/#you"; }
+    if (route.tab === "you" || route.tab === "workspace") {
+      const arg = arg1(route.arg);
+      if (route.tab === "you" && /^settings(?:-|$)/.test(arg)) return "/#" + arg.replace("-", "=");
+      return "/#" + route.tab + (arg ? "=" + arg : "");
+    }
     return "/";
   }
   const r = kind === "app" && typeof route.app === "string" && Object.hasOwn(REGISTRY, route.app) ? REGISTRY[route.app] : null;

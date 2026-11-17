@@ -84,11 +84,12 @@ export async function mount(root, fw) {
       return null;
     });
   };
+  const settingsJs = () => fw.lazy((q) => import("./mailsettings.js" + q));
   const signinJs = () => fw.lazy((q) => import("./signin.js" + q));
   Object.assign(ctx.open, {
     compose: opener(() => fw.lazy((q) => import("./compose.js" + q)), (m, init, current = () => true) => current() ? m.openCompose(ctx, init || {}) : null),
     later: (ids) => openLater(ctx, ids), views: () => openViews(ctx), rowMenu: (t) => openRowMenu(ctx, t), unsub: (t) => openUnsub(ctx, t),
-    settings: opener(() => fw.lazy((q) => import("./mailsettings.js" + q)), (m, page) => m.openSettings(ctx, page ?? null)),
+    settings: opener(settingsJs, (m, page) => m.openSettings(ctx, page ?? null)),
     viewer: opener(() => fw.lazy((q) => import("./viewer.js" + q)), (m, files, i, current = () => true) => current() ? m.openViewer(ctx, files, i) : null),
     signin: opener(signinJs, (m, current = () => true) => current() ? m.signIn(ctx) : null),
     confirm: (spec) => confirmSheet(ctx, spec),
@@ -262,7 +263,7 @@ export async function mount(root, fw) {
       const hits = store.get().list.rows.filter((t) => !t.draft && [t.subject, t.latest?.snippet, t.snippet, ...(t.people || []).flatMap((p) => [p.name, p.email])].some((x) => String(x || "").toLowerCase().includes(s))).slice(0, 5)
         .map((t) => { const who = logic.displayName(t.from || t.people?.[0]); return { title: t.subject || "(No Subject)", sub: [who, logic.fmtListDate(t.date)].filter(Boolean).join(" · "), avatar: who || "?", run: () => openThread(t.id) }; });
       const views = VIEWS_RUN.filter(([l]) => l.toLowerCase().includes(s)).map(([l, run]) => ({ title: `Mail · ${l}`, sub: "Mail", icon: "mail", run }));
-      const settings = "mail settings".includes(s) ? [{ title: "Mail Settings", sub: "Mail", icon: "mail", run: () => ctx.open.settings(null) }] : [];
+      const settings = "mail settings".includes(s) ? [{ title: "Mail Settings", sub: "Mail", icon: "mail", run: () => fw.settings ? fw.settings() : ctx.open.settings(null) }] : [];
       return [...hits, ...views, ...settings, { title: `Search Mail for “${q.trim()}”`, sub: "Asks Mail", icon: "mail", label: `Search Mail for ${q.trim()}`, run: () => searchMail(q) }];
     },
   })) || (() => {});
@@ -331,6 +332,10 @@ export async function mount(root, fw) {
     }).catch((e) => { workspaceAsked = null; if (alive && !fw.signal?.aborted) { console.error(e); fw.toast("Mail workspace tools couldn’t open. Try again."); } return null; });
   };
   return {
+    async settingsPanel(host,current,page) {
+      const module = await settingsJs();
+      if (current()) return module.openSettings({...ctx,fw:host},page);
+    },
     workspace: workspaceReady,
     show(r) {
       seen++;
@@ -365,7 +370,7 @@ export async function mount(root, fw) {
       }
       // (an iPad: the pane, the address the lens's)
       if (thread && store.get().layout === "pad") queueMicrotask(() => fw.nav.section(store.get().lens));
-      if (r?.key === "settings") ctx.open.settings(r.arg || null);
+      if (r?.key === "settings") { if (fw.settings && !r.arg) fw.settings({replace:true}); else ctx.open.settings(r.arg || null); }
       // (the hand-back swapped at Mail, then Mail asked afresh once the first ask is in, whichever way it went: a first
       // ask answered after the swap says the old gate, and only a fresh one brings Mail's list in)
       // (the code read from the address as it is now, before the frame tidies it: the sign-in page puts its own hints

@@ -18,7 +18,7 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.35";
+const BUILD = "4.36";
 // (what's new in it, said once it's in)
 const NEWS = "Ride overview appears when you have a planned session";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
@@ -562,7 +562,7 @@ const IFL = (() => {
   // (each hub path's app, by its own address's first part: degraded, the way back to it)
   const OWN = { chats: "chat", weather: "weather", fitness: "fitness", markets: "finance", mail: "email" };
   // (keys, not words: no app's copy but Today's names Today as an app, iflmenu.test.mjs)
-  const TABS = { today: ["Today", "/", "sun"], chats: ["Chats", "/chats/", "bubble"], apps: ["Apps", "/#apps", "grid"], you: ["You", "/#you", "person"] };
+  const TABS = { today: ["Today", "/", "sun"], chats: ["Chats", "/chats/", "bubble"], apps: ["Apps", "/#apps", "grid"], you: ["Settings", "/#settings", "sliders"] };
   const marker = typeof document !== "undefined" ? document.querySelector?.('meta[name="ifl-hub"]') : null;
   // (a path of this site's: starts /, not //, no \ and nothing unseen (a tab or a new line, which an address drops, so
   // "/\n/x" would be "//x"), no more than 200 characters)
@@ -651,6 +651,11 @@ const IFL = (() => {
       if (hub.degraded) return ownAt(p) || (ownPath(p) ? p : url);
       if (leaving(p)) crumb();
       return p;
+    },
+    settings(section = "") {
+      const path = "/#settings" + (section ? "=" + encodeURIComponent(section) : "");
+      if (hub.on) return path;
+      return /(^|\.)inflite\.ai$/.test(location.hostname) ? "https://inflite.ai" + path : null;
     },
     href(app, section = "") {
       if (!hub.on) return null;
@@ -1230,7 +1235,7 @@ const S = {
   boundary: 0, // the until whose crossing has had its fetch put in hand
 };
 // (the page's own sheet that's open, as the frame's sheet handle, and its dialog's id; the frame, made once signed in)
-let sheetOpen = null, sheetId = null, waitingAnswer = null, F = null, workspaceHost = null;
+let sheetOpen = null, sheetId = null, waitingAnswer = null, F = null, workspaceHost = null, settingsHost = null;
 
 // ---------------------------------------------------------------- the account's API, through this site's Worker
 const requests = createRequestCoordinator();
@@ -1887,7 +1892,7 @@ let bell = null, bellReady = Promise.resolve(), notificationCount = 0;
 const SCREENS = {
   today: { el: $("#today"), title: () => "Today", crumb: () => "", line: lineOf, acts: [BELL, EDIT], onShow() { drawLine(true); if (cardsStale) { cardsStale = false; refresh(); } }, onHide() {} },
   apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Open an app or jump straight in", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
-  you: { el: $("#you"), title: () => "You", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() {} },
+  you: { el: $("#you"), title: () => "Settings", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() {} },
 };
 // (a service's state, as it changes (the frame's opts.serviceState): Chats locked by its app lock, every word of Chat's
 // gone from Today at once, and none kept to draw again (S3-D14))
@@ -1911,7 +1916,7 @@ function frame() {
         onTodayShow: () => SCREENS.today.onShow(),
         onEditToday:()=>{if(F===ownerFrame){ownerFrame.nav.go("/");openEdit()}},
         onAccount: (opener) => { if (F === ownerFrame) openMenu(opener); },
-        onSettings: () => { if (F === ownerFrame) ownerFrame.nav.go("/#you"); },
+        onSettings: () => { if (F === ownerFrame) ownerFrame.nav.go("/#settings"); },
         onNotifications: async () => { await bellReady; if (F === ownerFrame && !ownerFrame.signal.aborted) bell?.open(); },
       });
     }).then((host) => {
@@ -1936,7 +1941,7 @@ function frame() {
     onHide() { workspaceRoute = null; workspace?.hide(); }, focus: () => workspace?.focus() || workspaceRoot } : undefined;
   if (OS_MODE && location.pathname === "/" && /^#workspace(?:=[\w-]{1,40})?$/.test(location.hash)) history.replaceState(history.state, "", `/${location.search}`);
   F = createFrame({
-    root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
+    settings: (app, options) => ownerFrame.nav.go("/#settings=" + app, options), root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
     session: () => ({ view: S.view, hub: S.hub, roof: S.roof, apps: S.apps, links: S.links || DEFAULT_LINKS }),
     lost: () => signedOutNow(true), checkSession, hubAgain: () => hubAgain(30e3), save, changed: () => { cardsStale = true; },
     // (a thenable, read when the frame first asks for a service: so a worker let go of after the frame's made (the hub's
@@ -1949,6 +1954,7 @@ function frame() {
     workspacePreview: OS_MODE && !["inflite.ai", "os.inflite.ai"].includes(location.hostname),
   });
   ownerFrame = F;
+  settingsHost = OS_MODE ? installWorkspace : null;
   if (OS_MODE) installWorkspace();
   // (swiping between an app's sections, as a native app pages between its tabs: swipe.js; once, whichever frame is up)
   if (!frame.swipe) frame.swipe = import("/swipe.js").then((m) => m.swipes({ get route() { return F?.route; }, nav: { section: (a, id) => F?.nav.section(a, id) } }), (e) => console.error(e));
@@ -1970,7 +1976,7 @@ function frame() {
   if(OS_MODE)import('/roof/continuity.js').then(m=>{if(F===f&&!f.signal.aborted)m.connectContinuity(f,{owner:S.view.user.id,root:$('#today')})}).catch(()=>{});
   bellReady = import("/bell.js").then((m) => {
     if (F !== f || bell) return;
-    bell = m.createBell(f, { count: (n) => { if (F !== f || f.signal.aborted) return; notificationCount = n; f.header.count?.("bell", n); workspaceHost?.update(); }, go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); }, settings: () => go("/#you=phone"), actions: OS_MODE ? (note) => F === f && !f.signal.aborted ? workspaceHost?.notificationActions(note) || [] : [] : undefined });
+    bell = m.createBell(f, { count: (n) => { if (F !== f || f.signal.aborted) return; notificationCount = n; f.header.count?.("bell", n); workspaceHost?.update(); }, go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); }, settings: () => go("/#settings=phone"), actions: OS_MODE ? (note) => F === f && !f.signal.aborted ? workspaceHost?.notificationActions(note) || [] : [] : undefined });
   }, (e) => console.error(e));
   return F;
 }
@@ -1979,6 +1985,7 @@ function unframe() {
   const f = F;
   F = null;
   workspaceHost = null;
+  settingsHost = null;
   prefsRecovery=null;prefsRecoveryLoad=null;
   notificationCount = 0;
   try { bell?.destroy(); } catch (e) { console.error(e); }
@@ -2006,15 +2013,65 @@ function drawYouNow(arg = F?.route?.arg ?? null) {
 // (The framework's connectors, loaded as You needs them)
 const connectors = () => import("/roof/connectors.js");
 const appsCtx = (task) => ({ current: task.current, answer: S.answer, view: S.view, href: (app, section) => IFL.hub.href(app, section), ui: task.frame.ui, frame: task.frame });
-const youCtx = (task) => ({
-  view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, ...scopedAPI(), current: task.current, active: task.active, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
-  kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
-  sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, syncPush, offHere: () => offHere(), toMorning, openAccount, signOut, canPush, pushWhy,
-  chatSettings: () => task.active() && (chatsHere ? task.frame.nav.go("/chats/#settings") : location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`)),
-  openSheet: (id) => task.active() && openSheet(id), closeSheet: () => task.active() && closeSheet(), BUILD,
-  security:()=>task.active()&&workspaceHost?.security().then(v=>task.active()&&v?.open()),life:action=>task.active()&&workspaceHost?.life().then(v=>task.active()&&v?.[action]?.()), reminders: () => task.active() && workspaceHost?.reminders(), remembered: () => task.active() && workspaceHost?.remembered(), frame: task.frame, connectors, connector: (app) => connectors().then((m) => task.active() && m.openConnector(task.frame, app)), go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
-  icon: (app) => { try { return IFL.iconUrl(app) || ""; } catch { return ""; } },
-});
+const youCtx = (task) => {
+  const hostAction = run => settingsHost && (async (...args) => {
+    const host = await settingsHost();
+    if (task.active() && host) return run(host, ...args);
+  });
+  function legacyPreferences(app) {
+    if (!task.active() || (app === "mail" && !S.view?.apps?.mail)) return;
+    const name = OWN[app], home = safe(S.links?.[name]) || DEFAULT_LINKS[name];
+    if (home) location.assign(home.replace(/\/$/, "") + "/#" + (app === "chats" ? "account" : "settings"));
+  }
+  let editing = false;
+  async function editAppSettings(app, trigger, page) {
+    if (!task.active() || editing) return;
+    if (!task.frame.session.apps[app] || (app === "mail" && !S.view?.apps?.mail)) {
+      if (trigger) return legacyPreferences(app);
+      return toast("Choose the app below to open its settings.");
+    }
+    editing = true;
+    const f = task.frame, route = f.route;
+    const current = () => task.current() && f.route === route && f.session.apps[app];
+    if (trigger) trigger.setAttribute("aria-busy","true");
+    try {
+      const view = f.view(app), instance = await view.load();
+      if (!current()) return;
+      if (!instance?.settingsPanel) throw Error("Update this app and try again to open its settings.");
+      const sheet = {open(spec) {
+        if (!current()) throw new DOMException("Settings closed", "AbortError");
+        return f.sheet.open({...spec,app,onClose() {
+          try { spec.onClose?.(); } finally {
+            if (!trigger) queueMicrotask(() => {
+              if (current() && location.hash === "#settings=" + app) f.nav.go("/#settings=apps",{replace:true});
+            });
+          }
+        }});
+      }};
+      await instance.settingsPanel({...view.fw, sheet, nav:{
+        ...view.fw.nav, go:(path,opts) => current() && f.nav.go(path,opts),
+        section:key => current() && f.nav.go(view.fw.nav.href(key))
+      }}, current, page);
+    } catch (e) {
+      if (current() && e.name !== "AbortError") toast(e.message || "Settings could not open. Try again.");
+    } finally {
+      editing = false;
+      trigger?.removeAttribute("aria-busy");
+    }
+  }
+  return {
+    editApp: editAppSettings, section: task.frame.route?.arg,
+    view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, ...scopedAPI(), current: task.current, active: task.active, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
+    kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
+    sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, syncPush, offHere: () => offHere(), toMorning, openAccount, signOut, canPush, pushWhy,
+    openSheet: (id) => task.active() && openSheet(id), closeSheet: () => task.active() && closeSheet(), BUILD,
+    security: hostAction(async host => { const security = await host.security(); if (task.active()) return security?.open(); }),
+    life: hostAction(async (host, action) => { const life = await host.life(); if (task.active()) return life?.[action]?.(); }),
+    remembered: hostAction(host => host.remembered()),
+    frame: task.frame, connectors, connector: (app) => connectors().then((m) => task.active() && m.openConnector(task.frame, app)), go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
+    icon: (app) => { try { return IFL.iconUrl(app) || ""; } catch { return ""; } },
+  };
+};
 
 // (signed out, or not? For the framework's session.lost(), D3: a module's 401 is believed only once /api/session says
 // so. Ordinary checks share 30 s; explicit expiry hints revalidate, sharing any
@@ -2040,8 +2097,12 @@ function checkSession(fresh = false) {
 const SETTINGS = [
   ["Notifications", "notify", "Each app’s, and Today’s morning"], ["Weather Notifications", "notify-weather", "Rain and warnings for the places you choose"],
   ["Quiet Hours", "quiet", "Every app, but warnings"], ["Rules", "rules", "What Today does for you"], ["This Device", "phone", "Notifications here"],
-  ["Connected Apps", "apps", "What each app shares with InFlite"], ["Account", "account", "Password, Passkeys and Devices"], ["Sign Out", "signout", "Of InFlite, on this device"],
+  ["Connected Apps", "sharing", "What each app shares with InFlite"], ["Account", "account", "Password, Passkeys and Devices"], ["Sign Out", "signout", "Of InFlite, on this device"],
   // (Mail's, for the site's admin alone: s4/spec §2.4)
+  ["Appearance", "appearance", "Colour palette, dark mode and Liquid Glass intensity"],
+  ["Units", "units", "Weather temperature, rainfall, wind, pressure and clock"],
+  ["Devices", "devices", "Remembered devices and notification delivery"],
+  ["App settings", "apps", "Weather, Fitness, Markets and Chats preferences"],
   ["Mail Notifications", "notify-mail", "Through InFlite, and which addresses notify you", (view) => view?.apps?.mail === true],
 ];
 // (search's own matching: a word's start, inside one, the letters in order, a slip; what's beside the title only where
@@ -2081,7 +2142,7 @@ function todayHits(q) {
 }
 function settingsHits(q) {
   if (!q || !S.view) return [];
-  return SETTINGS.filter(([t, , sub, only]) => (!only || only(S.view)) && found(q, t, sub)).map(([title, id, sub]) => ({ title, sub, href: `/#you=${id}` }));
+  return SETTINGS.filter(([t, , sub, only]) => (!only || only(S.view)) && found(q, t, sub)).map(([title, id, sub]) => ({ title, sub, href: `/#settings=${id}` }));
 }
 // (an entry for the screen already showing: the search closed, no navigation, so Back never meets a twin)
 const notHere = (list) => list.map((e) => (e.href && here(e.href) ? { title: e.title, sub: e.sub, icon: e.icon, avatar: e.avatar, run: () => {} } : e));
@@ -2114,17 +2175,13 @@ function drawLine(force = false) {
 }
 function openMenu(anchor) {
   if (!S.view) return;
-  const u = S.view.user, m = S.morning || {};
+  const u = S.view.user;
   IFL.menu(anchor, {
     app: "today",
     build: BUILD,
     me: { name: u.name || u.handle || "Your account", line: u.handle ? `@${u.handle}` : "", photo: photoNode(u) },
     rows: [
-      { icon: "bell", color: "red", label: "Notifications", key: "notify", open: () => go("/#you") },
-      { icon: "sun", color: "orange", label: matchMedia("(max-width: 360px)").matches ? "Morning" : "Morning Notification", key: "morning", value: m.on ? clock(m.at) : "Off", open: toMorning },
-      { icon: "link", color: "blue", label: "Connected Apps", key: "apps", open: () => go("/#you=apps") },
-      "-",
-      { icon: "sliders", color: "grey", label: "Edit Today", key: "edit", open: () => { go("/"); openEdit(); } },
+      { icon: "gear", color: "grey", label: "Settings", key: "settings", open: () => go("/#settings") },
     ],
     account: () => openAccount(),
     signOut,

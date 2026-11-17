@@ -11,7 +11,7 @@ import { createSend } from "./send.js";
 export const CONTRACT = 1;
 // The shell's request factory also works before the signed-in frame is mounted.
 export { createRequestCoordinator, isRequestCancelled } from "./requests.js";
-const TABN = { today: "Today", apps: "Apps", you: "You", workspace: "Workspace" };
+const TABN = { today: "Today", apps: "Apps", you: "Settings", workspace: "Workspace" };
 const labelOf = (r) => (r?.kind === "app" ? REGISTRY[r.app]?.name : TABN[r?.tab]) || null;
 const TODAY = { kind: "tab", tab: "today", arg: null };
 const T = (f, d) => { try { return f(); } catch (_) { return d; } };
@@ -678,6 +678,7 @@ export function createFrame(opts = {}) {
     const app = m.app, live = () => liveModule(m), mine = () => live() && shown?.id === "m:" + app;
     const closedSheet = () => ({ el: ui.el("dialog"), body: ui.el("div"), closed: true, close() {}, now() {}, push: () => ui.el("div"), pop() {}, setBusy() {} });
     return {
+      settings: opts.settings && (options => live() && (mine() || m.host?.visible) && opts.settings(app,options)),
       contract: CONTRACT, app, screenEl: m.el, signal: m.controller.signal, ui,
       header: { set(spec = {}) { if (!live()) return; m.header = { ...m.header, ...spec }; if (m.host) { if (m.host.visible) T(() => m.host.header?.({ ...m.header })); } else if (mine()) F.header.set(appHead(F.route)); } },
       nav: {
@@ -771,7 +772,7 @@ export function createFrame(opts = {}) {
     if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
     const u = T(() => new URL(a.href, L.href));
     if (u?.origin !== L.origin) return;
-    if ((u.pathname === "/" || u.pathname === "/index.html") && u.hash && !/^#(apps|you(=[\w-]*)?)?$/.test(u.hash) && !(opts.workspace && /^#workspace(=[\w-]{1,40})?$/.test(u.hash))) return;
+    if ((u.pathname === "/" || u.pathname === "/index.html") && u.hash && !/^#(apps|(?:settings|you)(=[\w-]*)?)?$/.test(u.hash) && !(opts.workspace && /^#workspace(=[\w-]{1,40})?$/.test(u.hash))) return;
     const p = u.pathname + u.search + u.hash, r = parse(p, { roof: roofs(), workspace: !!opts.workspace });
     if (!r) return;
     e.preventDefault();

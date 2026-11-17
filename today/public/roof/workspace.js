@@ -153,7 +153,7 @@ export async function createWorkspace(F, options = {}) {
       paintPending = false; if (!live()) return;
       const user = F.session.view?.user || {};
       systemInstance?.update();
-      view.update({ favourites,mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : "today", activeApp: F.route?.app, workspaces: [],
+      view.update({ favourites,settingsActive: F.route?.tab === "you",mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : "today", activeApp: F.route?.app, workspaces: [],
         apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id),indicator:appOn(a.id)?launcherStatus(snapshots.get(a.id)):null })), fileIndicator:fileIndicator(), user: { name: user.name || "", photo: user.photoAt && /^[\w-]{8,64}$/.test(owner) ? `/api/avatar?id=${encodeURIComponent(owner)}&v=${encodeURIComponent(String(user.photoAt))}` : null }, notifications: options.notifications?.() || 0,
         unifiedHome: true, connectionManaged: true, online: recovery.snapshot().online, activityCount: activityView.count(),
         greeting: `${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}${F.session.view?.user?.name ? ", " + String(F.session.view.user.name).trim().split(/\s+/)[0] : ""}`,
