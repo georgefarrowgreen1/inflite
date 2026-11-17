@@ -152,7 +152,8 @@ function paint(root, ctx) {
   const photo = typeof ctx.photo === "function" ? ctx.photo(u) : esc([...String(u.first || u.name || "?")][0] || "?");
   out.push(sec("youAccount", "", `<button class="row go you-me" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Password, Passkeys and Devices</small></span><span class="chev">${G.chev}</span></button>`));
   out.push(sec("youAppearance", "", `<button class="row go" type="button" id="youAppearanceOpen"><span class="tx"><b>Appearance</b><small>Colours, light and dark</small></span><span class="chev">${G.chev}</span></button>`));
-  if(ctx.life)out.push(sec("youLife","",`<button class="row go" type="button" id="youCaptureOpen"><span class="tx"><b>Quick Capture</b><small>Thoughts, reminders, photos and files</small></span><span class="chev">${G.chev}</span></button><button class="row go" type="button" id="youTodayOpen"><span class="tx"><b>Customise Today</b><small>Your cards, your order</small></span><span class="chev">${G.chev}</span></button><button class="row go" type="button" id="youPrivacyOpen"><span class="tx"><b>Privacy and data</b><small>Devices, connections and exports</small></span><span class="chev">${G.chev}</span></button><button class="row go" type="button" id="youCalendarsOpen"><span class="tx"><b>Connected calendars</b><small>Google Calendar, Outlook and files</small></span><span class="chev">${G.chev}</span></button>`));
+  if(ctx.security)out.push(sec("youSecurityModule","",`<button class="row go" type="button" id="youSecurityModuleOpen"><span class="tx"><b>Security Module</b><small>Sessions, app access and security activity</small></span><span class="chev">${G.chev}</span></button>`));
+  if(ctx.life)out.push(sec("youLife","",`<button class="row go" type="button" id="youCaptureOpen"><span class="tx"><b>Quick Capture</b><small>Thoughts, reminders, photos and files</small></span><span class="chev">${G.chev}</span></button><button class="row go" type="button" id="youTodayOpen"><span class="tx"><b>Customise Today</b><small>Your cards, your order</small></span><span class="chev">${G.chev}</span></button><button class="row go" type="button" id="youCalendarsOpen"><span class="tx"><b>Connected calendars</b><small>Google Calendar, Outlook and files</small></span><span class="chev">${G.chev}</span></button>`));
   if(ctx.reminders)out.push(sec("youReminders","",`<button class="row go" type="button" id="youRemindersOpen"><span class="tx"><b>Reminders</b><small>Actions linked to your apps</small></span><span class="chev">${G.chev}</span></button><button class="row go" type="button" id="youRememberedOpen"><span class="tx"><b>Remembered devices</b><small>Continuation and encrypted draft copies</small></span><span class="chev">${G.chev}</span></button>`));
   // Notifications: this phone, Today's morning, quiet hours
   const n = Y.notify;
@@ -294,6 +295,7 @@ function openFolder(k, root, ctx) {
 }
 function wire(root, ctx) {
   const $ = (s) => root.querySelector(s);
+  $('#youSecurityModuleOpen')?.addEventListener('click',()=>ctx.security());
   for(const [id,action]of [['youCaptureOpen','capture'],['youTodayOpen','customise'],['youPrivacyOpen','privacy'],['youCalendarsOpen','calendars']])$('#'+id)?.addEventListener('click',()=>ctx.life(action));
   $("#youRemindersOpen")?.addEventListener("click",()=>ctx.reminders());
   $("#youRememberedOpen")?.addEventListener("click",()=>ctx.remembered());

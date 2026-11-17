@@ -647,7 +647,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     if (callable(callbacks.onCreateWorkspace)) saved.append(launchButton("New workspace", icon("plus"), "onCreateWorkspace", "wsl-workspace wsl-create"));
     if (saved.childElementCount) body.append(section("Workspaces", saved));
     const controls = el("div", { class: "wsl-controls" });
-    for (const [label, glyph, callback, text] of [["Activity", "clock", "onActivity"], ["Workspace sync", "swap", "onSync", "Sync"], ["App status", "info", "onRecovery"], ["Notifications", "bell", "onNotifications"], ["Settings", "settings", "onSettings"]]) {
+    for (const [label, glyph, callback, text] of [["Security Module", "lock", "onSecurity"], ["Activity", "clock", "onActivity"], ["Workspace sync", "swap", "onSync", "Sync"], ["App status", "info", "onRecovery"], ["Notifications", "bell", "onNotifications"], ["Settings", "settings", "onSettings"]]) {
       if (!callable(callbacks[callback])) continue;
       const node = launchButton(label, icon(glyph), callback, "wsl-control"); if (text) node.lastElementChild.textContent = text;
       controls.append(node);

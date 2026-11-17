@@ -34,6 +34,8 @@ export async function createWorkspace(F, options = {}) {
   options.dockRoot?.append(background);
   const organiseStores=new Map();
   const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.10/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
+  let securityLoad=null;
+  const security=()=>securityLoad||=(import('./security-module.js').then(m=>live()?m.createSecurityModule(F,{remembered:()=>system().then(s=>s?.devices()),calendars:()=>lifeTools().then(s=>s?.calendars())}):null).catch(e=>{securityLoad=null;throw e}));
   let lifeInstance=null,lifeLoad=null;
   const lifeTools=()=>lifeLoad||=(Promise.all([import('./life410.js'),system()]).then(([m,s])=>live()?m.createLifeTools(F,{system:s,files,organiseStore,today,editToday:options.onEditToday}):null).then(v=>lifeInstance=v).catch(e=>{lifeLoad=null;throw e}));
   let files = null, commands = null, dialogs = null, recovery = null, recoveryView = null,systemInstance=null,systemLoad=null;
@@ -67,6 +69,7 @@ export async function createWorkspace(F, options = {}) {
     return Object.freeze({
       enabled: true,
       discovery350:true,
+      security:Object.freeze({open:()=>security().then(s=>usable()&&s?.open({app}))}),
       organiseStore,
       life:Object.freeze({share:ref=>lifeTools().then(v=>live()&&v?.share(ref)),calendars:()=>lifeTools().then(v=>live()&&v?.calendars())}),
       today:()=>usable()?options.day?.():null,
@@ -97,7 +100,7 @@ export async function createWorkspace(F, options = {}) {
     onToday: () => F.nav.go("/", { resume: true }), onApp: (app) => openApp(app),
     onRecent: app => { if (live() && appOn(app)) openApp(app); },
     onAppDrop: (app, token) => { if (live() && ["mail", "fitness"].includes(app) && /^[a-f0-9]{32}$/.test(token)) return runIntent(app, app === "mail" ? "compose-attach" : "import-drive", "drop:" + token); },
-    onCapture:()=>lifeTools().then(v=>live()&&v?.capture()),onSearch: () => F.search.open(), onApps: () => openApps(),
+    onSecurity:()=>security().then(s=>live()&&s?.open({app:F.route?.app||null})),onCapture:()=>lifeTools().then(v=>live()&&v?.capture()),onSearch: () => F.search.open(), onApps: () => openApps(),
     onNotifications: options.onNotifications, onAccount: options.onAccount, onSettings: options.onSettings,
     onFiles: () => openFiles(),
     onActivity: () => activityView.open(), onRecovery: () => recoveryView.open(),
@@ -365,6 +368,7 @@ export async function createWorkspace(F, options = {}) {
     paint(); activate(r).catch(() => {});
   }));
   files = createFilesService(F, {
+    authoriseTransfer:async(app,item,lease)=>{const m=await import('./security-client.js');if(!live())throw new DOMException('This account was released','AbortError');return m.approveFileTransfer(F,app,item,lease)},
     activity: fileActivity,share:source=>lifeTools().then(v=>live()&&v?.share(source)),remind:source=>system().then(s=>live()&&s?.capture(source)),
     sources: () => WORKSPACE_APPS.filter(a => ["fitness", "mail", "chats", "markets", "calendar", "notes", "people"].includes(a.id) && appOn(a.id)).map(a => ({ app: a.id, name: a.name, transient: a.id === "chats", status: snapshots.get(a.id)?.status || (snapshots.get(a.id)?.loading ? "loading" : providers.has(a.id) ? "ready" : "loading"), files: snapshots.get(a.id)?.files || [] })),
     load: loadFiles, runIntent, openApp, openExplorer: openFiles,
@@ -390,6 +394,8 @@ export async function createWorkspace(F, options = {}) {
   offs.push(F.search.provide({id:'document-contents',group:'Document contents',order:90,search:q=>q.trim().length<2?[]:[{title:'Search inside documents',sub:'Text, Markdown, CSV and JSON · open content search',run:()=>lifeTools().then(v=>live()&&v?.searchDocuments(q))}]}));
   let discoveryLoad;offs.push(F.search.provide({id:'discovery350',group:'Across InFlite',order:22,scope:'account',search:async(q,lease)=>{if(q.trim().length<2||!live())return [];discoveryLoad||=import('./discovery350.js');const m=await discoveryLoad;return live()?m.discover(F,{query:q,lease,files,searchApp,openApp,runIntent}):[]}}));
   queueMicrotask(()=>system().catch(()=>{}));
+  const securityRoute=r=>{if(r?.kind==='tab'&&r.tab==='you'&&r.arg==='security')security().then(s=>live()&&F.route===r&&s?.open()).catch(e=>live()&&F.route===r&&F.toast(e.message))};
+  offs.push(F.on('route',securityRoute));securityRoute(F.route);
   const lifeTimer=setTimeout(()=>{if(live())lifeTools().catch(()=>{})},1800);F.signal.addEventListener('abort',()=>clearTimeout(lifeTimer),{once:true});
   if (F.systemTasks?.register) offs.push(F.systemTasks.register(files, { signal: F.signal }));
   commands = createWorkspaceCommands(F, {
@@ -399,7 +405,7 @@ export async function createWorkspace(F, options = {}) {
     systemActions: () => [
       {id:'quick-capture',label:'Quick Capture',detail:'Save a thought, reminder, photo or file',keywords:['capture','inbox','save','note'],current:live,run:()=>lifeTools().then(v=>live()&&v?.capture())},
       {id:'today-customise',label:'Customise Today',detail:'Choose cards and sections',keywords:['layout','reorder','hide'],current:live,run:()=>lifeTools().then(v=>live()&&v?.customise())},
-      {id:'privacy-centre',label:'Privacy and data',detail:'Your devices, connections and exports',keywords:['security','export','permissions'],current:live,run:()=>lifeTools().then(v=>live()&&v?.privacy())},
+      {id:'security-module',label:'Security Module',detail:'Sessions, permissions and private security activity',keywords:['security','permissions','access','devices','privacy'],current:live,run:()=>security().then(s=>live()&&s?.open())},
       {id:'calendar-connections',label:'Connected calendars',detail:'Google Calendar, Outlook and iCalendar files',keywords:['subscribe','ics','calendar'],current:live,run:()=>lifeTools().then(v=>live()&&v?.calendars())},
       {id:'queued-file-recovery',label:'Queued file recovery',detail:'Retry or save files kept on this device',keywords:['upload','recover'],current:live,run:()=>files.recovery()},
       {id:'open-reminders',label:'Reminders',detail:'Actions linked to your apps',keywords:['tasks','todo','follow up'],current:live,run:()=>system().then(s=>live()&&s?.openList())},
@@ -410,7 +416,7 @@ export async function createWorkspace(F, options = {}) {
     ],
   });
   paint(); activate(F.route).catch(() => {});
-  return { show, hide, update: paint, destroy, openFiles,life:()=>lifeTools(),reminders:()=>system().then(s=>live()&&s?.openList()),remembered:()=>system().then(s=>live()&&s?.devices()), busy: () => live() && !!files?.busy(),
+  return { show, hide, update: paint, destroy, openFiles,security:()=>security(),life:()=>lifeTools(),reminders:()=>system().then(s=>live()&&s?.openList()),remembered:()=>system().then(s=>live()&&s?.devices()), busy: () => live() && !!files?.busy(),
     async flush(options) { return live() ? files?.flush(options) || { lost: 0 } : { lost: 0 }; },
     notificationActions: note => notificationActions(note, { origin: location.origin, enabled: appOn, openApp, runIntent, current: live }),
     focus: () => { if (shown && route?.tool === "files") { const target = explorer?.focus(); if (target) return target; } const heading = root.querySelector("h1") || root; heading.tabIndex = -1; return heading; } };

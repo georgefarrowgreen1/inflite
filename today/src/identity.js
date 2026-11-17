@@ -40,6 +40,10 @@ export async function identity(request, env) {
   if (!env.HUB_KEY) return fail(503, 'Sign-in is temporarily unavailable. Please try again.');
   const headers = new Headers({ 'X-Hub-Key': env.HUB_KEY, 'X-Inflite-Identity': role });
   const cookies = identityCookies(request); if (cookies) headers.set('Cookie', cookies);
+  // A captured account is a precondition checked against the upstream cookie,
+  // never a trusted identity. Preserve it across canonical Account requests.
+  const owner=request.headers.get('X-Inflite-Owner');
+  if(api&&owner!==null){if(!/^[A-Za-z0-9_-]{1,128}$/.test(owner))return fail(401,'Your account changed. Reopen this action.');headers.set('X-Inflite-Owner',owner);}
   for (const name of ['Accept', 'Content-Type', 'User-Agent', 'X-Home-Screen', 'Range']) {
     const value = request.headers.get(name); if (value) headers.set(name, value);
   }

@@ -11,4 +11,4 @@ export function organisePage(request,env){
  return env.ASSETS.fetch(request);
 }
 // Reuse the bounded private transport, with a fixed, disjoint capability set.
-export function organiseAPI(request,env){return systemAPI(request,env,{prefix:'/api/organise/',upstream:'today/organise/',routes:new Set(['POST list','GET record','PUT record','POST document-search','GET calendars','POST calendar-preview','PUT calendar','DELETE calendar','POST calendar-refresh','POST calendar-events','GET preferences','PUT preferences']),query:new Set(['id','kind','version']),maxBody:/\/(calendar|calendar-preview)$/.test(new URL(request.url).pathname)?768*1024:512*1024});}
+export function organiseAPI(request,env){return systemAPI(request,env,{prefix:'/api/organise/',upstream:'today/organise/',routes:new Set(['POST list','GET record','PUT record','POST document-search','GET calendars','POST calendar-preview','PUT calendar','DELETE calendar','POST calendar-refresh','POST calendar-events','GET preferences','PUT preferences']),query:new Set(['id','kind','version']),security:true,maxBody:/\/(calendar|calendar-preview)$/.test(new URL(request.url).pathname)?768*1024:512*1024});}

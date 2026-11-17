@@ -15,7 +15,7 @@ export async function systemAPI(request,env,capability={}){
  if(site&&site!=='same-origin'||origin&&origin!==u.origin||!read&&(origin!==u.origin||request.headers.get('X-Inflite')!=='1'))return json(403,'That request did not come from InFlite.');
  if(!/^[\w-]{1,80}$/.test(owner||''))return json(401,'Your account changed. Refresh before continuing.');
  const query=new URLSearchParams();for(const[k,v]of u.searchParams){if(!(capability.query||QUERY).has(k)||query.has(k)||v.length>100||/[\u0000-\u001f\u007f]/.test(v))return json(400,'That request is invalid.');query.set(k,v)}
- const headers=forwardHeaders(request,todayOrigin(env,request),{accept:'application/json'});headers.set('X-Inflite-Owner',owner);
+ const headers=forwardHeaders(request,todayOrigin(env,request),{accept:'application/json'});headers.set('X-Inflite-Owner',owner);if(capability.security){const token=request.headers.get('X-Inflite-Security');if(token){if(!/^[A-Za-z0-9_-]{40,100}$/.test(token))return json(400,'That approval is invalid.');headers.set('X-Inflite-Security',token)}}
  const ip=request.headers.get('CF-Connecting-IP');if(env.HUB_KEY&&ip){headers.set('X-Hub-Key',env.HUB_KEY);headers.set('X-Hub-IP',ip);headers.set('X-Hub-Geo',geoOf(request.cf))}
  let body;if(!read){if(request.method!=='DELETE'&&request.headers.get('Content-Type')?.split(';')[0].trim()!=='application/json')return json(415,'Use a JSON request.');try{body=await bodyUpTo(request,capability.maxBody||(action==='draft'?384*1024:8192))}catch(_){return json(400,'That request could not be read.')}if(body==null)return json(413,'That request is too large.');body||='{}';headers.set('Content-Type','application/json')}
  try{

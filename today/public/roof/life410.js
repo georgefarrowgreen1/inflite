@@ -1,6 +1,7 @@
 // Shared daily tools. Private values stay in captured account memory or its
 // encrypted journal. Every destination remains a review screen.
-import {createSystemClient,operationId} from './system-client.js';
+import {operationId} from './system-client.js';
+import {createSecurityClient as createSystemClient} from './security-client.js';
 import {openOfflineStore} from './offline-store.js';
 import {loadStyles} from './modules.js';
 const captureFields=raw=>{const title=raw.split('\n')[0].slice(0,160);return{title,text:raw.slice(title.length).replace(/^\n/,'')}};

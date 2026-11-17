@@ -197,6 +197,7 @@ export function createFilesService(F, options = {}) {
     if(!node||node.kind!=="file"||node.trashedAt||node.status!=="ready"||node.version!==version)throw new Error("That file changed. Refresh before opening it.");
     const api=await drive(lease),fresh=await api.item(id,lease);assert(lease);
     if(fresh.version!==version||fresh.trashedAt||fresh.status!=="ready")throw new Error("That file changed. Refresh before opening it.");
+    if(options.authoriseTransfer&&['chats','mail','fitness'].includes(lease.destination)){await options.authoriseTransfer(lease.destination,fresh,lease);assert(lease);}
     const blob=await api.content(id,lease);assert(lease);
     if(blob.size!==fresh.size)throw new Error("The file could not be read completely.");
     return {file:new File([blob],fresh.name,{type:fresh.mime,lastModified:fresh.modifiedAt}),item:driveResource(fresh)};

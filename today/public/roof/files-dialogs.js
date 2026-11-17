@@ -28,7 +28,7 @@ export function createFilesDialogs(F, { service } = {}) {
       const maxFiles = multiple ? Math.max(1, Math.min(100, Number.isSafeInteger(options.maxFiles) ? options.maxFiles : 100)) : 1;
       let closed = false, loading = false, committing = false, episode = 0, listingRead = null, folderId = null, query = "", page = 0, cursors = [null], answer = null, handle;
       const current = () => alive() && !closed && !controller.signal.aborted && !requester.signal?.aborted && !options.signal?.aborted && safe(requester.current) && safe(options.current);
-      const lease = () => ({ current, signal: controller.signal });
+      const lease = () => ({ current, signal: controller.signal, destination: requester.destination });
       const status = el("p", { class: "ifd-status", role: "status", "aria-live": "polite" });
       const path = el("nav", { class: "ifd-path", "aria-label": "Folder path" });
       const list = el("div", { class: "ifd-list", role: "list", "aria-label": mode === "save" ? "Destination folders" : "Files to open" });
@@ -159,7 +159,7 @@ export function createFilesDialogs(F, { service } = {}) {
     if (typeof token !== "string" || !/^[a-f0-9]{32}$/.test(token) || !service.resolveDrag) return null;
     const controller = new AbortController(), subscriptions = [];
     const current = () => alive() && !controller.signal.aborted && !requester.signal?.aborted && !options.signal?.aborted && safe(requester.current) && safe(options.current);
-    const lease = { signal: controller.signal, current }, accept = fileAccept(options.accept);
+    const lease = { signal: controller.signal, current, destination: requester.destination }, accept = fileAccept(options.accept);
     const maxBytes = Number.isSafeInteger(options.maxBytes) ? Math.max(0, Math.min(LIMIT, options.maxBytes)) : LIMIT;
     const maxFiles = Math.max(1, Math.min(100, Number.isSafeInteger(options.maxFiles) ? options.maxFiles : 100));
     const assert = () => { if (!current()) throw new DOMException("This file drop was released", "AbortError"); };
@@ -185,6 +185,7 @@ export function createFilesDialogs(F, { service } = {}) {
   function destroy() { if (dead) return; dead = true; pending?.cancel(); F.signal.removeEventListener("abort", destroy); }
   F.signal.addEventListener("abort", destroy, { once: true });
   return { open, save, fromDrop, destroy, forApp(app, requester = {}) {
+    requester={...requester,destination:app};
     if (!["mail", "fitness", "chats", "markets", "weather", "calendar", "notes", "people"].includes(app)) throw new TypeError("A known app is required for Files dialogs.");
     return Object.freeze({ open: options => show("open", null, options, requester), save: (file, options) => show("save", file, options, requester), fromDrop: (dataTransfer, options) => fromDrop(dataTransfer, options, requester) });
   } };
