@@ -299,7 +299,7 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.96";
+  const BUILD = "1.97";
   // (what's new in it, said once it's in)
   const NEWS = "Private downloads and safer diagnostics";
 
