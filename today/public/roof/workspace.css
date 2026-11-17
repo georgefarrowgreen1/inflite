@@ -117,7 +117,7 @@ html.ifl-os.os-workspace #workspace.ifl-screen { width: 100%; max-width: none; m
 .ifl-workspace .ws-secondary { background: var(--ws-well); }
 .ifl-workspace .ws-resource-share svg { width: 18px; height: 18px; }
 .ifl-workspace .ws-resource-secondary-icon { display: grid; place-items: center; flex: none; width: 18px; height: 18px; }
-.ifl-workspace .ws-dock { position: fixed; z-index: 8; left: 50vw; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--ws-line); border-radius: 30px; background: var(--ws-surface); box-shadow: var(--ws-shadow); scrollbar-width: none; }
+.ifl-workspace .ws-dock { position: fixed; z-index: 8; left: 50vw; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--ifl-glass-line,var(--ws-line)); border-radius: 30px; background: var(--ifl-surface); box-shadow: var(--ifl-glass-shadow,var(--ws-shadow)); scrollbar-width: none; }
 .ifl-workspace .ws-pane-sections::-webkit-scrollbar { display: none; }
 .ifl-workspace.ws-dock-host .ws-dock { view-transition-name: inflite-dock; }
 html.ifl-os::view-transition-group(inflite-dock), html.ifl-os::view-transition-new(inflite-dock) { animation: none; }
@@ -305,7 +305,6 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 .ifl-workspace .ws-system-count, .ifl-workspace .ws-sync-state { margin-left: auto; flex: none; color: var(--ws-muted); font-size: 11px; }
 .ifl-workspace .ws-system-count { display: grid; place-items: center; min-width: 24px; min-height: 24px; padding: 3px 6px; border-radius: 999px; background: var(--ws-well); }
 .ifl-workspace .ws-offline { flex: none; margin: 12px 20px 0; padding: 12px 16px; border-radius: 18px; background: var(--ws-well); color: var(--ws-text); font-size: 14px; line-height: 1.5; }
-.ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview { margin-bottom: 14px; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home-title, .ifl-workspace[data-unified=true][data-mode=today] .ws-workspace-chips { display: none; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-workspace-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-workspace-card > :not(:last-child) { display: none; }
@@ -314,7 +313,7 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 @media (prefers-reduced-motion: reduce) { .ifl-workspace .ws-mode-button { transition: none; } }
 .ifl-workspace .ws-home-body { display: contents; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home { display: block; }
-.ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview { display: flex; margin-bottom: 14px; align-items: center; justify-content: space-between; gap: 20px; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home-title { display: block; min-width: 0; margin: 0; font-size: clamp(24px, 2.6vw, 34px); line-height: 1.2; letter-spacing: -.7px; overflow-wrap: anywhere; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home-body { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(230px, 1fr); gap: 20px; align-items: start; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home-body[data-side=false] { grid-template-columns: minmax(0, 1fr); }
@@ -334,6 +333,7 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 .ifl-workspace .ws-home-job-icon svg { display: block; width: 18px; height: 18px; }
 @media (max-width: 959px) {
   .ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview { display: block; }
+  .ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview:has(.ws-workspace-card[hidden]) { display: none; }
   .ifl-workspace[data-unified=true][data-mode=today] .ws-home-title { display: none; }
   .ifl-workspace[data-unified=true][data-mode=today] .ws-home-body { display: block; }
   .ifl-workspace .ws-home-side { margin-top: 20px; }
@@ -373,15 +373,6 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 .ws-connection button { flex: none; min-height: 44px; }
 
 /* The permanent app dock and launcher share the new material. Legacy workspace layout stays dormant. */
-.ifl-workspace .ws-dock {
-  background: var(--ifl-surface);
-  border-color: var(--ifl-glass-line, var(--ws-line));
-  box-shadow: var(--ifl-glass-shadow, var(--ws-shadow));
-}
-
-
-
-
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .ifl-workspace .ws-dock { background: var(--ifl-glass, var(--ifl-surface)); -webkit-backdrop-filter: var(--ifl-glass-blur, none); backdrop-filter: var(--ifl-glass-blur, none); }
 }

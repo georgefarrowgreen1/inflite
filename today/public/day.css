@@ -258,21 +258,22 @@ button.dm-quiet:active { background: var(--press); }
   .day-side #coming .dc-ic { position: relative; z-index: 1; }
 }
 
-/* Today's summary catches the action colour; nested information keeps clear, quiet wells. */
-.day-top {
-  background-image: radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--ifl-accent-fill) 10%, transparent), transparent 60%),
-    linear-gradient(145deg, color-mix(in srgb, var(--ifl-glass-highlight, #fff) 27%, transparent), transparent 52%);
+/* One inset for related figures keeps the headline and its units aligned. */
+.day-top .dt-h { margin: 0; line-height: 1.16; text-wrap: balance; }
+.day-top .dt-chip { background: var(--ifl-glass-control); color: var(--text-2); }
+.day-top .dt-stats {
+  display: flex; flex-wrap: wrap; gap: 0;
+  padding: 5px; border-radius: var(--ifl-radius-row);
+  background: var(--ifl-glass-control);
 }
-.dt-chip {
-  padding-block: 6px;
-  background: color-mix(in srgb, var(--ifl-accent-wash) 80%, var(--ifl-surface));
-  color: var(--ifl-accent-ink);
-  box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px color-mix(in srgb, var(--ifl-accent-ink) 16%, transparent);
+.day-top .dt-stats > div {
+  flex: 1 1 76px; min-width: 0; padding: 8px 10px;
+  border-radius: 0; background: transparent;
 }
-:is(.dt-rows, .dt-stats > div, .dt-said) {
-  background: var(--ifl-surface-2);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ifl-glass-highlight, #fff) 55%, transparent), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line));
-}
+.day-top .dt-stats > div + div { border-inline-start: 1px solid var(--ifl-line); }
+.day-top .dt-stats dd { font-size: clamp(16px, 4.2vw, 20px); line-height: 1.25; }
+.day-top .dt-rows { background: transparent; padding-inline: 0; }
+.dt-said { background: var(--ifl-surface-2); }
 .dw-chip, .dc-send {
   background: var(--ifl-glass-control, var(--ifl-surface-2));
   box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-shadow-control);

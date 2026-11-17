@@ -91,7 +91,7 @@ a { color: inherit; }
 .vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .num { font-variant-numeric: tabular-nums; }
 /* (neither the way in nor your day until the script knows which: theme.js, for at most 4 seconds) */
-html.boot #out, html.boot #in { visibility: hidden; }
+html.boot #out, html.boot #in { display: none; }
 
 /* the sky: three slow lights over the gradient */
 .sky { position: fixed; inset: 0 0 calc(0px - var(--fix-gap, 0px)); z-index: -1; overflow: hidden; background: var(--ifl-page, var(--sky-c)); }
@@ -153,7 +153,7 @@ button.row:active, a.row:active { background: var(--press); }
 
 /* ---- a card for each app ---- */
 #rest.cards { display: grid; gap: 14px; margin-bottom: 30px; }
-.kept { min-height: 20px; margin: 0 6px 10px; font-size: 13.5px; color: var(--text-3); }
+.kept { min-height: 20px; margin: 0 6px; font-size: 13.5px; color: var(--text-3); }
 .tcard { border-radius: var(--r-card); padding: 18px; display: grid; gap: 12px; min-width: 0; }
 .tcard > * { min-width: 0; }
 /* Refresh content in order while the card itself stays available for press feedback. */

@@ -62,6 +62,17 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 .ifh-crumb[hidden] { display: none; }
 .ifh-ttl, .ifh-plain { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ifl-hd .ifh-pick { color: inherit; }
+@media (max-width: 599px) {
+  .ifl-hd[data-app="weather"] .ifh-t { container-type: inline-size; }
+  .ifl-hd[data-app="weather"] .ifh-pick {
+    font-size: clamp(18px, 10.4cqi, 32px);
+    max-width: 100%; margin-inline: 0;
+  }
+  @container (max-width: 162px) {
+    .ifl-hd[data-app="weather"]:not(.ifh-up) .ifh-ttl { white-space: normal; text-wrap: balance; line-height: 1.05; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  }
+  .ifl-hd[data-app="weather"].ifh-up .ifh-pick { font-size: min(1em, 20px); }
+}
 .ifl-hd .ifh-act[data-word] { width: auto; min-width: 44px; padding: 0 12px !important; border-radius: 999px !important; font-size: 16px; font-weight: 600; }
 .ifl-hd .ifh-act .ifl-glyph { display: grid; place-items: center; }
 .ifl-row2 { grid-column: 1 / -1; min-width: 0; }
@@ -540,6 +551,16 @@ dialog.ifl-sheet {
   .ifl-field:focus-within { outline: 2px solid Highlight; box-shadow: none; }
   .ifl-lens, .ifl-tab-pill { display: none; }
   .ifl-icon-btn.filled { background: Highlight; color: HighlightText; }
+}
+
+/* Section navigation keeps a neutral raised selection in each app. */
+@media (forced-colors: none) and (prefers-contrast: no-preference) {
+  .ifl-hd .ifl-segs { background: var(--ifl-glass-control); }
+  .ifl-hd .ifl-lens {
+    background: var(--ifl-raised);
+    box-shadow: inset 0 1px var(--ifl-glass-highlight), 0 0 0 1px var(--ifl-glass-line), 0 2px 5px #0002;
+  }
+  .ifl-hd .ifl-sec[aria-selected="true"] { color: var(--ifl-text); font-weight: 700; }
 }
 
 /* A single sampled surface keeps Files chrome clear without stacking filters. */
