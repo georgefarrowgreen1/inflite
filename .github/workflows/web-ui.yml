@@ -28,6 +28,8 @@ jobs:
       - run: npm run test:api
       - run: npx playwright install --with-deps chromium
       - run: npm run test:framework
+      - name: Private data and window continuity
+        run: node --test --test-concurrency=1 tests/mail-private-cache-ui.test.cjs tests/mail-body-security-ui.test.cjs tests/workspace-security-ui.test.cjs tests/workspace-windows-ui.test.cjs
       - run: npm run test:web
         env:
           WEB_UI_SCREENSHOTS: test-results/web-ui
