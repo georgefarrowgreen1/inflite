@@ -5,7 +5,7 @@ const {fixture,COOKIE}=require('./fixtures/mail-private-cache.cjs');
 test('private Mail bytes and own avatars are reauthorized after sign-out and an account change, using the real HTTP cache',async()=>{
  const f=await fixture();let browser;
  try{
-  browser=await chromium.launch({executablePath:process.env.CHROMIUM||'/usr/bin/chromium',args:['--no-sandbox']});
+  browser=await chromium.launch({executablePath:process.env.CHROMIUM,args:['--no-sandbox']});
   for(const path of ['/api/attachments/file1','/api/messages/message1/raw','/api/photo?v=1','/api/avatar?v=1']){
    const context=await browser.newContext({serviceWorkers:'block'}),page=await context.newPage();
    try{

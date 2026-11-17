@@ -28,7 +28,7 @@ test('hostile Mail HTML cannot execute, navigate, submit or fetch remote resourc
    const out=await serveBody(new Request(mail.origin+req.url),env,[hub.origin]);res.writeHead(out.status,Object.fromEntries(out.headers));res.end(Buffer.from(await out.arrayBuffer()));
   });
   hub=await listen((req,res)=>{res.writeHead(200,{'Content-Type':'text/html'});res.end('<!doctype html><title>Private hub</title><iframe id="mail" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>');});
-  browser=await chromium.launch({executablePath:process.env.CHROMIUM||'/usr/bin/chromium',args:['--no-sandbox']});
+  browser=await chromium.launch({executablePath:process.env.CHROMIUM,args:['--no-sandbox']});
   const page=await browser.newPage();await page.exposeFunction('heard',d=>messages.push(d));await page.goto(hub.origin);
   await page.evaluate(({mail,hub})=>{window.__pwned=0;addEventListener('message',e=>{if(e.origin===mail&&e.source===document.getElementById('mail').contentWindow)window.heard(e.data);});document.getElementById('mail').src=mail+'/body/#'+new URLSearchParams({m:'message1',t:'light',img:'0',p:hub});},{mail:mail.origin,hub:hub.origin});
   const shell=page.frameLocator('#mail'),inner=shell.frameLocator('#b iframe');await inner.locator('#safe').waitFor();
