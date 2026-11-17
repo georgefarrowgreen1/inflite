@@ -391,6 +391,10 @@ function bestBox(b, tz, now, sport = "ride") {
   const key = `<div class="ft-bt-key" aria-hidden="true">${RATINGS.map((r) => `<span><i class="${r}"></i>${r.charAt(0).toUpperCase() + r.slice(1)}</span>`).join("")}</div>`;
   return `<div class="ft-bestbox">${row}<div class="ft-bt" role="img" aria-label="${esc(said)}"><div class="ft-bt-cells" ${vars({ n })}>${cells}</div>${win}${nowL}</div><div class="ft-bt-axis" aria-hidden="true">${axis}</div>${key}</div>`;
 }
+// A ride action needs an available planned session, not just a weather headline.
+export function hasRideOverview(fitness) {
+  return fitness?.state === "ok" && fitness.kind === "session" && fitness.session != null && typeof fitness.session === "object" && !Array.isArray(fitness.session);
+}
 const SPORT = (s) => { const w = String(s || "ride").toLowerCase(); return w.charAt(0).toUpperCase() + w.slice(1); };
 const chip = (text, { cls = "", tile = "ft-s-ride", icon = G.ride } = {}) => `<span class="ft-sport${cls ? " " + cls : ""}"><i class="ft-tile ${tile}">${icon}</i>${esc(text)}</span>`;
 function nextRow(nx, c) {
@@ -420,7 +424,7 @@ function fitness(c, ctx) {
   if (c.kind === "event") {
     return `${hd}${chip("Event day", { tile: "ft-s-ride", icon: G.flag })}<h3 class="tc-h">${esc(c.event?.name || s?.name || "Your event")}</h3>${foot(open, send)}`;
   }
-  if (c.kind !== "session" || !s) {
+  if (!hasRideOverview(c)) {
     return `${hd}<h3 class="tc-h">No session planned today</h3>${nextRow(c.next, c)}${foot(open)}`;
   }
   const sport = String(s.sport || "ride").toLowerCase(), word = SPORT(sport);

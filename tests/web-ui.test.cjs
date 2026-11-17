@@ -1747,3 +1747,33 @@ test('the live shell records a bounded anonymous startup sample after the interf
   assert.deepEqual(Object.keys(sample.body).sort(),['app','dev','m']);assert.deepEqual(Object.keys(sample.body.m).sort(),['open_fail','startup']);assert.deepEqual(t.errors,[]);
  }finally{await t.ctx.close()}
 });
+
+
+for (const width of [320, 390, 1440]) test(`Ride overview requires an available planned session at ${width}px`, async () => {
+  const answer = structuredClone(day);
+  answer.tops.morning = {kind:'weather',title:'10° · Dry until 05:00',chip:'North Walsham · now',lines:['Environment Agency: flood alert in force.'],buttons:[]};
+  answer.cards.fitness = {state:'ok',kind:'rest'};
+  const {ctx,page,errors} = await open({width,answer});
+  try {
+    assert.equal(await page.locator('[data-ride-overview]').count(),0,'weather and a rest day do not offer a ride');
+    const planned = structuredClone(day.cards.fitness);
+    assert.equal(planned.kind,'session');
+    for (const fitness of [undefined,{state:'ok',kind:'none'},{...planned,session:null},{...planned,session:'invalid'},{...planned,state:'error'},{...planned,kind:'done'},{...planned,kind:'rest'},planned]) {
+      await page.evaluate(async ({answer,fitness})=>{
+        const {drawDay}=await import('/day.js');answer.cards.fitness=fitness;
+        drawDay(document.querySelector('#today'),answer,{now:answer.at,timers:false});
+      },{answer,fitness});
+      const valid=fitness===planned;
+      assert.equal(await page.locator('#top [data-ride-overview]').count(),valid?1:0,'headline follows the actual session availability');
+      assert.equal(await page.locator('#rest [data-ride-overview]').count(),valid?1:0,'Fitness card follows the same availability rule');
+    }
+    const guard = await page.evaluate(async()=>{
+      const {openRideOverview}=await import('/roof/ride-overview.js'),messages=[];let opened=false;
+      openRideOverview({ui:{},toast:t=>messages.push(t),sheet:{open(){opened=true}}},{fitness:{state:'error',kind:'session',session:{name:'Old ride'}}});
+      return {messages,opened};
+    });
+    assert.equal(guard.opened,false,'an unavailable session cannot open a stale overview');
+    assert.equal(guard.messages.length,1);
+    assert.deepEqual(errors,[]);
+  } finally {await ctx.close();}
+});

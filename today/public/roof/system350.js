@@ -4,6 +4,7 @@ import {createSystemClient} from './system-client.js';
 import {createActionsStore} from './actions-store.js';
 import {loadStyles} from './modules.js';
 import {deviceId} from './device-id.js';
+import {hasRideOverview} from '../cards.js';
 export async function createSystem350(F,options){
  const client=createSystemClient(F),live=client.live,ui=F.ui,el=ui.el;
  await loadStyles('/roof/system350.css');if(!live())return null;
@@ -17,7 +18,7 @@ export async function createSystem350(F,options){
   const answer=options.day?.(),cards=answer?.cards||{},out=[],now=Date.now(),fresh=Number.isFinite(answer?.at)&&Math.abs(now-answer.at)<30*60000;
   if(!fresh)return out;
   const fitness=cards.fitness,best=fitness?.best,day=fitness?.day||new Date().toISOString().slice(0,10);
-  if(fitness?.kind==='session'&&best?.said){const id='ride:'+day;out.push({id,title:best.poor?'Review your ride conditions':'A weather window for your ride',why:[best.said,best.sub].filter(Boolean).join(' · '),label:'Review ride',run:()=>import('./ride-overview.js').then(m=>live()&&m.openRideOverview(F,cards))})}
+  if(hasRideOverview(fitness)&&best?.said){const id='ride:'+day;out.push({id,title:best.poor?'Review your ride conditions':'A weather window for your ride',why:[best.said,best.sub].filter(Boolean).join(' · '),label:'Review ride',run:()=>import('./ride-overview.js').then(m=>live()&&m.openRideOverview(F,options.day?.()?.cards||{}))})}
   const dividend=cards.markets?.dividend;if(Number.isFinite(dividend?.at)&&dividend.at>=now-864e5&&dividend.at<=now+7*864e5)out.push({id:'income:'+new Date(dividend.at).toISOString().slice(0,10),title:'Income coming up',why:dividend.name+' · expected around '+new Date(dividend.at).toLocaleDateString(),label:'Review in Markets',run:()=>options.openSource({app:'markets'})});
   const mail=options.snapshots?.().get('mail');if(mail?.status==='ready'&&(mail.availability?.draft||mail.drafts>0))out.push({id:'draft:mail',title:'Finish your draft in Mail',why:'Mail has unfinished work ready for review.',label:'Open Mail',run:()=>options.openSource({app:'mail',id:mail.draftId||null})});
   return out.filter(x=>!dismissed.has(x.id)).slice(0,2);

@@ -34,7 +34,7 @@
 //   timers   false: nothing is timed here, the page calls tickDay itself (each minute, and at until). Otherwise the next
 //            boundary is drawn at its minute from here too (the page's own minute may come up to 59 s late); tickDay
 //            twice is as once
-import { CARD_KEYS, APP, esc, safe, safeOrigin, hm, dayKey, dateLong, dateShort, wkShort, dayWord, G, av, cardHTML, applyVars, tick, sendButton, hubOf, onHub } from "/cards.js";
+import { CARD_KEYS, APP, esc, safe, safeOrigin, hm, dayKey, dateLong, dateShort, wkShort, dayWord, G, av, cardHTML, hasRideOverview, applyVars, tick, sendButton, hubOf, onHub } from "/cards.js";
 import { tripOf, tripCardHtml, bookingRowParts, bookingOfRow, openTrip, openBooking, isGone, redrawTrip } from "/trip.js";
 import { owedOf, paidOf, moneyOf, owedRowHtml, paidHtml, parcelOfRow, parcelRowHtml, openItem, openBills, itemOfRow } from "/mailday.js";
 export { arrangeToday } from "/layout.js";
@@ -293,7 +293,7 @@ function topHtml(t, phase, st, now) {
       ${undo.length || extraButtons.length ? `<div class="tc-foot">${[...extraButtons, ...undo].join("")}</div>` : ""}
     </details>` : ""}
     ${wrote.length ? `<div class="dt-wrote">${wrote.map((w) => `<p class="dt-said" data-wid="${esc(w.id)}" data-first="${esc(w.first)}" data-since="${num(w.at) ?? 0}" hidden></p>`).join("")}</div>` : ""}
-    ${buttons.length ? `<div class="tc-foot">${buttons.join("")}</div>` : ""}${["ride","weather"].includes(kind)?`<div class="tc-foot"><button type="button" class="pill" data-ride-overview>Ride overview</button></div>`:""}
+    ${buttons.length ? `<div class="tc-foot">${buttons.join("")}</div>` : ""}${["ride","weather"].includes(kind)&&hasRideOverview(st.answer?.cards?.fitness)?`<div class="tc-foot"><button type="button" class="pill" data-ride-overview>Ride overview</button></div>`:""}
   </article>`;
 }
 

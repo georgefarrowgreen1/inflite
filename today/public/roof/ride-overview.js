@@ -1,8 +1,9 @@
 // One contextual view, using Today's real account summaries. The native apps
 // remain authoritative for selecting routes and viewing full forecasts.
+import {hasRideOverview} from "../cards.js";
 export function openRideOverview(F,cards){
  const ui=F.ui,fitness=cards.fitness,weather=cards.weather,session=fitness?.session;
- if(!session||fitness.kind!=='session')return F.toast('Open Fitness to choose your next ride.');
+ if(!hasRideOverview(fitness))return F.toast('Open Fitness to choose your next ride.');
  const body=ui.el('div',{class:'ride-overview'}),ride=ui.el('section',{},ui.el('h3',{text:session.name||'Planned ride'}));
  if(session.secs)ride.append(ui.el('p',{text:Math.round(session.secs/60)+' min'+(session.kind?' · '+session.kind:'')}));
  if(session.why)ride.append(ui.el('p',{text:session.why}));
