@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.04";
+const BUILD = "4.05";
 // (what's new in it, said once it's in)
-const NEWS = "Clearer Liquid Glass windows";
+const NEWS = "Stronger privacy and account protection";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/system350.js", "/roof/system-client.js", "/roof/actions-store.js", "/roof/actions-ui.js", "/roof/device-id.js", "/roof/devices-ui.js", "/roof/discovery350.js", "/roof/files-viewer350.js", "/roof/files-recovery350.js", "/roof/continuity.js", "/roof/offline-store.js", "/roof/offline-prefs.js", "/roof/ride-overview.js", "/roof/files-history.js", "/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/connection.js", "/roof/handoffs.js", "/roof/system350.css", "/roof/files-viewer350.css", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
@@ -31,11 +31,7 @@ if (OS_MODE) {
 }
 
 // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
-// InFlite's menu: one menu, the same in every app, opened from your photo. You (a tap to your account), the app's own
-// few rows, and a foot with its version and Sign Out. With it: the same note in every app after it's updated itself,
-// the updater every app shares (updates, below), and the hub (hub, below: every app as a page of inflite.ai).
-// (Plain script, no imports: it's the same in a module and in Mail's script. Images only ever blob: or the app's own,
-// as each app's rules allow; the apps' icons are drawn here, made blob: once each.)
+// Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.
 const IFL = (() => {
   const APPS = [["chat", "Chat"], ["weather", "Weather"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"], ["account", "Account"], ["today", "Today"]];
   const NAME = Object.fromEntries(APPS);
@@ -933,8 +929,16 @@ const IFL = (() => {
       for (let i = 0; i < 5; i++) { out += ALPHA[h % 32]; h = Math.floor(h / 32); }
       return `IF-${letterOf(app)}-${out}`;
     };
-    const scrub = (s, n = 400) => String(s ?? "").replace(/[^\s@]+@[^\s@]+\.[a-z]{2,}/gi, "<email>")
-      .replace(/[A-Za-z0-9_\-+/=]{32,}/g, "<long>").replace(/(https?:\/\/[^\s?#]+)[?#]\S*/g, "$1").slice(0, n);
+    const scrub = (s, n = 400) => String(s ?? "").split("\n").map((line) => {
+  // JSON parsers include a fragment of the rejected body in their error. Never report that fragment.
+  if (!/^\s*(?:at\s|[\w.$]+@)/.test(line) && /(?:JSON (?:Parse|parse)|not valid JSON|in JSON at position|after JSON|(?:Unexpected token|Expected property name).*(?:JSON|position))/i.test(line)) {
+    const at = /(?:position|line|column)\s+\d+(?:\s+(?:column|line)\s+\d+)?/i.exec(line);
+    return "JSON parse failed" + (at ? " (" + at[0] + ")" : "");
+  }
+  return line;
+}).join("\n").replace(/(["']?)(password|passwd|secret|token|authorization|cookie|access_token|refresh_token|api[_-]?key)\1\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|Bearer\s+[^\s,;}]+|[^\s,;}]+)/gi, "$2=<redacted>")
+  .replace(/[^\s@]+@[^\s@]+\.[a-z]{2,}/gi, "<email>")
+  .replace(/[A-Za-z0-9_\-+/=]{32,}/g, "<long>").replace(/(https?:\/\/[^\s?#]+)[?#]\S*/g, "$1").slice(0, n);
     // (the app it's in: at the hub, the section's (its own page's own app aside); else the app's address, or what it said)
     const appNow = () => {
       const host = HOSTS[location.hostname.split(".")[0]], seg = HUB[location.pathname.split("/")[1]];

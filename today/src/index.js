@@ -99,7 +99,7 @@ const worker = {
       if (url.pathname === "/api/status-banner") return await statusBanner(request, env, url);
       return await api(request, env, url);
     } catch (err) {
-      console.error(err);
+      console.error("today request failed");
       // (words only: never what went wrong inside)
       return refuse(500, SAID.wrong);
     }
@@ -207,13 +207,13 @@ async function api(request, env, url) {
   return out;
 }
 
-// A picture (a friend's, or your own for the header), from the account with your sign-in, served from Today's own
-// address: kept for good by the browser under its ?v= (when it last changed). Anything but a picture: none.
+// Your header picture is account-dependent even with ?v=. Reauthorize every
+// read so an HTTP cache cannot show the previous account's private image.
 function picture(res) {
   const type = res?.headers.get("Content-Type") || "";
   if (!res?.ok || !/^image\//i.test(type)) return refuse(404, "No picture.");
   return new Response(res.body, {
-    headers: { "Content-Type": type, ...SAFE, "Cache-Control": "private, max-age=31536000, immutable" },
+    headers: { "Content-Type": type, ...SAFE, "Cache-Control": "private, no-store" },
   });
 }
 

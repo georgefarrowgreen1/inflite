@@ -553,15 +553,15 @@ const publicUser = (v) =>
     ? { name: v.name, handle: v.handle, email: v.email, admin: !!v.admin, appearance: v.appearance || "auto", photoAt: v.photoAt || null }
     : null;
 
-// Your account's photo, from the account's address with your sign-in (where its page has it: the account's address only
-// answers /api/account/), kept for good by the browser under its ?v= (when it last changed)
+// Your account's photo, from the account's address with your sign-in. The URL
+// is account-dependent even with ?v=, so it must be authorized on every read.
 async function photo(env, request, url) {
   const r = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/me/photo?v=${encodeURIComponent(url.searchParams.get("v") || "")}`, {
     headers: { Cookie: accountCookie(request), Accept: "image/*" },
   });
   const type = r.headers.get("Content-Type") || "";
   if (!r.ok || !type.startsWith("image/")) throw new HttpError(404, "No photo.");
-  return new Response(r.body, { headers: { "Content-Type": type, "Cache-Control": "private, max-age=31536000, immutable", ...SAFE } });
+  return new Response(r.body, { headers: { "Content-Type": type, "Cache-Control": "private, no-store", ...SAFE } });
 }
 
 const senderName = (env, view) => env.DISPLAY_NAME || view?.name || "";
@@ -852,7 +852,7 @@ async function rawMessage(env, id) {
   const obj = await env.MAIL.get(`raw/${id}.eml`);
   if (!obj) throw new HttpError(404, "Original message not available");
   return new Response(obj.body, {
-    headers: { "Content-Type": "message/rfc822", "Content-Disposition": `attachment; filename="${id}.eml"`, ...SAFE },
+    headers: { "Content-Type": "message/rfc822", "Content-Disposition": `attachment; filename="${id}.eml"`, "Cache-Control": "private, no-store", ...SAFE },
   });
 }
 
@@ -872,7 +872,7 @@ async function attachment(env, id, url, request, hub = null) {
   const headers = {
     "Content-Type": type,
     "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${name}"; filename*=UTF-8''${encodeURIComponent(row.filename || "attachment")}`,
-    "Cache-Control": "private, max-age=86400",
+    "Cache-Control": "private, no-store",
     "Accept-Ranges": "bytes",
     // Never let an attachment run script on our origin. (A PDF, which browsers refuse to show in a sandbox, is shown
     // by their own viewer, which runs nothing of ours; and only ever inside Mail.)

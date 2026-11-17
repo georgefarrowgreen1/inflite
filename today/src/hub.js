@@ -87,7 +87,7 @@ function probe(env, request, t) {
       status = res.status;
       if (res.body) res.body.cancel().catch(() => {});
     } catch (e) {
-      console.error("hub probe", e && e.message);
+      console.error("hub probe failed");
     }
     const ok = status === 200, found = { ok, refused: status === 404, until: t + (ok ? KEEP_OK : KEEP_NO), key, origin, to };
     if (probing.get(id) === pending) probed = found;
@@ -190,7 +190,7 @@ export async function forward(env, request, { app, path, api = false }) {
     // (written out, never resolved against the app's address: a path that starts // is still a path there)
     res = await fetchUpstream((u, init) => appFetch(env, u, init), `${new URL(via).origin}${path}`, { method, headers: h, body, redirect: "manual" }, { signal: request.signal, timeout: 30000 });
   } catch (e) {
-    console.error("hub", app, e && e.message);
+    console.error("hub", app, "upstream failed");
     return refuse(502, SAID.down);
   }
   return answer(res, env, { api, here: url.origin, from: `${new URL(as).origin}${path}`, base: Object.keys(PAGES).find((k) => PAGES[k].app === app) });
