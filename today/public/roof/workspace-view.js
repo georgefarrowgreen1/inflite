@@ -664,16 +664,17 @@ export function createWorkspaceView(root, callbacks = {}) {
         grid.append(b);
       }
       if(!list.length)grid.append(el('p',{class:'wsl-empty',text:'No apps found'}));
-      status.textContent=editing?`${favourites().length} of 4 favourites`:'';
+      status.hidden=!editing;status.textContent=editing?`${favourites().length} of 4 favourites`:'';
       edit.textContent=editing?'Done':'Edit';edit.setAttribute('aria-label',editing?'Done editing favourites':'Edit favourites');
     }
     edit.addEventListener('click',()=>{if(!liveBody())return;editing=!editing;paintGrid()});
     input.addEventListener('input',()=>{query=input.value;paintGrid()});
     input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!editing){event.preventDefault();grid.querySelector('button:not(:disabled)')?.click()}});
     const security=callable(callbacks.onSecurity)?launchButton('Security Module',icon('lock'),'onSecurity','wsl-security'):null;
-    const more=el('details',{class:'wsl-more'},el('summary',{text:'More from InFlite'})),controls=el('div',{class:'wsl-controls'});
+    security?.append(icon('chev'));
+    const more=el('details',{class:'wsl-more'},el('summary',{},icon('more'),el('span',{text:'More'}),icon('down'))),controls=el('div',{class:'wsl-controls'});
     for(const[label,glyph,callback]of[['Today','sun','onToday'],['Quick Capture','plus','onCapture'],['Search InFlite','search','onSearch'],['Activity','clock','onActivity'],['App status','info','onRecovery'],['Notifications','bell','onNotifications'],['Settings','settings','onSettings']])if(callable(callbacks[callback]))controls.append(launchButton(label,icon(glyph),callback,'wsl-control'));
-    more.append(controls);body.append(tools,grid,status,security);if(controls.childElementCount)body.append(more);
+    more.append(controls);const utilities=el('div',{class:'wsl-utilities'},security);if(controls.childElementCount)utilities.append(more);body.append(tools,grid,status,utilities);
     paintGrid();return body;
   }
 

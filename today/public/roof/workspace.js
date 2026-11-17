@@ -68,7 +68,7 @@ export async function createWorkspace(F, options = {}) {
   const appOn = (app) => !!F.session.apps?.[app] && (app !== "mail" || F.session.view?.apps?.mail === true);
   const favouriteKey='ifl:launcher:v1:'+owner;
   let favourites=initialFavourites(guarded(()=>JSON.parse(localStorage.getItem(favouriteKey))),id=>id==='files'||appOn(id));
-  const launchOrigins=new Map();
+  const launchOrigins=new Map();let appsMenu=null,appsLaunch=null;
   const launchOptions=(id,source)=>{const origin=source?.nodeType?captureLauncherOrigin(source):source;if(!origin)return {};launchOrigins.set(id,origin);return {kind:'launch',launch:origin}};
   const handoffs = createHandoffs(F, { available: appOn, deliver: async (app, token, lease) => {
     const opened = await openApp(app, format({ app }), false, true, lease);
@@ -326,12 +326,30 @@ export async function createWorkspace(F, options = {}) {
     }
   }
   function openApps(opener) {
-    if (!live()) return;
-    let menu,body;
-    const open=()=>{if(!live())return;body=view.launcher(()=>menu?.now());menu=F.sheet.open({sheet:'workspace-apps',title:'Your apps',body,onClose:()=>view.launcherOpen(false)});view.launcherOpen(true);if(opener?.classList?.contains('ws-dock-add'))body.querySelector('.wsl-edit')?.click()};
-    if(F.route?.kind==='app'||F.route?.tool==='files'){
-      const id=F.route.app||'files',origin=launchOrigins.get(id)||captureLauncherOrigin(opener||view.dock.querySelector('[aria-current]'));
-      if(origin){F.nav.go('/',{resume:true,kind:'launch-return',launch:{...origin,render:open,target:()=>captureLauncherOrigin(body?.querySelector('[data-launcher-app="'+id+'"]'))}});return}
+    if (!live() || (appsMenu && !appsMenu.closed) || (appsLaunch && appsLaunch.route === F.route)) return;
+    const request = { route: F.route }; appsLaunch = request;
+    let menu, body;
+    const open = () => {
+      if (!live() || appsLaunch !== request) return;
+      appsLaunch = null;
+      body = view.launcher(() => menu?.now());
+      menu = F.sheet.open({ sheet: 'workspace-apps', title: 'Your apps', body, onClose: () => {
+        if (appsMenu === menu) { appsMenu = null; view.launcherOpen(false); }
+      } });
+      appsMenu = menu;
+      const edit = body.querySelector('.wsl-edit'), head = menu.el.querySelector('.ifs-head');
+      if (edit && head) head.insertBefore(edit, head.querySelector('[data-close]'));
+      view.launcherOpen(true);
+      if (opener?.classList?.contains('ws-dock-add')) menu.el.querySelector('.wsl-edit')?.click();
+    };
+    if (F.route?.kind === 'app' || F.route?.tool === 'files') {
+      const id = F.route.app || 'files', origin = launchOrigins.get(id) || captureLauncherOrigin(opener || view.dock.querySelector('[aria-current]'));
+      if (origin) {
+        F.nav.go('/', { resume: true, kind: 'launch-return', launch: { ...origin, render: open,
+          target: () => captureLauncherOrigin(body?.querySelector('[data-launcher-app="' + id + '"]')) } });
+        if (appsLaunch === request) request.route = F.route;
+        return;
+      }
     }
     open();
   }
@@ -358,7 +376,7 @@ export async function createWorkspace(F, options = {}) {
   }
   function destroy() {
     if (gone) return;
-    gone = true; ++scene;
+    gone = true; appsLaunch=null;appsMenu?.now();appsMenu=null;++scene;
     for (const off of offs.splice(0)) off();
     explorer?.destroy(); dialogs?.destroy(); handoffs.destroy(); connection.destroy(); recoveryView?.destroy(); recovery?.destroy(); activityView.destroy(); activity.destroy(); pendingFilesQuery = null;
     providers.clear(); snapshots.clear(); recentApps.clear(); launchOrigins.clear(); files?.destroy(); commands?.destroy(); background.remove();

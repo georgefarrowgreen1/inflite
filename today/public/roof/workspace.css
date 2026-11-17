@@ -366,33 +366,6 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace[data-mode=workspace] .ws-resource-share { margin: 0; }
 }
 
-/* The app launcher is portalled into a native sheet; it owns its own scope. */
-.ws-launcher { display: grid; gap: 16px; min-width: 0; color: var(--ifl-text, var(--text)); }
-.ws-launcher button { display: flex; align-items: center; min-width: 0; min-height: 44px; border: 1px solid var(--ifl-line, var(--line)); border-radius: 16px; font: inherit; color: inherit; background: var(--ifl-surface-2, var(--glass-ctl)); cursor: pointer; }
-.ws-launcher button:disabled { opacity: .42; cursor: default; }
-.ws-launcher button:focus-visible { outline: 2px solid var(--ifl-accent-ink, var(--acc-ink)); outline-offset: 3px; }
-.ws-launcher .ifl-glyph { display: grid; place-items: center; flex: none; width: 20px; height: 20px; }
-.ws-launcher .ifl-glyph svg { display: block; width: 20px; height: 20px; }
-.wsl-quick { display: flex; gap: 10px; }
-.wsl-home { gap: 8px; padding: 10px 12px; font-size: 14px !important; }
-.wsl-search { flex: 1; gap: 10px; padding: 10px 14px; font-size: 14px !important; text-align: left; }
-.wsl-apps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.ws-launcher .wsl-app { flex-direction: column; justify-content: center; gap: 7px; min-height: 86px; padding: 10px 8px; border-radius: 22px; font-size: 14px; font-weight: 600; }
-.wsl-app > span:last-child { max-width: 100%; overflow-wrap: anywhere; }
-.wsl-app img, .wsl-files-mark { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 12px; }
-.wsl-files-mark { color: var(--ifl-accent-ink, var(--acc-ink)); background: var(--ifl-accent-wash, var(--acc-wash)); }
-.wsl-files-mark .ifl-glyph, .wsl-files-mark svg { width: 24px; height: 24px; }
-.wsl-section h3 { margin: 0 2px 10px; color: var(--ifl-muted, var(--text-2)); font-size: 12px; font-weight: 600; }
-.wsl-workspaces, .wsl-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.ws-launcher .wsl-workspace, .ws-launcher .wsl-control { gap: 8px; padding: 10px 12px; font-size: 13px; text-align: left; }
-.wsl-workspace > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wsl-control > span:last-child { white-space: nowrap; }
-.wsl-control:last-child:nth-child(odd) { grid-column: 1 / -1; }
-.wsl-create { border-style: dashed !important; background: transparent !important; }
-.ws-launcher [aria-current] { border-color: var(--ifl-accent-ink, var(--acc-ink)); background: var(--ifl-accent-wash, var(--acc-wash)); }
-@media (hover: hover) { .ws-launcher button:not(:disabled):hover { border-color: var(--ifl-muted, var(--text-2)); } }
-@media (prefers-reduced-motion: no-preference) { .ws-launcher button { transition: transform .15s ease, background-color .15s ease; }.ws-launcher button:not(:disabled):active { transform: scale(.97); } }
-
 /* Connection feedback stays in document flow; the app dock keeps its anchor. */
 .ws-connection { display: flex; min-height: 0; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 20px; padding: 12px 16px; border: 1px solid var(--ifl-line); border-radius: 16px; background: var(--ifl-surface-2); color: var(--ifl-text); font-size: 14px; }
 .ws-connection[hidden] { display: none; }
@@ -411,13 +384,6 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 }
 .ifl-workspace .ws-dock-symbol img { box-shadow: 0 2px 4px #00000014; }
 .ifl-workspace .ws-dock-launcher { background: var(--ifl-glass-control, var(--ws-well)); box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)); }
-.ws-launcher button {
-  border-color: var(--ifl-glass-line, var(--ifl-line));
-  background: linear-gradient(155deg, color-mix(in srgb, var(--ifl-glass-highlight, #fff) 24%, transparent), transparent 70%), var(--ifl-surface-2);
-  box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line));
-}
-.ws-launcher [aria-current] { background: var(--ifl-accent-wash); border-color: var(--ifl-accent-ink); }
-.ws-launcher .wsl-app img { box-shadow: 0 3px 6px #00000014; }
 .ws-connection { background: var(--ifl-surface-2); box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)); }
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .ifl-workspace .ws-dock { background: var(--ifl-glass, var(--ifl-surface)); -webkit-backdrop-filter: var(--ifl-glass-blur, none); backdrop-filter: var(--ifl-glass-blur, none); }
@@ -432,5 +398,3 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace .ws-dock-button[aria-current], .ws-launcher [aria-current] { background: Highlight; color: HighlightText; box-shadow: none; }
   .ifl-workspace .ws-dock-launcher { background: ButtonFace; box-shadow: none; }
 }
-
-.wsl-quick{flex-wrap:wrap}.wsl-capture{display:flex;align-items:center;justify-content:center;gap:10px;flex:1;min-height:48px;min-width:120px;padding:12px 16px;border:1px solid var(--ifl-glass-line,var(--ifl-line));border-radius:999px;background:var(--ifl-glass-control,var(--ifl-surface));color:var(--ifl-text,var(--text));font:inherit;font-weight:600}.wsl-capture .ifl-glyph{display:grid;place-items:center;width:22px;height:22px;flex:none}
