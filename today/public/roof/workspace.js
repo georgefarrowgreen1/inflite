@@ -170,7 +170,7 @@ export async function createWorkspace(F, options = {}) {
   }
   function openAppMenu(app,opener){
     if(!live()||!['files',...WORKSPACE_APPS.map(a=>a.id)].includes(app)||app!=='files'&&!appOn(app))return;
-    const expected=F.route,valid=()=>live()&&F.route===expected&&(app==='files'||appOn(app));
+    const expected=F.route,valid=()=>live()&&body.isConnected&&!menu?.closed&&F.route===expected&&(app==='files'||appOn(app));
     const ui=F.ui,name=app==='files'?'Files':REGISTRY[app].name,body=ui.el('div',{class:'wsl-context'});
     let menu;const close=()=>{if(menu===appsMenu)F.sheet.closeAll();else menu?.now()};
     const item=(label,glyph,run)=>body.append(ui.btn(label,{icon:glyph,run:()=>{if(!valid())return;return run()}}));

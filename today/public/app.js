@@ -18,7 +18,7 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.31";
+const BUILD = "4.32";
 // (what's new in it, said once it's in)
 const NEWS = "App shortcuts, ordered favourites, quieter libraries and live activity indicators";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
