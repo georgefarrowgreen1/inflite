@@ -116,3 +116,11 @@
 .m-mail .mr-meta, .m-mail .mr-who small { line-height: 1.45; }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .m-mail .mr-bar { background: var(--ifl-surface); -webkit-backdrop-filter: none; backdrop-filter: none; } .m-mail .mr-card, .m-mail .mr-spot, .m-mail .mr-qr { background-image: none; } .m-mail .mr-file, .m-mail .mr-later { background: var(--ifl-surface-2); } }
 @media (forced-colors: active) { .m-mail .mr-bar, .m-mail .mr-card, .m-mail .mr-spot, .m-mail .mr-qr, .m-mail .mr-file, .m-mail .mr-later { background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; } .m-mail .mr-qr:focus-within { outline: 2px solid Highlight; box-shadow: none; } }
+
+.m-mail .mr-card { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.m-mail .mr-card + .mr-card, .m-mail .mr-body { border-top: 1px solid var(--line); }
+.m-mail .mr-mhead { padding-inline: 0; }
+.m-mail .mr-options > summary { cursor: pointer; padding: 12px 0; color: var(--text-2); }
+.m-mail .mr-options[open] .mr-replies { margin-block: 10px; }
+.m-mail .mr-foot > [data-act=reply] { justify-content: flex-start; gap: 8px; min-height: 48px; background: var(--ifl-glass-control, var(--glass-ctl)); }
+.m-mail .mr-foot > [data-act=reply] svg { width: 20px; height: 20px; }

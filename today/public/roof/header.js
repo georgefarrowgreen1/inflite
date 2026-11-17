@@ -50,7 +50,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
     const b = e.target.closest(".ifh-act");
     if (!b) return;
     const k = b.dataset.act;
-    if (k === "search") return F?.search?.open();
+    if (k === "search" && !runs.search) return F?.search?.open();
     runs[k]?.(b);
   });
   segs.addEventListener("click", (e) => { const b = e.target.closest("[role=tab]"); if (b) choose(b.dataset.sec); });
@@ -81,7 +81,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
   }
   function setActs(list) {
     const seen = new Set(["search"]);
-    list = [{ icon: "search", label: "Search" }, ...(list || []).filter((a) => a && !seen.has(a.icon) && seen.add(a.icon)).slice(0, 2)];
+    list = [list?.find(a => a?.icon === "search") || { icon: "search", label: "Search" }, ...(list || []).filter((a) => a && !seen.has(a.icon) && seen.add(a.icon)).slice(0, 2)];
     runs = {};
     for (const a of list) if (a.run) runs[a.icon] = a.run;
     const k = list.map((a) => `${a.icon}|${a.label}|${a.word || ""}`).join(";");

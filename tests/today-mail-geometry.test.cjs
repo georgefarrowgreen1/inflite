@@ -54,9 +54,10 @@ async function open({ native = false, width, theme }) {
     await page.addStyleTag({ url: '/mail/roof/mailsheets.css' });
     await page.evaluate(async () => {
       const ui = await import('/roof/ui.js'), { createSheets } = await import('/roof/sheet.js'), { openCompose } = await import('/mail/roof/compose.js'), { createStore } = await import('/mail/roof/store.js');
+      const { icon } = await import('/mail/roof/icons.js');
       const sheets = createSheets({ route: { tab: 'today' } }); let slot = null;
       const fw = { ui, session: { user: { id: "geometry-test-owner" } }, signal: new AbortController().signal, toast() {}, sheet: { open: spec => sheets.open({ ...spec, app: 'mail' }) } };
-      window.__geometryCompose = openCompose({ fw, store: createStore({ me: { defaultFrom: 'george@example.com', identities: ['george@example.com', 'work@example.com'] } }), logic: {}, icon: name => ui.icon(name), open: {},
+      window.__geometryCompose = openCompose({ fw, store: createStore({ me: { defaultFrom: 'george@example.com', identities: ['george@example.com', 'work@example.com'] } }), logic: {}, icon, open: {},
         api: { saveDraft: async () => ({ id: 'sample-draft' }) }, outbox: { unsent: () => slot, keepUnsent: f => (slot = f, true), dropUnsent: () => { slot = null; }, track: () => () => {} } },
       { subject: 'A clear subject', text: 'Hello,\n\nA little breathing room for every field.' });
     });
@@ -89,7 +90,7 @@ async function centredIcons(locator) {
   assert.ok(icons.length > 0);
   for (const icon of icons) { assert.ok(icon.width >= 44 && icon.height >= 44, 'icon controls retain a 44px target'); assert.ok(icon.dx < 1 && icon.dy < 1, 'glyphs stay centred inside their control'); }
 }
-for (const [width, theme] of [[320, 'dark'], [390, 'dark'], [1440, 'light']]) test(`Hosted Mail editing surfaces keep one rounded focus ring and comfortable insets at ${width}px ${theme}`, async () => {
+for (const [width, theme] of [[320, 'dark'], [390, 'dark'], [1440, 'light']]) test(`Hosted Mail keeps the writing surface aligned and its focused recipient visible at ${width}px ${theme}`, async () => {
   const { ctx, page, errors } = await open({ width, theme });
   try {
     const sheet = page.locator('dialog[data-sheet="mail-compose"]'), input = sheet.getByRole('textbox', { name: 'To', exact: true });
@@ -99,10 +100,14 @@ for (const [width, theme] of [[320, 'dark'], [390, 'dark'], [1440, 'light']]) te
     await input.fill('friend@example.com');
     const ring = await input.evaluate(el => { const i = getComputedStyle(el), r = getComputedStyle(el.closest('.mc-row')); return { innerOutline: i.outlineStyle, innerShadow: i.boxShadow, radius: parseFloat(r.borderTopLeftRadius), shadow: r.boxShadow, top: r.borderTopColor, bottom: r.borderBottomColor, height: el.getBoundingClientRect().height }; });
     assert.equal(ring.innerOutline, 'none', 'the bare inner input must not draw a second square ring'); assert.equal(ring.innerShadow, 'none');
-    assert.ok(ring.radius >= 16 && ring.shadow.includes('inset'), 'the visible focus indicator belongs to the rounded outer field'); assert.equal(ring.top, ring.bottom); assert.ok(ring.height >= 44);
-    for (const selector of ['.mc-row[data-k="to"]', '.mc-subject', '.mc-text', '.mc-from']) await roundedInset(sheet.locator(selector));
+    assert.ok(ring.shadow.includes('inset'), 'the recipient row underlines the focused input'); assert.ok(ring.height >= 44);
+    const surfaces = await sheet.locator('.mc-row[data-k="to"], .mc-subject, .mc-text').evaluateAll(els => els.map(el => ({ x: el.getBoundingClientRect().left, width: el.getBoundingClientRect().width })));
+    assert.equal(surfaces.length, 3);
+    assert.ok(surfaces.every(row => Math.abs(row.x - surfaces[0].x) < 1 && Math.abs(row.width - surfaces[0].width) < 1), 'address, subject and body share one writing margin');
+    await centredIcons(sheet.locator('.ifs-head button:visible'));
+    assert.equal(await sheet.locator('.ifs-head [data-act=send]').getAttribute('aria-label'), 'Send');
     await centredIcons(sheet.locator('.mc-tools .ifl-icon-btn'));
-    for (const name of ['Cc/Bcc', 'Add Files']) assert.ok((await sheet.locator('.mc-tools').getByRole('button', { name, exact: true }).boundingBox()).height >= 44);
+    for (const name of ['Cc/Bcc', 'Add Files']) assert.ok((await sheet.getByRole('button', { name, exact: true }).boundingBox()).height >= 44);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
     await screenshot(page, `hosted-${width}-${theme}`);
     if (width < 600) {

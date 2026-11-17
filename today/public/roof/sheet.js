@@ -192,7 +192,7 @@ export function createSheets(F, { beforeOpen } = {}) {
     function setBusy(on) {
       if (shut) return;
       if (on) d.setAttribute("aria-busy", "true"); else d.removeAttribute("aria-busy");
-      for (const b of d.querySelectorAll(".ifs-acts button")) b.disabled = !!on;
+      for (const b of d.querySelectorAll(".ifs-acts button, [data-sheet-action]")) b.disabled = !!on;
     }
     if (head && !head.querySelector("[data-back]")) {
       const back = el("button", { class: "ifs-btn ifs-back", type: "button", "aria-label": "Back", data: { back: "" } }, icon("back"));

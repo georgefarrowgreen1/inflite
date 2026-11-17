@@ -300,11 +300,13 @@ export function view(el, ctx) {
     for (const b of cur.bar.querySelectorAll("[data-act=more]")) b.replaceChildren(ctx.icon("more"));
     if (!cur.qr) cur.qr = quick(t);
     const newest = t.messages?.find((m) => m.folder !== "sent") || t.messages?.[0];
-    const row = E("div", { class: "mr-replies" },
-      pill("Reply", "reply", "reply", () => write(t, "reply")), pill("Reply All", "reply-all", "reply-all", () => write(t, "replyAll")),
-      pill("Forward", "forward", "forward", () => write(t, "forward")),
-      newest ? E("a", { class: "ifl-btn small", href: api.rawUrl(newest.id), target: "_blank", rel: "noopener", data: { act: "original" }, text: "Open Original" }) : null);
-    cur.foot.replaceChildren(pad() ? "" : E("div", { class: "mr-acts" }, ...acts(t)), cur.qr, row);
+    const reply = pill("Reply", "reply", "reply", () => write(t, "reply"));
+    const extras = cur.extras || (cur.extras = E("details", { class: "mr-options" }));
+    extras.replaceChildren(E("summary", { text: "More reply options" }), cur.qr,
+      E("div", { class: "mr-replies" }, pill("Reply All", "reply-all", "reply-all", () => write(t, "replyAll")),
+        pill("Forward", "forward", "forward", () => write(t, "forward")),
+        newest ? E("a", { class: "ifl-btn small", href: api.rawUrl(newest.id), target: "_blank", rel: "noopener", data: { act: "original" }, text: "Open Original" }) : null));
+    cur.foot.replaceChildren(reply, extras, pad() ? "" : E("div", { class: "mr-acts" }, ...acts(t)));
     for (const b of cur.foot.querySelectorAll("[data-act=more]")) b.replaceChildren(ctx.icon("more"));
   }
   // (replies go to the newest message someone else sent, or the newest if it's all yours)

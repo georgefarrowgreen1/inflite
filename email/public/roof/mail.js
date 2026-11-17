@@ -29,10 +29,8 @@
 //     phone's reader goes back to the list (fw.nav.back(), or a cold one to the lens's address, replaced, kind "pop"); an
 //     iPad's pane opens nextId, else none. (MM's addition.)
 //   open.compose, open.settings, open.viewer and open.signin reach their lazy files only through fw.lazy.
-// The header is set from here alone, on lens, filter, address, box, counts, offline, threadId, thread, layout, list:
-//   title = the view with pick ▾ → open.views(); line "3 unread" | "All caught up" | "Couldn’t reach Mail · Try Again";
-//   acts: Write only; badges { people: { n, say } } (S4-D26); a phone reader: title the subject, acts Done and Later,
-//   sections: false (s24 §4), back "Back to Mail" when it was opened cold (S4-D7).
+// The mailbox header owns Search, Write and the section tabs. A phone conversation keeps the
+// mailbox name in the header and shows its subject in the reader, with a back path for deep links.
 import { createStore, STORAGE, local } from "./store.js";
 import { MAIL, createApi } from "./api.js";
 import * as logic from "./logic.js";
@@ -45,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.97";
-export const NEWS = "Private downloads and safer diagnostics";
+export const BUILD = "1.98";
+export const NEWS = "A quieter inbox and a new writing sheet for messages and replies";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
@@ -168,25 +166,20 @@ export async function mount(root, fw) {
     const badges = { people: n ? { n, say: `${n} unread` } : 0 };
     if (!lensOnly && s.layout === "phone" && s.threadId && route?.key === "thread") {
       const t = s.thread?.t || s.list.rows.find((r) => r.id === s.threadId);
-      const subj = t?.subject || "Conversation";
+      const mailbox = logic.viewTitle(s);
       return {
-        title: subj, compactTitle: subj, pick: null, line: "", sections: false, badges,
+        title: mailbox, compactTitle: mailbox, pick: null, line: "", sections: false, badges,
         back: cold ? { label: "Back to Mail" } : null,
-        acts: [{ icon: "done", label: "Done", word: "Done", run: () => t && actions.act([t.id], logic.leadAction(t).act) }, { icon: "later", label: "Later", word: "Later", run: () => t && ctx.open.later([t.id]) }],
+        acts: [{ icon: "more", label: "Conversation actions", run: () => t && ctx.open.rowMenu(t) }],
       };
     }
     const gate = s.access && s.access !== "ok";
-    const title = gate || (s.offline && !s.list.rows.length) ? "Mail" : logic.viewTitle(s);
-    const lensN = s.lens === "people" || s.lens === "updates" ? Number(s.counts?.[s.lens]) || 0 : 0;
-    const line = gate ? "" : s.offline ? "Offline" : s.list.err && !s.list.rows.length ? "Couldn’t reach Mail · Try Again"
-      : s.query ? `${s.list.rows.length}${s.list.more ? "+" : ""} found` : s.box === "trash" ? (s.counts?.trash ? `${s.counts.trash} in Trash` : "Empty")
-      : s.box === "drafts" ? (s.counts?.drafts ? `${s.counts.drafts} draft${s.counts.drafts === 1 ? "" : "s"}` : "")
-      : s.lens === "people" || s.lens === "updates" ? (lensN ? `${lensN} unread` : s.counts ? "All caught up" : "")
-      : s.lens === "later" ? (s.counts?.later ? `${s.counts.later} put off` : "") : "";
-    const sectionLabel = SECTIONS.find(([id]) => id === s.lens)?.[1] || "Mail";
+    const title = s.box || s.query || s.address || s.filter !== "all" ? logic.viewTitle(s) : "Mail";
+    const line = gate ? "" : s.offline ? "Offline" : s.list.err && !s.list.rows.length ? "Couldn’t reach Mail · Try Again" : "";
+    const search = { icon: "search", label: "Search Mail", run: button => list.focusSearch(button) };
     return {
-      title, compactTitle: n && s.lens === "people" ? `${sectionLabel} · ${n}` : sectionLabel, line, badges,
-      pick: gate ? null : { label: "Views", run: () => ctx.open.views() }, acts: gate ? [] : [write], sections: SECTIONS, back: null,
+      title, compactTitle: title, line, badges,
+      pick: gate ? null : { label: "Views", run: () => ctx.open.views() }, acts: gate ? [] : [search, write], sections: SECTIONS, back: null,
     };
   }
   offs.push(...["lens", "filter", "address", "box", "counts", "offline", "threadId", "thread", "layout", "list", "query", "access"].map((k) => store.on(k, header)));

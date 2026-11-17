@@ -27,7 +27,7 @@ import { MAIL, MAIL_PAGE } from "./api.js";
 
 const MAX = 20 * 1024 * 1024;
 const LISTS = ["to", "cc", "bcc"];
-const titleOf = (c) => c.subject.trim() || (c.quote?.mode === "forward" ? "Forward" : c.quote ? "Reply" : "New Message");
+const titleOf = (c) => c.quote?.mode === "forward" ? "Forward" : c.quote ? "Reply" : "New message";
 const people = (l) => (Array.isArray(l) ? l : []).filter((p) => p && p.email).map((p) => ({ name: String(p.name || ""), email: String(p.email) }));
 // (the words kept on the phone and sent to Mail: never a file's bytes)
 export const fieldsOf = (c) => ({ from: c.from, to: c.to, cc: c.cc, bcc: c.bcc, subject: c.subject, text: c.text, quote: c.quote, inReplyTo: c.inReplyTo, references: c.references, draftId: c.draftId, quoteOld: !!c.quoteOld });
@@ -227,7 +227,7 @@ export function openCompose(ctx, init = {}) {
     x.addEventListener("click", () => { c.files.splice(i, 1); drawFiles(); changed(); });
     return x;
   }));
-  const pick = el("input", { type: "file", multiple: true, class: "vh", "aria-label": "Add Files", tabindex: "-1" });
+  const pick = el("input", { type: "file", multiple: true, hidden: true, "aria-label": "Add Files", tabindex: "-1" });
   pick.addEventListener("change", () => {
     for (const f of pick.files) {
       if (c.files.reduce((n, x) => n + (x.size || 0), 0) + f.size > MAX) { fw.toast("Files are limited to 20 MB"); break; }
@@ -240,7 +240,11 @@ export function openCompose(ctx, init = {}) {
   const drawQuote = () => {
     quoteEl.hidden = !c.quote && !c.quoteOld;
     if (c.quoteOld) quoteEl.replaceChildren(el("p", { text: "This draft was started in Mail on its own. Its quoted text is added only when you send it there." }), ui.btn("Open Mail", { small: true, href: `${MAIL_PAGE}/`, act: "open-mail" }));
-    else if (c.quote) quoteEl.replaceChildren(el("b", { class: "mc-qk", text: "Quoted below" }), el("p", { class: "mc-qs", text: snippetOf() }));
+    else if (c.quote) {
+      const meta = store.get().thread?.metas?.[c.quote.of];
+      const sender = meta?.from?.name || meta?.from?.email || "Original message";
+      quoteEl.replaceChildren(el("details", {}, el("summary", {}, ui.avatar(sender), el("span", {}, el("b", { text: sender }), el("small", { text: snippetOf() || "Quoted message" }))), el("b", { class: "mc-qk", text: "Quoted below" }), el("p", { text: snippetOf() || "Original message included when sent." })));
+    }
     const a = quoteEl.querySelector("a");
     a?.setAttribute("target", "_blank");
     a?.setAttribute("rel", "noopener");
@@ -249,10 +253,38 @@ export function openCompose(ctx, init = {}) {
   more.hidden = true;
   more.append(ui.btn("Delete Draft", { destructive: true, small: true, act: "delete-draft", run: () => end("delete") }));
   const moreBtn = ui.iconBtn("more", { label: "More", act: "more", run: () => { more.hidden = !more.hidden; } });
-  const tools = el("div", { class: "mc-tools" },
-    ui.btn("Cc/Bcc", { small: true, act: "cc", run: () => { ccRow.hidden = !ccRow.hidden; if (!ccRow.hidden) fields.cc.input.focus(); } }),
-    ui.btn("Add Files", { small: true, act: "files", run: () => pick.click() }),
-    ...(fw.workspace?.files?.open ? [ui.btn("From InFlite Files", { small: true, act: "drive-files", run: async () => {
+  const to = tokens("to", "To");
+  const ccButton = ui.btn("Cc/Bcc", { small: true, act: "cc", run: () => {
+    ccRow.hidden = !ccRow.hidden;
+    ccButton.setAttribute("aria-expanded", String(!ccRow.hidden));
+    if (!ccRow.hidden) fields.cc.input.focus();
+  } });
+  ccButton.setAttribute("aria-expanded", String(!ccRow.hidden));
+  to.append(ccButton);
+  const formatting = el("div", { class: "mc-format", hidden: true });
+  const formatButton = ui.btn("Aa", { small: true, label: "Text tools", act: "format", run: () => {
+    formatting.hidden = !formatting.hidden;
+    formatButton.setAttribute("aria-expanded", String(!formatting.hidden));
+  } });
+  formatButton.setAttribute("aria-expanded", "false");
+  formatButton.setAttribute("aria-label", "Text tools");
+  for (const [label, prefix] of [["Bullet list", "• "], ["Numbered list", "1. "], ["Quote", "> "]]) {
+    formatting.append(ui.btn(label, { small: true, run: () => {
+      const start = text.value.slice(0, text.selectionStart).lastIndexOf("\n") + 1;
+      const end = text.selectionEnd;
+      const lines = text.value.slice(start, end).split("\n");
+      text.setRangeText(lines.map((line, i) => (prefix === "1. " ? (i + 1) + ". " : prefix) + line).join("\n"), start, end, "end");
+      c.text = text.value;
+      formatting.hidden = true;
+      formatButton.setAttribute("aria-expanded", "false");
+      text.focus(); changed();
+    } }));
+  }
+  const attach = ui.iconBtn("attachment", { label: "Add Files", act: "files", run: () => pick.click() });
+  attach.replaceChildren(ctx.icon("attachment"));
+  const status = el("small", { class: "mc-status", role: "status" });
+  const tools = el("div", { class: "mc-tools" }, attach, formatButton,
+    ...(fw.workspace?.files?.open ? [ui.btn("Drive", { small: true, label: "Attach from InFlite Files", act: "drive-files", run: async () => {
       const current = () => !ended && !sending && !h?.closed && !fw.signal.aborted && fw.session.user.id === owner && store.get().access === "ok";
       if (!current() || h.el.getAttribute("aria-busy") === "true") return;
       try {
@@ -267,10 +299,10 @@ export function openCompose(ctx, init = {}) {
         drawFiles(); changed();
       } catch (error) { if (current() && error?.name !== "AbortError") fw.toast(error?.message || "Those files couldn’t attach."); }
     } })] : []),
-    moreBtn);
+    moreBtn, status);
   moreBtn.replaceChildren(ctx.icon("more"));
   const prog = el("p", { class: "mc-prog", "aria-live": "polite" });
-  const body = el("div", { class: "mc" }, el("div", { class: "mc-head" }, tokens("to", "To"), from), sugg, ccRow, subject, text, filesEl, quoteEl, tools, more, prog, pick);
+  const body = el("div", { class: "mc" }, el("div", { class: "mc-head" }, el("div", { class: "mc-sender" }, el("span", { text: "From" }), from || el("span", { text: c.from || me.defaultFrom || "Default address" })), to), ccRow, sugg, subject, quoteEl, text, filesEl, formatting, more, prog, tools, pick);
   if (fw.workspace?.files?.fromDrop) {
     const isDriveDrop = event => [...(event.dataTransfer?.types || [])].includes("application/x-inflite-files-token");
     body.addEventListener("dragover", event => { if (isDriveDrop(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } });
@@ -293,11 +325,12 @@ export function openCompose(ctx, init = {}) {
     });
   }
   drawFiles(); drawQuote();
-  ccRow.after(sugg);
+
 
   function redraw() {
     for (const k of LISTS) fields[k].draw();
     ccRow.hidden = !(c.cc.length || c.bcc.length);
+    ccButton.setAttribute("aria-expanded", String(!ccRow.hidden));
     subject.value = c.subject; text.value = c.text; if (from) from.value = c.from;
     drawFiles(); drawQuote(); changed();
   }
@@ -306,7 +339,12 @@ export function openCompose(ctx, init = {}) {
     const t = h?.el.querySelector(".ifs-head h2");
     if (t) t.textContent = titleOf(c);
     clearTimeout(keepT);
-    keepT = setTimeout(() => { if (!ended && dirty()) keep(); }, 800);
+    status.textContent = "";
+    keepT = setTimeout(() => {
+      if (ended || !dirty()) return;
+      const kept = keep();
+      status.textContent = kept ? (c.files.some(isFile) ? "Text saved on device" : "Saved on device") : "Draft not saved";
+    }, 800);
   }
 
   // ---- closing: Send, Delete Draft, or any other way (kept, S4-D18)
@@ -338,7 +376,8 @@ export function openCompose(ctx, init = {}) {
     const job = (async () => {
       await filesReady();
       const r = await api.saveDraft(draftOf(fieldsOf(c), await draftFiles(c.files)), null, { keepalive: !bytes });
-      if (r?.id) c.draftId = r.id;
+      if (!r?.id) throw new Error("Mail did not confirm the draft");
+      c.draftId = r.id;
       if (kept && stamp(ctx.outbox.unsent()) === at) ctx.outbox.dropUnsent();
       fw.toast("Draft saved");
     })();
@@ -352,7 +391,7 @@ export function openCompose(ctx, init = {}) {
   }
 
   async function send() {
-    if (sending) return;
+    if (sending || h.el.getAttribute("aria-busy") === "true") return;
     for (const k of LISTS) fields[k].commit();
     const all = LISTS.flatMap((k) => c[k]), bad = all.find((p) => !EMAIL_RE.test(p.email));
     if (!all.length || bad) return fw.toast(bad ? `“${bad.email}” isn’t a valid address` : "Add a recipient");
@@ -363,7 +402,7 @@ export function openCompose(ctx, init = {}) {
     const offline = !online();
     if (offline && (c.files.length || unknown)) return fw.toast(c.files.length ? "Files need a connection. Try Again" : "This draft needs a connection. Try Again");
     try { await filesReady(); } catch (_) { return fw.toast("Couldn’t reach Mail. Try Again"); }
-    if (h.closed) return;
+    if (h.closed || sending) return;
     // (a quoteOld draft goes without its quote, as "Send Without the Quoted Text?" said: quote null, not left out)
     const f = { ...fieldsOf(c), quoteOld: false };
     if (offline && !fits(f)) return fw.toast("Couldn’t keep this on your phone. Try Again when you’re online");
@@ -395,6 +434,15 @@ export function openCompose(ctx, init = {}) {
     focus: c.to.length ? text : fields.to.input,
     onClose: closed,
   });
+  const sendButton = h.el.querySelector('[data-act="send"]');
+  const sheetHead = h.el.querySelector(".ifs-head");
+  if (sendButton && sheetHead) {
+    sendButton.setAttribute("aria-label", "Send");
+    sendButton.dataset.sheetAction = "";
+    sendButton.replaceChildren(ctx.icon("send-up"));
+    sheetHead.append(sendButton);
+    h.el.querySelector(".ifs-acts")?.remove();
+  }
   store.set({ compose: true }, "compose");
   // Save this app's bounded draft synchronously before a browser can suspend
   // the page. File bytes remain with the existing upload/draft workflow.

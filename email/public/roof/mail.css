@@ -87,3 +87,18 @@
 .m-mail .ml-day { letter-spacing: .01em; }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .m-mail .ml-row, .m-mail .ml-sending, .m-mail .ml-resume-draft { background-image: none; } }
 @media (forced-colors: active) { .m-mail .ml-row, .m-mail .ml-sending, .m-mail .ml-resume-draft { background: Canvas; color: CanvasText; box-shadow: none; border: 1px solid CanvasText; } .m-mail .ml-row.selected { outline: 2px solid Highlight; outline-offset: -2px; } }
+
+/* Continuous mailbox rows. The swipe underlay appears only during a gesture. */
+.m-mail .ml-rows { gap: 0; }
+.m-mail .ml-wrap, .m-mail .ml-row { border: 0; border-radius: 0; box-shadow: none; }
+.m-mail .ml-row { background: transparent; align-items: center; padding-block: 14px; }
+.m-mail .ml-wrap.swiping .ml-row { background: var(--ifl-page, var(--bg)); }
+.m-mail .ml-wrap + .ml-wrap::before { content: ""; position: absolute; inset: 0 0 auto 70px; border-top: 1px solid var(--ifl-line, var(--line)); }
+.m-mail .ml-row .ml-snip { -webkit-line-clamp: 1; }
+.m-mail .ml-row.unread .ml-dot { background: #19ad9d; }
+.m-mail .ml-day { margin: 20px 0 4px; }
+.m-mail .ml-search[hidden] { display: none; }
+.m-mail.ifl-in-pane .ml-search[hidden] { display: flex; }
+.m-mail .ml-later-empty { text-align: center; margin: clamp(40px, 9vh, 100px) auto; }
+.m-mail .ml-later-empty > svg { width: 36px; height: 36px; color: var(--text-2); }
+.m-mail .ml-later-empty .ifl-empty { padding-top: 8px; }

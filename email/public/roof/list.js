@@ -14,7 +14,7 @@ import { MAIL, MAIL_PAGE } from "./api.js";
 export function view(el, ctx) {
   const { store, fw, logic, actions } = ctx, ui = fw.ui;
   const doc = el.ownerDocument;
-  let typed = "", shownSig = "";
+  let typed = "", shownSig = "", searchOpener = null;
   // (the rows last built for each list, by what they show: a switch back to a place whose rows haven't changed puts the
   // same rows back, none built again; the six most recent kept)
   const built = new Map();
@@ -22,6 +22,16 @@ export function view(el, ctx) {
     onInput: (v) => { typed = v; if (!v.trim() && store.get().query) search(""); else draw(); },
     onEnter: (v) => search(v) });
   field.classList.add("ml-search");
+  field.hidden = true;
+  field.input.addEventListener("blur", () => { if (!typed && !store.get().query) field.hidden = true; });
+  field.input.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    search("");
+    field.hidden = true;
+    field.input.blur();
+    if (searchOpener?.isConnected) searchOpener.focus({ preventScroll: true });
+  });
   field.input.setAttribute("enterkeyhint", "search");
   const chips = ui.el("div", { class: "ml-chips", role: "group", "aria-label": "Showing" });
   const box = ui.el("div", { class: "ml-out", "aria-live": "polite" });
@@ -76,7 +86,7 @@ export function view(el, ctx) {
   function caughtUp(s) {
     const c = s.counts || {}, n = c.nextLater, ups = [...new Set((c.updatesFrom || []).map((p) => logic.displayName(p).trim()).filter(Boolean))].slice(0, 3);
     return ui.el("div", { class: "ml-caught" },
-      ui.empty({ title: "All caught up", body: "Nothing from people is waiting." }),
+      ui.empty({ title: "All caught up" }),
       n?.at ? ui.row({ lead: { time: logic.fmtWhen(n.at) }, title: `${logic.displayName(n.from) || "A conversation"} is back from Later`, sub: n.subject || "", run: () => fw.nav.section("later"), label: `Later: ${logic.displayName(n.from) || "a conversation"}, back ${logic.fmtWhen(n.at)}` }) : null,
       ups.length ? ui.row({ lead: { icon: "bell" }, title: "Newest in Updates", sub: ups.join(", "), run: () => fw.nav.section("updates") }) : null);
   }
@@ -143,6 +153,7 @@ export function view(el, ctx) {
       else if (filter) rows.replaceChildren(ui.empty({ title: "Nothing loaded matches", body: "Press Return to search all your mail." }));
       else if (s.query) rows.replaceChildren(noResults(s));
       else if (s.lens === "people" && s.filter === "all" && !s.address && !s.box) rows.replaceChildren(caughtUp(s));
+      else if (s.lens === "later" && !s.box && !s.address) rows.replaceChildren(ui.el("div", { class: "ml-later-empty" }, ctx.icon("later"), ui.empty({ title: "Nothing in Later", body: "Messages you snooze stay here until they’re due." })));
       else { const [t, b] = words(s); rows.replaceChildren(ui.empty({ title: t, body: b })); }
     } else {
       rows.setAttribute("role", "list");
@@ -180,7 +191,7 @@ export function view(el, ctx) {
   return {
     draw,
     hide() {},
-    focusSearch() { field.input.focus(); },
+    focusSearch(button) { searchOpener = button || doc.activeElement; field.hidden = false; field.input.focus(); },
     destroy() {
       built.clear();
       for (const f of offs) f();

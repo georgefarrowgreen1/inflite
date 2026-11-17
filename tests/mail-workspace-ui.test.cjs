@@ -123,3 +123,31 @@ test('Mail actual gate and a delayed optional compose import respect account and
     await t.clean();
   } finally { await t.ctx.close(); }
 });
+
+test('Phone Mail reveals search on demand and keeps text tools and Send inside the writing sheet', async () => {
+  const t = await open({ width: 390, paneWidth: 390 });
+  try {
+    await t.page.evaluate(() => T.setPane(false));
+    await t.page.locator('.ml-row').first().waitFor();
+    const search = t.page.getByRole('searchbox', { name: 'Search Mail', includeHidden: true });
+    assert.equal(await search.isHidden(), true);
+    await t.page.evaluate(() => T.headers.at(-1).acts.find(a => a.icon === 'search').run(document.getElementById('focus')));
+    await search.fill('unmatched phrase');
+    await search.press('Escape');
+    assert.equal(await search.isHidden(), true);
+    assert.equal(await t.page.evaluate(() => document.activeElement.id), 'focus');
+    await t.page.evaluate(() => { T.headers.at(-1).acts.find(a => a.icon === 'compose').run(); });
+    const sheet = t.page.getByRole('dialog', { name: 'New message' });
+    await sheet.waitFor();
+    assert.equal(await sheet.locator('.ifs-head').getByRole('button', { name: 'Send' }).isVisible(), true);
+    await sheet.getByRole('button', { name: 'Cc/Bcc' }).click();
+    assert.equal(await sheet.getByRole('textbox', { name: 'Bcc', exact: true }).isVisible(), true);
+    const body = sheet.locator('textarea');
+    await body.fill('Meet at nine');
+    await sheet.getByRole('button', { name: 'Text tools' }).click();
+    await sheet.getByRole('button', { name: 'Bullet list' }).click();
+    assert.equal(await body.inputValue(), '• Meet at nine');
+    await sheet.getByText('Saved on device', { exact: true }).waitFor();
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});

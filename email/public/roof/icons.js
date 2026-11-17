@@ -6,6 +6,7 @@ const NS = "http://www.w3.org/2000/svg";
 const dot = (x, y, r) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
 // [stroked paths, filled paths]
 const P = {
+  "send-up": [["M12 20V4m-7 7 7-7 7 7"]],
   done: [["m5 12.5 4.5 4.5L19 7.5"]],
   reply: [["M9.5 15 4 9.5 9.5 4", "M4 9.5h10.5a5.5 5.5 0 0 1 5.5 5.5v5"]],
   "reply-all": [["M8 15 2.5 9.5 8 4", "M12.5 15 7 9.5 12.5 4", "M7 9.5h8a5.5 5.5 0 0 1 5.5 5.5v5"]],
