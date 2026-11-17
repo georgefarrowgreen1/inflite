@@ -1,3 +1,5 @@
+import { initialFavourites, normaliseFavourites } from "./launcher-model.js";
+import { captureLauncherOrigin, launcherTransition } from "./launcher-motion.js";
 // Unified InFlite shell: singleton apps, Files and account-scoped actions.
 // Saved workspaces are retired; existing records are never read or changed.
 import { REGISTRY, format } from "./router.js";
@@ -19,7 +21,7 @@ const retiredContextAction = (app, id) => app === "fitness" && id === "weather-f
 const guarded = (fn, fallback) => { try { return fn(); } catch (_) { return fallback; } };
 
 export async function createWorkspace(F, options = {}) {
-  await loadStyles("/roof/workspace.css");
+  await Promise.all([loadStyles("/roof/workspace.css"),loadStyles("/roof/launcher.css")]);
   if (F.signal.aborted) throw new DOMException("This account was released", "AbortError");
   const { root, today } = options, owner = F.session.view?.user?.id;
   if (!root || !today || !owner) throw new Error("InFlite needs a signed-in owner");
@@ -43,6 +45,10 @@ export async function createWorkspace(F, options = {}) {
   let dialogInstance = null, dialogLoad = null;
   let explorer = null, explorerLoad = null, filesLocation = safeFilesLocation({ kind: "drive" }), pendingFilesQuery = null;
   let shown = false, gone = false, route = null, scene = 0, paintPending = false;
+  let stopLaunch=null;
+  const launchMotion=spec=>(stopLaunch=launcherTransition(spec));
+  F.nav.launchMotion=launchMotion;
+  offs.push(()=>{stopLaunch?.();if(F.nav.launchMotion===launchMotion)F.nav.launchMotion=null});
   const live = () => !gone && !F.signal.aborted && F.session.view?.user?.id === owner;
   const organiseTimer=setTimeout(()=>{if(live())import('/organise/today.js').then(m=>{if(live())m.connectToday(F,today)}).catch(()=>{})},1500);F.signal.addEventListener('abort',()=>clearTimeout(organiseTimer),{once:true});
   const activity = createActivityRegistry(F), activityView = createWorkspaceActivity(F, { registry: activity });
@@ -60,6 +66,10 @@ export async function createWorkspace(F, options = {}) {
     return live()&&!lease.signal?.aborted&&guarded(()=>!lease.current||lease.current(),false)?instance:null;
   };
   const appOn = (app) => !!F.session.apps?.[app] && (app !== "mail" || F.session.view?.apps?.mail === true);
+  const favouriteKey='ifl:launcher:v1:'+owner;
+  let favourites=initialFavourites(guarded(()=>JSON.parse(localStorage.getItem(favouriteKey))),id=>id==='files'||appOn(id));
+  const launchOrigins=new Map();
+  const launchOptions=(id,source)=>{const origin=source?.nodeType?captureLauncherOrigin(source):source;if(!origin)return {};launchOrigins.set(id,origin);return {kind:'launch',launch:origin}};
   const handoffs = createHandoffs(F, { available: appOn, deliver: async (app, token, lease) => {
     const opened = await openApp(app, format({ app }), false, true, lease);
     return opened && lease.current() ? runIntent(app, "handoff", token, lease) : { ok: false, cancelled: true };
@@ -97,12 +107,13 @@ export async function createWorkspace(F, options = {}) {
   }
   for (const app of WORKSPACE_APPS.filter((a) => a.pane)) acquire(app.id);
   const view = createWorkspaceView(root, {
-    onToday: () => F.nav.go("/", { resume: true }), onApp: (app) => openApp(app),
+    onToday: opener => {const origin=captureLauncherOrigin(opener);F.nav.go("/",{resume:true,...(origin?{kind:'launch-return',launch:origin}:{})})}, onApp: (app,launch) => openApp(app,null,false,false,{launch}),
+    onFavourites:items=>{if(!live())return;const next=normaliseFavourites(items);if(!next)return;favourites=next;guarded(()=>localStorage.setItem(favouriteKey,JSON.stringify(next)));paint()},
     onRecent: app => { if (live() && appOn(app)) openApp(app); },
     onAppDrop: (app, token) => { if (live() && ["mail", "fitness"].includes(app) && /^[a-f0-9]{32}$/.test(token)) return runIntent(app, app === "mail" ? "compose-attach" : "import-drive", "drop:" + token); },
-    onSecurity:()=>security().then(s=>live()&&s?.open({app:F.route?.app||null})),onCapture:()=>lifeTools().then(v=>live()&&v?.capture()),onSearch: () => F.search.open(), onApps: () => openApps(),
+    onSecurity:()=>security().then(s=>live()&&s?.open({app:F.route?.app||null})),onCapture:()=>lifeTools().then(v=>live()&&v?.capture()),onSearch: () => F.search.open(), onApps: opener => openApps(opener),
     onNotifications: options.onNotifications, onAccount: options.onAccount, onSettings: options.onSettings,
-    onFiles: () => openFiles(),
+    onFiles: launch => openFiles(null,null,launch),
     onActivity: () => activityView.open(), onRecovery: () => recoveryView.open(),
   });
   // Chrome has one account-owned home outside animated page containers.
@@ -141,7 +152,7 @@ export async function createWorkspace(F, options = {}) {
       paintPending = false; if (!live()) return;
       const user = F.session.view?.user || {};
       systemInstance?.update();
-      view.update({ mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : "today", activeApp: F.route?.app, workspaces: [],
+      view.update({ favourites,mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : "today", activeApp: F.route?.app, workspaces: [],
         apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id) })), user: { name: user.name || "", photo: user.photoAt && /^[\w-]{8,64}$/.test(owner) ? `/api/avatar?id=${encodeURIComponent(owner)}&v=${encodeURIComponent(String(user.photoAt))}` : null }, notifications: options.notifications?.() || 0,
         unifiedHome: true, connectionManaged: true, online: recovery.snapshot().online, activityCount: activityView.count(),
         greeting: `${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}${F.session.view?.user?.name ? ", " + String(F.session.view.user.name).trim().split(/\s+/)[0] : ""}`,
@@ -213,7 +224,7 @@ export async function createWorkspace(F, options = {}) {
   async function openApp(app, destination = null, expand = false, wake = false, lease = {}) {
     const manifest = getWorkspaceApp(app); if (!live() || !manifest || !appOn(app)) return null;
     const path = destination || recentApps.get(app) || manifest.href;
-    F.nav.go(path, { ...(wake ? { kind: "section" } : {}), resume: !destination && !wake });
+    F.nav.go(path, { ...launchOptions(app,lease.launch),...(wake ? { kind: "section" } : {}), resume: !destination && !wake });
     const expected = F.route, handle = handles.get(app);
     if (expected?.kind !== "app" || expected.app !== app) return null;
     try { if (handle) {
@@ -256,20 +267,20 @@ export async function createWorkspace(F, options = {}) {
       queueProvider(app); return result;
     } catch (_) { if (ownsAction()) F.toast("That action couldn’t finish. Try again."); return false; }
   }
-  function navigateFiles(next, { query, resume = false } = {}) {
+  function navigateFiles(next, { query, resume = false,launch=null } = {}) {
     next = safeFilesLocation(next);
     if (!live() || !next) return false;
     const path = format({ tab: "workspace", tool: "files", folder: next.kind === "drive" && next.view === "folder" ? next.folderId : null });
     const prefill = typeof query === "string" ? { query: query.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 160), location: JSON.stringify(next), route: null } : null;
     pendingFilesQuery = prefill;
     const replace = F.route?.tool === "files" && JSON.stringify(filesLocation) === JSON.stringify(next);
-    F.nav.go(path, { kind: "section", replace, resume, state: { files: { userId: owner, location: next } } });
+    F.nav.go(path, { kind: "section",...launchOptions("files",launch), replace, resume, state: { files: { userId: owner, location: next } } });
     if (prefill && pendingFilesQuery === prefill) prefill.route = F.route;
     return true;
   }
-  const openFiles = (query = null, location = null) => {
+  const openFiles = (query = null, location = null,launch=null) => {
     const destination = location === null ? query === null ? filesLocation : { kind: "drive", folderId: null, view: "folder" } : safeFilesLocation(location);
-    return destination ? navigateFiles(destination, { query, resume: query === null && location === null }) : false;
+    return destination ? navigateFiles(destination, { query,launch, resume: query === null && location === null }) : false;
   };
   function filesLocationAt(r) {
     const direct = safeFilesLocation({ kind: "drive", folderId: r?.folder || null });
@@ -314,12 +325,17 @@ export async function createWorkspace(F, options = {}) {
       return false;
     }
   }
-  function openApps() {
+  function openApps(opener) {
     if (!live()) return;
-    let menu;
-    const body = view.launcher(() => menu?.now());
-    menu = F.sheet.open({ sheet: "workspace-apps", title: "Your apps", body });
+    let menu,body;
+    const open=()=>{if(!live())return;body=view.launcher(()=>menu?.now());menu=F.sheet.open({sheet:'workspace-apps',title:'Your apps',body,onClose:()=>view.launcherOpen(false)});view.launcherOpen(true);if(opener?.classList?.contains('ws-dock-add'))body.querySelector('.wsl-edit')?.click()};
+    if(F.route?.kind==='app'||F.route?.tool==='files'){
+      const id=F.route.app||'files',origin=launchOrigins.get(id)||captureLauncherOrigin(opener||view.dock.querySelector('[aria-current]'));
+      if(origin){F.nav.go('/',{resume:true,kind:'launch-return',launch:{...origin,render:open,target:()=>captureLauncherOrigin(body?.querySelector('[data-launcher-app="'+id+'"]'))}});return}
+    }
+    open();
   }
+
   async function show(nextRoute) {
     if (!live()) return false;
     // Old saved-layout bookmarks return home without touching saved records.
@@ -345,7 +361,7 @@ export async function createWorkspace(F, options = {}) {
     gone = true; ++scene;
     for (const off of offs.splice(0)) off();
     explorer?.destroy(); dialogs?.destroy(); handoffs.destroy(); connection.destroy(); recoveryView?.destroy(); recovery?.destroy(); activityView.destroy(); activity.destroy(); pendingFilesQuery = null;
-    providers.clear(); snapshots.clear(); recentApps.clear(); files?.destroy(); commands?.destroy(); background.remove();
+    providers.clear(); snapshots.clear(); recentApps.clear(); launchOrigins.clear(); files?.destroy(); commands?.destroy(); background.remove();
     restoreToday(); anchor.remove(); view.destroy(); html.classList.remove("ifl-os", "os-workspace"); html.removeAttribute("data-os-dock-away"); document.title = originalTitle;
     if (F.tabs.away === dockAway) F.tabs.away = nativeAway;
     const state = history.state;

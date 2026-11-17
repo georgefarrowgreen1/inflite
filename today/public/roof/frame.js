@@ -80,7 +80,7 @@ export function createFrame(opts = {}) {
   };
   const roofs = () => sess().apps;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let motion = 0, stopMotion = () => {};
+  let motion = 0, stopMotion = () => {}, launcherRendering = false;
   const cancelMotion = (finish) => { stopMotion(finish); ++motion; stopMotion = () => {}; };
   const newKey = () => Math.random().toString(36).slice(2, 10);
   const ys = new Map(), backTo = new Map();
@@ -297,9 +297,10 @@ export function createFrame(opts = {}) {
 
   // ---- navigation
   F.nav = {
+    launchMotion: null,
     go(path, o = {}) {
       if (gone) return;
-      F.sheet.closeAll();
+      if (!o.launch) F.sheet.closeAll();
       let u = T(() => new URL(String(path), L.href));
       if (!u) return;
       if (u.origin !== L.origin) return /^https?:$/.test(u.protocol) && L.assign(u.href);
@@ -307,7 +308,7 @@ export function createFrame(opts = {}) {
       let r = parse(p, { roof: roofs(), workspace: !!opts.workspace });
       if (!r) return L.assign(globalThis.IFL?.hub?.go ? globalThis.IFL.hub.go(p) : p);
       if (o.resume) {
-        if (shown && idOf(r) === shown.id && resumeKey(r) === resumeKey(shown.route)) return;
+        if (shown && idOf(r) === shown.id && resumeKey(r) === resumeKey(shown.route)) return F.sheet.closeAll();
         const kept = resumeRoutes.get(resumeKey(r));
         if (kept && (kept.kind !== "app" || isOn(kept.app))) {
           // A new route identity keeps old asynchronous show/action callbacks
@@ -324,7 +325,7 @@ export function createFrame(opts = {}) {
       if (!o.replace) { depth++; key = newKey(); routes.length = depth; }
       put(p, !o.replace, o.state);
       routes[depth] = r;
-      render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom && r.app === "weather" ? hintOf(o.zoomFrom, u) : null, y: o.resume ? routeScroll.get(format(r)) || 0 : o.replace && shown?.id === idOf(r) ? scrollY : 0 });
+      render(r, { kind, zoomFrom: zoom, hint: o.zoomFrom && r.app === "weather" ? hintOf(o.zoomFrom, u) : null, launch: o.launch, y: o.resume ? routeScroll.get(format(r)) || 0 : o.replace && shown?.id === idOf(r) ? scrollY : 0 });
     },
     back() {
       if (gone) return;
@@ -421,6 +422,7 @@ export function createFrame(opts = {}) {
     shown = { id, route: r };
     html.dataset.route = format(r);
     const change = () => {
+      if (o.launch) F.sheet.closeAll();
       if (prev && !same) {
         if (prev.id.startsWith("m:")) {
           const previous = mods[prev.id.slice(2)];
@@ -446,6 +448,7 @@ export function createFrame(opts = {}) {
         const f = pop ? backTo.get(k) : null;
         (f?.isConnected && !f.closest("[hidden]") ? f : screens[id]?.spec.focus?.() || doc.querySelector("#hd h1.ifh-name"))?.focus?.({ preventScroll: true });
       }
+      if (!gone && F.route === r && o.launch?.render) { launcherRendering = true; try { o.launch.render(); } finally { launcherRendering = false; } }
       return el;
     };
     transition(o.first || o.again ? null : o.kind, change, o);
@@ -541,6 +544,10 @@ export function createFrame(opts = {}) {
     const k = reduced() ? "fade" : kind, mine = motion;
     let applied = false;
     const apply = () => { if (gone || mine !== motion || applied) return; applied = true; return change(); };
+    if (F.nav.launchMotion && o.launch) {
+      stopMotion = F.nav.launchMotion({ kind, origin: o.launch, change: apply, current: () => !gone && mine === motion, doc });
+      return;
+    }
     if (typeof doc.startViewTransition === "function" && doc.visibilityState === "visible") {
       html.dataset.vt = k;
       const z = k === "zoom" ? o.zoomFrom : null;
@@ -751,7 +758,7 @@ export function createFrame(opts = {}) {
   // ---- the pieces
   F.header = createHeader(opts.header, F, { me: opts.me, onMe: opts.onMe });
   F.tabs = createTabs(opts.tabs, F, { me: opts.me });
-  F.sheet = createSheets(F, { beforeOpen: () => cancelMotion(true) });
+  F.sheet = createSheets(F, { beforeOpen: () => { if (!launcherRendering) cancelMotion(true); } });
   F.search = createSearch(F);
   F.send = createSend(F);
   for (const id of ["today", "apps", "you", "workspace"]) if (opts[id]) F.screen(id, opts[id]);

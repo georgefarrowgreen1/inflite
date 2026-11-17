@@ -13,6 +13,8 @@
 // resource: { name, app, intent, objectId, secondary?:{label,icon?,app,intent,objectId}, share? }.
 // setPane("fitness"|"weather"|"markets"|"chats"|"mail"|"app", {title,line,pick?,actions,sections,section,busy,error}).
 import { el, icon, avatar } from "./ui.js";
+import { LAUNCHER_APPS, initialFavourites, normaliseFavourites, toggleFavourite } from "./launcher-model.js";
+import { captureLauncherOrigin } from "./launcher-motion.js";
 import { WINDOW_APPS, normalizeLayout, normalizeWindow, pixelBounds, relativeBounds, snapWindow } from "./workspace-windows.js";
 
 let serial = 0;
@@ -181,10 +183,21 @@ export function createWorkspaceView(root, callbacks = {}) {
   const main = el("div", { class: "ws-main" }, toolbar, offline, canvas);
   const dock = el("nav", { class: "ws-dock", "aria-label": "Apps" }), dockRecords = new Map();
   const dockToday = callable(callbacks.onToday) ? button("Today", null, "today", "ws-dock-button") : null;
-  dockToday?.append(el("span", { class: "ws-dock-symbol ws-dock-today" }, icon("calendar")), el("span", { class: "ws-dock-label", text: "Today" }));
+  dockToday?.append(el("span", { class: "ws-dock-symbol ws-dock-today" }, icon("sun")), el("span", { class: "ws-dock-label", text: "Today" }));
   const dockApps = el("div", { class: "ws-dock-apps" });
   const launcher = callable(callbacks.onApps) ? button("All apps", "grid", "apps", "ws-dock-button ws-dock-launcher") : null;
-  dock.append(...[dockToday, dockApps, launcher].filter(Boolean));
+  launcher?.append(el("span",{class:"ws-dock-label",text:"Apps"}));
+  const dockSelection=el("span",{class:"ws-dock-selection","aria-hidden":"true"});
+  dock.append(dockSelection,...[dockToday, dockApps, launcher].filter(Boolean));
+  let selectionMotion=null;
+  const launcherOpen=value=>{if(gone)return;launcher?.setAttribute("aria-expanded",String(value));selectDock()};
+  function selectDock(animate=true){
+    const selected=launcher?.getAttribute("aria-expanded")==="true"?launcher:dock.querySelector("button[aria-current]")||launcher;if(!selected)return;
+    const before=dockSelection.getBoundingClientRect(),outer=dock.getBoundingClientRect(),r=selected.getBoundingClientRect(),x=r.left-outer.left-dock.clientLeft;
+    const pose=x+":"+r.width;if(dockSelection.dataset.pose===pose)return;dockSelection.dataset.pose=pose;
+    selectionMotion?.cancel();dockSelection.style.width=r.width+"px";dockSelection.style.transform=`translateX(${x}px)`;
+    if(animate&&before.width&&before.height&&!reduced.matches&&dockSelection.animate){selectionMotion=dockSelection.animate([{transform:`translateX(${before.left-outer.left-dock.clientLeft}px) scaleX(${before.width/r.width})`},{transform:`translateX(${x}px) scaleX(1)`}],{duration:360,easing:"cubic-bezier(.22,1,.36,1)"});selectionMotion.finished.catch(()=>{})}
+  }
   const dockHost = el("div", { class: "ifl-workspace ws-dock-host" }, dock);
   const fileToken = event => Array.from(event.dataTransfer?.types || []).includes("application/x-inflite-files-token");
   const dropTarget = event => { const node = event.target?.closest?.("[data-app-drop]"); return node && dock.contains(node) && ["mail", "fitness"].includes(node.dataset.appDrop) ? node : null; };
@@ -570,10 +583,18 @@ export function createWorkspaceView(root, callbacks = {}) {
     if (cardFacts.dataset.values !== factKey) { cardFacts.dataset.values = factKey; cardFacts.replaceChildren(...facts.map(f => el("div", {}, el("dt", { text: f.label }), el("dd", { text: f.value })))); }
     cardFacts.hidden = !facts.length;
     setCurrent(dockToday, mode === "today");
-    reconcile(dockApps, dockRecords, apps, a => a.id, a => {
-      const b = button(a.name || APP_NAMES[a.id] || a.id, null, action(`app:${a.id}`, opener => { if (model.mode === "workspace" && layoutOf().windows[a.id]?.minimized) restoreWindow(a.id); else invoke("onApp", a.id, opener); }), "ws-dock-button");
-      b.append(el("span", { class: "ws-dock-symbol" }, appSymbol(a.icon || a.id)), el("span", { class: "ws-dock-label" })); if (callable(callbacks.onAppDrop) && ["mail", "fitness"].includes(a.id)) b.dataset.appDrop = a.id; return b;
-    }, (b, a) => { const name = a.name || APP_NAMES[a.id] || a.id, inWorkspace = mode === "workspace" && paneApps().includes(a.id), minimized = inWorkspace && layoutOf().windows[a.id].minimized; words(b.lastElementChild, name); b.setAttribute("aria-label", minimized ? `Restore ${name}` : name); b.title = minimized ? `Restore ${name}` : name; b.toggleAttribute("data-running", inWorkspace); b.toggleAttribute("data-minimized", minimized); setCurrent(b, mode === "app" && a.id === model.activeApp || inWorkspace && !minimized && a.id === model.foregroundApp); });
+    const candidates=[...(callable(callbacks.onFiles)?[{id:"files",name:"Files",available:true}]:[]),...(Array.isArray(model.apps)?model.apps:[])];
+    const ids=initialFavourites(model.favourites,id=>candidates.some(a=>a.id===id&&a.available!==false));
+    const pinned=ids.map(id=>candidates.find(a=>a.id===id)).filter(Boolean);
+    if(files)files.hidden=ids.includes("files");
+    reconcile(dockApps, dockRecords, pinned, a => a.id, a => {
+      const b = button(a.name || APP_NAMES[a.id] || a.id, null, action(`app:${a.id}`, opener => { if (model.mode === "workspace" && layoutOf().windows[a.id]?.minimized) restoreWindow(a.id); else if(a.id==="files")invoke("onFiles",captureLauncherOrigin(opener));else invoke("onApp", a.id, captureLauncherOrigin(opener)); }), "ws-dock-button");
+      b.append(el("span", { class: "ws-dock-symbol" }, a.id==="files"?el("span",{class:"wsl-files-mark","aria-hidden":"true"},icon("file")):appSymbol(a.icon || a.id)), el("span", { class: "ws-dock-label" })); if (callable(callbacks.onAppDrop) && ["mail", "fitness"].includes(a.id)) b.dataset.appDrop = a.id; return b;
+    }, (b, a) => { const name = a.name || APP_NAMES[a.id] || a.id, inWorkspace = mode === "workspace" && paneApps().includes(a.id), minimized = inWorkspace && layoutOf().windows[a.id].minimized; b.disabled=a.available===false;words(b.lastElementChild, name); b.setAttribute("aria-label", minimized ? `Restore ${name}` : name); b.title = minimized ? `Restore ${name}` : name; b.toggleAttribute("data-running", inWorkspace); b.toggleAttribute("data-minimized", minimized); setCurrent(b, mode === "files" && a.id === "files" || mode === "app" && a.id === model.activeApp || inWorkspace && !minimized && a.id === model.foregroundApp); });
+    for(const old of dockApps.querySelectorAll('.ws-dock-add'))old.remove();
+    for(let i=pinned.length;i<4;i++){const add=button("Choose a favourite","plus","apps","ws-dock-button ws-dock-add");add.append(el("span",{class:"ws-dock-label",text:"Add"}));dockApps.append(add)}
+    setCurrent(launcher,mode!=="today"&&!pinned.some(a=>mode==="files"?a.id==="files":a.id===model.activeApp));
+    selectDock();
     const user = model.user || {}, userKey = JSON.stringify([user.name || "", user.photo || ""]);
     if (account && userKey !== avatarKey) { avatarKey = userKey; account.replaceChildren(user.name || user.photo ? avatar(user.name || "", { photo: user.photo }) : icon("person")); const photo = account.querySelector("img"); photo?.addEventListener("error", () => photo.remove(), { once: true }); account.setAttribute("aria-label", user.name ? `Account for ${user.name}` : "Your account"); }
     const count = Math.max(0, Math.floor(Number(model.notifications) || 0)); notificationCount.hidden = !count; words(notificationCount, count > 99 ? "99+" : count);
@@ -617,56 +638,58 @@ export function createWorkspaceView(root, callbacks = {}) {
   listen(dockHost, "keydown", navigateKeys);
 
   function appLauncher(close) {
-    const body = el("div", { class: "ws-launcher" });
-    const launchButton = (label, mark, callback, cls, args = [], allowed = () => true) => {
-      const node = el("button", { type: "button", class: cls, "aria-label": label, on: { click() {
-        if (gone || !body.isConnected || !allowed()) return;
-        close?.(); invoke(callback, ...args);
-      } } }, mark, el("span", { text: label }));
-      return node;
-    };
-    const quick = el("div", { class: "wsl-quick" });
-    if (callable(callbacks.onToday)) quick.append(launchButton("Today", icon("calendar"), "onToday", "wsl-home"));
-    if (callable(callbacks.onCapture)) quick.append(launchButton("Quick Capture", icon("plus"), "onCapture", "wsl-capture"));
-    if (callable(callbacks.onSearch)) quick.append(launchButton("Search InFlite", icon("search"), "onSearch", "wsl-search"));
-    const grid = el("div", { class: "wsl-apps", role: "group", "aria-label": "Apps" });
-    if (callable(callbacks.onFiles)) grid.append(launchButton("Files", el("span", { class: "wsl-files-mark", "aria-hidden": "true" }, icon("file")), "onFiles", "wsl-app"));
-    for (const id of ["calendar","notes","people","chats", "mail", "fitness", "weather", "markets"]) {
-      const app = model.apps?.find(a => a.id === id); if (!app || !callable(callbacks.onApp)) continue;
-      const allowed = () => model.apps?.some(a => a.id === id && a.available !== false);
-      const node = launchButton(app.name, icon(null, { app: APP_ICONS[id] || id, size: 40 }), "onApp", "wsl-app", [id], allowed);
-      node.disabled = !allowed(); setCurrent(node, model.mode === "app" && model.activeApp === id); grid.append(node);
+    const body=el('div',{class:'ws-launcher'}),grid=el('div',{class:'wsl-apps',role:'group','aria-label':'Apps'}),status=el('p',{class:'wsl-edit-status',role:'status'});
+    let editing=false,query='';
+    const edit=el('button',{type:'button',class:'wsl-edit','aria-label':'Edit favourites',text:'Edit'});
+    const input=el('input',{type:'search',placeholder:'Search apps','aria-label':'Search apps',maxlength:40});
+    const search=el('label',{class:'wsl-search-field'},icon('search'),input);
+    const tools=el('div',{class:'wsl-tools'},search,edit);
+    const liveBody=()=>!gone&&body.isConnected;
+    const favourites=()=>normaliseFavourites(model.favourites)||[];
+    const appItems=()=>[{id:'files',name:'Files',available:callable(callbacks.onFiles)},...(model.apps||[])].sort((a,b)=>LAUNCHER_APPS.indexOf(a.id)-LAUNCHER_APPS.indexOf(b.id));
+    const mark=id=>id==='files'?el('span',{class:'wsl-files-mark','aria-hidden':'true'},icon('file')):icon(null,{app:APP_ICONS[id]||id,size:40});
+    const launchButton=(label,glyph,callback,cls,args=[])=>el('button',{type:'button',class:cls,'aria-label':label,on:{click(){if(!liveBody())return;close?.();invoke(callback,...args)}}},glyph,el('span',{text:label}));
+    function paintGrid() {
+      grid.replaceChildren();
+      const list=appItems().filter(a=>a?.id&&LAUNCHER_APPS.includes(a.id)&&a.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+      for(const a of list){
+        const allowed=()=>appItems().some(item=>item.id===a.id&&item.available!==false),pinned=favourites().includes(a.id);
+        const b=el('button',{type:'button',class:'wsl-app','aria-label':editing?(pinned?'Unpin ':'Pin ')+a.name:a.name,data:{launcherApp:a.id},on:{click(){
+          if(!liveBody()||(!allowed()&&!(editing&&pinned)))return;
+          if(editing){const next=toggleFavourite(favourites(),a.id);if(next.full){status.textContent='Unpin an app to make room.';return}invoke('onFavourites',next.items);model.favourites=next.items;paintGrid();return}
+          const launch=captureLauncherOrigin(b);if(a.id==='files')invoke('onFiles',launch);else invoke('onApp',a.id,launch);
+        }}},mark(a.id),el('span',{text:a.name}));
+        b.disabled=!allowed()&&!(editing&&pinned);
+        if(editing){b.setAttribute('aria-pressed',String(pinned));if(pinned)b.append(el('span',{class:'wsl-pinned','aria-hidden':'true'},icon('check')))}else setCurrent(b,model.mode==='files'?a.id==='files':model.mode==='app'&&model.activeApp===a.id);
+        grid.append(b);
+      }
+      if(!list.length)grid.append(el('p',{class:'wsl-empty',text:'No apps found'}));
+      status.textContent=editing?`${favourites().length} of 4 favourites`:'';
+      edit.textContent=editing?'Done':'Edit';edit.setAttribute('aria-label',editing?'Done editing favourites':'Edit favourites');
     }
-    body.append(quick, grid);
-    const section = (title, content) => el("section", { class: "wsl-section", "aria-label": title }, el("h3", { text: title }), content);
-    const saved = el("div", { class: "wsl-workspaces" });
-    for (const item of model.workspaces || []) {
-      const node = launchButton(item.name + " workspace", icon("grid"), "onWorkspace", "wsl-workspace", [item.id]);
-      node.lastElementChild.textContent = item.name; setCurrent(node, model.mode === "workspace" && model.activeId === item.id); saved.append(node);
-    }
-    if (callable(callbacks.onCreateWorkspace)) saved.append(launchButton("New workspace", icon("plus"), "onCreateWorkspace", "wsl-workspace wsl-create"));
-    if (saved.childElementCount) body.append(section("Workspaces", saved));
-    const controls = el("div", { class: "wsl-controls" });
-    for (const [label, glyph, callback, text] of [["Security Module", "lock", "onSecurity"], ["Activity", "clock", "onActivity"], ["Workspace sync", "swap", "onSync", "Sync"], ["App status", "info", "onRecovery"], ["Notifications", "bell", "onNotifications"], ["Settings", "settings", "onSettings"]]) {
-      if (!callable(callbacks[callback])) continue;
-      const node = launchButton(label, icon(glyph), callback, "wsl-control"); if (text) node.lastElementChild.textContent = text;
-      controls.append(node);
-    }
-    if (controls.childElementCount) body.append(section("Controls", controls));
-    return body;
+    edit.addEventListener('click',()=>{if(!liveBody())return;editing=!editing;paintGrid()});
+    input.addEventListener('input',()=>{query=input.value;paintGrid()});
+    input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!editing){event.preventDefault();grid.querySelector('button:not(:disabled)')?.click()}});
+    const security=callable(callbacks.onSecurity)?launchButton('Security Module',icon('lock'),'onSecurity','wsl-security'):null;
+    const more=el('details',{class:'wsl-more'},el('summary',{text:'More from InFlite'})),controls=el('div',{class:'wsl-controls'});
+    for(const[label,glyph,callback]of[['Today','sun','onToday'],['Quick Capture','plus','onCapture'],['Search InFlite','search','onSearch'],['Activity','clock','onActivity'],['App status','info','onRecovery'],['Notifications','bell','onNotifications'],['Settings','settings','onSettings']])if(callable(callbacks[callback]))controls.append(launchButton(label,icon(glyph),callback,'wsl-control'));
+    more.append(controls);body.append(tools,grid,status,security);if(controls.childElementCount)body.append(more);
+    paintGrid();return body;
   }
 
   function destroy() {
     if (gone) return;
     finishGesture(false); closeWindowMenu();
-    gone = true; stopMotion(); cancelAnimationFrame(frame); for (const off of cleanups.splice(0)) off(); actions.clear();
+    gone = true; selectionMotion?.cancel();stopMotion(); cancelAnimationFrame(frame); for (const off of cleanups.splice(0)) off(); actions.clear();
     dockHost.remove();
     root.replaceChildren(); root.classList.remove("ifl-workspace");
     for (const key of ["mode", "foregroundApp", "focusedApp", "paneCount", "layout", "windowCount"]) delete root.dataset[key];
   }
   if (callbacks.signal) { const abort = () => destroy(); callbacks.signal.addEventListener("abort", abort, { once: true }); cleanups.push(() => callbacks.signal.removeEventListener("abort", abort)); }
+  listen(globalThis,"resize",()=>selectDock(false));
+  listen(reduced,"change",()=>{selectionMotion?.cancel();selectDock(false)});
   const slots = { today: todaySlot, files: filesSlot, ...Object.fromEntries(WINDOW_APPS.map(app => [app, panes.get(app).slot])), app: panes.get("app").slot, dockAnchor, sidebarAnchor };
   update();
   if (callbacks.signal?.aborted) destroy();
-  return { slots, sidebar, dock: dockHost, launcher: appLauncher, update, setPane, destroy, getViewport, isPaneVisible, revealPane, windowAction };
+  return { slots, sidebar, dock: dockHost, launcher: appLauncher, launcherOpen, update, setPane, destroy, getViewport, isPaneVisible, revealPane, windowAction };
 }

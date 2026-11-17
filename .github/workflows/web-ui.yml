@@ -26,13 +26,17 @@ jobs:
       - run: npm ci --prefix email --omit=dev --ignore-scripts --no-audit --no-fund
       - run: npm run test:requests
       - run: npm run test:api
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:framework
       - name: Private data and window continuity
         run: node --test --test-concurrency=1 tests/mail-private-cache-ui.test.cjs tests/mail-body-security-ui.test.cjs tests/workspace-security-ui.test.cjs tests/workspace-windows-ui.test.cjs
       - run: npm run test:web
         env:
           WEB_UI_SCREENSHOTS: test-results/web-ui
+      - name: Launcher navigation and geometry in WebKit
+        run: node --test --test-concurrency=1 tests/workspace-launcher-ui.test.cjs tests/launcher420-ui.test.cjs
+        env:
+          WEB_UI_BROWSER: webkit
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

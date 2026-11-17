@@ -1,0 +1,59 @@
+
+/* 4.20 launcher: Today + four fixed favourites + Apps. One neutral material. */
+.ifl-workspace .ws-dock { isolation:isolate; overflow:visible; gap:2px; padding:7px 5px; width:370px; max-width:calc(100vw - 24px); border-radius:28px; touch-action:manipulation; }
+.ifl-workspace .ws-dock-apps { display:contents; }
+.ifl-workspace .ws-dock-button { flex:1 1 0; width:0; min-width:0; height:64px; min-height:64px; border-radius:21px; gap:6px; padding:5px 0; background:transparent; }
+.ifl-workspace .ws-dock-button[aria-current],.ifl-workspace .ws-dock-button[aria-current]:hover { background:transparent; box-shadow:none; }
+.ifl-workspace .ws-dock-selection { position:absolute;z-index:-1;left:0;top:7px;bottom:7px;width:0;border-radius:21px;background:light-dark(#e7e7e7,#373737);transform-origin:left center;pointer-events:none; }
+.ifl-workspace .ws-dock-symbol,.ifl-workspace .ws-dock-symbol img { width:36px;height:36px;border-radius:11px; }
+.ifl-workspace .ws-dock-today { background:none;color:var(--ws-text); }
+.ifl-workspace .ws-dock-label { display:block; font-size:11px;line-height:1.1;max-width:100%; }
+.ifl-workspace .ws-dock-launcher { margin-left:0;box-shadow:none;background:none; }
+.ifl-workspace .ws-dock-launcher::before { left:-1px;top:15px;bottom:15px; }
+.ifl-workspace .ws-dock-launcher>.ifl-glyph { display:grid;place-items:center;width:36px;height:36px; }
+.ifl-workspace .ws-dock-add>.ifl-glyph { width:36px;height:36px;display:grid;place-items:center; }
+.wsl-files-mark { display:grid;place-items:center;flex:none;width:40px;height:40px;border-radius:12px;color:#fff;background:linear-gradient(150deg,#79b7ff,#366bd7); }
+.wsl-files-mark .ifl-glyph,.wsl-files-mark svg { width:24px!important;height:24px!important; }
+.ifl-workspace .ws-dock-symbol .wsl-files-mark { width:36px;height:36px;border-radius:11px; }
+.ifl-sheet[data-sheet=workspace-apps] { width:min(392px,calc(100vw - 24px));margin-left:auto;margin-right:auto;bottom:calc(106px + env(safe-area-inset-bottom,0px));border-radius:30px;max-height:calc(var(--vvh,100dvh) - 120px - env(safe-area-inset-top,0px)); }
+.ifl-sheet[data-sheet=workspace-apps] .ifs-head { padding:16px 20px 10px; }
+.ifl-sheet[data-sheet=workspace-apps] .ifs-body { padding:0 18px 15px; }
+html[data-vt=launch-return] .ifl-sheet[data-sheet=workspace-apps] { animation:none!important;transform:none!important; }
+.ws-launcher { gap:10px; }
+.ws-launcher button { border:0;background:transparent;box-shadow:none; }
+.wsl-tools { display:flex;gap:8px;align-items:center;margin-bottom:5px; }
+.wsl-search-field { display:flex;align-items:center;gap:9px;min-width:0;flex:1;padding:0 12px;border-radius:17px;background:var(--ifl-surface-2,var(--glass-ctl)); }
+.wsl-search-field>.ifl-glyph { color:var(--ifl-muted,var(--text-2)); }
+.wsl-search-field input { min-width:0;width:100%;min-height:46px;padding:8px 0;border:0;border-radius:10px;background:transparent;color:inherit;font:inherit;font-size:16px; }
+.ws-launcher .wsl-edit { min-width:44px;min-height:44px;justify-content:center;font-size:13px;padding:0 7px; }
+.wsl-apps { grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:88px;min-height:280px;align-content:start;gap:8px 6px; }
+.ws-launcher .wsl-app { position:relative;min-height:84px;gap:8px;padding:5px 0;border-radius:20px;font-size:12px;font-weight:500;background:transparent;box-shadow:none; }
+.ws-launcher .wsl-app img,.ws-launcher .wsl-app>.wsl-files-mark { width:48px;height:48px;border-radius:14px;box-shadow:none; }
+.ws-launcher .wsl-app[aria-current] { border:0;background:transparent; }
+.ws-launcher .wsl-app[aria-pressed=true] { background:light-dark(#ededed,#353535); }
+.wsl-pinned { position:absolute;top:4px;right:8px;display:grid;place-items:center;width:19px;height:19px;border-radius:50%;background:var(--ifl-text,var(--text));color:var(--ifl-surface,var(--bg)); }
+.wsl-pinned .ifl-glyph,.wsl-pinned svg { width:12px!important;height:12px!important; }
+.wsl-empty { grid-column:1/-1;text-align:center;color:var(--ifl-muted,var(--text-2));padding:20px 4px;margin:0; }
+.wsl-edit-status { min-height:17px;font-size:12px;text-align:center;color:var(--ifl-muted,var(--text-2));margin:0; }
+.ws-launcher .wsl-security { gap:10px;min-height:44px;padding:8px 6px;text-align:left;border-radius:12px;border-top:1px solid var(--ifl-line,var(--line));font-size:13px; }
+.wsl-more { border-top:1px solid var(--ifl-line,var(--line));padding-top:5px; }
+.wsl-more summary { min-height:44px;align-content:center;padding:8px 6px;font-size:13px;cursor:pointer; }
+.wsl-controls { margin-top:6px; }
+@media(hover:hover) { .ws-launcher .wsl-app:not(:disabled):hover,.ws-launcher .wsl-edit:hover { background:var(--ifl-surface-2,var(--glass-ctl)); } }
+@media(max-height:600px) { .ifl-sheet[data-sheet=workspace-apps] { bottom:calc(12px + env(safe-area-inset-bottom,0px));max-height:calc(var(--vvh,100dvh) - 24px); } .wsl-apps { min-height:0; } }
+@media(prefers-reduced-motion:reduce) { .ifl-workspace .ws-dock-button,.ws-launcher button { transition:none!important; } }
+@media(forced-colors:active) { .ifl-workspace .ws-dock-selection { background:Highlight; } .ifl-workspace .ws-dock-button[aria-current] { color:HighlightText; } .wsl-files-mark { background:ButtonFace;color:ButtonText; } }
+
+/* InFlite 4.20: a continuous icon-to-window surface; shared chrome stays anchored. */
+html[data-vt^="launch"] .ifl-hd { view-transition-name: none; }
+html[data-vt^="launch"]::view-transition-group(root) { animation: none; }
+html[data-vt^="launch"]::view-transition-old(root), html[data-vt^="launch"]::view-transition-new(root) { transform-origin: 0 0; mix-blend-mode: normal; overflow: clip; }
+html[data-vt="launch"]::view-transition-old(root) { animation: 500ms cubic-bezier(.2,.85,.22,1) both ifl-launch-under; transform-origin: 50% 50%; }
+html[data-vt="launch"]::view-transition-new(root) { animation: 500ms cubic-bezier(.2,.85,.22,1) both ifl-launch-window; }
+html[data-vt="launch-return"]::view-transition-old(root) { z-index: 1; animation: 390ms cubic-bezier(.3,0,.2,1) both ifl-launch-return; }
+html[data-vt="launch-return"]::view-transition-new(root) { animation: 390ms cubic-bezier(.2,.85,.22,1) both ifl-launch-home; transform-origin: 50% 50%; }
+@keyframes ifl-launch-window { from { transform: var(--ifl-launch-from); border-radius: var(--ifl-launch-radius); opacity: .4; } 76% { transform: scale(1.002); border-radius: 28px; opacity: 1; } to { transform: none; border-radius: 0; opacity: 1; } }
+@keyframes ifl-launch-under { to { transform: scale(.96); opacity: .65; } }
+@keyframes ifl-launch-return { to { transform: var(--ifl-launch-from); border-radius: var(--ifl-launch-radius); opacity: 0; } }
+@keyframes ifl-launch-home { from { transform: scale(.96); opacity: .65; } to { transform: none; opacity: 1; } }
+@media(prefers-reduced-motion:reduce) { html[data-vt^="launch"]::view-transition-old(root),html[data-vt^="launch"]::view-transition-new(root) { animation: none !important; } }
