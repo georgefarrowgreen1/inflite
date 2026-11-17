@@ -694,7 +694,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     const more=el('details',{class:'wsl-more'},el('summary',{},icon('more'),el('span',{text:'More'}),icon('down'))),controls=el('div',{class:'wsl-controls'});
     for(const[label,glyph,callback]of[['Today','sun','onToday'],['Quick Capture','plus','onCapture'],['Search InFlite','search','onSearch'],['Activity','clock','onActivity'],['App status','info','onRecovery'],['Notifications','bell','onNotifications'],['Settings','settings','onSettings']])if(callable(callbacks[callback]))controls.append(launchButton(label,icon(glyph),callback,'wsl-control'));
     more.append(controls);const utilities=el('div',{class:'wsl-utilities'},security);if(controls.childElementCount)utilities.append(more);body.append(tools,favs,status,grid,utilities);
-    const dispose=launcherInput(body,{current:liveBody,menu:(app,node)=>{if(!editing)invoke('onAppMenu',app,node)},reorder:(id,target)=>{
+    const dispose=launcherInput(body,{current:liveBody,menu:(app,node)=>{if(!editing)return invoke('onAppMenu',app,node)},reorder:(id,target)=>{
       if(!liveBody()||!editing)return;const next=moveFavourite(favourites(),id,target);invoke('onFavourites',next);model.favourites=next;animateOrder(favs,paintGrid);favs.querySelector('[data-launcher-favourite="'+id+'"]')?.focus({preventScroll:true});
     }});
     body.destroyLauncher=()=>{stopOrder(favs);dispose();if(launcherRefresh===refresh)launcherRefresh=null};

@@ -184,6 +184,7 @@ export async function createWorkspace(F, options = {}) {
     if(app==='files'&&indicator)item('View activity','clock',()=>{close();activityView.open()});
     if(appsMenu&&!appsMenu.closed){menu=appsMenu;menu.push({page:'app-actions',title:name,body})}
     else menu=F.sheet.open({sheet:'launcher-actions',title:name,body});
+    return menu;
   }
   async function searchApp(app,query,lease={}){
     const valid=()=>live()&&appOn(app)&&!lease.signal?.aborted&&guarded(()=>!lease.current||lease.current(),false);
