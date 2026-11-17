@@ -5,7 +5,7 @@ import { geoOf } from './account.js';
 import { fetchUpstream } from './upstream.js';
 import { bodyUpTo } from './body.js';
 
-const PREFIX = /^\/(auth|account)(?=\/|$)/;
+const PREFIX = /^\/(settings\/account|auth|account)(?=\/|$)/;
 const SAFE = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
 const fail = (status, error) => Response.json({ error }, { status, headers: SAFE });
 export const isIdentityPath = path => PREFIX.test(path);
@@ -28,15 +28,20 @@ function publicLocation(value, role) {
 export async function identity(request, env) {
   const url = new URL(request.url), match = PREFIX.exec(url.pathname);
   if (!match) return fail(404, 'That identity page was not found.');
-  const role = match[1], base = '/' + role, path = url.pathname.slice(base.length) || '/';
+  const settings = match[1] === 'settings/account';
+  const role = settings ? 'account' : match[1], base = '/' + match[1], path = url.pathname.slice(base.length) || '/';
   if (url.origin !== 'https://inflite.ai') return fail(404, 'Open identity on InFlite.');
   if (url.pathname === base) return new Response(null, { status: 308, headers: { ...SAFE, Location: base + '/' + url.search } });
   if (/%(?:2f|5c|00)/i.test(path) || path.includes('\\') || url.search.length > 8192) return fail(400, 'That identity request is invalid.');
   const api = path.startsWith('/api/'), read = request.method === 'GET' || request.method === 'HEAD';
+  if (settings && (api || !read)) return fail(404, 'Use the account API for account actions.');
   if ((!read && !api) || (api && !path.startsWith('/api/account/'))) return fail(404, 'That identity action was not found.');
   if (!read && request.headers.get('Origin') !== url.origin) return fail(403, 'That request didn’t come from InFlite.');
   const site = request.headers.get('Sec-Fetch-Site');
   if (api && site && site !== 'same-origin' && !(read && site === 'none')) return fail(403, 'That request didn’t come from InFlite.');
+  const page = read && (path === '/' || path === '/index.html');
+  const unavailable = status => page ? unavailablePage(request, role, status) : fail(status, 'Sign-in could not be reached. Please try again.');
+  if (!env.HUB_KEY && page) return unavailable(503);
   if (!env.HUB_KEY) return fail(503, 'Sign-in is temporarily unavailable. Please try again.');
   const headers = new Headers({ 'X-Hub-Key': env.HUB_KEY, 'X-Inflite-Identity': role });
   const cookies = identityCookies(request); if (cookies) headers.set('Cookie', cookies);
@@ -58,6 +63,10 @@ export async function identity(request, env) {
   }
   try {
     const response = await fetchUpstream((target, init) => appFetch(env, target, init), `https://${role}.inflite.ai${path}${url.search}`, { method: request.method, headers, body, redirect: 'manual' }, { signal: request.signal, timeout: 30000 });
+    if (page && response.status >= 500) {
+      response.body?.cancel().catch(() => {});
+      return unavailable(response.status);
+    }
     const out = new Headers(response.headers);
     for (const name of ['Access-Control-Allow-Origin', 'Access-Control-Allow-Credentials', 'Access-Control-Allow-Headers', 'Access-Control-Allow-Methods', 'Service-Worker-Allowed']) out.delete(name);
     if (api) out.set('Cache-Control', 'private, no-store');
@@ -69,5 +78,15 @@ export async function identity(request, env) {
     }
     if (request.method === 'HEAD') response.body?.cancel().catch(() => {});
     return new Response(request.method === 'HEAD' ? null : response.body, { status: response.status, headers: out });
-  } catch { return fail(request.signal.aborted ? 499 : 502, 'Sign-in could not be reached. Please try again.'); }
+  } catch { return unavailable(request.signal.aborted ? 499 : 502); }
+}
+
+function unavailablePage(request, role, status) {
+  const account = role === 'account';
+  const title = account ? 'Account is temporarily unavailable' : 'Sign-in is temporarily unavailable';
+  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark">
+    <title>${title} · InFlite</title><link rel="stylesheet" href="/identity-recovery.css"><main>
+    <img src="/icon-180.png" width="48" height="48" alt="InFlite"><h1>${title}</h1><p>Try again to continue where you left off.</p>
+    <button type="button" hidden>Try again</button><a href="/#settings">Back to Settings</a></main><script src="/identity-recovery.js"></script></html>`;
+  return new Response(request.method === 'HEAD' ? null : html, {status,headers:{...SAFE,'Content-Type':'text/html; charset=utf-8','X-Frame-Options':'DENY','Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"}});
 }

@@ -560,8 +560,19 @@ label.row:active { background: var(--press); }
 .ic.red { background: linear-gradient(160deg, #ff7a6e, #e5372c); }
 /* (you, at the top: your picture and name, larger, a card of its own) */
 .you-sec .row.you-me { min-height: 82px; padding-block: 14px; gap: 14px; }
-.you-me .you-ph { width: 58px; height: 58px; font-size: 22px; }
-.you-me .tx b { font-size: 20px; font-weight: 600; letter-spacing: -0.2px; }
+.you-me { color: var(--text); text-decoration: none; }
+#youAccount .group { overflow: hidden; border-radius: 25px; }
+#youAccount .you-me {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px;
+  align-items: center; min-height: 106px; padding: 20px;
+  background: linear-gradient(115deg, rgb(255 255 255 / .10), transparent 65%);
+}
+.you-me .you-ph { width: 62px; height: 62px; font-size: 22px; box-shadow: 0 0 0 1px rgb(128 128 128 / .22); }
+.you-me .tx b { font-size: clamp(1.15rem, 2.3vw, 1.45rem); font-weight: 650; line-height: 1.12; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.you-me .chev { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: var(--ifl-glass-control); }
+#youAccount .you-me:focus-visible { outline: 2px solid currentColor; outline-offset: -4px; }
+@media (max-width: 360px) { #youAccount .you-me { gap: 10px; padding: 14px; } .you-me .you-ph { width: 50px; height: 50px; } }
+
 .you-sec button.row { appearance: none; -webkit-appearance: none; border: 0; background: none; font: inherit; cursor: pointer; }
 .you-sec button.row:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; border-radius: var(--r-group); }
 .you-ph { position: relative; overflow: hidden; flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--ifl-on-accent, #10150d); font-weight: 600; background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b)); }

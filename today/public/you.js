@@ -152,7 +152,7 @@ function paint(root, ctx) {
   const sections = {};
   // You: your picture and name, a tap from your account
   const photo = typeof ctx.photo === "function" ? ctx.photo(u) : esc([...String(u.first || u.name || "?")][0] || "?");
-  sections.youAccount = sec("youAccount", "", `<button class="row go you-me" type="button" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>Edit profile</small></span><span class="chev">${G.chev}</span></button>`);
+  sections.youAccount = sec("youAccount", "", `<a class="row go you-me" href="/settings/account/" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>View account</small></span><span class="chev">${G.chev}</span></a>`);
   // Notifications: this phone, Today's morning, quiet hours
   const n = Y.notify;
   {
@@ -278,7 +278,7 @@ function paint(root, ctx) {
   root.dataset.settingsSection = ctx.section || "";
   const currentCategory = selected || (matchMedia("(min-width: 900px)").matches ? "account" : null);
   const nav = groups.map(([key,title,sub,icon]) =>
-    `<a class="row go settings-category" href="/#settings=${key}" data-category="${key}" ${currentCategory === key ? 'aria-current="page"' : ""}>${ic(icon,"grey")}${tx(title,sub)}<span class="chev">${G.chev}</span></a>`).join("");
+    `<a class="row go settings-category" href="${key === "account" ? "/settings/account/" : "/#settings=" + key}" data-category="${key}" ${currentCategory === key ? 'aria-current="page"' : ""}>${ic(icon,"grey")}${tx(title,sub)}<span class="chev">${G.chev}</span></a>`).join("");
   const details = groups.map(([key,title,, ,html]) =>
     `<section class="settings-detail" data-group="${key}" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${html}</section>`).join("");
   root.innerHTML = `<div class="settings-sidebar">
@@ -332,6 +332,7 @@ function paint(root, ctx) {
     if (key === 'appearance') return appearance(ctx);
     if (key === 'units' && options.weather) return ctx.editApp('weather',b,'units');
     if (["weather","fitness","markets","chats","mail"].includes(key)) return ctx.editApp(key,b);
+    if (["profile","security","data"].includes(key)) return location.assign("/settings/account/#open=" + key);
     ctx.openAccount(key);
   });
 }
@@ -350,7 +351,7 @@ function categoryFor(section) {
   if (["weather","fitness","chats","mail","markets","calendars","sharing"].includes(key)) return "apps";
   if (["appearance","customise","rules","units"].includes(key)) return "personalise";
   if (key === "versions") return "about";
-  if (key === "signout") return "account";
+  if (key === "signout" || key === "module") return "account";
   return null;
 }
 const FOLDER_TITLE = { rules: "What Today Does for You", apps: "Connected Apps", versions: "About InFlite" };
@@ -419,7 +420,7 @@ function emailPreferences(root,ctx) {
       ui.list([toggle("When a reported problem is fixed",prefs.account.fixed,on=>({account:{fixed:on}}))],{label:"Account"}));
     list.disabled = !prefs.emailOk;
     body.replaceChildren(list,status,el("p",{class:"you-foot",text:"Security emails about sign-ins and account changes are always sent."}));
-    if (!prefs.emailOk) body.prepend(ui.row({title:"Verify your email to receive app updates",trail:"chevron",run:()=>ctx.openAccount("security")}));
+    if (!prefs.emailOk) body.prepend(ui.row({title:"Verify your email to receive app updates",trail:"chevron",run:()=>location.assign("/settings/account/#open=security")}));
   }
   load();
 }
@@ -483,7 +484,7 @@ function appearance(ctx) {
 
 function wire(root, ctx) {
   const $ = (s) => root.querySelector(s);
-  $("#youAcct")?.addEventListener("click", () => ctx.openAccount("profile"));
+
   for (const b of root.querySelectorAll("[data-folder]")) b.addEventListener("click", () => openFolder(b.dataset.folder, document.getElementById("you") || root, ctx));
   $("#youMorning")?.addEventListener("click", () => ctx.toMorning());
   $("#youOut")?.addEventListener("click", (e) => { e.currentTarget.disabled = true; ctx.signOut(); });
@@ -605,6 +606,7 @@ export async function goTo(root, ctx, id, drawn) {
   const key = id.replace(/^settings-/, "");
   if (key === "notify-weather") return openWxNotify(root, ctx);
   if (key === "emails") return emailPreferences(root,ctx);
+  if (key === "module") return ctx.security?.();
   if (key === "notify-mail") return openMailNotifyFrom(ctx);
   if (["weather","fitness","chats","markets","mail"].includes(key)) return ctx.editApp(key);
   if (key === "appearance") return appearance(ctx);

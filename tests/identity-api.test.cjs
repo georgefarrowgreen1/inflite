@@ -39,3 +39,21 @@ test('identity remaps reviewed redirects only and never retries uncertain writes
   const r = await identity(req('/auth/api/account/signout',{method:'POST',body:'{}'}), env(() => {calls++;throw new Error('uncertain');}));
   assert.equal(r.status,502);assert.equal(calls,1);
 });
+
+test('Settings Account uses the existing identity service and offers page recovery on upstream failure', async () => {
+  const { identity } = await import('../today/src/identity.js');
+  let target;
+  const service = env(request => { target = request.url; return new Response('Account'); });
+  assert.equal((await identity(req('/settings/account'),service)).headers.get('Location'),'/settings/account/');
+  assert.equal(await (await identity(req('/settings/account/'),service)).text(),'Account');
+  assert.equal(target,'https://account.inflite.ai/');
+  await identity(req('/settings/account/styles.css?v=abc'),service);
+  assert.equal(target,'https://account.inflite.ai/styles.css?v=abc');
+  assert.equal((await identity(req('/settings/account/api/account/me'),service)).status,404);
+  for (const service of [env(() => { throw Error('offline'); }),env(() => new Response('down',{status:503})),{}]) {
+    const page = await identity(req('/settings/account/'),service);
+    assert.match(page.headers.get('Content-Type'),/text\/html/);
+    assert.match(await page.text(),/Back to Settings/);
+    assert.match((await identity(req('/account/api/account/me'),service)).headers.get('Content-Type') || '',/json|text\/plain/);
+  }
+});
