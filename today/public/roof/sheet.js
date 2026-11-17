@@ -133,6 +133,7 @@ export function createSheets(F, { beforeOpen } = {}) {
     }
     // Tab and Shift-Tab go round the sheet, never out of it to the browser's own bar
     function trap(e) {
+      if (e.key === "Escape") return cancel(e);
       if (e.key !== "Tab") return;
       const f = [...d.querySelectorAll('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.getClientRects().length && !x.closest("[hidden]"));
       if (!f.length) return;

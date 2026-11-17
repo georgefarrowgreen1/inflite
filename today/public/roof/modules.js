@@ -2,7 +2,7 @@
 import { REGISTRY } from "./router.js";
 
 const tries = {}, built = {}, kept = {}, watching = new WeakMap(), styles = new Map(), failedStyles = new WeakSet(), disposed = new WeakSet();
-const released = () => new DOMException("This screen was released", "AbortError");
+const released = () => new DOMException("Released", "AbortError");
 const check = (signal) => { if (signal?.aborted) throw released(); };
 // Dynamic imports cannot be stopped, but their callers can stop waiting. Their eventual result is still handled.
 function until(work, ms, what, signal, optional = false) {
