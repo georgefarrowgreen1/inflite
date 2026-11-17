@@ -81,7 +81,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
   }
   function setActs(list) {
     const seen = new Set(["search"]);
-    list = [list?.find(a => a?.icon === "search") || { icon: "search", label: "Search" }, ...(list || []).filter((a) => a && !seen.has(a.icon) && seen.add(a.icon)).slice(0, 2)];
+    list = [list?.find(a => a?.icon === "search" && a.scope === "app") || { icon: "search", label: "Search" }, ...(list || []).filter((a) => a && !seen.has(a.icon) && seen.add(a.icon)).slice(0, 2)];
     runs = {};
     for (const a of list) if (a.run) runs[a.icon] = a.run;
     const k = list.map((a) => `${a.icon}|${a.label}|${a.word || ""}`).join(";");

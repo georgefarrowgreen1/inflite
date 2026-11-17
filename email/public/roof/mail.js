@@ -176,7 +176,7 @@ export async function mount(root, fw) {
     const gate = s.access && s.access !== "ok";
     const title = s.box || s.query || s.address || s.filter !== "all" ? logic.viewTitle(s) : "Mail";
     const line = gate ? "" : s.offline ? "Offline" : s.list.err && !s.list.rows.length ? "Couldn’t reach Mail · Try Again" : "";
-    const search = { icon: "search", label: "Search Mail", run: button => list.focusSearch(button) };
+    const search = { icon: "search", scope: "app", label: "Search Mail", run: button => list.focusSearch(button) };
     return {
       title, compactTitle: title, line, badges,
       pick: gate ? null : { label: "Views", run: () => ctx.open.views() }, acts: gate ? [] : [search, write], sections: SECTIONS, back: null,
