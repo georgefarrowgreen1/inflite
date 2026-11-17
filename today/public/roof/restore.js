@@ -30,11 +30,14 @@ export function createResumeState({ owner, signal, storage, now = Date.now } = {
   const live = () => typeof owner === "string" && /^[\w-]{1,100}$/.test(owner) && !signal?.aborted;
   let last = "", savedAt = 0;
   function clear() { try { storage?.removeItem(key); } catch (_) {} last = ""; }
-  function remember(route, { y = 0, state } = {}) {
-    if (!live() || !route || route.query || !storage?.setItem) return false;
+  function targetFor(route, { y = 0, state } = {}) {
+    if (!live() || !route || route.query) return null;
     const path = route.kind === "tab" && route.tab === "workspace" && route.tool !== "files" ? "/" : format(route);
-    const target = resumeTarget({ path, y, files: state?.files?.userId === owner ? state.files.location : undefined });
-    if (!target) return false;
+    return resumeTarget({ path, y, files: state?.files?.userId === owner ? state.files.location : undefined });
+  }
+  function remember(route, options) {
+    const target = targetFor(route, options);
+    if (!target || !storage?.setItem) return false;
     const text = JSON.stringify(target), at = now();
     if (text === last && at - savedAt < 60000) return true;
     try { storage?.setItem(key, JSON.stringify({ v: 1, owner, at, target })); last = text; savedAt = at; return true; } catch (_) { return false; }
@@ -53,5 +56,5 @@ export function createResumeState({ owner, signal, storage, now = Date.now } = {
       return { ...target, ...(target.files ? { state: { files: { userId: owner, location: target.files } } } : {}) };
     } catch (_) { return null; }
   }
-  return { remember, restore, clear };
+  return { targetFor, remember, restore, clear };
 }

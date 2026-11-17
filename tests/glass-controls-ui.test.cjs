@@ -100,7 +100,11 @@ test('master off, zero intensity and live accessibility preferences clear pointe
 
 test('coarse touch has no sticky pointer light and a tap still activates the native button once',async()=>{
  const t=await open({touch:true});try{
-  assert.equal(await t.page.evaluate(()=>matchMedia('(pointer: coarse)').matches),true);const action=t.page.getByRole('button',{name:'Neutral glass action',exact:true}),box=await action.boundingBox();await t.page.touchscreen.tap(box.x+box.width/2,box.y+box.height/2);await noPointer(t.page);assert.equal(await t.page.evaluate(()=>T.clicks),1);assert.deepEqual(await t.page.evaluate(()=>T.clickDefaults),[false]);await finish(t);
+  assert.equal(await t.page.evaluate(()=>matchMedia('(pointer: coarse)').matches),true);const action=t.page.getByRole('button',{name:'Neutral glass action',exact:true}),box=await action.boundingBox();await t.page.touchscreen.tap(box.x+box.width/2,box.y+box.height/2);await noPointer(t.page);assert.equal(await t.page.evaluate(()=>T.clicks),1);assert.deepEqual(await t.page.evaluate(()=>T.clickDefaults),[false]);
+  await t.page.evaluate(()=>{T.sheet();document.querySelector('dialog[open]').focus()});
+  const sheet=t.page.getByRole('dialog',{name:'Glass controls sheet'});
+  assert.deepEqual(await sheet.evaluate(el=>[el===document.activeElement,getComputedStyle(el).outlineStyle]),[true,'none']);
+  await finish(t);
  }finally{await t.ctx.close()}
 });
 

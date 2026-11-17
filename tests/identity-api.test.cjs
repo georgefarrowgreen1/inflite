@@ -57,3 +57,16 @@ test('Settings Account uses the existing identity service and offers page recove
     assert.match((await identity(req('/account/api/account/me'),service)).headers.get('Content-Type') || '',/json|text\/plain/);
   }
 });
+
+test('only the embedded Settings document allows same-origin framing, including during recovery', async () => {
+  const {identity} = await import('../today/src/identity.js');
+  const policy = "script-src 'self'; frame-ancestors 'none'; object-src 'none'";
+  const service = env(() => new Response('Account',{headers:{'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':policy,'X-Frame-Options':'DENY'}}));
+  for (const path of ['/settings/account/?embed=1','/settings/account/','/account/?embed=1','/auth/?embed=1','/settings/account/app.js?embed=1']) {
+    const embedded = path === '/settings/account/?embed=1';
+    const response = await identity(req(path),service);
+    assert.equal(response.headers.get('X-Frame-Options'),embedded ? 'SAMEORIGIN' : 'DENY');
+    assert.equal(response.headers.get('Content-Security-Policy'),embedded ? policy.replace("ancestors 'none'","ancestors 'self'") : policy);
+  }
+  assert.equal((await identity(req('/settings/account/?embed=1'),{})).headers.get('X-Frame-Options'),'SAMEORIGIN');
+});

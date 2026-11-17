@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.37";
+const BUILD = "4.38";
 // (what's new in it, said once it's in)
-const NEWS = "Ride overview appears when you have a planned session";
+const NEWS = "Account now opens inside Settings. Handoff follows open tabs across your devices.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.31/store.js","/os.webmanifest"];
@@ -339,7 +339,6 @@ const IFL = (() => {
     if (!m) return;
     open = null;
     m.behind?.forEach((c) => { c.inert = false; });
-    m.anchor.classList.remove("ifm-lit");
     document.removeEventListener("keydown", m.key, true);
     window.removeEventListener("resize", m.fit);
     window.visualViewport?.removeEventListener("resize", m.fit);
@@ -449,7 +448,6 @@ const IFL = (() => {
     window.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("scroll", fit);
-    anchor.classList.add("ifm-lit");
     anchor.setAttribute("aria-expanded", "true");
     open = { anchor, layer, pop, key, fit, cancelFit, behind, onClose: o.onClose, redraw: (list) => {
       // (the focus kept on the row it was on, by its key)
@@ -1892,7 +1890,7 @@ let bell = null, bellReady = Promise.resolve(), notificationCount = 0;
 const SCREENS = {
   today: { el: $("#today"), title: () => "Today", crumb: () => "", line: lineOf, acts: [BELL, EDIT], onShow() { drawLine(true); if (cardsStale) { cardsStale = false; refresh(); } }, onHide() {} },
   apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Open an app or jump straight in", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
-  you: { el: $("#you"), title: () => "Settings", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() {} },
+  you: { el: $("#you"), title: () => "Settings", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() { you?.releaseAccount?.(); } },
 };
 // (a service's state, as it changes (the frame's opts.serviceState): Chats locked by its app lock, every word of Chat's
 // gone from Today at once, and none kept to draw again (S3-D14))
@@ -2061,6 +2059,15 @@ const youCtx = (task) => {
   }
   return {
     editApp: editAppSettings, section: task.frame.route?.arg,
+    async refreshProfile() {
+      if (!task.current()) return;
+      const view = await call("/api/session", { fresh: true, signal: task.signal }).catch(() => null);
+      if (!task.current() || view?.user?.id !== task.owner) return;
+      Object.assign(S.view.user, view.user);
+      keepSession(S.view);
+      task.frame.refresh();
+      return S.view.user;
+    },
     view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, ...scopedAPI(), current: task.current, active: task.active, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
     kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
     sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, syncPush, offHere: () => offHere(), toMorning, openAccount, signOut, canPush, pushWhy,
@@ -2197,11 +2204,17 @@ function go(path) {
 // Your account, at the place asked for (open=…). From a Home Screen Today, whose sign-in the browser doesn't share, with
 // a code good for a minute that signs the account's page in too (as Markets does)
 function accountHref(open) {
+  if (OS_MODE) return "/#settings=account" + (["profile","security","data","confirm","units","appearance","notify-inflight"].includes(open) ? "-" + open : "");
   const base = safe(S.links?.account) || DEFAULT_LINKS.account, p = new URLSearchParams({ from: "today" });
   if (open) p.set("open", open);
   return `${base}/#${p}`;
 }
 async function openAccount(open) {
+  if (OS_MODE) {
+    const path = accountHref(open);
+    if (!here(path)) F?.nav.go(path);
+    return;
+  }
   if (standalone()) {
     try {
       const { code } = await call("/api/account-link", { method: "POST", body: {} });

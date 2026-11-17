@@ -8,13 +8,15 @@ historical objects, including pending replacement objects.
 
 ## Screen continuation
 
-After verified sign-in, an optional background module synchronizes a bounded screen
-reference for this device. Today offers up to three other devices. Only a tap
-opens one: the active route, deep links and local reopen take precedence. Records
-contain an opaque random device ID, Phone/Tablet/Computer label, curated path,
-bounded scroll and server timestamp. Never search terms, names, location, content
-or auth tokens. Each device uses compare-and-swap; at most 12 are retained and
-references older than 30 days are not offered. Mail drafts autosave through Mail's
+Today offers up to three open tabs from other devices on the signed-in account.
+Selecting a row checks that the same tab still offers that screen before opening it.
+Each document publishes a curated route with its own random tab ID and a sequence
+number. A close clears only that tab, and a late heartbeat cannot undo the close.
+Visible Today pages check every ten seconds. Each tab renews every 45 seconds
+while its browser can run timers. After 150 seconds without renewal its offer
+expires. A tab restored from the browser’s back-forward cache registers again.
+Remembered devices, encrypted draft copies and local screen reopening have
+independent lifetimes. Mail drafts autosave through Mail's
 own authenticated API; local Chat drafts retain their existing encryption model.
 The continuation service does not receive plaintext drafts or bypass app unlock.
 

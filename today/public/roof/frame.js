@@ -201,6 +201,7 @@ export function createFrame(opts = {}) {
 
   const F = {
     route: null,
+    continuationTarget: () => opts.resume?.targetFor(reopenRoute(F.route), { y: scrollY, state: H.state }),
     signal: lifetime.signal,
     ui, toast,
     get session() { return gone ? { view: null, hub: false, roof: false, apps: {}, links: {}, lost } : { ...sess(), lost }; },
@@ -375,13 +376,15 @@ export function createFrame(opts = {}) {
   const stayR = (r) => r?.kind === "app" && !!REGISTRY[r.app].stay?.includes(r.key);
   const tabRoot = (r) => r?.kind === "app" && !!REGISTRY[r.app].tab && !stayR(r);
   const isTab = (r) => r?.kind === "tab" || tabRoot(r);
-  function rememberReopen(r, y = scrollY) {
-    if (!opts.resume) return;
+  function reopenRoute(r) {
     const hint = r?.kind === "app" ? T(() => mods[r.app]?.instance?.resumeRoute?.(), null) : null;
     const candidate = typeof hint === "string" ? parse(hint, { roof: true }) : null;
     // Native panes may keep a conversation while their address shows the list.
     // The account serializer still applies its route/opaque-ID allowlist.
-    opts.resume.remember(candidate?.kind === "app" && candidate.app === r?.app ? candidate : r, { y, state: H.state });
+    return candidate?.kind === "app" && candidate.app === r?.app ? candidate : r;
+  }
+  function rememberReopen(r, y = scrollY) {
+    opts.resume?.remember(reopenRoute(r), { y, state: H.state });
   }
   function leaveEntry() {
     ys.set(key, scrollY);

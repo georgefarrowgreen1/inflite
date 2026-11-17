@@ -1,10 +1,13 @@
 
 /* 4.20 launcher: Today + four fixed favourites + Apps. One neutral material. */
-.ifl-workspace .ws-dock { isolation:isolate; overflow:visible; gap:2px; padding:7px 5px; width:370px; max-width:calc(100vw - 24px); border-radius:28px; touch-action:manipulation; }
+.ifl-workspace .ws-dock { isolation:isolate; overflow:visible; gap:2px; padding:7px 5px; width:370px; max-width:calc(100vw - 24px); touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+.ifl-workspace .ws-dock, html.ifl-os::view-transition-group(inflite-dock) { border-radius:28px; }
+/* Clip the glass snapshot to the dock while the app underneath animates. */
+html.ifl-os::view-transition-group(inflite-dock) { overflow:clip; }
 .ifl-workspace .ws-dock-apps { display:contents; }
 .ifl-workspace .ws-dock-button { flex:1 1 0; width:0; min-width:0; height:64px; min-height:64px; border-radius:21px; gap:6px; padding:5px 0; background:transparent; }
 .ifl-workspace .ws-dock-button[aria-current],.ifl-workspace .ws-dock-button[aria-current]:hover { background:transparent; box-shadow:none; }
-.ifl-workspace .ws-dock-selection { position:absolute;z-index:-1;left:0;top:7px;bottom:7px;width:0;border-radius:21px;background:var(--ifl-glass-control);box-shadow:inset 0 1px var(--ifl-glass-highlight),0 0 0 1px var(--ifl-glass-line);transform-origin:left center;pointer-events:none; }
+.ifl-workspace .ws-dock-selection { position:absolute;z-index:-1;left:0;top:7px;bottom:7px;width:0;border-radius:21px;background:var(--ifl-glass-control);transform-origin:left center;pointer-events:none; }
 .ifl-workspace :is(.ws-dock-symbol,.ws-dock-symbol img,.ws-dock-symbol .wsl-files-mark) { width:36px;height:36px;border-radius:11px; }
 .ifl-workspace .ws-dock-today { background:none;color:var(--ws-text); }
 .ifl-workspace .ws-dock-label { display:block; font-size:11px;line-height:1.1;max-width:100%; }

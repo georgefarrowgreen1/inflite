@@ -14,10 +14,19 @@ before(async()=>{
   const u=new URL(req.url,'http://localhost'),path=u.pathname;
   const answer=(v,status=200)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(v))};
   if(path.startsWith('/api/files/')){
-   let chunks=[];for await(const c of req)chunks.push(c);const bytes=Buffer.concat(chunks),action=path.split('/').at(-1),owner=req.headers['x-inflite-files-owner'];requests.push({action,owner,method:req.method});
+   const chunks=[];
+   try { for await(const c of req)chunks.push(c); }
+   catch(error){ if(req.aborted)return;throw error; }
+   const bytes=Buffer.concat(chunks),action=path.split('/').at(-1),owner=req.headers['x-inflite-files-owner'];requests.push({action,owner,method:req.method});
    const data=req.headers['content-type']?.startsWith('application/json')?JSON.parse(bytes.toString()||'{}'):null;
    if(action==='preferences'){if(req.method==='GET')return answer({prefs});if(JSON.stringify(data.expected)!==JSON.stringify(prefs))return answer({error:'Changed on another device'},409);prefs={...data};delete prefs.expected;return answer({prefs})}
-   if(action==='continuity'){const owned=devices.get(owner)||[];if(req.method==='GET')return answer({devices:owned});const previous=owned.find(d=>d.id===data.id);if((previous?.revision||0)!==data.revision)return answer({error:'Device changed'},409);const next={...data,revision:data.revision+1,updatedAt:Date.now()};devices.set(owner,[...owned.filter(d=>d.id!==data.id),next]);return answer({revision:next.revision})}
+   if(action==='open-tabs'){
+    const owned=devices.get(owner)||[];
+    if(req.method==='GET')return answer({tabs:owned.filter(t=>t.target&&t.id!==u.searchParams.get('id')).map(t=>({...t,remainingMs:150000}))});
+    const prior=owned.find(t=>t.tab===data.tab);
+    if(!prior||prior.seq<data.seq)devices.set(owner,[...owned.filter(t=>t.tab!==data.tab),{...data,updatedAt:Date.now()}]);
+    return answer({ok:true});
+   }
    if(action==='uploads'){const prior=operations.get(owner+data.operationId);if(prior)return answer({item:prior});const id=String(objects.size+1).padStart(32,'0'),item={id,parentId:data.parentId,name:data.name,kind:'file',mime:data.mime,size:data.size,status:'pending',createdAt:Date.now(),modifiedAt:Date.now(),version:1};operations.set(owner+data.operationId,item);objects.set(id,{item,owner});return answer({item})}
    if(action==='content'&&req.method==='PUT'){const record=objects.get(u.searchParams.get('id'));if(!record||record.owner!==owner)return answer({error:'Missing'},404);record.bytes=bytes;Object.assign(record.item,{status:'ready',version:2});return answer({item:record.item})}
    return answer({error:'Unknown fixture action'},404);
@@ -57,9 +66,28 @@ test('offline Today edits survive reopening and require a choice before overwrit
  await next.getByRole('button',{name:'Review layouts'}).click();await next.getByRole('button',{name:'Use account layout',exact:true}).click();await next.waitForFunction(()=>T.applied.at(-1).hidden.includes('weather'));assert.equal(prefs.density,undefined);await ctx.close();
 });
 
-test('another device offers the same conversation without replacing an active route before an explicit tap',async()=>{
- const first=await browser.newContext(),phone=await first.newPage();await boot(phone,'continuation_owner');
- await phone.evaluate(async()=>{const {createResumeState}=await import('/roof/restore.js'),{connectContinuity}=await import('/roof/continuity.js');T.F.session.apps.chats=true;createResumeState({owner:'continuation_owner',signal:T.ac.signal}).remember({kind:'app',app:'chats',key:'open',arg:'friend_42'});connectContinuity(T.F,{owner:'continuation_owner',root:document.querySelector('main')})});
- await phone.waitForFunction(()=>localStorage.getItem('ifl:device:continuation_owner'));for(let n=0;n<60&&!devices.get('continuation_owner')?.length;n++)await new Promise(r=>setTimeout(r,100));assert.equal(devices.get('continuation_owner')[0].target.path,'/chats/#open=friend_42');
- const second=await browser.newContext(),desktop=await second.newPage();await boot(desktop,'continuation_owner');await desktop.evaluate(async()=>{const {connectContinuity}=await import('/roof/continuity.js');T.F.session.apps.chats=true;connectContinuity(T.F,{owner:'continuation_owner',root:document.querySelector('main')})});await desktop.getByRole('button',{name:/Chats/}).waitFor();assert.equal(await desktop.evaluate(()=>T.path),undefined);await desktop.getByRole('button',{name:/Chats/}).click();assert.equal(await desktop.evaluate(()=>T.path),'/chats/#open=friend_42');await first.close();await second.close();
+test('closing one tab withdraws just that handoff while Today stays open on another device',async()=>{
+ const owner='continuation_owner', first=await browser.newContext(),second=await browser.newContext();
+ async function open(context,path){
+  const page=await context.newPage();await boot(page,owner);
+  await page.evaluate(async({owner,path})=>{
+   const {connectContinuity}=await import('/roof/continuity.js');
+   const {parse}=await import('/roof/router.js'),{createResumeState}=await import('/roof/restore.js');
+   const resume=createResumeState({owner,signal:T.ac.signal});
+   T.F.route=parse(path,{roof:true,workspace:true});
+   T.F.session.apps={chats:true,weather:true};T.F.continuationTarget=()=>resume.targetFor(T.F.route);
+   connectContinuity(T.F,{owner,root:document.querySelector('main')});
+  },{owner,path});return page;
+ }
+ try{
+  const chat=await open(first,'/chats/#open=friend_42'),weather=await open(first,'/weather/');
+  const desktop=await open(second,'/');
+  const chatRow=desktop.getByRole('button',{name:/Chats/}),weatherRow=desktop.getByRole('button',{name:/Weather/});
+  await chatRow.waitFor();await weatherRow.waitFor();
+  assert.equal(await chat.getByRole('button',{name:/Weather/}).count(),0);
+  assert.equal(await desktop.evaluate(()=>T.path),undefined);
+  await chatRow.click();await desktop.waitForFunction(()=>T.path==='/chats/#open=friend_42');
+  await weather.close();await weatherRow.waitFor({state:'hidden',timeout:20000});assert.ok(await chatRow.isVisible());
+  await chat.close();await desktop.locator('.continuation-card').waitFor({state:'hidden',timeout:20000});
+ }finally{await first.close();await second.close()}
 });

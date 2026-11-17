@@ -61,7 +61,9 @@ const current = (ctx) => ctx.current?.() !== false && ctx.active?.() !== false;
 // subscription, as the browser has it)
 const Y = { rules: null, notify: null, devices: null, sub: null, shares: null, sharesRoof: null };
 let drawing = null;
-export function forgetYou() { Y.rules = Y.notify = Y.devices = Y.sub = Y.shares = null; Y.synced = Y.notHere = Y.everyLost = false; drawing = null; }
+const accountSection = section => /^(?:settings-)?account(?:-(profile|security|data|confirm|units|appearance|notify-inflight))?$/.exec(section || "");
+export function releaseAccount() { document.getElementById("you")?.querySelector(".settings-account-frame")?.remove(); }
+export function forgetYou() { releaseAccount(); Y.rules = Y.notify = Y.devices = Y.sub = Y.shares = null; Y.synced = Y.notHere = Y.everyLost = false; drawing = null; }
 // (Connected Apps: each app, and the words of InFlite's connector contract its descriptor fills, and only those)
 const CONNECTED = [["weather", "Weather"], ["chats", "Chats"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"]];
 const WORDS = [["cards", "Cards"], ["search", "Search"], ["notifications", "Notifications"], ["actions", "Actions"], ["screens", "Screens"]];
@@ -105,6 +107,7 @@ export async function drawYou(root, ctx) {
   if (!root || !ctx?.view || !current(ctx)) return;
   // (drawn at once with what's known, then again as each answer comes)
   paint(root, ctx);
+  if (accountSection(ctx.section)) return;
   const ask = (path) => ctx.call(path).catch((e) => (ctx.missing(e) ? false : null));
   const sub = await ctx.sub().catch(() => null);
   if (!current(ctx)) return;
@@ -139,6 +142,8 @@ export async function drawYou(root, ctx) {
 function paint(root, ctx) {
   if (!current(ctx)) return;
   const u = ctx.view.user || {}, admin = ctx.view.apps?.mail === true;
+  const account = accountSection(ctx.section);
+  if (account && root.dataset.settingsOwner === String(u.id) && root.dataset.settingsSection === ctx.section && root.querySelector(".settings-account-frame")) return;
   // (a section: its heading, one group, a line of small print under it; icons: its rows lead with an icon, the lines
   // between them start where the words do)
   const sec = (id, title, body, foot = "", icons = false) => body ? `<section class="you-sec" id="${id}">${title ? `<h2 class="you-h">${esc(title)}</h2>` : ""}<div class="group glass${icons ? " icons" : ""}">${body}</div>${foot ? `<p class="you-foot">${foot}</p>` : ""}</section>` : "";
@@ -152,7 +157,7 @@ function paint(root, ctx) {
   const sections = {};
   // You: your picture and name, a tap from your account
   const photo = typeof ctx.photo === "function" ? ctx.photo(u) : esc([...String(u.first || u.name || "?")][0] || "?");
-  sections.youAccount = sec("youAccount", "", `<a class="row go you-me" href="/settings/account/" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>View account</small></span><span class="chev">${G.chev}</span></a>`);
+  sections.youAccount = sec("youAccount", "", `<a class="row go you-me" href="/#settings=account" id="youAcct"><span class="you-ph" aria-hidden="true">${photo}</span><span class="tx"><b>${esc(u.name || u.handle || "Your account")}</b><small>View account</small></span><span class="chev">${G.chev}</span></a>`);
   // Notifications: this phone, Today's morning, quiet hours
   const n = Y.notify;
   {
@@ -269,7 +274,7 @@ function paint(root, ctx) {
       (sections.youDevices || sec("youDeviceInfo","",row("devices","Other notification devices",Y.devices === null ? "Checking your devices…" : "None listed")))],
     ["about", "About InFlite", "App versions", "info", FOLDERS.versions]
   ];
-  const selected = categoryFor(ctx.section);
+  const selected = account ? "account" : categoryFor(ctx.section);
   const previous = root.querySelector('.settings-search input');
   const sameVisit = root.dataset.settingsOwner === String(u.id) && root.dataset.settingsSection === (ctx.section || "");
   const query = sameVisit ? previous?.value || "" : "";
@@ -278,18 +283,36 @@ function paint(root, ctx) {
   root.dataset.settingsSection = ctx.section || "";
   const currentCategory = selected || (matchMedia("(min-width: 900px)").matches ? "account" : null);
   const nav = groups.map(([key,title,sub,icon]) =>
-    `<a class="row go settings-category" href="${key === "account" ? "/settings/account/" : "/#settings=" + key}" data-category="${key}" ${currentCategory === key ? 'aria-current="page"' : ""}>${ic(icon,"grey")}${tx(title,sub)}<span class="chev">${G.chev}</span></a>`).join("");
+    `<a class="row go settings-category" href="/#settings=${key}" data-category="${key}" ${currentCategory === key ? 'aria-current="page"' : ""}>${ic(icon,"grey")}${tx(title,sub)}<span class="chev">${G.chev}</span></a>`).join("");
   const details = groups.map(([key,title,, ,html]) =>
     `<section class="settings-detail" data-group="${key}" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${html}</section>`).join("");
   root.innerHTML = `<div class="settings-sidebar">
     ${sections.youAccount}<label class="settings-search">${sv('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>')}<input type="search" aria-label="Search settings" placeholder="Search settings" autocomplete="off"></label>
     <nav class="group glass icons" aria-label="Settings categories">${nav}</nav></div>
     <div class="settings-content"><a class="settings-back" href="/#settings"><span aria-hidden="true">‹</span> All settings</a>${details}<p class="settings-empty" role="status" hidden>No matching settings</p></div>`;
+  if (account) {
+    const detail = root.querySelector('[data-group="account"]');
+    const frame = document.createElement("iframe");
+    frame.className = "settings-account-frame";
+    frame.title = "Account";
+    frame.dataset.owner = u.id;
+    frame.src = "/settings/account/?embed=1" + (account[1] ? "#open=" + account[1] : "");
+    frame.addEventListener("inflite-profile-updated", async () => {
+      const user = await ctx.refreshProfile?.();
+      if (!user || !frame.isConnected) return;
+      const card = root.querySelector("#youAcct");
+      card.querySelector(".tx b").textContent = user.name || user.handle;
+      card.querySelector(".you-ph").innerHTML = ctx.photo(user);
+    });
+    detail.append(frame);
+  }
   const input = root.querySelector('.settings-search input');
   input.value = query;
   function filter() {
     const words = input.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     root.toggleAttribute("data-filtering", !!words.length);
+    const frame = root.querySelector(".settings-account-frame");
+    if (frame) frame.hidden = !!words.length;
     let count = 0;
     for (const section of root.querySelectorAll('[data-group]')) {
       const key = section.dataset.group, title = section.getAttribute('aria-label');
@@ -301,7 +324,7 @@ function paint(root, ctx) {
           item.hidden = (!words.length && !!item.dataset.editor) || !words.every(word => line.includes(word));
           if (!item.hidden) hits++;
         }
-        block.hidden = !hits;
+        block.hidden = !hits || !!frame && !words.length && key === "account";
         any ||= !!hits;
       }
       section.hidden = words.length ? !any : key !== (selected || 'account');
@@ -332,7 +355,6 @@ function paint(root, ctx) {
     if (key === 'appearance') return appearance(ctx);
     if (key === 'units' && options.weather) return ctx.editApp('weather',b,'units');
     if (["weather","fitness","markets","chats","mail"].includes(key)) return ctx.editApp(key,b);
-    if (["profile","security","data"].includes(key)) return location.assign("/settings/account/#open=" + key);
     ctx.openAccount(key);
   });
 }
@@ -420,7 +442,7 @@ function emailPreferences(root,ctx) {
       ui.list([toggle("When a reported problem is fixed",prefs.account.fixed,on=>({account:{fixed:on}}))],{label:"Account"}));
     list.disabled = !prefs.emailOk;
     body.replaceChildren(list,status,el("p",{class:"you-foot",text:"Security emails about sign-ins and account changes are always sent."}));
-    if (!prefs.emailOk) body.prepend(ui.row({title:"Verify your email to receive app updates",trail:"chevron",run:()=>location.assign("/settings/account/#open=security")}));
+    if (!prefs.emailOk) body.prepend(ui.row({title:"Verify your email to receive app updates",trail:"chevron",run:()=>ctx.openAccount("security")}));
   }
   load();
 }

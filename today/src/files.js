@@ -7,7 +7,7 @@ import { bodyUpTo } from "./body.js";
 import { fetchUpstream } from "./upstream.js";
 
 const MAX_FILE = 25 * 1024 * 1024, MAX_JSON = 4096, MAX_REPLY = 128 * 1024;
-const ROUTES = new Set(["GET list", "GET item", "GET limits", "POST search", "POST folders", "POST uploads", "POST move", "POST trash", "POST restore", "POST copy", "POST favourite", "PATCH item", "DELETE item", "GET content", "PUT content", "GET history", "POST replacements", "DELETE replacements", "PUT replacement-content", "POST restore-version", "GET continuity", "PUT continuity", "GET preferences", "PUT preferences"]);
+const ROUTES = new Set(["GET list", "GET item", "GET limits", "POST search", "POST folders", "POST uploads", "POST move", "POST trash", "POST restore", "POST copy", "POST favourite", "PATCH item", "DELETE item", "GET content", "PUT content", "GET history", "POST replacements", "DELETE replacements", "PUT replacement-content", "POST restore-version", "GET open-tabs", "PUT open-tabs", "GET continuity", "PUT continuity", "GET preferences", "PUT preferences"]);
 const QUERY = new Set(["id", "parentId", "view", "sort", "kind", "cursor", "version", "download", "versionId", "uploadId"]);
 const SAFE = { "Cache-Control": "private, no-store", "Content-Security-Policy": "sandbox; default-src 'none'; frame-ancestors 'none'", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin", "Referrer-Policy": "no-referrer" };
 const json = (status, error) => new Response(JSON.stringify({ error }), { status, headers: { ...SAFE, "Content-Type": "application/json; charset=utf-8" } });

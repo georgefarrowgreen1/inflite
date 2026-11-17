@@ -40,7 +40,8 @@ export async function identity(request, env) {
   const site = request.headers.get('Sec-Fetch-Site');
   if (api && site && site !== 'same-origin' && !(read && site === 'none')) return fail(403, 'That request didn’t come from InFlite.');
   const page = read && (path === '/' || path === '/index.html');
-  const unavailable = status => page ? unavailablePage(request, role, status) : fail(status, 'Sign-in could not be reached. Please try again.');
+  const embedded = settings && read && path === "/" && url.search === "?embed=1";
+  const unavailable = status => page ? unavailablePage(request, role, status, embedded) : fail(status, 'Sign-in could not be reached. Please try again.');
   if (!env.HUB_KEY && page) return unavailable(503);
   if (!env.HUB_KEY) return fail(503, 'Sign-in is temporarily unavailable. Please try again.');
   const headers = new Headers({ 'X-Hub-Key': env.HUB_KEY, 'X-Inflite-Identity': role });
@@ -76,17 +77,24 @@ export async function identity(request, env) {
       if (!location) return fail(502, 'That identity destination is unavailable.');
       out.set('Location', location); return new Response(null, { status: response.status, headers: out });
     }
+    if (embedded && response.ok && /^text\/html(?:;|$)/i.test(out.get("Content-Type") || "")) {
+      const policy = out.get("Content-Security-Policy") || "";
+      if (/(?:^|;\s*)frame-ancestors 'none'(?=;|$)/.test(policy)) {
+        out.set("Content-Security-Policy", policy.replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
+        out.set("X-Frame-Options", "SAMEORIGIN");
+      }
+    }
     if (request.method === 'HEAD') response.body?.cancel().catch(() => {});
     return new Response(request.method === 'HEAD' ? null : response.body, { status: response.status, headers: out });
   } catch { return unavailable(request.signal.aborted ? 499 : 502); }
 }
 
-function unavailablePage(request, role, status) {
+function unavailablePage(request, role, status, embedded) {
   const account = role === 'account';
   const title = account ? 'Account is temporarily unavailable' : 'Sign-in is temporarily unavailable';
   const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark">
     <title>${title} · InFlite</title><link rel="stylesheet" href="/identity-recovery.css"><main>
     <img src="/icon-180.png" width="48" height="48" alt="InFlite"><h1>${title}</h1><p>Try again to continue where you left off.</p>
-    <button type="button" hidden>Try again</button><a href="/#settings">Back to Settings</a></main><script src="/identity-recovery.js"></script></html>`;
-  return new Response(request.method === 'HEAD' ? null : html, {status,headers:{...SAFE,'Content-Type':'text/html; charset=utf-8','X-Frame-Options':'DENY','Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"}});
+    <button type="button" hidden>Try again</button><a href="/#settings" target="_top">Back to Settings</a></main><script src="/identity-recovery.js"></script></html>`;
+  return new Response(request.method === 'HEAD' ? null : html, {status,headers:{...SAFE,'Content-Type':'text/html; charset=utf-8','X-Frame-Options':embedded ? 'SAMEORIGIN' : 'DENY','Content-Security-Policy':`default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors ${embedded ? "'self'" : "'none'"}; form-action 'none'`}});
 }

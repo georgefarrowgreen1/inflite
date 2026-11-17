@@ -14,3 +14,65 @@ test('real transfer facts update Files quietly and clear when uploads finish',as
 test('a cancelled touch cannot open a late shortcut after navigation or account release',async()=>{const t=await open();try{const{page}=t;await page.evaluate(()=>{const b=document.querySelector('.ws-dock [data-launcher-app=weather]');b.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:91,pointerType:'touch',isPrimary:true,button:0,clientX:100,clientY:750}));b.dispatchEvent(new PointerEvent('pointercancel',{bubbles:true,pointerId:91}));T.F.nav.go('/fitness/',{kind:'section'})});await page.getByRole('textbox',{name:'fitness draft',exact:true}).waitFor();await page.waitForTimeout(600);assert.equal(await page.locator('dialog[open]').count(),0);await page.evaluate(()=>T.F.destroy());await page.waitForTimeout(600);assert.equal(await page.locator('dialog[open],.ws-dock').count(),0);await t.clean()}finally{await t.ctx.close()}});
 test('dismissed shortcut controls cannot launch an app or change favourites',async()=>{const t=await open();try{const{page}=t;await page.locator('.ws-dock [data-launcher-app=weather]').click({button:'right'});await page.getByRole('dialog',{name:'Weather',exact:true}).waitFor();await page.evaluate(()=>{T.oldShortcut=[...document.querySelectorAll('dialog[data-sheet=launcher-actions] button.ifl-btn')];T.F.sheet.closeAll()});const before=await page.evaluate(()=>({url:location.href,favourites:localStorage.getItem('ifl:launcher:v1:ann')}));await page.evaluate(()=>{for(const b of T.oldShortcut)b.click()});await settle(page);assert.deepEqual(await page.evaluate(()=>({url:location.href,favourites:localStorage.getItem('ifl:launcher:v1:ann')})),before);assert.equal(await page.locator('dialog[open]').count(),0);await t.clean()}finally{await t.ctx.close()}});
 test('releasing a held dock icon leaves its shortcut panel open without activating an action',async()=>{const t=await open();try{const{page}=t,b=await page.locator('.ws-dock [data-launcher-app=weather]').boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.waitForTimeout(600);await page.mouse.up();const menu=page.locator('dialog[data-sheet=launcher-actions]');await menu.getByRole('button',{name:'Open Weather',exact:true}).waitFor();await settle(page);assert.equal(await menu.evaluate(n=>n.open&&!n.classList.contains('closing')),true);assert.equal(new URL(page.url()).pathname,'/');await page.keyboard.press('Escape');await menu.waitFor({state:'detached'});await t.clean()}finally{await t.ctx.close()}});
+
+test('dock press keeps the rounded glass edge and keyboard focus stays visible',async()=>{
+ const t=await open();
+ try {
+  const {page}=t, dock=page.locator('.ws-dock'), weather=dock.getByRole('button',{name:'Weather',exact:true});
+  await weather.focus();
+  await page.keyboard.press('Tab');
+  const focus=await dock.locator(':focus-visible').evaluate(button=>getComputedStyle(button).outlineStyle);
+  assert.notEqual(focus,'none');
+
+  await page.evaluate(()=>{
+   const start=document.startViewTransition.bind(document);
+   document.startViewTransition=update=>{
+    const transition=start(update);
+    window.dockSnapshot=transition.ready.then(()=>{
+     const group=getComputedStyle(document.documentElement,'::view-transition-group(inflite-dock)');
+     return {radius:group.borderTopLeftRadius,overflow:group.overflow};
+    });
+    return transition;
+   };
+  });
+  await weather.click();
+  const snapshot=await page.evaluate(()=>window.dockSnapshot);
+  assert.equal(snapshot.radius,await dock.evaluate(node=>getComputedStyle(node).borderTopLeftRadius));
+  assert.equal(snapshot.overflow,'clip');
+  assert.equal(await dock.locator('.ws-dock-selection').evaluate(node=>getComputedStyle(node).boxShadow),'none');
+  await settle(page);await t.clean();
+ } finally {await t.ctx.close()}
+});
+
+test('pointer-opened profile menu and sheets keep focus without a ring, and Tab shows focus again',async()=>{
+ const t=await open();
+ try {
+  const {page}=t;
+  await page.addScriptTag({url:'/theme.js'});
+  await page.evaluate(()=>{
+   const anchor=document.createElement('button');
+   anchor.textContent='Profile menu';anchor.className='ifh-me';
+   document.body.append(anchor);
+   anchor.onclick=()=>IFL.menu(anchor,{app:'today',me:{name:'Alex'},rows:[{label:'Settings',icon:'sliders',open:()=>{
+    T.F.sheet.open({title:'Settings',body:document.createElement('div')});
+   }}]});
+  });
+  const opener=page.getByRole('button',{name:'Profile menu'}),profile=page.locator('.ifm-card');
+  const outline=el=>getComputedStyle(el).outlineStyle;
+  const restingShadow=await opener.evaluate(el=>getComputedStyle(el).boxShadow);
+  await opener.click();
+  assert.equal(await profile.evaluate(el=>el===document.activeElement),true);
+  assert.equal(await profile.evaluate(outline),'none');
+  assert.equal(await opener.evaluate(el=>getComputedStyle(el).boxShadow),restingShadow);
+  const settings=page.getByRole('button',{name:'Settings',exact:true}).last();
+  await page.keyboard.press('Tab');
+  assert.equal(await settings.evaluate(el=>el===document.activeElement),true);
+  assert.notEqual(await settings.evaluate(outline),'none');
+  await settings.click();
+  const sheet=page.getByRole('dialog',{name:'Settings',exact:true});await sheet.waitFor();
+  await sheet.evaluate(el=>el.focus({preventScroll:true}));
+  assert.equal(await sheet.evaluate(el=>el===document.activeElement),true);
+  assert.equal(await sheet.evaluate(outline),'none');
+  await page.keyboard.press('Escape');await t.clean();
+ } finally {await t.ctx.close()}
+});

@@ -1,35 +1,124 @@
-// Background screen continuation. Explicit links and the active screen always
-// win; another device is opened only through the person's Continue action.
-import {deviceId,deviceLabel} from './device-id.js';
-import {resumeTarget,RESUME_PREFIX} from './restore.js';
-export function connectContinuity(F,{owner,root}={}){
- const live=()=>!F.signal.aborted&&F.session.view?.user?.id===owner;
- const id=deviceId(owner);if(!id)return;
- const paused=()=>{try{return localStorage.getItem('ifl:device-paused:'+owner)==='1'}catch(_){return true}};
- let revision=0,loaded=false,running=false,timer=0,last='',devices=[],lastRead=0;
- const panel=F.ui.el('section',{class:'continuation-card',hidden:true,'aria-label':'Continue on this device'});root.prepend(panel);
- const label=deviceLabel();
- async function request(method,body){
-  const response=await fetch('/api/files/continuity',{method,credentials:'same-origin',mode:'same-origin',cache:'no-store',redirect:'error',signal:AbortSignal.any([F.signal,AbortSignal.timeout(12000)]),headers:{'X-Inflite-Files-Owner':owner,...(body?{'X-Inflite':'1','Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
-  const text=await response.text();if(!live()||text.length>16000)throw Error('Continuation unavailable');let value=JSON.parse(text);if(!response.ok){const error=Error(value.error||'Continuation unavailable');error.status=response.status;throw error}return value;
- }
- function paint(){
-  if(!live())return;panel.replaceChildren();
-  const other=devices.filter(d=>d.id!==id&&resumeTarget(d.target)&&Date.now()-d.updatedAt<30*864e5).filter(d=>{const app=d.target.path.split('/')[1];return !app||app.startsWith('#')||F.session.apps?.[app]===true}).slice(0,3);
-  panel.hidden=!other.length;if(!other.length)return;
-  panel.append(F.ui.el('h2',{text:'Continue from another device'}));
-  for(const d of other){const app=d.target.path.split('/')[1],name=({fitness:'Fitness',weather:'Weather',markets:'Markets',chats:'Chats',mail:'Mail'})[app]||(d.target.path.includes('#files')?'Files':'Today');panel.append(F.ui.el('button',{type:'button',class:'continuation-row',on:{click:()=>{if(live())F.nav.go(d.target.path,{state:d.target.files?{files:{userId:owner,location:d.target.files}}:undefined})}}},F.ui.el('span',{},F.ui.el('strong',{text:name}),F.ui.el('small',{text:d.label+' · '+new Date(d.updatedAt).toLocaleString()})),F.ui.el('span',{'aria-hidden':'true',text:'›'})))}
- }
- async function read(){if(!live()||running)return;running=true;try{const result=await request('GET');devices=Array.isArray(result.devices)?result.devices.slice(0,12):[];revision=devices.find(d=>d.id===id)?.revision||0;loaded=true;lastRead=Date.now();paint()}catch(_){}finally{running=false}}
- async function write(){
-  if(!live()||!loaded||running||paused()||navigator.onLine===false)return;let record;try{const raw=localStorage.getItem(RESUME_PREFIX+owner);if(!raw||raw.length>1500)return;record=JSON.parse(raw);if(record.owner!==owner)return}catch(_){return}
-  const target=resumeTarget(record.target);if(!target)return;const text=JSON.stringify(target);if(text===last)return;running=true;
-  try{const result=await request('PUT',{id,revision,label,target});revision=result.revision;last=text}catch(error){if(error.status===410){try{localStorage.setItem('ifl:device-paused:'+owner,'1')}catch(_){}}else if(error.status===409&&live()){loaded=false;setTimeout(()=>{if(live())read().then(schedule)},1000)}}finally{running=false}
- }
- function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(!loaded)read().then(write);else write()},1500)}
- window.addEventListener('inflite:devices-changed',e=>{if(live()&&e.detail?.owner===owner){last='';loaded=false;read().then(schedule)}},{signal:F.signal});
- const off=F.on('route',schedule);
- const visible=()=>{if(document.visibilityState==='visible'&&Date.now()-lastRead>60000)read().then(schedule)};
- document.addEventListener('visibilitychange',visible,{signal:F.signal});window.addEventListener('online',()=>read().then(schedule),{signal:F.signal});
- F.signal.addEventListener('abort',()=>{clearTimeout(timer);off();panel.remove()},{once:true});read().then(schedule);
+// Open-tab presence belongs to this document. Local reopen and remembered
+// devices have longer lifetimes and are managed separately.
+import {deviceId, deviceLabel} from './device-id.js';
+import {resumeTarget} from './restore.js';
+import {REGISTRY} from './router.js';
+
+export function connectContinuity(F, {owner, root}) {
+  const id = deviceId(owner);
+  if (!id) return;
+  const label = deviceLabel(), path = '/api/files/open-tabs';
+  const live = () => !F.signal.aborted && F.session.view?.user?.id === owner;
+  const paused = () => {
+    try { return localStorage.getItem('ifl:device-paused:' + owner) === '1'; }
+    catch { return true; }
+  };
+  const newTab = () => crypto.randomUUID().replace(/-/g, '');
+  const panel = F.ui.el('section', {class:'continuation-card', hidden:true, 'aria-label':'Continue on this device'});
+  root.prepend(panel);
+  let tab = newTab(), sequence = 0, advertised = false, suspended = false;
+  let tabs = [], signature = '', readGeneration = 0, expiryTimer, routeTimer;
+  const headers = {'X-Inflite-Files-Owner':owner};
+
+  function publish(target, keepalive = false) {
+    if (!target && !advertised) return;
+    advertised = !!target;
+    const sentTab = tab, seq = ++sequence;
+    fetch(path, {
+      method:'PUT', credentials:'same-origin', mode:'same-origin', redirect:'error', cache:'no-store', keepalive,
+      signal:keepalive ? undefined : AbortSignal.any([F.signal, AbortSignal.timeout(12000)]),
+      headers:{...headers, 'X-Inflite':'1', 'Content-Type':'application/json'},
+      body:JSON.stringify({id,tab,seq,label,target}),
+    }).then(response => {
+      if (!live() || sentTab !== tab || seq !== sequence) return;
+      if (response.status === 400 && target) publish(null);
+      if (response.status === 410) {
+        localStorage.setItem('ifl:device-paused:' + owner, '1');
+      }
+    }).catch(() => {});
+  }
+  function renew() {
+    if (!live() || suspended || !navigator.onLine) return;
+    publish(paused() ? null : F.continuationTarget());
+  }
+  function paint() {
+    clearTimeout(expiryTimer);
+    if (!live()) return;
+    const now = Date.now();
+    const rows = tabs.filter(row => row.until > now && row.id !== id && (!row.app || F.session.apps?.[row.app])).slice(0,3);
+    if (rows.length) expiryTimer = setTimeout(paint, Math.min(...rows.map(row => row.until-now)));
+    const key = JSON.stringify(rows.map(row => [row.tab,row.target.path,row.updatedAt,row.label]));
+    if (key === signature) return;
+    signature = key;
+    panel.replaceChildren();
+    panel.hidden = !rows.length;
+    if (!rows.length) return;
+    const el = F.ui.el;
+    panel.append(el('h2', {text:'Continue from another device'}));
+    for (const row of rows) {
+      const name = REGISTRY[row.app]?.name || (row.target.files ? 'Files' : 'Today');
+      const open = async () => {
+        if (!await read() || !live() || suspended || !panel.isConnected) return;
+        const current = tabs.find(item => item.id === row.id && item.tab === row.tab && item.target.path === row.target.path && item.until > Date.now());
+        if (current && (!row.app || F.session.apps?.[row.app])) F.nav.go(current.target.path, {
+          state:current.target.files ? {files:{userId:owner,location:current.target.files}} : undefined,
+        });
+      };
+      panel.append(el('button', {type:'button', class:'continuation-row', on:{click:open}},
+        el('span', {}, el('strong', {text:name}), el('small', {text:row.label+' · '+new Date(row.updatedAt).toLocaleString()})),
+        el('span', {'aria-hidden':'true', text:'›'})));
+    }
+  }
+  async function read() {
+    if (!live() || suspended || !navigator.onLine) return false;
+    const generation = ++readGeneration, started = Date.now();
+    try {
+      const response = await fetch(path+'?id='+id, {headers, credentials:'same-origin', mode:'same-origin', redirect:'error', cache:'no-store', signal:AbortSignal.any([F.signal,AbortSignal.timeout(8000)])});
+      if (!response.ok) throw Error();
+      const result = await response.json();
+      if (!live() || generation !== readGeneration) return false;
+      tabs = (result.tabs || []).flatMap(row => {
+        const target = resumeTarget(row.target);
+        return target && Number.isFinite(row.remainingMs) ? [{...row,target,app:target.path.split('/')[1]?.split('#')[0],until:started+row.remainingMs}] : [];
+      });
+      paint();
+      return true;
+    } catch {
+      if (generation === readGeneration) { tabs = []; paint(); }
+      return false;
+    }
+  }
+  function refreshCard() {
+    const route = F.route;
+    const today = route?.tab === 'today' || (route?.tab === 'workspace' && !route.tool);
+    if (document.visibilityState === 'visible' && today) read();
+  }
+  function leave() {
+    suspended = true;
+    ++readGeneration;
+    clearTimeout(routeTimer);
+    publish(null, true);
+    tabs = []; paint();
+  }
+  const options = {signal:F.signal};
+  window.addEventListener('pagehide', leave, options);
+  window.addEventListener('pageshow', event => {
+    if (!event.persisted) return;
+    tab = newTab(); sequence = 0; suspended = false;
+    renew(); refreshCard();
+  }, options);
+  const refresh = () => { renew(); refreshCard(); };
+  window.addEventListener('online', refresh, options);
+  window.addEventListener('offline', () => { ++readGeneration; tabs = []; paint(); }, options);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); }, options);
+  window.addEventListener('inflite:devices-changed', event => { if (event.detail?.owner === owner) refresh(); }, options);
+  const off = F.on('route', () => {
+    clearTimeout(routeTimer);
+    routeTimer = setTimeout(refresh, 200);
+  });
+  const heartbeat = setInterval(renew, 45000), poll = setInterval(refreshCard, 10000);
+  F.signal.addEventListener('abort', () => {
+    leave(); off(); clearTimeout(expiryTimer); clearInterval(heartbeat); clearInterval(poll); panel.remove();
+  }, {once:true});
+  refresh();
 }
