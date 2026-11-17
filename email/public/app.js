@@ -2258,12 +2258,9 @@ const IFL = (() => {
     renderDetailChrome();
   }
 
-  // Your account: its page, remote images, and signing out
-  // You: your card (the way to your account), Notifications and Remote Images as switches, and Sign Out on its own
-  // You, your apps and Mail's own few, from your photo: InFlite's menu, the same in every app (its copy, below BUILD)
+  // Mail's account menu and device preferences.
   function profileMenu(anchor) {
     closeMenu(true);
-    // (Settings and Notifications a tap away: their sheets asked for while nothing else is going on)
     warmPart("sheets");
     const me = S.me || {};
     const name = (me.account || {}).name || me.displayName || "";
@@ -2328,8 +2325,7 @@ const IFL = (() => {
 
   let setState = null;
 
-  // (at: a page to open it at, over its first: "signature")
-function openPreferences() {
+  function openPreferences() {
     const url = IFL.hub.settings("mail");
     return url ? location.assign(url) : openSettings();
   }
