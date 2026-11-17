@@ -359,6 +359,8 @@ export async function createWorkspace(F, options = {}) {
       if (!live() || appsLaunch !== request) return;
       appsLaunch = null;
       body = view.launcher(() => menu?.now());
+      // Safari does not focus a button on tap. Give the sheet its actual return target.
+      opener?.focus?.({ preventScroll: true });
       menu = F.sheet.open({ sheet: 'workspace-apps', title: 'Your apps', body, onClose: () => {
         body?.destroyLauncher?.();
         if (appsMenu === menu) { appsMenu = null; view.launcherOpen(false); }

@@ -2,6 +2,15 @@ const {test,before,after}=require('node:test'),assert=require('node:assert/stric
 const filename=resolve(__dirname,'files-host-ui.test.cjs'),m=new Module(filename);m.filename=filename;m.paths=Module._nodeModulePaths(__dirname);const original=m.require.bind(m);let start,stop;m.require=id=>id==='node:test'?{test(){},before(fn){start=fn},after(fn){stop=fn}}:original(id);m._compile(readFileSync(filename,'utf8').replace("dockRoot:byId('in')","dockRoot:byId('in'),onSettings:()=>{},onNotifications:()=>{}")+'\nmodule.exports={open};',filename);before(()=>start());after(()=>stop());
 async function open(width,height=760){const t=await m.exports.open({width});await t.ctx.route(u=>u.origin===new URL(t.page.url()).origin&&u.pathname==='/api/status-banner',r=>r.fulfill({json:{banner:null}}));await t.ctx.route('blob:**',r=>new URL(r.request().url()).origin===new URL(t.page.url()).origin?r.continue():r.abort());await t.page.setViewportSize({width,height});const source=readFileSync(resolve(__dirname,'../today/public/app.js'),'utf8'),a=source.indexOf('// ==== InFlite\'s menu, shared:'),end='// ==== end of InFlite\'s menu ====',block=source.slice(a,source.indexOf(end,a)+end.length);await t.ctx.route('**/launcher-shared.js',r=>r.fulfill({contentType:'text/javascript',body:block+'\nwindow.IFL=IFL;'}));await t.page.addScriptTag({url:'/launcher-shared.js'});await t.page.evaluate(()=>{T.F.toast=()=>{};document.documentElement.dataset.theme='dark'});await t.page.getByRole('button',{name:'All apps',exact:true}).click();t.menu=t.page.getByRole('dialog',{name:'Your apps',exact:true});await t.menu.waitFor();return t;}
 for(const [width,height] of[[320,760],[390,760],[844,390],[1440,900]])test(`app launcher is compact, branded and keyboard accessible at ${width}x${height}`,async()=>{const t=await open(width,height);try{
+ await t.page.waitForFunction(()=>{
+   const style=getComputedStyle(document.querySelector('.ws-dock'));
+   return style.opacity==='0' && style.pointerEvents==='none';
+ });
+ const edges=await t.menu.evaluate(menu=>({
+   drawer:menu.getBoundingClientRect().bottom,
+   dock:document.querySelector('.ws-dock').getBoundingClientRect().bottom
+ }));
+ assert.ok(Math.abs(edges.drawer-edges.dock)<=1,JSON.stringify(edges));
  const grid=t.menu.getByRole('group',{name:'Apps',exact:true});assert.equal(await grid.locator('.wsl-app').count(),9);assert.equal(await grid.locator('img').count(),8);
  for(const name of ['Calendar','Notes','People'])assert.equal(await grid.getByRole('button',{name,exact:true}).count(),1);
  await t.page.waitForFunction(()=>[...document.querySelectorAll('.wsl-app img')].every(n=>n.complete&&n.naturalWidth>0));
@@ -13,7 +22,7 @@ for(const [width,height] of[[320,760],[390,760],[844,390],[1440,900]])test(`app 
  assert.equal(await t.menu.getByRole('button',{name:'Mail',exact:true}).isDisabled(),true);
  await t.menu.getByRole('button',{name:'Files',exact:true}).focus();assert.equal(await t.menu.getByRole('button',{name:'Files',exact:true}).evaluate(n=>n===document.activeElement),true);
  if(process.env.LAUNCHER_SCREENSHOTS&&process.env.WEB_UI_BROWSER!=='webkit'){mkdirSync(process.env.LAUNCHER_SCREENSHOTS,{recursive:true});await t.page.screenshot({path:resolve(process.env.LAUNCHER_SCREENSHOTS,`launcher-${width}.png`),caret:'initial'});}
- await t.page.keyboard.press('Escape');await t.menu.waitFor({state:'detached'});assert.equal(await t.page.getByRole('button',{name:'All apps',exact:true}).evaluate(n=>n===document.activeElement),true);await t.clean();
+ await t.page.keyboard.press('Escape');await t.menu.waitFor({state:'detached'});await t.page.waitForFunction(()=>getComputedStyle(document.querySelector('.ws-dock')).opacity==='1');assert.equal(await t.page.getByRole('button',{name:'All apps',exact:true}).evaluate(n=>n===document.activeElement),true);await t.clean();
 }finally{await t.ctx.close()}});
 test('launcher destinations use the existing singleton apps and stale controls lose their authority',async()=>{const t=await open(390);try{
  await t.menu.getByRole('button',{name:'Files',exact:true}).click();await t.page.getByRole('button',{name:'Select Private folder',exact:true}).waitFor();

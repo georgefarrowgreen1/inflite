@@ -197,7 +197,12 @@ export function createWorkspaceView(root, callbacks = {}) {
   const dockSelection=el("span",{class:"ws-dock-selection","aria-hidden":"true"});
   dock.append(dockSelection,...[dockToday, dockApps, launcher].filter(Boolean));
   let selectionMotion=null;
-  const launcherOpen=value=>{if(gone)return;launcher?.setAttribute("aria-expanded",String(value));selectDock()};
+  const launcherOpen = value => {
+    if (gone) return;
+    dock.toggleAttribute("data-launcher-open", value);
+    launcher?.setAttribute("aria-expanded", String(value));
+    selectDock();
+  };
   function selectDock(animate=true){
     const selected=launcher?.getAttribute("aria-expanded")==="true"?launcher:dock.querySelector("button[aria-current]")||launcher;if(!selected)return;
     const before=dockSelection.getBoundingClientRect(),outer=dock.getBoundingClientRect(),r=selected.getBoundingClientRect(),x=r.left-outer.left-dock.clientLeft;

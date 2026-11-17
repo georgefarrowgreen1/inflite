@@ -17,8 +17,21 @@ html.ifl-os::view-transition-group(inflite-dock) { overflow:clip; }
 .ifl-workspace .ws-dock-add>.ifl-glyph { width:36px;height:36px;display:grid;place-items:center; }
 .wsl-files-mark { display:grid;place-items:center;flex:none;width:40px;height:40px;border-radius:12px;color:#fff;background:linear-gradient(150deg,#79b7ff,#366bd7); }
 .wsl-files-mark .ifl-glyph,.wsl-files-mark svg { width:24px!important;height:24px!important; }
+/* Keep the dock geometry for app transitions while the modal owns its space. */
+.ifl-workspace .ws-dock[data-launcher-open] { opacity:0; pointer-events:none; }
 /* One window, one material and one inset rhythm. Other sheets retain their own chrome. */
-dialog.ifl-sheet[data-sheet=workspace-apps] { --sheet-inset:0px;--sheet-bottom-pad:0px;inset:auto 0 calc(104px + env(safe-area-inset-bottom,0px));width:min(374px,calc(100vw - 24px));height:auto;margin:0 auto;padding:0;border-radius:30px;max-height:calc(var(--vvh,100dvh) - 120px - env(safe-area-inset-top,0px)); }
+dialog.ifl-sheet[data-sheet=workspace-apps] {
+  --sheet-inset: 0px;
+  --sheet-bottom-pad: 0px;
+  --launcher-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  inset: auto 0 var(--launcher-bottom);
+  width: min(374px, calc(100vw - 24px));
+  height: auto;
+  max-height: calc(var(--vvh, 100dvh) - var(--launcher-bottom) - 12px - env(safe-area-inset-top, 0px));
+  margin: 0 auto;
+  padding: 0;
+  border-radius: 30px;
+}
 .ifl-sheet[data-sheet=workspace-apps] .ifs-grab { display:none; }
 .ifl-sheet[data-sheet=workspace-apps] .ifs-head { min-height:64px;gap:8px;padding:12px 20px 6px; }
 .ifl-sheet[data-sheet=workspace-apps] .ifs-head::before { content:none; }
@@ -61,7 +74,7 @@ html[data-vt=launch-return] .ifl-sheet[data-sheet=workspace-apps] { animation:no
 @media(hover:hover) { .ws-launcher button:not(:disabled):hover,.wsl-more summary:hover,.ifl-sheet[data-sheet=workspace-apps] .wsl-edit:hover { background:var(--ifl-raised); } }
 @media(prefers-reduced-motion:no-preference) { .ws-launcher button { transition:transform .3s cubic-bezier(.22,1,.36,1),background-color .15s; }.ws-launcher button:not(:disabled):active { transform:scale(.97);transition-duration:70ms; }.wsl-more summary>.ifl-glyph:last-child { transition:transform .2s ease; } }
 @media(min-width:1020px) { dialog.ifl-sheet[data-sheet=workspace-apps] { left:232px;max-width:calc(100vw - 264px); } }
-@media(max-height:600px) { dialog.ifl-sheet[data-sheet=workspace-apps] { bottom:12px;max-height:calc(var(--vvh,100dvh) - 24px); }.wsl-apps { min-height:0; } }
+@media(max-height:600px) { .wsl-apps { min-height:0; } }
 dialog.ifl-sheet[data-sheet=workspace-apps].ifs-kb { bottom:calc(var(--sheet-foot,0px) + 12px);max-height:calc(var(--vvh,100dvh) - 24px); }
 @media(prefers-reduced-motion:reduce) { .ifl-workspace .ws-dock-button,.ws-launcher button { transition:none!important; } }
 @media(forced-colors:active) { .ifl-workspace .ws-dock-selection { background:Highlight; }.ifl-workspace .ws-dock-button[aria-current] { color:HighlightText; }.wsl-files-mark { background:ButtonFace;color:ButtonText; }.wsl-utilities { background:Canvas;outline:1px solid CanvasText; }.wsl-search-field:focus-within { outline-color:Highlight; } }
