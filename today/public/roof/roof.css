@@ -139,9 +139,9 @@ dialog.ifl-sheet.dragging:not(.closing) { animation: none; transition: none; }
 @media (min-width: 700px) {
   dialog.ifl-sheet { --sheet-bottom-pad: 24px; inset: 0; margin: auto; width: min(560px, calc(100% - 48px)); height: fit-content; border-radius: var(--r-sheet); padding-bottom: var(--sheet-bottom-pad); animation-name: ifl-sheet-pop; }
   dialog.ifl-sheet.closing { animation-name: ifl-sheet-unpop; }
-  @keyframes ifl-sheet-pop { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
-  @keyframes ifl-sheet-unpop { to { opacity: 0; transform: translateY(6px) scale(0.98); } }
 }
+@keyframes ifl-sheet-pop { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
+@keyframes ifl-sheet-unpop { to { opacity: 0; transform: translateY(6px) scale(0.98); } }
 .ifs-grab { flex: none; width: 40px; height: 5px; margin: 8px auto 2px; border-radius: 3px; background: var(--line); background: color-mix(in srgb, var(--text) 22%, transparent); touch-action: none; }
 .ifl-sheet .ifs-head { position: sticky; top: 0; z-index: 2; display: flex; flex-shrink: 0; align-items: center; gap: 10px; min-height: 56px; padding: 6px 0; touch-action: none; }
 /* A quiet, opaque title strip keeps scrolling form text clear of the controls without another live blur. */

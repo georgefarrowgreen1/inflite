@@ -76,3 +76,52 @@ test('pointer-opened profile menu and sheets keep focus without a ring, and Tab 
   await page.keyboard.press('Escape');await t.clean();
  } finally {await t.ctx.close()}
 });
+
+test('drawer and dock crossfade on dismissal and respect reduced motion',async()=>{
+ const t=await open();
+ try {
+  const {page}=t, apps=page.getByRole('button',{name:'All apps',exact:true});
+  const drawer=page.locator('dialog[data-sheet=workspace-apps]'), dock=page.locator('.ws-dock');
+  await apps.click();
+  await settle(page);
+  assert.equal(await dock.evaluate(node=>getComputedStyle(node).opacity),'0');
+  const closing=await drawer.evaluate(sheet=>{
+   const dock=document.querySelector('.ws-dock');
+   sheet.querySelector('[data-close]').click();
+   const style=getComputedStyle(dock);
+   const fade=dock.getAnimations().find(animation=>animation.transitionProperty==='opacity');
+   return {sheet:sheet.open, interactive:style.pointerEvents, target:fade?.effect.getKeyframes().at(-1).opacity};
+  });
+  assert.deepEqual(closing,{sheet:true,interactive:'none',target:'1'});
+  await drawer.waitFor({state:'detached'});
+  await settle(page);
+  assert.equal(await dock.evaluate(node=>getComputedStyle(node).opacity),'1');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await apps.click();
+  assert.deepEqual(await dock.evaluate(node=>node.getAnimations().map(a=>a.transitionProperty || a.animationName || a.id)),[]);
+  await page.keyboard.press('Escape');
+  await drawer.waitFor({state:'detached'});
+  await t.clean();
+ } finally {await t.ctx.close()}
+});
+
+test('the dock highlight settles on the latest app after a quick switch',async()=>{
+ const t=await open();
+ try {
+  const {page}=t;
+  await page.evaluate(()=>{
+   T.F.nav.go('/weather/',{kind:'section'});
+   T.F.nav.go('/fitness/',{kind:'section'});
+  });
+  const active=page.locator('.ws-dock [data-launcher-app=fitness][aria-current]');
+  await active.waitFor();
+  await settle(page);
+  const error=await active.evaluate(button=>{
+   const slot=button.getBoundingClientRect();
+   const highlight=document.querySelector('.ws-dock-selection').getBoundingClientRect();
+   return Math.max(Math.abs(highlight.left-slot.left),Math.abs(highlight.width-slot.width));
+  });
+  assert.ok(error<=1,`Highlight missed the selected button by ${error}px`);
+  await t.clean();
+ } finally {await t.ctx.close()}
+});

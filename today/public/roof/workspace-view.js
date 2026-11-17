@@ -196,19 +196,23 @@ export function createWorkspaceView(root, callbacks = {}) {
   launcher?.append(el("span",{class:"ws-dock-label",text:"Apps"}));
   const dockSelection=el("span",{class:"ws-dock-selection","aria-hidden":"true"});
   dock.append(dockSelection,...[dockToday, dockApps, launcher].filter(Boolean));
-  let selectionMotion=null;
   const launcherOpen = value => {
     if (gone) return;
     dock.toggleAttribute("data-launcher-open", value);
     launcher?.setAttribute("aria-expanded", String(value));
-    selectDock();
   };
-  function selectDock(animate=true){
-    const selected=launcher?.getAttribute("aria-expanded")==="true"?launcher:dock.querySelector("button[aria-current]")||launcher;if(!selected)return;
-    const before=dockSelection.getBoundingClientRect(),outer=dock.getBoundingClientRect(),r=selected.getBoundingClientRect(),x=r.left-outer.left-dock.clientLeft;
-    const pose=x+":"+r.width;if(dockSelection.dataset.pose===pose)return;dockSelection.dataset.pose=pose;
-    selectionMotion?.cancel();dockSelection.style.width=r.width+"px";dockSelection.style.transform=`translateX(${x}px)`;
-    if(animate&&before.width&&before.height&&!reduced.matches&&dockSelection.animate){selectionMotion=dockSelection.animate([{transform:`translateX(${before.left-outer.left-dock.clientLeft}px) scaleX(${before.width/r.width})`},{transform:`translateX(${x}px) scaleX(1)`}],{duration:360,easing:"cubic-bezier(.22,1,.36,1)"});selectionMotion.finished.catch(()=>{})}
+  function selectDock(animate = true) {
+    const selected = dock.querySelector("button[aria-current]") || launcher;
+    if (!selected?.offsetWidth) return;
+    // Use the slot's layout position even while its button is pressed or reordering.
+    const width = selected.offsetWidth;
+    const x = selected.offsetLeft;
+    const pose = x + ":" + width;
+    if (animate && dockSelection.dataset.pose === pose) return;
+    dockSelection.toggleAttribute("data-glide", animate && !!dockSelection.dataset.pose && !dock.hasAttribute("data-launcher-open"));
+    dockSelection.style.width = width + "px";
+    dockSelection.style.transform = `translateX(${x}px)`;
+    dockSelection.dataset.pose = pose;
   }
   const dockHost = el("div", { class: "ifl-workspace ws-dock-host" }, dock);
   const fileToken = event => Array.from(event.dataTransfer?.types || []).includes("application/x-inflite-files-token");
@@ -712,14 +716,13 @@ export function createWorkspaceView(root, callbacks = {}) {
   function destroy() {
     if (gone) return;
     finishGesture(false); closeWindowMenu();
-    gone = true; stopOrder(dockApps); selectionMotion?.cancel();stopMotion(); cancelAnimationFrame(frame); for (const off of cleanups.splice(0)) off(); actions.clear();
+    gone = true; stopOrder(dockApps); stopMotion(); cancelAnimationFrame(frame); for (const off of cleanups.splice(0)) off(); actions.clear();
     dockHost.remove();
     root.replaceChildren(); root.classList.remove("ifl-workspace");
     for (const key of ["mode", "foregroundApp", "focusedApp", "paneCount", "layout", "windowCount"]) delete root.dataset[key];
   }
   if (callbacks.signal) { const abort = () => destroy(); callbacks.signal.addEventListener("abort", abort, { once: true }); cleanups.push(() => callbacks.signal.removeEventListener("abort", abort)); }
   listen(globalThis,"resize",()=>selectDock(false));
-  listen(reduced,"change",()=>{selectionMotion?.cancel();selectDock(false)});
   const slots = { today: todaySlot, files: filesSlot, ...Object.fromEntries(WINDOW_APPS.map(app => [app, panes.get(app).slot])), app: panes.get("app").slot, dockAnchor, sidebarAnchor };
   update();
   if (callbacks.signal?.aborted) destroy();

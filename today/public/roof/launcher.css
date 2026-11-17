@@ -19,6 +19,21 @@ html.ifl-os::view-transition-group(inflite-dock) { overflow:clip; }
 .wsl-files-mark .ifl-glyph,.wsl-files-mark svg { width:24px!important;height:24px!important; }
 /* Keep the dock geometry for app transitions while the modal owns its space. */
 .ifl-workspace .ws-dock[data-launcher-open] { opacity:0; pointer-events:none; }
+@media (prefers-reduced-motion: no-preference) {
+  .ifl-workspace .ws-dock { transition: opacity 180ms ease-out; }
+  .ifl-workspace .ws-dock[data-launcher-open] { transition-duration: 120ms; }
+  body:has(> dialog[data-sheet=workspace-apps].closing) .ws-dock[data-launcher-open] { opacity: 1; }
+  .ifl-workspace .ws-dock-selection[data-glide] {
+    transition: transform 280ms cubic-bezier(.22, 1, .36, 1);
+  }
+  dialog.ifl-sheet[data-sheet=workspace-apps] {
+    --dur-sheet-in: 260ms;
+    --dur-sheet-out: 170ms;
+    transform-origin: center bottom;
+  }
+  dialog.ifl-sheet[data-sheet=workspace-apps]:not(.ifs-touched):not(.closing) { animation-name: ifl-sheet-pop; }
+  dialog.ifl-sheet[data-sheet=workspace-apps].closing:not(.ifs-touched) { animation-name: ifl-sheet-unpop; }
+}
 /* One window, one material and one inset rhythm. Other sheets retain their own chrome. */
 dialog.ifl-sheet[data-sheet=workspace-apps] {
   --sheet-inset: 0px;
@@ -76,7 +91,9 @@ html[data-vt=launch-return] .ifl-sheet[data-sheet=workspace-apps] { animation:no
 @media(min-width:1020px) { dialog.ifl-sheet[data-sheet=workspace-apps] { left:232px;max-width:calc(100vw - 264px); } }
 @media(max-height:600px) { .wsl-apps { min-height:0; } }
 dialog.ifl-sheet[data-sheet=workspace-apps].ifs-kb { bottom:calc(var(--sheet-foot,0px) + 12px);max-height:calc(var(--vvh,100dvh) - 24px); }
-@media(prefers-reduced-motion:reduce) { .ifl-workspace .ws-dock-button,.ws-launcher button { transition:none!important; } }
+@media (prefers-reduced-motion: reduce) {
+  .ifl-workspace :is(.ws-dock, .ws-dock-selection, .ws-dock-button), .ws-launcher button { transition: none !important; }
+}
 @media(forced-colors:active) { .ifl-workspace .ws-dock-selection { background:Highlight; }.ifl-workspace .ws-dock-button[aria-current] { color:HighlightText; }.wsl-files-mark { background:ButtonFace;color:ButtonText; }.wsl-utilities { background:Canvas;outline:1px solid CanvasText; }.wsl-search-field:focus-within { outline-color:Highlight; } }
 
 /* InFlite 4.20: a continuous icon-to-window surface; shared chrome stays anchored. */
