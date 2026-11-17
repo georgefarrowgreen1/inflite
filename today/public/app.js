@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.38";
+const BUILD = "4.39";
 // (what's new in it, said once it's in)
-const NEWS = "Account now opens inside Settings. Handoff follows open tabs across your devices.";
+const NEWS = "Account stays aligned as you swipe through your apps. A compact header gives your profile more room in Settings.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.31/store.js","/os.webmanifest"];
@@ -1890,7 +1890,7 @@ let bell = null, bellReady = Promise.resolve(), notificationCount = 0;
 const SCREENS = {
   today: { el: $("#today"), title: () => "Today", crumb: () => "", line: lineOf, acts: [BELL, EDIT], onShow() { drawLine(true); if (cardsStale) { cardsStale = false; refresh(); } }, onHide() {} },
   apps: { el: $("#apps"), title: () => "Apps", crumb: () => "", line: () => "Open an app or jump straight in", acts: [], onShow() { drawAppsNow(); }, onHide() {} },
-  you: { el: $("#you"), title: () => "Settings", crumb: () => "", line: () => (S.view?.user?.handle ? `@${S.view.user.handle}` : ""), acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() { you?.releaseAccount?.(); } },
+  you: { el: $("#you"), title: () => "Settings", crumb: () => "", line: () => "", acts: [], onShow(route) { drawYouNow(route?.arg ?? null); }, onHide() { you?.releaseAccount?.(); } },
 };
 // (a service's state, as it changes (the frame's opts.serviceState): Chats locked by its app lock, every word of Chat's
 // gone from Today at once, and none kept to draw again (S3-D14))

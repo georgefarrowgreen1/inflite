@@ -286,11 +286,17 @@ function paint(root, ctx) {
     `<a class="row go settings-category" href="/#settings=${key}" data-category="${key}" ${currentCategory === key ? 'aria-current="page"' : ""}>${ic(icon,"grey")}${tx(title,sub)}<span class="chev">${G.chev}</span></a>`).join("");
   const details = groups.map(([key,title,, ,html]) =>
     `<section class="settings-detail" data-group="${key}" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${html}</section>`).join("");
+  const detailNav = account ? `<header class="settings-account-bar">
+    <a class="settings-back" href="/#settings" aria-label="Back to all settings">${sv('<path d="m15 5-7 7 7 7"/>')}</a>
+    <h1>Account &amp; security</h1>
+    <button type="button" aria-label="Search">${sv('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>')}</button>
+  </header>` : `<a class="settings-back" href="/#settings"><span aria-hidden="true">‹</span> All settings</a>`;
   root.innerHTML = `<div class="settings-sidebar">
     ${sections.youAccount}<label class="settings-search">${sv('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>')}<input type="search" aria-label="Search settings" placeholder="Search settings" autocomplete="off"></label>
     <nav class="group glass icons" aria-label="Settings categories">${nav}</nav></div>
-    <div class="settings-content"><a class="settings-back" href="/#settings"><span aria-hidden="true">‹</span> All settings</a>${details}<p class="settings-empty" role="status" hidden>No matching settings</p></div>`;
+    <div class="settings-content">${detailNav}${details}<p class="settings-empty" role="status" hidden>No matching settings</p></div>`;
   if (account) {
+    root.querySelector(".settings-account-bar button").addEventListener("click", () => ctx.frame.search.open());
     const detail = root.querySelector('[data-group="account"]');
     const frame = document.createElement("iframe");
     frame.className = "settings-account-frame";
