@@ -1,4 +1,4 @@
-import { initialFavourites, normaliseFavourites } from "./launcher-model.js";
+import { initialFavourites, normaliseFavourites, toggleFavourite, launcherStatus } from "./launcher-model.js";
 import { captureLauncherOrigin, launcherTransition } from "./launcher-motion.js";
 // Unified InFlite shell: singleton apps, Files and account-scoped actions.
 // Saved workspaces are retired; existing records are never read or changed.
@@ -35,7 +35,7 @@ export async function createWorkspace(F, options = {}) {
   const background = F.ui.el("div", { hidden: true, inert: true, "aria-hidden": "true" });
   options.dockRoot?.append(background);
   const organiseStores=new Map();
-  const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.10/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
+  const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.30/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
   let securityLoad=null;
   const security=()=>securityLoad||=(import('./security-module.js').then(m=>live()?m.createSecurityModule(F,{remembered:()=>system().then(s=>s?.devices()),calendars:()=>lifeTools().then(s=>s?.calendars())}):null).catch(e=>{securityLoad=null;throw e}));
   let lifeInstance=null,lifeLoad=null;
@@ -109,6 +109,7 @@ export async function createWorkspace(F, options = {}) {
   const view = createWorkspaceView(root, {
     onToday: opener => {const origin=captureLauncherOrigin(opener);F.nav.go("/",{resume:true,...(origin?{kind:'launch-return',launch:origin}:{})})}, onApp: (app,launch) => openApp(app,null,false,false,{launch}),
     onFavourites:items=>{if(!live())return;const next=normaliseFavourites(items);if(!next)return;favourites=next;guarded(()=>localStorage.setItem(favouriteKey,JSON.stringify(next)));paint()},
+    onAppMenu:openAppMenu,
     onRecent: app => { if (live() && appOn(app)) openApp(app); },
     onAppDrop: (app, token) => { if (live() && ["mail", "fitness"].includes(app) && /^[a-f0-9]{32}$/.test(token)) return runIntent(app, app === "mail" ? "compose-attach" : "import-drive", "drop:" + token); },
     onSecurity:()=>security().then(s=>live()&&s?.open({app:F.route?.app||null})),onCapture:()=>lifeTools().then(v=>live()&&v?.capture()),onSearch: () => F.search.open(), onApps: opener => openApps(opener),
@@ -153,12 +154,36 @@ export async function createWorkspace(F, options = {}) {
       const user = F.session.view?.user || {};
       systemInstance?.update();
       view.update({ favourites,mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : "today", activeApp: F.route?.app, workspaces: [],
-        apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id) })), user: { name: user.name || "", photo: user.photoAt && /^[\w-]{8,64}$/.test(owner) ? `/api/avatar?id=${encodeURIComponent(owner)}&v=${encodeURIComponent(String(user.photoAt))}` : null }, notifications: options.notifications?.() || 0,
+        apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id),indicator:appOn(a.id)?launcherStatus(snapshots.get(a.id)):null })), fileIndicator:fileIndicator(), user: { name: user.name || "", photo: user.photoAt && /^[\w-]{8,64}$/.test(owner) ? `/api/avatar?id=${encodeURIComponent(owner)}&v=${encodeURIComponent(String(user.photoAt))}` : null }, notifications: options.notifications?.() || 0,
         unifiedHome: true, connectionManaged: true, online: recovery.snapshot().online, activityCount: activityView.count(),
         greeting: `${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}${F.session.view?.user?.name ? ", " + String(F.session.view.user.name).trim().split(/\s+/)[0] : ""}`,
         recentApps: [...recentApps.keys()].reverse().filter(appOn).map(app => ({ app })), recentActivity: activity.snapshot().slice(0, 3),
         subtitle: guarded(() => new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(new Date()), ""), title: "Today" });
     });
+  }
+  function fileIndicator(){
+    const rows=files?.transfers?.()||[],active=rows.filter(r=>['queued','reserving','uploading'].includes(r.status));
+    if(rows.some(r=>r.status==='failed'))return {label:'Upload needs attention',text:'!',kind:'error'};
+    if(!active.length)return null;
+    const known=active.every(r=>Number.isFinite(r.progress)),percent=known?Math.floor(active.reduce((n,r)=>n+Math.max(0,Math.min(1,r.progress)),0)/active.length*100):null;
+    return {label:active.length+' upload'+(active.length===1?'':'s')+(percent===null?' waiting':' · '+percent+'%'),text:percent===null?'':percent+'%',kind:'upload'};
+  }
+  function openAppMenu(app,opener){
+    if(!live()||!['files',...WORKSPACE_APPS.map(a=>a.id)].includes(app)||app!=='files'&&!appOn(app))return;
+    const expected=F.route,valid=()=>live()&&F.route===expected&&(app==='files'||appOn(app));
+    const ui=F.ui,name=app==='files'?'Files':REGISTRY[app].name,body=ui.el('div',{class:'wsl-context'});
+    let menu;const close=()=>{if(menu===appsMenu)F.sheet.closeAll();else menu?.now()};
+    const item=(label,glyph,run)=>body.append(ui.btn(label,{icon:glyph,run:()=>{if(!valid())return;return run()}}));
+    const indicator=app==='files'?fileIndicator():launcherStatus(snapshots.get(app));
+    if(indicator)body.append(ui.el('p',{class:'wsl-edit-status',text:indicator.label}));
+    item('Open '+name,'open',()=>{const launch=captureLauncherOrigin(opener);close();return app==='files'?openFiles(null,null,launch):openApp(app,null,false,false,{launch})});
+    const defaults={calendar:['new','New event'],notes:['new','New note'],people:['new','Add person'],mail:['compose','New message'],chats:['new-chat','New chat']},shortcut=defaults[app];
+    if(shortcut)item(shortcut[1],'plus',async()=>{const launch=captureLauncherOrigin(opener);close();const route=await openApp(app,format({app}),false,false,{launch});if(route&&live()&&F.route===route)return runIntent(app,shortcut[0],null,{current:()=>live()&&F.route===route})});
+    const pinned=favourites.includes(app),full=!pinned&&favourites.length===4;
+    if(!full)item(pinned?'Remove from favourites':'Add to favourites',pinned?'minus':'plus',()=>{const next=toggleFavourite(favourites,app);if(!next.full){favourites=next.items;guarded(()=>localStorage.setItem(favouriteKey,JSON.stringify(favourites)));paint();if(menu===appsMenu)menu.pop();else close()}});
+    if(app==='files'&&indicator)item('View activity','clock',()=>{close();activityView.open()});
+    if(appsMenu&&!appsMenu.closed){menu=appsMenu;menu.push({page:'app-actions',title:name,body})}
+    else menu=F.sheet.open({sheet:'launcher-actions',title:name,body});
   }
   async function searchApp(app,query,lease={}){
     const valid=()=>live()&&appOn(app)&&!lease.signal?.aborted&&guarded(()=>!lease.current||lease.current(),false);
@@ -334,6 +359,7 @@ export async function createWorkspace(F, options = {}) {
       appsLaunch = null;
       body = view.launcher(() => menu?.now());
       menu = F.sheet.open({ sheet: 'workspace-apps', title: 'Your apps', body, onClose: () => {
+        body?.destroyLauncher?.();
         if (appsMenu === menu) { appsMenu = null; view.launcherOpen(false); }
       } });
       appsMenu = menu;
@@ -423,7 +449,7 @@ export async function createWorkspace(F, options = {}) {
     };
     return Object.freeze(api);
   }, destroy() { dialogInstance?.destroy(); } };
-  offs.push(activity.subscribe(paint));
+  offs.push(activity.subscribe(paint),files.subscribe(paint));
   offs.push(F.search.provide({id:'reminders350',group:'Reminders',order:12,scope:'account',search:(q,lease)=>q.trim().length<2?[]:system().then(s=>live()&&s?s.search(q,lease):[])}));
   offs.push(F.search.provide({id:'document-contents',group:'Document contents',order:90,search:q=>q.trim().length<2?[]:[{title:'Search inside documents',sub:'Text, Markdown, CSV and JSON · open content search',run:()=>lifeTools().then(v=>live()&&v?.searchDocuments(q))}]}));
   let discoveryLoad;offs.push(F.search.provide({id:'discovery350',group:'Across InFlite',order:22,scope:'account',search:async(q,lease)=>{if(q.trim().length<2||!live())return [];discoveryLoad||=import('./discovery350.js');const m=await discoveryLoad;return live()?m.discover(F,{query:q,lease,files,searchApp,openApp,runIntent}):[]}}));

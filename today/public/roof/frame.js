@@ -330,7 +330,7 @@ export function createFrame(opts = {}) {
     back() {
       if (gone) return;
       const top = F.sheet.top();
-      if (top) return top.close();
+      if (top) return top.back();
       if (shownMod()?.instance?.back?.()) return;
       if (curDepth() > 0) return H.back();
       const t = F.route?.kind === "app" && REGISTRY[F.route.app].tab;

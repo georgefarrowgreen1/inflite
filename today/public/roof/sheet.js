@@ -60,7 +60,7 @@ export function createSheets(F, { beforeOpen } = {}) {
     const stack = [];
     let shut = false, closeTimer = 0, drag = null, pageTimer = 0, sizeMotion = null;
     const ac = new AbortController(), sig = { signal: ac.signal };
-    const h = { el: d, body, close: () => close(true), now: () => close(false), push, pop, setBusy, closed: false };
+    const h = { el: d, body, close: () => close(true), back: () => stack.length ? pop() : close(true), now: () => close(false), push, pop, setBusy, closed: false };
     function done() {
       if (h.closed) return;
       shut = true;
@@ -101,7 +101,7 @@ export function createSheets(F, { beforeOpen } = {}) {
       d.classList.add("closing");
       closeTimer = setTimeout(done, 400);
     }
-    const cancel = (e) => { e.preventDefault(); close(true); };
+    const cancel = (e) => { e.preventDefault(); h.back(); };
     const closed = () => { if (!h.closed) done(); };
     const click = (e) => {
       if (e.target.closest?.("[data-close]")) return close(true);

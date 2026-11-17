@@ -48,7 +48,7 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
   function snapshot() {
     if (!live()) return { status: "signin", actions: [], files: [] };
     const s = store.get(), status = blocked(s), canUse = s.access === "ok";
-    return {drafts:canUse?(s.counts?.drafts||0):0, status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(), availability: { local: canUse && !!s.list.rows.length, pending: (s.outbox || []).length, saving: s.sending > 0, draft: s.compose, error: (s.outbox || []).some(item => item.state === "failed"), updatedAt: s.updatedAt },
+    return {unread:canUse&&s.counts?Math.max(0,s.counts.people||0)+Math.max(0,s.counts.updates||0):null,drafts:canUse?(s.counts?.drafts||0):0, status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(), availability: { local: canUse && !!s.list.rows.length, pending: (s.outbox || []).length, saving: s.sending > 0, draft: !!s.compose, error: (s.outbox || []).some(item => item.state === "failed"), updatedAt: s.updatedAt },
       actions: [
         { id: "compose", label: "Compose a message", keywords: ["write", "email", "new mail"], enabled: canUse },
         ...(sdk.files?.open ? [{ id: "compose-attach", label: "Attach a Drive file to a new message", keywords: ["attach", "file", "drive", "email"], enabled: canUse }] : []),

@@ -1,6 +1,6 @@
 import {mountApp} from '/organise/app.js';
 export const CONTRACT=1;
-export const BUILD='4.10';
-export const NEWS='Quick Capture, linked actions and connected calendars';
+export const BUILD='4.30';
+export const NEWS='Refined libraries, calmer editors and retained navigation';
 export const SECTIONS=[["contacts", "Contacts"]];
 export const mount=(root,F)=>mountApp(root,F,'people');

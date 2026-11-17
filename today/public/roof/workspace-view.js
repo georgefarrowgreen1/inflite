@@ -13,7 +13,8 @@
 // resource: { name, app, intent, objectId, secondary?:{label,icon?,app,intent,objectId}, share? }.
 // setPane("fitness"|"weather"|"markets"|"chats"|"mail"|"app", {title,line,pick?,actions,sections,section,busy,error}).
 import { el, icon, avatar } from "./ui.js";
-import { LAUNCHER_APPS, initialFavourites, normaliseFavourites, toggleFavourite } from "./launcher-model.js";
+import { LAUNCHER_APPS, initialFavourites, normaliseFavourites, toggleFavourite, moveFavourite } from "./launcher-model.js";
+import { launcherInput, animateOrder, stopOrder } from "./launcher-input.js";
 import { captureLauncherOrigin } from "./launcher-motion.js";
 import { WINDOW_APPS, normalizeLayout, normalizeWindow, pixelBounds, relativeBounds, snapWindow } from "./workspace-windows.js";
 
@@ -24,9 +25,15 @@ const asText = value => value == null ? "" : String(value);
 const words = (node, value) => { const text = asText(value); if (node.textContent !== text) node.textContent = text; };
 const callable = value => typeof value === "function";
 const appSymbol = app => icon(null, { app: APP_ICONS[app] || app, size: 32 });
+function badge(button,state){
+  button.querySelector('.wsl-badge')?.remove();button.removeAttribute('aria-description');
+  if(!state)return;button.setAttribute('aria-description',state.label);
+  (button.querySelector('.ws-dock-symbol')||button).append(el('span',{class:'wsl-badge','aria-hidden':'true',data:{status:state.kind},text:state.text}));
+}
 
 export function createWorkspaceView(root, callbacks = {}) {
   const uid = `ifl-workspace-${++serial}`, actions = new Map(), cleanups = [], panes = new Map();
+  let launcherRefresh=null;
   let gone = false, model = {}, focusedApp = "", avatarKey = "", gesture = null, frame = 0, menuEpoch = 0, motion = null;
   const windowsEnabled = callable(callbacks.onWindowChange);
   const listen = (node, type, fn, options) => { node.addEventListener(type, fn, options); cleanups.push(() => node.removeEventListener(type, fn, options)); };
@@ -583,18 +590,21 @@ export function createWorkspaceView(root, callbacks = {}) {
     if (cardFacts.dataset.values !== factKey) { cardFacts.dataset.values = factKey; cardFacts.replaceChildren(...facts.map(f => el("div", {}, el("dt", { text: f.label }), el("dd", { text: f.value })))); }
     cardFacts.hidden = !facts.length;
     setCurrent(dockToday, mode === "today");
-    const candidates=[...(callable(callbacks.onFiles)?[{id:"files",name:"Files",available:true}]:[]),...(Array.isArray(model.apps)?model.apps:[])];
+    const candidates=[...(callable(callbacks.onFiles)?[{id:"files",name:"Files",available:true,indicator:model.fileIndicator}]:[]),...(Array.isArray(model.apps)?model.apps:[])];
     const ids=initialFavourites(model.favourites,id=>candidates.some(a=>a.id===id&&a.available!==false));
     const pinned=ids.map(id=>candidates.find(a=>a.id===id)).filter(Boolean);
     if(files)files.hidden=ids.includes("files");
-    reconcile(dockApps, dockRecords, pinned, a => a.id, a => {
+    const orderKey=pinned.map(a=>a.id).join(','),moved=!!dockApps.dataset.order&&dockApps.dataset.order!==orderKey;
+    const place=()=>reconcile(dockApps, dockRecords, pinned, a => a.id, a => {
       const b = button(a.name || APP_NAMES[a.id] || a.id, null, action(`app:${a.id}`, opener => { if (model.mode === "workspace" && layoutOf().windows[a.id]?.minimized) restoreWindow(a.id); else if(a.id==="files")invoke("onFiles",captureLauncherOrigin(opener));else invoke("onApp", a.id, captureLauncherOrigin(opener)); }), "ws-dock-button");
+      b.dataset.launcherApp=a.id;
       b.append(el("span", { class: "ws-dock-symbol" }, a.id==="files"?el("span",{class:"wsl-files-mark","aria-hidden":"true"},icon("file")):appSymbol(a.icon || a.id)), el("span", { class: "ws-dock-label" })); if (callable(callbacks.onAppDrop) && ["mail", "fitness"].includes(a.id)) b.dataset.appDrop = a.id; return b;
-    }, (b, a) => { const name = a.name || APP_NAMES[a.id] || a.id, inWorkspace = mode === "workspace" && paneApps().includes(a.id), minimized = inWorkspace && layoutOf().windows[a.id].minimized; b.disabled=a.available===false;words(b.lastElementChild, name); b.setAttribute("aria-label", minimized ? `Restore ${name}` : name); b.title = minimized ? `Restore ${name}` : name; b.toggleAttribute("data-running", inWorkspace); b.toggleAttribute("data-minimized", minimized); setCurrent(b, mode === "files" && a.id === "files" || mode === "app" && a.id === model.activeApp || inWorkspace && !minimized && a.id === model.foregroundApp); });
+    }, (b, a) => { const name = a.name || APP_NAMES[a.id] || a.id, inWorkspace = mode === "workspace" && paneApps().includes(a.id), minimized = inWorkspace && layoutOf().windows[a.id].minimized; b.disabled=a.available===false;badge(b,a.available===false?null:a.indicator);words(b.lastElementChild, name); b.setAttribute("aria-label", minimized ? `Restore ${name}` : name); b.title = minimized ? `Restore ${name}` : name; b.toggleAttribute("data-running", inWorkspace); b.toggleAttribute("data-minimized", minimized); setCurrent(b, mode === "files" && a.id === "files" || mode === "app" && a.id === model.activeApp || inWorkspace && !minimized && a.id === model.foregroundApp); });
+    if(moved)animateOrder(dockApps,place);else place();dockApps.dataset.order=orderKey;
     for(const old of dockApps.querySelectorAll('.ws-dock-add'))old.remove();
     for(let i=pinned.length;i<4;i++){const add=button("Choose a favourite","plus","apps","ws-dock-button ws-dock-add");add.append(el("span",{class:"ws-dock-label",text:"Add"}));dockApps.append(add)}
     setCurrent(launcher,mode!=="today"&&!pinned.some(a=>mode==="files"?a.id==="files":a.id===model.activeApp));
-    selectDock();
+    selectDock();launcherRefresh?.();
     const user = model.user || {}, userKey = JSON.stringify([user.name || "", user.photo || ""]);
     if (account && userKey !== avatarKey) { avatarKey = userKey; account.replaceChildren(user.name || user.photo ? avatar(user.name || "", { photo: user.photo }) : icon("person")); const photo = account.querySelector("img"); photo?.addEventListener("error", () => photo.remove(), { once: true }); account.setAttribute("aria-label", user.name ? `Account for ${user.name}` : "Your account"); }
     const count = Math.max(0, Math.floor(Number(model.notifications) || 0)); notificationCount.hidden = !count; words(notificationCount, count > 99 ? "99+" : count);
@@ -620,6 +630,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   };
   listen(root, "click", event => { if (!dockHost.contains(event.target)) activate(event); });
   listen(dockHost, "click", activate);
+  cleanups.push(launcherInput(dockHost,{current:()=>!gone,menu:(app,node)=>invoke('onAppMenu',app,node)}));
   listen(root, "focusin", event => { const pane = event.target.closest?.(".ifl-workspace-pane"); if (pane) markFocus(pane.dataset.pane); });
   listen(root, "pointerdown", event => { const pane = event.target.closest?.(".ifl-workspace-pane"); if (pane) markFocus(pane.dataset.pane); }, { passive: true });
   const navigateKeys = event => {
@@ -638,6 +649,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   listen(dockHost, "keydown", navigateKeys);
 
   function appLauncher(close) {
+    const favs=el('div',{class:'wsl-favourites',role:'group','aria-label':'Favourite order',hidden:true});
     const body=el('div',{class:'ws-launcher'}),grid=el('div',{class:'wsl-apps',role:'group','aria-label':'Apps'}),status=el('p',{class:'wsl-edit-status',role:'status'});
     let editing=false,query='';
     const edit=el('button',{type:'button',class:'wsl-edit','aria-label':'Edit favourites',text:'Edit'});
@@ -647,10 +659,17 @@ export function createWorkspaceView(root, callbacks = {}) {
     const liveBody=()=>!gone&&body.isConnected;
     const favourites=()=>normaliseFavourites(model.favourites)||[];
     const appItems=()=>[{id:'files',name:'Files',available:callable(callbacks.onFiles)},...(model.apps||[])].sort((a,b)=>LAUNCHER_APPS.indexOf(a.id)-LAUNCHER_APPS.indexOf(b.id));
+    const state=id=>id==='files'?model.fileIndicator:(model.apps||[]).find(a=>a.id===id)?.indicator;
+    const refresh=()=>{for(const b of grid.querySelectorAll('[data-launcher-app]'))badge(b,editing?null:state(b.dataset.launcherApp))};
+    launcherRefresh=refresh;
     const mark=id=>id==='files'?el('span',{class:'wsl-files-mark','aria-hidden':'true'},icon('file')):icon(null,{app:APP_ICONS[id]||id,size:40});
     const launchButton=(label,glyph,callback,cls,args=[])=>el('button',{type:'button',class:cls,'aria-label':label,on:{click(){if(!liveBody())return;close?.();invoke(callback,...args)}}},glyph,el('span',{text:label}));
     function paintGrid() {
-      grid.replaceChildren();
+      grid.replaceChildren();favs.replaceChildren();favs.hidden=!editing;
+      if(editing)for(const [index,id]of favourites().entries()){
+        const name=id==='files'?'Files':APP_NAMES[id];
+        favs.append(el('button',{type:'button',class:'wsl-favourite',data:{launcherFavourite:id},'aria-label':`Move ${name}, position ${index+1} of ${favourites().length}`},mark(id),el('span',{text:name})));
+      }
       const list=appItems().filter(a=>a?.id&&LAUNCHER_APPS.includes(a.id)&&a.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
       for(const a of list){
         const allowed=()=>appItems().some(item=>item.id===a.id&&item.available!==false),pinned=favourites().includes(a.id);
@@ -664,8 +683,8 @@ export function createWorkspaceView(root, callbacks = {}) {
         grid.append(b);
       }
       if(!list.length)grid.append(el('p',{class:'wsl-empty',text:'No apps found'}));
-      status.hidden=!editing;status.textContent=editing?`${favourites().length} of 4 favourites`:'';
-      edit.textContent=editing?'Done':'Edit';edit.setAttribute('aria-label',editing?'Done editing favourites':'Edit favourites');
+      status.hidden=!editing;status.textContent=editing?`${favourites().length} of 4 favourites · Drag to reorder, or use arrow keys.`:'';
+      refresh();edit.textContent=editing?'Done':'Edit';edit.setAttribute('aria-label',editing?'Done editing favourites':'Edit favourites');
     }
     edit.addEventListener('click',()=>{if(!liveBody())return;editing=!editing;paintGrid()});
     input.addEventListener('input',()=>{query=input.value;paintGrid()});
@@ -674,14 +693,18 @@ export function createWorkspaceView(root, callbacks = {}) {
     security?.append(icon('chev'));
     const more=el('details',{class:'wsl-more'},el('summary',{},icon('more'),el('span',{text:'More'}),icon('down'))),controls=el('div',{class:'wsl-controls'});
     for(const[label,glyph,callback]of[['Today','sun','onToday'],['Quick Capture','plus','onCapture'],['Search InFlite','search','onSearch'],['Activity','clock','onActivity'],['App status','info','onRecovery'],['Notifications','bell','onNotifications'],['Settings','settings','onSettings']])if(callable(callbacks[callback]))controls.append(launchButton(label,icon(glyph),callback,'wsl-control'));
-    more.append(controls);const utilities=el('div',{class:'wsl-utilities'},security);if(controls.childElementCount)utilities.append(more);body.append(tools,grid,status,utilities);
+    more.append(controls);const utilities=el('div',{class:'wsl-utilities'},security);if(controls.childElementCount)utilities.append(more);body.append(tools,favs,status,grid,utilities);
+    const dispose=launcherInput(body,{current:liveBody,menu:(app,node)=>{if(!editing)invoke('onAppMenu',app,node)},reorder:(id,target)=>{
+      if(!liveBody()||!editing)return;const next=moveFavourite(favourites(),id,target);invoke('onFavourites',next);model.favourites=next;animateOrder(favs,paintGrid);favs.querySelector('[data-launcher-favourite="'+id+'"]')?.focus({preventScroll:true});
+    }});
+    body.destroyLauncher=()=>{stopOrder(favs);dispose();if(launcherRefresh===refresh)launcherRefresh=null};
     paintGrid();return body;
   }
 
   function destroy() {
     if (gone) return;
     finishGesture(false); closeWindowMenu();
-    gone = true; selectionMotion?.cancel();stopMotion(); cancelAnimationFrame(frame); for (const off of cleanups.splice(0)) off(); actions.clear();
+    gone = true; stopOrder(dockApps); selectionMotion?.cancel();stopMotion(); cancelAnimationFrame(frame); for (const off of cleanups.splice(0)) off(); actions.clear();
     dockHost.remove();
     root.replaceChildren(); root.classList.remove("ifl-workspace");
     for (const key of ["mode", "foregroundApp", "focusedApp", "paneCount", "layout", "windowCount"]) delete root.dataset[key];
