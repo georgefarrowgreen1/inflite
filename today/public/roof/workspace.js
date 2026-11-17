@@ -68,8 +68,11 @@ export async function createWorkspace(F, options = {}) {
   const appOn = (app) => !!F.session.apps?.[app] && (app !== "mail" || F.session.view?.apps?.mail === true);
   const favouriteKey='ifl:launcher:v1:'+owner;
   let favourites=initialFavourites(guarded(()=>JSON.parse(localStorage.getItem(favouriteKey))),id=>id==='files'||appOn(id));
-  const launchOrigins=new Map();let appsMenu=null,appsLaunch=null;
-  const launchOptions=(id,source)=>{const origin=source?.nodeType?captureLauncherOrigin(source):source;if(!origin)return {};launchOrigins.set(id,origin);return {kind:'launch',launch:origin}};
+  let appsMenu = null;
+  function launchOptions(source) {
+    const origin = source?.nodeType ? captureLauncherOrigin(source) : source;
+    return origin ? { kind: "launch", launch: origin } : {};
+  }
   const handoffs = createHandoffs(F, { available: appOn, deliver: async (app, token, lease) => {
     const opened = await openApp(app, format({ app }), false, true, lease);
     return opened && lease.current() ? runIntent(app, "handoff", token, lease) : { ok: false, cancelled: true };
@@ -250,7 +253,7 @@ export async function createWorkspace(F, options = {}) {
   async function openApp(app, destination = null, expand = false, wake = false, lease = {}) {
     const manifest = getWorkspaceApp(app); if (!live() || !manifest || !appOn(app)) return null;
     const path = destination || recentApps.get(app) || manifest.href;
-    F.nav.go(path, { ...launchOptions(app,lease.launch),...(wake ? { kind: "section" } : {}), resume: !destination && !wake });
+    F.nav.go(path, { ...launchOptions(lease.launch),...(wake ? { kind: "section" } : {}), resume: !destination && !wake });
     const expected = F.route, handle = handles.get(app);
     if (expected?.kind !== "app" || expected.app !== app) return null;
     try { if (handle) {
@@ -300,7 +303,7 @@ export async function createWorkspace(F, options = {}) {
     const prefill = typeof query === "string" ? { query: query.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 160), location: JSON.stringify(next), route: null } : null;
     pendingFilesQuery = prefill;
     const replace = F.route?.tool === "files" && JSON.stringify(filesLocation) === JSON.stringify(next);
-    F.nav.go(path, { kind: "section",...launchOptions("files",launch), replace, resume, state: { files: { userId: owner, location: next } } });
+    F.nav.go(path, { kind: "section",...launchOptions(launch), replace, resume, state: { files: { userId: owner, location: next } } });
     if (prefill && pendingFilesQuery === prefill) prefill.route = F.route;
     return true;
   }
@@ -352,35 +355,22 @@ export async function createWorkspace(F, options = {}) {
     }
   }
   function openApps(opener) {
-    if (!live() || (appsMenu && !appsMenu.closed) || (appsLaunch && appsLaunch.route === F.route)) return;
-    const request = { route: F.route }; appsLaunch = request;
-    let menu, body;
-    const open = () => {
-      if (!live() || appsLaunch !== request) return;
-      appsLaunch = null;
-      body = view.launcher(() => menu?.now());
-      // Safari does not focus a button on tap. Give the sheet its actual return target.
-      opener?.focus?.({ preventScroll: true });
-      menu = F.sheet.open({ sheet: 'workspace-apps', title: 'Your apps', body, onClose: () => {
-        body?.destroyLauncher?.();
-        if (appsMenu === menu) { appsMenu = null; view.launcherOpen(false); }
-      } });
-      appsMenu = menu;
-      const edit = body.querySelector('.wsl-edit'), head = menu.el.querySelector('.ifs-head');
-      if (edit && head) head.insertBefore(edit, head.querySelector('[data-close]'));
-      view.launcherOpen(true);
-      if (opener?.classList?.contains('ws-dock-add')) menu.el.querySelector('.wsl-edit')?.click();
-    };
-    if (F.route?.kind === 'app' || F.route?.tool === 'files') {
-      const id = F.route.app || 'files', origin = launchOrigins.get(id) || captureLauncherOrigin(opener || view.dock.querySelector('[aria-current]'));
-      if (origin) {
-        F.nav.go('/', { resume: true, kind: 'launch-return', launch: { ...origin, render: open,
-          target: () => captureLauncherOrigin(body?.querySelector('[data-launcher-app="' + id + '"]')) } });
-        if (appsLaunch === request) request.route = F.route;
-        return;
+    if (!live() || (appsMenu && !appsMenu.closed)) return;
+    const body = view.launcher(() => menu);
+    // Safari does not focus a button on tap. Give the sheet its actual return target.
+    opener?.focus?.({ preventScroll: true });
+    const menu = F.sheet.open({ sheet: 'workspace-apps', title: 'Your apps', body, onClose: () => {
+      body.destroyLauncher?.();
+      if (appsMenu === menu) {
+        appsMenu = null;
+        view.launcherOpen(false);
       }
-    }
-    open();
+    } });
+    appsMenu = menu;
+    const edit = body.querySelector('.wsl-edit'), head = menu.el.querySelector('.ifs-head');
+    if (edit && head) head.insertBefore(edit, head.querySelector('[data-close]'));
+    view.launcherOpen(true);
+    if (opener?.classList?.contains('ws-dock-add')) edit?.click();
   }
 
   async function show(nextRoute) {
@@ -405,10 +395,10 @@ export async function createWorkspace(F, options = {}) {
   }
   function destroy() {
     if (gone) return;
-    gone = true; appsLaunch=null;appsMenu?.now();appsMenu=null;++scene;
+    gone = true; appsMenu?.now();appsMenu=null;++scene;
     for (const off of offs.splice(0)) off();
     explorer?.destroy(); dialogs?.destroy(); handoffs.destroy(); connection.destroy(); recoveryView?.destroy(); recovery?.destroy(); activityView.destroy(); activity.destroy(); pendingFilesQuery = null;
-    providers.clear(); snapshots.clear(); recentApps.clear(); launchOrigins.clear(); files?.destroy(); commands?.destroy(); background.remove();
+    providers.clear(); snapshots.clear(); recentApps.clear(); files?.destroy(); commands?.destroy(); background.remove();
     restoreToday(); anchor.remove(); view.destroy(); html.classList.remove("ifl-os", "os-workspace"); html.removeAttribute("data-os-dock-away"); document.title = originalTitle;
     if (F.tabs.away === dockAway) F.tabs.away = nativeAway;
     const state = history.state;

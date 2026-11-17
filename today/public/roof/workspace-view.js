@@ -658,7 +658,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   listen(root, "keydown", event => { if (!dockHost.contains(event.target)) navigateKeys(event); });
   listen(dockHost, "keydown", navigateKeys);
 
-  function appLauncher(close) {
+  function appLauncher(getSheet) {
     const favs=el('div',{class:'wsl-favourites',role:'group','aria-label':'Favourite order',hidden:true});
     const body=el('div',{class:'ws-launcher'}),grid=el('div',{class:'wsl-apps',role:'group','aria-label':'Apps'}),status=el('p',{class:'wsl-edit-status',role:'status'});
     let editing=false,query='';
@@ -673,7 +673,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     const refresh=()=>{for(const b of grid.querySelectorAll('[data-launcher-app]'))badge(b,editing?null:state(b.dataset.launcherApp))};
     launcherRefresh=refresh;
     const mark=id=>id==='files'?el('span',{class:'wsl-files-mark','aria-hidden':'true'},icon('file')):icon(null,{app:APP_ICONS[id]||id,size:40});
-    const launchButton=(label,glyph,callback,cls,args=[])=>el('button',{type:'button',class:cls,'aria-label':label,on:{click(){if(!liveBody())return;close?.();invoke(callback,...args)}}},glyph,el('span',{text:label}));
+    const launchButton=(label,glyph,callback,cls,args=[])=>el('button',{type:'button',class:cls,'aria-label':label,on:{click(){if(!liveBody())return;getSheet()?.now();invoke(callback,...args)}}},glyph,el('span',{text:label}));
     function paintGrid() {
       grid.replaceChildren();favs.replaceChildren();favs.hidden=!editing;
       if(editing)for(const [index,id]of favourites().entries()){
@@ -686,6 +686,7 @@ export function createWorkspaceView(root, callbacks = {}) {
         const b=el('button',{type:'button',class:'wsl-app','aria-label':editing?(pinned?'Unpin ':'Pin ')+a.name:a.name,data:{launcherApp:a.id},on:{click(){
           if(!liveBody()||(!allowed()&&!(editing&&pinned)))return;
           if(editing){const next=toggleFavourite(favourites(),a.id);if(next.full){status.textContent='Unpin an app to make room.';return}invoke('onFavourites',next.items);model.favourites=next.items;paintGrid();return}
+          if (b.hasAttribute('aria-current')) { getSheet()?.close(); return; }
           const launch=captureLauncherOrigin(b);if(a.id==='files')invoke('onFiles',launch);else invoke('onApp',a.id,launch);
         }}},mark(a.id),el('span',{text:a.name}));
         b.disabled=!allowed()&&!(editing&&pinned);

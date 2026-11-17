@@ -54,7 +54,6 @@ dialog.ifl-sheet[data-sheet=workspace-apps] {
 .ifl-sheet[data-sheet=workspace-apps] .ifs-btn { width:44px;height:44px;min-width:44px;border:0;box-shadow:none;background:var(--ifl-surface-2,var(--glass-ctl)); }
 .ifl-sheet[data-sheet=workspace-apps] .ifs-btn svg { stroke-width:1.8; }
 .ifl-sheet[data-sheet=workspace-apps] .ifs-body { flex:0 1 auto;padding:4px 20px 18px;overflow:auto;overscroll-behavior:contain; }
-html[data-vt=launch-return] .ifl-sheet[data-sheet=workspace-apps] { animation:none!important;transform:none!important; }
 .ws-launcher { display:grid;gap:14px;min-width:0;color:var(--ifl-text); }
 .ws-launcher button,.ifl-sheet[data-sheet=workspace-apps] .wsl-edit { display:flex;align-items:center;min-width:0;min-height:44px;border:0;border-radius:16px;background:transparent;box-shadow:none;color:inherit;font:inherit;cursor:pointer;touch-action:manipulation; }
 .ws-launcher button:disabled { opacity:.42;cursor:default; }

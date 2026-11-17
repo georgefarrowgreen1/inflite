@@ -125,3 +125,54 @@ test('the dock highlight settles on the latest app after a quick switch',async()
   await t.clean();
  } finally {await t.ctx.close()}
 });
+
+for (const app of ['Weather','Files']) test(`Apps opens over ${app} without navigating or starting another route animation`, async () => {
+ const t=await open();
+ try {
+  const {page}=t;
+  await page.locator('.ws-dock').getByRole('button',{name:app,exact:true}).click();
+  if (app==='Weather') await page.getByRole('textbox',{name:'weather draft'}).fill('Keep this draft');
+  else {
+   await page.getByRole('button',{name:'Select Private folder'}).click();
+   await page.getByRole('button',{name:'Select Private note.txt'}).waitFor();
+  }
+  await settle(page);
+  const before=await page.evaluate(()=>({url:location.href,depth:history.length}));
+  await page.evaluate(()=>{
+   window.drawerRoutes=0;
+   T.F.on('route',()=>window.drawerRoutes++);
+  });
+  const apps=page.getByRole('button',{name:'All apps',exact:true}), drawer=page.getByRole('dialog',{name:'Your apps'});
+  await apps.click();
+  await drawer.waitFor();
+  assert.deepEqual(await page.evaluate(()=>({url:location.href,depth:history.length})),before);
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.vt||''),'');
+  await drawer.getByRole('button',{name:app,exact:true}).click();
+  await drawer.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>window.drawerRoutes),0);
+  if (app==='Weather') assert.equal(await page.getByRole('textbox',{name:'weather draft'}).inputValue(),'Keep this draft');
+  else assert.ok(await page.getByRole('button',{name:'Select Private note.txt'}).isVisible());
+  await t.clean();
+ } finally {await t.ctx.close()}
+});
+
+test('pressing Apps during an app launch finishes on one drawer over that app',async()=>{
+ const t=await open();
+ try {
+  const {page}=t;
+  await page.evaluate(()=>{
+   document.querySelector('.ws-dock [data-launcher-app=weather]').click();
+   document.querySelector('.ws-dock-launcher').click();
+  });
+  const drawer=page.getByRole('dialog',{name:'Your apps'});
+  await drawer.waitFor();
+  await settle(page);
+  assert.equal(await page.locator('dialog[open]').count(),1);
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.vt||''),'');
+  assert.equal(new URL(page.url()).pathname,'/weather/');
+  await page.keyboard.press('Escape');
+  await drawer.waitFor({state:'detached'});
+  await page.getByRole('textbox',{name:'weather draft'}).waitFor();
+  await t.clean();
+ } finally {await t.ctx.close()}
+});

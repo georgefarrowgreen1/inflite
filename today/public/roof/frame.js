@@ -80,7 +80,7 @@ export function createFrame(opts = {}) {
   };
   const roofs = () => sess().apps;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let motion = 0, stopMotion = () => {}, launcherRendering = false;
+  let motion = 0, stopMotion = () => {};
   const cancelMotion = (finish) => { stopMotion(finish); ++motion; stopMotion = () => {}; };
   const newKey = () => Math.random().toString(36).slice(2, 10);
   const ys = new Map(), backTo = new Map();
@@ -451,7 +451,6 @@ export function createFrame(opts = {}) {
         const f = pop ? backTo.get(k) : null;
         (f?.isConnected && !f.closest("[hidden]") ? f : screens[id]?.spec.focus?.() || doc.querySelector("#hd h1.ifh-name"))?.focus?.({ preventScroll: true });
       }
-      if (!gone && F.route === r && o.launch?.render) { launcherRendering = true; try { o.launch.render(); } finally { launcherRendering = false; } }
       return el;
     };
     transition(o.first || o.again ? null : o.kind, change, o);
@@ -762,7 +761,7 @@ export function createFrame(opts = {}) {
   // ---- the pieces
   F.header = createHeader(opts.header, F, { me: opts.me, onMe: opts.onMe });
   F.tabs = createTabs(opts.tabs, F, { me: opts.me });
-  F.sheet = createSheets(F, { beforeOpen: () => { if (!launcherRendering) cancelMotion(true); } });
+  F.sheet = createSheets(F, { beforeOpen: () => cancelMotion(true) });
   F.search = createSearch(F);
   F.send = createSend(F);
   for (const id of ["today", "apps", "you", "workspace"]) if (opts[id]) F.screen(id, opts[id]);
