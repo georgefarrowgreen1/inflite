@@ -6584,7 +6584,6 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 .sheet .compose-text,.sheet .c-subject,.qr-field,.set-input,.set-local,.set-sig { font-size: 16px; }
 .row .preview,.msg-sub,.thread-snippet { line-height: 1.45; }
 .sheet .compose-text { line-height: 1.5; }
-.qr:focus-within { box-shadow: inset 0 0 0 2px var(--tint); }
 /* Standalone Mail uses the same window material as hosted Mail. */
 :is(.sheet,.menu,.toast,.navbar) { --text:var(--ifl-glass-text); --text-2:var(--ifl-glass-muted); --text-3:var(--ifl-glass-muted); --label:var(--text); --label-2:var(--text-2); --label-3:var(--text-3); --tint-text:var(--ifl-glass-accent); }
 :is(.sheet,.menu,.toast) { --sheet:var(--ifl-glass-window); }
