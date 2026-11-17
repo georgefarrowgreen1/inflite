@@ -1725,10 +1725,18 @@ test('a quiet day refresh keeps cached cards and focused controls in place, incl
   if(url.pathname!=='/api/today')return false;await gate;await route.fulfill({status:503,json:{error:'Temporarily unavailable'}});return true;
  }});
  try{
-  await t.page.locator('.ws-dock').waitFor();await t.page.getByText('Updating your day…',{exact:true}).waitFor();
+  await t.page.locator('.ws-dock').waitFor();
+  const indicator=t.page.locator('#kept[data-refreshing]');
+  await indicator.waitFor();
+  assert.equal(await indicator.locator('.vh').textContent(),'Updating your day…');
+  const animation=()=>indicator.evaluate(el=>getComputedStyle(el,'::after').animationName);
+  assert.equal(await animation(),'none');
+  await t.page.emulateMedia({reducedMotion:'no-preference'});
+  assert.equal(await animation(),'day-refresh-sweep');
   await t.page.evaluate(()=>{const card=document.querySelector('.tcard[data-app="weather"]');window.keptRefreshCard=card;window.keptRefreshAction=card.querySelector('a');keptRefreshAction.focus({preventScroll:true})});
   const before=await t.page.locator('.tcard[data-app="weather"]').boundingBox();
   release();await t.page.getByText('Couldn’t update. Showing your last saved day.',{exact:true}).waitFor();
+  assert.equal(await indicator.count(),0);
   const after=await t.page.locator('.tcard[data-app="weather"]').boundingBox();
   assert.equal(await t.page.evaluate(()=>keptRefreshCard===document.querySelector('.tcard[data-app="weather"]')&&document.activeElement===keptRefreshAction),true);
   assert.ok(Math.abs(before.y-after.y)<=1,'refresh status does not shift existing cards');

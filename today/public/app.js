@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.40";
+const BUILD = "4.41";
 // (what's new in it, said once it's in)
-const NEWS = "Account and Admin now open directly in Settings, with one page to scroll and sheets that span the app.";
+const NEWS = "A slim light sweeps across Today while your day refreshes.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.31/store.js","/os.webmanifest"];
@@ -2325,10 +2325,14 @@ function drawKept() {
   // Reserve this small line once content exists, so refresh status never moves
   // cards or the user's scroll position.
   k.hidden = !S.answer;
-  if (pending) k.textContent = "Updating your day…";
-  else if (failed) k.textContent = "Couldn’t update. Showing your last saved day.";
-  else if (old) k.textContent = `Updated ${hm(S.answerAt, S.answer?.tz || browserTz())}`;
-  else k.textContent = "";
+  k.toggleAttribute("data-refreshing", pending);
+  const label = k.firstElementChild || k.appendChild(document.createElement("span"));
+  label.classList.toggle("vh", pending);
+  let message = "";
+  if (pending) message = "Updating your day…";
+  else if (failed) message = "Couldn’t update. Showing your last saved day.";
+  else if (old) message = `Updated ${hm(S.answerAt, S.answer?.tz || browserTz())}`;
+  if (label.textContent !== message) label.textContent = message;
 }
 // each minute, on the minute (the answer's clock), or at the answer's next moment if that's sooner (its until, a step of
 // its timeline, a Coming Up row's time, an Undo's end), with no request: the day's next phase at its minute (from the

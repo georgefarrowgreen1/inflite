@@ -154,6 +154,27 @@ button.row:active, a.row:active { background: var(--press); }
 /* ---- a card for each app ---- */
 #rest.cards { display: grid; gap: 14px; margin-bottom: 30px; }
 .kept { min-height: 20px; margin: 0 6px; font-size: 13.5px; color: var(--text-3); }
+.kept[data-refreshing] { position: relative; overflow: hidden; }
+.kept[data-refreshing]::before, .kept[data-refreshing]::after {
+  content: ""; position: absolute; left: 0; top: calc(50% - 1px); height: 2px; border-radius: 999px;
+}
+.kept[data-refreshing]::before { width: 100%; background: var(--text); opacity: .1; }
+.kept[data-refreshing]::after {
+  width: 36%; background: linear-gradient(90deg, transparent, var(--text-2) 60%, var(--text) 85%, transparent);
+  transform: translateX(89%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kept[data-refreshing]::after { animation: day-refresh-sweep 1.5s cubic-bezier(.42,0,.28,1) infinite both; }
+}
+@keyframes day-refresh-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(280%); }
+}
+@media (forced-colors: active) {
+  .kept[data-refreshing]::before { background: GrayText; opacity: 1; }
+  .kept[data-refreshing]::after { background: Highlight; forced-color-adjust: none; }
+}
+
 .tcard { border-radius: var(--r-card); padding: 18px; display: grid; gap: 12px; min-width: 0; }
 .tcard > * { min-width: 0; }
 /* Refresh content in order while the card itself stays available for press feedback. */
