@@ -18,7 +18,7 @@ The current capability set is deliberately explicit:
 - Fetch a chosen read-only calendar subscription.
 - Prepare a chosen Drive file for Chats, Mail or Fitness.
 
-Existing workflows default to Allowed to preserve previously available behavior. There is no claim that a user has explicitly approved an inherited default. The interface labels it “Default access · no saved override”. Changing it to Ask each time or Blocked saves a versioned account permission. Concurrent edits require review; changing a permission revokes its outstanding approvals.
+Existing workflows default to Allowed to preserve previously available behavior. There is no claim that a user has explicitly approved an inherited default. The interface labels it “Default setting”; this is not a saved user approval. Changing it to Ask each time or Blocked saves a versioned account permission. Concurrent edits require review; changing a permission revokes its outstanding approvals.
 
 Temporary approvals bind to the granting session, permission version and selected resource. Calendar approvals identify the supplied subscription link by a hash or the saved calendar ID. File approvals identify the owned file; transfer approval also verifies its current version and ready state. Blocked search/feed access is enforced at the server. Background feed refresh does not prompt: it is skipped when approval is required. Explicit connection actions can open the shared permission sheet.
 
@@ -39,3 +39,7 @@ The interface uses shared Liquid Glass tokens, semantic rounded controls, center
 The review interface and approval UI are lazy. Native Calendar, Notes and People retain their existing 14 KiB JavaScript and 4 KiB stylesheet first-open budgets. The optional security interface has a separate 9/2 KiB budget. Immutable 4.02 and 4.10 native graphs remain unchanged.
 
 Release evidence is in `/tmp/inflite-security-module/`: D1/R2 authorization and replay tests, primary-versus-stale-replica tests, actual Account exports, Chromium and WebKit flows, phone/tablet/desktop geometry, real Root integration, framework/API regressions, source credential scans, four locked dependency audits and Worker builds. Existing supply-chain gates and backup/recovery guidance remain in place; these tests do not establish production backup coverage or an independent penetration test.
+
+## Interface refinement in Root 4.12
+
+Security Module keeps its tabs and refresh controls fixed above an independently scrolling panel. Tab positions survive navigation. Account checks have a single result, purpose-specific icons and localized dates. Recovery uses grouped settings rows; disclosures have visible affordances. Permission choices explain their effect, identify the current choice and restore focus to the updated connection. Pending refreshes have a skeleton, failed refreshes remove stale assessments, and retries reload authoritative information. Tab motion is cancelled on replacement or close and disabled with reduced motion. Shared glass, contrast and transparency settings remain authoritative. No authentication, approval or revocation contract changed. Native 4.10 asset graphs and existing component budgets remain unchanged.
