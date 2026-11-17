@@ -377,11 +377,11 @@ export function createFrame(opts = {}) {
   const tabRoot = (r) => r?.kind === "app" && !!REGISTRY[r.app].tab && !stayR(r);
   const isTab = (r) => r?.kind === "tab" || tabRoot(r);
   function reopenRoute(r) {
-    const hint = r?.kind === "app" ? T(() => mods[r.app]?.instance?.resumeRoute?.(), null) : null;
-    const candidate = typeof hint === "string" ? parse(hint, { roof: true }) : null;
+    if (r?.kind !== "app") return r;
+    const candidate = T(() => parse(mods[r.app]?.instance?.resumeRoute?.(), { roof: true }));
     // Native panes may keep a conversation while their address shows the list.
     // The account serializer still applies its route/opaque-ID allowlist.
-    return candidate?.kind === "app" && candidate.app === r?.app ? candidate : r;
+    return candidate?.app === r.app ? candidate : r;
   }
   function rememberReopen(r, y = scrollY) {
     opts.resume?.remember(reopenRoute(r), { y, state: H.state });
