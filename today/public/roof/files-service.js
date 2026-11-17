@@ -26,7 +26,7 @@ export function createFilesService(F, options = {}) {
   const retryTransfer=(id,{explicit=true}={})=>{const r=transfers.get(id);if(!live()||!r||r.status!=='failed'||!r.file)return;r.controller=new AbortController();r.explicitRetry=explicit;r.status='queued';r.error='';transferEvent();pump()};
   const reconnect=()=>{for(const r of transfers.values())if(r.status==='failed'&&r.retryable)retryTransfer(r.id,{explicit:false});pump()};
   if(typeof window!=='undefined')window.addEventListener('online',reconnect,{signal:F.signal});
-  const acceptsApp = (app, node) => typeof options.runIntent === "function" && !!F.session.apps?.[app] && node.kind === "file" && node.status === "ready" && !node.trashedAt && (app === "mail" ? F.session.view?.apps?.mail === true && node.size <= 20 * 1024 * 1024 : app === "fitness" && /\.(fit|gpx|tcx|zwo|erg|mrc|zip)$/i.test(node.name));
+  const acceptsApp = (app, node) => typeof options.runIntent === "function" && !!F.session.apps?.[app] && node.kind === "file" && node.status === "ready" && !node.trashedAt && (app === "mail" ? F.session.view?.apps?.mail === true && node.size <= 20 * 1024 * 1024 : app === "chats" ? node.size <= 8 * 1024 * 1024 : app === "fitness" && /\.(fit|gpx|tcx|zwo|erg|mrc|zip)$/i.test(node.name));
   const live = () => !dead && !!owner && !F.signal.aborted && F.session.view?.user?.id === owner;
   const current = lease => live() && !lease?.signal?.aborted && valid(lease?.current);
   const assert = lease => { if (!current(lease)) throw abort(); };
@@ -52,8 +52,10 @@ export function createFilesService(F, options = {}) {
     const actions = node.kind === "folder" ? [label("open", "Open", "folder", { primary: true })] : ready ? [
       ...(previewable(node) ? [label("preview", "Preview", "preview", { primary: true })] : []), label("download", "Download", "download", { primary: !previewable(node) }), label("history","Version history","restore"),label("replace","Replace file","upload"),
     ] : [];
+    if (acceptsApp("chats", node)) actions.push(label("attach-chats", "Attach in Chats", "chat"));
     if (acceptsApp("mail", node)) actions.push(label("attach-mail", "Attach in Mail", "mail"));
     if (acceptsApp("fitness", node)) actions.push(label("import-fitness", "Import into Fitness", "fitness"));
+    if(ready&&options.share&&node.kind==="file")actions.push(label("use-in-app","Use in another app","share"));
     if(ready&&options.remind)actions.push(label("remind","Remind me","bell"));
     if (ready) actions.push(label("rename", "Rename", "rename"), label("move", "Move", "folder"), ...(node.kind === "file" ? [label("copy","Copy","copy")] : []), label("favourite",node.favourite?"Remove favourite":"Add favourite","star"));
     actions.push(label(ready?"trash":"delete",ready?"Move to Trash":"Remove pending upload","delete",{destructive:true}));
@@ -152,16 +154,17 @@ export function createFilesService(F, options = {}) {
     const id = typeof key === "string" && key.startsWith("drive:") ? key.slice(6) : null;
     const node = id && ID.test(id) ? nodes.get(id) : null;
     if (action !== "create-folder" && !node) return { ok: false, error: "That file is no longer available. Refresh to check." };
-    if (action === "attach-mail" || action === "import-fitness") {
-      const app = action === "attach-mail" ? "mail" : "fitness";
+    if (action === "attach-mail" || action === "attach-chats" || action === "import-fitness") {
+      const app = action === "attach-mail" ? "mail" : action === "attach-chats" ? "chats" : "fitness";
       if (handingOff || !acceptsApp(app, node) || node.version !== input.version) return { ok: false, error: "Refresh the file and try again." };
       const token = prepareDrag([{ key, version: input.version }]);
       if (!token) return { ok: false, error: "That file is no longer available." };
       handingOff = true;
-      try { return await options.runIntent(app, app === "mail" ? "compose-attach" : "import-drive", "drop:" + token, { signal: lease.signal, current: () => current(lease) && acceptsApp(app, node) }); }
+      try { return await options.runIntent(app, app === "fitness" ? "import-drive" : "compose-attach", "drop:" + token, { signal: lease.signal, current: () => current(lease) && acceptsApp(app, node) }); }
       finally { drags.delete(token); handingOff = false; }
     }
     if (action === "download" && node.kind === "file" && node.status === "ready" && !node.trashedAt) { download(node, lease); return { ok: true }; }
+    if(action==="use-in-app"&&node.status==="ready"&&!node.trashedAt){await options.share?.({app:"files",id:node.id});return {ok:true}}
     if(action==="remind"&&node.status==="ready"&&!node.trashedAt){await options.remind?.({app:"files",id:node.id});return {ok:true}}
     if (action === "preview") {
       const api = await drive(lease); assert(lease);

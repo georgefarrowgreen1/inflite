@@ -1,7 +1,7 @@
 // Reminder screens share the framework's fields, sheets, focus and feedback.
-const NAME={mail:'Mail',chats:'Chats',fitness:'Fitness',weather:'Weather',markets:'Markets',files:'Files'};
-const DEFAULT={mail:'Follow up in Mail',chats:'Reply in Chats',fitness:'Plan my ride',weather:'Check the forecast',markets:'Review my portfolio',files:'Review this file'};
-export const sourcePath=s=>!s?'/':s.app==='mail'?(s.id?'/mail/#thread='+s.id:'/mail/'):s.app==='chats'?(s.id?'/chats/#open='+s.id:'/chats/'):s.app==='files'?'/#files':s.app==='fitness'?'/fitness/':s.app==='markets'?'/markets/#holdings':'/weather/';
+const NAME={mail:'Mail',chats:'Chats',fitness:'Fitness',weather:'Weather',markets:'Markets',files:'Files',notes:'Notes',calendar:'Calendar',people:'People'};
+const DEFAULT={mail:'Follow up in Mail',chats:'Reply in Chats',fitness:'Plan my ride',weather:'Check the forecast',markets:'Review my portfolio',files:'Review this file',notes:'Review this note',calendar:'Prepare for this event',people:'Follow up'};
+export const sourcePath=s=>!s?'/':['notes','calendar','people'].includes(s.app)?'/'+s.app+'/#item='+s.id:s.app==='mail'?(s.id?'/mail/#thread='+s.id:'/mail/'):s.app==='chats'?(s.id?'/chats/#open='+s.id:'/chats/'):s.app==='files'?'/#files':s.app==='fitness'?'/fitness/':s.app==='markets'?'/markets/#holdings':'/weather/';
 export function dueWords(at,status='open'){
  if(at==null)return 'No date';const date=new Date(at);if(!Number.isFinite(date.getTime()))return '';
  const day=new Intl.DateTimeFormat(undefined,{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(date);return (status==='open'&&at<Date.now()?'Overdue · ':'')+day;
@@ -31,19 +31,22 @@ export function createActionsUI(F,{store,files,openSource,client}){
   h=F.sheet.open({sheet:'action-files',title:'Attach from Files',body:el('div',{class:'system350'},q,el('div',{class:'s350-toolbar'},up,crumb),status,list,more,done),onClose(){gen++;clearTimeout(timer);resolve(null)}});
   done.disabled=!selected.size;read();return result;
  }
- function form(item=null,{source=null,intent=null}={}){
+ function form(item=null,{source=null,intent=null,initial=null,onCommitted=null}={}){
+  item=item||initial;
   if(!live())return null;const title=el('input',{type:'text',maxlength:160,value:item?.title||DEFAULT[source?.app]||'','aria-label':'Reminder title',autocomplete:'off'}),notes=el('textarea',{maxlength:2000,rows:3,'aria-label':'Reminder notes',value:item?.notes||''}),date=el('input',{type:'datetime-local',value:localDate(item?.dueAt),'aria-label':'Reminder date'}),notify=el('input',{type:'checkbox',checked:item?.notify!==false,'aria-label':'Notify on registered devices'}),error=el('p',{role:'status',class:'s350-error',hidden:true}),attachments=el('div',{class:'s350-file-chips'});
   notes.value=item?.notes||'';
+  const repeat=el('select',{'aria-label':'Repeat reminder'});for(const [value,label]of [['','Never'],['daily','Every day'],['weekly','Every week'],['monthly','Every month'],['yearly','Every year']])repeat.append(el('option',{value,text:label}));repeat.value=item?.recurrence?.frequency||'';
   let refs=(item?.files||[]).map(f=>({...f,name:item?.attachments?.find(a=>a.id===f.id)?.name||f.name||'Attached file'})),h,saving=false;
   const current=()=>live()&&!h.closed;
   function paintFiles(){attachments.replaceChildren(...refs.map(f=>el('div',{class:'s350-file-chip'},el('span',{text:f.name||'Attached file'}),ui.iconBtn('x',{label:'Remove '+(f.name||'attached file'),run:()=>{refs=refs.filter(x=>x.id!==f.id);paintFiles()}}))))}
   const pick=button('Attach a file',async()=>{try{const chosen=await attach(refs,current);if(current()&&chosen){refs=chosen;paintFiles()}}catch(e){if(current())showError(error,e)}});
-  const body=el('form',{class:'system350 s350-form'},field('Title',title),source||item?.source?el('p',{class:'s350-muted',text:'Linked to '+NAME[(source||item.source).app]+'. Your title and notes appear in Today.'}):null,field('Notes',notes),field('Remind me',date),el('label',{class:'s350-choice'},notify,el('span',{text:'Notify on devices with Today notifications enabled'})),el('p',{class:'s350-muted',text:'Device alerts follow quiet hours and the next reminder check.'}),attachments,pick,error);
+  const body=el('form',{class:'system350 s350-form'},field('Title',title),source||item?.source?el('p',{class:'s350-muted',text:'Linked to '+NAME[(source||item.source).app]+'. Your title and notes appear in Today.'}):null,field('Notes',notes),field('Remind me',date),field('Repeat',repeat),el('label',{class:'s350-choice'},notify,el('span',{text:'Notify on devices with Today notifications enabled'})),el('p',{class:'s350-muted',text:'Device alerts follow quiet hours and the next reminder check.'}),attachments,pick,error);
   body.addEventListener('submit',e=>{e.preventDefault();save()});
   async function save(){if(!current()||saving)return;const name=title.value.trim();if(!name){error.textContent='Give the reminder a title.';error.hidden=false;title.focus();return}
    const at=date.value?new Date(date.value).getTime():null;if(at!==null&&!Number.isFinite(at)){error.textContent='Choose a valid date.';error.hidden=false;return}
-   const value={title:name,notes:notes.value.trim(),dueAt:at,notify:notify.checked,files:refs.map(({id,version})=>({id,version})),...(!item?.version?{source:source||item?.source||null}:{})};saving=true;h.setBusy(true);error.hidden=true;
-   try{if(intent)await store.retry(intent.id,{body:value});else if(item?.version)await store.update(item,value);else await store.create(value);if(current()){h.now();F.toast(navigator.onLine===false?'Reminder kept on this device':'Saving reminder…')}}catch(e){if(current()){h.setBusy(false);saving=false;showError(error,e)}}
+   if(repeat.value&&!at){error.textContent='Choose a date before setting a repeat.';error.hidden=false;date.focus();return}
+   const value={recurrence:repeat.value?{frequency:repeat.value,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'}:null,title:name,notes:notes.value.trim(),dueAt:at,notify:notify.checked,files:refs.map(({id,version})=>({id,version})),...(!item?.version?{source:source||item?.source||null}:{})};saving=true;h.setBusy(true);error.hidden=true;
+   try{if(intent)await store.retry(intent.id,{body:value});else if(item?.version)await store.update(item,value);else await store.create(value);if(current()){await onCommitted?.();if(!current())return;h.now();F.toast(navigator.onLine===false?'Reminder kept on this device':'Saving reminder…')}}catch(e){if(current()){h.setBusy(false);saving=false;showError(error,e)}}
   }
   h=F.sheet.open({sheet:'reminder-edit',title:intent?'Edit pending reminder':item?.version?'Edit reminder':'New reminder',focus:title,body,acts:[{label:item?.version?'Save changes':'Add reminder',primary:true,run:save}]});paintFiles();return h;
  }
@@ -51,7 +54,7 @@ export function createActionsUI(F,{store,files,openSource,client}){
   if(!live())return;const local=store.snapshot().find(a=>a.id===id);if(local?.pending)return queue(local.intentId);
   const body=el('div',{class:'system350'},el('p',{role:'status',text:'Loading reminder…'})),h=F.sheet.open({sheet:'reminder',title:'Reminder',body});
   try{const a=await store.get(id,{current:()=>live()&&!h.closed});if(!live()||h.closed)return;
-   body.replaceChildren(el('h3',{class:'s350-title',text:a.title}),el('p',{class:'s350-muted',text:dueWords(a.dueAt,a.status)}));if(a.notes)body.append(el('p',{class:'s350-notes',text:a.notes}));
+   body.replaceChildren(el('h3',{class:'s350-title',text:a.title}),el('p',{class:'s350-muted',text:dueWords(a.dueAt,a.status)+(a.recurrence?' · Repeats '+a.recurrence.frequency:'')}));if(a.repetitions)body.append(el('p',{class:'s350-muted',text:a.repetitions+' completed occurrences. The next date skips missed occurrences.'}));if(a.notes)body.append(el('p',{class:'s350-notes',text:a.notes}));
    if(a.source)body.append(button('Open in '+NAME[a.source.app],()=>{h.now();openSource(a.source)}));
    for(const file of a.attachments||[]){body.append(file.unavailable?el('p',{text:'An attached file is no longer available.'}):button(file.name+(file.changed?' · updated':''),()=>{h.now();openSource({app:'files',id:file.id})}))}
    body.append(el('div',{class:'s350-toolbar'},button(a.status==='done'?'Reopen reminder':'Complete reminder',async()=>{await store.update(a,{status:a.status==='done'?'open':'done'});if(live()&&!h.closed)h.now()},true),button('Edit',()=>{h.now();form(a)}),button('Delete',()=>{let confirm;confirm=F.sheet.open({title:'Delete reminder?',body:el('p',{text:'The linked message or file stays in its app.'}),acts:[{label:'Delete reminder',destructive:true,run:async()=>{try{await store.update(a,{status:'deleted'});if(live()){confirm.now();h.now()}}catch(e){if(live())F.toast(errorText(e))}}}]})})));
@@ -69,7 +72,7 @@ export function createActionsUI(F,{store,files,openSource,client}){
  }
  function row(a){
   const check=ui.iconBtn('check',{label:(a.status==='done'?'Reopen ':'Complete ')+a.title,run:async()=>{try{await store.update(a,{status:a.status==='done'?'open':'done'})}catch(e){if(live())F.toast(errorText(e))}}});check.disabled=!!a.pending;check.setAttribute('aria-pressed',String(a.status==='done'));
-  const open=el('button',{type:'button',class:'s350-row-main',on:{click:()=>a.pending?queue(a.intentId):detail(a.id)}},el('strong',{text:a.title}),el('small',{text:a.pending?(a.pendingState==='conflict'?'Review changes':a.pendingState==='failed'?'Needs attention':'Kept on this device'):dueWords(a.dueAt,a.status)}));
+  const open=el('button',{type:'button',class:'s350-row-main',on:{click:()=>a.pending?queue(a.intentId):detail(a.id)}},el('strong',{text:a.title}),el('small',{text:a.pending?(a.pendingState==='conflict'?'Review changes':a.pendingState==='failed'?'Needs attention':'Kept on this device'):dueWords(a.dueAt,a.status)+(a.recurrence?' · '+a.recurrence.frequency:'')}));
   return el('article',{class:'s350-action-row',data:{overdue:String(a.status==='open'&&a.dueAt!=null&&a.dueAt<Date.now())}},check,open);
  }
  function queue(only=null){

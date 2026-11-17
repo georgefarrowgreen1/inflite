@@ -561,3 +561,6 @@ dialog.ifl-sheet {
   :root .ifl-files-explorer, :root :is(.ifx-toolbar, .ifx-locations) { background: Canvas; color: CanvasText; border-color: CanvasText; -webkit-backdrop-filter: none; backdrop-filter: none; }
   .ifl-workspace .ws-dock { --ws-text: CanvasText; --ws-muted: CanvasText; }
 }
+
+/* Action feedback stays centered even when reduced motion removes transforms. */
+.ifl-toast{left:16px;right:16px;width:max-content;max-width:min(560px,calc(100vw - 32px));margin-inline:auto;box-sizing:border-box;flex-wrap:wrap;transform:translateY(20px) scale(.96)}.ifl-toast.on{transform:translateY(0)}.ifl-toast .ifm-note-tx{flex:1 1 16ch}.ifl-toast-act{min-height:44px;max-width:100%;white-space:normal}.ifl-toast.has-act{padding:12px}

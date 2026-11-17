@@ -103,7 +103,8 @@ export function createWorkspaceView(root, callbacks = {}) {
   notifications?.append(notificationCount);
   const account = callable(callbacks.onAccount) ? button("Your account", null, action("account", opener => invoke("onAccount", opener)), "ws-icon-button ws-account") : null;
   account?.append(icon("person"));
-  const toolbar = el("header", { class: "ws-toolbar", role: "banner" }, back, headingBox, search, el("div", { class: "ws-header-actions" }, appsHeader, layoutButton, switchButton, manage, notifications, account));
+  const capture=callable(callbacks.onCapture)?bindButton("Quick Capture","plus","capture",()=>invoke("onCapture"),"ws-icon-button ws-capture"):null;
+  const toolbar = el("header", { class: "ws-toolbar", role: "banner" }, back, headingBox, search, el("div", { class: "ws-header-actions" }, capture, appsHeader, layoutButton, switchButton, manage, notifications, account));
 
   const phoneChips = el("nav", { class: "ws-workspace-chips", "aria-label": "Workspaces" }), chipRecords = new Map();
   const cardTitle = el("h3", { class: "ws-summary-title" }), cardLine = el("p", { class: "ws-summary-line" }), cardFacts = el("dl", { class: "ws-summary-facts" });
@@ -626,6 +627,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     };
     const quick = el("div", { class: "wsl-quick" });
     if (callable(callbacks.onToday)) quick.append(launchButton("Today", icon("calendar"), "onToday", "wsl-home"));
+    if (callable(callbacks.onCapture)) quick.append(launchButton("Quick Capture", icon("plus"), "onCapture", "wsl-capture"));
     if (callable(callbacks.onSearch)) quick.append(launchButton("Search InFlite", icon("search"), "onSearch", "wsl-search"));
     const grid = el("div", { class: "wsl-apps", role: "group", "aria-label": "Apps" });
     if (callable(callbacks.onFiles)) grid.append(launchButton("Files", el("span", { class: "wsl-files-mark", "aria-hidden": "true" }, icon("file")), "onFiles", "wsl-app"));

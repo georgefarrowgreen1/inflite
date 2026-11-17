@@ -18,12 +18,12 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.05";
+const BUILD = "4.10";
 // (what's new in it, said once it's in)
-const NEWS = "Stronger privacy and account protection";
+const NEWS = "Quick Capture, repeating reminders, connected calendars and more ways to use your apps together";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/system350.js", "/roof/system-client.js", "/roof/actions-store.js", "/roof/actions-ui.js", "/roof/device-id.js", "/roof/devices-ui.js", "/roof/discovery350.js", "/roof/files-viewer350.js", "/roof/files-recovery350.js", "/roof/continuity.js", "/roof/offline-store.js", "/roof/offline-prefs.js", "/roof/ride-overview.js", "/roof/files-history.js", "/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/connection.js", "/roof/handoffs.js", "/roof/system350.css", "/roof/files-viewer350.css", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/os.webmanifest"];
+const OS_FILES = ["/roof/life410.js", "/roof/system350.js", "/roof/system-client.js", "/roof/actions-store.js", "/roof/actions-ui.js", "/roof/device-id.js", "/roof/devices-ui.js", "/roof/discovery350.js", "/roof/files-viewer350.js", "/roof/files-recovery350.js", "/roof/continuity.js", "/roof/offline-store.js", "/roof/offline-prefs.js", "/roof/ride-overview.js", "/roof/files-history.js", "/roof/workspace.js", "/roof/workspace-view.js", "/roof/workspace-catalog.js", "/roof/workspace-windows.js", "/roof/workspace-commands.js", "/roof/workspace-files.js", "/roof/files-service.js", "/roof/files-apps.js", "/roof/files-metadata.js", "/roof/files-location.js", "/roof/files-drive.js", "/roof/files-explorer.js", "/roof/files-view.js", "/roof/files-dialogs.js", "/roof/workspace-activity.js", "/roof/workspace-activity-state.js", "/roof/workspace-recovery.js", "/roof/workspace-recovery-view.js", "/roof/connection.js", "/roof/handoffs.js", "/roof/life410.css", "/roof/system350.css", "/roof/files-viewer350.css", "/roof/workspace.css", "/roof/workspace-commands.css", "/roof/workspace-files.css", "/roof/files-view.css", "/roof/files-dialogs.css", "/roof/workspace-activity.css", "/roof/workspace-recovery.css", "/organise/releases/4.10/store.js", "/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -1909,6 +1909,7 @@ function frame() {
       return m.createWorkspace(ownerFrame, {
         root: workspaceRoot, today: $("#today"), dockRoot: $("#in"), day: () => F === ownerFrame ? S.answer : null, notifications: () => notificationCount,
         onTodayShow: () => SCREENS.today.onShow(),
+        onEditToday:()=>{if(F===ownerFrame){ownerFrame.nav.go("/");openEdit()}},
         onAccount: (opener) => { if (F === ownerFrame) openMenu(opener); },
         onSettings: () => { if (F === ownerFrame) ownerFrame.nav.go("/#you"); },
         onNotifications: async () => { await bellReady; if (F === ownerFrame && !ownerFrame.signal.aborted) bell?.open(); },
@@ -2011,7 +2012,7 @@ const youCtx = (task) => ({
   sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, syncPush, offHere: () => offHere(), toMorning, openAccount, signOut, canPush, pushWhy,
   chatSettings: () => task.active() && (chatsHere ? task.frame.nav.go("/chats/#settings") : location.assign(S.hub ? "/chats/#account" : `${safe(S.links?.chat) || DEFAULT_LINKS.chat}/#account`)),
   openSheet: (id) => task.active() && openSheet(id), closeSheet: () => task.active() && closeSheet(), BUILD,
-  reminders: () => task.active() && workspaceHost?.reminders(), remembered: () => task.active() && workspaceHost?.remembered(), frame: task.frame, connectors, connector: (app) => connectors().then((m) => task.active() && m.openConnector(task.frame, app)), go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
+  life:action=>task.active()&&workspaceHost?.life().then(v=>task.active()&&v?.[action]?.()), reminders: () => task.active() && workspaceHost?.reminders(), remembered: () => task.active() && workspaceHost?.remembered(), frame: task.frame, connectors, connector: (app) => connectors().then((m) => task.active() && m.openConnector(task.frame, app)), go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
   icon: (app) => { try { return IFL.iconUrl(app) || ""; } catch { return ""; } },
 });
 
