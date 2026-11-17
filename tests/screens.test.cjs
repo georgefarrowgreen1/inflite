@@ -17,7 +17,7 @@ async function host(tab = 'apps', arg = null) {
     createScreenTasks, requests: { signal: account.signal }, S: { view: { user: { id: 'a' } } },
     F: { route: route(tab, arg), signal: lifetime.signal, ui: {} },
     $: id => ({ id }), scopedAPI: () => ({ current: () => !sandbox.requests.signal.aborted, call: async () => ({}) }),
-    IFL: { hub: { href: app => `/${app}/` } }, chatsHere: true,
+    IFL: { hub: { href: app => `/${app}/` } }, chatsHere: true, settingsHost: null,
     missing() {}, toast() {}, currentSub() {}, turnOn() {}, turnOff() {}, fanOut() {}, everyKept() {}, syncPush() {}, offHere() {}, toMorning() {}, openAccount() {}, signOut() {}, canPush() {}, pushWhy() {}, openSheet() {}, closeSheet() {}, BUILD: 'test',
     load: name => { const d = deferred(); loads.push({ name, ...d }); return d.promise; },
   };
@@ -109,7 +109,7 @@ test('a delayed You deep link cannot scroll, focus or open a folder after route 
 test('a current You deep link still scrolls and focuses its destination', async () => {
   const m = await you(); let scrolled = 0, focused = 0;
   globalThis.matchMedia = () => ({ matches: false });
-  const target = { scrollIntoView() { scrolled++; }, querySelector: () => ({ matches: () => true, focus() { focused++; } }) };
+  const target = { scrollIntoView() { scrolled++; }, focus() { focused++; } };
   await m.goTo({ querySelector: () => target }, { current: () => true, active: () => true }, 'quiet');
   assert.deepEqual({ scrolled, focused }, { scrolled: 1, focused: 1 });
 });
@@ -137,7 +137,10 @@ test('an old You visit cannot start its settings load after a slow browser subsc
   const m = await you(), subscription = deferred(); let active = true, calls = 0;
   globalThis.document = { getElementById: () => null };
   globalThis.matchMedia = () => ({ matches: false });
-  const root = { innerHTML: '', isConnected: true, querySelector: () => null, querySelectorAll: () => [] };
+  const search = { value: '', addEventListener() {} }, empty = {hidden: true};
+  const root = { innerHTML: '', dataset: {}, isConnected: true, toggleAttribute() {}, contains: () => false,
+    querySelector: key => key === '.settings-search input' ? search : key === '.settings-empty' ? empty : null,
+    querySelectorAll: () => [] };
   const pending = m.drawYou(root, {
     view: { user: { id: 'a', name: 'Example' } }, hub: false, current: () => true, active: () => active,
     sub: () => subscription.promise, call: () => { calls++; return Promise.resolve({}); }, missing: () => false,

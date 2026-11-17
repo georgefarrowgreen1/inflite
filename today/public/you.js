@@ -613,7 +613,10 @@ export async function goTo(root, ctx, id, drawn) {
   if (key === "about" || key === "versions") liveVersions(root,ctx);
   if (["quiet","phone","notify","signout"].includes(key)) {
     await drawn;
-    if (current(ctx)) root.querySelector(({quiet:"#youQuiet",phone:"#youPhone",notify:"#youApps2 .row",signout:"#youOut"})[key])?.focus({preventScroll:true});
+    if (!current(ctx)) return;
+    const target = root.querySelector(({quiet:"#youQuiet",phone:"#youPhone",notify:"#youApps2 :is(input,button,a)",signout:"#youOut"})[key]);
+    target?.scrollIntoView({block:"nearest"});
+    target?.focus({preventScroll:true});
   }
 }
 
