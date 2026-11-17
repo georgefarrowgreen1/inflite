@@ -7,9 +7,9 @@ for(const [width,height] of[[320,760],[390,760],[844,390],[1440,900]])test(`app 
  await t.page.waitForFunction(()=>[...document.querySelectorAll('.wsl-app img')].every(n=>n.complete&&n.naturalWidth>0));
  const cols=await grid.evaluate(n=>getComputedStyle(n).gridTemplateColumns.split(' ').length);assert.equal(cols,3);
  for(const button of await t.menu.locator('.ws-launcher button').all()){const b=await button.boundingBox();if(b&&await button.isVisible())assert.ok(b.height>=44,JSON.stringify({name:await button.getAttribute("aria-label"),box:b}));}
- for(const node of await grid.locator('img').all()){const b=await node.boundingBox();assert.deepEqual([b.width,b.height],[48,48]);}
+ for(const node of await grid.locator('img').all()){const b=await node.boundingBox();assert.deepEqual([b.width,b.height],[52,52]);}
  assert.equal(await t.menu.evaluate(n=>n.scrollWidth>n.clientWidth+1),false);assert.ok((await t.menu.boundingBox()).height<=height);
- await t.menu.locator('summary').click();await t.menu.getByRole('button',{name:'Settings',exact:true}).scrollIntoViewIfNeeded(); const footer=await t.menu.getByRole('button',{name:'Settings',exact:true}).boundingBox(), bounds=await t.menu.boundingBox();assert.ok(footer.y>=bounds.y&&footer.y+footer.height<=bounds.y+bounds.height+1);
+ assert.equal(await t.menu.locator('details').getAttribute('open'),null);await t.menu.getByRole('button',{name:'Settings',exact:true}).scrollIntoViewIfNeeded(); const footer=await t.menu.getByRole('button',{name:'Settings',exact:true}).boundingBox(), bounds=await t.menu.boundingBox();assert.ok(footer.y>=bounds.y&&footer.y+footer.height<=bounds.y+bounds.height+1);
  assert.equal(await t.menu.getByRole('button',{name:'Mail',exact:true}).isDisabled(),true);
  await t.menu.getByRole('button',{name:'Files',exact:true}).focus();assert.equal(await t.menu.getByRole('button',{name:'Files',exact:true}).evaluate(n=>n===document.activeElement),true);
  if(process.env.LAUNCHER_SCREENSHOTS&&process.env.WEB_UI_BROWSER!=='webkit'){mkdirSync(process.env.LAUNCHER_SCREENSHOTS,{recursive:true});await t.page.screenshot({path:resolve(process.env.LAUNCHER_SCREENSHOTS,`launcher-${width}.png`),caret:'initial'});}
