@@ -680,6 +680,12 @@ test('packing updates for expanding history, new card content and returning from
     assert.equal(await page.locator('#today').evaluate(e => e.style.getPropertyValue('--today-columns')), '4');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForFunction(() => !document.querySelector('#today').classList.contains('today-packed'));
+    // The breakpoint clears packing before child ResizeObservers and the return
+    // transition finish. Check the final phone layout, as the desktop checks do.
+    await page.evaluate(async () => {
+      await Promise.allSettled(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished));
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
     assert.equal(await page.locator('#rest').evaluate(e => getComputedStyle(e).display), 'grid');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
     assert.deepEqual(errors, []);
