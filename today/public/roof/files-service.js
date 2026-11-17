@@ -202,6 +202,14 @@ export function createFilesService(F, options = {}) {
     if(blob.size!==fresh.size)throw new Error("The file could not be read completely.");
     return {file:new File([blob],fresh.name,{type:fresh.mime,lastModified:fresh.modifiedAt}),item:driveResource(fresh)};
   }
+  async function cancelUpload(api, reserved, spec) {
+    try {
+      const recovery = await import("./files-recovery350.js");
+      return await recovery.cancelUpload(api, reserved, spec);
+    } catch {
+      return "Cancellation could not be confirmed. Check My Drive.";
+    }
+  }
   async function save(file,{folderId=null,name=file?.name,...lease}={}) {
     assert(lease);if(!(file instanceof Blob)||file.size>MAX_FILE||typeof name!=="string"||!name.trim())throw new Error("Choose a named file no larger than 25 MB.");
     return writing(async()=>{
@@ -209,7 +217,14 @@ export function createFilesService(F, options = {}) {
       const note=(status,detail,progress)=>{try{if(live())options.activity?.put(spec.operationId,{title:name,kind:"upload",status,detail,...(Number.isFinite(progress)?{progress}:{}),actions:[]});}catch(_){}};
       note("running","Preparing save");
       try { reserved=await api.reserve(spec,lease);assert(lease); const ready=await api.uploadContent(reserved.id,file,{...lease,onProgress:value=>note("running","Saving",value)});assert(lease);driveEpoch++; const item=driveResource(ready);resourceEvent(folderId);note("succeeded","Saved to My Drive",1);return{item}; }
-      catch(error){if(live()&&error?.name==="AbortError")try{const node=reserved||await api.reserve(spec),fresh=await api.item(node.id);if(fresh.version<=2&&(reserved||fresh.version===1&&fresh.status==="pending"))await api.remove(fresh.id,fresh.version);}catch(_){}note(error?.name==="AbortError"?"cancelled":"failed",error?.name==="AbortError"?"Cancelled":fileText(error?.message,240)||"Refresh Files to check the save.");throw error;}
+      catch(error) {
+        if (live() && error?.name === "AbortError") {
+          const detail = await cancelUpload(api, reserved, spec);
+          note(detail ? "failed" : "cancelled", detail || "Cancelled");
+          if (detail) throw new Error(detail);
+        } else note("failed", fileText(error?.message,240) || "Refresh Files to check the save.");
+        throw error;
+      }
     });
   }
   async function batch(values,action,input={},lease={}) {
@@ -228,21 +243,29 @@ export function createFilesService(F, options = {}) {
     assert(lease);const drag=drags.get(token);if(!drag||Date.now()-drag.at>60000){drags.delete(token);return[];}
     const items=[];for(const ref of drag.refs){const node=nodes.get(ref.key.slice(6));if(!node||node.trashedAt||node.status!=="ready"||node.version!==ref.version)return[];items.push(driveResource(node));}return items;
   }
+  const activeTransfer = record => ["queued", "reserving", "uploading"].includes(record.status);
+  function transferLabel(record) {
+    if (record.error) return record.error;
+    if (record.status === "queued" && globalThis.navigator?.onLine === false) return "Kept on this device · waiting for a connection";
+    if (record.status === "uploading" && record.progress >= 1) return "Finishing…";
+    return { queued: "Waiting", uploading: "Uploading", reserving: "Preparing…", done: "Uploaded", cancelled: "Cancelled", failed: "Upload failed" }[record.status];
+  }
   function publicTransfers() {
     if (!live()) return [];
     return [...transfers.values()].map(record => ({ id: record.id, name: record.name, status: record.status, progress: record.progress,
-      label: record.error || (record.status==="queued"&&globalThis.navigator?.onLine===false?"Kept on this device · waiting for a connection":null) || ({ queued: "Waiting", uploading: record.progress >= 1 ? "Finishing…" : "Uploading", reserving: "Preparing…", done: "Uploaded", cancelled: "Cancelled", failed: "Upload failed" })[record.status], cancelable: ["queued", "reserving", "uploading"].includes(record.status) }));
+      label: transferLabel(record), cancelable: activeTransfer(record) }));
   }
   const transferEvent = () => {
-    if(live())for(const record of transfers.values())try{options.activity?.put(record.id,{title:record.name,detail:record.error||({queued:"Waiting",reserving:"Preparing upload",uploading:"Uploading",done:"Uploaded",cancelled:"Cancelled",failed:"Refresh Files to check before choosing the file again."})[record.status],kind:"upload",status:({queued:"queued",reserving:"running",uploading:"running",done:"succeeded",cancelled:"cancelled",failed:"failed"})[record.status],...(["uploading","done"].includes(record.status)&&Number.isFinite(record.progress)?{progress:record.progress}:{}),actions:["queued","reserving","uploading"].includes(record.status)?[{id:"cancel",label:"Cancel",run:()=>cancelTransfer(record.id)}]:record.status==="failed"?[{id:"retry",label:"Retry",run:()=>retryTransfer(record.id)},{id:"discard",label:"Discard",run:()=>cancelTransfer(record.id)},{id:"review",label:"Review",run:recovery}]:[]});}catch(_){}
+    if(live())for(const record of transfers.values())try{options.activity?.put(record.id,{title:record.name,detail:transferLabel(record),kind:"upload",status:({queued:"queued",reserving:"running",uploading:"running",done:"succeeded",cancelled:"cancelled",failed:"failed"})[record.status],...(["uploading","done"].includes(record.status)&&Number.isFinite(record.progress)?{progress:record.progress}:{}),actions:activeTransfer(record)?[{id:"cancel",label:"Cancel",run:()=>cancelTransfer(record.id)}]:record.status==="failed"&&!record.cancelled?[{id:"retry",label:"Retry",run:()=>retryTransfer(record.id)},{id:"discard",label:"Discard",run:()=>cancelTransfer(record.id)},{id:"review",label:"Review",run:recovery}]:[]});}catch(_){}
     emit({ kind: "transfers" });
   };
   function trimTransfers() { for (const [id, record] of transfers) { if (transfers.size <= 40) break; if (["done", "cancelled", "failed"].includes(record.status)) transfers.delete(id); } }
   async function uploadOne(record) {
     activeUploads++;
     const lease = { current: () => live() && !record.cancelled, signal: record.controller.signal };
+    let api;
     try {
-      const api = await drive(lease); record.status = "reserving"; transferEvent();
+      api = await drive(lease); record.status = "reserving"; transferEvent();
       record.reservation = { name: record.name, mime: record.file.type || "application/octet-stream", size: record.file.size, parentId: record.folderId, operationId: record.operationId||record.id };
       if(record.replacement){
         const target=record.replacement;
@@ -261,14 +284,11 @@ export function createFilesService(F, options = {}) {
       record.status = record.cancelled || error?.name === "AbortError" ? "cancelled" : "failed";
       record.retryable=!error.status||[408,502,503].includes(error.status);
       if (record.status === "failed") record.error = fileText(error?.message, 240) || "The upload didn’t finish. Refresh to check.";
-      if (live() && record.cancelled && !record.replacement && (record.node || record.reservation)) try {
-        // Cancellation can hide a committed reservation's reply. Reconcile the
-        // exact idempotent operation before cleanup; consumed operations cannot
-        // create another item, and a changed account never enters this path.
-        const api = await drive(), reserved = record.node || await api.reserve(record.reservation), fresh = await api.item(reserved.id);
-        if (fresh.version <= 2 && (record.node || fresh.status === "pending" && fresh.version === 1)) await api.remove(fresh.id, fresh.version);
+      if (live() && record.cancelled && !record.replacement && record.reservation) {
+        record.error = await cancelUpload(api, record.node, record.reservation);
+        if (record.error) record.status = "failed";
         resourceEvent(record.folderId);
-      } catch (_) { /* An expired reservation is also reclaimed by the server. */ }
+      }
     } finally { if(record.status==="done"||record.cancelled){await journal?.remove(record.id).catch(()=>{});record.file=null}record.reservation = null; activeUploads--; trimTransfers(); transferEvent(); pump(); }
   }
   function pump() {
@@ -283,7 +303,7 @@ export function createFilesService(F, options = {}) {
     if (folderId !== null && (typeof folderId !== "string" || !ID.test(folderId))) throw new Error("Choose a valid destination folder.");
     files = [...files];
     if (!files.length) return { queued: 0 };
-    if (files.length > 100 || [...transfers.values()].filter(record => ["queued", "reserving", "uploading"].includes(record.status)).length + files.length > 100) throw new Error("Choose up to 100 files at a time.");
+    if (files.length > 100 || [...transfers.values()].filter(activeTransfer).length + files.length > 100) throw new Error("Choose up to 100 files at a time.");
     if (files.some(file => !(file instanceof Blob) || typeof file.name !== "string" || !file.name.trim() || /[\/\\\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/.test(file.name) || file.size > MAX_FILE)) throw new Error("Choose files no larger than 25 MB each.");
     const store=await durable;assert({current:accepting});
     if(typeof indexedDB!=='undefined'&&!store)throw Error('Files could not keep this upload. Try again before closing this page.');
@@ -294,14 +314,14 @@ export function createFilesService(F, options = {}) {
     trimTransfers(); transferEvent(); pump(); return { queued: files.length };
   }
   function cancelTransfer(id) {
-    const record = transfers.get(id); if (!live() || !record || !["queued", "reserving", "uploading","failed"].includes(record.status)) return;
+    const record = transfers.get(id); if (!live() || !record || !activeTransfer(record) && record.status !== "failed") return;
     record.cancelled = true; record.controller.abort();
     if(record.replacement)drive().then(api=>api.cancelReplacement(record.operationId||record.id)).catch(()=>{});
     if (["queued","failed"].includes(record.status)) { record.status = "cancelled"; record.file = null; journal?.remove(record.id).catch(()=>{}); }
     transferEvent();
   }
   const recovery=()=>live()&&import('./files-recovery350.js').then(m=>live()&&m.recover(F,{live,transfers,drive,assert,journal:()=>journal,operation,transferEvent,resourceEvent,retryTransfer,cancelTransfer,savedRecord}));
-  const busy = () => live() && (activeUploads > 0 || writes.size > 0 || [...transfers.values()].some(record => ["queued", "reserving", "uploading"].includes(record.status)));
+  const busy = () => live() && (activeUploads > 0 || writes.size > 0 || [...transfers.values()].some(activeTransfer));
   async function flush({ timeoutMs = 2000 } = {}) {
     let timer, expired = false;
     const deadline = new Promise(resolve => { timer = setTimeout(() => { expired = true; resolve(); }, Math.max(0, Math.min(10000, timeoutMs))); });

@@ -246,7 +246,7 @@ test('cancelled uploads reconcile an unacknowledged reservation with the exact o
    assert.equal(xhrs.length,0,'the first reservation reply has not reached the client');service.cancelTransfer(service.transfers()[0].id);
    assert.deepEqual(await service.flush({timeoutMs:1000}),{lost:0});assert.equal(attempts,2,'only the cancellation cleanup performs one exact idempotent replay');
    const reservations=calls.filter(c=>c.action==='uploads');assert.deepEqual(reservations[1].body,reservations[0].body);assert.equal(reservations[0].body.parentId,B);assert.equal(reservations[0].body.operationId,service.transfers()[0].id);
-   assert.equal(xhrs.length,0);assert.equal(service.transfers()[0].status,'cancelled');
+   assert.equal(xhrs.length,0);assert.equal(service.transfers()[0].status,mode==='pending'?'cancelled':'failed');
    const deletes=calls.filter(c=>c.method==='DELETE');
    if(mode==='pending'){assert.equal(nodes.has(id),false);assert.equal(deletes.length,1);assert.equal(deletes[0].params.version,'1');}
    else{assert.equal(nodes.has(id),true,'another same-account continuation is preserved');assert.equal(deletes.length,0);assert.equal(nodes.get(id).version,mode==='ready'?2:3);}
@@ -256,6 +256,28 @@ test('cancelled uploads reconcile an unacknowledged reservation with the exact o
    assert.deepEqual(call.body,original);if(mode!=='pending')state.nodes.set(id,{...state.nodes.get(id),status:'ready',version:mode==='ready'?2:3,name:mode==='newer'?'Renamed elsewhere.txt':original.name});
    return Response.json({item:state.nodes.get(id)},{status:201});
   }});}finally{responseGate.resolve();await turn();}
+ }
+});
+
+test('upload cancellation crossing commit removes the original bytes and preserves later edits', async () => {
+ for (const version of [2, 3]) {
+  await fixture(async ({ service, calls, xhrs, nodes }) => {
+   await service.upload([new File(['data'], 'Race.txt')]);
+   await until(() => xhrs.length === 1);
+   const transfer = service.transfers()[0];
+   service.cancelTransfer(transfer.id);
+   await service.flush();
+   const deletes = calls.filter(call => call.method === 'DELETE');
+   assert.deepEqual(deletes.map(call => call.params.version), version === 2 ? ['1','2'] : ['1']);
+   assert.equal(nodes.has(deletes[0].params.id), version === 3);
+   assert.equal(service.transfers()[0].status, version === 2 ? 'cancelled' : 'failed');
+  }, { fetch(call, { nodes }) {
+   if (call.method === 'DELETE' && call.params.version === '1') {
+    const item = nodes.get(call.params.id);
+    nodes.set(item.id, { ...item, status: 'ready', version });
+    return Response.json({ error: 'Changed' }, { status: 409 });
+   }
+  } });
  }
 });
 

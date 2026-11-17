@@ -48,11 +48,11 @@ export const STATIC = Object.freeze({
 });
 for (const c of Object.values(STATIC)) c.links = c.sections.map(([, l, h]) => [l, h]);
 
-// Weather without its connector file (hub or roof off): what it shares, no search, no mini
+// A disabled or unavailable module can still describe its registered screens.
 const fallback = (app) => {
   const R = REGISTRY[app];
   return { app, name: R.name, icon: app, href: R.path, sections: R.sections, aliases: R.aliases,
-    shares: { cards: "Forecasts, ride weather and warnings", notifications: "Rain, warnings, briefings and solar alerts", screens: R.sections.map((s) => s[1]).join(" · ") } };
+    shares: { ...(app === "weather" ? { cards: "Forecasts, ride weather and warnings", notifications: "Rain, warnings, briefings and solar alerts" } : {}), screens: R.sections.map((s) => s[1]).join(" · ") } };
 };
 let F0 = null;
 export async function connectorOf(app, F = F0) {

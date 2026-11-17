@@ -47,7 +47,7 @@ const OUT = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path
 
 // The host page. The frame has no address of its own here: its script gives it Mail's (with the code coming back from
 // signing in, if there's one), so Mail is loaded once
-export function hostPage(mail, auth) {
+export function hostPage(mail, auth, standalone = false) {
   const publicMail = mail === "https://email.inflite.ai" ? "https://inflite.ai/mail/standalone/" : mail + "/";
   return `<!doctype html>
 <html lang="en-GB" data-mail="${attr(mail)}" data-auth="${attr(auth)}">
@@ -74,7 +74,7 @@ export function hostPage(mail, auth) {
   <header class="mh-bar">
     <button type="button" class="mh-back" aria-label="Back to Apps">${CHEVRON}<span>Apps</span></button>
     <h1 class="mh-t">Mail</h1>
-    <a class="mh-own" href="${attr(publicMail)}" target="_blank" rel="noopener">Open Mail on Its Own${OUT}</a>
+    ${standalone ? "" : `<a class="mh-own" href="${attr(publicMail)}" target="_blank" rel="noopener">Open Mail on Its Own${OUT}</a>`}
   </header>
   <iframe class="mh-frame" name="ifl-mail" title="Mail" allow="clipboard-write; web-share"></iframe>
 </body>
@@ -87,7 +87,7 @@ export function hostPage(mail, auth) {
 // the device). And the hub's cross-fade between pages, asked for here as menu.css asks it of the apps' pages, so going
 // from Apps to Mail and back fades as every page of the hub does
 export const HOST_CSS = `@view-transition { navigation: auto; }
-:root { color-scheme: light dark; --mh-bg: #dde3fb; --mh-ink: #11131c; --mh-ink-2: rgba(60, 60, 67, 0.62); --mh-tint: #0f7f6e; --mh-panel: rgba(255, 255, 255, 0.9);
+:root { color-scheme: light dark; --mh-bg: #dde3fb; --mh-ink: #11131c; --mh-ink-2: rgba(60, 60, 67, 0.62); --mh-tint: #086b5c; --mh-panel: rgba(255, 255, 255, 0.9);
   --mh-line: rgba(60, 60, 67, 0.14); --mh-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --mh-bg: #1b2860; --mh-ink: #f4f5fa; --mh-ink-2: rgba(235, 235, 245, 0.62); --mh-tint: #5fe0c9; --mh-panel: rgba(56, 58, 74, 0.72); --mh-line: rgba(235, 235, 245, 0.12); }
@@ -130,5 +130,5 @@ export async function mailPage(request, env) {
   }
   const mail = originOf(env.MAIL_ORIGIN), auth = originOf(env.AUTH_ORIGIN);
   if (!mail || !auth) return said(503, "Mail isn’t ready here yet.");
-  return new Response(method === "HEAD" ? null : hostPage(mail, auth), { headers: pageHeaders(mail) });
+  return new Response(method === "HEAD" ? null : hostPage(mail, auth, /^\/mail\/standalone\/?$/.test(url.pathname)), { headers: pageHeaders(mail) });
 }

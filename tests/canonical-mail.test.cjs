@@ -7,6 +7,7 @@ test('canonical standalone Mail wraps its legacy feature surface at the isolated
  const out=await mailPage(new Request('https://inflite.ai/mail/standalone/'),env);
  assert.equal(out.status,200);const html=await out.text();
  assert.match(html,/data-mail="https:\/\/email\.inflite\.ai"/);assert.match(html,/src="\/mailhost\.js"/);assert.doesNotMatch(html,/src="\/app\.js"/);
+ assert.doesNotMatch(html,/class="mh-own"/);
  assert.match(out.headers.get('content-security-policy'),/frame-src https:\/\/email\.inflite\.ai/);
  assert.equal(out.headers.get('set-cookie'),null);
 });

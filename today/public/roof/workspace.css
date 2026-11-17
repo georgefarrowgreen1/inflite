@@ -186,14 +186,6 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace .ws-summary-line { margin: 5px 0 0; color: var(--ws-muted); font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
   .ifl-workspace .ws-summary-open { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 999px; color: var(--ws-muted); background: var(--ws-well); }
   .ifl-workspace .ws-summary-open svg { display: block; width: 17px; height: 17px; }
-  .ifl-workspace .ws-summary-symbols { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 74px; border-radius: 16px; background: var(--ws-page); }
-  .ifl-workspace .ws-summary-symbols img { width: 44px; height: 44px; border-radius: 12px; }
-  .ifl-workspace .ws-summary-symbols > .ifl-glyph { display: grid; place-items: center; width: 20px; height: 20px; color: var(--ws-muted); }
-  .ifl-workspace .ws-summary-symbols svg { display: block; width: 16px; height: 16px; }
-  .ifl-workspace .ws-summary-facts { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
-  .ifl-workspace .ws-summary-facts > div { flex: 1 1 60px; min-width: 0; }
-  .ifl-workspace .ws-summary-facts dt { color: var(--ws-muted); font-size: 11px; line-height: 1.3; }
-  .ifl-workspace .ws-summary-facts dd { margin: 3px 0 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
   .ifl-workspace .ws-open-workspace { width: 100%; }
   .ifl-workspace .ws-today-slot { overflow: visible; }
   .ifl-workspace:is([data-mode="workspace"], [data-mode="app"], [data-mode="files"]) .ws-canvas { flex: 1; min-height: 0; overflow: hidden; }
@@ -299,18 +291,13 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 }
 
 /* One InFlite shell: Today is home, workspaces use the same account and apps. */
-.ifl-workspace .ws-mode-switch { display: flex; flex: none; gap: 3px; padding: 4px; border-radius: 999px; background: var(--ws-well); }
-.ifl-workspace .ws-mode-button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 9px 18px; border: 0; border-radius: 999px; background: transparent; color: var(--ws-muted); font: inherit; font-size: 14px; font-weight: 600; }
-.ifl-workspace .ws-mode-button[aria-pressed=true] { background: var(--ws-wash); color: var(--ws-text); }
 .ifl-workspace .ws-system-count, .ifl-workspace .ws-sync-state { margin-left: auto; flex: none; color: var(--ws-muted); font-size: 11px; }
 .ifl-workspace .ws-system-count { display: grid; place-items: center; min-width: 24px; min-height: 24px; padding: 3px 6px; border-radius: 999px; background: var(--ws-well); }
 .ifl-workspace .ws-offline { flex: none; margin: 12px 20px 0; padding: 12px 16px; border-radius: 18px; background: var(--ws-well); color: var(--ws-text); font-size: 14px; line-height: 1.5; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home-title, .ifl-workspace[data-unified=true][data-mode=today] .ws-workspace-chips { display: none; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-workspace-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-workspace-card > :not(:last-child) { display: none; }
-@media (max-width: 1190px) and (min-width: 960px) { .ifl-workspace .ws-mode-button { padding-inline: 12px; } .ifl-workspace .ws-toolbar { flex-wrap: wrap; } .ifl-workspace .ws-search { min-width: 190px; } }
-@media (max-width: 959px) { .ifl-workspace .ws-mode-switch { order: 6; flex: 1 0 100%; } .ifl-workspace .ws-mode-button { flex: 1; min-height: 44px; } }
-@media (prefers-reduced-motion: reduce) { .ifl-workspace .ws-mode-button { transition: none; } }
+@media (max-width: 1190px) and (min-width: 960px) { .ifl-workspace .ws-toolbar { flex-wrap: wrap; } .ifl-workspace .ws-search { min-width: 190px; } }
 .ifl-workspace .ws-home-body { display: contents; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home { display: block; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview { display: flex; margin-bottom: 14px; align-items: center; justify-content: space-between; gap: 20px; }
@@ -356,8 +343,6 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace[data-mode=workspace] .ws-heading { min-width: 0; }
   .ifl-workspace[data-mode=workspace] .ws-search { order: 0; flex: 0 0 44px; width: 44px; padding: 10px; }
   .ifl-workspace[data-mode=workspace] .ws-search > span:not(.ifl-glyph) { display: none; }
-  .ifl-workspace[data-mode=workspace] .ws-mode-switch { order: 0; flex: none; padding: 2px; }
-  .ifl-workspace[data-mode=workspace] .ws-mode-button { flex: none; padding-inline: 12px; }
   .ifl-workspace[data-mode=workspace] .ws-pane-tabs { display: none; }
   .ifl-workspace[data-mode=workspace] .ws-pane-header { min-height: 52px; padding-block: 4px; }
   .ifl-workspace[data-mode=workspace] .ws-pane-sections { padding-block: 4px; }

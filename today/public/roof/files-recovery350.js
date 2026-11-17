@@ -12,3 +12,25 @@ export async function openRecovery(F,service){
 }
 
 export function recover(F,{live,transfers,drive,assert,journal,operation,transferEvent,resourceEvent,retryTransfer,cancelTransfer,savedRecord}){return openRecovery(F,{records:()=>[...transfers.values()].filter(r=>r.file&&['failed','queued'].includes(r.status)),retry:retryTransfer,discard:cancelTransfer,review:async id=>{const r=transfers.get(id);if(!r?.replacement||r.status!=='failed')throw Error('Wait until this upload has stopped.');const api=await drive(),cancel=await api.cancelReplacement(r.operationId||r.id);if(cancel.committed){await journal()?.remove(r.id);r.status='done';r.file=null;transferEvent();resourceEvent(r.folderId);return {committed:true}}assert();const item=await api.item(r.replacement.id);assert();return item;},replace:async(id,version)=>{const r=transfers.get(id);if(!live()||r?.status!=='failed'||!r.replacement)throw Error('Review this upload again.');r.replacement={...r.replacement,version};r.operationId=operation();await journal()?.put(savedRecord(r));if(live())retryTransfer(id)}});}
+
+export async function cancelUpload(api, reserved, spec) {
+  try {
+    const node = reserved || await api.reserve(spec);
+    // Commit can advance a pending reservation while its conditional delete is in flight.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const fresh = await api.item(node.id);
+      const pending = fresh.status === "pending" && fresh.version === 1;
+      const committed = reserved && fresh.status === "ready" && fresh.version === 2;
+      if (!pending && !committed) return "The file changed and was kept in Drive.";
+      try {
+        await api.remove(node.id, fresh.version);
+        return "";
+      } catch (error) {
+        if (error.status !== 409 || !pending || attempt) throw error;
+      }
+    }
+  } catch (error) {
+    if (error.status === 404 || error.status === 410) return "";
+    throw error;
+  }
+}
