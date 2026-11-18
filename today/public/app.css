@@ -1557,25 +1557,56 @@ html[data-midnight-lava=lagoon], .lava-swatches [data-lava=lagoon] { --lava-base
   .lava-swatches input:checked + .lava-swatch::after { color: Highlight; }
 }
 
+/* A small window onto the current wallpaper. The full scene stays in its original
+   aspect ratio with its bottom edge at the dock, as on the home screen. */
+.settings-dock-preview {
+  position: relative; isolation: isolate; display: grid; place-items: end center;
+  height: 80px; margin: 8px 16px 0; padding-bottom: 10px; overflow: hidden;
+  border-radius: 16px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--ifl-line);
+}
+.settings-dock-preview canvas { display: none; position: absolute; bottom: 0; left: 0; width: 100%; height: auto; }
+html[data-midnight-lava] .settings-dock-preview canvas { display: block; }
+.settings-preview-dock {
+  position: relative; display: flex; align-items: center; gap: 7px; padding: 6px 9px;
+  border-radius: 16px; border: 1px solid var(--ifl-glass-line); background: var(--ifl-glass);
+  box-shadow: var(--ifl-glass-shadow); -webkit-backdrop-filter: var(--ifl-glass-blur); backdrop-filter: var(--ifl-glass-blur);
+}
+.settings-preview-dock img { width: 22px; height: 22px; border-radius: 6px; }
+.settings-preview-dock :is(.ifl-glyph, svg) { width: 16px; height: 16px; }
+@media (prefers-reduced-transparency: no-preference) and (prefers-contrast: no-preference) {
+  html[data-midnight-lava][data-glass=on] .settings-preview-dock {
+    --ifl-glass-blur: blur(var(--ifl-glass-radius)) saturate(105%);
+    background-color: color-mix(in srgb, var(--ifl-surface) calc(100% - 55% * var(--ifl-glass-strength)), transparent);
+  }
+}
 /* A single displacement field bends the backdrop after frosting. Its neutral
    centre and the separate foreground layer keep labels and glyphs crisp. */
 .ifl-optics { position: absolute; pointer-events: none; overflow: hidden; }
-html[data-refractor=backdrop][data-glass=on] :is(.ws-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts, .ifm-pop, dialog.ifl-sheet[open]) {
-  backdrop-filter: var(--ifl-glass-blur) url("#ifl-system-lens");
+html[data-refractor=backdrop][data-glass=on] :is(.ws-dock, .settings-preview-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts, .ifm-pop, dialog.ifl-sheet[open]) {
+  backdrop-filter: var(--ifl-glass-blur) var(--ifl-lens-filter, url("#ifl-system-lens"));
 }
 
 /* WebKit's CSS canvas samples the same scene at a second magnification.
    Only a narrow bevel transmits this sample. The centre uses the usual material. */
 html[data-refractor=wallpaper] .ifh:not(.ifh-conversation) .ifh-acts { position: relative; }
-html[data-refractor=wallpaper] :is(.ws-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .ifm-pop, dialog.ifl-sheet[open])::after {
+html[data-refractor=wallpaper] :is(.ws-dock, .settings-preview-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .ifm-pop, dialog.ifl-sheet[open])::after {
   content: ""; position: absolute; inset: 0; box-sizing: border-box; border-radius: inherit;
   pointer-events: none; opacity: var(--ifl-glass-strength);
   box-shadow: inset 0 1px 1px rgb(255 255 255 / .22), inset 0 -1px 1px rgb(0 0 0 / .12);
 }
-html[data-refractor=wallpaper][data-midnight-lava] :is(.ws-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .ifm-pop, dialog.ifl-sheet[open])::after {
-  padding: clamp(2px, calc(6px * var(--ifl-glass-strength)), 6px);
+html[data-refractor=wallpaper][data-midnight-lava] :is(.ws-dock, .settings-preview-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .ifm-pop, dialog.ifl-sheet[open])::after {
+  padding: max(1px, calc(var(--ifl-rim-width, 6px) * var(--ifl-glass-strength)));
   background: -webkit-canvas(ifl-lava) var(--ifl-lens-position, 50% 50%) / var(--ifl-lens-size, cover) no-repeat;
-  opacity: calc(.72 * var(--ifl-glass-strength));
+  opacity: calc(var(--ifl-rim-transmission, .72) * var(--ifl-glass-strength));
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
 }
+
+.ifh-acts { --ifl-lens-filter: url("#ifl-system-lens-control"); --ifl-rim-width: 2px; --ifl-rim-transmission: .42; }
+:is(.ifm-pop, dialog.ifl-sheet:not([data-sheet=workspace-apps])) {
+  --ifl-lens-filter: url("#ifl-system-lens-sheet"); --ifl-rim-width: 3px; --ifl-rim-transmission: .48;
+}
+:is(.settings-preview-dock, .ws-dock, .ifl-tabs, dialog[data-sheet=workspace-apps]) {
+  --ifl-lens-filter: url("#ifl-system-lens"); --ifl-rim-width: 6px; --ifl-rim-transmission: .72;
+}
+.settings-preview-dock { --ifl-rim-width: 3px; }

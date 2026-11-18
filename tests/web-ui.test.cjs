@@ -1823,12 +1823,27 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
       await colours.getByRole('radio', {name:colour,exact:true}).check();
       assert.equal(await page.locator('html').getAttribute('data-midnight-lava'), colour.toLowerCase());
       const pixels = await canvas.evaluate(c => c.toDataURL());
+      assert.equal(await page.locator('.settings-dock-preview canvas').evaluate(c => c.toDataURL()),pixels);
       if (colour === 'Midnight') assert.equal(pixels, original, 'colour changes preserve the exact pool positions');
       else rendered.add(pixels);
     }
     assert.equal(rendered.size, 4, 'each colourway paints distinct pixels');
+    const slider = page.getByRole('slider',{name:'Glass intensity'});
+    const adjust = value => slider.evaluate((n,v) => {
+      n.value = v;
+      n.dispatchEvent(new Event('input',{bubbles:true}));
+    }, value);
+    await adjust(82);
+    await save(page, 'dock-glass-preview-'+width);
+    assert.equal(await page.evaluate(()=>InFliteAppearance.snapshot().glassStrength),82);
+    assert.equal(pref.glassStrength,55,'dragging previews before saving');
+    await slider.dispatchEvent('change');
+    await page.waitForFunction(()=>document.querySelector('.settings-range input')?.value === '82' && !document.querySelector('.settings-appearance fieldset').disabled);
+    assert.equal(pref.glassStrength,82);
+    await adjust(10);
 
     await page.keyboard.press('Escape');
+    await page.waitForFunction(()=>InFliteAppearance.snapshot().glassStrength===82);
     let email = {emailOk:true,chat:{emails:{},pigeons:true},weather:{email:{}},account:{fixed:true}};
     await page.route('**/account/api/account/notify', async route => {
       assert.equal(route.request().headers()['x-inflite-owner'],owner);
@@ -2026,5 +2041,46 @@ test('system glass refracts the dock edge, keeps its centre clear and follows ap
     await page.emulateMedia({contrast:'more'});
     await page.waitForFunction(() => !document.documentElement.hasAttribute('data-refractor'));
     assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('Lava drawer follows a short drag, rotates in place and releases the dock on dismissal', async () => {
+  const {ctx,page,errors} = await open({initialPath:'/?os=1',scheme:'dark',motion:'no-preference'});
+  try {
+    await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('still'));
+    const launcher = page.locator('.ws-dock-launcher');
+    await launcher.click();
+    const drawer = page.getByRole('dialog',{name:'Your apps'});
+    await drawer.evaluate(n => Promise.allSettled(n.getAnimations().map(a=>a.finished)));
+    const head = await drawer.locator('.ifs-head h2').boundingBox();
+    const x = head.x + 8, y = head.y + head.height/2;
+    await page.mouse.move(x,y);
+    await page.mouse.down();
+    const webkit = process.env.WEB_UI_BROWSER === 'webkit';
+    const cropY = () => drawer.evaluate(n=>parseFloat(n.style.getPropertyValue('--ifl-lens-position').split(' ')[1]));
+    const start = await cropY();
+    await page.mouse.move(x,y+24,{steps:6});
+    await page.waitForFunction(()=>document.querySelector('dialog.dragging')?.style.getPropertyValue('--drag') === '24px');
+    if (webkit) await page.waitForFunction(start => {
+      const d = document.querySelector('dialog.dragging');
+      return parseFloat(d?.style.getPropertyValue('--ifl-lens-position').split(' ')[1]) < start-18;
+    },start);
+    await page.mouse.up();
+    if (webkit) await page.waitForFunction(start => {
+      const d = document.querySelector('dialog[open]');
+      return Math.abs(parseFloat(d?.style.getPropertyValue('--ifl-lens-position').split(' ')[1])-start)<2;
+    },start);
+    await page.setViewportSize({width:820,height:390});
+    await drawer.locator('.ifs-head h2').scrollIntoViewIfNeeded();
+    if (webkit) await page.waitForFunction(()=>parseFloat(document.querySelector('dialog[open]').style.getPropertyValue('--ifl-lens-size'))>820);
+    const landscape = await drawer.locator('.ifs-head h2').boundingBox();
+    await page.mouse.move(landscape.x+8,landscape.y+12);
+    await page.mouse.down();
+    await page.mouse.move(landscape.x+8,landscape.y+148,{steps:3});
+    await page.mouse.up();
+    await drawer.waitFor({state:'detached'});
+    await launcher.click();
+    await drawer.waitFor();
+    assert.deepEqual(errors,[]);
   } finally { await ctx.close(); }
 });

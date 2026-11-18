@@ -24,7 +24,7 @@
 //   goTo(root, ctx, id, drawn) → /#you=<id>: its section scrolled to (notify, apps, quiet, rules, phone, account,
 //   signout), or its sheet (notify-weather, notify-mail), once drawn (drawYou's promise)
 //   openWxNotify(root, ctx) → the Weather Notifications sheet
-import { wallpaperPreference, setWallpaper, lavaColours, wallpaperColour, setWallpaperColour } from "/roof/wallpaper.js";
+import { previewWallpaper, wallpaperPreference, setWallpaper, lavaColours, wallpaperColour, setWallpaperColour } from "/roof/wallpaper.js";
 import { esc, G } from "/cards.js";
 
 const LEVELS = [["do", "Do"], ["suggest", "Suggest"], ["quiet", "Quiet"]];
@@ -468,6 +468,20 @@ function appearance(ctx) {
   const owner = ctx.view.user.id, body = el("div", {class:"settings-appearance"});
   const listeners = new AbortController();
   const h = ctx.frame.sheet.open({sheet:"settings-appearance",title:"Appearance",body,onClose:()=>listeners.abort()});
+  const sample = el("canvas");
+  const favourites = document.querySelector(".ws-dock-apps");
+  const apps = favourites ? Array.from(favourites.querySelectorAll("[data-launcher-app]"), b => b.dataset.launcherApp)
+    : ["weather","fitness","markets","chat"];
+  const dock = el("div",{class:"settings-preview-dock"},ui.icon("sun"),
+    apps.map(app => app === "files" ? ui.icon("file") : ui.icon(null,{app,size:24})),ui.icon("grid"));
+  const preview = el("div",{class:"settings-dock-preview","aria-hidden":"true"},sample,dock);
+  previewWallpaper(sample,listeners.signal);
+  let previewing = false;
+  function cancelPreview() {
+    if (previewing) theme.cancelGlassPreview();
+    previewing = false;
+  }
+  listeners.signal.addEventListener("abort",cancelPreview,{once:true});
   let syncWallpaperControls;
   window.addEventListener("inflite:wallpaper-storage", () => syncWallpaperControls?.(), {signal:listeners.signal});
   const active = () => current(ctx) && !h.closed;
@@ -494,9 +508,11 @@ function appearance(ctx) {
       try {
         const result = await accountPreference(ctx,"prefs","PUT",{[key]:value});
         if (!ctx.current() || result.id !== owner) return;
+        previewing = false;
         theme.accept({...result.prefs,id:owner},{animate:true});
         if (active()) draw({...result.prefs,id:owner});
       } catch (error) {
+        cancelPreview();
         if (active()) { draw(pref); body.querySelector('[role=status]').textContent = error.message; }
       } finally { form.disabled = false; }
     }
@@ -529,7 +545,15 @@ function appearance(ctx) {
     };
     const strength = el("input",{type:"range",min:0,max:100,value:pref.glassStrength,"aria-label":"Glass intensity",disabled:!pref.glass});
     const amount = el("output",{text:pref.glassStrength+"%"});
-    strength.oninput = () => {amount.textContent = strength.value+"%";};
+    strength.oninput = () => {
+      amount.textContent = strength.value+"%";
+      previewing = theme.setGlass({glassStrength:Number(strength.value)},{preview:true});
+    };
+    strength.onpointercancel = () => {
+      cancelPreview();
+      strength.value = pref.glassStrength;
+      amount.textContent = strength.value+"%";
+    };
     strength.onchange = () => save("glassStrength",Number(strength.value));
     form.append(ui.list([
       select("Mode","appearance",[["auto","System"],["light","Light"],["dark","Dark"]]),
@@ -537,6 +561,7 @@ function appearance(ctx) {
       colours,
       select("Colour palette","palette",Object.entries(theme.palettes).map(([id,p])=>[id,p.name])),
       ui.row({title:"Liquid Glass",trail:ui.sw(pref.glass,on=>save("glass",on),{label:"Liquid Glass"})}),
+      preview,
       ui.row({title:"Glass intensity",trail:el("span",{class:"settings-range"},strength,amount)})
     ]));
     body.replaceChildren(form,status);

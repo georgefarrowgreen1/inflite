@@ -66,6 +66,21 @@ const contrast = matchMedia("(prefers-contrast: more), (forced-colors: active)")
 let pools, ctx, frame, timer, previous;
 let suspended = false;
 
+let preview;
+function drawPreview() {
+  if (!preview || !frame) return;
+  if (preview.width !== frame.width || preview.height !== frame.height) {
+    preview.width = frame.width;
+    preview.height = frame.height;
+  }
+  preview.getContext("2d")?.drawImage(canvas, 0, 0);
+}
+export function previewWallpaper(target, signal) {
+  preview = target;
+  drawPreview();
+  signal.addEventListener("abort", () => { if (preview === target) preview = null; }, {once:true});
+}
+
 function checkpoint() {
   if (pools) try { sessionStorage.setItem(sceneKey, JSON.stringify(pools)); } catch {}
 }
@@ -132,6 +147,7 @@ function paint() {
   }
   ctx.putImageData(frame, 0, 0);
   wallpaperFrame(canvas, frame);
+  drawPreview();
 }
 
 function sync() {
