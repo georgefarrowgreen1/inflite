@@ -152,6 +152,40 @@ test('Phone Mail reveals search on demand and keeps text tools and Send inside t
   } finally { await t.ctx.close(); }
 });
 
+test('The compact compose toolbar fits five named actions at 320px and protects the draft', async () => {
+  const t = await open({ width: 320, paneWidth: 320 });
+  try {
+    await t.page.evaluate(() => {
+      T.fw.workspace.files = { open: async () => [new File(['notes'], 'notes.txt', { type: 'text/plain' })] };
+      T.headers.at(-1).acts.find(action => action.icon === 'compose').run();
+    });
+    const sheet = t.page.getByRole('dialog', { name: 'New message' });
+    const group = sheet.getByRole('group', { name: 'Message tools' });
+    await group.waitFor();
+    assert.equal(await group.getByRole('button').count(), 5);
+    const rects = await group.locator('button').evaluateAll(nodes => nodes.map(n => {
+      const {x, y, right, width, height} = n.getBoundingClientRect();
+      return {x, y, right, width, height};
+    }));
+    assert.ok(rects.every(r => r.x >= 0 && r.right <= 320 && r.width >= 44 && r.height >= 44 && r.y === rects[0].y));
+    await group.getByRole('button', { name: 'Attach from InFlite Files' }).click();
+    await sheet.getByText('notes.txt', {exact: true}).waitFor();
+    await group.getByRole('button', {name:'Follow up if unanswered'}).click();
+    const due = sheet.getByLabel('Follow up in People if unanswered');
+    assert.equal(await due.isVisible(), true);
+    await group.getByRole('button', {name:'Text tools'}).click();
+    assert.equal(await due.isVisible(), false);
+    await group.getByRole('button', {name:'Delete draft'}).click();
+    const confirm = t.page.getByRole('dialog', {name:'Delete draft?'});
+    await confirm.getByRole('button', {name:'Keep writing'}).click();
+    assert.equal(await sheet.isVisible(), true);
+    await group.getByRole('button', {name:'Delete draft'}).click();
+    await confirm.getByRole('button', {name:'Delete draft', exact:true}).click();
+    await sheet.waitFor({state:'hidden'});
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});
+
 test('Mail opens a native time review, accepts an explicit change, and offers an editable reply', async () => {
   const t = await open();
   try {
@@ -200,11 +234,12 @@ test('Mail opens a native time review, accepts an explicit change, and offers an
     await follow.click();
     const due = t.page.getByLabel('Follow up in People if unanswered');
     assert.ok(Date.parse(await due.inputValue()) > Date.now());
-    const followRow = t.page.locator('.mc-follow');
-    assert.equal(await followRow.evaluate(row => row.open), true);
+    const clock = t.page.getByRole('button', {name:/^Follow up if unanswered/});
+    assert.equal(await clock.getAttribute('aria-expanded'), 'true');
     await t.page.getByRole('button', { name: 'Clear follow-up time' }).click();
     assert.equal(await due.inputValue(), '');
-    assert.equal(await followRow.locator('summary small').textContent(), 'Set time');
+    assert.equal(await clock.getAttribute('aria-expanded'), 'false');
+    assert.equal(await clock.getAttribute('aria-label'), 'Follow up if unanswered');
     assert.equal(await editor.inputValue(),'Let me know by Friday.');
     assert.equal(writes.length,1);
     assert.deepEqual(writes[0].value,{title:record.title,description:record.description,links:[],timezone:'UTC',allDay:false,start:start+5400000,end:start+9000000});

@@ -37,11 +37,7 @@
 .ifl-sheet[data-app=mail] .mc-quote[hidden] { display: none; }
 .ifl-sheet[data-app=mail] .mc-quote p { margin: 4px 0 8px; overflow-wrap: anywhere; }
 .ifl-sheet[data-app=mail] .mc-qk { color: var(--text); font-size: 13px; }
-.ifl-sheet[data-app=mail] .mc-tools, .ifl-sheet[data-app=mail] .mc-more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 8px; }
-.ifl-sheet[data-app=mail] .mc-tools .ifl-btn,
-.ifl-sheet[data-app=mail] .mc-more .ifl-btn { min-height: 44px; padding: 10px 16px; }
 .ifl-sheet[data-app=mail] .mc-tools .ifl-icon-btn { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border-radius: var(--r-pill, 999px); }
-.ifl-sheet[data-app=mail] .mc-more[hidden] { display: none; }
 .ifl-sheet[data-app=mail] svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .ifl-sheet[data-app=mail] svg[data-icon=more] { fill: currentColor; stroke: none; }
 
@@ -148,12 +144,24 @@
 .ifl-sheet[data-app=mail] .mc { flex: 1; min-height: 0; gap: 0; }
 .ifl-sheet[data-app=mail] .mc-letter { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; align-items: stretch; }
 .ifl-sheet[data-app=mail] .mc-letter > * { flex-shrink: 0; }
-.ifl-sheet[data-app=mail] .mc-letter .mc-row { width: 100%; min-height: 48px; align-items: center; padding: 2px 8px 2px 14px; border-radius: 16px; border: 0; background: color-mix(in srgb, var(--mc-ink) 5%, transparent); }
-.ifl-sheet[data-app=mail] .mc-letter .mc-row:focus-within { box-shadow: inset 3px 0 var(--mc-teal); }
-.ifl-sheet[data-app=mail] .mc-k { font-size: 14px; font-weight: 600; }
+.ifl-sheet[data-app=mail] .mc-letter .mc-row {
+  width: 100%; min-height: 49px; align-items: baseline; gap: 8px; padding: 2px 0;
+  border: 0; border-radius: 0; background: transparent; box-shadow: inset 0 -1px var(--mc-line);
+}
+.ifl-sheet[data-app=mail] .mc-letter .mc-row:focus-within { box-shadow: inset 0 -1px var(--mc-teal); }
+.ifl-sheet[data-app=mail] .mc-k { align-self: flex-start; color: var(--mc-muted); font-size: 15px; font-weight: 400; }
+.ifl-sheet[data-app=mail] .mc-chips { align-self: center; gap: 0 8px; }
 .ifl-sheet[data-app=mail] .mc-chips input { min-width: 40px; }
-.ifl-sheet[data-app=mail] .mc-cc .mc-row { margin-top: 4px; }
-.ifl-sheet[data-app=mail] .mc-row [data-act=cc] { min-width: 44px; min-height: 44px; padding: 3px 6px; border: none; box-shadow: none; background: transparent; color: var(--mc-muted); font-size: 13px; }
+.ifl-sheet[data-app=mail] .mc-row [data-act=cc] {
+  align-self: flex-start; flex: none; display: inline-flex; align-items: center; justify-content: end;
+  gap: 5px; min-width: 44px; min-height: 44px; padding: 0 3px; border: 0; box-shadow: none;
+  background: transparent; color: var(--mc-muted); font-size: 13px; font-weight: 500;
+}
+.ifl-sheet[data-app=mail] .mc-row [data-act=cc]::after {
+  content: ""; position: static; inset: auto; flex: none; width: 5px; height: 5px; border-radius: 0; border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0; transform: translateY(-1px) rotate(45deg);
+}
+.ifl-sheet[data-app=mail] .mc-row [data-act=cc][aria-expanded=true]::after { transform: translateY(1px) rotate(225deg); }
 .ifl-sheet[data-app=mail] .mc-letter .mc-subject { width: 100%; min-height: 62px; padding: 10px 0; border: 0; border-radius: 0; border-bottom: 1px solid var(--mc-line); background: transparent; font-size: clamp(22px, 4vw, 28px); letter-spacing: -.035em; font-weight: 650; }
 .ifl-sheet[data-app=mail] .mc-letter .mc-text { flex: 1 0 120px; width: 100%; min-height: 120px; margin: 0; padding: 16px 0; resize: none; border: 0; border-radius: 0; background: transparent; font: inherit; font-size: 17px; line-height: 1.55; }
 .ifl-sheet[data-app=mail] .mc-letter :is(.mc-subject,.mc-text)::placeholder { color: var(--mc-muted); opacity: .85; }
@@ -182,7 +190,7 @@
 .ifl-sheet[data-app=mail][data-sheet=mail-compose].ifs-kb .ifs-body { padding-top: 8px; }
 @media (forced-colors: active) {
   .ifl-sheet[data-app=mail][data-sheet=mail-compose] { background-image: none; }
-  .ifl-sheet[data-app=mail] .mc-letter .mc-row:focus-within { box-shadow: none; }
+  .ifl-sheet[data-app=mail] .mc-letter .mc-row:focus-within { box-shadow: none; border-radius: 16px; }
   .ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-act=send] { background: ButtonFace; color: ButtonText; border: 1px solid ButtonText; }
 }
 /* A committed address leaves just a caret until the next recipient is typed. */
@@ -190,33 +198,37 @@
   flex: 1 1 12px; width: 12px; min-width: 12px;
 }
 .ifl-sheet[data-app=mail] .mc-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  max-width: calc(100% - 16px); padding-inline: 10px;
+  display: inline-flex; align-items: center; gap: 6px; max-width: calc(100% - 20px);
+  padding: 0 2px; min-width: 44px; border: 0; box-shadow: none; background: transparent;
+  color: var(--mc-ink); font-size: 16px; font-weight: 500; text-align: start;
 }
 .ifl-sheet[data-app=mail] .mc-chip span { overflow: hidden; text-overflow: ellipsis; }
-.ifl-sheet[data-app=mail] .mc-chip::after { content: "×"; flex: none; font-size: 14px; color: var(--mc-muted); }
+.ifl-sheet[data-app=mail] .mc-chip svg {
+  width: 24px; height: 24px; padding: 3px; border-radius: 50%;
+  color: var(--mc-ink);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--mc-teal) 12%, transparent), color-mix(in srgb, var(--mc-teal) 24%, transparent));
+}
+.ifl-sheet[data-app=mail] .mc-chip[aria-expanded=true] span { text-decoration: underline; text-underline-offset: 4px; }
+.ifl-sheet[data-app=mail] .mc-chip.bad, .ifl-sheet[data-app=mail] .mc-chip.bad svg { color: var(--danger); }
+.ifl-sheet[data-app=mail] .mc-recipient-details:not([hidden]) {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-block: 4px; padding: 4px 8px 4px 12px; border-radius: 14px; background: var(--glass-ctl);
+}
+.ifl-sheet[data-app=mail] .mc-recipient-details span { min-width: 0; overflow-wrap: anywhere; }
+.ifl-sheet[data-app=mail] .mc-recipient-details small { display: block; font-size: 12px; color: var(--mc-muted); }
+.ifl-sheet[data-app=mail] .mc-recipient-details b { font-size: 15px; font-weight: 500; }
+.ifl-sheet[data-app=mail] .mc-recipient-details button { flex: none; min-width: 44px; min-height: 44px; color: var(--danger); }
 .ifl-sheet[data-app=mail] .mc-chips input:-webkit-autofill {
   -webkit-background-clip: text; -webkit-text-fill-color: var(--mc-ink); caret-color: var(--mc-ink);
 }
-.ifl-sheet[data-app=mail] .mc-more:not([hidden]) {
-  display: grid; gap: 0; margin-bottom: 8px; padding: 0 12px;
-  max-height: min(240px, 36dvh, calc(var(--vvh, 100dvh) * .36));
-  overflow: auto; overscroll-behavior: contain;
-  background: var(--glass-ctl); border-radius: 16px;
+.ifl-sheet[data-app=mail] .mc-toolgroup { flex: none; }
+.ifl-sheet[data-app=mail] .mc-toolgroup [data-act=delete-draft] { color: var(--danger); }
+.ifl-sheet[data-app=mail] .mc-toolgroup .scheduled { position: relative; }
+.ifl-sheet[data-app=mail] .mc-toolgroup .scheduled::before {
+  content: ""; position: absolute; inset: auto auto 6px; width: 4px; height: 4px;
+  border-radius: 50%; background: currentColor;
 }
-.ifl-sheet[data-app=mail] .mc-more > .ifl-btn,
-.ifl-sheet[data-app=mail] .mc-follow summary {
-  display: flex; align-items: center; justify-content: flex-start; gap: 10px;
-  min-height: 46px; width: 100%; padding: 4px 2px; border: 0; border-radius: 0;
-  background: transparent; box-shadow: none; color: var(--mc-ink);
-  font: inherit; font-size: 15px; font-weight: 550; text-align: start; cursor: pointer;
-}
-.ifl-sheet[data-app=mail] .mc-follow summary::-webkit-details-marker { display: none; }
-.ifl-sheet[data-app=mail] .mc-more > * + * { border-top: 1px solid var(--mc-line); }
-.ifl-sheet[data-app=mail] .mc-more > button.destructive { color: var(--danger); }
-.ifl-sheet[data-app=mail] .mc-more :is(svg,.ifl-glyph) { width: 18px; height: 18px; flex: none; }
-.ifl-sheet[data-app=mail] .mc-follow summary small { margin-inline-start: auto; color: var(--mc-muted); font-size: 13px; white-space: nowrap; }
-.ifl-sheet[data-app=mail] .mc-time { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; }
+.ifl-sheet[data-app=mail] .mc-time:not([hidden]) { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; }
 .ifl-sheet[data-app=mail] .mc-time input {
   flex: 1; min-width: 0; min-height: 44px; padding-inline: 8px; font: inherit;
   color: var(--mc-ink); background: var(--glass-ctl); border: 0; border-radius: 10px;

@@ -299,9 +299,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.21";
+  const BUILD = "2.22";
   // (what's new in it, said once it's in)
-  const NEWS = "Mail has a tidier recipient line, grouped compose options and clearer send feedback.";
+  const NEWS = "Tap a recipient to see their address. Compose tools now share one compact toolbar.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.

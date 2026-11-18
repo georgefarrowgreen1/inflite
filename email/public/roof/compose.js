@@ -132,6 +132,21 @@ export function openCompose(ctx, init = {}) {
   const fields = {};
   const sugg = el("div", { class: "mc-sugg", role: "listbox", "aria-label": "Suggestions" });
   let asked = 0, suggFor = null;
+  const recipientDetails = el("div", { class: "mc-recipient-details", hidden: true, tabindex: "-1", role: "group", "aria-label": "Recipient details" });
+  let activeRecipient = null;
+  function closeRecipient() {
+    activeRecipient?.setAttribute("aria-expanded", "false");
+    activeRecipient = null;
+    recipientDetails.hidden = true;
+    recipientDetails.replaceChildren();
+  }
+  recipientDetails.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    activeRecipient?.focus({ preventScroll: true });
+    closeRecipient();
+  });
   function tokens(key, label) {
     const box = el("div", { class: "mc-chips" });
     const input = el("input", { type: "email", inputmode: "email", autocomplete: "off", autocapitalize: "off", spellcheck: "false", enterkeyhint: "next", "aria-label": label, data: { key } });
@@ -140,13 +155,38 @@ export function openCompose(ctx, init = {}) {
     box.append(input);
     const draw = () => {
       input.placeholder = c[key].length ? " " : "Name or email";
-      for (const [p, node] of chips) if (!c[key].includes(p)) { node.remove(); chips.delete(p); }
+      for (const [p, node] of chips) if (!c[key].includes(p)) {
+        if (activeRecipient === node) closeRecipient();
+        node.remove();
+        chips.delete(p);
+      }
       let previous = null;
       for (const p of c[key]) {
         let node = chips.get(p);
         if (!node) {
-          node = el("button", { type: "button", class: `mc-chip${EMAIL_RE.test(p.email) ? "" : " bad"}`, "aria-label": `Remove ${p.name || p.email}`, title: p.email }, el("span", {text: p.name || p.email}));
-          node.addEventListener("click", (e) => { e.preventDefault(); const i = c[key].indexOf(p); if (i < 0) return; c[key].splice(i, 1); draw(); changed(); input.focus({ preventScroll: true }); });
+          const valid = EMAIL_RE.test(p.email);
+          node = el("button", { type: "button", class: valid ? "mc-chip" : "mc-chip bad", "aria-expanded": "false", title: p.email },
+            ctx.icon(valid ? "recipient" : "invalid-address"), el("span", { text: p.name || p.email }));
+          node.addEventListener("click", () => {
+            const alreadyOpen = activeRecipient === node;
+            closeRecipient();
+            if (alreadyOpen) return;
+            activeRecipient = node;
+            node.setAttribute("aria-expanded", "true");
+            const remove = ui.iconBtn("trash", { label: `Remove ${p.email}`, run: () => {
+              const i = c[key].indexOf(p);
+              if (i < 0) return;
+              c[key].splice(i, 1);
+              draw();
+              changed();
+              input.focus({ preventScroll: true });
+            } });
+            remove.replaceChildren(ctx.icon("trash"));
+            recipientDetails.replaceChildren(el("span", {}, el("small", { text: valid ? "Email address" : "Invalid address" }), el("b", { text: p.email })), remove);
+            row.after(recipientDetails);
+            recipientDetails.hidden = false;
+            recipientDetails.focus({ preventScroll: true });
+          });
           chips.set(p, node);
           if (previous) previous.after(node); else box.prepend(node);
         }
@@ -292,18 +332,27 @@ export function openCompose(ctx, init = {}) {
     a?.setAttribute("target", "_blank");
     a?.setAttribute("rel", "noopener");
   };
-  const more = el("div", { class: "mc-more", role: "group", "aria-label": "Message options" });
-  more.hidden = true;
-  const due = el("input", { type:"datetime-local", "aria-label":"Follow up in People if unanswered" });
-  const dueLabel = el("small");
+  const due = el("input", { type: "datetime-local", "aria-label": "Follow up in People if unanswered" });
   const clearDue = ui.btn("Clear", { small: true, label: "Clear follow-up time", run: () => {
     c.followUpAt = null;
     drawDue();
     changed();
-    followSummary.focus();
+    showFollowUp(false);
+    followButton.focus();
   } });
-  const followSummary = el("summary", {}, ctx.icon("later"), el("span", {text:"Follow up if unanswered"}), dueLabel);
-  const follow = el("details", {class:"mc-follow"}, followSummary, el("div", {class:"mc-time"}, due, clearDue));
+  const follow = el("div", { class: "mc-time", hidden: true }, due, clearDue);
+  const followButton = ui.iconBtn("later", { label: "Follow up if unanswered", act: "more", run: () => showFollowUp(follow.hidden) });
+  followButton.replaceChildren(ctx.icon("later"));
+  followButton.setAttribute("aria-expanded", "false");
+  function showFollowUp(open) {
+    follow.hidden = !open;
+    followButton.setAttribute("aria-expanded", String(open));
+    if (open) {
+      formatting.hidden = true;
+      formatButton.setAttribute("aria-expanded", "false");
+      due.focus();
+    }
+  }
   const weekdays = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   let suggestedAt = null;
   const followHint = ui.btn("", {small:true, run:() => {
@@ -311,10 +360,7 @@ export function openCompose(ctx, init = {}) {
     c.followUpAt = suggestedAt;
     drawDue();
     changed();
-    more.hidden = false;
-    moreBtn.setAttribute("aria-expanded","true");
-    follow.open = true;
-    due.focus();
+    showFollowUp(true);
   }});
   followHint.hidden = true;
   function suggestFollowUp() {
@@ -333,7 +379,10 @@ export function openCompose(ctx, init = {}) {
   }
   const drawDue = () => {
     const d = new Date(c.followUpAt);
-    dueLabel.textContent = c.followUpAt ? d.toLocaleDateString(undefined, {day:"numeric", month:"short"}) : "Set time";
+    const label = c.followUpAt ? "Follow up if unanswered, " + d.toLocaleString(undefined, {dateStyle: "medium", timeStyle: "short"}) : "Follow up if unanswered";
+    followButton.title = label;
+    followButton.setAttribute("aria-label", label);
+    followButton.classList.toggle("scheduled", !!c.followUpAt);
     clearDue.hidden = !c.followUpAt;
     due.value = c.followUpAt ? new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16) : "";
   };
@@ -343,17 +392,10 @@ export function openCompose(ctx, init = {}) {
     if (due.value && (!(at > Date.now()) || at > Date.now()+366*86400000)) { drawDue(); fw.toast("Choose a future time within a year"); return; }
     c.followUpAt = due.value ? at : null; drawDue(); changed();
   });
-  more.append(follow);
-  const removeDraft = ui.btn("Delete draft", { destructive: true, small: true, act: "delete-draft", run: () => end("delete") });
-  removeDraft.prepend(ctx.icon("trash"));
-  more.append(removeDraft);
-  const moreBtn = ui.iconBtn("more", { label: "More", act: "more", run: () => {
-    formatting.hidden = true;
-    formatButton.setAttribute("aria-expanded", "false");
-    more.hidden = !more.hidden;
-    moreBtn.setAttribute("aria-expanded", String(!more.hidden));
+  const removeDraft = ui.iconBtn("trash", { label: "Delete draft", act: "delete-draft", run: async () => {
+    if (await ctx.open.confirm({ title: "Delete draft?", yes: "Delete draft", no: "Keep writing", danger: true }) && !h.closed) end("delete");
   } });
-  moreBtn.setAttribute("aria-expanded", "false");
+  removeDraft.replaceChildren(ctx.icon("trash"));
   const to = tokens("to", "To");
   const ccButton = ui.btn("Cc/Bcc", { small: true, act: "cc", run: () => {
     ccRow.hidden = !ccRow.hidden;
@@ -364,8 +406,7 @@ export function openCompose(ctx, init = {}) {
   to.append(ccButton);
   const formatting = el("div", { class: "mc-format", hidden: true });
   const formatButton = ui.btn("Aa", { small: true, label: "Text tools", act: "format", run: () => {
-    more.hidden = true;
-    moreBtn.setAttribute("aria-expanded", "false");
+    showFollowUp(false);
     formatting.hidden = !formatting.hidden;
     formatButton.setAttribute("aria-expanded", String(!formatting.hidden));
   } });
@@ -385,13 +426,12 @@ export function openCompose(ctx, init = {}) {
   const attach = ui.iconBtn("attachment", { label: "Add Files", act: "files", run: () => pick.click() });
   attach.replaceChildren(ctx.icon("attachment"));
   const status = el("small", { class: "mc-status", role: "status" });
+  const group = el("div", { class: "mc-toolgroup", role: "group", "aria-label": "Message tools" }, attach, formatButton);
   if (fw.workspace?.files?.open) {
-    const drive = ui.btn("Attach from Drive", { small: true, label: "Attach from InFlite Files", act: "drive-files", run: async () => {
+    const drive = ui.iconBtn("folder", { label: "Attach from InFlite Files", act: "drive-files", run: async () => {
       const current = () => !ended && !sending && !h?.closed && !fw.signal.aborted && fw.session.user.id === owner && store.get().access === "ok";
       if (!current() || h.el.getAttribute("aria-busy") === "true") return;
-      more.hidden = true;
-      moreBtn.setAttribute("aria-expanded", "false");
-      moreBtn.focus({ preventScroll: true });
+      drive.focus({ preventScroll: true });
       try {
         const left = MAX - c.files.reduce((n, item) => n + (item.size || 0), 0);
         if (left <= 0) return fw.toast("Files are limited to 20 MB");
@@ -404,17 +444,29 @@ export function openCompose(ctx, init = {}) {
         drawFiles(); changed();
       } catch (error) { if (current() && error?.name !== "AbortError") fw.toast(error?.message || "Those files couldn’t attach."); }
     } });
-    drive.prepend(ctx.icon("folder"));
-    more.prepend(drive);
+    drive.replaceChildren(ctx.icon("folder"));
+    group.append(drive);
   }
-  const tools = el("div", { class: "mc-tools" }, el("div", { class: "mc-toolgroup" }, attach, formatButton), status, moreBtn);
-  moreBtn.replaceChildren(ctx.icon("more"));
+  group.append(followButton, removeDraft);
+  const tools = el("div", { class: "mc-tools" }, group, status);
   const prog = el("p", { class: "mc-prog", "aria-live": "polite" });
   const identity = el("span", { class: "mc-identity" }, from || el("span", { text: c.from || "Default address" }));
   const sender = el("label", { class: "mc-sender" }, ctx.icon("envelope"),
     el("span", { class: "mc-account" }, el("small", { text: "From" }), identity));
   const letter = el("div", { class: "mc-letter" }, to, ccRow, sugg, subject, text, footer, filesEl, quoteEl);
-  const body = el("div", { class: "mc" }, sender, letter, el("div", { class: "mc-accessories" }, followHint, formatting, more, prog, tools), pick);
+  const body = el("div", { class: "mc" }, sender, letter, el("div", { class: "mc-accessories" }, followHint, formatting, follow, prog, tools), pick);
+  const dismissRecipient = event => {
+    if (activeRecipient && !activeRecipient.contains(event.target) && !recipientDetails.contains(event.target)) closeRecipient();
+  };
+  body.addEventListener("focusin", dismissRecipient);
+  body.addEventListener("click", dismissRecipient);
+  body.addEventListener("keydown", event => {
+    if (activeRecipient === event.target && event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeRecipient();
+    }
+  });
   if (fw.workspace?.files?.fromDrop) {
     const isDriveDrop = event => [...(event.dataTransfer?.types || [])].includes("application/x-inflite-files-token");
     body.addEventListener("dragover", event => { if (isDriveDrop(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } });
