@@ -1959,3 +1959,72 @@ test('app launch keeps exposed wallpaper pixels stationary throughout the transi
     await page.waitForFunction(pixels => document.querySelector('.sky canvas').toDataURL() !== pixels, before);
   } finally { await ctx.close(); }
 });
+
+test('system glass refracts the dock edge, keeps its centre clear and follows appearance settings', async () => {
+  const {ctx, page, errors} = await open({initialPath:'/?os=1', scheme:'dark'});
+  try {
+    const dock = page.locator('.ws-dock:visible');
+    await dock.waitFor();
+    await page.evaluate(async () => {
+      (await import('/roof/wallpaper.js')).setWallpaper('still');
+      InFliteAppearance.setGlass({glass:true, glassStrength:100}, {preview:true});
+    });
+    const mode = await page.locator('html').getAttribute('data-refractor');
+    assert.equal(mode, process.env.WEB_UI_BROWSER === 'webkit' ? 'wallpaper' : 'backdrop');
+    const box = await dock.boundingBox();
+    // Uniform stripes make a displaced sample distinguishable from blur or a flat tint.
+    await dock.evaluate(n => {
+      n.style.setProperty('background','transparent','important');
+      n.style.setProperty('--ifl-glass-blur','blur(0px)','important');
+      for (const child of n.children) child.style.setProperty('visibility','hidden','important');
+    });
+    const row = await page.evaluate(async ({mode, box}) => {
+      const stripe = 'repeating-linear-gradient(90deg, #040404 0 8px, #fafafa 8px 16px)';
+      const bg = document.createElement('div');
+      Object.assign(bg.style,{position:'fixed', inset:'0', zIndex:'7', background:stripe, pointerEvents:'none'});
+      document.querySelector('.ws-dock').before(bg);
+      if (mode === 'wallpaper') {
+        const sky = document.querySelector('.sky canvas');
+        const raster = document.createElement('canvas');
+        raster.width = sky.width; raster.height = sky.height;
+        const c = raster.getContext('2d');
+        c.fillStyle = '#040404';
+        c.fillRect(0,0,raster.width,raster.height);
+        c.fillStyle = '#fafafa';
+        c.fillRect(0,0,Math.ceil((box.x + 22) * raster.width / sky.clientWidth),raster.height);
+        (await import('/roof/refractor.js')).wallpaperFrame(sky,c.getImageData(0,0,raster.width,raster.height));
+      }
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      return Math.floor(box.y + box.height/2);
+    }, {mode, box});
+    const {PNG} = require('playwright-core/lib/utilsBundle');
+    const shot = async () => {
+      await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+      return PNG.sync.read(await page.screenshot());
+    };
+    const on = await shot();
+    // Flatten only the optics, preserving the same tint, bevel and layered controls.
+    await dock.evaluate((node, mode) => {
+      if (mode === 'backdrop') {
+        document.querySelector('#ifl-system-lens feDisplacementMap').setAttribute('scale','0');
+      } else {
+        const box = node.getBoundingClientRect(), sky = document.querySelector('.sky canvas').getBoundingClientRect();
+        node.style.setProperty('--ifl-lens-size', sky.width+'px '+sky.height+'px');
+        node.style.setProperty('--ifl-lens-position', (sky.left-box.left)+'px '+(sky.top-box.top)+'px');
+      }
+    }, mode);
+    const off = await shot();
+    const diff = x => Math.abs(on.data[4*(row*on.width+x)] - off.data[4*(row*off.width+x)]);
+    let bend = 0;
+    for(let i=2;i<Math.min(28,box.width/4);i++) bend += diff(Math.floor(box.x)+i);
+    assert.ok(bend > 40, 'bevel must visibly shift the striped backdrop: ' + bend);
+    assert.ok(diff(Math.floor(box.x+box.width/2)) < 5, 'centre samples the original backdrop');
+    await page.evaluate(()=>InFliteAppearance.setGlass({glassStrength:0},{preview:true}));
+    assert.equal(await page.locator('html').getAttribute('data-refractor'),null);
+    await page.evaluate(()=>InFliteAppearance.cancelGlassPreview());
+    assert.equal(await page.locator('html').getAttribute('data-refractor'),mode);
+    await page.emulateMedia({contrast:'more'});
+    await page.waitForFunction(() => !document.documentElement.hasAttribute('data-refractor'));
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});

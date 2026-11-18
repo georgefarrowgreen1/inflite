@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100" preserveAspectRatio="none">
+  <!-- Red and green are horizontal and vertical light offsets. Mid-grey is flat glass. -->
+  <defs>
+    <linearGradient id="x">
+      <stop stop-color="#808080"/><stop offset=".02" stop-color="#fb8080"/>
+      <stop offset=".085" stop-color="#808080"/><stop offset=".915" stop-color="#808080"/>
+      <stop offset=".98" stop-color="#058080"/><stop offset="1" stop-color="#808080"/>
+    </linearGradient>
+    <linearGradient id="y" x2="0" y2="1">
+      <stop stop-color="#808080"/><stop offset=".045" stop-color="#80fb80"/>
+      <stop offset=".17" stop-color="#808080" stop-opacity="0"/>
+      <stop offset=".83" stop-color="#808080" stop-opacity="0"/>
+      <stop offset=".955" stop-color="#800580"/><stop offset="1" stop-color="#808080"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="100" fill="url(#x)"/>
+  <rect width="200" height="100" fill="url(#y)"/>
+</svg>

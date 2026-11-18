@@ -1556,3 +1556,26 @@ html[data-midnight-lava=lagoon], .lava-swatches [data-lava=lagoon] { --lava-base
   .lava-swatch { border: 1px solid ButtonText; }
   .lava-swatches input:checked + .lava-swatch::after { color: Highlight; }
 }
+
+/* A single displacement field bends the backdrop after frosting. Its neutral
+   centre and the separate foreground layer keep labels and glyphs crisp. */
+.ifl-optics { position: absolute; pointer-events: none; overflow: hidden; }
+html[data-refractor=backdrop][data-glass=on] :is(.ws-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts, .ifm-pop, dialog.ifl-sheet[open]) {
+  backdrop-filter: var(--ifl-glass-blur) url("#ifl-system-lens");
+}
+
+/* WebKit's CSS canvas samples the same scene at a second magnification.
+   Only a narrow bevel transmits this sample. The centre uses the usual material. */
+html[data-refractor=wallpaper] .ifh:not(.ifh-conversation) .ifh-acts { position: relative; }
+html[data-refractor=wallpaper] :is(.ws-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .ifm-pop, dialog.ifl-sheet[open])::after {
+  content: ""; position: absolute; inset: 0; box-sizing: border-box; border-radius: inherit;
+  pointer-events: none; opacity: var(--ifl-glass-strength);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / .22), inset 0 -1px 1px rgb(0 0 0 / .12);
+}
+html[data-refractor=wallpaper][data-midnight-lava] :is(.ws-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .ifm-pop, dialog.ifl-sheet[open])::after {
+  padding: clamp(2px, calc(6px * var(--ifl-glass-strength)), 6px);
+  background: -webkit-canvas(ifl-lava) var(--ifl-lens-position, 50% 50%) / var(--ifl-lens-size, cover) no-repeat;
+  opacity: calc(.72 * var(--ifl-glass-strength));
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}

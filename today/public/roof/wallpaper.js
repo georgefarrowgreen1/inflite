@@ -1,4 +1,6 @@
 // The wallpaper belongs to the document. App routes only replace content above it.
+import {wallpaperFrame} from "./refractor.js";
+
 const preferenceKey = "inflite:dark-wallpaper";
 const colourKey = "inflite:lava-colour";
 const sceneKey = "inflite:midnight-lava:v1";
@@ -129,6 +131,7 @@ function paint() {
     }
   }
   ctx.putImageData(frame, 0, 0);
+  wallpaperFrame(canvas, frame);
 }
 
 function sync() {

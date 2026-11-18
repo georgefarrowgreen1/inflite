@@ -49,10 +49,19 @@
   <link rel="modulepreload" href="/roof/ui.js">
   <link rel="modulepreload" href="/roof/search.js">
   <link rel="modulepreload" href="/roof/send.js">
+  <link rel="modulepreload" href="/roof/refractor.js">
   <script type="module" src="/roof/wallpaper.js"></script>
   <script type="module" src="/app.js"></script>
 </head>
 <body>
+<svg class="ifl-optics" width="0" height="0" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="ifl-system-lens" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feImage href="/roof/refractor-map.svg" x="0%" y="0%" width="100%" height="100%" preserveAspectRatio="none" result="bevel"/>
+      <feDisplacementMap in="SourceGraphic" in2="bevel" xChannelSelector="R" yChannelSelector="G" scale="0"/>
+    </filter>
+  </defs>
+</svg>
 <div class="sky" aria-hidden="true"><canvas></canvas></div>
 
 <!-- The session is unknown until the account answers. Slow startup never means signed out. -->
