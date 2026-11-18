@@ -618,5 +618,29 @@ export default (M) => {
     go.focus({ preventScroll: true });
   }
 
-  return { openSettings, togglePush, unsubSheet };
+  async function contactCard(options) {
+    try {
+      const { openContactCard } = await import("/roof/contact-card.js");
+      if (options.current()) openContactCard({ ...options, demo: DEMO });
+    } catch {
+      toast("Couldn’t open the contact card.", { error: true });
+    }
+  }
+
+  function saveContactAttachment(attachment, anchor, threadId) {
+    return contactCard({
+      anchor,
+      current: () => anchor.isConnected && S.thread?.id === threadId,
+      async read() {
+        if (attachment.size > 512 * 1024) throw Error("Choose a card smaller than 512 KB.");
+        const url = new URL(attachment.url, location.origin);
+        if (url.origin !== location.origin || !/^\/api\/attachments\/[\w-]+$/.test(url.pathname)) throw Error("Invalid attachment.");
+        const response = await fetch(url, { credentials: "same-origin", redirect: "error" });
+        if (!response.ok) throw Error("Couldn’t open the attachment.");
+        return response.blob();
+      },
+    });
+  }
+
+  return { openSettings, togglePush, unsubSheet, contactCard, saveContactAttachment };
 };

@@ -243,12 +243,6 @@
     return (doc.body.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
   }
 
-  function bodyInner(html) {
-    const doc = new DOMParser().parseFromString(html || "", "text/html");
-    doc.querySelectorAll("script,iframe,object,embed,form").forEach((n) => n.remove());
-    return doc.body.innerHTML;
-  }
-
   function parseAddress(s) {
     s = String(s || "")
       .trim()
@@ -284,15 +278,6 @@
       else if (k === "body") out.text = dec(v).replace(/\r\n/g, "\n");
     }
     return out;
-  }
-
-  function fileToBase64(blob) {
-    return new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result).split(",")[1] || "");
-      r.onerror = () => reject(r.error);
-      r.readAsDataURL(blob);
-    });
   }
 
   // ---------------------------------------------------------------------------
@@ -4388,14 +4373,7 @@ pre{white-space:pre-wrap}
                   h("div.mail-card-actions",
                   h("button.pill",{type:"button",onclick:(e)=>{
                     const anchor=e.currentTarget;
-                    return contactCard({anchor,current:()=>anchor.isConnected && S.thread?.id===currentThread,read:async()=>{
-                      if(a.size>512*1024) throw Error("Choose a card smaller than 512 KB.");
-                      const url=new URL(a.url,location.origin);
-                      if(url.origin!==location.origin || !/^\/api\/attachments\/[\w-]+$/.test(url.pathname))throw Error("Invalid attachment.");
-                      const response=await fetch(url,{credentials:"same-origin",redirect:"error"});
-                      if(!response.ok)throw Error("Couldn’t open the attachment.");
-                      return response.blob();
-                    }});
+                    return fromPart("sheets", "saveContactAttachment")(a, anchor, currentThread);
                   }},"Save to People"),h("a.pill",{href:downloadUrl(a.url),download:a.filename},"Download vCard")));
               }
               return kind
@@ -4995,16 +4973,11 @@ pre{white-space:pre-wrap}
   // What a part uses of Mail's own: given once, as the first is loaded. What changes as Mail goes (a menu open, a sheet,
   // the viewer) read, and set, through it as it is now
   let partsCtx = null;
-  async function contactCard(options) {
-    try {
-      const mod=await import("/roof/contact-card.js");
-      if(options.current())mod.openContactCard({...options,demo:DEMO});
-    } catch { toast("Couldn’t open the contact card.",{error:true}); }
-  }
+  const contactCard = fromPart("sheets", "contactCard");
   function partsContext() {
     return (partsCtx ||= {
       contactCard, icon, h, setKids, avatar, displayName, locale, debounce, wait, dayMs, fmtSize, extOf, kindOf, downloadUrl,
-      textToHtml, htmlToText, bodyInner, parseAddress, EMAIL_RE, fileToBase64, dataBlob,
+      textToHtml, htmlToText, parseAddress, EMAIL_RE, dataBlob,
       IFL, DEMO, STANDALONE, PUSH_OK, ApiError, api, S, els, ADDR_COLORS, RECENT_KEY,
       showMenu, closeMenu, confirmMenu, undoFor, toast, sigFor, addrColor, mine, focusedBefore,
       renderListChrome, loadList, refreshCounts, openThread, retryFailed, runSearch,

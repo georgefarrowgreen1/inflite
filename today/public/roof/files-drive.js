@@ -119,8 +119,12 @@ export function createDriveClient(F) {
   function uploadContent(id, file, { onProgress = () => {}, replacement=false, ...lease } = {}) {
     checkedId(id);
     if (!(file instanceof Blob) || file.size > MAX) return Promise.reject(new FilesError("Choose a file no larger than 25 MB.", 413));
-    if (file.size > 1024 * 1024) return import('./upload-parts.js').then(({sendParts}) =>
-      sendParts(request, replacement ? {uploadId:id} : {id}, file, onProgress, lease)).then(itemAnswer);
+    const wholeFile = () => uploadWholeFile(id, file, replacement, lease, onProgress);
+    if (file.size <= 1024 * 1024) return wholeFile().then(itemAnswer);
+    return import('./upload-parts.js').then(({sendParts}) =>
+      sendParts(request, replacement ? {uploadId:id} : {id}, file, onProgress, lease, wholeFile)).then(itemAnswer);
+  }
+  function uploadWholeFile(id, file, replacement, lease, onProgress) {
     const task = scope(lease, 120000);
     return new Promise((resolve, reject) => {
       let xhr, finished = false; const stop = () => xhr?.abort();
@@ -129,7 +133,7 @@ export function createDriveClient(F) {
       xhr = new XMLHttpRequest(); xhr.open("PUT", `/api/files/${replacement?"replacement-content?uploadId=":"content?id="}${encodeURIComponent(id)}`, true); xhr.withCredentials = true; xhr.timeout = 120000;
       xhr.setRequestHeader("X-Inflite-Files-Owner", owner); xhr.setRequestHeader("X-Inflite", "1"); xhr.setRequestHeader("Content-Type", "application/octet-stream"); xhr.setRequestHeader("Accept", "application/json");
       xhr.upload.onprogress = event => { try { task.check(); onProgress(Number.isFinite(event.loaded) && event.loaded >= 0 ? Math.max(0, Math.min(1, file.size ? event.loaded / file.size : 1)) : 0); } catch (_) {} };
-      xhr.onload = () => { try { task.check(); if (new TextEncoder().encode(xhr.responseText).length > 128 * 1024) throw failure(null, xhr.status); const value = JSON.parse(xhr.responseText); if (xhr.status < 200 || xhr.status >= 300) { lost(xhr.status); throw failure(value, xhr.status); } finish(null, itemAnswer(value)); } catch (error) { finish(error instanceof SyntaxError ? failure(null, xhr.status) : error); } };
+      xhr.onload = () => { try { task.check(); if (new TextEncoder().encode(xhr.responseText).length > 128 * 1024) throw failure(null, xhr.status); const value = JSON.parse(xhr.responseText); if (xhr.status < 200 || xhr.status >= 300) { lost(xhr.status); throw failure(value, xhr.status); } finish(null, value); } catch (error) { finish(error instanceof SyntaxError ? failure(null, xhr.status) : error); } };
       xhr.onerror = () => finish(new FilesError("The upload lost its connection. Refresh before retrying."));
       xhr.onabort = () => finish(task.signal.reason instanceof FilesError ? task.signal.reason : abort()); xhr.ontimeout = () => finish(new FilesError("The upload timed out. Refresh before retrying."));
       task.signal.addEventListener("abort", stop, { once: true });

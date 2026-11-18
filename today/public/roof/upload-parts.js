@@ -1,13 +1,20 @@
 // Compare server-confirmed chunks with the durable local file before resuming.
-export function sendParts(request, query, file, onProgress, lease) {
-  const send = () => transfer(request, query, file, onProgress, lease);
+export function sendParts(request, query, file, onProgress, lease, wholeFile) {
+  const send = () => transfer(request, query, file, onProgress, lease, wholeFile);
   // Reopened tabs can discover the same durable upload at the same time.
   return globalThis.navigator?.locks ? navigator.locks.request('inflite:drive:' + (query.id || query.uploadId),
     lease.signal ? {signal:lease.signal} : {}, send) : send();
 }
-async function transfer(request, query, file, onProgress, lease) {
+async function transfer(request, query, file, onProgress, lease, wholeFile) {
   const endpoint = 'upload-parts';
-  const status = await request(endpoint, {query, ...lease});
+  let status;
+  try {
+    status = await request(endpoint, {query, ...lease});
+  } catch (error) {
+    // Older account Workers return this exact response for an unknown route.
+    if (error.status === 404 && error.message === 'Not found.' && wholeFile) return wholeFile();
+    throw error;
+  }
   if (status.item) return status;
   const { partSize, parts } = status;
   if (partSize !== 1024 * 1024 || !parts || typeof parts !== 'object') throw Error('Unexpected upload checkpoints.');

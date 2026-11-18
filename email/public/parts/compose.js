@@ -4,7 +4,22 @@
 // and closes with those. Given what it uses of Mail's own (M: app.js partsContext); what it gives back is what app.js
 // calls.
 export default (M) => {
-  const { icon, h, setKids, avatar, fmtSize, extOf, debounce, textToHtml, htmlToText, bodyInner, parseAddress, EMAIL_RE, fileToBase64, dataBlob, ApiError, api, S, showMenu, closeMenu, confirmMenu, undoFor, toast, sigFor, addrColor, renderListChrome, loadList, refreshCounts, openThread, retryFailed, keepUnsent, forgetUnsent, outbox, pendingSends, focusedBefore } = M;
+  const { icon, h, setKids, avatar, fmtSize, extOf, debounce, textToHtml, htmlToText, parseAddress, EMAIL_RE, dataBlob, ApiError, api, S, showMenu, closeMenu, confirmMenu, undoFor, toast, sigFor, addrColor, renderListChrome, loadList, refreshCounts, openThread, retryFailed, keepUnsent, forgetUnsent, outbox, pendingSends, focusedBefore } = M;
+
+  function fileToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",")[1] || "");
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(blob);
+    });
+  }
+
+  function bodyInner(html) {
+    const doc = new DOMParser().parseFromString(html || "", "text/html");
+    doc.querySelectorAll("script,iframe,object,embed,form").forEach((n) => n.remove());
+    return doc.body.innerHTML;
+  }
 
   let sheetOpener = null;
 
