@@ -1840,6 +1840,15 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
   } finally { await ctx.close(); }
 });
 
+// Sample the exposed app gutter from a whole viewport screenshot. Cropped
+// WebKit screenshots can omit composited fixed layers.
+async function wallpaperPixels(page) {
+  await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+  const {PNG} = require('playwright-core/lib/utilsBundle');
+  const shot = PNG.sync.read(await page.screenshot());
+  return Array.from({length:64}, (_, i) => shot.data.readUInt32BE(((300 + i) * shot.width + 2) * 4));
+}
+
 test('Midnight Lava carries the same visible scene through the app drawer, Calendar and a reload', async () => {
   const {ctx, page, errors} = await open({initialPath:'/?os=1', scheme:'dark', hubApps:{calendar:true}, viewApps:{calendar:true}});
   try {
@@ -1849,20 +1858,21 @@ test('Midnight Lava carries the same visible scene through the app drawer, Calen
     await page.evaluate(() => { window.wallpaperNode = document.querySelector('.sky canvas'); });
     async function checkVisibleScene() {
       const sky = page.locator('.sky canvas');
-      // Capture the viewport before sampling it. A clipped WebKit screenshot
-      // can omit composited fixed layers.
-      async function gutter() {
-        await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
-        const {PNG} = require('playwright-core/lib/utilsBundle');
-        const shot = PNG.sync.read(await page.screenshot());
-        const x = 4;
-        return Array.from({length:180}, (_, y) => shot.data.readUInt32BE(((240 + y) * shot.width + x) * 4));
-      }
-      const visible = await gutter();
-      await sky.evaluate(c => { c.style.visibility = 'hidden'; });
-      const hidden = await gutter();
-      await sky.evaluate(c => { c.style.visibility = ''; });
-      assert.notDeepEqual(visible, hidden, 'the wallpaper paints through the app gutter');
+      const visible = await wallpaperPixels(page);
+      const expected = await sky.evaluate(c => {
+        const copy = document.createElement('canvas');
+        copy.width = c.clientWidth; copy.height = c.clientHeight;
+        const raster = copy.getContext('2d');
+        raster.drawImage(c, 0, 0, copy.width, copy.height);
+        return Array.from(raster.getImageData(2, 300, 1, 64).data);
+      });
+      // The compositor and Canvas2D can interpolate the low-resolution artwork
+      // slightly differently. Compare the painted colours with the scaled scene.
+      const meanError = visible.reduce((sum, pixel, i) => {
+        for (let j = 0; j < 3; j++) sum += Math.abs((pixel >>> (24 - j * 8) & 255) - expected[i * 4 + j]);
+        return sum;
+      }, 0) / (visible.length * 3);
+      assert.ok(meanError < 3, 'painted gutter should match the wallpaper, mean colour error ' + meanError);
       assert.ok(await sky.evaluate(c => c === window.wallpaperNode));
       assert.equal(await image(), first);
     }
@@ -1872,11 +1882,11 @@ test('Midnight Lava carries the same visible scene through the app drawer, Calen
     await page.locator('.ws-dock-launcher').click();
     await page.getByRole('dialog', {name:'Your apps'}).getByRole('button', {name:'Calendar', exact:true}).click();
     await page.locator('.m-calendar:visible').waitFor();
-    await page.waitForFunction(() => !document.documentElement.dataset.vt);
+    await page.waitForFunction(() => !document.documentElement.dataset.vt && !document.querySelector('.ifl-screen[class*="ifl-enter-"]'));
     await checkVisibleScene();
     await page.goBack();
     await page.locator('#workspace[data-mode=today]').waitFor();
-    await page.waitForFunction(() => !document.documentElement.dataset.vt);
+    await page.waitForFunction(() => !document.documentElement.dataset.vt && !document.querySelector('.ifl-screen[class*="ifl-enter-"]'));
     await checkVisibleScene();
     await page.goto(origin + '/?os=1');
     await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
@@ -1886,5 +1896,33 @@ test('Midnight Lava carries the same visible scene through the app drawer, Calen
     await page.emulateMedia({colorScheme:'light'});
     await page.waitForFunction(() => !document.documentElement.hasAttribute('data-midnight-lava'));
     assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('app launch keeps exposed wallpaper pixels stationary throughout the transition', async () => {
+  const {ctx, page} = await open({initialPath:'/?os=1', scheme:'dark', hubApps:{calendar:true}, viewApps:{calendar:true}});
+  try {
+    await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('still'));
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    const calendar = page.locator('.ws-dock [data-launcher-app=calendar]');
+    await calendar.waitFor();
+    const stationary = await wallpaperPixels(page);
+    await calendar.click();
+    const motion = await page.waitForFunction(() => {
+      const animations = document.getAnimations().filter(a =>
+        a.effect?.target?.id === 'm-calendar' || a.animationName?.startsWith('ifl-launch'));
+      if (!animations.length) return false;
+      for (const animation of animations) animation.pause();
+      return animations;
+    });
+    for (const fraction of [.05, .5, .9]) {
+      await motion.evaluate((animations, f) => {
+        for (const a of animations) a.currentTime = f * a.effect.getTiming().duration;
+      }, fraction);
+      const pixels = await wallpaperPixels(page);
+      assert.deepEqual(pixels, stationary, 'wallpaper changed at ' + fraction * 100 + '% of launch');
+    }
+    await motion.evaluate(animations => animations.forEach(a => a.finish()));
+    await page.locator('.m-calendar:visible').waitFor();
   } finally { await ctx.close(); }
 });

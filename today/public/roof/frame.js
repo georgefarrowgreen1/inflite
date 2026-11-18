@@ -551,7 +551,8 @@ export function createFrame(opts = {}) {
       stopMotion = F.nav.launchMotion({ kind, origin: o.launch, change: apply, current: () => !gone && mine === motion, doc });
       return;
     }
-    if (typeof doc.startViewTransition === "function" && doc.visibilityState === "visible") {
+    // Keep the live wallpaper outside tab, push and Back animations as well.
+    if (typeof doc.startViewTransition === "function" && doc.visibilityState === "visible" && !("midnightLava" in html.dataset)) {
       html.dataset.vt = k;
       const z = k === "zoom" ? o.zoomFrom : null;
       z?.classList.add("ifl-vt-zoom");

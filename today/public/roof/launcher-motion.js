@@ -25,12 +25,14 @@ export function launcherTransition({kind,origin,change,target=origin?.target,cur
   if(matchMedia('(prefers-reduced-motion: reduce)').matches||doc.hidden){apply();return stop}
   if(!point()){apply();clear();return stop}
   owners.set(html,token);html.dataset.vt=kind;
-  if(typeof doc.startViewTransition==='function'){
+  // A document snapshot briefly replaces the live wallpaper during a launch.
+  // With Midnight Lava, animate only the incoming screen over the existing canvas.
+  if(typeof doc.startViewTransition==='function' && !('midnightLava' in html.dataset)){
     try{vt=doc.startViewTransition(()=>{const result=apply();if(current())point();return result})}catch(_){clear();apply();return stop}
     for(const name of ['ready','updateCallbackDone'])vt[name]?.catch?.(()=>{});
     vt.finished.then(()=>{apply();clear()},()=>{apply();clear()});timer=setTimeout(()=>stop(true),1600);return stop;
   }
-  // Older browsers keep the same route lifecycle and use a smaller origin zoom.
+  // Keep the same route lifecycle with a smaller, screen-local origin zoom.
   // No wrapper, reparenting, bitmap clone, animated blur or page-sized layout writes.
   const node=apply();if(!node?.animate){clear();return stop}
   try{
