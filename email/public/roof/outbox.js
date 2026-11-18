@@ -53,18 +53,41 @@ export function createOutbox(ctx) {
   const tracked = new Map();
   const offs = [];
   let dead = false;
+  const owner = fw.session?.user?.id;
+  const retired = () => dead || fw.signal?.aborted || fw.session?.user?.id !== owner;
+  const canDrain = () => !retired() && (!store.get || store.get().access === "ok");
   const toast = (text, o) => { try { return fw.toast(text, o) || null; } catch { return null; } };
   const mirror = () => {
+    if (retired()) return;
     const list = [...items.values()].map(({ key, at, draft, state, handle }) => ({ key, at, draft, state, undoInToast: state === "waiting" && !!handle?.close }));
     store.set({ outbox: list, sending: list.filter((x) => x.state === "waiting" || x.state === "sending").length });
   };
+  function storedQueue() {
+    const records = local.get(STORAGE.outbox, []);
+    return Array.isArray(records) ? records.filter(r => typeof r?.key === "string" && r.key && r.draft && typeof r.draft === "object") : [];
+  }
+  for (const r of storedQueue()) items.set(r.key, { key: r.key, at: r.at || Date.now(), draft: fieldsOf(r.draft), state: "queued" });
+  let knownQueued = new Set(items.keys());
   const keepQueue = () => {
-    const q = [...items.values()].filter((x) => x.state === "queued").map(({ key, at, draft }) => ({ key, at, draft }));
-    if (!q.length) { local.drop(STORAGE.outbox); return true; }
-    try { return local.put(STORAGE.outbox, q); } catch { return false; }
+    if (retired()) return false;
+    const queued = new Map([...items].filter(([,it]) => it.state === "queued"));
+    const added = [...queued.keys()].filter(key => !knownQueued.has(key));
+    const removed = [...knownQueued].filter(key => !queued.has(key));
+    if (!added.length && !removed.length) return true;
+    // Other tabs may have queued or delivered messages since this outbox opened.
+    const merged = new Map(storedQueue().map(item => [item.key, item]));
+    for (const key of removed) merged.delete(key);
+    for (const key of added) {
+      const { at, draft } = queued.get(key);
+      merged.set(key, {key, at, draft});
+    }
+    try {
+      if (merged.size) local.put(STORAGE.outbox, [...merged.values()]);
+      else local.drop(STORAGE.outbox);
+      knownQueued = new Set(queued.keys());
+      return true;
+    } catch { return false; }
   };
-  // (what was queued offline before: kept again from storage)
-  for (const r of local.get(STORAGE.outbox, []) || []) if (r?.key && r.draft) items.set(r.key, { key: r.key, at: r.at || Date.now(), draft: fieldsOf(r.draft), state: "queued" });
 
   const payload = async (d, files = []) => {
     const attachments = [];
@@ -78,7 +101,7 @@ export function createOutbox(ctx) {
   const after = () => { ctx.actions?.counts?.(); ctx.actions?.load?.({ quiet: true }); };
 
   async function go(it, { keepalive = false } = {}) {
-    if (it.state === "sending" || !items.has(it.key)) return;
+    if (retired() || it.state === "sending" || !items.has(it.key)) return;
     clearTimeout(it.timer);
     it.state = "sending";
     try { it.handle?.close?.(); } catch {}
@@ -87,14 +110,14 @@ export function createOutbox(ctx) {
       await api.sendDraft(it.draft.draftId, it.key, { keepalive });
       items.delete(it.key);
       mirror();
-      if (!dead) { toast("Message Sent"); after(); }
+      if (!retired()) { toast("Message Sent"); after(); }
     } catch (e) {
       // (Mail refused it, 4xx: it's still in Drafts, to change there; no answer: Try Again asks whether it went first)
       const refused = e.status >= 400 && e.status < 500 && e.status !== 401;
       if (refused) items.delete(it.key);
       else it.state = "failed";
       mirror();
-      if (!dead) toast(refused ? "Couldn’t send. It’s in Drafts" : e.message || "Couldn’t send", refused ? undefined : { action: { label: "Try Again", run: () => retry(it.key) } });
+      if (!retired()) toast(refused ? "Couldn’t send. It’s in Drafts" : e.message || "Couldn’t send", refused ? undefined : { action: { label: "Try Again", run: () => retry(it.key) } });
     }
   }
 
@@ -112,6 +135,7 @@ export function createOutbox(ctx) {
     let saved;
     try {
       saved = await api.saveDraft(await payload(d, files), onProgress);
+      if (!saved?.id || retired()) throw new Error("Mail did not confirm the draft");
     } catch (e) {
       return { ok: false, error: e.message || "Couldn’t send", offline: !e.status && !online() };
     }
@@ -155,17 +179,19 @@ export function createOutbox(ctx) {
   // (sends made offline: saved, then sent, as the connection comes back; asked first whether any went already)
   let draining = null;
   function drain() {
-    if (draining || !online()) return draining;
+    if (draining || !canDrain() || !online()) return draining;
     const q = [...items.values()].filter((x) => x.state === "queued");
     if (!q.length) return null;
     draining = (async () => {
       let went = [];
       try { went = (await api.sent(q.map((x) => x.key)))?.sent || []; } catch {}
       for (const it of q) {
+        if (!canDrain()) break;
         if (went.includes(it.key)) { items.delete(it.key); continue; }
         try {
           const saved = await api.saveDraft(await payload(it.draft, []));
-          it.draft = { ...it.draft, draftId: saved?.id || it.draft.draftId };
+          if (!saved?.id || retired()) break;
+          it.draft = { ...it.draft, draftId: saved.id };
           it.state = "waiting";
           await go(it);
         } catch { it.state = "queued"; break; }
@@ -181,41 +207,84 @@ export function createOutbox(ctx) {
   }
   const unsent = () => { const u = local.get(STORAGE.unsent, null); return u && typeof u === "object" ? u : null; };
   const dropUnsent = () => local.drop(STORAGE.unsent);
-  let draftTimer=0;
+  let draftTimer=0, recovering=null;
   function track(fn, onSaved) {
-    tracked.set(fn, { onSaved: typeof onSaved === "function" ? onSaved : null, id: null, sig: null });
+    const state = { onSaved, id:null, sig:null, saving:null };
+    tracked.set(fn, state);
     if(!draftTimer)draftTimer=setInterval(()=>{if(!dead&&online())flush({draftsOnly:true}).catch(()=>{})},5000);
-    return () => {tracked.delete(fn);if(!tracked.size){clearInterval(draftTimer);draftTimer=0}};
+    const stop = () => {
+      tracked.delete(fn);
+      if (!tracked.size) { clearInterval(draftTimer); draftTimer = 0; }
+      return state.saving;
+    };
+    stop.pending = () => state.saving;
+    return stop;
+  }
+
+  async function saveTracked(fn, state, keepalive, draftsOnly) {
+    if (state.saving) {
+      if (draftsOnly) return state.saving;
+      await state.saving;
+      if (!tracked.has(fn)) return true;
+      return saveTracked(fn, state, keepalive, draftsOnly);
+    }
+    const snapshot = fn();
+    if (!snapshot) return true;
+    const draft = fieldsOf(snapshot), files = snapshot.files || [];
+    draft.draftId ||= state.id;
+    if (draftsOnly && files.some(file => file instanceof Blob)) return true;
+    const signature = id => JSON.stringify([{ ...draft, draftId: id }, files.map(f => f?.ref ?? f?.i ?? [f?.name, f?.size])]);
+    if (state.sig === signature(draft.draftId)) return true;
+    const kept = unsent();
+    state.saving = (async () => {
+      const result = await api.saveDraft(await payload(draft, files), null, { keepalive });
+      if (!result?.id) return false;
+      state.id = result.id;
+      state.sig = signature(result.id);
+      const latest = fn();
+      if (!retired() && latest && kept && JSON.stringify(unsent()) === JSON.stringify(kept) &&
+          JSON.stringify(fieldsOf(kept)) === JSON.stringify(fieldsOf(snapshot)) &&
+          JSON.stringify(fieldsOf(latest)) === JSON.stringify(fieldsOf(snapshot))) dropUnsent();
+      state.onSaved?.(result.id, snapshot);
+      return true;
+    })().catch(() => false).finally(() => { state.saving = null; });
+    return state.saving;
+  }
+
+  async function recoverDraft(kept, keepalive) {
+    const draft = fieldsOf(kept);
+    let files = [];
+    if (draft.draftId) {
+      try {
+        files = (await api.draft(draft.draftId)).compose.files;
+        if (!Array.isArray(files)) throw new Error("Mail did not return the draft attachments");
+      } catch (error) {
+        if (error?.status !== 404) throw error;
+        draft.draftId = null;
+      }
+    }
+    if (retired()) throw new Error("Mail was closed");
+    const result = await api.saveDraft(await payload(draft, files), null, { keepalive });
+    if (!result?.id) throw new Error("Mail did not confirm the draft");
+    if (!retired() && JSON.stringify(unsent()) === JSON.stringify(kept)) dropUnsent();
   }
 
   async function flush({ keepalive = false, draftsOnly = false } = {}) {
+    if (retired()) return { lost: 0 };
     let lost = 0;
     const jobs = [];
     for (const it of draftsOnly?[]:[...items.values()]) {
       if (it.state === "waiting") jobs.push(go(it, { keepalive }));
       else if (it.state === "queued") jobs.push(api.saveDraft(await payload(it.draft, []), null, { keepalive }).then(() => { items.delete(it.key); }, () => { lost++; }));
     }
-    for (const [fn, t] of tracked) {
-      if(t.saving){jobs.push(t.saving);continue}
-      let f = null;
-      try { f = fn(); } catch {}
-      if (!f) continue;
-      const d = fieldsOf(f);
-      d.draftId ||= t.id;
-      const files = Array.isArray(f.files) ? f.files : [];
-      if(draftsOnly&&files.some(file=>file instanceof Blob))continue;
-      const sigOf = (id) => JSON.stringify([{ ...d, draftId: id }, files.map((x) => x?.ref || `${x?.name}:${x?.size}`)]);
-      if (sigOf(d.draftId) === t.sig) continue;
-      const saving=t.saving=Promise.resolve().then(async()=>api.saveDraft(await payload(d, files), null, { keepalive })).then((r) => {
-        t.id = r?.id || d.draftId || null;
-        t.sig = sigOf(t.id);
-        let latest;try{latest=fn()}catch(_){}
-        if(latest&&JSON.stringify({...fieldsOf(latest),draftId:t.id})===JSON.stringify({...d,draftId:t.id}))dropUnsent();
-        if (t.id) try { t.onSaved?.(t.id); } catch {}
-      }, () => { lost++; }).finally(()=>{if(t.saving===saving)t.saving=null});jobs.push(saving);
+    for (const [fn, state] of tracked) {
+      jobs.push(saveTracked(fn, state, keepalive, draftsOnly).then(ok => { if (!ok) lost++; }));
     }
     const u = !draftsOnly && !tracked.size && unsent();
-    if (u && (u.subject || u.text || u.to?.length)) jobs.push(api.saveDraft(await payload(fieldsOf(u), []), null, { keepalive }).then(() => dropUnsent(), () => { lost++; }));
+    if (u && (u.subject || u.text || u.to?.length || u.cc?.length || u.bcc?.length)) {
+      recovering ||= recoverDraft(u, keepalive).finally(() => { recovering = null; });
+      jobs.push(recovering.catch(() => { lost++; }));
+    }
     const n = jobs.length;
     let done = 0;
     let cap = 0;
@@ -228,6 +297,7 @@ export function createOutbox(ctx) {
   }
 
   const on = (t, ev, fn) => { t?.addEventListener?.(ev, fn); offs.push(() => t?.removeEventListener?.(ev, fn)); };
+  if (store.on) offs.push(store.on("access", () => drain()));
   on(globalThis, "online", () => drain());
   offs.push(fw.on?.("visible", () => drain()) || (() => {}));
   // (put away during the undo window: it goes at once, as app.js's sendNow)

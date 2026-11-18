@@ -2,7 +2,31 @@
 // turned on or off on this device, and Unsubscribe. Given what it uses of Mail's own (M: app.js partsContext); what it
 // gives back is what app.js calls.
 export default (M) => {
-  const { icon, h, setKids, avatar, displayName, locale, debounce, DEMO, STANDALONE, PUSH_OK, api, S, els, showMenu, closeMenu, confirmMenu, toast, ADDR_COLORS, loadList, refreshCounts } = M;
+  const { icon, h, setKids, avatar, displayName, locale, debounce, DEMO, STANDALONE, PUSH_OK, api, S, els, showMenu, closeMenu, confirmMenu, toast, ADDR_COLORS, loadList, refreshCounts, addrColor } = M;
+
+  // Send From, from the menu: your addresses, the one new mail goes from ticked; another chosen is made the default
+  function sendFromMenu(anchor) {
+    const me = S.me || {};
+    showMenu(
+      anchor,
+      (me.addresses || []).map((a) => ({
+        label: a.email,
+        dot: addrColor(a.email),
+        checked: a.email === me.defaultFrom,
+        action: async () => {
+          if (a.email === me.defaultFrom) return;
+          try {
+            await api.updateAddress(a.email, { isDefault: true });
+            S.me = { ...S.me, ...(await api.me()) };
+            toast(`New mail goes from ${a.email}`, { icon: "check" });
+          } catch (err) {
+            toast(err.message, { error: true });
+          }
+        },
+      })),
+      { title: "Send new mail from", dropdown: true }
+    );
+  }
 
   // (at: a page to open it at, over its first: "signature")
   function openSettings(at) {
@@ -642,5 +666,5 @@ export default (M) => {
     });
   }
 
-  return { openSettings, togglePush, unsubSheet, contactCard, saveContactAttachment };
+  return { sendFromMenu, openSettings, togglePush, unsubSheet, contactCard, saveContactAttachment };
 };

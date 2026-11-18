@@ -18,12 +18,12 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.10.2";
+const BUILD = "4.11.1";
 // (what's new in it, said once it's in)
-const NEWS = "Lava stays anchored during drawer gestures, with finer glass edges and a live dock preview in Appearance.";
+const NEWS = "More reliable updates, safer account switching and a public guide to InFlite with a direct way to contact the team.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.31.1/store.js","/os.webmanifest"];
+const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.31.2/store.js","/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -220,7 +220,9 @@ const IFL = (() => {
   //      be interrupted, save() → where you are (to JSON), files: what to fetch afresh where there's no service worker }
   const U = { app: "", build: "", url: "version", field: "build", busy: null, save: null, files: null, ready: null, fresh: "", at: 0, back: Date.now(), touch: 0, going: false, told: "" };
   const typing = () => { const a = document.activeElement; return !!a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || (a.tagName === "INPUT" && !a.readOnly && !/^(button|checkbox|radio|range|submit|reset|file|color)$/.test(a.type))); };
-  const busyNow = () => typing() || !!open || !!document.querySelector("dialog[open], .ifa-layer, [aria-busy='true']") || !!U.busy?.();
+  const busyNow = () => typing() || !!open || !!U.busy?.() ||
+    [...document.querySelectorAll("dialog[open], .ifa-layer, [aria-busy='true']")].some(node =>
+      node.getClientRects().length && getComputedStyle(node).visibility !== "hidden");
   // Three-part releases follow the legacy two-part series within each major.
   const older = (a, b) => {
     const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
@@ -237,6 +239,9 @@ const IFL = (() => {
     // (a service worker that's noticed the app's files change, as it opened: looked at now)
     navigator.serviceWorker?.addEventListener("message", (e) => { if (/:new$/.test(e.data?.type || "")) check(true); });
     setInterval(() => { if (document.visibilityState === "visible") check(); }, 5 * 60e3);
+    navigator.serviceWorker?.addEventListener("controllerchange", () => {
+      if (U.ready) { U.ready.retryAt = 0; soon(); }
+    });
     setInterval(soon, 4000);
     setTimeout(() => check(true), 2000);     // (as it opens, a moment after: out of the way of its opening)
   }
@@ -259,7 +264,7 @@ const IFL = (() => {
   }
   function soon() {
     const r = U.ready, t = Date.now();
-    if (!r || U.going || document.visibilityState !== "visible") return;
+    if (!r || U.going || t < (r.retryAt || 0) || document.visibilityState !== "visible") return;
     if (busyNow()) return tell();
     const fresh = t - U.back < 8e3 && !U.touch, still = t - (U.touch || U.back) > (window.__iflQuiet || 60e3);     // (__iflQuiet: tests' shorter minute)
     if (fresh || still || r.must) return apply();
@@ -280,25 +285,29 @@ const IFL = (() => {
     try {
       const k = JSON.parse(sessionStorage.getItem(key) || "null");
       if (!asked && !got && k?.build === r.build && Date.now() - k.at < 10 * 60e3) return;
-      sessionStorage.setItem(key, JSON.stringify({ build: r.build, at: Date.now() }));
     } catch (_) {}
-    U.going = true;
     close(true);
+    if (busyNow()) {
+      if (asked) note(U.app, "Update waiting", "Finish your current task or close the open panel to continue.");
+      return;
+    }
+    U.going = true;
     if (!got) {
       const t = U.touch;
-      if (!(await afresh())) {
-        // (a new version's worker that couldn't fetch all its files (Weather's are all or none), or hasn't yet: loaded
-        // now, it'd be the old version again. Still offered, it's tried again once that worker's taken over, else in ten
-        // minutes; tried afresh, not taken as fresh: a worker taking over has fetched its own files, not always the
-        // app's (Mail's are fetched by the page, U.files))
+      const result = await afresh();
+      if (result !== true || U.ready?.build !== r.build) {
         U.going = false;
-        navigator.serviceWorker?.addEventListener("controllerchange", () => { if (U.ready?.build === r.build) try { sessionStorage.removeItem(key); } catch (_) {} }, { once: true });
-        if (asked) note(U.app, `${NAME[U.app]} couldn’t update just now`, "It tries again by itself");
+        r.retryAt = Date.now() + 30000;
+        if (asked) note(U.app, "Update waiting", result === "other-windows"
+          ? "Close your other InFlite windows. This one will try again."
+          : "The update isn’t ready yet. InFlite will try again.");
         return;
       }
-      // (and if you've started on something meanwhile (typing, a sheet, a tap), it waits for the next moment you're not)
-      if (!asked && (busyNow() || (!r.must && U.touch !== t))) { U.fresh = r.build; U.going = false; return; }
+      U.fresh = r.build;
+      if (busyNow() || document.hidden || (!asked && !r.must && U.touch !== t)) { U.going = false; return; }
     }
+    // Only a real reload needs a loop guard. A blocked install must remain retryable.
+    try { sessionStorage.setItem(key, JSON.stringify({build:r.build, at:Date.now()})); } catch (_) {}
     // (where you are kept as it goes, not before the wait: you may have scrolled meanwhile)
     try { const at = U.save?.(); if (at != null) sessionStorage.setItem(`ifl-here:${U.app}`, JSON.stringify({ at, t: Date.now() })); } catch (_) {}
     location.reload();
@@ -1266,7 +1275,7 @@ async function call(path, { method = "GET", body, signal, timeoutMs, fresh, late
     if (scope.aborted) throw scope.reason;
     // Only the session endpoint confirms expiry. An app-specific 401 asks it
     // first, without dropping the current screen, drafts or cached account data.
-    if (r.status === 401 && S.view) signedOutNow(path === "/api/session");
+    if (r.status === 401 && S.view && path !== "/api/logout") signedOutNow(path === "/api/session");
     throw r;
   }
 }
@@ -1605,16 +1614,25 @@ function keptFor(id) {
 // has its own cookie jar, so it signs in this way too.
 const VERIFIER_KEY = "inflite:signin-verifier", THEN_KEY = "inflite:signin-then";
 // Today's own trip, from an app in this window (then: where to come back to, a path of this page's own)
+function signInReturnURL(path) {
+  if (typeof path !== "string" || path === "/" || !path.startsWith("/") || path.startsWith("//")) return null;
+  try {
+    const url = new URL(path, location.origin);
+    return url.origin === location.origin ? url : null;
+  } catch { return null; }
+}
 function signInHere(then) {
-  try { if (typeof then === "string" && /^\/(?!\/)/.test(then) && then !== "/") sessionStorage.setItem(THEN_KEY, then); else sessionStorage.removeItem(THEN_KEY); } catch {}
+  try { if (signInReturnURL(then)) sessionStorage.setItem(THEN_KEY, then); else sessionStorage.removeItem(THEN_KEY); } catch {}
   goToAccount(false);
 }
 // (back signed in, from Today's own trip: on to the app it was started from, if it was one)
 function thenAfter() {
   let then = null;
   try { then = sessionStorage.getItem(THEN_KEY); sessionStorage.removeItem(THEN_KEY); } catch {}
-  if (then && /^\/(?!\/)/.test(then) && then !== "/") { location.replace(then); return true; }
-  return false;
+  const url = signInReturnURL(then);
+  if (!url) return false;
+  location.replace(url.href);
+  return true;
 }
 const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 let sessionAsked = null;
@@ -1718,27 +1736,51 @@ let chatsUnlock = null;
 // without a tap, as the account wants them: syncPush), Chat's sign-in and key on this phone gone too where its engine's
 // here, the account's sign-in ended, your day forgotten here, then the sign-in page says so and offers the way back
 // (§11.5)
+let signingOut = false;
 async function signOut() {
-  // (first, what you wrote in a module saved to its app (C10, s24 §10); where something couldn't be, asked before going on)
-  const fl = await Promise.resolve(F?.flush?.()).catch(() => null);
-  if (fl?.lost > 0 && !(await anyway())) return;
-  resetRequests();
+  if (signingOut || !S.view?.user?.id) return;
+  signingOut = true;
+  try {
+    await signOutAccount(S.view.user.id);
+  } finally {
+    signingOut = false;
+  }
+}
+
+async function signOutAccount(owner) {
+  const sameAccount = () => S.view?.user?.id === owner;
+  const fl = await Promise.resolve().then(() => F?.flush?.()).catch(() => ({lost:1}));
+  if (!sameAccount() || (fl?.lost > 0 && !(await anyway()))) return;
   const endpoint = await currentSub().then((sub) => sub?.endpoint || null, () => null);
+  if (!sameAccount()) return;
+  // Keep the open apps and their drafts until Account acknowledges the logout.
+  // A lost response can still mean it succeeded; only a fresh session check can confirm that.
+  let confirmed = false;
+  try {
+    const response = await call("/api/logout", {method:"POST",body:endpoint ? {endpoint} : {}});
+    confirmed = response?.ok === true;
+  } catch {}
+  if (!confirmed && sameAccount()) confirmed = await checkSession(true) === false;
+  if (!sameAccount()) return;
+  if (!confirmed) {
+    toast("Couldn’t confirm sign-out. Try again.");
+    return;
+  }
+  const auth = safe(S.links?.auth) || DEFAULT_LINKS.auth;
+  resetRequests();
   const chatOut = S.hub && await Promise.race([
-    IFL.hub.chat().then(async (c) => { if (typeof c?.signOut !== "function") return false; await c.signOut(); return true; }).catch(() => false),
+    IFL.hub.chat().then(async (c) => { if (!sameAccount() || typeof c?.signOut !== "function") return false; await c.signOut(); return true; }).catch(() => false),
     new Promise((ok) => setTimeout(() => ok(false), 4000)),
   ]);
-  // (Chats in this page: its core signed out and forgot (above), then ended, before Chat's store here is cleared too; 2
-  // seconds at most, as one still starting is ended all the same)
+  if (!sameAccount()) return;
   if (chatsHere) await Promise.race([F?.releaseService("chats", { terminate: true }), new Promise((ok) => setTimeout(ok, 2000))]);
-  const auth = safe(S.links?.auth) || DEFAULT_LINKS.auth;
-  await call("/api/logout", { method: "POST", body: endpoint ? { endpoint } : {} }).catch(() => {});
+  if (!sameAccount()) return;
   resetRequests();
   forgetKept();
-  // (the frame let go of first: a module's own closing (Mail's unsent message) writes before its copies are wiped, never after)
+  // Let editors finish closing before removing their local copies.
   unframe();
-  // (and the apps' copies of you at this address: the hub's, so every app's)
   await forgetApps({ chat: chatsHere || !chatOut });
+  if (!sameAccount()) return;
   try { localStorage.removeItem("today:push"); } catch {}
   S.view = null;
   location.assign(`${auth}/#${new URLSearchParams({ signout: "today", back: `${location.origin}/` })}`);
@@ -1771,6 +1813,7 @@ function sessionWaiting(said) {
 function showOut(said = "") {
   sheetOpen && closeSheet();
   IFL.close(true);
+  $("#sessionState").setAttribute("aria-busy", "false");
   $("#sessionState").hidden = true;
   $("#in").hidden = true;
   $("#out").hidden = false;
@@ -1831,6 +1874,7 @@ function signedIn(view, { offline = false } = {}) {
   if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; }
   if (!S.morning || !("lines" in S.morning)) S.morning = view.morning || S.morning;
   $("#out").hidden = true;
+  $("#sessionState").setAttribute("aria-busy", "false");
   $("#sessionState").hidden = true;
   $("#in").hidden = false;
   frame();
@@ -3160,7 +3204,7 @@ function start() {
     });
     try {
       const registration = await sw.getRegistration();
-      await registration.update();
+      if (!registration.waiting && !registration.installing) await registration.update();
       const worker = registration.installing;
       if (worker && worker.state !== "installed" && worker.state !== "activated") {
         await new Promise(resolve => {
@@ -3173,7 +3217,8 @@ function start() {
       if (registration.waiting) {
         const waiting = registration.waiting;
         if (busy()) return false;
-        if (!(await ask(waiting, { ifl: "activate-shell", build }))?.activating) return false;
+        const reply = await ask(waiting, { ifl: "activate-shell", build });
+        if (!reply?.activating) return reply?.reason === "other-windows" ? reply.reason : false;
         for (let i = 0; i < 50 && sw.controller !== waiting; i++) await new Promise(r => setTimeout(r, 100));
       }
       return (await ask(sw.controller, { ifl: "renew", build }))?.build === build;

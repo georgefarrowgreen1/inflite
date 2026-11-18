@@ -16,6 +16,7 @@ import { organiseAPI, organisePage } from './organise.js';
 import {securityAPI} from './security.js';
 import { systemAPI } from "./system.js";
 import { workspacesAPI } from "./workspaces.js";
+import { contact } from "./contact.js";
 import { isExtraPath, extraApp } from "./extra-apps.js";
 import { isIdentityPath, identity } from "./identity.js";
 
@@ -92,6 +93,7 @@ const worker = {
     try {
       if (hubbed) return await hub(request, env, ctx);
       if (mail) return await mailPage(request, env);
+      if (url.pathname === "/api/contact") return await contact(request, env);
       if (isFilesAPI(url.pathname)) return await filesAPI(request, env);
       if (url.pathname.startsWith("/api/security/")) return await securityAPI(request,env);
       if (url.pathname.startsWith("/api/organise/")) return await organiseAPI(request,env);
@@ -119,7 +121,14 @@ async function statusBanner(request, env, url) {
   const query = new URLSearchParams({ app: String(url.searchParams.get("app") || "hub").replace(/[^a-z]/g, "").slice(0, 20) || "hub" });
   const res = await ask(env, request, { path: "status-banner", query, timeout: 5000 });
   const ok = res && res.ok;
-  return new Response(ok ? res.body : JSON.stringify({ banner: null }), { status: 200, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...SAFE } });
+  if (!ok) res?.body?.cancel().catch(() => {});
+  if (ok) {
+    try {
+      const text = await bodyUpTo(res, 32 * 1024, {signal:AbortSignal.any([request.signal, AbortSignal.timeout(5000)])});
+      if (text) return json(JSON.parse(text));
+    } catch {}
+  }
+  return json({banner:null});
 }
 
 async function bugReport(request, env) {
@@ -130,7 +139,11 @@ async function bugReport(request, env) {
   if (body === null || body.length > 12000) return refuse(413, "That’s too much to send.");
   const res = await ask(env, request, { method: "POST", path: "bugs", body, timeout: 8000 });
   if (!res) return refuse(502, "The report couldn’t be sent just now.");
-  return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json; charset=utf-8", ...SAFE } });
+  try {
+    const text = await bodyUpTo(res, 32 * 1024, {signal:AbortSignal.any([request.signal, AbortSignal.timeout(8000)])});
+    if (text && (res.status < 300 || res.status >= 400)) return json(JSON.parse(text), res.status);
+  } catch {}
+  return refuse(request.signal.aborted ? 499 : 502, "The report couldn’t be sent just now.");
 }
 
 // How fast the page was on this device, numbers only, from the shared menu as the page is left: passed on to the account
@@ -153,7 +166,7 @@ async function vitals(request, env, ctx) {
     }
     body += dec.decode();
   }
-  const go = ask(env, request, { method: "POST", path: "vitals", body, timeout: 5000 }).catch(() => null);
+  const go = ask(env, request, { method: "POST", path: "vitals", body, timeout: 5000 }).then(res => res?.body?.cancel()).catch(() => null);
   if (ctx?.waitUntil) ctx.waitUntil(go); else await go;
   return none();
 }
@@ -188,14 +201,20 @@ async function api(request, env, url) {
   const headers = at && /^\d{13}$/.test(at) ? { "X-Today-At": at } : null;
   const res = await ask(env, request, { method, path: route.path, query, body, timeout: route.timeout, accept: route.image ? "image/*" : "application/json", headers });
   if (route.image) return picture(res);
-  if (!res || (res.status >= 300 && res.status < 400)) return refuse(502, SAID.down);
+  if (!res || (res.status >= 300 && res.status < 400)) {
+    res?.body?.cancel().catch(() => {});
+    return refuse(request.signal.aborted ? 499 : 502, SAID.down);
+  }
 
   let data;
   try {
-    data = JSON.parse(await res.text());
+    const payload = await bodyUpTo(res, 4 * 1024 * 1024, {
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(route.timeout)]),
+    });
+    if (payload === null) return refuse(502, SAID.down);
+    data = JSON.parse(payload);
   } catch {
-    // (not the account's answer at all: a host's error page, say)
-    return refuse(502, SAID.down);
+    return refuse(request.signal.aborted ? 499 : 502, SAID.down);
   }
   let out;
   if (res.status >= 400) {
@@ -214,7 +233,10 @@ async function api(request, env, url) {
 // read so an HTTP cache cannot show the previous account's private image.
 function picture(res) {
   const type = res?.headers.get("Content-Type") || "";
-  if (!res?.ok || !/^image\//i.test(type)) return refuse(404, "No picture.");
+  if (!res?.ok || !/^image\//i.test(type)) {
+    res?.body?.cancel().catch(() => {});
+    return refuse(404, "No picture.");
+  }
   return new Response(res.body, {
     headers: { "Content-Type": type, ...SAFE, "Cache-Control": "private, no-store" },
   });

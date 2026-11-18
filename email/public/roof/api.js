@@ -73,10 +73,7 @@ export function createApi({ base = MAIL, onLost = null, onRefused = null } = {})
       if (!offline()) try { onRefused?.(); } catch {}
       throw new ApiError(0, offline() ? OFFLINE : AWAY);
     });
-    if (opts.blob) {
-      if (!res.ok) throw new ApiError(res.status, `Request failed (${res.status})`);
-      return res.blob();
-    }
+    if (opts.blob && res.ok) return res.blob();
     let data = null;
     try {
       data = await res.json();

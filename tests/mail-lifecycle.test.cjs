@@ -63,7 +63,7 @@ async function open({ show = true } = {}) {
       toast: message => t.toasts.push(message),
       session: { lost() {}, hubAgain() {} },
       nav: { depth: () => 0, go() {}, section() {}, href: () => '/mail/' },
-      header: { set() {} },
+      header: { set(value) { t.header = value; } },
       ui: await import('/roof/ui.js'),
       on: () => () => {},
       search: { provide: () => () => {} },
@@ -170,5 +170,23 @@ test('Mail lifecycle cleanup preserves unsent state and both flush contracts', a
     });
     assert.deepEqual(result, { busy: true, flushed: { lost: false }, flushes: [{}, { keepalive: true }], destroyed: 1, unsent: { subject: 'Unsent draft' } });
     assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('locking Mail clears mailbox metadata and conversation actions from the shared header', async () => {
+  const { ctx, page } = await open();
+  try {
+    const header = await page.evaluate(async () => {
+      const t = window.trial;
+      t.ctx.store.set({access:'ok',counts:{people:6},address:'fixture@example.com'});
+      await t.drain();
+      t.ctx.store.set({access:'reauth'});
+      await t.drain();
+      return t.header;
+    });
+    assert.equal(header.title,'Mail');
+    assert.deepEqual(header.acts,[]);
+    assert.deepEqual(header.badges,{});
+    assert.equal(header.sections,false);
   } finally { await ctx.close(); }
 });

@@ -1,4 +1,4 @@
-# inflite.ai and os.inflite.ai: InFlite Today and its workspace shell (today/): their files are today/public;
+# inflite.ai and os.inflite.ai: InFlite Today and its workspace shell (today/): their source files are in today/public;
 # only /api/*, /version and the hub's paths
 # run the Worker (today/src/index.js), which passes the account's cookie on to account.inflite.ai (the georgefarrowgreen repo's
 # functions/_todayapp.js). Workers Builds deploys it from here. Mail is a Worker of its own (email/).
@@ -12,8 +12,12 @@ preview_urls = false
 # Both hosts use the existing Worker's bindings and secrets. Wrangler provisions the OS hostname's DNS and certificate.
 routes = [{ pattern = "inflite.ai", custom_domain = true }, { pattern = "os.inflite.ai", custom_domain = true }]
 
+[build]
+command = "node tools/build-shell-assets.mjs"
+watch_dir = ["today/public", "tools"]
+
 [assets]
-directory = "./today/public"
+directory = "./today/.assets"
 binding = "ASSETS"
 not_found_handling = "404-page"
 # (and InFlite's hub, Today First: Chats, Weather, Fitness and Markets at /chats/, /weather/, /fitness/ and /markets/,

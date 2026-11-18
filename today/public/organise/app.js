@@ -53,7 +53,7 @@ export async function mountApp(root,F,kind){
   const allRows=currentRows();let rows=allRows;if(kind==='calendar'){paintDates(allRows);const monthEnd=localDay(new Date(Number(date.slice(0,4)),Number(date.slice(5,7)),1));rows=allRows.filter(v=>overlaps(v,date,section==='week'?addDays(date,1):monthEnd));caption.firstChild.textContent=section==='week'?dateLabel(date,{weekday:'long',day:'numeric',month:'short'}):'Upcoming';}
   count.textContent=rows.length?(rows.length+(cursor?'+':'')+' '+(kind==='notes'?(rows.length===1?'note':'notes'):kind==='people'?(rows.length===1?'person':'people'):(rows.length===1?'item':'items'))):'';
   const isEmpty=loaded&&!loading&&!query&&!store.snapshot().some(v=>!v.deleted)&&!store.localForms().length;const quiet=kind!=='calendar'&&(isEmpty||!loaded&&loading);actions.hidden=quiet;searchBox.hidden=quiet;if(noteTools)noteTools.hidden=quiet;
-  list.replaceChildren();let group='',groupBox=list;
+  const nextList=list.cloneNode(false);let group='',groupBox=nextList;
   if(!rows.length&&!loading){
    const first=!query&&kind!=='calendar'&&(kind!=='notes'||noteFilter==='all'),empty=el('section',{class:first?'org-welcome':'org-empty'});
    if(first){
@@ -62,11 +62,11 @@ export async function mountApp(root,F,kind){
     if(kind==='notes')empty.append(button('Start a checklist',()=>create({title:'Untitled checklist',text:'',checklist:[{id:operationId(),text:'',done:false}],links:[]})));
     else empty.append(button('Import contacts',()=>importContacts()));
    }else empty.append(...[el('span',{class:'org-empty-icon'},ui.icon(kind==='notes'?'file':kind==='people'?'person':'calendar')),el('h3',{text:query?'No results':kind==='notes'?'No checklists yet':'Nothing scheduled'}),el('p',{text:query?'Try another name or title.':kind==='notes'?'Turn your next note into a list.':section==='week'?'Nothing scheduled for this day.':'Nothing else scheduled this month.'}),kind==='notes'?button('Start a checklist',()=>create({title:'Untitled checklist',text:'',checklist:[{id:operationId(),text:'',done:false}],links:[]})):null].filter(Boolean));
-   list.append(empty);
+   nextList.append(empty);
   }
   for(const v of rows){
    const key=kind==='calendar'?eventDay(v)<date?date:eventDay(v):kind==='people'?(v.title.trim()[0]||'#').toLocaleUpperCase():noteView==='list'?(localDay(v.updatedAt||Date.now())===localDay()?'Today':localDay(v.updatedAt||Date.now())===addDays(localDay(),-1)?'Yesterday':'Earlier'):'';
-   if(key&&key!==group){group=key;list.append(el('h3',{class:'org-day-label',text:kind==='calendar'?dateLabel(group,{weekday:'long',day:'numeric',month:'long'}):group}));groupBox=el('div',{class:'org-record-group'});list.append(groupBox)}
+   if(key&&key!==group){group=key;nextList.append(el('h3',{class:'org-day-label',text:kind==='calendar'?dateLabel(group,{weekday:'long',day:'numeric',month:'long'}):group}));groupBox=el('div',{class:'org-record-group'});nextList.append(groupBox)}
    const b=el('button',{type:'button',class:'org-record',data:{record:v.id},'aria-current':editorId===v.id?'true':null,on:{click:safe(()=>v.source?openExternal(v):go(v.id))}}),copy=el('span',{class:'org-record-copy'},el('strong',{text:v.title}));
    if(kind==='calendar'){
     const time=v.ride?'To plan':v.allDay?(v.source?'Date only':'All day'):new Date(v.start).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
@@ -81,7 +81,10 @@ export async function mountApp(root,F,kind){
    b.append(copy);if(kind!=='notes')b.append(ui.icon('chev'));
    if(v.formDraft)b.append(el('span',{class:'org-pending',text:'Draft'}));if(v.pending)b.append(el('span',{class:'org-pending',text:v.state==='conflict'?'Review':v.state==='failed'?'Retry':'Saving'}));groupBox.append(b);
   }
-  if(active)list.querySelector('[data-record="'+CSS.escape(active)+'"]')?.focus({preventScroll:true});editor?.status();
+  // Equal library results can arrive several times while a user is focusing a row.
+  // Calendar feed actions also carry source details that are not visible in the row.
+  if(kind==='calendar'||!list.isEqualNode(nextList))list.replaceChildren(...nextList.childNodes);
+  if(active&&document.activeElement?.dataset.record!==active)list.querySelector('[data-record="'+CSS.escape(active)+'"]')?.focus({preventScroll:true});editor?.status();
  }
  async function importContacts(){const [m]=await Promise.all([import('./import.js'),import('/roof/modules.js').then(m=>m.loadStyles(new URL('./editor.css',import.meta.url).pathname))]);if(live()&&shown)m.openImport({F,store,onImported:()=>load()})}
  async function load(append=false){

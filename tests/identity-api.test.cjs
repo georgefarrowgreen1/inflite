@@ -40,6 +40,18 @@ test('identity remaps reviewed redirects only and never retries uncertain writes
   assert.equal(r.status,502);assert.equal(calls,1);
 });
 
+test('identity preserves asset revalidation and resolves relative redirects inside their source directory', async () => {
+  const { identity } = await import('../today/src/identity.js');
+  const cached = await identity(req('/settings/account/ui/profile.js', { headers: { 'If-None-Match': '"v1"' } }), env(request => {
+    assert.equal(request.headers.get('If-None-Match'), '"v1"');
+    return new Response(null, { status: 304, headers: { ETag: '"v1"' } });
+  }));
+  assert.equal(cached.status, 304);
+  assert.equal(cached.headers.get('Location'), null);
+  const redirected = await identity(req('/auth/login/start'), env(() => new Response(null, { status: 302, headers: { Location: 'continue' } })));
+  assert.equal(redirected.headers.get('Location'), 'https://inflite.ai/auth/login/continue');
+});
+
 test('Settings Account uses the existing identity service and offers page recovery on upstream failure', async () => {
   const { identity } = await import('../today/src/identity.js');
   let target;

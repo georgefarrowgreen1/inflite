@@ -2084,3 +2084,126 @@ test('Lava drawer follows a short drag, rotates in place and releases the dock o
     assert.deepEqual(errors,[]);
   } finally { await ctx.close(); }
 });
+
+test('a signed-in shell applies an offered update once the visible work finishes', async () => {
+  const {ctx,page} = await open({initialPath:'/?os=1'});
+  try {
+    const target = '90.1.1';
+    await page.route('**/version', r => r.fulfill({json:{build:target}}));
+    await page.evaluate(build => {
+      const task = document.createElement('div');
+      task.id = 'pending-update-test';
+      task.setAttribute('aria-busy','true');
+      task.textContent = 'Saving';
+      document.body.append(task);
+      IFL.offer(build);
+    },target);
+    assert.ok(await page.evaluate(()=>IFL.updateReady()));
+    const navigated = page.waitForEvent('load',{timeout:4500});
+    await page.evaluate(build => {
+      document.getElementById('pending-update-test').hidden = true;
+      IFL.offer(build);
+    },target);
+    await navigated;
+    assert.equal(await page.evaluate(()=>JSON.parse(sessionStorage.getItem('ifl-upd:today')).build),target);
+  } finally {await ctx.close();}
+});
+
+test('Settings recovers a stalled read and reconciles an unconfirmed appearance save without replaying it', async () => {
+  const {page,ctx} = await open({initialPath:'/#settings',waitForDay:false});
+  try {
+    const owner = fixture('session').user.id;
+    let stuck = true, writes = 0;
+    let prefs = {appearance:'auto',palette:'inflite',glass:true,glassStrength:55};
+    await page.evaluate(() => {
+      const timeout = AbortSignal.timeout.bind(AbortSignal);
+      AbortSignal.timeout = ms => timeout(ms === 12000 ? 250 : ms);
+    });
+    await page.route('**/account/api/account/appearance', route => {
+      if (!stuck) return route.fulfill({json:{id:owner,signedIn:true,...prefs}});
+    });
+    await page.route('**/account/api/account/prefs', route => {
+      prefs = {...prefs,...route.request().postDataJSON()};
+      writes++;
+      return route.abort('failed');
+    });
+    await page.getByRole('searchbox',{name:'Search settings'}).fill('liquid glass');
+    await page.getByRole('button',{name:/Appearance Theme/}).click();
+    await page.getByText('Account took too long to respond. Try again.').waitFor();
+    stuck = false;
+    await page.getByRole('button',{name:'Try again',exact:true}).click();
+    await page.getByRole('combobox',{name:'Mode',exact:true}).selectOption('dark');
+    await page.getByRole('button',{name:'Reload preferences'}).click();
+    await page.waitForFunction(()=>document.querySelector('.settings-appearance select')?.value === 'dark');
+    assert.equal(writes,1);
+  } finally { await ctx.close(); }
+});
+
+test('repeated and overlapping search terms preserve each result’s original label', async () => {
+  const {page,ctx} = await open();
+  try {
+    const labels = await page.evaluate(async () => {
+      const [{match},{highlight},ui] = await Promise.all([
+        import('/roof/search.js'), import('/roof/search-render.js'), import('/roof/ui.js')
+      ]);
+      return ['wea weather','weather weather','forecast weather'].map(query => {
+        const title = 'Weather forecast', row = ui.row({title});
+        highlight(ui,row,title,match(query,title).hits);
+        return row.querySelector('b').textContent;
+      });
+    });
+    assert.deepEqual(labels,Array(3).fill('Weather forecast'));
+  } finally { await ctx.close(); }
+});
+
+test('an unconfirmed sign-out keeps this account usable and the same control can retry', async () => {
+  let attempts = 0;
+  const {ctx,page} = await open({initialPath:'/#settings',waitForDay:false,intercept:async (route,{url})=>{
+    if (url.pathname !== '/api/logout') return false;
+    attempts++;
+    await route.fulfill({status:attempts===1 ? 503 : 200,json:attempts===1 ? {error:'Busy'} : {ok:true}});
+    return true;
+  }});
+  try {
+    await page.getByRole('searchbox',{name:'Search settings'}).fill('Sign out');
+    const button = page.locator('#youOut');
+    await button.waitFor();
+    const before = await page.evaluate(()=>{
+      localStorage.setItem('today:push','keep-push-on-failure');
+      return [location.href,history.length,localStorage.getItem('today:session')];
+    });
+    await button.click();
+    await page.getByText('Couldn’t confirm sign-out. Try again.',{exact:true}).first().waitFor();
+    assert.deepEqual(await page.evaluate(()=>[location.href,history.length,localStorage.getItem('today:session')]), before);
+    assert.equal(await page.evaluate(()=>localStorage.getItem('today:push')),'keep-push-on-failure');
+    assert.equal(await button.isEnabled(),true);
+    await button.click();
+    await page.waitForURL(url=>url.hash.startsWith('#signout=') || url.hostname === 'auth.inflite.ai');
+    assert.equal(attempts,2);
+  } finally { await ctx.close(); }
+});
+
+test('after sign-in the shell restores a local destination and discards a stale external destination', async () => {
+  const {ctx,page} = await open({intercept:async (route,{url,view})=>{
+    if (url.pathname !== '/api/auth/handback') return false;
+    await route.fulfill({json:view});
+    return true;
+  }});
+  try {
+    for (const destination of ['https://elsewhere.example/','/#settings']) {
+      await page.evaluate(path=>{
+        sessionStorage.setItem('inflite:signin-verifier','sample-verifier');
+        sessionStorage.setItem('inflite:signin-then',path);
+      },destination);
+      await page.goto(origin + '/?callback#signin=sample');
+      if (destination === '/#settings') {
+        await page.getByRole('searchbox',{name:'Search settings'}).waitFor();
+        assert.equal(new URL(page.url()).hash,'#settings');
+      } else {
+        await page.locator('#top .day-top').waitFor();
+        assert.equal(new URL(page.url()).origin,origin);
+      }
+      assert.equal(await page.evaluate(()=>sessionStorage.getItem('inflite:signin-then')),null);
+    }
+  } finally { await ctx.close(); }
+});

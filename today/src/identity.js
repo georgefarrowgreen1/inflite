@@ -17,8 +17,9 @@ export function identityCookies(request) {
     /^(?:(?:__Secure-|__Host-))?known-[a-f0-9]{8}=[a-f0-9]{32}\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{32}$/.test(s)
   ).slice(0, 24).join('; ');
 }
-function publicLocation(value, role) {
-  const u = new URL(value, `https://${role}.inflite.ai`);
+function publicLocation(value, source) {
+  if (!value) return null;
+  const u = new URL(value, source);
   const paths = { auth: '/auth', account: '/account', chat: '/chats', weather: '/weather', fitness: '/fitness', finance: '/markets', email: '/mail' };
   const m = /^(auth|account|chat|weather|fitness|finance|email)\.inflite\.ai$/.exec(u.hostname);
   if (m && u.protocol === 'https:' && !u.port && !u.username && !u.password) return `https://inflite.ai${paths[m[1]]}${u.pathname}${u.search}${u.hash}`;
@@ -53,6 +54,11 @@ export async function identity(request, env) {
   for (const name of ['Accept', 'Content-Type', 'User-Agent', 'X-Home-Screen', 'Range']) {
     const value = request.headers.get(name); if (value) headers.set(name, value);
   }
+  if (read && !api && !page) {
+    for (const name of ['If-None-Match', 'If-Modified-Since', 'If-Range']) {
+      const value = request.headers.get(name); if (value) headers.set(name, value);
+    }
+  }
   const origin = request.headers.get('Origin'); if (origin) headers.set('Origin', origin);
   const ip = request.headers.get('CF-Connecting-IP');
   if (ip) { headers.set('X-Hub-IP', ip); headers.set('X-Hub-Geo', geoOf(request.cf)); }
@@ -63,7 +69,8 @@ export async function identity(request, env) {
     if (body === null) return fail(413, 'That identity request is too large.');
   }
   try {
-    const response = await fetchUpstream((target, init) => appFetch(env, target, init), `https://${role}.inflite.ai${path}${url.search}`, { method: request.method, headers, body, redirect: 'manual' }, { signal: request.signal, timeout: 30000 });
+    const upstreamURL = `https://${role}.inflite.ai${path}${url.search}`;
+    const response = await fetchUpstream((target, init) => appFetch(env, target, init), upstreamURL, { method: request.method, headers, body, redirect: 'manual' }, { signal: request.signal, timeout: 30000 });
     if (page && response.status >= 500) {
       response.body?.cancel().catch(() => {});
       return unavailable(response.status);
@@ -71,9 +78,9 @@ export async function identity(request, env) {
     const out = new Headers(response.headers);
     for (const name of ['Access-Control-Allow-Origin', 'Access-Control-Allow-Credentials', 'Access-Control-Allow-Headers', 'Access-Control-Allow-Methods', 'Service-Worker-Allowed']) out.delete(name);
     if (api) out.set('Cache-Control', 'private, no-store');
-    if (response.status >= 300 && response.status < 400) {
-      const location = publicLocation(out.get('Location') || '', role);
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
       response.body?.cancel().catch(() => {});
+      const location = publicLocation(out.get('Location'), upstreamURL);
       if (!location) return fail(502, 'That identity destination is unavailable.');
       out.set('Location', location); return new Response(null, { status: response.status, headers: out });
     }

@@ -73,7 +73,7 @@ const probeTo = (env) => { try { return `${new URL(env.CHAT_VIA || env.CHAT_ORIG
 const probeId = (env) => JSON.stringify([env.HUB_KEY, env.CHAT_ORIGIN, probeTo(env)]);
 // (what was found, while it's fresh, and only for this key and this address of Chat's)
 const known = (env, t) => (probed && keyed(env) && probed.key === env.HUB_KEY && probed.to === probeTo(env) && probed.origin === env.CHAT_ORIGIN && t < probed.until ? probed : null);
-function probe(env, request, t) {
+function probe(env, t) {
   const to = probeTo(env);
   const key = env.HUB_KEY, origin = env.CHAT_ORIGIN, id = probeId(env);
   if (probing.has(id)) return probing.get(id);
@@ -83,7 +83,8 @@ function probe(env, request, t) {
     let status = 0;
     try {
       if (!to) throw new TypeError("no address for Chat");
-      const res = await fetchUpstream((u, init) => appFetch(env, u, init), to, { headers: hubHeaders(env, request, "CHAT"), redirect: "manual" }, { timeout: PROBE_WAIT });
+      const headers = { "X-Hub-Key": key, Origin: new URL(origin).origin, "Sec-Fetch-Site": "same-origin", Accept: "application/json" };
+      const res = await fetchUpstream((u, init) => appFetch(env, u, init), to, { headers, redirect: "manual" }, { timeout: PROBE_WAIT });
       status = res.status;
       if (res.body) res.body.cancel().catch(() => {});
     } catch (e) {
@@ -96,10 +97,10 @@ function probe(env, request, t) {
   probing.set(id, pending);
   return pending;
 }
-async function ready(env, request) {
+async function ready(env) {
   if (!keyed(env)) return false;
   const t = Date.now();
-  return (known(env, t) || (await probe(env, request, t))).ok;
+  return (known(env, t) || (await probe(env, t))).ok;
 }
 
 const ROOF_APPS = ["weather", "markets", "fitness", "chats"];
@@ -108,7 +109,7 @@ export async function hub(request, env, ctx) {
   // (Today's page asks once a visit whether the hub's there: until it is, it links to each app's own address)
   // (and whether Weather is a module of it there: One roof, roof.yml's switch, D14)
   // (and each module's switch, apps: s24-contracts §2; roof stays Weather's, for pages from before that read only it)
-  if (p === "/api/hub") return read ? json({ ready: await ready(env, request), roof: roofOn(env), apps: appsOn(env) }) : refuse(405, SAID.method);
+  if (p === "/api/hub") return read ? json({ ready: await ready(env), roof: roofOn(env), apps: appsOn(env) }) : refuse(405, SAID.method);
   // One roof (spec §8.1, D7): with the roof on, a document at /weather/ is the framework's page, and Weather's old worker
   // there is retired, before the key is asked about (the page itself goes to Weather's own address when the hub says it
   // isn't ready); with it off (ROOF_OFF "1"), Weather's milestone-1 page is the hub's again, and the module's files are
@@ -131,7 +132,7 @@ export async function hub(request, env, ctx) {
   // What was found is /api/hub's; where nothing fresh is, it's asked beside this request, for the next)
   const t = Date.now(), found = known(env, t);
   if (found?.refused) return refuse(503, SAID.notReady);
-  if (!found && keyed(env) && ctx?.waitUntil && !probing.has(probeId(env))) ctx.waitUntil(probe(env, request, t));
+  if (!found && keyed(env) && ctx?.waitUntil && !probing.has(probeId(env))) ctx.waitUntil(probe(env, t));
 
   // ---- an app's API, at the same path as on its own host ----
   const api = Object.keys(APIS).find((k) => p.startsWith(k));

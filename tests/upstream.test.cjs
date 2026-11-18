@@ -127,6 +127,8 @@ test('Mail version reads are byte bounded even with a falsely short length and e
   } } };
   const req = () => request('/mail/version', { headers: { Cookie: 'account=secret', Authorization: 'Bearer secret' } });
   assert.deepEqual(await (await mailRoof(req(), env)).json(), { build: '1.49' });
+  body = () => Response.json({ build:'2.24.2', extra:'private' });
+  assert.deepEqual(await (await mailRoof(req(), env)).json(), { build:'2.24.2' });
   body = () => new Response(new ReadableStream({
     start(c) { c.enqueue(new TextEncoder().encode('{"build":"1.49","extra":"' + 'x'.repeat(4096))); },
     cancel() { cancelled = true; },
@@ -156,10 +158,14 @@ test('parallel foreground and background hub checks share one probe and ignore i
   const gate = new Promise(resolve => { release = resolve; });
   const env = { ...baseEnv(), APPS: { fetch: async req => {
     if (!req.url.endsWith('/_hub/version')) return Response.json({ ok: true });
+    assert.equal(req.headers.get('range'), null);
+    assert.equal(req.headers.get('if-none-match'), null);
+    assert.equal(req.headers.get('x-hub-geo'), null);
+    assert.equal(req.headers.get('x-hub-ip'), null);
     probes++; signal = req.signal; await gate; return Response.json({ build: '1.70' });
   } } };
   const caller = new AbortController();
-  const pending = Array.from({ length: 6 }, (_, i) => hub(request('/api/hub', i ? {} : { signal: caller.signal }), env, {}));
+  const pending = Array.from({ length: 6 }, (_, i) => hub(request('/api/hub', i ? {} : { signal: caller.signal, headers:{Range:'bytes=0-20','If-None-Match':'old','CF-Connecting-IP':'192.0.2.10'} }), env, {}));
   const waits = [];
   assert.equal((await hub(request('/api/weather/where'), env, { waitUntil: p => waits.push(p) })).status, 200);
   await turn();
@@ -229,4 +235,20 @@ test('a forgotten pending probe cannot overwrite the newer result for the same c
   assert.equal((await (await old).json()).ready, false);
   assert.equal((await (await hub(request('/api/hub'), env, {})).json()).ready, true);
   assert.equal(releases.length, 2, 'the fresh cache survives the older completion');
+});
+
+test('Today account requests finish on a stalled binding and honour a cancelled caller', async t => {
+  const { ask } = await import('../today/src/account.js');
+  t.mock.timers.enable({apis:['setTimeout']});
+  let received;
+  const e = {ACCOUNT_ORIGIN:'https://account.inflite.ai',APPS:{fetch(req) { received = req.signal; return new Promise(()=>{}); }}};
+  const pending = ask(e,request('/api/session'),{path:'today/me',timeout:100});
+  await turn(); t.mock.timers.tick(101);
+  assert.equal(await pending,null);
+  assert.ok(received.aborted);
+  const caller = new AbortController();
+  const stopping = ask(e,request('/api/session',{signal:caller.signal}),{path:'today/me'});
+  await turn(); caller.abort();
+  assert.equal(await stopping,null);
+  assert.ok(received.aborted);
 });

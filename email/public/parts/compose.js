@@ -261,7 +261,7 @@ export default (M) => {
     const suggestFetch = debounce(async (q, key) => {
       try {
         const { contacts } = await api.contacts(q);
-        if (suggestState.key !== key || suggestState.input?.value.trim() !== q) return;
+        if (suggestState.key !== key || suggestState.input?.value.trim() !== q || document.activeElement !== suggestState.input) return;
         const taken = new Set([...c.to, ...c.cc, ...c.bcc].map((p) => p.email.toLowerCase()));
         suggestState.items = contacts.filter((x) => !taken.has(x.email.toLowerCase())).slice(0, 5);
         suggestState.hl = suggestState.items.length ? 0 : -1;
@@ -271,13 +271,16 @@ export default (M) => {
 
     function suggest(key, input) {
       const q = input.value.trim();
+      clearSuggest();
+      if (!q) return;
       suggestState.key = key;
       suggestState.input = input;
-      if (q.length < 1) return clearSuggest();
       suggestFetch(q, key);
     }
 
     function clearSuggest() {
+      suggestState.key = null;
+      suggestState.input = null;
       suggestState.items = [];
       suggestState.hl = -1;
       drawSuggest();

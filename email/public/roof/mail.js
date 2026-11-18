@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.24.2";
-export const NEWS = "Mail checks for updates with less data and retries interrupted version checks.";
+export const BUILD = "2.24.3";
+export const NEWS = "Drafts keep your latest edits and attachments, and sending recovers more reliably after a connection drops.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
@@ -122,7 +122,7 @@ export async function mount(root, fw) {
   const on = (t, ev, fn, o) => { t.addEventListener(ev, fn, o); offs.push(() => t.removeEventListener(ev, fn, o)); };
   const drawResume = () => {
     const s = store.get(), draft = ctx.outbox.unsent();
-    resumeDraft.hidden = !alive || !onScreen || s.access !== "ok" || s.compose || !draft || !(draft.subject || draft.text || draft.to?.length);
+    resumeDraft.hidden = !alive || !onScreen || s.access !== "ok" || s.compose || !draft || !(draft.subject || draft.text || draft.to?.length || draft.cc?.length || draft.bcc?.length);
   };
   offs.push(...["access", "compose", "outbox", "offline"].map(key => store.on(key, drawResume)));
 
@@ -162,6 +162,9 @@ export async function mount(root, fw) {
     fw.header.set(headOf(store.get()));
   }
   function headOf(s, { lensOnly = false } = {}) {
+    if (s.access && s.access !== "ok") {
+      return { title:"Mail", compactTitle:"Mail", pick:null, acts:[], line:"", sections:false, badges:{}, back:null };
+    }
     const write = { icon: "compose", label: "Write", run: () => ctx.open.compose({}) };
     const n = Number(s.counts?.people) || 0;
     const badges = { people: n ? { n, say: `${n} unread` } : 0 };
@@ -174,13 +177,12 @@ export async function mount(root, fw) {
         acts: [{ icon: "more", label: "Conversation actions", run: () => t && ctx.open.rowMenu(t) }],
       };
     }
-    const gate = s.access && s.access !== "ok";
     const title = s.box || s.query || s.address || s.filter !== "all" ? logic.viewTitle(s) : "Mail";
-    const line = gate ? "" : s.offline ? "Offline" : s.list.err && !s.list.rows.length ? "Couldn’t reach Mail · Try Again" : "";
+    const line = s.offline ? "Offline" : s.list.err && !s.list.rows.length ? "Couldn’t reach Mail · Try Again" : "";
     const search = { icon: "search", scope: "app", label: "Search Mail", run: button => list.focusSearch(button) };
     return {
       title, compactTitle: title, line, badges,
-      pick: gate ? null : { label: "Views", run: () => ctx.open.views() }, acts: gate ? [] : [search, write], sections: SECTIONS, back: null,
+      pick: { label: "Views", run: () => ctx.open.views() }, acts: [search, write], sections: SECTIONS, back: null,
     };
   }
   offs.push(...["lens", "filter", "address", "box", "counts", "offline", "threadId", "thread", "layout", "list", "query", "access"].map((k) => store.on(k, header)));

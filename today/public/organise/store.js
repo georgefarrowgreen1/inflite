@@ -3,7 +3,7 @@ import {openOfflineStore} from '/roof/offline-store.js';
 // Encrypted, acknowledged per-record drafts. An uncertain request keeps its exact
 // operation until acknowledged; newer typing follows it at the returned version.
 export async function createStore(F,kind){
- const client=createSystemClient(F,{prefix:'/api/organise/'}),items=new Map(),pending=new Map(),forms=new Map(),listeners=new Set();let local=null,running=false,serial=Promise.resolve(),sequence=0,read=0;
+ const client=createSystemClient(F,{prefix:'/api/organise/'}),items=new Map(),pending=new Map(),forms=new Map(),acknowledged=new WeakMap(),listeners=new Set();let local=null,running=false,serial=Promise.resolve(),sequence=0,read=0;
  const live=client.live,emit=()=>{if(live())for(const fn of listeners)fn()},clone=v=>structuredClone(v);
  try{local=await openOfflineStore(client.owner,{signal:F.signal});for(const v of await local.list('organise-'+kind))pending.set(v.id,{...v,state:v.state==='conflict'?'conflict':'queued'});for(const v of await local.list('organise-form-'+kind))forms.set(v.recordId,v)}catch(_){}
  if(!live()){local?.close();throw new DOMException('Released','AbortError')}
@@ -15,7 +15,10 @@ export async function createStore(F,kind){
  function commit(fn){const p=serial.catch(()=>{}).then(()=>{if(!live())throw new DOMException('Released','AbortError');return fn()});serial=p;return p}
  async function save(id,value,{version=0,deleted=false}={}){
   if(!live())throw new DOMException('Released','AbortError');
-  return commit(async()=>{const old=pending.get(id),p={...old,id,kind:'organise-'+kind,version:old?.version??version,value:clone(value),deleted,revision:(old?.revision||0)+1,updatedAt:Date.now(),state:old?.state==='conflict'?'conflict':'queued',error:old?.state==='conflict'?old.error:'',operation:old?.operation||null};
+  // An acknowledgement may be removing the previous journal entry while typing
+  // queues this save. Only inherit the version from that same local operation.
+  const previous=pending.get(id)?.operation;
+  return commit(async()=>{const old=pending.get(id),base=previous?.version===version?acknowledged.get(previous):null,p={...old,id,kind:'organise-'+kind,version:old?.version??base??version,value:clone(value),deleted,revision:(old?.revision||0)+1,updatedAt:Date.now(),state:old?.state==='conflict'?'conflict':'queued',error:old?.state==='conflict'?old.error:'',operation:old?.operation||null};
    if(old?.state==='failed'&&old.status>=400&&old.status<500&&![408,429].includes(old.status))p.operation=null;
    await persist(p);if(live()){pending.set(id,p);sequence++;emit();queueMicrotask(pump)}return view(id);
   });
@@ -25,7 +28,7 @@ export async function createStore(F,kind){
    try{
     await commit(async()=>{p=pending.get(id);if(!p||p.state!=='queued')return;if(!p.operation){const next={...p,operation:{operationId:operationId(),version:p.version,value:clone(p.value),deleted:p.deleted,revision:p.revision}};await persist(next);pending.set(id,next);p=next}p.state='saving';emit()});
     if(!p?.operation)break;const op=p.operation,r=await client.request('record',{method:'PUT',body:{kind,id,version:op.version,operationId:op.operationId,value:op.value,deleted:op.deleted}});
-    await commit(async()=>{if(!live())return;merge(r.record);const form=forms.get(id);if(form&&form.version===op.version){const next={...form,version:r.record.version};await persist(next);forms.set(id,next)}window.dispatchEvent(new CustomEvent('inflite:organise-change',{detail:{owner:client.owner,kind}}));const current=pending.get(id);if(current.revision===op.revision){await local.remove(id);pending.delete(id)}else{const next={...current,version:r.record.version,operation:null,state:'queued',error:''};await persist(next);pending.set(id,next)}emit()});
+    await commit(async()=>{if(!live())return;merge(r.record);acknowledged.set(op,r.record.version);const form=forms.get(id);if(form&&form.version===op.version){const next={...form,version:r.record.version};await persist(next);forms.set(id,next)}window.dispatchEvent(new CustomEvent('inflite:organise-change',{detail:{owner:client.owner,kind}}));const current=pending.get(id);if(current.revision===op.revision){await local.remove(id);pending.delete(id)}else{const next={...current,version:r.record.version,operation:null,state:'queued',error:''};await persist(next);pending.set(id,next)}emit()});
    }catch(error){if(!live())break;await commit(async()=>{const current=pending.get(id);if(!current)return;const next={...current,state:[409,410].includes(error.status)?'conflict':'failed',status:error.status||0,error:error.message||'Retry when connected.'};await persist(next);pending.set(id,next);emit()}).catch(()=>{});break}
   }}}finally{running=false;emit()}
  }

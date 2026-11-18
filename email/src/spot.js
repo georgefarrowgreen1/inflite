@@ -196,7 +196,9 @@ function dropComments(src) {
 // (the page with its scripts', styles' and head's insides out, each put as by; one left open is left as it is, and with
 // none closed after it, every later one of its kind too)
 export function dropBlocks(html, by = "") {
-  const src = String(html), low = src.toLowerCase(), open = new Set(["script", "style", "head"]);
+  const src = String(html);
+  if (!src.includes("</")) return src;
+  const low = src.toLowerCase(), open = new Set(["script", "style", "head"]);
   let out = "", from = 0;
   for (const m of low.matchAll(/<(script|style|head)\b/g)) {
     if (m.index < from || !open.has(m[1])) continue;
@@ -262,7 +264,11 @@ function tree(html) {
     const el = { tag, attrs: attrsOf(m[3]), kids: [] };
     top.kids.push(el);
     if (tag === "br") top.kids.push(" ");
-    if (!VOID.has(tag) && !/\/\s*$/.test(m[3])) stack.push(el);
+    if (!VOID.has(tag) && !/\/\s*$/.test(m[3])) {
+      // The metadata walkers follow this tree recursively. Ignore excessively nested markup.
+      if (stack.length >= 256) break;
+      stack.push(el);
+    }
   }
   return root;
 }
@@ -279,7 +285,8 @@ function propValue(el) {
   return plain(textOf(el));
 }
 export function microdata(html) {
-  if (!/\bitemscope\b/i.test(html || "")) return [];
+  html = String(html || "").slice(0, MAX_HTML);
+  if (!html.includes(">") || !/\bitemscope\b/i.test(html)) return [];
   const items = [];
   const item = (el, depth) => {
     const o = { "@type": (el.attrs.itemtype || "").trim().split(/\s+/)[0] || "" };

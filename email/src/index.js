@@ -989,13 +989,16 @@ async function send(env, ctx, body, view) {
   // to have gone, not sent twice. One still going from the first time says so, to be asked again in a moment; one left
   // half done minutes ago is taken as not sent.
   const key = typeof body.key === "string" && /^[\w-]{8,64}$/.test(body.key) ? body.key : null;
+  const claimedAt = Date.now();
   if (key) {
-    const claim = await env.DB.prepare(`INSERT INTO sends (key, at) VALUES (?1, ?2) ON CONFLICT(key) DO NOTHING`).bind(key, Date.now()).run();
+    const claim = await env.DB.prepare(
+      `INSERT INTO sends (key, at) VALUES (?1, ?2)
+       ON CONFLICT(key) DO UPDATE SET at = excluded.at WHERE sends.id IS NULL AND sends.at <= ?3`
+    ).bind(key, claimedAt, claimedAt - 2 * 60e3).run();
     if (!claim.meta?.changes) {
-      const was = await env.DB.prepare(`SELECT id, at FROM sends WHERE key = ?1`).bind(key).first();
+      const was = await env.DB.prepare(`SELECT id FROM sends WHERE key = ?1`).bind(key).first();
       if (was?.id) return json({ ok: true, id: was.id });
-      if (was && Date.now() - was.at < 2 * 60e3) throw new HttpError(503, "That message is still sending. Try again in a moment.");
-      await env.DB.prepare(`UPDATE sends SET at = ?2 WHERE key = ?1`).bind(key, Date.now()).run();
+      throw new HttpError(503, "That message is still sending. Try again in a moment.");
     }
   }
 
@@ -1006,7 +1009,7 @@ async function send(env, ctx, body, view) {
       result = await env.EMAIL.send(message);
     } catch (err) {
       console.error("send failed", err.code, err.message);
-      if (key) await env.DB.prepare(`DELETE FROM sends WHERE key = ?1`).bind(key).run().catch(() => {});
+      if (key) await env.DB.prepare(`DELETE FROM sends WHERE key = ?1 AND at = ?2 AND id IS NULL`).bind(key, claimedAt).run().catch(() => {});
       const hint =
         err.code === "E_SENDER_NOT_VERIFIED"
           ? `${env.DOMAIN} isn't verified for Email Sending yet.`
@@ -1018,7 +1021,7 @@ async function send(env, ctx, body, view) {
 
     // Sent: whatever happens to the copy kept here, the answer is that it went (so it's never sent twice).
     const id = crypto.randomUUID();
-    if (key) await env.DB.prepare(`UPDATE sends SET id = ?2 WHERE key = ?1`).bind(key, id).run().catch((err) => console.error("sent, but not noted as sent", err));
+    if (key) await env.DB.prepare(`UPDATE sends SET id = ?2 WHERE key = ?1 AND id IS NULL`).bind(key, id).run().catch((err) => console.error("sent, but not noted as sent", err));
     try {
       await keepSent(env, ctx, { followUpAt:body.followUpAt, id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId: body.draftId });
     } catch (err) {

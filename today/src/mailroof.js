@@ -52,8 +52,8 @@ export async function mailRoof(request, env) {
   let res;
   try {
     res = await askMail(env, file ? `/roof/${m[1]}` : "/roof/version", request, file && method === "HEAD" ? "HEAD" : "GET");
-  } catch (e) {
-    console.error("mail roof", e && e.message);
+  } catch {
+    console.error("mail roof upstream failed");
     return said(502, "Mail can’t be reached just now.");
   }
   if (!res) return said(503, "Mail isn’t ready here yet.");
@@ -68,7 +68,7 @@ export async function mailRoof(request, env) {
         if (text !== null) build = JSON.parse(text)?.build;
       }
     } catch (_) {}
-    if (!(typeof build === "string" || typeof build === "number") || !/^\d{1,4}(\.\d{1,4})?$/.test(String(build))) { res.body?.cancel?.().catch?.(() => {}); return said(502, "Mail can’t be reached just now."); }
+    if (!(typeof build === "string" || typeof build === "number") || !/^\d{1,8}(?:\.\d{1,8}){0,2}$/.test(String(build))) { res.body?.cancel?.().catch?.(() => {}); return said(502, "Mail can’t be reached just now."); }
     return new Response(method === "HEAD" ? null : JSON.stringify({ build }), { headers: { "Content-Type": "application/json; charset=utf-8", ...SAFE } });
   }
 

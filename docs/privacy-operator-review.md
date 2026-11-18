@@ -1,0 +1,13 @@
+# InFlite privacy decisions for operator review
+
+InFlite, United Kingdom, confirmed privacy@inflite.ai as the privacy contact on 18 November 2026. The public pages describe observed product behaviour. The operator had no existing privacy or retention policy. The decisions below remain open and require operational evidence in addition to code.
+
+| Decision | What the operator needs to establish |
+| --- | --- |
+| Controller identity | Confirm the legal person behind the InFlite name and their correspondence address. Confirm whether a DPO, representative or ICO registration is required. Check that the privacy mailbox receives requests and is monitored. |
+| Lawful bases | Record a basis for each purpose. Assess contract necessity for requested account, messaging and sync functions. For service security, abuse prevention and answering enquiries, document the relevant interest, necessity and balancing assessment if relying on legitimate interests. Record applicable legal obligations individually. Update the public notice with the adopted bases and interests. |
+| Fitness and health | Heart rate, sleep, recovery, route history and related inferences can be sensitive. Establish the applicable Article 6 basis and Article 9 condition for each health-data flow before enabling it for a user. If relying on explicit consent, document the affirmative action, withdrawal, effect on imports and deletion. Provider authorisation alone does not establish explicit consent to InFlite’s processing. Assess DPIA requirements. |
+| Providers and transfers | Confirm the contracted processors, regions, sub-processors and any independent controllers. Verify applicable UK adequacy arrangements, UK transfer agreements or other safeguards where required, plus how a person can obtain a copy. |
+| Retention and deletion | Approve periods or decision criteria for support enquiries, access logs, backups, dormant accounts, provider tokens and restored backups. The support inbox currently requires administrator deletion. Verify how deletion propagates and test restoration and expiry with synthetic records. |
+| Storage and individual rights | Confirm the actual edge analytics and storage configuration. Assess each non-essential device storage or tracking purpose and applicable consent requirements. Assign an owner to rights requests, objections, restrictions and provider deletion follow-up. |
+| Terms | Verify the operator’s identity, scope of the service, support process and any consumer obligations before treating the terms as reviewed. Review notices when these facts or the app behaviour change. |

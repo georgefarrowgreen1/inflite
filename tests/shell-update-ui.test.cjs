@@ -57,6 +57,22 @@ test('an interrupted shell install preserves offline launch and a complete updat
     assert.equal(await update(), 'installed');
     assert.equal(stableRequests, 1, 'unchanged verified CSS is copied locally during both update attempts');
     assert.equal(await page.evaluate(() => fetch('/cards.js').then(r => r.text())), '4.6.1');
+    const other = await ctx.newPage();
+    await other.goto(url);
+    const activate = () => page.evaluate(async () => {
+      const reg = await navigator.serviceWorker.getRegistration(), channel = new MessageChannel();
+      const reply = new Promise(resolve => { channel.port1.onmessage = e => resolve(e.data); });
+      reg.waiting.postMessage({ifl:'activate-shell',build:'4.6.2'},[channel.port2]);
+      return reply;
+    });
+    assert.deepEqual(await activate(), {activating:false,reason:'other-windows'});
+    await other.close();
+    await page.evaluate(() => new Promise(resolve => {
+      const frame = document.createElement('iframe');
+      frame.onload = resolve; frame.src = '/embedded'; document.body.append(frame);
+    }));
+    assert.deepEqual(await activate(), {activating:true}, 'an embedded same-origin frame belongs to this window');
+    await page.waitForFunction(async()=> (await (await fetch('/cards.js')).text()) === '4.6.2');
     await page.close(); page = await ctx.newPage();
     await ctx.setOffline(true); await page.goto(url);
     await page.waitForFunction(async () => (await fetch('/cards.js')).text().then(text => text === '4.6.2'));

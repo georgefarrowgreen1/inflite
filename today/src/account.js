@@ -3,6 +3,7 @@
 // account side is functions/_todayapp.js in the georgefarrowgreen repo: TODAY_ROUTES.) Nothing the browser sent is
 // passed on but the account's cookie and these few headers.
 import { appFetch } from "./apps.js";
+import { fetchUpstream } from "./upstream.js";
 
 // (and the mark that the browser has just changed its sign-in, ifl_rw=1, so the account asks its main database who's
 // signed in, not a copy near the visitor that may be a moment behind: georgefarrowgreen functions/_account.js markWrote)
@@ -43,13 +44,12 @@ export async function ask(env, request, { method = "GET", path, query = null, bo
   if (env.HUB_KEY && ip) { h.set("X-Hub-Key", env.HUB_KEY); h.set("X-Hub-IP", ip); h.set("X-Hub-Geo", geoOf(request.cf)); }
   for (const [k, v] of Object.entries(headers || {})) h.set(k, v);
   try {
-    return await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/${path}${q}`, {
+    return await fetchUpstream((url, init) => appFetch(env, url, init), `${env.ACCOUNT_ORIGIN}/api/account/${path}${q}`, {
       method,
       headers: h,
       body: body ?? undefined,
       redirect: "manual",
-      signal: AbortSignal.timeout(timeout),
-    });
+    }, { signal:request.signal, timeout });
   } catch {
     return null;
   }

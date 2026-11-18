@@ -85,7 +85,10 @@ let youModule;
 async function you() {
   if (!youModule) {
     const cards = 'data:text/javascript,' + encodeURIComponent('export const G = {}; export const esc = s => String(s ?? "");');
-    const source = readFileSync(resolve(publicDir, 'you.js'), 'utf8').replace('"/cards.js"', JSON.stringify(cards)).replace('import("/mailnotify.js")', 'globalThis.loadMailNotifications()');
+    const wallpaper = 'data:text/javascript,' + encodeURIComponent(
+      'export const previewWallpaper=()=>{}, wallpaperPreference=()=>"plain", setWallpaper=()=>{}, lavaColours=[], wallpaperColour=()=>"midnight", setWallpaperColour=()=>{};');
+    const source = readFileSync(resolve(publicDir, 'you.js'), 'utf8')
+      .replace('"/roof/wallpaper.js"', JSON.stringify(wallpaper)).replace('"/cards.js"', JSON.stringify(cards)).replace('import("/mailnotify.js")', 'globalThis.loadMailNotifications()');
     youModule = import('data:text/javascript,' + encodeURIComponent(source));
   }
   return youModule;

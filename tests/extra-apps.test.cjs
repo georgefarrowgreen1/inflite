@@ -20,3 +20,13 @@ test('Status writes are explicit once, canonical document redirect preserves que
  assert.equal((await extraApp(req('/status?detail=a'),env(()=>{}))).headers.get('location'),'/status/?detail=a');
  assert.equal((await extraApp(req('/status/'),env(()=>Response.redirect('https://evil.test',302)))).status,502);
 });
+
+test('malformed Status manifest responses degrade to a private gateway error', async () => {
+  const {extraApp} = await mod;
+  const out = await extraApp(req('/status/manifest.webmanifest'),env(()=>new Response('Temporarily unavailable')));
+  assert.equal(out.status,502);
+  assert.equal(out.headers.get('cache-control'),'no-store');
+  assert.equal(await out.text(),'Couldn’t open Status.');
+  const redirect = await extraApp(req('/api/status'),env(()=>new Response(null,{status:302,headers:{Location:'/api/status/day'}})));
+  assert.equal(redirect.headers.get('location'),'/api/status/day');
+});

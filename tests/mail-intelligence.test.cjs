@@ -77,13 +77,13 @@ test('attachment search returns files from the named sender, and inbox follow-up
     const savedFetch = globalThis.fetch;
     try {
       globalThis.fetch = async () => Response.json({signedIn:true,admin:true,passkey:true,fresh:true,handle:'fixture'});
-      const post = async (path,body) => {
+      const post = async (path,body,expected = 200) => {
         const res = await worker.fetch(new Request('https://email.inflite.ai/api/'+path,{
           method:'POST',headers:{Origin:'https://email.inflite.ai',Cookie:'account=abcdefghijklmnopqrstuvwxyz',
           'X-Inflite':'1','Sec-Fetch-Site':'same-origin','Content-Type':'application/json'},body:JSON.stringify(body)
         }),env,ctx);
         const value = await res.json();
-        assert.equal(res.status,200,JSON.stringify(value));
+        assert.equal(res.status,expected,JSON.stringify(value));
         return value;
       };
       const due = Date.now()+86400000;
@@ -103,6 +103,19 @@ test('attachment search returns files from the named sender, and inbox follow-up
       await drain();
       assert.equal(sql.prepare('SELECT count(*) AS n FROM messages WHERE thread_id=?').get(scheduled.thread_id).n,2);
       assert.equal(sql.prepare('SELECT * FROM mail_followups WHERE message_id=?').get(sent.id),undefined);
+
+      // Two clients reconnecting at once must share the same expired send claim.
+      const started = Promise.withResolvers(), release = Promise.withResolvers();
+      const retry = {to:[{email:'recipient@example.com'}], subject:'Retry fixture', text:'Local fixture', key:'retry-fixture-002'};
+      sql.prepare('INSERT INTO sends(key,at) VALUES(?,?)').run(retry.key,0);
+      env.EMAIL.send = async message => { deliveries.push(message); started.resolve(); await release.promise; return {messageId:'retry@example.com'}; };
+      const first = post('send',retry);
+      await started.promise;
+      try { await post('send',retry,503); } finally { release.resolve(); }
+      const completed = await first;
+      assert.equal((await post('send',retry)).id,completed.id);
+      assert.equal(deliveries.length,2);
+      await drain();
     } finally { globalThis.fetch = savedFetch; }
   } finally { sql.close(); }
 });
@@ -131,4 +144,71 @@ test('Signature styles the sender’s own sign-off once above quoted history', a
   const alias = signedMessage('Hello',{name:'A < B',from:'team@inflite.ai'});
   assert.match(alias, /A &lt; B · InFlite/);
   assert.match(signedMessage('Hello',{from:'team@inflite.ai'}), /team@inflite.ai/);
+});
+
+test('draft recovery preserves server attachments, current edits and a newer local copy', async t => {
+  const {createOutbox} = await import('../email/public/roof/outbox.js');
+  const data = new Map();
+  t.mock.method(globalThis, 'setInterval', () => 0);
+  const previous = Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{
+    get length(){return data.size}, key:i=>[...data.keys()][i],
+    setItem:(k,v)=>data.set(k,v), getItem:k=>data.get(k)??null, removeItem:k=>data.delete(k),
+  }});
+  t.after(() => previous ? Object.defineProperty(globalThis,'localStorage',previous) : delete globalThis.localStorage);
+  const saves = [], firstSave = Promise.withResolvers(), release = Promise.withResolvers();
+  const api = {
+    draft:async id => ({compose:{files:[{i:0,filename:'fixture.txt'}]}}),
+    saveDraft:async draft => {
+      saves.push(draft);
+      if (saves.length===1) { firstSave.resolve(); await release.promise; }
+      return {id:'one'};
+    },
+  };
+  const box = createOutbox({api,fw:{},store:{set(){}}});
+  t.after(()=>box.destroy());
+  let text = 'first', draftId = null;
+  const snapshots = [];
+  const untrack = box.track(()=>({text,draftId,files:[]}), (id,snapshot)=>{ draftId=id; snapshots.push(snapshot.text); });
+  const first = box.flush({draftsOnly:true});
+  await firstSave.promise;
+  text = 'edited during save';
+  const final = box.flush();
+  release.resolve();
+  assert.deepEqual(await Promise.all([first,final]),[{lost:0},{lost:0}]);
+  assert.deepEqual(snapshots,['first','edited during save']);
+  assert.equal(saves[1].id,'one');
+  untrack();
+  box.keepUnsent({cc:[{email:'cc@example.com'}],draftId:'one'});
+  const started = Promise.withResolvers(), confirmed = Promise.withResolvers();
+  api.saveDraft = async draft => { saves.push(draft); started.resolve(); await confirmed.promise; return {id:'one'}; };
+  const recovering = box.flush();
+  await started.promise;
+  box.keepUnsent({text:'newer local draft'});
+  confirmed.resolve();
+  assert.deepEqual(await recovering,{lost:0});
+  assert.deepEqual(saves[2].attachments,[{i:0}]);
+  assert.equal(box.unsent().text,'newer local draft');
+
+  // A mounted tab finishing its flush must leave another tab's queued message intact.
+  const remote = [{key:'other-tab',at:9,draft:{text:'Queued in a different tab'}}];
+  data.set('mail:outbox',JSON.stringify(remote));
+  await box.flush({draftsOnly:true});
+  assert.deepEqual(JSON.parse(data.get('mail:outbox')),remote);
+});
+
+test('a calendar series ends on the last retained occurrence across clock changes and exceptions', async () => {
+  const {expand,lastOf,parseRule} = await import('../email/src/repeat.js');
+  const wall = {y:2026,mo:3,d:1,hh:9,mi:30,ss:0};
+  for (const zone of ['Europe/London','America/New_York','Pacific/Auckland']) {
+    for (const rule of ['FREQ=WEEKLY;COUNT=12','FREQ=DAILY;UNTIL=20260402T083000Z','FREQ=MONTHLY;COUNT=4;BYDAY=-1SU']) {
+      const r = parseRule(rule);
+      const series = expand(r,{wall,zone});
+      const ex = [series.at(-1).start,series.at(-2).day];
+      for (const rd of [[],[Date.UTC(2026,11,1)]]) {
+        const expected = expand(r,{wall,zone,ex,rd}).at(-1)?.start ?? null;
+        assert.equal(lastOf(r,{wall,zone,ex,rd}),expected,zone+' '+rule);
+      }
+    }
+  }
 });

@@ -28,7 +28,12 @@ export function highlight(ui, r, title, hits) {
   if (!b || !hits?.length) return r;
   const kids = [];
   let k = 0;
-  for (const [a, z] of hits) { if (a > k) kids.push(title.slice(k, a)); kids.push(ui.el("mark", { class: "ifl-hit", text: title.slice(a, z) })); k = z; }
+  for (const [a, z] of hits) {
+    if (z <= k) continue;
+    if (a > k) kids.push(title.slice(k, a));
+    kids.push(ui.el("mark", { class: "ifl-hit", text: title.slice(Math.max(a, k), z) }));
+    k = z;
+  }
   if (k < title.length) kids.push(title.slice(k));
   b.replaceChildren(...kids);
   return r;

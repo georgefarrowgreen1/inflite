@@ -87,7 +87,7 @@ function yearDays(r, y) {
 // is inclusive. ex: EXDATEs (a moment in ms, or a "yyyymmdd" for a date); rd: RDATEs (ms). Never more than 4000
 // periods looked at, and a rule that ends (COUNT or UNTIL) never past ten years from its first date, so a broken rule
 // can't run on.
-export function expand(r, { wall, zone, from = -Infinity, to = Infinity, ex = [], rd = [], max = 400 }) {
+export function expand(r, { wall, zone, from = -Infinity, to = Infinity, ex = [], rd = [], max = 400 }, lastOnly = false) {
   // (no rule, only dates added: the first date, and those)
   r = r || { freq: null, interval: 1, count: null, until: null, byday: [], bymonthday: [], bymonth: [], bysetpos: [], wkst: 1 };
   const at = (n) => { const { y, mo, d } = ymd(n); return zonedMs(y, mo, d, wall.hh, wall.mi, wall.ss || 0, zone); };
@@ -100,13 +100,21 @@ export function expand(r, { wall, zone, from = -Infinity, to = Infinity, ex = []
   // (an UNTIL of 9999, or a COUNT of years of days: no later than ten years on)
   if (r.until || r.count) until = Math.min(until, at(first + 3653));
   const exMs = new Set(ex.filter((x) => typeof x === "number")), exDay = new Set(ex.filter((x) => typeof x === "string"));
-  const out = [];
+  const out = [], candidates = [];
+  // A wall date at any time of day in any time zone is within two UTC days.
+  const lastPossibleDay = Math.floor(Math.min(to, until) / DAY) + 2;
   let n = 0, done = false;
   // (→ false once there's no more to look for)
   const take = (d) => {
+    if (d > lastPossibleDay || (r.count && n >= r.count)) { done = true; return false; }
+    if (lastOnly) {
+      candidates.push(d);
+      n++;
+      return true;
+    }
     const ms = at(d);
     if (ms < t0) return true;
-    if (ms > until || (r.count && n >= r.count)) return (done = true), false;
+    if (ms > until) return (done = true), false;
     n++;
     if (ms > to) return (done = true), false;
     const day = dayKey(d);
@@ -143,6 +151,15 @@ export function expand(r, { wall, zone, from = -Infinity, to = Infinity, ex = []
     for (const d of days) if (d > first && !take(d)) break;
     if (out.length >= max) break;
   }
+  // Only the last retained date needs an exact time-zone conversion when storing a series end.
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const day = dayKey(candidates[i]);
+    if (exDay.has(day)) continue;
+    const start = at(candidates[i]);
+    if (start < t0 || start < from || start > until || start > to || exMs.has(start)) continue;
+    out.push({ start, day });
+    break;
+  }
   // (and the dates added, at their own moments)
   for (const ms of rd) if (Number.isFinite(ms) && ms >= from && ms <= to && !out.some((o) => o.start === ms) && !exMs.has(ms)) {
     const p = zoneParts(ms, zone);
@@ -154,7 +171,7 @@ export function expand(r, { wall, zone, from = -Infinity, to = Infinity, ex = []
 // The last date of a rule that ends (COUNT or UNTIL), or null for one that doesn't
 export function lastOf(r, o) {
   if (r?.freq && !r.count && !r.until) return null;
-  const all = expand(r, { ...o, max: 10000 });
+  const all = expand(r, { ...o, max: 10000 }, true);
   return all.length ? all[all.length - 1].start : null;
 }
 

@@ -36,7 +36,8 @@ let liveAt = 0;
 function liveVersions(root, ctx) {
   if (Date.now() - liveAt < 60e3) return;
   liveAt = Date.now();
-  Promise.all(Object.entries(LIVE_PATH).map(([k, p]) => fetch(`${p}version`, { cache: "no-store", credentials: "same-origin" })
+  const signal = AbortSignal.any([ctx.frame.signal, AbortSignal.timeout(12000)]);
+  Promise.all(Object.entries(LIVE_PATH).map(([k, p]) => fetch(`${p}version`, { cache: "no-store", credentials: "same-origin", signal })
     .then((r) => (r.ok ? r.json() : null)).then((j) => { if (j?.build) LIVE[k] = String(j.build); }, () => {}))).then(() => { if (root.isConnected && current(ctx)) paint(root, ctx); });
 }
 // (each row's leading icon: a symbol on a colour, as Settings has, or the app's own icon)
@@ -232,7 +233,14 @@ function paint(root, ctx) {
     try { b ||= localStorage.getItem(`ifl-build:${k}`); } catch {}
     return row(`v-${k}`, name, null, `<span class="val">${b ? `V${esc(b)}` : "—"}</span>`);
   }).join("");
-  FOLDERS.versions = sec("youVersions", "About InFlite", ver);
+  const aboutLinks = [
+    ["/about/", "About the apps"],
+    ["/about/#contact", "Contact InFlite"],
+    ["/privacy/", "Privacy notice"],
+    ["/storage/", "Cookies and device storage"],
+    ["/terms/", "Terms of use"],
+  ].map(([href, title]) => `<a class="row go" href="${href}">${tx(title, "")}<span class="chev">${G.chev}</span></a>`).join("");
+  FOLDERS.versions = sec("youVersions", "About InFlite", aboutLinks + ver);
   const link = (action, title, description, lead = "") => go(`data-setting="${action}"`, title, description, "", lead);
   const options = ctx.frame?.session?.apps || {};
   const appSettings = [
@@ -274,7 +282,7 @@ function paint(root, ctx) {
     ["devices", "Devices", "Saved devices and notification delivery", "devices",
       (ctx.remembered ? sec("youRemembered","",link("remembered","Remembered devices","Continuation and encrypted drafts")) : "") +
       (sections.youDevices || sec("youDeviceInfo","",row("devices","Other notification devices",Y.devices === null ? "Checking your devices…" : "None listed")))],
-    ["about", "About InFlite", "App versions", "info", FOLDERS.versions]
+    ["about", "About InFlite", "App versions, privacy and support", "info", FOLDERS.versions]
   ];
   const selected = account ? "account" : categoryFor(ctx.section);
   const previous = root.querySelector('.settings-search input');
@@ -408,25 +416,37 @@ function openFolder(k, root, ctx) {
   fillFolder(sheet, root, ctx);
   if (!sheet.open) ctx.openSheet("sh-youfolder");
 }
-async function accountPreference(ctx,path,method = "GET",patch) {
+async function accountPreference(ctx,path,method = "GET",patch, lifetime = ctx.frame.signal) {
   const headers = {"X-InFlite-Owner":ctx.view.user.id};
   if (patch) headers["Content-Type"] = "application/json";
-  const response = await fetch("/account/api/account/" + path, {
-    method, headers, credentials:"same-origin", cache:"no-store", signal:ctx.frame.signal,
-    body: patch ? JSON.stringify(patch) : undefined
-  });
-  if (!response.ok) throw Error(response.status === 401 ? "Your account changed. Open Settings again." : "Couldn’t reach Account. Try again.");
-  return response.json();
+  const deadline = AbortSignal.timeout(12000);
+  const signal = AbortSignal.any([ctx.frame.signal, lifetime, deadline]);
+  try {
+    const response = await fetch("/account/api/account/" + path, {
+      method, headers, credentials:"same-origin", cache:"no-store", mode:"same-origin", redirect:"error", signal,
+      body: patch ? JSON.stringify(patch) : undefined
+    });
+    if (!response.ok) throw Object.assign(Error(response.status === 401 ? "Your account changed. Open Settings again." : "Couldn’t reach Account. Try again."),{status:response.status});
+    return await response.json();
+  } catch (error) {
+    if (ctx.frame.signal.aborted || lifetime.aborted) throw error;
+    if (method !== "GET" && (!error.status || error.status >= 500))
+      throw Object.assign(Error("Couldn’t confirm the save. Reload your preferences to see their current values."),{uncertain:true});
+    if (deadline.aborted) throw Error("Account took too long to respond. Try again.");
+    throw error;
+  }
 }
+
 
 function emailPreferences(root,ctx) {
   const ui = ctx.frame.ui, el = ui.el, body = el("div",{class:"settings-preferences"});
-  const h = ctx.frame.sheet.open({sheet:"settings-emails",title:"Email preferences",body});
+  const reads = new AbortController();
+  const h = ctx.frame.sheet.open({sheet:"settings-emails",title:"Email preferences",body,onClose:()=>reads.abort()});
   const active = () => current(ctx) && !h.closed;
   async function load() {
     body.replaceChildren(ui.skeleton("rows",3));
     try {
-      const prefs = await accountPreference(ctx,"notify");
+      const prefs = await accountPreference(ctx,"notify","GET",undefined,reads.signal);
       if (active()) draw(prefs);
     } catch (error) {
       if (active()) body.replaceChildren(ui.error({title:"Email preferences unavailable",body:error.message,acts:[{label:"Try again",run:load}]}));
@@ -446,7 +466,9 @@ function emailPreferences(root,ctx) {
           paint(root,ctx);
         }
       } catch (error) {
-        if (active()) { draw(prefs); body.querySelector('[role=status]').textContent = error.message; }
+        if (!active()) return;
+        if (error.uncertain) body.replaceChildren(ui.error({title:"Email preferences",body:error.message,acts:[{label:"Reload preferences",run:load}]}));
+        else { draw(prefs); body.querySelector('[role=status]').textContent = error.message; }
       }
     },{label:title})});
     const chat = [["messages","Unread messages"],["landed","Letters arriving"],["requests","Friend requests"]];
@@ -488,7 +510,7 @@ function appearance(ctx) {
   async function load() {
     body.replaceChildren(ui.skeleton("rows",3));
     try {
-      const pref = await accountPreference(ctx,"appearance");
+      const pref = await accountPreference(ctx,"appearance","GET",undefined,listeners.signal);
       if (!active()) return;
       if (!pref.signedIn || pref.id !== owner) throw Error("Sign in to Account to edit your appearance.");
       theme.accept(pref);
@@ -513,7 +535,9 @@ function appearance(ctx) {
         if (active()) draw({...result.prefs,id:owner});
       } catch (error) {
         cancelPreview();
-        if (active()) { draw(pref); body.querySelector('[role=status]').textContent = error.message; }
+        if (!active()) return;
+        if (error.uncertain) body.replaceChildren(ui.error({title:"Appearance",body:error.message,acts:[{label:"Reload preferences",run:load}]}));
+        else { draw(pref); body.querySelector('[role=status]').textContent = error.message; }
       } finally { form.disabled = false; }
     }
     const select = (label,key,items) => {
@@ -574,7 +598,11 @@ function wire(root, ctx) {
 
   for (const b of root.querySelectorAll("[data-folder]")) b.addEventListener("click", () => openFolder(b.dataset.folder, document.getElementById("you") || root, ctx));
   $("#youMorning")?.addEventListener("click", () => ctx.toMorning());
-  $("#youOut")?.addEventListener("click", (e) => { e.currentTarget.disabled = true; ctx.signOut(); });
+  $("#youOut")?.addEventListener("click", async e => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    try { await ctx.signOut(); } finally { button.disabled = false; }
+  });
   // (a rule's level: Do, Suggest or Quiet, set by you)
   for (const sel of root.querySelectorAll("[data-rulepick]")) sel.addEventListener("change", async () => {
     const rule = sel.dataset.rulepick, level = sel.value, r = sel.closest("[data-rule]"), rec = Y.rules?.rules?.find((x) => x.rule === rule);
