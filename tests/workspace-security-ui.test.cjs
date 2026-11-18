@@ -148,3 +148,68 @@ test('the real native chrome policy controls the external OS dock and releases i
   assert.deepEqual(state,{hidden:{dock:true,marked:true,external:'in'},shown:true,restored:true,marked:false,dock:false});await clean();
  }finally{await ctx.close()}
 });
+
+test('Search shows a late exact Drive match, previews the selected version and restores its filtered result', async () => {
+  const { ctx, page, clean } = await open();
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const content = '<gpx><trk><trkseg><trkpt lat="52" lon="1"><ele>10</ele></trkpt><trkpt lat="52.1" lon="1"><ele>52</ele></trkpt></trkseg></trk></gpx>';
+    const node = (n, name, kind, parentId = null) => ({
+      id: String(n).padStart(32, '0'), name, kind, parentId, status: 'ready', version: 1,
+      createdAt: 1, modifiedAt: n * 86400000, mime: kind === 'file' ? 'application/gpx+xml' : 'inode/directory',
+      size: kind === 'file' ? content.length : 0
+    });
+    const archive = node(2, 'Archive', 'folder'), rides = node(3, 'Saturday rides', 'folder');
+    const older = node(5, 'Coast route.gpx', 'file', archive.id), newest = node(7, older.name, 'file', rides.id);
+    const noteText = 'A note with the coast route meeting point.';
+    const note = { ...node(9, 'Ride plan.txt', 'file', rides.id), mime: 'text/plain', size: noteText.length };
+    const contentsRead = [];
+    let release;
+    const delay = new Promise(resolve => { release = resolve; });
+    await page.route('**/api/files/search', async r => {
+      await delay;
+      await r.fulfill({ json: { items: [{ ...older, folderName: archive.name }, { ...newest, folderName: rides.name }], ancestors: [], folder: null, revision: 1, cursor: null,
+        usage: { used: 0, reserved: 0, limit: 1000, nodes: 4, nodeLimit: 5000, fileLimit: 26214400 } } });
+    });
+    await page.route('**/api/files/item?*', r => r.fulfill({ json: { item: [archive, rides, older, newest, note].find(x => x.id === new URL(r.request().url()).searchParams.get('id')) } }));
+    await page.route('**/api/files/content?*', r => {
+      contentsRead.push(new URL(r.request().url()).searchParams.get('id'));
+      return r.fulfill({ body: contentsRead.at(-1) === note.id ? noteText : content, contentType: 'application/octet-stream' });
+    });
+    await page.evaluate(() => {
+      audit.F.search.provide({ id: 'fixture-notes', group: 'Notes', search: () => [{ title: 'Planning the coast route', app: 'notes', run() {} }] });
+      audit.F.search.open();
+    });
+    const search = page.getByRole('combobox', { name: 'Search everything' });
+    await search.fill('coast route');
+    await page.getByRole('option').filter({ hasText: 'Planning the coast route' }).waitFor();
+    release();
+    await page.getByRole('group', { name: 'Top hit' }).getByRole('option').filter({ hasText: 'Saturday rides' }).waitFor();
+    await page.getByLabel('Filter by app').getByRole('button', { name: 'Files', exact: true }).click();
+    const row = page.getByRole('option').filter({ hasText: 'Archive' });
+    await row.waitFor();
+    assert.deepEqual(contentsRead, []);
+    await row.click();
+    await page.getByRole('img', { name: 'Elevation profile' }).waitFor();
+    assert.deepEqual(contentsRead, [older.id]);
+    assert.match(await page.locator('[data-page=result]').innerText(), /11\.1 km · 42 m ascent/);
+    await page.getByRole('button', { name: 'Back to results' }).click();
+    assert.equal(await search.inputValue(), 'coast route');
+    assert.equal(await page.getByLabel('Filter by app').getByRole('button', { name: 'Files', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await row.evaluate(el => el === document.activeElement && el.getAttribute('aria-selected') === 'true'), true);
+    assert.equal(await page.getByRole('option').filter({ hasText: 'Planning the coast route' }).count(), 0);
+    await page.route('**/api/organise/document-search', r => r.fulfill({ json: {
+      hits: [{ id: note.id, name: note.name, version: note.version, snippet: 'Matching passage' }], scanned: 1, cursor: null
+    } }));
+    await page.getByLabel('Filter by app').getByRole('button', { name: 'All', exact: true }).click();
+    await page.getByRole('option').filter({ hasText: 'Search inside documents' }).click();
+    const documents = page.locator('dialog[data-sheet="document-search"]');
+    await documents.getByRole('button').filter({ hasText: 'Matching passage' }).click();
+    await documents.getByText(noteText, { exact: true }).waitFor();
+    assert.deepEqual(contentsRead, [older.id, note.id]);
+    await documents.getByRole('button', { name: 'Back', exact: true }).click();
+    await documents.getByRole('button', { name: 'Close', exact: true }).click();
+    assert.equal(await search.inputValue(), 'coast route');
+    await clean();
+  } finally { await ctx.close(); }
+});

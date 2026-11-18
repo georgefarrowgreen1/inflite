@@ -19,7 +19,7 @@ export function driveItem(value) {
     || value.favourite !== undefined && typeof value.favourite !== "boolean" || value.trashedAt !== undefined && (!Number.isSafeInteger(value.trashedAt) || value.trashedAt <= 0 || !driveId(value.trashRoot))
     || !value.name || value.name !== clean(value.name) || !/^[\w!#$&^_.+-]+\/[\w!#$&^_.+-]+$/.test(value.mime || "")) return null;
   return { id: value.id, parentId: value.parentId, kind: value.kind, name: value.name, mime: value.mime, size: value.size,
-    createdAt: value.createdAt, modifiedAt: value.modifiedAt, version: value.version, status: value.status, ...(value.trashedAt ? { trashedAt:value.trashedAt, trashRoot:value.trashRoot } : {}), ...(value.favourite ? { favourite:true } : {}) };
+    ...(value.folderName ? { folderName: clean(value.folderName) } : {}), createdAt: value.createdAt, modifiedAt: value.modifiedAt, version: value.version, status: value.status, ...(value.trashedAt ? { trashedAt:value.trashedAt, trashRoot:value.trashRoot } : {}), ...(value.favourite ? { favourite:true } : {}) };
 }
 function itemAnswer(value) {
   const item = driveItem(value?.item);

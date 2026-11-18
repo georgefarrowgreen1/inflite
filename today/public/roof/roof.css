@@ -588,3 +588,15 @@ dialog.ifl-sheet {
 
 /* Keep Mail’s short send notice and Undo together above the dock. */
 .ifl-toast[data-app=mail].has-act .ifm-note-tx { flex: 1 1 auto; min-width: 0; }
+
+.ifl-search-filters { display:flex; flex:none; gap:6px; overflow-x:auto; scrollbar-width:none; padding:5px 0; }
+.ifl-search-filters[hidden], .ifl-search[hidden] { display:none; }
+.ifl-search-filters button { flex:none; padding:7px 13px; border-radius:var(--r-pill); background:var(--glass-ctl); color:var(--text); font-size:14px; font-weight:600; }
+.ifl-search-filters button[aria-pressed=true] { background:var(--acc-fill); color:var(--on-acc); }
+dialog[data-sheet="search"] .ifs-page { min-height:0; overflow:auto; }
+.ifl-search-detail { display:grid; gap:12px; padding:4px; overflow-wrap:anywhere; }
+.ifl-search-detail p { margin:0; }
+.ifl-search-detail p:first-child { color:var(--text-2); }
+.ifl-search-detail pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.ifl-search-detail :is(img, audio, svg) { max-width:100%; }
+.ifl-search-detail .ifl-profile { display:block; width:100%; height:96px; color:var(--acc-ink); }

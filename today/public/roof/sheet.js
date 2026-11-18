@@ -157,7 +157,7 @@ export function createSheets(F, { beforeOpen } = {}) {
       clearTimeout(pageTimer); body.classList.remove("ifl-enter-pop");
       const kids = [...body.children].filter((c) => !c.hidden);
       const pg = el("div", { class: "ifs-page ifl-enter-push", data: { page: page.page } });
-      stack.push({ pg, kids, title: h2?.textContent, acts: d.querySelector(".ifs-acts"), y: d.scrollTop, by: body.scrollTop, focus: focused() });
+      stack.push({ pg, kids, onLeave: page.onLeave, title: h2?.textContent, acts: d.querySelector(".ifs-acts"), y: d.scrollTop, by: body.scrollTop, focus: focused() });
       for (const c of kids) c.hidden = true;
       d.classList.add("pushed");
       if (h2 && page.title != null) h2.textContent = page.title;
@@ -176,6 +176,7 @@ export function createSheets(F, { beforeOpen } = {}) {
       if (!s) return;
       const height = sizeBefore();
       s.pg.remove();
+      s.onLeave?.();
       for (const c of s.kids) c.hidden = false;
       if (h2) h2.textContent = s.title;
       d.querySelector(".ifs-acts")?.remove();

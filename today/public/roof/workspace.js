@@ -1,3 +1,4 @@
+import { createDiscoveryView, discover } from './discovery350.js';
 import { initialFavourites, normaliseFavourites, toggleFavourite, launcherStatus } from "./launcher-model.js";
 import { captureLauncherOrigin, launcherTransition } from "./launcher-motion.js";
 // Unified InFlite shell: singleton apps, Files and account-scoped actions.
@@ -451,8 +452,17 @@ export async function createWorkspace(F, options = {}) {
   }, destroy() { dialogInstance?.destroy(); } };
   offs.push(activity.subscribe(paint),files.subscribe(paint));
   offs.push(F.search.provide({id:'reminders350',group:'Reminders',order:12,scope:'account',search:(q,lease)=>q.trim().length<2?[]:system().then(s=>live()&&s?s.search(q,lease):[])}));
-  offs.push(F.search.provide({id:'document-contents',group:'Document contents',order:90,search:q=>q.trim().length<2?[]:[{title:'Search inside documents',sub:'Text, Markdown, CSV and JSON · open content search',run:()=>lifeTools().then(v=>live()&&v?.searchDocuments(q))}]}));
-  let discoveryLoad;offs.push(F.search.provide({id:'discovery350',group:'Across InFlite',order:22,scope:'account',search:async(q,lease)=>{if(q.trim().length<2||!live())return [];discoveryLoad||=import('./discovery350.js');const m=await discoveryLoad;return live()?m.discover(F,{query:q,lease,files,searchApp,openApp,runIntent}):[]}}));
+  offs.push(F.search.provide({id:'document-contents',group:'Document contents',order:90,search:q=>q.trim().length<2?[]:[{title:'Search inside documents',offer:true,layer:true,sub:'Text, Markdown, CSV and JSON · open content search',run:current=>lifeTools().then(v=>live()&&current()&&v?.searchDocuments(q))}]}));
+  F.search.useDiscovery?.(createDiscoveryView);
+  for (const app of ['files','calendar','notes','people','mail','chats','fitness','markets','weather']) {
+    offs.push(F.search.provide({
+      id: 'discover-' + app, group: REGISTRY[app]?.name || 'Files', order: 22, scope: 'account',
+      async search(query, lease) {
+        if (query.trim().length < 2 || !live() || app !== 'files' && !appOn(app)) return [];
+        return live() ? discover(F, { app, query, lease, files, searchApp, openApp, runIntent }) : [];
+      }
+    }));
+  }
   queueMicrotask(()=>system().catch(()=>{}));
   const securityRoute=r=>{if(r?.kind==='tab'&&r.tab==='you'&&r.arg==='security')security().then(s=>live()&&F.route===r&&s?.open()).catch(e=>live()&&F.route===r&&F.toast(e.message))};
   offs.push(F.on('route',securityRoute));securityRoute(F.route);
@@ -460,7 +470,7 @@ export async function createWorkspace(F, options = {}) {
   if (F.systemTasks?.register) offs.push(F.systemTasks.register(files, { signal: F.signal }));
   commands = createWorkspaceCommands(F, {
     apps: () => WORKSPACE_APPS.map(a => ({ ...a, available: appOn(a.id) })),
-    files: q => files.search(q), actions: () => [...snapshots].flatMap(([app, snapshot]) => (snapshot?.actions || []).filter(action => !retiredContextAction(app, action.id)).map(action => ({ app, ...action }))),
+    files: q => files.search(q, { includeDrive: false }), actions: () => [...snapshots].flatMap(([app, snapshot]) => (snapshot?.actions || []).filter(action => !retiredContextAction(app, action.id)).map(action => ({ app, ...action }))),
     runIntent, openApp, openFiles, fileDialogsAvailable: () => live() && !!dialogs,
     systemActions: () => [
       {id:'quick-capture',label:'Quick Capture',detail:'Save a thought, reminder, photo or file',keywords:['capture','inbox','save','note'],current:live,run:()=>lifeTools().then(v=>live()&&v?.capture())},

@@ -9,8 +9,8 @@
 //   shortcuts; no provider asked. Typed: every provider (80 ms debounce), each answer drawn as it comes (one slower than
 //   300 ms when it arrives; one that throws left out), ranked (rank below): a Top hit, then groups best first, three
 //   each with "Show all", the letters that matched in bold, "Nothing for “…”" through textContent. The query never
-//   leaves the page: no request, no URL, no history.state, no log, and never stored; only what's opened (a result with
-//   an address) is kept, in Recent (RECENT, on this device, for this account; Today's sign-out clears it).
+//   is sent to authorised app providers. It is never added to browser history or Recent; only an opened result with
+//   an address is kept, in Recent (RECENT, on this device, for this account; Today's sign-out clears it).
 // collect(providers, q, update(groups, settled), { slow }) → Promise: the merging, ordered by order then id, each group
 //   at most 20 entries; update is called once the quick ones are in (or slow ms passed) and again as each late one arrives.
 // match(q, text) → { s, hits: [[from, to], …] } | null: how well text answers q (0…1): its start, a word's start, inside
@@ -24,20 +24,24 @@
 //   no one's), Mail's only for the admin.
 import { REGISTRY, ownPath } from "./router.js";
 
-const SLOW = 300, MAX = 20, SHOW = 3, RECENT = "ifl:recent", KEEP = 8, RECENT_SHOWN = 5;
+const SLOW = 300, MAX = 20, RECENT = "ifl:recent", KEEP = 8, RECENT_SHOWN = 5;
 export function collect(providers, q, update, { slow = SLOW,signal,current } = {}) {
   const ps = [...providers].sort((a, b) => (a.order ?? 50) - (b.order ?? 50) || String(a.id).localeCompare(String(b.id)));
   const got = new Map();
   let shown = false, left = ps.length;
   const groups = () => ps.filter((p) => got.get(p)?.length).map((p, i) => ({ id: p.id, group: p.group, order: i, entries: got.get(p) }));
-  const fire = () => { shown = true; update(groups(), left === 0); };
-  const clean = (r) => (Array.isArray(r) ? r.filter((e) => e && typeof e.title === "string" && (e.href || typeof e.run === "function")).slice(0, MAX) : []);
+  const fire = () => { shown = true; if (!signal?.aborted && (!current || current())) update(groups(), left === 0); };
+  const clean = (r) => {
+    const entries = Array.isArray(r) ? r.filter(e => e && typeof e.title === "string" && (e.href || typeof e.run === "function")) : [];
+    if (entries.length <= MAX) return entries;
+    return entries.map(e => score(e, q)).sort(compare).slice(0, MAX).map(x => x.e);
+  };
   return new Promise((done) => {
     if (!ps.length) { fire(); return done(); }
     const t = setTimeout(() => { if (!shown) fire(); }, slow);
     for (const p of ps) {
       let r;
-      try { r = p.search(q,{signal,current}); } catch (_) { r = []; }
+      try { r = p.search(q, { signal, current }); } catch (_) { r = []; }
       Promise.resolve(r).then(clean, () => []).then((list) => {
         got.set(p, list);
         left--;
@@ -128,7 +132,14 @@ export function match(q, text) {
   return null;
 }
 
-const LOOSE = 0.2, TOP = 0.35;
+const LOOSE = 0.2, TOP = 0.68;
+function score(e, q) {
+  const title = match(q, e.title), sub = title ? null : match(q, e.sub);
+  return { e, s: e.offer ? 0 : title ? title.s : sub?.s >= 0.7 ? sub.s * 0.55 : LOOSE, hits: title?.hits || [] };
+}
+const compare = (a, b) => b.s - a.s || (b.e.updatedAt || 0) - (a.e.updatedAt || 0);
+const identity = e => e.key || e.href || JSON.stringify([e.app || e.icon, e.title, e.sub]);
+
 export function rank(groups, q, { recent = [] } = {}) {
   const typed = fold(q).trim(), was = new Set(recent.map((r) => r.href));
   const offer = (e) => !!typed && fold(e.title).includes(`“${typed.slice(0, 30)}`);
@@ -136,26 +147,26 @@ export function rank(groups, q, { recent = [] } = {}) {
   for (const g of groups) {
     const list = [];
     for (const e of g.entries) {
-      const m = match(q, e.title), ms = m ? null : match(q, e.sub);
-      // (a sub counts only where it holds what was typed)
-      const x = { e, s: (m ? m.s : ms?.s >= 0.7 ? ms.s * 0.55 : LOOSE) + (e.href && was.has(e.href) ? 0.06 : 0), hits: m?.hits || [] };
-      if (offer(e)) { more.push({ ...x, s: 0, hits: [] }); continue; }
-      if (e.href) {
-        const o = seen.get(e.href);
-        if (o && o.s >= x.s) continue;
+      const x = score(e, q);
+      if (e.href && was.has(e.href)) x.s += 0.06;
+      if (e.offer || offer(e)) { more.push({ ...x, s: 0, hits: [] }); continue; }
+      const key = e.key || e.href;
+      if (key) {
+        const o = seen.get(key);
+        if (o && (o.s > x.s || o.s === x.s && (!e.detail || o.e.detail))) continue;
         if (o) o.gone = true;
-        seen.set(e.href, x);
+        seen.set(key, x);
       }
       list.push(x);
     }
     out.push({ id: g.id, group: g.group, order: g.order ?? out.length, list });
   }
-  for (const g of out) g.list = g.list.filter((x) => !x.gone).sort((a, b) => b.s - a.s);
+  for (const g of out) g.list = g.list.filter((x) => !x.gone).sort(compare);
   const all = out.flatMap((g) => g.list);
   let top = null;
   if (all.length > 1) {
-    const best = all.reduce((a, b) => (b.s > a.s ? b : a));
-    if (best.s >= TOP) { top = best; const g = out.find((x) => x.list.includes(best)); g.list = g.list.filter((x) => x !== best); }
+    const [best, next] = all.sort(compare);
+    if (best.s >= TOP && (compare(best, next) < 0 || !best.e.app && !next.e.app)) { top = best; const g = out.find((x) => x.list.includes(best)); g.list = g.list.filter((x) => x !== best); }
   }
   const gs = out.filter((g) => g.list.length).sort((a, b) => b.list[0].s - a.list[0].s || a.order - b.order);
   return { top, groups: gs.map((g) => ({ id: g.id, group: g.group, entries: g.list, all: g.list.length })), more };
@@ -190,39 +201,32 @@ const APPS = () => ["weather", "chats", "fitness", "markets", "mail"].filter((a)
 // a few places people go most (the app's own where the account has it)
 const SHORTCUTS = [["Rain radar", "weather", "/weather/#radar", "rain"], ["Add a friend", "chats", "/chats/#add", "addp"], ["Activities", "fitness", "/fitness/#activities", "ride"],
   ["Holdings", "markets", "/markets/#holdings", "trend"], ["Quiet Hours", null, "/#you=quiet", "moon"]];
-// (and more ways in, as you type)
-const ALSO = [["Rain radar", "weather", "/weather/#radar"], ["16-day forecast", "weather", "/weather/#days"], ["Add a friend", "chats", "/chats/#add"], ["Friend requests", "chats", "/chats/#requests"]];
-
-// the Apps provider: every module (REGISTRY) and app beside (connectors.js STATIC) with its sections; a module that's
-// switched off is listed as STATIC has it (its hub page's), and an app's sections only where the account has the app
-// (view.apps[app] !== false); Mail, the site admin's alone, not listed at all for anyone else
-function appsProvider(F) {
-  let st = null;
-  const on = (a) => !!F.session?.apps?.[a], has = (a) => F.session?.view?.apps?.[a] !== false;
-  const yours = yoursOf(F);
-  const mod = (R) => ({ app: R.app, name: R.name, icon: R.app, href: R.path, links: R.sections.slice(1).map(([id, l]) => [l, R.path + "#" + id]) });
-  const load = () => (st ||= import("./connectors.js").then((c) => c.STATIC, () => ({}))).then((S) =>
-    [...Object.values(REGISTRY).filter((R) => !S[R.app]).map(mod), ...Object.values(S).map((c) => (REGISTRY[c.app] && on(c.app) ? mod(REGISTRY[c.app]) : c))]
-      .filter((c) => yours(c.app)).flatMap((c) => [{ title: c.name, sub: "App", icon: c.icon, href: c.href }, ...(has(c.app) ? c.links || [] : []).map(([l, href]) => ({ title: `${c.name} · ${l}`, sub: c.name, icon: c.icon, href })),
-        ...(has(c.app) ? ALSO.filter(([, a]) => a === c.app).map(([title, , href]) => ({ title, sub: c.name, icon: c.icon, href })) : [])]));
-  return {
-    id: "apps", group: "Apps", order: 10,
-    search: (q) => load().then((a) => (q.trim() ? a.filter((e) => match(q, e.title)) : a)),
-  };
-}
-
 let n = 0;
 export function createSearch(F) {
-  const provs = new Set([appsProvider(F)]);
-  let h = null, t = 0, gen = 0;
+  let renderer, apps;
+  const provs = new Set();
+  let h = null, t = 0, gen = 0, discoveryView;
   function open() {
     if (h) return h;
     const ui = F.ui, id = `ifl-sr-${++n}`, yours = yoursOf(F), has = (a) => !a || F.session?.view?.apps?.[a] !== false;
-    const input = ui.el("input", { type: "search", role: "combobox", placeholder: "Search", "aria-label": "Search everything", "aria-controls": id, "aria-expanded": "true", "aria-autocomplete": "list", autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", enterkeyhint: "go" });
+    const input = ui.el("input", { type: "search", role: "combobox", maxlength: 160, placeholder: "Search InFlite", "aria-label": "Search everything", "aria-controls": id, "aria-expanded": "true", "aria-autocomplete": "list", autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", enterkeyhint: "go" });
     const clear = ui.el("button", { class: "ifl-clear", type: "button", "aria-label": "Clear", hidden: true }, ui.icon("x"));
     const box = ui.el("div", { class: "ifl-field search" }, ui.icon("search"), input, clear);
     const list = ui.el("div", { class: "ifl-results", id, role: "listbox", "aria-label": "Results" });
     const say = ui.el("p", { class: "ifl-none", role: "status" });
+    let pinned = false, previewing = false;
+    const view = discoveryView?.(F, {
+      list, sheet: () => h, redraw: draw,
+      select(row) { pinned = true; previewing = true; mark(opts.indexOf(row), false); },
+      restore(row) {
+        previewing = false;
+        if (!input.isConnected) return;
+        draw();
+        const i = opts.findIndex(o => o.dataset.result === row.dataset.result);
+        if (i >= 0) { mark(i, false); opts[i].focus({ preventScroll: true }); }
+      },
+      resetSelection() { pinned = false; }
+    });
     const wide = new Set();
     let opts = [], at = -1, last = null, lastQ = "", was = null, waiting = false, asked = null;
     // (the highlighted one: aria-activedescendant on the field, aria-selected on it, kept in sight)
@@ -233,25 +237,15 @@ export function createSearch(F) {
       else input.removeAttribute("aria-activedescendant");
     };
     const option = (r, e, key) => {
-      r.setAttribute("role", "option"); r.id = `${id}-${key}`; r.tabIndex = -1;
+      r.setAttribute("role", "option"); r.id = `${id}-${key}`; r.tabIndex = -1; r.dataset.result = identity(e);
       // (opened: kept in Recent, when it has an address to go back to)
       if (e.href) r.addEventListener("click", () => remember(F, e));
       return r;
     };
-    // (a title with what matched in bold: its letters as text, never markup)
-    const bold = (r, title, hits) => {
-      const b = r.querySelector(".ifl-tx b");
-      if (!b || !hits?.length) return r;
-      const kids = [];
-      let k = 0;
-      for (const [a, z] of hits) { if (a > k) kids.push(title.slice(k, a)); kids.push(ui.el("mark", { class: "ifl-hit", text: title.slice(a, z) })); k = z; }
-      if (k < title.length) kids.push(title.slice(k));
-      b.replaceChildren(...kids);
-      return r;
-    };
     const rowOf = (e, key, hits) => {
-      const r = ui.row({ lead: e.avatar != null ? { avatar: e.avatar } : e.icon ? { app: e.icon } : null, title: e.title, sub: e.sub, trail: "chevron", href: e.href, run: e.href ? null : () => { close(); e.run(); }, label: e.label });
-      return bold(option(r, e, key), e.title, hits);
+      const r = ui.row({ lead: e.avatar != null ? { avatar: e.avatar } : e.icon ? { app: e.icon } : null, title: e.title, sub: e.sub, trail: "chevron", href: e.href, run: e.href ? null : () => { if (e.layer) { const my = gen; e.run(() => gen === my && !!h); } else if (view && (e.preview || e.detail)) view.open(e, r); else { close(); e.run(); } }, label: e.label });
+      option(r, e, key);
+      return hits?.length ? renderer.highlight(ui, r, e.title, hits) : r;
     };
     const head = (label, act) => ui.el("div", { class: "ifl-sr-head" }, ui.el("div", { class: "ifl-label", "aria-hidden": "true", text: label }), act || null);
     const group = (gid, label, kids, act, cls = "") => ui.el("div", { class: `ifl-sr-group${cls ? " " + cls : ""}`, role: "group", "aria-label": label, data: { group: gid } }, head(label, act), kids);
@@ -263,6 +257,7 @@ export function createSearch(F) {
 
     // the empty field: your apps, Recent, shortcuts
     const home = () => {
+      view?.reset();
       const apps = APPS().filter(yours).map((a) => {
         const R = REGISTRY[a], ic = a === "chats" ? "chat" : a;
         return option(ui.el("a", { class: "ifl-sr-app", href: R.path, "aria-label": R.name }, ui.icon(null, { app: ic, size: 40 }), ui.el("span", { text: R.name })), { title: R.name, sub: "App", icon: ic, href: R.path }, `app-${a}`);
@@ -285,28 +280,19 @@ export function createSearch(F) {
     };
     // typed: Top hit, the groups, then the offers to look further
     const drawn = (r, settled, q) => {
-      const showAll = (g) => {
-        const b = ui.el("button", { class: "ifl-sr-more", type: "button", text: "Show all", "aria-label": `Show all ${g.group || ""}`.trim(), "aria-expanded": "false" });
-        b.addEventListener("click", () => { wide.add(g.id); draw(); input.focus({ preventScroll: true }); });
-        return b;
-      };
-      const gs = [];
-      if (r.top) gs.push(group("top", "Top hit", [rowOf(r.top.e, "top", r.top.hits)], null, "top"));
-      for (const g of r.groups) {
-        const full = wide.has(g.id), shown = full ? g.entries : g.entries.slice(0, SHOW);
-        gs.push(group(g.id, g.group || g.id, shown.map((x, i) => rowOf(x.e, `${g.id}-${i}`, x.hits)), !full && g.all > SHOW ? showAll(g) : null));
-      }
-      if (r.more.length) gs.push(group("more", "More", r.more.map((x, i) => rowOf(x.e, `more-${i}`))));
+      const gs = renderer.resultGroups(r, { ui, input, group, rowOf, wide, draw });
+      const selected = q === was && pinned ? opts[at]?.dataset.result : null;
       list.replaceChildren(...gs);
       say.textContent = q && !gs.length && settled ? `Nothing for “${q}”` : "";
       // (a late answer leaves the highlight where ↑/↓ put it; a new query starts it at the top)
-      done(q === was ? at : 0);
+      done(0);
+      if (selected) { const i = opts.findIndex(o => o.dataset.result === selected); if (i >= 0) mark(i, false); }
       was = q;
     };
     function draw() {
       const q = input.value.trim();
       if (!q) home();
-      else if (last) drawn(rank(last.groups, q, { recent: recents(F) }), last.settled, q);
+      else if (last) drawn(rank(view ? view.filter(last.groups) : last.groups, q, { recent: recents(F) }), last.settled, q);
     }
     let queryController=null;
     const run = () => {
@@ -314,18 +300,28 @@ export function createSearch(F) {
       const q = input.value.trim(), my = ++gen;
       waiting = false;
       clear.hidden = !input.value;
-      if (q !== lastQ) wide.clear();
+      if (q !== lastQ) { wide.clear(); pinned = false; view?.reset(); list.scrollTop = 0; }
       lastQ = q;
       if (!q) { last = null; return home(); }
       // (Mail's provider, the admin's alone, asked only for them)
-      asked = collect([...provs].filter((p) => p.id !== "mail" || yours("mail")), q, (g, s) => { if (my === gen && h) { last = { groups: g, settled: s }; draw(); } },{signal:queryController.signal,current:()=>my===gen&&!!h});
+      const current = () => my === gen && !!h;
+      asked = import("./search-render.js").then(module => {
+        if (!current()) return;
+        renderer = module;
+        apps ||= module.appsProvider(F, yours);
+        return collect([apps, ...provs].filter(p => p.id !== "mail" || yours("mail")), q, (groups, settled) => {
+          last = { groups, settled };
+          if (!previewing) draw();
+        }, { signal: queryController.signal, current });
+      }).catch(() => { if (current()) say.textContent = "Search couldn’t finish. Try again."; });
     };
-    input.addEventListener("input", () => { queryController?.abort();gen++;clearTimeout(t); waiting = true; t = setTimeout(run, 80); });
+    input.addEventListener("input", () => { queryController?.abort();gen++;last = null; view?.reset(); list.replaceChildren(); done(-1); say.textContent = ""; clear.hidden = !input.value; clearTimeout(t); waiting = true; t = setTimeout(run, 80); });
     input.addEventListener("keydown", (e) => {
       if (e.isComposing) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         if (!opts.length) return;
+        pinned = true;
         const d = e.key === "ArrowDown" ? 1 : -1;
         mark(at < 0 ? (d > 0 ? 0 : opts.length - 1) : (at + d + opts.length) % opts.length);
       } else if (e.key === "Enter") {
@@ -337,17 +333,17 @@ export function createSearch(F) {
     });
     list.addEventListener("mousemove", (e) => {
       const o = e.target.closest?.("[role=option]"), i = o ? opts.indexOf(o) : -1;
-      if (i >= 0 && i !== at) mark(i, false);
+      if (i >= 0 && i !== at) { pinned = true; mark(i, false); }
     });
     clear.addEventListener("click", () => { input.value = ""; input.focus(); run(); });
-    h = F.sheet.open({ sheet: "search", title: "Search everything", focus: input, body: ui.el("div", { class: "ifl-search" }, box, say, list), onClose: () => { queryController?.abort();h = null; gen++; clearTimeout(t); } });
+    h = F.sheet.open({ sheet: "search", title: view ? "Search InFlite" : "Search everything", focus: input, body: ui.el("div", { class: "ifl-search" }, box, view?.filters, say, list), onClose: () => { queryController?.abort();h = null; gen++; clearTimeout(t); } });
     input.focus({ preventScroll: true });
     run();
     return h;
   }
   function close() { h?.close(); }
   return {
-    open, close,invalidate(){if(h){h.body.replaceChildren();h.now();}},
+    open, close, useDiscovery(factory) { discoveryView = factory; }, invalidate(){if(h){h.body.replaceChildren();h.now();}},
     provide(p) {
       if (!p || typeof p.search !== "function") return () => {};
       provs.add(p);

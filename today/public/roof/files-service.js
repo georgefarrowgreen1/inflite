@@ -336,16 +336,18 @@ export function createFilesService(F, options = {}) {
   }
   async function searchAccount(query,lease={}){
     assert(lease);const typed=fileText(query,160);if(typed.length<2)return [];
-    const api=await drive(lease),answer=await api.browse({view:'search',query:typed,sort:'name',...lease});assert(lease);
-    return answer.items.filter(item=>item.status==='ready'&&!item.trashedAt).slice(0,20).map(driveResource);
+    const api = await drive(lease);
+    const answer = await api.browse({ view: 'search', query: typed, sort: 'modified', ...lease });
+    assert(lease);
+    return answer.items.filter(item => item.status === 'ready' && !item.trashedAt).map(driveResource);
   }
   async function locate(id,lease={}){assert(lease);if(!ID.test(id||''))throw Error('That file reference is invalid.');const api=await drive(lease),item=await api.item(id,lease);assert(lease);if(item.status!=='ready'||item.trashedAt)throw Error('That file is no longer available.');return driveResource(item)}
-  async function search(query) {
+  async function search(query, { includeDrive = true } = {}) {
     if (!live()) return [];
     const typed = fileText(query, 160); if (!typed) return [];
     const appEntries = await index.search(typed); if (!live()) return [];
     const words = typed.toLocaleLowerCase().split(/\s+/).filter(Boolean);
-    const driveEntries = [...nodes.values()].filter(node => node.status === "ready" && !node.trashedAt && words.every(word => node.name.toLocaleLowerCase().includes(word))).slice(0, 10).map(node => ({ app: null, title: node.name, sub: "My Drive", icon: "file", run: () => live() && nodes.has(node.id) && open(node.kind === "folder" ? "" : node.name, { kind: "drive", folderId: node.kind === "folder" ? node.id : node.parentId, view: "folder" }) }));
+    const driveEntries = !includeDrive ? [] : [...nodes.values()].filter(node => node.status === "ready" && !node.trashedAt && words.every(word => node.name.toLocaleLowerCase().includes(word))).slice(0, 10).map(node => ({ app: null, title: node.name, sub: "My Drive", icon: "file", run: () => live() && nodes.has(node.id) && open(node.kind === "folder" ? "" : node.name, { kind: "drive", folderId: node.kind === "folder" ? node.id : node.parentId, view: "folder" }) }));
     return [...driveEntries, ...appEntries, { app: null, title: `Find “${typed}” in InFlite Files`, sub: "Search My Drive", icon: "file", run: () => open(typed) },
       ...(index.snapshot().length ? [{ app: null, title: `Find “${typed}” in app files`, sub: "Attachments, routes and workouts", icon: "file", run: () => open(typed, { kind: "apps", app: null }) }] : [])];
   }
