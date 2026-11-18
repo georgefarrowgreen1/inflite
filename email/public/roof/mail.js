@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.24.1";
-export const NEWS = "Upload to Drive from the InFlite attachment picker and resume interrupted transfers.";
+export const BUILD = "2.24.2";
+export const NEWS = "Mail checks for updates with less data and retries interrupted version checks.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

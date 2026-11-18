@@ -5,6 +5,7 @@
 // And InFlite as one window (Today First): Chats, Weather, Fitness and Markets as pages of this site (/chats/,
 // /weather/, /fitness/, /markets/: the hub, today/src/hub.js), and Mail in a frame at /mail/ (today/src/mailhost.js);
 // wrangler.toml sends those paths here before the assets.
+import { assetBuild } from "../../shared/asset-build.js";
 import { ask, setCookies } from "./account.js";
 import { isHubPath, hub } from "./hub.js";
 import { mailPage } from "./mailhost.js";
@@ -221,19 +222,7 @@ function picture(res) {
 
 // Which Today is deployed: the build number in its app.js (BUILD), read once per deployment of this Worker, so a page
 // running older code (a copy kept by the phone, say) can tell it's behind
-let buildKept = null;
-async function appBuild(env, request) {
-  const key = env.BUILD_ID || env.CF_VERSION_METADATA?.id || "dev";
-  if (buildKept?.key === key) return buildKept.build;
-  try {
-    const r = await env.ASSETS.fetch(new Request(new URL("/app.js", request.url)));
-    const m = r.ok && /const BUILD = "([\d.]+)"/.exec(await r.text());
-    buildKept = { key, build: m ? m[1] : null };
-    return buildKept.build;
-  } catch {
-    return null;
-  }
-}
+const appBuild = assetBuild("/app.js");
 async function version(env, request) {
   return json({ build: await appBuild(env, request), min: null });
 }

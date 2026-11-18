@@ -63,3 +63,43 @@ test('vCard export folds UTF-8 lines and carries only explicitly selected detail
  assert.deepEqual(readCards(text),[{title,email:'asa@example.com'}]);
  assert.doesNotMatch(text,/12345|Secret|private/);
 });
+
+test('Mail retries an unavailable build and asks the asset binding for only the release prefix', async () => {
+  const mail = (await import('../email/src/index.js')).default;
+  const parts = [], ranges = [];
+  const env = { BUILD_ID: 'delivery-retry', ASSETS: { async fetch(request) {
+    const path = new URL(request.url).pathname;
+    if (path === '/app.js') {
+      ranges.push(request.headers.get('Range'));
+      if (ranges.length === 1) return new Response(null, { status: 503 });
+      return new Response('const BUILD = "2.24.2";', { status: 206 });
+    }
+    parts.push(path);
+    return new Response('export default {};', { headers: { 'Content-Type': 'text/javascript' } });
+  } } };
+  const load = () => mail.fetch(new Request('https://email.inflite.ai/parts/compose.js?b=2.24.2'), env, {});
+  const first = await load();
+  assert.equal(first.status, 503);
+  assert.equal(first.headers.get('Cache-Control'), 'no-store');
+  assert.deepEqual(parts, []);
+  assert.equal((await load()).status, 200);
+  assert.equal((await load()).status, 200);
+  assert.deepEqual(ranges, ['bytes=0-16383', 'bytes=0-16383']);
+});
+
+test('the release reader recovers declarations beyond the prefix and across stream chunks', async () => {
+  const { assetBuild } = await import('../shared/asset-build.js');
+  const ranges = [];
+  const env = { ASSETS: { fetch(request) {
+    ranges.push(request.headers.get('Range'));
+    if (ranges.length === 1) return new Response('/* intro */', { status: 206 });
+    return new Response(new ReadableStream({ start(controller) {
+      for (const chunk of ['/* intro */\nexport const B', 'UILD = "2.', '24.2";']) controller.enqueue(new TextEncoder().encode(chunk));
+      controller.close();
+    } }));
+  } } };
+  const version = assetBuild('/roof/mail.js'), request = new Request('https://email.inflite.ai/roof/version');
+  assert.equal(await version(env, request), '2.24.2');
+  assert.equal(await version(env, request), '2.24.2');
+  assert.deepEqual(ranges, ['bytes=0-16383', null]);
+});

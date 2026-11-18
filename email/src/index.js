@@ -1,3 +1,4 @@
+import { assetBuild } from "../../shared/asset-build.js";
 import { dueFollowups, validDue } from "./followups.js";
 import { peopleCards } from './people-cards.js';
 import { exportAttachment } from "./attachment-export.js";
@@ -488,19 +489,7 @@ const buildOf = (env) => env.BUILD_ID || env.CF_VERSION_METADATA?.id || null;
 
 // The build number in the Mail that's deployed (BUILD in app.js), read once per deployment, so a page running older
 // code (an old copy kept by the phone, say) can tell it's behind
-let appBuildCache = null;
-async function appBuild(env, request) {
-  const key = buildOf(env) || "dev";
-  if (appBuildCache?.key === key) return appBuildCache.build;
-  try {
-    const r = await env.ASSETS.fetch(new Request(new URL("/app.js", request.url)));
-    const m = r.ok && /const BUILD = "([\d.]+)"/.exec(await r.text());
-    appBuildCache = { key, build: m ? m[1] : null };
-    return appBuildCache.build;
-  } catch {
-    return null;
-  }
-}
+const appBuild = assetBuild("/app.js");
 
 // The module InFlite's page runs Mail as (email/public/roof/), passed through by InFlite's Worker at /mail/roof/<file>:
 // a script or a style that's there, as it is, asked again each time (no-cache), never Mail's page in its place (the
@@ -534,7 +523,8 @@ async function partFile(request, env, url) {
   const b = url.searchParams.get("b");
   if (b) {
     const now = await appBuild(env, request);
-    if (now && b !== now) return none(409);
+    if (!now) return new Response("Mail is updating.", { status: 503, headers: { ...SAFE, "Cache-Control": "no-store", "Retry-After": "1" } });
+    if (b !== now) return none(409);
   }
   const res = await env.ASSETS.fetch(request);
   const ok = res.status === 304 || (res.status === 200 && /^(text|application)\/javascript\b/i.test(res.headers.get("Content-Type") || ""));
@@ -545,20 +535,7 @@ async function partFile(request, env, url) {
   return out;
 }
 
-let roofBuildCache = null;
-async function roofBuild(env, request) {
-  const key = buildOf(env) || "dev";
-  if (roofBuildCache?.key === key) return roofBuildCache.build;
-  try {
-    const r = await env.ASSETS.fetch(new Request(new URL("/roof/mail.js", request.url)));
-    const m = r.ok && /\bBUILD\s*=\s*"([\d.]+)"/.exec(await r.text());
-    // (kept only once it's read: a deploy whose module isn't there yet asks again)
-    if (m) roofBuildCache = { key, build: m[1] };
-    return m ? m[1] : null;
-  } catch {
-    return null;
-  }
-}
+const roofBuild = assetBuild("/roof/mail.js");
 
 const publicUser = (v) =>
   v?.signedIn

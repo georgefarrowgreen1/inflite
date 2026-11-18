@@ -7,7 +7,7 @@ const { createHash } = require('node:crypto');
 const source = readFileSync(require.resolve('../today/public/sw.js'), 'utf8');
 
 test('an interrupted shell install preserves offline launch and a complete update waits for open tabs', async () => {
-  let build = '4.6.1', interrupt = false;
+  let build = '4.6.1', interrupt = false, stableRequests = 0;
   const server = createServer((req, res) => {
     const path = req.url.split('?')[0];
     if (interrupt && path === '/cards.js') { res.writeHead(503).end(); return; }
@@ -15,9 +15,14 @@ test('an interrupted shell install preserves offline launch and a complete updat
     if (path === '/sw.js') {
       res.setHeader('Content-Type', 'text/javascript');
       const sums = JSON.parse(/^const INTEGRITY = (.*);$/m.exec(source)[1]);
-      for (const key of Object.keys(sums)) sums[key] = 'sha256-' + createHash('sha256').update(key === '/app.js' ? 'const BUILD = "' + build + '";' : build).digest('base64');
+      for (const key of Object.keys(sums)) sums[key] = 'sha256-' + createHash('sha256').update(key === '/app.js' ? 'const BUILD = "' + build + '";' : key === '/day.css' ? '/* stable */' : build).digest('base64');
       res.end(source.replace(/^const INTEGRITY = .*;$/m, 'const INTEGRITY = ' + JSON.stringify(sums) + ';')
         .replace(/const RELEASE = "[\d.]+";/, 'const RELEASE = "' + build + '";'));
+    } else if (path === '/day.css') {
+      res.setHeader('Cache-Control', 'public, no-cache');
+      res.setHeader('ETag', '"constant-css"');
+      stableRequests++;
+      res.end('/* stable */');
     } else if (path === '/') {
       res.setHeader('Content-Type', 'text/html'); res.end('<title>' + build + '</title>');
     } else if (path === '/app.js') res.end('const BUILD = "' + build + '";');
@@ -50,10 +55,20 @@ test('an interrupted shell install preserves offline launch and a complete updat
     assert.equal(await page.evaluate(() => fetch('/cards.js').then(r => r.text())), '4.6.1');
     await ctx.setOffline(false); interrupt = false;
     assert.equal(await update(), 'installed');
+    assert.equal(stableRequests, 1, 'unchanged verified CSS is copied locally during both update attempts');
     assert.equal(await page.evaluate(() => fetch('/cards.js').then(r => r.text())), '4.6.1');
     await page.close(); page = await ctx.newPage();
     await ctx.setOffline(true); await page.goto(url);
     await page.waitForFunction(async () => (await fetch('/cards.js')).text().then(text => text === '4.6.2'));
     await page.reload(); assert.equal(await page.title(), '4.6.2');
+    await ctx.setOffline(false);
+    await page.evaluate(async () => {
+      const cache = await caches.open('inflite-shell-set-4.6.2');
+      await cache.put('/day.css', new Response('damaged local copy', { headers: { 'Content-Type': 'text/css' } }));
+    });
+    build = '4.6.3';
+    assert.equal(await update(), 'installed');
+    assert.equal(stableRequests, 2, 'a damaged local asset is fetched again before installation');
+    assert.equal(await page.evaluate(async () => (await (await caches.open('inflite-shell-set-4.6.3')).match('/day.css')).text()), '/* stable */');
   } finally { await browser?.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
