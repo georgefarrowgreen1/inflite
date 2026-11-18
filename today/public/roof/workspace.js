@@ -83,6 +83,13 @@ export async function createWorkspace(F, options = {}) {
       enabled: true,
       discovery350:true,
       security:Object.freeze({open:()=>security().then(s=>usable()&&s?.open({app}))}),
+      ...(app === "mail" && { async calendarChange(spec, current) {
+        const handle = handles.get(app);
+        const active = () => usable() && handle?.fw.visible() && !handle.el.hidden && !handle.el.inert && current();
+        if (!active()) return null;
+        const { matchChange } = await import("../organise/mail-calendar.js");
+        return active() ? matchChange(handle.fw, spec, active) : null;
+      } }),
       organiseStore,
       life:Object.freeze({share:ref=>lifeTools().then(v=>live()&&v?.share(ref)),calendars:()=>lifeTools().then(v=>live()&&v?.calendars())}),
       today:()=>usable()?options.day?.():null,

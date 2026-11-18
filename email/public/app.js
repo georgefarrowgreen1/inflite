@@ -299,9 +299,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "1.99";
+  const BUILD = "2.00";
   // (what's new in it, said once it's in)
-  const NEWS = "A new Mail composer with a focused writing space and editable signatures";
+  const NEWS = "A focused reader, calendar change reviews, follow-ups and attachment search";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.

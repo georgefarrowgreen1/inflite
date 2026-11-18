@@ -151,3 +151,58 @@ test('Phone Mail reveals search on demand and keeps text tools and Send inside t
     await t.clean();
   } finally { await t.ctx.close(); }
 });
+
+test('Mail opens a native time review, accepts an explicit change, and offers an editable reply', async () => {
+  const t = await open();
+  try {
+    const threadId = 't-1', evidence = 'Can we make it 09:30 instead?';
+    const msg = t.mail.msgs.find(m => m.threadId === threadId);
+    const start = new Date(Date.now() + 3*86400000).setUTCHours(8,0,0,0);
+    const record = {id:'a'.repeat(32),kind:'calendar',version:4,title:'Club ride',timezone:'UTC',description:'Meet outside',links:[],start,end:start+3600000,allDay:false};
+    await t.page.route('**/api/threads/t-1', route => route.fulfill({
+      headers:{'Access-Control-Allow-Origin':ORIGIN,'Access-Control-Allow-Credentials':'true'},json:{
+        id:threadId,subject:record.title,latestId:msg.id,messages:[{...msg,date:Date.now(),snippet:evidence}],
+        timeChange:{messageId:msg.id,evidence,time:'09:30'}
+      }
+    }));
+    const writes = [];
+    await t.page.route('**/api/organise/**', async route => {
+      const req = route.request();
+      assert.equal(req.headers()['x-inflite-owner'],'owner-a');
+      if (req.url().endsWith('/list')) return route.fulfill({json:{records:[record],cursor:null}});
+      if (req.method()==='GET') return route.fulfill({json:{record}});
+      writes.push(req.postDataJSON());
+      return route.fulfill({json:{record:{...record,...writes.at(-1).value,version:5}}});
+    });
+    await t.page.evaluate(async () => {
+      // The fixture runs over http://kit.test. Production has a secure context.
+      if (!crypto.randomUUID) crypto.randomUUID = () => 'a'.repeat(32);
+      const {matchChange} = await import('/organise/mail-calendar.js');
+      T.fw.workspace.calendarChange = (spec,current) => matchChange(T.fw,spec,current);
+    });
+    await t.page.locator('.ml-row[data-thread="t-1"]').click();
+    const suggestion = t.page.getByText('Time change proposed', {exact:true});
+    await suggestion.click();
+    let review = t.page.getByRole('dialog',{name:'Review change'});
+    assert.equal(await review.locator('blockquote').textContent(),evidence);
+    assert.match(await review.innerText(),/08:00/);
+    assert.match(await review.innerText(),/09:30/);
+    await review.getByRole('button',{name:'View message'}).click();
+    assert.deepEqual(writes,[]);
+    await suggestion.click();
+    await review.getByRole('button',{name:'Update Calendar'}).click();
+    await t.page.getByRole('button',{name:'Reply with time'}).click();
+    const editor = t.page.locator('dialog[data-sheet="mail-compose"] textarea');
+    await editor.waitFor();
+    assert.match(await editor.inputValue(),/09:30 works for me/);
+    await editor.fill('Let me know by Friday.');
+    const follow = t.page.getByRole('button',{name:/^Follow up .* if unanswered$/});
+    await follow.click();
+    const due = t.page.getByLabel('Follow up in People if unanswered');
+    assert.ok(Date.parse(await due.inputValue()) > Date.now());
+    assert.equal(await editor.inputValue(),'Let me know by Friday.');
+    assert.equal(writes.length,1);
+    assert.deepEqual(writes[0].value,{title:record.title,description:record.description,links:[],timezone:'UTC',allDay:false,start:start+5400000,end:start+9000000});
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});

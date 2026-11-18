@@ -214,6 +214,7 @@ async function store(message, env, ctx, id, raw, address) {
       unsubOf(email),
       /one-click/i.test(headerOf(email, "list-unsubscribe-post")) ? 1 : 0
     ),
+    env.DB.prepare(`DELETE FROM mail_followups WHERE thread_id=?2 AND ${isNew}`).bind(id, threadId),
     // (a new message brings its conversation back into the stream, snoozed or not)
     env.DB.prepare(`UPDATE messages SET snooze_until = NULL WHERE thread_id = ?2 AND snooze_until IS NOT NULL AND ${isNew}`).bind(id, threadId),
     ...attachments.map((a) =>

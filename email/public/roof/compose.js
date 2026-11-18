@@ -30,7 +30,7 @@ const LISTS = ["to", "cc", "bcc"];
 const titleOf = (c) => c.quote?.mode === "forward" ? "Forward" : c.quote ? "Reply" : "New message";
 const people = (l) => (Array.isArray(l) ? l : []).filter((p) => p && p.email).map((p) => ({ name: String(p.name || ""), email: String(p.email) }));
 // (the words kept on the phone and sent to Mail: never a file's bytes)
-export const fieldsOf = (c) => ({ from: c.from, to: c.to, cc: c.cc, bcc: c.bcc, subject: c.subject, text: c.text, quote: c.quote, inReplyTo: c.inReplyTo, references: c.references, draftId: c.draftId, quoteOld: !!c.quoteOld });
+export const fieldsOf = (c) => ({ ...(c.followUpAt && {followUpAt:c.followUpAt}), from: c.from, to: c.to, cc: c.cc, bcc: c.bcc, subject: c.subject, text: c.text, quote: c.quote, inReplyTo: c.inReplyTo, references: c.references, draftId: c.draftId, quoteOld: !!c.quoteOld });
 // (words worth keeping: someone to send to, a subject or a message)
 export const hasWords = (u) => !!u && !!(u.subject || String(u.text || "").trim() || [u.to, u.cc, u.bcc].some((l) => Array.isArray(l) && l.length));
 const online = () => typeof navigator === "undefined" || navigator.onLine !== false;
@@ -39,7 +39,7 @@ const stamp = (u) => (u ? u.at ?? JSON.stringify(u) : null);
 const isFile = (f) => typeof File !== "undefined" && f instanceof File;
 // (a draft for Mail from kept words: a quote only when it's { of, mode }; none, or quoteOld, leaves the key out, so Mail
 // keeps the quote the draft has; a missing key and none are the same for a new draft)
-export const draftOf = (f, attachments) => ({ id: f.draftId || undefined, from: f.from, to: f.to || [], cc: f.cc || [], bcc: f.bcc || [], subject: f.subject || "", text: f.text || "", inReplyTo: f.inReplyTo || null, references: f.references || null, ...(f.quote?.of && !f.quoteOld && { quote: { of: f.quote.of, mode: f.quote.mode } }), attachments });
+export const draftOf = (f, attachments) => ({ id: f.draftId || undefined, followUpAt:f.followUpAt || null, from: f.from, to: f.to || [], cc: f.cc || [], bcc: f.bcc || [], subject: f.subject || "", text: f.text || "", inReplyTo: f.inReplyTo || null, references: f.references || null, ...(f.quote?.of && !f.quoteOld && { quote: { of: f.quote.of, mode: f.quote.mode } }), attachments });
 const sizeOf = (s) => (typeof s === "string" ? s.length * 2 : 0);
 // (whether these words fit beside what Mail already keeps on this phone: all mail:* at most CAP)
 export function fits(fields) {
@@ -99,7 +99,7 @@ export function openCompose(ctx, init = {}) {
   const me = store.get().me || {}, owner = fw.session.user.id, fileDialog = new AbortController();
   const sigFor = (from) => (me.addresses || []).find((a) => a.email === String(from || "").toLowerCase())?.signature || me.signature || "";
   const c = {
-    from: init.from || me.defaultFrom || "", to: people(init.to), cc: people(init.cc), bcc: people(init.bcc),
+    followUpAt:init.followUpAt || null, from: init.from || me.defaultFrom || "", to: people(init.to), cc: people(init.cc), bcc: people(init.bcc),
     subject: String(init.subject || ""), text: String(init.text || ""), quote: init.quote?.of ? { of: String(init.quote.of), mode: init.quote.mode } : null,
     inReplyTo: init.inReplyTo || null, references: init.references || null, draftId: init.draftId || null,
     files: (init.files || []).slice(), quoteOld: !!init.quoteOld,
@@ -280,6 +280,45 @@ export function openCompose(ctx, init = {}) {
   };
   const more = el("div", { class: "mc-more" });
   more.hidden = true;
+  const due = el("input", { type:"datetime-local", "aria-label":"Follow up in People if unanswered" });
+  const follow = el("label", {class:"mc-follow"}, el("span", {text:"Follow up in People if unanswered"}), due);
+  const weekdays = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  let suggestedAt = null;
+  const followHint = ui.btn("", {small:true, run:() => {
+    if (!suggestedAt) return;
+    c.followUpAt = suggestedAt;
+    drawDue();
+    changed();
+    more.hidden = false;
+    moreBtn.setAttribute("aria-expanded","true");
+    due.focus();
+  }});
+  followHint.hidden = true;
+  function suggestFollowUp() {
+    // An explicit deadline offers one local time. The user can edit it before sending.
+    const mentions = [...text.value.matchAll(/\bby (Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/gi)];
+    followHint.hidden = !!c.followUpAt || mentions.length !== 1;
+    suggestedAt = null;
+    if (followHint.hidden) return;
+    const target = weekdays.findIndex(name => name.toLowerCase() === mentions[0][1].toLowerCase());
+    const date = new Date();
+    date.setHours(17,0,0,0);
+    date.setDate(date.getDate() + (target - date.getDay() + 7) % 7);
+    if (date.getTime() <= Date.now()) date.setDate(date.getDate() + 7);
+    suggestedAt = date.getTime();
+    followHint.textContent = "Follow up " + date.toLocaleString(undefined,{weekday:"short",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}) + " if unanswered";
+  }
+  const drawDue = () => {
+    const d = new Date(c.followUpAt);
+    due.value = c.followUpAt ? new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16) : "";
+  };
+  drawDue();
+  due.addEventListener("change",()=>{
+    const at = new Date(due.value).getTime();
+    if (due.value && (!(at > Date.now()) || at > Date.now()+366*86400000)) { drawDue(); fw.toast("Choose a future time within a year"); return; }
+    c.followUpAt = due.value ? at : null; changed();
+  });
+  more.append(follow);
   more.append(ui.btn("Delete Draft", { destructive: true, small: true, act: "delete-draft", run: () => end("delete") }));
   const moreBtn = ui.iconBtn("more", { label: "More", act: "more", run: () => {
     formatting.hidden = true;
@@ -344,7 +383,7 @@ export function openCompose(ctx, init = {}) {
   const sender = el("label", { class: "mc-sender" }, ctx.icon("envelope"),
     el("span", { class: "mc-account" }, el("small", { text: "From" }), identity));
   const letter = el("div", { class: "mc-letter" }, to, ccRow, sugg, subject, text, signature, filesEl, quoteEl);
-  const body = el("div", { class: "mc" }, sender, letter, el("div", { class: "mc-accessories" }, formatting, more, prog, tools), pick);
+  const body = el("div", { class: "mc" }, sender, letter, el("div", { class: "mc-accessories" }, followHint, formatting, more, prog, tools), pick);
   if (fw.workspace?.files?.fromDrop) {
     const isDriveDrop = event => [...(event.dataTransfer?.types || [])].includes("application/x-inflite-files-token");
     body.addEventListener("dragover", event => { if (isDriveDrop(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } });
@@ -373,11 +412,12 @@ export function openCompose(ctx, init = {}) {
     for (const k of LISTS) fields[k].draw();
     ccRow.hidden = !(c.cc.length || c.bcc.length);
     ccButton.setAttribute("aria-expanded", String(!ccRow.hidden));
-    subject.value = c.subject; showText(); if (from) from.value = c.from; else identity.firstChild.textContent = c.from || "Default address";
+    subject.value = c.subject; drawDue(); showText(); if (from) from.value = c.from; else identity.firstChild.textContent = c.from || "Default address";
     drawFiles(); drawQuote(); changed();
   }
   function changed() {
     if (ended) return;
+    suggestFollowUp();
     const t = h?.el.querySelector(".ifs-head h2");
     if (t) t.textContent = titleOf(c);
     clearTimeout(keepT);
@@ -515,7 +555,7 @@ export function openCompose(ctx, init = {}) {
       if (ok || ended || !held()) return;
       if (blank && !dirty()) {
         leftAt = null;
-        Object.assign(c, { from: left.from || c.from, to: people(left.to), cc: people(left.cc), bcc: people(left.bcc), subject: String(left.subject || ""), text: String(left.text || ""),
+        Object.assign(c, { followUpAt:left.followUpAt || null, from: left.from || c.from, to: people(left.to), cc: people(left.cc), bcc: people(left.bcc), subject: String(left.subject || ""), text: String(left.text || ""),
           quote: left.quote?.of ? { of: String(left.quote.of), mode: left.quote.mode } : null, quoteOld: !!left.quoteOld, inReplyTo: left.inReplyTo || null, references: left.references || null, draftId: left.draftId || null });
         redraw();
         wrote = true;
@@ -535,7 +575,7 @@ export function openCompose(ctx, init = {}) {
     // (after any words left on this phone are saved: they may be this very draft's)
     ready.then(() => api.draft(c.draftId)).then(({ compose: d = {}, quoteOld }) => {
       if (ended) return;
-      Object.assign(c, { from: d.from || c.from, to: people(d.to), cc: people(d.cc), bcc: people(d.bcc), subject: String(d.subject || ""), text: String(d.text || ""), inReplyTo: d.inReplyTo || null, references: d.references || null,
+      Object.assign(c, { followUpAt:d.followUpAt || null, from: d.from || c.from, to: people(d.to), cc: people(d.cc), bcc: people(d.bcc), subject: String(d.subject || ""), text: String(d.text || ""), inReplyTo: d.inReplyTo || null, references: d.references || null,
         quote: d.quote?.of ? { of: String(d.quote.of), mode: d.quote.mode } : null, quoteOld: !!quoteOld, files: Array.isArray(d.files) ? d.files.slice() : [] });
       redraw();
       snap = sigOf();

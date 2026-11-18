@@ -35,6 +35,7 @@ export function view(el, ctx) {
   const owner = fw.session.user.id;
   let cur = null, touched = 0;
   const offs = [];
+  const dismissed = new Set();
   const off = listenFrames({
     remote(id, on) { const c = cur?.cards.get(id); if (c) c.banner.hidden = !on || c.loaded; },
     mailto(href) { const d = logic.mailtoDraft?.(href); if (d) ctx.open.compose(d); },
@@ -59,9 +60,13 @@ export function view(el, ctx) {
     cur.head = E("header", { class: "mr-head", tabindex: "-1" });
     cur.spots = E("div", { class: "mr-spots", role: "group", "aria-label": "Spotted by Mail", hidden: true });
     cur.msgs = E("div", { class: "mr-msgs" });
+    cur.historyLabel = E("summary");
+    cur.older = E("div", { class: "mr-older" });
+    cur.history = E("details", { class: "mr-history", hidden: true }, cur.historyLabel, cur.older);
+    cur.change = E("div", { class:"mr-change", role:"group", "aria-label":"Calendar change" });
     cur.foot = E("footer", { class: "mr-foot" });
     cur.bar = E("div", { class: "mr-bar", role: "toolbar", "aria-label": "Conversation" });
-    el.replaceChildren(cur.bar, cur.head, cur.spots, cur.msgs, cur.foot);
+    el.replaceChildren(cur.bar, cur.head, cur.history, cur.spots, cur.msgs, cur.change, cur.foot);
     // (the newest message's frame, made on the tap from the row's latestId, while the thread is still on its way)
     if (row?.latestId) {
       cur.expanded.add(row.latestId);
@@ -84,7 +89,7 @@ export function view(el, ctx) {
   function loaded(t) {
     const msgs = t.messages || [];
     if (!cur.expanded.size && msgs[0]) cur.expanded.add(msgs[0].id);
-    for (const m of msgs.filter((m) => m.unread && m.folder === "inbox").slice(0, 5)) cur.expanded.add(m.id);
+
     // (the early frame was for the newest; if Mail says otherwise, that one opens too)
     if (msgs[0]) cur.expanded.add(msgs[0].id);
     for (const mid of cur.expanded) meta(mid);
@@ -109,13 +114,18 @@ export function view(el, ctx) {
   function card(m, early = false) {
     const c = { id: m.id, el: E("article", { class: "mr-card", data: { mid: m.id } }), loaded: false };
     c.top = E("button", { type: "button", class: "mr-mhead" });
-    c.top.addEventListener("click", () => toggle(m.id));
+    c.top.addEventListener("click", () => {
+      if (store.get().thread?.t?.messages?.[0]?.id !== m.id) return toggle(m.id);
+      c.addresses.hidden = !c.addresses.hidden;
+      c.top.setAttribute("aria-expanded", String(!c.addresses.hidden));
+    });
+    c.addresses = E("p", {class:"mr-addresses",hidden:true});
     c.body = E("div", { class: "mr-body" });
     c.banner = E("p", { class: "mr-remote", hidden: true }, E("span", { text: "Remote pictures are hidden to protect your privacy." }), " ",
       ui.btn("Load", { small: true, act: "load-remote", run: () => { c.loaded = true; c.banner.hidden = true; cur?.frames.get(m.id)?.allowImages(); } }));
     c.files = E("div", { class: "mr-files" });
     c.when = E("p", { class: "mr-when" });
-    c.el.append(c.top, c.banner, c.body, c.files, c.when);
+    c.el.append(c.top, c.addresses, c.banner, c.body, c.files, c.when);
     cur.cards.set(m.id, c);
     paintCard(c, m, early);
     return c.el;
@@ -124,7 +134,12 @@ export function view(el, ctx) {
     const open = cur.expanded.has(m.id), sent = m.folder === "sent", who = sent ? "You" : logic.displayName(m.from) || "Unknown Sender";
     c.el.classList.toggle("open", open);
     c.el.classList.toggle("unread", !!m.unread && m.folder === "inbox");
-    c.top.setAttribute("aria-expanded", String(open));
+    const newest = store.get().thread?.t?.messages?.[0]?.id === m.id;
+    c.top.setAttribute("aria-expanded", String(newest ? !c.addresses.hidden : open));
+    c.addresses.textContent = [["From", [m.from]], ["To", m.to], ["Cc", m.cc]].map(([label, people]) => {
+      const addresses = (people || []).map(p => p?.email).filter(Boolean).join(", ");
+      return addresses ? label + ": " + addresses : "";
+    }).filter(Boolean).join("\n");
     const to = (m.to || []).map((p) => (!sent && p.email === m.mailbox ? "you" : logic.displayName(p))).join(", ");
     c.top.replaceChildren(ui.avatar(logic.displayName(m.from) || "?"), E("span", { class: "mr-who" },
       E("b", { text: open ? who : who.split(/\s+/)[0] }), E("small", { text: open ? (to ? `to ${to}` : m.from?.email || "") : m.snippet || "" })),
@@ -284,6 +299,11 @@ export function view(el, ctx) {
     cur.head.replaceChildren(...[
       E("h2", { class: "mr-subject", text: t.subject || "(No Subject)" }),
       E("p", { class: "mr-meta", text: [who && who[0].toUpperCase() + who.slice(1), t.count > 1 && `${t.count} messages`, t.trashed ? "In Trash" : t.done && "Done"].filter(Boolean).join(" · ") }),
+      t.reminder ? E("div",{class:"mr-later"}, E("span",{text:"Follow up if unanswered · "+logic.fmtWhen(t.reminder.due)}),
+        ui.btn("Clear",{small:true,run:async()=>{
+          try { await api.batch({ids:[t.id],action:"cancel-followup",messageId:t.reminder.message_id}); if(cur?.id===t.id) await load(t.id); ctx.actions.load({quiet:true}); }
+          catch(error){fw.toast(error.message || "Couldn’t clear the reminder");}
+        }})) : null,
       t.snoozeUntil ? E("p", { class: "mr-later" }, ctx.icon("later"), E("span", { text: `Comes back ${logic.fmtWhen?.(t.snoozeUntil) || ""}` }),
         ui.btn("Bring Back Now", { small: true, act: "unsnooze", run: () => ctx.actions.act([t.id], "unsnooze") })) : null,
     ].filter(Boolean));
@@ -302,11 +322,12 @@ export function view(el, ctx) {
     const newest = t.messages?.find((m) => m.folder !== "sent") || t.messages?.[0];
     const reply = pill("Reply", "reply", "reply", () => write(t, "reply"));
     const extras = cur.extras || (cur.extras = E("details", { class: "mr-options" }));
-    extras.replaceChildren(E("summary", { text: "More reply options" }), cur.qr,
+    extras.replaceChildren(E("summary", { "aria-label": "More reply options", text: "⌄" }), cur.qr,
       E("div", { class: "mr-replies" }, pill("Reply All", "reply-all", "reply-all", () => write(t, "replyAll")),
         pill("Forward", "forward", "forward", () => write(t, "forward")),
         newest ? E("a", { class: "ifl-btn small", href: api.rawUrl(newest.id), target: "_blank", rel: "noopener", data: { act: "original" }, text: "Open Original" }) : null));
-    cur.foot.replaceChildren(reply, extras, pad() ? "" : E("div", { class: "mr-acts" }, ...acts(t)));
+    if (!pad()) extras.append(E("div", { class:"mr-acts" }, ...acts(t)));
+    cur.foot.replaceChildren(reply, extras);
     for (const b of cur.foot.querySelectorAll("[data-act=more]")) b.replaceChildren(ctx.icon("more"));
   }
   // (replies go to the newest message someone else sent, or the newest if it's all yours)
@@ -363,6 +384,49 @@ export function view(el, ctx) {
     return E("div", { class: "mr-qr" }, f, send);
   }
 
+  function paintChange(t) {
+    const proposal = t.timeChange, mid = proposal?.messageId, latest = t.messages?.[0], view = cur;
+    const current = () => !fw.signal.aborted && cur === view && store.get().thread?.t?.messages?.[0]?.id === mid && store.get().access === "ok" && fw.session.user.id === owner;
+    if (mid && view.updatedId === mid && current()) return;
+    if (!fw.workspace?.calendarChange || !mid || latest?.id !== mid || !current() || dismissed.has(mid)) {
+      view.change.replaceChildren(); view.proposalId = null; return;
+    }
+    if (view.proposalId === mid) return;
+    view.proposalId = mid;
+    view.change.replaceChildren();
+    const clear = () => { dismissed.add(mid); view.change.replaceChildren(); };
+    const refresh = () => { view.proposalId = null; if (current()) paintChange(store.get().thread.t); };
+    fw.workspace.calendarChange({...proposal,subject:t.subject,threadId:t.id,date:latest.date},current).then(result => {
+      if (!result || !current()) return;
+      const row = ui.row({lead:{icon:"calendar"},title:"Time change proposed", sub:result.label, trail:"chevron", run:()=>result.review({
+        dismiss:async () => {
+          clear();
+          try { await api.batch({ids:[t.id],action:"dismiss-time",messageId:mid}); }
+          catch { if (current()) { dismissed.delete(mid); refresh(); fw.toast("Couldn’t save that choice. Try again."); } }
+        }, refresh,
+        viewMessage:()=>{ if (current()) view.cards.get(mid)?.top.focus(); },
+        updated:()=>{
+          clear();
+          if (!current()) return;
+          view.updatedId = mid;
+          const draftReply = async () => {
+            const m = await target(t);
+            if (!m || !current()) return;
+            const draft = logic.replyDraft(m, "reply", me());
+            const signature = me().addresses?.find(a=>a.email===draft.from)?.signature || me().signature;
+            draft.text = proposal.time + " works for me." + (signature ? "\n\n"+signature : "");
+            ctx.open.compose(draft,current);
+          };
+          view.change.replaceChildren(E("span",{text:"Calendar updated"}),ui.btn("Reply with time",{run:draftReply}));
+          fw.toast("Calendar updated");
+        }
+      })});
+      view.change.replaceChildren(row);
+    }).catch(error => {
+      if (current() && error?.name !== "AbortError") view.change.replaceChildren(ui.btn("Check Calendar again", {run:refresh}));
+    });
+  }
+
   // ---- drawing from the store
   function paint() {
     if (!cur) return;
@@ -381,17 +445,22 @@ export function view(el, ctx) {
     paintHead(t);
     paintSpots(t);
     // oldest first, as a conversation reads; the newest at the foot, by the reply (cards already made stay where they are)
+    const earlier = Math.max(0, (t.messages?.length || 0) - 1);
+    cur.history.hidden = !earlier;
+    cur.historyLabel.textContent = earlier + (earlier === 1 ? " earlier message" : " earlier messages");
     let prev = null;
     for (const m of [...(t.messages || [])].reverse()) {
       const meta = th.metas?.[m.id], full = meta ? { ...m, ...meta } : m;
       let c = cur.cards.get(m.id);
       if (!c) { card(full); c = cur.cards.get(m.id); }
       else paintCard(c, full);
-      if (!c.el.isConnected || c.el.parentNode !== cur.msgs) { if (prev) prev.after(c.el); else cur.msgs.prepend(c.el); }
-      prev = c.el;
+      const group = m.id === t.messages[0].id ? cur.msgs : cur.older;
+      if (c.el.parentNode !== group) { if (group === cur.older && prev) prev.after(c.el); else group.prepend(c.el); }
+      if (group === cur.older) prev = c.el;
     }
     for (const [id, c] of cur.cards) if (!(t.messages || []).some((m) => m.id === id)) { dropFrame(id); c.el.remove(); cur.cards.delete(id); }
     paintFoot(t);
+    paintChange(t);
   }
   function shut() {
     if (!cur) return;

@@ -68,7 +68,7 @@ export function createActions(ctx) {
         rows = got.concat(older);
       }
       if (!more) { lastRows.set(seen, rows.slice(0, 60)); if (lastRows.size > 12) lastRows.delete(lastRows.keys().next().value); }
-      store.set({ list: { rows, more: s.box === "drafts" ? false : !!res.hasMore, loading: false, err: null }, updatedAt: Date.now(), offline: false });
+      store.set({ list: { rows, followups:more ? s.list.followups : res.followups || [], more: s.box === "drafts" ? false : !!res.hasMore, loading: false, err: null }, updatedAt: Date.now(), offline: false });
       return true;
     } catch (e) {
       if (my !== token) return false;

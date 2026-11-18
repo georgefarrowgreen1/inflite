@@ -124,3 +124,22 @@
 .m-mail .mr-options[open] .mr-replies { margin-block: 10px; }
 .m-mail .mr-foot > [data-act=reply] { justify-content: flex-start; gap: 8px; min-height: 48px; background: var(--ifl-glass-control, var(--glass-ctl)); }
 .m-mail .mr-foot > [data-act=reply] svg { width: 20px; height: 20px; }
+.m-mail .mr-history { border-radius: 18px; background: var(--ifl-glass-control,var(--glass-ctl)); }
+.m-mail .mr-history > summary { display: list-item; padding: 14px; min-height: 44px; cursor: pointer; font-weight: 600; }
+.m-mail .mr-older { padding: 0 14px 8px; }
+.m-mail .mr-addresses { margin: 0; padding: 6px 0 12px; white-space: pre-line; overflow-wrap:anywhere; color:var(--text-2); }
+.m-mail .mr-change:empty { display:none; }
+.m-mail .mr-change { background:var(--ifl-glass-control,var(--glass-ctl)); border-radius:16px; padding:6px 12px; }
+.m-mail .mr-foot { position:sticky; bottom:8px; z-index:2; display:grid; grid-template-columns:1fr 52px; align-items:center; padding:4px 8px; border-radius:26px; background:var(--ifl-glass-window,var(--solid)); box-shadow:var(--ifl-shadow-card); backdrop-filter:var(--ifl-glass-window-blur,none); }
+.m-mail .mr-foot > [data-act=reply] { background:transparent; border:0; box-shadow:none; }
+.m-mail .mr-options > summary { display:grid;place-items:center;min-height:44px; }
+.m-mail .mr-options[open] { display:flex;flex-direction:column; position:absolute;bottom:0;right:0;width:min(100%,360px);padding:10px;border-radius:20px;background:var(--solid);box-shadow:var(--ifl-shadow-card); }
+.m-mail .mr-options[open] summary { align-self:end; width:44px; }
+.m-mail:not(.ml-split) .mr-subject { font-size:clamp(25px,6vw,34px);line-height:1.12; }
+.m-mail[data-layout=phone]:not(.ifl-in-pane) .ml-reader { min-height:calc(100dvh - var(--hd-h,90px));padding-inline:0;padding-bottom:env(safe-area-inset-bottom,0px); }
+.m-mail[data-layout=phone]:not(.ifl-in-pane) .mr-foot { margin-top:auto;bottom:max(8px,env(safe-area-inset-bottom,0px)); }
+.ifl-sheet[data-app=mail] .mr-review { display:grid;gap:12px; }
+.ifl-sheet[data-app=mail] .mr-review dl { display:grid;grid-template-columns:auto 1fr;gap:12px;padding:16px;border-radius:18px;background:var(--glass-ctl); }
+.ifl-sheet[data-app=mail] .mr-review dd { margin:0;text-align:end;font-weight:600; }
+.ifl-sheet[data-app=mail] .mr-review blockquote { margin:0;padding:6px 14px;border-inline-start:2px solid var(--line); }
+.ifl-sheet[data-app=mail] .mr-review p:empty { display:none; }

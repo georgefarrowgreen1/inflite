@@ -102,3 +102,6 @@
 .m-mail .ml-later-empty { text-align: center; margin: clamp(40px, 9vh, 100px) auto; }
 .m-mail .ml-later-empty > svg { width: 36px; height: 36px; color: var(--text-2); }
 .m-mail .ml-later-empty .ifl-empty { padding-top: 8px; }
+.m-mail .ml-reminders:empty { display:none; }
+.m-mail .ml-file-hit { display:grid; padding:10px 14px; gap:3px; color:inherit; text-decoration:none; overflow-wrap:anywhere; }
+.m-mail .ml-file-hit small { color:var(--muted); }

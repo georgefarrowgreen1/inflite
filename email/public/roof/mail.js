@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.99";
-export const NEWS = "A new Mail composer with a focused writing space and editable signatures";
+export const BUILD = "2.00";
+export const NEWS = "A focused reader, calendar change reviews, follow-ups and attachment search";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

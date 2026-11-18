@@ -38,7 +38,8 @@ export function view(el, ctx) {
   const rows = ui.el("div", { class: "ml-rows" });
   const foot = ui.el("div", { class: "ml-foot" });
   const sentinel = ui.el("div", { class: "ml-end", "aria-hidden": "true" });
-  el.append(field, chips, box, rows, foot, sentinel);
+  const reminders = ui.el("div", {class:"ml-reminders"});
+  el.append(field, chips, box, reminders, rows, foot, sentinel);
 
   function search(q) {
     q = String(q || "").trim().slice(0, 300);
@@ -142,7 +143,7 @@ export function view(el, ctx) {
     const filter = typed.trim() && typed.trim() !== s.query ? typed.trim().toLowerCase() : "";
     const list = filter ? L.rows.filter((t) => [t.subject, t.snippet, t.latest?.snippet, ...(t.people || []).flatMap((p) => [p.name, p.email])].some((x) => String(x || "").toLowerCase().includes(filter))) : L.rows;
     // (the day too: "Today" and "Yesterday" are said again after midnight even if nothing else changed)
-    const sig = JSON.stringify([logic.startOfDay(Date.now()), s.layout, s.threadId, s.lens, s.query, filter, list.length ? 0 : L.loading, L.err, list.length && list.map((t) => [t.id, t.date, t.unread, t.starred, t.snoozeUntil, t.done, t.trashed, t.count, t.subject, t.category])]);
+    const sig = JSON.stringify([logic.startOfDay(Date.now()), s.layout, s.threadId, s.lens, s.query, filter, L.followups?.length, list.length ? 0 : L.loading, L.err, list.length && list.map((t) => [t.id, t.date, t.unread, t.starred, t.snoozeUntil, t.done, t.trashed, t.count, t.subject, t.category, t.matchedFiles])]);
     if (sig === shownSig) return;
     shownSig = sig;
     const kept = rows.contains(doc.activeElement) ? doc.activeElement.closest(".ml-row")?.dataset : null;
@@ -152,6 +153,7 @@ export function view(el, ctx) {
       else if (L.err) rows.replaceChildren(unreached(L.err));
       else if (filter) rows.replaceChildren(ui.empty({ title: "Nothing loaded matches", body: "Press Return to search all your mail." }));
       else if (s.query) rows.replaceChildren(noResults(s));
+      else if (L.followups?.length && s.lens === "people" && s.filter === "all" && !s.address && !s.box) rows.replaceChildren();
       else if (s.lens === "people" && s.filter === "all" && !s.address && !s.box) rows.replaceChildren(caughtUp(s));
       else if (s.lens === "later" && !s.box && !s.address) rows.replaceChildren(ui.el("div", { class: "ml-later-empty" }, ctx.icon("later"), ui.empty({ title: "Nothing in Later", body: "Messages you snooze stay here until they’re due." })));
       else { const [t, b] = words(s); rows.replaceChildren(ui.empty({ title: t, body: b })); }
@@ -161,6 +163,15 @@ export function view(el, ctx) {
       if (out) built.delete(sig);
       else {
         out = [];
+        const files = s.query && !filter ? list.flatMap(thread => thread.matchedFiles || []) : [];
+        if (files.length) {
+          out.push(ui.label("Matching attachments"));
+          for (const file of files) {
+            out.push(ui.el("a", {class:"ml-file-hit", href:ctx.api.fileUrl(file.id), target:"_blank", rel:"noopener"},
+              ui.el("b", {text:file.filename || "Attachment"}), ui.el("small", {text:file.sender + " · " + logic.fmtWhen(file.date)})));
+          }
+          out.push(ui.label("Conversations"));
+        }
         let day = null;
         for (const t of list) {
           const d = s.lens === "later" && !s.query && !s.box ? null : logic.dayLabel(t.sort ?? t.date);
@@ -182,6 +193,8 @@ export function view(el, ctx) {
   function draw() {
     const s = store.get();
     if (field.input.value !== typed && doc.activeElement !== field.input) field.input.value = typed = s.query;
+    const due = !s.query && s.lens === "people" && !s.box && !s.address ? s.list.followups || [] : [];
+    reminders.replaceChildren(...(due.length ? [ui.label("Waiting for a reply"),ui.list(due.map(r=>ui.row({title:r.subject || "No subject",sub:"Follow-up due",trail:"chevron",run:()=>open(r.thread_id)})))] : []));
     drawChips(s);
     drawOutbox(s);
     drawRows(s);

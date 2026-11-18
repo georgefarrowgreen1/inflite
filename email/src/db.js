@@ -1,5 +1,7 @@
 // D1 schema, created lazily on first use so no migration step is needed.
 const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS mail_followups (thread_id TEXT PRIMARY KEY, message_id TEXT NOT NULL, due INTEGER NOT NULL, notified INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE INDEX IF NOT EXISTS idx_mail_followups_due ON mail_followups(due)`,
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)`,
   `CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
@@ -200,12 +202,13 @@ const MIGRATIONS = [
   // conversation: receive.js store)
   `ALTER TABLE messages ADD COLUMN also_to TEXT`,
   // (Mail on Your Day, stage 3: a repeating invite's rule, and its last date (null for one with no end). spot.js)
+  `ALTER TABLE messages ADD COLUMN dismissed_time INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE spots ADD COLUMN rule TEXT`,
   `ALTER TABLE spots ADD COLUMN last_at INTEGER`,
 ];
 
 // Bumped whenever SCHEMA or MIGRATIONS change, so a new isolate checks one row rather than running them all again.
-const SCHEMA_VERSION = "13";
+const SCHEMA_VERSION = "14";
 
 let ready;
 

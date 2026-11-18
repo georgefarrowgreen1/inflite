@@ -1,3 +1,4 @@
+import { dueFollowups, validDue } from "./followups.js";
 import { exportAttachment } from "./attachment-export.js";
 import { sharedNotFound } from "../../shared/not-found.js";
 import { accountView, accessOf, passOn, forgetCheck, accountCookie, quietNow } from "./auth.js";
@@ -99,6 +100,11 @@ const worker = {
     } catch (err) {
       console.error("scheduled: Later", err);
     }
+    try {
+      // An open People inbox polls the mailbox version. Wake it when a
+      // reminder becomes due, including when no messages arrived that minute.
+      if ((await dueFollowups(env, true)).length) await bumpVersion(env);
+    } catch (error) { console.error("scheduled: mail follow-ups", error); }
     // mail that came while the database wasn't answering, read in now it is (receive.js)
     await retryPending(env, ctx).catch((err) => console.error("scheduled: pending", err));
     // the last 60 days read back, a few at a time, once one of Spot in Your Mail's switches is turned on (spot.js)
@@ -766,6 +772,7 @@ async function getDraft(env, id) {
   return json({
     id,
     compose: {
+      ...(validDue(c.followUpAt) && { followUpAt:c.followUpAt }),
       from: String(c.from || ""),
       to: people(c.to),
       cc: people(c.cc),
@@ -843,6 +850,7 @@ async function deleteSome(env, ids) {
     ...atts.map((a) => `att/${a.id}`),
   ]);
   await env.DB.batch([
+    env.DB.prepare(`DELETE FROM mail_followups WHERE message_id IN (${placeholders})`).bind(...ids),
     env.DB.prepare(`DELETE FROM attachments WHERE message_id IN (${placeholders})`).bind(...ids),
     env.DB.prepare(`DELETE FROM messages WHERE id IN (${placeholders})`).bind(...ids),
   ]);
@@ -1034,7 +1042,7 @@ async function send(env, ctx, body, view) {
     const id = crypto.randomUUID();
     if (key) await env.DB.prepare(`UPDATE sends SET id = ?2 WHERE key = ?1`).bind(key, id).run().catch((err) => console.error("sent, but not noted as sent", err));
     try {
-      await keepSent(env, ctx, { id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId: body.draftId });
+      await keepSent(env, ctx, { followUpAt:body.followUpAt, id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId: body.draftId });
     } catch (err) {
       console.error("sent, but the copy wasn't kept", err);
     }
@@ -1044,7 +1052,7 @@ async function send(env, ctx, body, view) {
   return json({ ok: true, id: await going });
 }
 
-async function keepSent(env, ctx, { id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId }) {
+async function keepSent(env, ctx, { followUpAt, id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId }) {
   const messageId = cleanMessageId(result?.messageId) || `${id}@${env.DOMAIN}`;
   const threadId = (await findThread(env, inReplyTo, references.join(" "))) || id;
 
@@ -1085,6 +1093,10 @@ async function keepSent(env, ctx, { id, result, from, name, to, cc, bcc, all, su
       ).bind(a.id, id, a.filename, a.type, a.bytes.byteLength)
     ),
   ];
+  if (validDue(followUpAt)) {
+    stmts.push(env.DB.prepare(`INSERT INTO mail_followups(thread_id,message_id,due,notified) VALUES(?,?,?,0)
+      ON CONFLICT(thread_id) DO UPDATE SET message_id=excluded.message_id,due=excluded.due,notified=0`).bind(threadId,id,followUpAt));
+  }
   // Replying in a conversation means it has been read.
   if (threadId !== id) stmts.push(env.DB.prepare(`UPDATE messages SET unread = 0 WHERE thread_id = ?1`).bind(threadId));
   await env.DB.batch(stmts);
@@ -1197,6 +1209,7 @@ async function saveDraft(env, body, view) {
   const kept = Array.isArray(stored.attachments) ? stored.attachments : [];
   const quote = cleanQuote("quote" in body ? body.quote : stored.quote);
   const compose = {
+    followUpAt: validDue(body.followUpAt) ? body.followUpAt : (body.followUpAt === undefined ? stored.followUpAt || null : null),
     from: String(body.from || ""),
     to: normalizeRecipients(body.to),
     cc: normalizeRecipients(body.cc),

@@ -182,3 +182,5 @@
   .ifl-sheet[data-app=mail] .mc-letter .mc-row:focus-within { box-shadow: none; }
   .ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-act=send] { background: ButtonFace; color: ButtonText; border: 1px solid ButtonText; }
 }
+.ifl-sheet[data-app=mail] .mc-follow { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; width:100%; font-size:.9rem; }
+.ifl-sheet[data-app=mail] .mc-follow input { min-height:44px; max-width:100%; font:inherit; color:inherit; background:var(--glass-ctl); border:0; border-radius:12px; padding-inline:10px; }

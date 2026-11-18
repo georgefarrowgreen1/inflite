@@ -1,3 +1,6 @@
+import { attachmentIntent, attachSearchHits, senderCondition, visibleFile } from "./attachment-search.js";
+import { dueFollowups } from "./followups.js";
+import { proposedTime } from "./time-change.js";
 import { rowToSummary, rowToBrief, bumpVersion } from "./db.js";
 
 // One stream of conversations rather than folders. Later hides a conversation until a time; when it comes it's back at the
@@ -16,7 +19,7 @@ export const cleanSubject = (s) => (s || "").replace(/^((re|fwd?|aw|sv)\s*:\s*)+
 // out: listThreads), anything else matched against the subject, preview, people and the names of the files.
 // (one of a message's own files, not a picture set in its text)
 const fileOf = (cond) =>
-  `EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = messages.id AND NOT (COALESCE(a.disposition, '') = 'inline' AND a.content_id IS NOT NULL) AND ${cond})`;
+  `EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = messages.id AND ${visibleFile} AND ${cond})`;
 const fileLike = (p) => fileOf(`lower(a.filename) LIKE ${p}`);
 
 export function searchCondition(q, bind) {
@@ -97,8 +100,12 @@ function listFilter(sp, bind, now) {
     : null;
   const scope = among ? `${where} AND thread_id IN (SELECT thread_id FROM messages WHERE ${among})` : where;
   const having = [];
+  const intent = attachmentIntent(q);
   if (trashSearch && !q) having.push("1");
-  else if (q) having.push(`SUM(CASE WHEN ${searchCondition(q, bind)} THEN 1 ELSE 0 END) > 0`);
+  else if (intent) {
+    const sender = bind("%" + intent.sender + "%");
+    having.push(`SUM(CASE WHEN folder != 'sent' AND ${senderCondition(sender)} AND ${fileOf(intent.condition)} THEN 1 ELSE 0 END) > 0`);
+  } else if (q) having.push(`SUM(CASE WHEN ${searchCondition(q, bind)} THEN 1 ELSE 0 END) > 0`);
   else if (view === "all") having.push(`SUM(folder = 'inbox') > 0`, `MAX(COALESCE(snooze_until, 0)) <= ${bind(now)}`);
   else if (view === "unread") having.push(`SUM(folder = 'inbox' AND unread = 1) > 0`, `MAX(COALESCE(snooze_until, 0)) <= ${bind(now)}`);
   else if (view === "flagged") having.push(`MAX(starred) = 1`);
@@ -111,7 +118,7 @@ function listFilter(sp, bind, now) {
     const a = bind(address);
     having.push(`SUM(lower(mailbox) = ${a} OR instr(COALESCE(also_to, ''), ',' || ${a} || ',') > 0) > 0`);
   }
-  return { view, category, address, q, trashSearch, where, scope, having };
+  return { view, category, address, q, intent, trashSearch, where, scope, having };
 }
 
 const binder = (params) => (v) => {
@@ -128,7 +135,7 @@ export async function listThreads(env, url) {
 
   const params = [];
   const bind = binder(params);
-  const { view, category, address, q, trashSearch, where, scope, having } = listFilter(url.searchParams, bind, now);
+  const { view, category, address, q, intent, trashSearch, where, scope, having } = listFilter(url.searchParams, bind, now);
   if (before) having.push(`MAX(MAX(date), MAX(COALESCE(bumped_at, 0))) < ${bind(before)}`);
 
   if (counting) {
@@ -150,6 +157,8 @@ export async function listThreads(env, url) {
   const page = groups.slice(0, limit);
   const threads = await threadsFrom(env, page, where, now);
 
+  if (intent) await attachSearchHits(env.DB, threads, intent, trashSearch);
+
   // Drafts sit at the top of the stream.
   let drafts = [];
   // (drafts sit at the top of People)
@@ -157,7 +166,8 @@ export async function listThreads(env, url) {
     const { results } = await env.DB.prepare(`SELECT * FROM messages WHERE folder = 'drafts' ORDER BY date DESC LIMIT 20`).all();
     drafts = results.map(rowToSummary);
   }
-  return { threads, drafts, hasMore };
+  const followups = view === "all" && !before && !q && !address && category === "people" ? await dueFollowups(env) : [];
+  return { threads, drafts, hasMore, ...(followups.length && {followups}) };
 }
 
 // Mark All as Read: every conversation in a list (list: its view, category, address and search, as listThreads is asked),
@@ -255,7 +265,8 @@ export async function getThread(env, id) {
     results[0].folder === "trash" ? `folder = 'trash'` : `folder NOT IN ('trash', 'drafts')`,
     Date.now()
   );
-  return { ...t, messages: results.map(rowToSummary) };
+  const reminder = await env.DB.prepare("SELECT due,message_id FROM mail_followups WHERE thread_id=?").bind(id).first();
+  return { ...t, reminder, timeChange: results[0].dismissed_time ? null : proposedTime(results[0]), messages: results.map(rowToSummary) };
 }
 
 // What can be done to a whole conversation.
@@ -268,6 +279,12 @@ export async function threadAction(env, id, body, deleteMessages) {
       .bind(id)
       .first();
   switch (body.action) {
+    case "dismiss-time":
+      await D.prepare("UPDATE messages SET dismissed_time=1 WHERE thread_id=? AND id=?").bind(id, String(body.messageId || "")).run();
+      return;
+    case "cancel-followup":
+      await D.prepare("DELETE FROM mail_followups WHERE thread_id=? AND message_id=?").bind(id,String(body.messageId || "")).run();
+      return;
     case "done":
       await D.prepare(`UPDATE messages SET folder = 'archive', snooze_until = NULL WHERE thread_id = ?1 AND folder = 'inbox'`).bind(id).run();
       break;
