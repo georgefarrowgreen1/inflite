@@ -141,6 +141,8 @@
 .m-mail .mr-menu .mr-acts { margin-top: 6px; }
 .m-mail:not(.ml-split) .mr-subject { font-size: clamp(25px,6vw,34px); line-height: 1.12; }
 .m-mail[data-layout=phone]:not(.ifl-in-pane) .ml-reader { min-height: calc(100dvh - var(--hd-h,90px)); padding-inline: 0; }
+/* The full-page reader clears the visible dock and its safe-area inset. */
+[data-app=mail]:has(.ws-dock-host:not([hidden]) .ws-dock:not([hidden])) > :not(.kb-up) .m-mail { --mail-reply-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
 .m-mail[data-layout=phone]:not(.ifl-in-pane) .mr-foot { bottom: var(--mail-keyboard-bottom, var(--mail-reply-bottom, max(8px, env(safe-area-inset-bottom,0px)))); }
 @media (forced-colors: active) { .m-mail .mr-foot { border: 1px solid CanvasText; } }
 .ifl-sheet[data-app=mail] .mr-review { display:grid;gap:12px; }
