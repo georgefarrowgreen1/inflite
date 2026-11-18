@@ -139,6 +139,7 @@ export function openCompose(ctx, init = {}) {
     const chips = new Map();
     box.append(input);
     const draw = () => {
+      input.placeholder = c[key].length ? "" : "Name or email";
       for (const [p, node] of chips) if (!c[key].includes(p)) { node.remove(); chips.delete(p); }
       let previous = null;
       for (const p of c[key]) {
@@ -167,14 +168,20 @@ export function openCompose(ctx, init = {}) {
       return true;
     };
     input.addEventListener("keydown", (e) => {
+      if (e.isComposing) return;
       if ((e.key === "Enter" || e.key === "," || e.key === ";") && commit()) e.preventDefault();
+      else if (e.key === "Enter" && !input.value.trim()) {
+        e.preventDefault();
+        const next = key === "cc" ? fields.bcc.input : key === "to" && !ccRow.hidden ? fields.cc.input : subject;
+        next.focus();
+      }
       else if (e.key === "Backspace" && !input.value && c[key].length) { c[key].pop(); draw(); changed(); }
     });
     input.addEventListener("input", () => { if (/[,;]/.test(input.value)) commit(); else suggest(key, input.value.trim()); });
     input.addEventListener("blur", () => setTimeout(() => { if (!sugg.contains(document.activeElement)) commit(false); }, 150));
     draw();
     fields[key] = { input, draw, commit };
-    const caption = el("span", { class: "mc-k", text: `${label}:` });
+    const caption = el("span", { class: "mc-k", text: label });
     const row = el("div", { class: "mc-row", data: { k: key } }, caption, box);
     row.addEventListener("click", (e) => { if (e.target === row || e.target === caption || e.target === box) input.focus({ preventScroll: true }); });
     return row;
@@ -208,18 +215,40 @@ export function openCompose(ctx, init = {}) {
     from.value = c.from;
     from.addEventListener("change", () => {
       const was = sigFor(c.from), next = sigFor(from.value);
-      if (was !== next && (!was || c.text.endsWith(`\n\n${was}`))) { c.text = (was ? c.text.slice(0, -was.length - 2) : c.text.trimEnd()) + (next ? `\n\n${next}` : ""); text.value = c.text; }
-      c.from = from.value; changed();
+      if (was !== next && (!was || c.text.endsWith(`\n\n${was}`))) { c.text = (was ? c.text.slice(0, -was.length - 2) : c.text.trimEnd()) + (next ? `\n\n${next}` : ""); }
+      c.from = from.value; showText(); changed();
     });
   }
   const ccRow = el("div", { class: "mc-cc" }, tokens("cc", "Cc"), tokens("bcc", "Bcc"));
   ccRow.hidden = !(c.cc.length || c.bcc.length);
-  const subject = el("input", { type: "text", class: "mc-subject", placeholder: "Subject", autocomplete: "off", enterkeyhint: "next", "aria-label": "Subject", data: { key: "subject" } });
+  const subject = el("input", { type: "text", class: "mc-subject", placeholder: "Add a subject", autocomplete: "off", enterkeyhint: "next", "aria-label": "Subject", data: { key: "subject" } });
   subject.value = c.subject;
+  subject.addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); text.focus(); }
+  });
   subject.addEventListener("input", () => { c.subject = subject.value; changed(); });
-  const text = el("textarea", { class: "mc-text", placeholder: "Message", "aria-label": "Message", data: { key: "text" } });
-  text.value = c.text;
-  text.addEventListener("input", () => { c.text = text.value; changed(); });
+  const text = el("textarea", { class: "mc-text", placeholder: "Write your message…", "aria-label": "Message", data: { key: "text" } });
+  let signatureTail = "";
+  const signature = el("button", { type: "button", class: "mc-signature", "aria-label": "Edit signature in this message" });
+  signature.addEventListener("click", () => {
+    const start = text.value.length + 2;
+    signatureTail = "";
+    signature.hidden = true;
+    text.value = c.text;
+    text.focus();
+    text.setSelectionRange(start, c.text.length);
+  });
+  function showText() {
+    const current = sigFor(c.from);
+    signatureTail = current && c.text.endsWith("\n\n" + current) ? "\n\n" + current : "";
+    text.value = signatureTail ? c.text.slice(0, -signatureTail.length) : c.text;
+    signature.textContent = current;
+    signature.setAttribute("aria-description", current);
+    signature.hidden = !signatureTail;
+  }
+  function editText() { c.text = text.value + signatureTail; changed(); }
+  showText();
+  text.addEventListener("input", editText);
   const filesEl = el("div", { class: "mc-files" });
   const drawFiles = () => filesEl.replaceChildren(...c.files.map((f, i) => {
     const name = f.name || f.filename || "File";
@@ -252,7 +281,13 @@ export function openCompose(ctx, init = {}) {
   const more = el("div", { class: "mc-more" });
   more.hidden = true;
   more.append(ui.btn("Delete Draft", { destructive: true, small: true, act: "delete-draft", run: () => end("delete") }));
-  const moreBtn = ui.iconBtn("more", { label: "More", act: "more", run: () => { more.hidden = !more.hidden; } });
+  const moreBtn = ui.iconBtn("more", { label: "More", act: "more", run: () => {
+    formatting.hidden = true;
+    formatButton.setAttribute("aria-expanded", "false");
+    more.hidden = !more.hidden;
+    moreBtn.setAttribute("aria-expanded", String(!more.hidden));
+  } });
+  moreBtn.setAttribute("aria-expanded", "false");
   const to = tokens("to", "To");
   const ccButton = ui.btn("Cc/Bcc", { small: true, act: "cc", run: () => {
     ccRow.hidden = !ccRow.hidden;
@@ -263,6 +298,8 @@ export function openCompose(ctx, init = {}) {
   to.append(ccButton);
   const formatting = el("div", { class: "mc-format", hidden: true });
   const formatButton = ui.btn("Aa", { small: true, label: "Text tools", act: "format", run: () => {
+    more.hidden = true;
+    moreBtn.setAttribute("aria-expanded", "false");
     formatting.hidden = !formatting.hidden;
     formatButton.setAttribute("aria-expanded", String(!formatting.hidden));
   } });
@@ -274,19 +311,20 @@ export function openCompose(ctx, init = {}) {
       const end = text.selectionEnd;
       const lines = text.value.slice(start, end).split("\n");
       text.setRangeText(lines.map((line, i) => (prefix === "1. " ? (i + 1) + ". " : prefix) + line).join("\n"), start, end, "end");
-      c.text = text.value;
       formatting.hidden = true;
       formatButton.setAttribute("aria-expanded", "false");
-      text.focus(); changed();
+      text.focus(); editText();
     } }));
   }
   const attach = ui.iconBtn("attachment", { label: "Add Files", act: "files", run: () => pick.click() });
   attach.replaceChildren(ctx.icon("attachment"));
   const status = el("small", { class: "mc-status", role: "status" });
-  const tools = el("div", { class: "mc-tools" }, attach, formatButton,
-    ...(fw.workspace?.files?.open ? [ui.btn("Drive", { small: true, label: "Attach from InFlite Files", act: "drive-files", run: async () => {
+  if (fw.workspace?.files?.open) more.prepend(ui.btn("Attach from Drive", { small: true, label: "Attach from InFlite Files", act: "drive-files", run: async () => {
       const current = () => !ended && !sending && !h?.closed && !fw.signal.aborted && fw.session.user.id === owner && store.get().access === "ok";
       if (!current() || h.el.getAttribute("aria-busy") === "true") return;
+      more.hidden = true;
+      moreBtn.setAttribute("aria-expanded", "false");
+      moreBtn.focus({ preventScroll: true });
       try {
         const left = MAX - c.files.reduce((n, item) => n + (item.size || 0), 0);
         if (left <= 0) return fw.toast("Files are limited to 20 MB");
@@ -298,11 +336,15 @@ export function openCompose(ctx, init = {}) {
         }
         drawFiles(); changed();
       } catch (error) { if (current() && error?.name !== "AbortError") fw.toast(error?.message || "Those files couldn’t attach."); }
-    } })] : []),
-    moreBtn, status);
+    } }));
+  const tools = el("div", { class: "mc-tools" }, el("div", { class: "mc-toolgroup" }, attach, formatButton), status, moreBtn);
   moreBtn.replaceChildren(ctx.icon("more"));
   const prog = el("p", { class: "mc-prog", "aria-live": "polite" });
-  const body = el("div", { class: "mc" }, el("div", { class: "mc-head" }, el("div", { class: "mc-sender" }, el("span", { text: "From" }), from || el("span", { text: c.from || me.defaultFrom || "Default address" })), to), ccRow, sugg, subject, quoteEl, text, filesEl, formatting, more, prog, tools, pick);
+  const identity = el("span", { class: "mc-identity" }, from || el("span", { text: c.from || "Default address" }));
+  const sender = el("label", { class: "mc-sender" }, ctx.icon("envelope"),
+    el("span", { class: "mc-account" }, el("small", { text: "From" }), identity));
+  const letter = el("div", { class: "mc-letter" }, to, ccRow, sugg, subject, text, signature, filesEl, quoteEl);
+  const body = el("div", { class: "mc" }, sender, letter, el("div", { class: "mc-accessories" }, formatting, more, prog, tools), pick);
   if (fw.workspace?.files?.fromDrop) {
     const isDriveDrop = event => [...(event.dataTransfer?.types || [])].includes("application/x-inflite-files-token");
     body.addEventListener("dragover", event => { if (isDriveDrop(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } });
@@ -331,7 +373,7 @@ export function openCompose(ctx, init = {}) {
     for (const k of LISTS) fields[k].draw();
     ccRow.hidden = !(c.cc.length || c.bcc.length);
     ccButton.setAttribute("aria-expanded", String(!ccRow.hidden));
-    subject.value = c.subject; text.value = c.text; if (from) from.value = c.from;
+    subject.value = c.subject; showText(); if (from) from.value = c.from; else identity.firstChild.textContent = c.from || "Default address";
     drawFiles(); drawQuote(); changed();
   }
   function changed() {
@@ -440,7 +482,7 @@ export function openCompose(ctx, init = {}) {
     sendButton.setAttribute("aria-label", "Send");
     sendButton.dataset.sheetAction = "";
     sendButton.replaceChildren(ctx.icon("send-up"));
-    sheetHead.append(sendButton);
+    sheetHead.append(sender, sendButton);
     h.el.querySelector(".ifs-acts")?.remove();
   }
   store.set({ compose: true }, "compose");

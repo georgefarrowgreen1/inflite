@@ -28,7 +28,7 @@ before(async () => {
   browser = process.env.WEB_UI_BROWSER === 'webkit' ? await webkit.launch() : await chromium.launch({ executablePath: process.env.CHROMIUM || (existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined), args: ['--no-sandbox'] });
 });
 after(async () => { await browser?.close(); await Promise.all([todayServer, mailServer].filter(Boolean).map(s => new Promise(ok => s.close(ok)))); });
-async function open({ native = false, width, theme }) {
+async function open({ native = false, width, theme, compose = { subject: 'A clear subject', text: 'Hello,\n\nA little breathing room for every field.' } }) {
   const origin = `http://127.0.0.1:${(native ? mailServer : todayServer).address().port}`;
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: theme, reducedMotion: 'reduce', serviceWorkers: 'block', hasTouch: width < 600, isMobile: width < 600 });
   await ctx.addInitScript(width => {
@@ -52,15 +52,14 @@ async function open({ native = false, width, theme }) {
   if (native) await page.getByRole('button', { name: 'New Message', exact: true }).click();
   else {
     await page.addStyleTag({ url: '/mail/roof/mailsheets.css' });
-    await page.evaluate(async () => {
+    await page.evaluate(async compose => {
       const ui = await import('/roof/ui.js'), { createSheets } = await import('/roof/sheet.js'), { openCompose } = await import('/mail/roof/compose.js'), { createStore } = await import('/mail/roof/store.js');
       const { icon } = await import('/mail/roof/icons.js');
       const sheets = createSheets({ route: { tab: 'today' } }); let slot = null;
       const fw = { ui, session: { user: { id: "geometry-test-owner" } }, signal: new AbortController().signal, toast() {}, sheet: { open: spec => sheets.open({ ...spec, app: 'mail' }) } };
-      window.__geometryCompose = openCompose({ fw, store: createStore({ me: { defaultFrom: 'george@example.com', identities: ['george@example.com', 'work@example.com'] } }), logic: {}, icon, open: {},
-        api: { saveDraft: async () => ({ id: 'sample-draft' }) }, outbox: { unsent: () => slot, keepUnsent: f => (slot = f, true), dropUnsent: () => { slot = null; }, track: () => () => {} } },
-      { subject: 'A clear subject', text: 'Hello,\n\nA little breathing room for every field.' });
-    });
+      window.__geometryCompose = openCompose({ fw, store: createStore({ me: { defaultFrom: 'george@example.com', identities: ['george@example.com', 'work@example.com'], signature: 'Sent from iPhone', addresses: [{ email: 'work@example.com', signature: 'George at work' }] } }), logic: {}, icon, open: {},
+        api: { saveDraft: async () => ({ id: 'sample-draft' }) }, outbox: { unsent: () => slot, keepUnsent: f => (slot = f, true), dropUnsent: () => { slot = null; }, track: () => () => {}, send: async fields => { window.sentFields = fields; return { ok: true }; } } }, compose);
+    }, compose);
   }
   return { ctx, page, errors };
 }
@@ -95,12 +94,16 @@ for (const [width, theme] of [[320, 'dark'], [390, 'dark'], [1440, 'light']]) te
   try {
     const sheet = page.locator('dialog[data-sheet="mail-compose"]'), input = sheet.getByRole('textbox', { name: 'To', exact: true });
     await roundedWindow(sheet);
+    if (width < 600) {
+      const rect = await sheet.boundingBox();
+      assert.ok(rect.y <= 24 && rect.height >= 820, 'the phone composer occupies the visible screen');
+    }
     const headGap = await sheet.evaluate(el => el.querySelector('.mc-row').getBoundingClientRect().top - el.querySelector('.ifs-head').getBoundingClientRect().bottom);
     assert.ok(headGap >= 12, 'the first field keeps at least 12px below the sheet header');
     await input.fill('friend@example.com');
     const ring = await input.evaluate(el => { const i = getComputedStyle(el), r = getComputedStyle(el.closest('.mc-row')); return { innerOutline: i.outlineStyle, innerShadow: i.boxShadow, radius: parseFloat(r.borderTopLeftRadius), shadow: r.boxShadow, top: r.borderTopColor, bottom: r.borderBottomColor, height: el.getBoundingClientRect().height }; });
     assert.equal(ring.innerOutline, 'none', 'the bare inner input must not draw a second square ring'); assert.equal(ring.innerShadow, 'none');
-    assert.ok(ring.shadow.includes('inset'), 'the recipient row underlines the focused input'); assert.ok(ring.height >= 44);
+    assert.ok(ring.shadow.includes('inset'), 'the recipient row marks the focused input'); assert.ok(ring.height >= 44);
     const surfaces = await sheet.locator('.mc-row[data-k="to"], .mc-subject, .mc-text').evaluateAll(els => els.map(el => ({ x: el.getBoundingClientRect().left, width: el.getBoundingClientRect().width })));
     assert.equal(surfaces.length, 3);
     assert.ok(surfaces.every(row => Math.abs(row.x - surfaces[0].x) < 1 && Math.abs(row.width - surfaces[0].width) < 1), 'address, subject and body share one writing margin');
@@ -123,6 +126,30 @@ for (const [width, theme] of [[320, 'dark'], [390, 'dark'], [1440, 'light']]) te
       await roundedWindow(sheet);
       await screenshot(page, `hosted-${width}-keyboard`);
     }
+    await noErrors(page, errors);
+  } finally { await ctx.close(); }
+});
+test('The signature stays editable and follows the sender in a phone reply', async () => {
+  const compose = { to: [{ email: 'pat@example.com' }], subject: 'Re: Tomorrow', quote: { of: 'm-1', mode: 'reply' }, snippet: 'See you tomorrow' };
+  const { ctx, page, errors } = await open({ width: 390, theme: 'dark', compose });
+  try {
+    const sheet = page.getByRole('dialog', { name: 'Reply', exact: true });
+    const body = sheet.getByRole('textbox', { name: 'Message', exact: true });
+    const signature = sheet.getByRole('button', { name: 'Edit signature in this message' });
+    assert.equal(await body.inputValue(), '');
+    assert.equal(await signature.textContent(), 'Sent from iPhone');
+    await body.fill('See you at nine.');
+    await sheet.getByRole('combobox', { name: 'From' }).selectOption('work@example.com');
+    assert.equal(await signature.textContent(), 'George at work');
+    assert.equal(await body.inputValue(), 'See you at nine.');
+    await sheet.getByRole('textbox', { name: 'Subject', exact: true }).press('Enter');
+    assert.ok(await body.evaluate(el => el === document.activeElement));
+    await signature.click();
+    await body.press('Backspace');
+    await page.keyboard.insertText('George');
+    await sheet.getByRole('button', { name: 'Send', exact: true }).click();
+    await page.waitForFunction(() => !!window.sentFields);
+    assert.deepEqual(await page.evaluate(() => [sentFields.text, sentFields.from, sentFields.quote.of]), ['See you at nine.\n\nGeorge', 'work@example.com', 'm-1']);
     await noErrors(page, errors);
   } finally { await ctx.close(); }
 });

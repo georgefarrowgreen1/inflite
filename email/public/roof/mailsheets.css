@@ -100,34 +100,85 @@
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .ifl-sheet[data-app=mail] :is(.mc-row,.mc-subject,.mc-text,.mc-from,.ms-input,.ms-sig) { background: var(--ifl-surface-2); } .ifl-sheet[data-app=mail] :is(.mc-chip,.mc-file) { background-image: none; } }
 @media (forced-colors: active) { .ifl-sheet[data-app=mail] :is(.mc-row,.mc-subject,.mc-text,.mc-from,.ms-input,.ms-sig,.mc-chip,.mc-file) { background: Field; color: FieldText; border-color: ButtonText; box-shadow: none; } }
 
-/* Writing surface sized to the visible viewport, including the software keyboard. */
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] { height: min(760px, calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 16px)); overflow: hidden; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-grab { display: none; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head h2 { grid-column: 2; grid-row: 1; text-align: center; font-size: 19px; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-close] { grid-column: 1; grid-row: 1; width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-act=send] { grid-column: 3; grid-row: 1; padding: 0; width: 44px; height: 44px; min-width: 44px; border-radius: 50%; background: #006c63; color: white; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc { min-height: 100%; gap: 0; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-head { gap: 0; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] :is(.mc-sender,.mc-row,.mc-subject) { display: flex; align-items: center; gap: 10px; min-height: 48px; width: 100%; padding: 2px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; box-shadow: none; background: transparent; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-sender { overflow-wrap: anywhere; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-sender > :first-child { color: var(--text-2); }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-from { flex: 1; border: 0; background: transparent; padding: 0; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-chips input { min-width: 50px; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-text { flex: 1 0 120px; resize: none; width: 100%; margin: 0; padding: 16px 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; font: inherit; line-height: 1.5; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-tools { position: sticky; bottom: 0; align-items: center; padding: 4px 8px; gap: 4px; border-radius: 24px; background: var(--ifl-surface, var(--solid)); box-shadow: inset 0 0 0 1px var(--line); }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-status { margin-left: auto; color: var(--text-2); font-size: 12px; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-format { display: flex; flex-wrap: wrap; gap: 4px; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-format[hidden] { display: none; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-quote { border: 0; border-radius: 16px; margin-top: 10px; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-quote summary { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-quote summary > span:last-child { flex: 1; min-width: 0; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-quote summary small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-quote summary::after { content: "⌄"; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-file::after { content: "×"; }
-@media (forced-colors: active) { .ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-act=send] { background: ButtonFace; color: ButtonText; border: 1px solid ButtonText; } }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-row:focus-within { border-bottom-color: var(--acc-ink); box-shadow: inset 0 -1px var(--acc-ink); }
-@media (forced-colors: active) { .ifl-sheet[data-app=mail][data-sheet=mail-compose] .mc-row:focus-within { border-radius: 16px; box-shadow: none; } }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-act=send] svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.ifl-sheet[data-app=mail][data-sheet=mail-compose] :is([data-act=cc], [data-act=format]) { min-width: 44px; min-height: 44px; }
+/* The composer has a fixed envelope header and tools. Only the letter scrolls. */
+.ifl-sheet[data-app=mail][data-sheet=mail-compose] {
+  --mc-ink: var(--ifl-text, var(--text));
+  --mc-muted: var(--ifl-muted, var(--text-2));
+  --mc-teal: #087c75;
+  --mc-line: color-mix(in srgb, var(--mc-ink) 13%, transparent);
+  --sheet-inset: clamp(18px, 4vw, 32px);
+  height: min(780px, calc(var(--vvh, 100dvh) - 32px));
+  overflow: hidden;
+  background-image: radial-gradient(ellipse at 86% -20%, rgb(44 177 161 / .15), transparent 48%);
+}
+@media (max-width: 699px) {
+  .ifl-sheet[data-app=mail][data-sheet=mail-compose] {
+    --mc-top: max(8px, env(safe-area-inset-top, 0px));
+    top: calc(var(--vv-top, 0px) + var(--mc-top)); bottom: auto;
+    height: calc(var(--vvh, 100dvh) - var(--mc-top)); max-height: none;
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  }
+  .ifl-sheet[data-app=mail][data-sheet=mail-compose].ifs-kb { padding-bottom: 4px; }
+}
+.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-grab,
+.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head::before { display: none; }
+.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px;
+  row-gap: 16px; padding: 14px 0 0;
+}
+.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head h2 {
+  grid-column: 1 / -1; grid-row: 2; text-align: start;
+  font-size: clamp(30px, 6vw, 40px); line-height: 1.12; letter-spacing: -.04em;
+}
+.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-close] {
+  grid-area: 1 / 1; width: 44px; height: 44px; min-width: 44px; min-height: 44px;
+}
+.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-act=send] {
+  grid-area: 1 / 3; width: 44px; height: 44px; min-width: 44px; padding: 0; border: 0;
+  border-radius: 50%; color: white; background: var(--mc-teal); box-shadow: inset 0 1px 0 rgb(255 255 255 / .22);
+}
+.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-act=send] svg { width: 22px; height: 22px; }
+.ifl-sheet[data-app=mail] .mc-sender { grid-area: 1 / 2; justify-self: center; display: flex; align-items: center; gap: 8px; min-height: 44px; max-width: 100%; min-width: 0; }
+.ifl-sheet[data-app=mail] .mc-sender > svg { color: var(--mc-muted); width: 21px; height: 21px; }
+.ifl-sheet[data-app=mail] .mc-account { min-width: 0; display: grid; }
+.ifl-sheet[data-app=mail] .mc-account small { color: var(--mc-muted); font-size: 11px; line-height: 1.3; }
+.ifl-sheet[data-app=mail] .mc-identity { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.ifl-sheet[data-app=mail] .mc-account .mc-from { min-height: 0; width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--mc-ink); font: inherit; }
+.ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-body { display: flex; min-height: 0; overflow: hidden; padding-top: 16px; }
+.ifl-sheet[data-app=mail] .mc { flex: 1; min-height: 0; gap: 0; }
+.ifl-sheet[data-app=mail] .mc-letter { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; align-items: stretch; }
+.ifl-sheet[data-app=mail] .mc-letter > * { flex-shrink: 0; }
+.ifl-sheet[data-app=mail] .mc-letter .mc-row { width: 100%; min-height: 48px; align-items: center; padding: 2px 8px 2px 14px; border-radius: 16px; border: 0; background: color-mix(in srgb, var(--mc-ink) 5%, transparent); }
+.ifl-sheet[data-app=mail] .mc-letter .mc-row:focus-within { box-shadow: inset 3px 0 var(--mc-teal); }
+.ifl-sheet[data-app=mail] .mc-k { font-size: 14px; font-weight: 600; }
+.ifl-sheet[data-app=mail] .mc-chips input { min-width: 40px; }
+.ifl-sheet[data-app=mail] .mc-cc .mc-row { margin-top: 4px; }
+.ifl-sheet[data-app=mail] .mc-row [data-act=cc] { min-width: 44px; min-height: 44px; padding: 3px 6px; border: none; box-shadow: none; background: transparent; color: var(--mc-muted); font-size: 13px; }
+.ifl-sheet[data-app=mail] .mc-letter .mc-subject { width: 100%; min-height: 62px; padding: 10px 0; border: 0; border-radius: 0; border-bottom: 1px solid var(--mc-line); background: transparent; font-size: clamp(22px, 4vw, 28px); letter-spacing: -.035em; font-weight: 650; }
+.ifl-sheet[data-app=mail] .mc-letter .mc-text { flex: 1 0 120px; width: 100%; min-height: 120px; margin: 0; padding: 16px 0; resize: none; border: 0; border-radius: 0; background: transparent; font: inherit; font-size: 17px; line-height: 1.55; }
+.ifl-sheet[data-app=mail] .mc-letter :is(.mc-subject,.mc-text)::placeholder { color: var(--mc-muted); opacity: .85; }
+.ifl-sheet[data-app=mail] .mc-signature { align-self: start; max-width: 100%; min-height: 44px; padding: 5px 0; color: var(--mc-muted); background: transparent; font: inherit; font-size: 14px; text-align: start; white-space: pre-line; overflow-wrap: anywhere; }
+.ifl-sheet[data-app=mail] .mc-signature:not([hidden])::before { content: ""; display: block; width: 22px; border-top: 1px solid var(--mc-line); margin-bottom: 5px; }
+.ifl-sheet[data-app=mail] .mc-accessories { flex: none; padding: 8px 0 0; border-top: 1px solid var(--mc-line); }
+.ifl-sheet[data-app=mail] .mc-tools { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; padding: 0; }
+.ifl-sheet[data-app=mail] .mc-toolgroup { display: flex; align-items: center; padding: 1px 3px; border-radius: 24px; background: color-mix(in srgb, var(--mc-ink) 7%, transparent); }
+.ifl-sheet[data-app=mail] .mc-tools :is(.ifl-btn,.ifl-icon-btn) { display: grid; place-items: center; background: transparent; border: 0; box-shadow: none; color: var(--mc-ink); min-width: 44px; min-height: 44px; padding: 0; }
+.ifl-sheet[data-app=mail] .mc-tools [aria-expanded=true] { background: var(--press); }
+.ifl-sheet[data-app=mail] .mc-status { margin-inline-start: auto; color: var(--mc-muted); font-size: 12px; text-align: end; }
+.ifl-sheet[data-app=mail] :is(.mc-format,.mc-more):not([hidden]) { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
+.ifl-sheet[data-app=mail] .mc-format .ifl-btn { min-height: 44px; }
+.ifl-sheet[data-app=mail] .mc-quote { margin: 8px 0; border: 0; border-radius: 16px; }
+.ifl-sheet[data-app=mail] .mc-quote summary { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.ifl-sheet[data-app=mail] .mc-quote summary > span:last-child { flex: 1; min-width: 0; }
+.ifl-sheet[data-app=mail] .mc-quote summary small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ifl-sheet[data-app=mail] .mc-quote summary::after { content: "⌄"; }
+.ifl-sheet[data-app=mail] .mc-file::after { content: "×"; }
+.ifl-sheet[data-app=mail] .mc-files:not(:empty) { padding-bottom: 8px; }
+.ifl-sheet[data-app=mail][data-sheet=mail-compose].ifs-kb .ifs-head { row-gap: 2px; padding-top: 4px; }
+.ifl-sheet[data-app=mail][data-sheet=mail-compose].ifs-kb h2 { font-size: 23px; }
+.ifl-sheet[data-app=mail][data-sheet=mail-compose].ifs-kb .ifs-body { padding-top: 8px; }
+@media (forced-colors: active) {
+  .ifl-sheet[data-app=mail][data-sheet=mail-compose] { background-image: none; }
+  .ifl-sheet[data-app=mail] .mc-letter .mc-row:focus-within { box-shadow: none; }
+  .ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-act=send] { background: ButtonFace; color: ButtonText; border: 1px solid ButtonText; }
+}
