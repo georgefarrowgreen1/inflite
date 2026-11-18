@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.6.1";
+const BUILD = "4.6.2";
 // (what's new in it, said once it's in)
-const NEWS = "Search People, Notes and Calendar without opening them. Linked files open directly in preview.";
+const NEWS = "Updates now keep the last complete InFlite shell available offline.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.31/store.js","/os.webmanifest"];
@@ -308,6 +308,7 @@ const IFL = (() => {
   // again; and without one, the page and its files asked of the network past the browser's own copy. → false if a new
   // worker was being installed and hasn't taken over (its files not all fetched, or not yet)
   async function afresh() {
+    if (U.prepare) return U.prepare(U.ready.build, busyNow);
     const sw = navigator.serviceWorker, wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
     try {
       const reg = await sw?.getRegistration();
@@ -3145,7 +3146,40 @@ function start() {
   wire();
   worker();
   IFL.built("today", BUILD, NEWS);
-  IFL.updates({ app: "today", build: BUILD, url: "/version", field: "build", busy: () => !!F?.busy() || !!sheetOpen, save,
+  // A waiting worker has a complete cache. Let active editors finish and let
+  // other tabs keep their current worker until they close.
+  async function prepareShell(build, busy) {
+    const sw = navigator.serviceWorker;
+    if (!sw?.controller) return true;
+    const ask = (worker, data) => new Promise(resolve => {
+      const channel = new MessageChannel();
+      const finish = value => { clearTimeout(timer); channel.port1.close(); resolve(value); };
+      const timer = setTimeout(() => finish(null), 5000);
+      channel.port1.onmessage = e => finish(e.data);
+      worker.postMessage(data, [channel.port2]);
+    });
+    try {
+      const registration = await sw.getRegistration();
+      await registration.update();
+      const worker = registration.installing;
+      if (worker && worker.state !== "installed" && worker.state !== "activated") {
+        await new Promise(resolve => {
+          const done = () => { clearTimeout(timer); worker.removeEventListener("statechange", changed); resolve(); };
+          const changed = () => { if (["installed", "activated", "redundant"].includes(worker.state)) done(); };
+          const timer = setTimeout(done, 30000);
+          worker.addEventListener("statechange", changed); changed();
+        });
+      }
+      if (registration.waiting) {
+        const waiting = registration.waiting;
+        if (busy()) return false;
+        if (!(await ask(waiting, { ifl: "activate-shell", build }))?.activating) return false;
+        for (let i = 0; i < 50 && sw.controller !== waiting; i++) await new Promise(r => setTimeout(r, 100));
+      }
+      return (await ask(sw.controller, { ifl: "renew", build }))?.build === build;
+    } catch { return false; }
+  }
+  IFL.updates({ app: "today", build: BUILD, prepare: prepareShell, url: "/version", field: "build", busy: () => !!F?.busy() || !!sheetOpen, save,
     files: ["/", "/app.js", "/cards.js", "/day.js", "/apps.js", "/you.js", "/swipe.js", "/layout.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", ...ROOF_FILES, "/roof/roof.css", "/roof/controls.css", ...(OS_MODE ? OS_FILES : [])] });
   load();
   nextMinute();

@@ -17,30 +17,42 @@ const engineAt = (u) => u.pathname.startsWith("/chats/") && u.searchParams.has("
 
 // ---- Today's own files, kept: Today opens at once, from them ----
 // Today's page and files come from what's kept here whenever they're all there, so it opens at once, on a weak signal or
-// none, with the copy of your day the page kept; from the network only when one isn't kept yet, or when the request
-// says to go past what's kept (a reload, or the updater fetching the new version's files: cache "reload"/"no-cache").
-// They're kept fresh as a set, never one at a time behind the page's back: InFlite's updater (IFL.updates) asks /version
-// as Today opens and, when there's a new Today, asks this worker to renew (every file fetched again, each kept as it
-// comes, any it couldn't get let go, so it's fetched from the network next time and never an old one beside new ones)
-// before it loads it. Only these files: never the API, nor any page or file of Chats' or the apps'.
+// none. Each worker reads the immutable cache it installed. The browser keeps
+// the previous worker active if any asset fails validation or storage is full.
 const SHELL = "today-app-4";
+const RELEASE = "4.6.2";
+const INTEGRITY = {"/app.js":"sha256-LyEdXvXehMZ010onoB/120qOEDQhS5N5ELIazEd9hmk=","/cards.js":"sha256-9MokSG+Lo/eVUW9liXXrzi+K4C6xJMCYCmFXbZMn7YM=","/day.js":"sha256-y2x07EbgsKZFHIQ3Ffm+KLSe7Vg6d0CDswYaEDXGTbo=","/trip.js":"sha256-cm5+K/+pQb6yFyN5W3RNyo9MN8boUqyBy9T45ZuBHzc=","/mailday.js":"sha256-05mjdpY95mAaE2gVWkKgIUgf4xsyUmM2JKjR2v3hG28=","/apps.js":"sha256-7oBcTbklevxzADhuBPCL8PIX1oWrm6uIOPJGbMscZf8=","/you.js":"sha256-uBLCN6PoQEuKIZzjPbv5T4RF34AXA3bGAVkX8BDXdK8=","/settings-account.js":"sha256-BrptoC16LQucRNBtyCcg4K1d45amPKD/sEElaoBydz4=","/swipe.js":"sha256-kcDrJ7jOZ6pBTOt9ennA2rmBr2oYkmOTSO+Xsk1i0qE=","/wxicons.js":"sha256-6TTiEF2XDkNrqy19gWz2m0UaelpP9yJGqx3GhEgHo8g=","/app.css":"sha256-ZpmDn21GXG4vpttoHTBhoEIF6e5x+22ltUSjxr9rcJA=","/day.css":"sha256-pMAvuhicWqXHgcA0RIVBLVOO56qBIDMdf7qIgRzIGdU=","/theme.js":"sha256-fXYcCarHRP0/2DD7Lv9bm8URhabFb8aoyteFevfj6wY=","/fade.js":"sha256-1pgroYvSt0QEYQEjE8UXW6kHnmKUwB/o0nQRmcls1kM=","/mailhost.js":"sha256-oxl03ogzijhnG0up5W+MPzH54qoXhmai0JBKoZuIReE=","/manifest.webmanifest":"sha256-rv2hkt+0inVoy1TPf9f2QQBxB1sedRCIkRCOpKnnN+g=","/icon.svg":"sha256-etQK3NWM0hIRti6h3V95sTWB9WYEEXNN/L+bbTLYBkw=","/inflite.svg":"sha256-etQK3NWM0hIRti6h3V95sTWB9WYEEXNN/L+bbTLYBkw=","/icon-180.png":"sha256-r6cJpJ36ODaGXHUfsLF6TxWwB2+UMJh+gFXORc5haTE=","/icon-192.png":"sha256-aoHHVnW8gXa8qsYgdOuDlP9GV5XlYkdXyty8N2vZ63I=","/apps/chat.svg":"sha256-BKjK7Vb/dIq3uaDS0zzIhc+DUQiKN8dhARxcaJI/Jeo=","/apps/weather.svg":"sha256-Mfwc5OH4F6BLd/7oUJGzE93BUHpdA9pP8ngJdHx/4GE=","/apps/fitness.svg":"sha256-VlNGMAn3otDsh1+9awQcPVPo6zJd1RsrjxIg77b5Kxs=","/apps/markets.svg":"sha256-4dyxemkVGBiXsY+ZsgoVjcpcte0/7F2HyXpiUBYASMU=","/mailcard.js":"sha256-+VPaq4bIWssS+Yv+f6HCrtRPB4Pg4LkHf7WNrcWZvrY=","/mailnotify.js":"sha256-iOgamd/qrWTV5MeHURCYFyBhqC55VpokKszmM4oKBkU=","/layout.js":"sha256-o9clw8op61btcLge1rJH+rPTVjekzfNyhpbIAU29ZGs=","/roof/requests.js":"sha256-yTggrsgNggVQAH6h4t6rCz+gHJ0rdTLGUovPHPTPmrg=","/roof/tasks.js":"sha256-J7mIiKPUdHqh9tS/jFijWT2vZSCYiIkb6zivw3IsMgk=","/roof/screens.js":"sha256-gysXZdG/UEokQ5wq+Bpy73cKbFFg7P7H+XNHXxnWGbk=","/roof/preload.js":"sha256-bMUerj87QrfGShbGBC1ni5sFi2GkB02bmPxg2+7f2ZE=","/roof/performance.js":"sha256-E43be0EzMNh5w5mrIwGs3uErh+PTgjsYdlkX11rS0e8=","/roof/restore.js":"sha256-6yIx8qM8ntIsByf9bFOgs9KlSoqCygtWYW4R+6DbDf4=","/apps/mail.svg":"sha256-w4vn8W2oXr5QruwVKsPwf9Uk5IirJ9T0uI42N82mHwo=","/apps/calendar.svg":"sha256-H+8uRHnq+hfwBXF2uwUzOMfmOx4a3jrlWJpLCTMEVgM=","/apps/notes.svg":"sha256-BKPFx3snUTq2oCwVIfwiMOlRG1od+e43FYh+KkK/TOw=","/apps/people.svg":"sha256-HDIhZKLfrSFtdskDXvs3mMyKT+gJeBnTR9rIDy0/yMM=","/roof/frame.js":"sha256-8to0QP/vI8/WXYA6bufJ0X3cxp3sjCS8YMRQ5n9xKPY=","/roof/router.js":"sha256-kc8MC4UY20qaNRY7Nkdn48AZAYlOWyWT9K0ZUn4Zo9Q=","/roof/header.js":"sha256-PF4H4/7zE7undrQnE20iIXgqqXDYIFF2mU4txipqVQM=","/roof/tabs.js":"sha256-mRWr0SnRofgNT5oUNKUaUURW7MrXn6dVlPeC5RNN5c4=","/roof/sheet.js":"sha256-7C7PMjqnJ5JI+Ewqf5eH6kbBIyeW6AyYSxLGBsib2nQ=","/roof/toast.js":"sha256-bo24oK2oTa8GPtDrFxeCkVZuurwl8F4WnsutDS0tMII=","/roof/ui.js":"sha256-3MhJlFDuJBUUiaZ9hqw6AnMrEiWOjWTjCVrNqWbGHZg=","/roof/search.js":"sha256-ifYn+yJtVu6+HUjajUVy4Ph0eB6NrAT8Rm6Dlaj0b4E=","/roof/search-render.js":"sha256-+43+GVvQyUUqGLHM+ugtAG946HHMP0bXCdcY69ozPrw=","/roof/send.js":"sha256-GwtSpYaW/z9z7M+Bpd0WMzQ+EuR2iVzaKH7lPksOxyU=","/roof/modules.js":"sha256-ryTiN+NbdTSHkqo1UjXhQwotOxuBfMU4qN9qE+W4a2U=","/roof/connectors.js":"sha256-HRn+pKDsPvPOiWJnqrf3BRyjDZu5fNFGFfZVH78jQeY=","/roof/roof.css":"sha256-Bh2bmydwfs0J39H70/GhCkuwAqGokCtvuEeAPX9+v/Y=","/roof/controls.css":"sha256-ALIBkxvQNKImF2WuRQpQU4tWB78S5JJf1DZC/P63X8Q=","/bell.js":"sha256-tDaaCU/fXnC2a9jMOPn0FfdTQtKIEgmB39cGJFNWjdo=","/roof/launcher-model.js":"sha256-/Y/2ZwmnOzkUiRKRYGEy2b93DBHHhM2CEbfOFcLeKsY=","/roof/launcher-motion.js":"sha256-XUp860LwfxtvAa5W+2lLJoNL1XDehIWKFH/b52ML85c=","/roof/launcher-input.js":"sha256-JHH/7GpKijxgf5Y85hOzEyYbfHG988FOU8d+3BbSQjM=","/roof/security-module.js":"sha256-l1DM7k7uZ+Oby7M6UpdnNrkBc6tW1lSgiFUp5ry9SN0=","/roof/security-client.js":"sha256-Ql+/N4T620vqa9wcLMq25CjY69aUHowcBNezAhemELU=","/roof/life410.js":"sha256-DMqGnvNTOhE2lSvwoU3x0SBty5/ObMZrDxQxCrJGdAw=","/roof/system350.js":"sha256-2pSrbke6QZUU8LVTuxtHseZ4pvy9tdFCzlaJPKEtmtM=","/roof/system-client.js":"sha256-PTWywza6D8j+lgN7XufPnLFjUWHFP15MiRh8k55hGeY=","/roof/actions-store.js":"sha256-rD2wXSAphlJ0qIhqhGCteoDQEbxiq+mrlvMnxO0U4PQ=","/roof/actions-ui.js":"sha256-I/bvM7yIlucT02swwfoRGcZrXYi3jrDtUjV90PgZUIs=","/roof/device-id.js":"sha256-IR5VvRMsr+X3N1Zb4e8RiZ7NvsnyhoPjyv+yLwtOpFQ=","/roof/devices-ui.js":"sha256-eROgeCinAC2nA5PlUOABFlQGAwoteTl7zyMIQbSyOqs=","/roof/discovery350.js":"sha256-kLMWehOa7VSGHMK2AJJQEHzIM2k2jMr77dnbQQITSOw=","/roof/search-file.js":"sha256-eHWcbPhMQnLutHbFY/bbgEwJ0xpAfKORhgQBf6I8GK4=","/roof/files-viewer350.js":"sha256-3UQJEjpr9qVkvof9DHsH6UULkjzIyP6ZlYV+M7a3eHo=","/roof/files-recovery350.js":"sha256-sDCo5eQwdo90ZiWh/eCbTzdiDXmqYSilhDPB/nwFm5A=","/roof/continuity.js":"sha256-Swe12i0T4rCxZbBLbd0dyLzjJvwtWMbmegOot0DrvRY=","/roof/offline-store.js":"sha256-RdcChQywH55G4VUIm7exiuD7n/6S7YsZrZRO/2nj370=","/roof/offline-prefs.js":"sha256-zoKVwyqHZL4v+jvGfLE/1uEjqt8hPwiKWWn8usyyWJU=","/roof/ride-overview.js":"sha256-0U7bDF6oh5+9/nMMQ5utenNx9lHaLfgiqSmDRKjqOMs=","/roof/files-history.js":"sha256-TnkznWNpfxIYxHSdjLowMYs3JtCz+/arumjjkWyXues=","/roof/workspace.js":"sha256-ii8kccPgaoniz/Z9yGfa6O/eCKdtS9i72n/bqg1zBg8=","/roof/workspace-view.js":"sha256-KvSBeb1NhZl6CKDXacTNM7lAMDSmq53aRlZtVwm0XZo=","/roof/workspace-catalog.js":"sha256-/dzhia5G/y1MUgWABwttYOzcUIQs/9Qu9FCMet5KKeY=","/roof/workspace-windows.js":"sha256-fOdedyAje5nJniEza37CDpInbLg155BTJGipCUfX9vI=","/roof/workspace-commands.js":"sha256-+SjshQcf0n85bDKitufVARYUA0ODkAY55iIKfXpdTPc=","/roof/workspace-files.js":"sha256-ylFuy+c0Xl5ONHAlePGCnMSRjnAKC7Mr/TkkYMezKwk=","/roof/files-service.js":"sha256-G/nRGWaQP4p/Bm/tflrmTowkOyfNCmTinjiFS9o7N2g=","/roof/files-apps.js":"sha256-2A+wNNUBNivrDML9Yj+iqJxPdJXyARd+rYgoXc6wX8A=","/roof/files-metadata.js":"sha256-m3r2R+ZT0KriV1CIL/NB//WqzdbS4tfqtQM4rH0YegM=","/roof/files-location.js":"sha256-zOz5OWfJc9UlhVzJlxInH4q9W87kUGZtKGo4cnmXUD4=","/roof/files-drive.js":"sha256-VpuF4f0flQ6MmMRE/u5t9ViBJ0lQ1e45yS4HDhp1HOw=","/roof/files-explorer.js":"sha256-P/2oTdEH+UP2A/97VChBf0ZrMojNF+ZaU/6VSeGSa2k=","/roof/files-view.js":"sha256-aFhm8jw6oMG4ZP7LCvyuoNLz2dvAxZmrhby/Wu03UX4=","/roof/files-dialogs.js":"sha256-oRnkkp6mgUBBQ3BwTrNC8lDqnzdm4ZYcbADi0b5vulY=","/roof/workspace-activity.js":"sha256-u+7k/ztFKT+Ym71t38fSZyzjqvxwerM95LzamKn/VVY=","/roof/workspace-activity-state.js":"sha256-VDRhWqUjsEEnixPJa0nXDmP/zfze016Fz085zpEAxWg=","/roof/workspace-recovery.js":"sha256-rOF3xgf5aC3MRKzH/kI58k7ybJzY+/r89VRR3wLypGE=","/roof/workspace-recovery-view.js":"sha256-0rks0LKRB6uDxqqe7LPOp+U9X8KDSbLRpD7Lv+EV57g=","/roof/connection.js":"sha256-RX5XBm3VboVALS5xSfU2L/bN4wpN2ZTz1BbVY7mHBO8=","/roof/handoffs.js":"sha256-xWVwrUTBICD0dyrMpiG85qbEiwViRPk8uk65+QyL768=","/roof/launcher.css":"sha256-vvjfFJN7Rbz5iFzDNve5TebGCizLR61bUs4FVTIhxSE=","/roof/security-module.css":"sha256-723q/xMIqxZAkPeA4NnKfLoq86oEpNVE4UjZFqi104Q=","/roof/life410.css":"sha256-gy4+SO0jNBLeErAr3HVORkrU6cLzl7GHlmrucwwwPsk=","/roof/system350.css":"sha256-QYNQO2nKkAWNbDK0dRxaUvXVYiH1vJuhszsUdgCg/D0=","/roof/files-viewer350.css":"sha256-vKCx5d5CesnShSfdGFfPkE3IaFpD0fOPQAyGxAKf9K4=","/roof/workspace.css":"sha256-g2C7ehOn5Bl0yx5Wuelg1StN7xqPDYXyUBHBziRspYg=","/roof/workspace-commands.css":"sha256-BOzrRfIq9KPyhJMqUa0ieM5lTECidEFoe07qElgSGcY=","/roof/workspace-files.css":"sha256-sv/1ObOkZCLo8FgmkPj7CEEix8tTKC+w/CoFsh3ZxLE=","/roof/files-view.css":"sha256-nHqnxsUXp9+uDCsnRZovk97/pleHG0FtPSyvCbU8UtY=","/roof/files-dialogs.css":"sha256-y4o25Ekj3OTpTz7jy2OF547Qum+5geUiZwGE+6QRZ5k=","/roof/workspace-activity.css":"sha256-71Cz1PDWNZU/sWBTHuAJXrEhmcfqEn5Lqk/IECJBF+A=","/roof/workspace-recovery.css":"sha256-M/2orPWFC+8iO/yQWFvECo4xm5428W1SJQudVEHNt8E=","/organise/releases/4.31/store.js":"sha256-Z1au0O2mlxIrflBTMCnes6FM/ZUwk0E8Q267o2o3XWU=","/os.webmanifest":"sha256-nFZ6HpMSYkPunUC7DXJWGK80k0oc3WoP5kFhCrJHMkU="};
+const releaseCache = "inflite-shell-set-" + RELEASE;
 const FILES = ["/", "/app.js", "/cards.js", "/day.js", "/trip.js", "/mailday.js", "/apps.js", "/you.js", "/settings-account.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg",
   "/mailcard.js", "/mailnotify.js", "/layout.js", "/roof/requests.js", "/roof/tasks.js", "/roof/screens.js", "/roof/preload.js", "/roof/performance.js", "/roof/restore.js", "/apps/mail.svg", "/apps/calendar.svg", "/apps/notes.svg", "/apps/people.svg",
   "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/search-render.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css", "/roof/controls.css", "/bell.js"];
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.31/store.js","/os.webmanifest"];
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(self.location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(self.location.hostname) && new URL(self.location.href).searchParams.get("os") === "1";
 if (OS_MODE) FILES.push(...OS_FILES);
-self.addEventListener("install", (e) => {
-  self.skipWaiting();
-  // (each kept as it comes, so one that isn't there doesn't keep the rest out; not waited on long: a worker that takes
-  // over late holds the updater up)
-  e.waitUntil(Promise.race([caches.open(SHELL).then((c) => Promise.all(FILES.map((f) => c.add(f).catch(() => {})))).catch(() => {}), new Promise((ok) => setTimeout(ok, 8000))]));
-});
-// (the updater every app shares, about to load a new version: Today's files are fetched afresh by the page itself, past
-// the browser's copy, through here and kept as they come, so there's nothing more for this worker to do: IFL.updates.
-// A page of the hub opened, or back in sight: the badge counted again, IFL.hub)
+async function installShell() {
+  const cache = await caches.open(releaseCache);
+  // Cache.addAll commits the group in one operation, including on quota failure.
+  await cache.addAll(FILES.map(path => new Request(new URL(path, self.location.origin), {
+    cache: "reload", credentials: "same-origin", redirect: "error", integrity: INTEGRITY[path] || ""
+  })));
+  const script = await cache.match("/app.js");
+  if (!script || !((await script.text()).includes('const BUILD = "' + RELEASE + '";'))) {
+    await caches.delete(releaseCache);
+    throw Error("The shell release changed during installation.");
+  }
+}
+self.addEventListener("install", e => e.waitUntil(installShell()));
 self.addEventListener("message", (e) => {
-  if (e.data?.ifl === "renew") e.waitUntil?.(renew().catch(() => {}).then(() => e.ports[0]?.postMessage({ ifl: "renewed" })));
+  if (e.data?.ifl === "activate-shell" && e.data.build === RELEASE && sameOrigin(e.source?.url)) {
+    e.waitUntil((async () => {
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const alone = windows.every(client => client.id === e.source.id);
+      e.ports[0]?.postMessage({ activating: alone });
+      if (alone) await self.skipWaiting();
+    })());
+  } else if (e.data?.ifl === "renew") {
+    e.ports[0]?.postMessage({ ifl: "renewed", ...(e.data.build ? { build: RELEASE } : {}) });
+  }
   else if (e.data?.ifl === "badge") e.waitUntil?.(badge());
   else if (typeof e.data?.ifl === "string" && e.data.ifl.startsWith("notes") && e.source && sameOrigin(e.source.url)) e.waitUntil?.(notesAsked(e.data, e.ports?.[0]));
   else if (e.data?.ifl === "keep" && e.source && sameOrigin(e.source.url)) e.waitUntil?.(keep(e.data));
@@ -49,6 +61,7 @@ self.addEventListener("activate", (e) =>
   e.waitUntil(
     (async () => {
       for (const k of await caches.keys()) if (k.startsWith("today-app-") && k !== SHELL) await caches.delete(k);
+      for (const k of await caches.keys()) if (k.startsWith("inflite-shell-set-") && k !== releaseCache) await caches.delete(k);
       await self.clients.claim();
     })()
   )
@@ -67,47 +80,17 @@ self.addEventListener("fetch", (e) => {
   if (FILES.includes(u.pathname) && !u.search) e.respondWith(keptFirst(e, u.pathname));
   else if (moduleFile(u)) e.respondWith(fromModule(e, u));
 });
-// (what's kept, if it is, unless the request says to go past it: a reload, the updater's own fetches)
-const PAST = new Set(["reload", "no-cache", "no-store"]);
+async function shellAsset(key) {
+  return (await caches.open(releaseCache)).match(key);
+}
 async function keptFirst(e, key) {
-  if (!PAST.has(e.request.cache)) {
-    const k = await caches.open(SHELL).then((c) => c.match(key)).catch(() => null);
-    if (k) return k;
-  }
-  return fresh(e, key);
-}
-// (the updater's, before it loads a new Today: every file fetched again past the browser's copy, each kept as it comes;
-// one that couldn't be had let go, so it comes from the network next time rather than an old one beside the new)
-async function renew() {
-  const c = await caches.open(SHELL);
-  await Promise.all(FILES.map((f) => fetch(f, { cache: "reload", credentials: "same-origin" })
-    .then((r) => (r.ok && r.type === "basic" ? c.put(f, r) : c.delete(f)), () => c.delete(f)).catch(() => c.delete(f).catch(() => {}))));
-}
-async function fresh(e, key) {
-  const kept = () => caches.open(SHELL).then((c) => c.match(key)).catch(() => null);
-  let res;
-  try {
-    res = await fetch(e.request);
-  } catch (err) {
-    const k = await kept();
-    if (k) return k;
-    throw err;
-  }
-  if (res.ok && res.type === "basic") {
-    const copy = res.clone();
-    const keep = caches.open(SHELL).then((c) => c.put(key, copy)).catch(() => {});
-    // (waited for where the browser lets a fetch's event be, this late; where it won't, it's kept all the same)
-    try {
-      e.waitUntil(keep);
-    } catch {}
-  } else if (res.status >= 500) return (await kept()) || res;
-  return res;
+  return await shellAsset(key) || fetch(e.request);
 }
 
 // ---- the modules (One roof, spec §8.2; s24 §8): each one's page at /<app>/, and its files kept when the page asks ----
 const ROOF_DOCS = MOD_APPS.flatMap((a) => [`/${a}/`, `/${a}/index.html`]);
 async function roofDoc(e) {
-  const kept = () => caches.open(SHELL).then((c) => c.match("/")).catch(() => null);
+  const kept = () => shellAsset("/");
   let res;
   try {
     res = await fetch(e.request);
