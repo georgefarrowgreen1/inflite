@@ -139,13 +139,13 @@ export function openCompose(ctx, init = {}) {
     const chips = new Map();
     box.append(input);
     const draw = () => {
-      input.placeholder = c[key].length ? "" : "Name or email";
+      input.placeholder = c[key].length ? " " : "Name or email";
       for (const [p, node] of chips) if (!c[key].includes(p)) { node.remove(); chips.delete(p); }
       let previous = null;
       for (const p of c[key]) {
         let node = chips.get(p);
         if (!node) {
-          node = el("button", { type: "button", class: `mc-chip${EMAIL_RE.test(p.email) ? "" : " bad"}`, "aria-label": `Remove ${p.name || p.email}`, title: p.email, text: p.name || p.email });
+          node = el("button", { type: "button", class: `mc-chip${EMAIL_RE.test(p.email) ? "" : " bad"}`, "aria-label": `Remove ${p.name || p.email}`, title: p.email }, el("span", {text: p.name || p.email}));
           node.addEventListener("click", (e) => { e.preventDefault(); const i = c[key].indexOf(p); if (i < 0) return; c[key].splice(i, 1); draw(); changed(); input.focus({ preventScroll: true }); });
           chips.set(p, node);
           if (previous) previous.after(node); else box.prepend(node);
@@ -292,10 +292,18 @@ export function openCompose(ctx, init = {}) {
     a?.setAttribute("target", "_blank");
     a?.setAttribute("rel", "noopener");
   };
-  const more = el("div", { class: "mc-more" });
+  const more = el("div", { class: "mc-more", role: "group", "aria-label": "Message options" });
   more.hidden = true;
   const due = el("input", { type:"datetime-local", "aria-label":"Follow up in People if unanswered" });
-  const follow = el("label", {class:"mc-follow"}, el("span", {text:"Follow up in People if unanswered"}), due);
+  const dueLabel = el("small");
+  const clearDue = ui.btn("Clear", { small: true, label: "Clear follow-up time", run: () => {
+    c.followUpAt = null;
+    drawDue();
+    changed();
+    followSummary.focus();
+  } });
+  const followSummary = el("summary", {}, ctx.icon("later"), el("span", {text:"Follow up if unanswered"}), dueLabel);
+  const follow = el("details", {class:"mc-follow"}, followSummary, el("div", {class:"mc-time"}, due, clearDue));
   const weekdays = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   let suggestedAt = null;
   const followHint = ui.btn("", {small:true, run:() => {
@@ -305,6 +313,7 @@ export function openCompose(ctx, init = {}) {
     changed();
     more.hidden = false;
     moreBtn.setAttribute("aria-expanded","true");
+    follow.open = true;
     due.focus();
   }});
   followHint.hidden = true;
@@ -324,16 +333,20 @@ export function openCompose(ctx, init = {}) {
   }
   const drawDue = () => {
     const d = new Date(c.followUpAt);
+    dueLabel.textContent = c.followUpAt ? d.toLocaleDateString(undefined, {day:"numeric", month:"short"}) : "Set time";
+    clearDue.hidden = !c.followUpAt;
     due.value = c.followUpAt ? new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16) : "";
   };
   drawDue();
   due.addEventListener("change",()=>{
     const at = new Date(due.value).getTime();
     if (due.value && (!(at > Date.now()) || at > Date.now()+366*86400000)) { drawDue(); fw.toast("Choose a future time within a year"); return; }
-    c.followUpAt = due.value ? at : null; changed();
+    c.followUpAt = due.value ? at : null; drawDue(); changed();
   });
   more.append(follow);
-  more.append(ui.btn("Delete Draft", { destructive: true, small: true, act: "delete-draft", run: () => end("delete") }));
+  const removeDraft = ui.btn("Delete draft", { destructive: true, small: true, act: "delete-draft", run: () => end("delete") });
+  removeDraft.prepend(ctx.icon("trash"));
+  more.append(removeDraft);
   const moreBtn = ui.iconBtn("more", { label: "More", act: "more", run: () => {
     formatting.hidden = true;
     formatButton.setAttribute("aria-expanded", "false");
@@ -372,7 +385,8 @@ export function openCompose(ctx, init = {}) {
   const attach = ui.iconBtn("attachment", { label: "Add Files", act: "files", run: () => pick.click() });
   attach.replaceChildren(ctx.icon("attachment"));
   const status = el("small", { class: "mc-status", role: "status" });
-  if (fw.workspace?.files?.open) more.prepend(ui.btn("Attach from Drive", { small: true, label: "Attach from InFlite Files", act: "drive-files", run: async () => {
+  if (fw.workspace?.files?.open) {
+    const drive = ui.btn("Attach from Drive", { small: true, label: "Attach from InFlite Files", act: "drive-files", run: async () => {
       const current = () => !ended && !sending && !h?.closed && !fw.signal.aborted && fw.session.user.id === owner && store.get().access === "ok";
       if (!current() || h.el.getAttribute("aria-busy") === "true") return;
       more.hidden = true;
@@ -389,7 +403,10 @@ export function openCompose(ctx, init = {}) {
         }
         drawFiles(); changed();
       } catch (error) { if (current() && error?.name !== "AbortError") fw.toast(error?.message || "Those files couldn’t attach."); }
-    } }));
+    } });
+    drive.prepend(ctx.icon("folder"));
+    more.prepend(drive);
+  }
   const tools = el("div", { class: "mc-tools" }, el("div", { class: "mc-toolgroup" }, attach, formatButton), status, moreBtn);
   moreBtn.replaceChildren(ctx.icon("more"));
   const prog = el("p", { class: "mc-prog", "aria-live": "polite" });

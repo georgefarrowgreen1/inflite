@@ -8,7 +8,7 @@
 // toast(text, { action: { label, run }, app }) → { close() } (close: let it go now, s24 §4)
 import { el } from "./ui.js";
 let cur = null;
-export function toast(text, { action = null, app = null } = {}) {
+export function toast(text, { action = null, app = null, onClose = null } = {}) {
   const d = document;
   cur?.gone();
   for (const t of d.querySelectorAll(".ifl-toast")) t.remove();
@@ -27,7 +27,9 @@ export function toast(text, { action = null, app = null } = {}) {
   t.addEventListener("focusin", hold); t.addEventListener("focusout", free);
   function gone() {
     clearTimeout(timer);
-    if (cur?.t === t) cur = null;
+    if (cur?.t !== t) return;
+    cur = null;
+    onClose?.();
     t.classList.remove("on");
     if (say.textContent === b.textContent) say.textContent = "";
     setTimeout(() => t.remove(), 400);

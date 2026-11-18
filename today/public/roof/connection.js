@@ -12,7 +12,12 @@ export function createConnectionView(F, { root, recovery, open } = {}) {
     let text = "";
     if (route?.tool === "files" && !snapshot.online) text = "You’re offline. Folder names stay visible; cloud files and uploads need a connection.";
     else if (!snapshot.online) text = current ? "You’re offline · " + recoveryDetail(current, false) : "You’re offline. Some views need a connection.";
-    else if (current?.unsynced || current?.syncError || current?.phase === "offline") text = recoveryDetail(current, true);
+    else if (current?.unsynced || current?.syncError || current?.phase === "offline") {
+      // Mail presents send progress and Undo in its own outbox.
+      const mailSending = current.app === "mail" && current.phase === "ready" && current.saving;
+      if (mailSending && current.syncError) text = "Some messages couldn’t send. Open Mail to review.";
+      else if (!mailSending) text = recoveryDetail(current, true);
+    }
     if (text !== last) { words.textContent = last = text; el.hidden = !text; }
   }
   const off = recovery.subscribe(update), routeOff = F.on("route", update);

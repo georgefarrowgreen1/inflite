@@ -200,9 +200,46 @@ test('Mail opens a native time review, accepts an explicit change, and offers an
     await follow.click();
     const due = t.page.getByLabel('Follow up in People if unanswered');
     assert.ok(Date.parse(await due.inputValue()) > Date.now());
+    const followRow = t.page.locator('.mc-follow');
+    assert.equal(await followRow.evaluate(row => row.open), true);
+    await t.page.getByRole('button', { name: 'Clear follow-up time' }).click();
+    assert.equal(await due.inputValue(), '');
+    assert.equal(await followRow.locator('summary small').textContent(), 'Set time');
     assert.equal(await editor.inputValue(),'Let me know by Friday.');
     assert.equal(writes.length,1);
     assert.deepEqual(writes[0].value,{title:record.title,description:record.description,links:[],timezone:'UTC',allDay:false,start:start+5400000,end:start+9000000});
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});
+
+test('A pending message has one visible Undo, including after another notification replaces it', async () => {
+  const t = await open({ width: 390, paneWidth: 390 });
+  try {
+    await t.page.evaluate(async () => {
+      const { toast } = await import('/roof/toast.js');
+      T.fw.toast = (message, options) => toast(message, { ...options, app: 'mail' });
+      T.headers.at(-1).acts.find(action => action.icon === 'compose').run();
+    });
+    const dialog = t.page.getByRole('dialog', { name: 'New message' });
+    const to = dialog.getByRole('textbox', { name: 'To', exact: true });
+    await to.fill('alongrecipientaddress@example.com');
+    await to.press('Enter');
+    await dialog.getByRole('textbox', { name: 'Subject' }).fill('Lunch on Thursday');
+    await dialog.getByRole('textbox', { name: 'Message' }).fill('Does noon work?');
+    await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+    const undo = t.page.getByRole('button', { name: 'Undo', exact: true });
+    await t.page.locator('.ifl-toast.on').getByRole('button', { name: 'Undo' }).waitFor();
+    assert.equal(await undo.count(), 1);
+    const text = await t.page.locator('.ifl-toast.on .ifm-note-tx').boundingBox();
+    const action = await undo.boundingBox();
+    assert.ok(text.y >= action.y && text.y + text.height <= action.y + action.height, 'Undo shares a line with the status');
+    assert.equal(await t.page.locator('.ml-out').isVisible(), false);
+    await t.page.evaluate(() => T.fw.toast('Copied'));
+    await t.page.locator('.ml-out').getByRole('button', { name: 'Undo' }).waitFor();
+    assert.equal(await undo.count(), 1);
+    await undo.click();
+    await dialog.waitFor();
+    assert.equal(await dialog.getByRole('textbox', { name: 'Subject' }).inputValue(), 'Lunch on Thursday');
     await t.clean();
   } finally { await t.ctx.close(); }
 });

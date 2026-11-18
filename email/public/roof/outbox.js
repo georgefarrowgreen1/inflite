@@ -55,7 +55,7 @@ export function createOutbox(ctx) {
   let dead = false;
   const toast = (text, o) => { try { return fw.toast(text, o) || null; } catch { return null; } };
   const mirror = () => {
-    const list = [...items.values()].map(({ key, at, draft, state }) => ({ key, at, draft, state }));
+    const list = [...items.values()].map(({ key, at, draft, state, handle }) => ({ key, at, draft, state, undoInToast: state === "waiting" && !!handle?.close }));
     store.set({ outbox: list, sending: list.filter((x) => x.state === "waiting" || x.state === "sending").length });
   };
   const keepQueue = () => {
@@ -117,8 +117,14 @@ export function createOutbox(ctx) {
     }
     const it = { key: keyOf(), at: Date.now(), draft: { ...d, draftId: saved?.id || d.draftId }, files: (files || []).length, state: "waiting", timer: 0, handle: null };
     items.set(it.key, it);
+    it.handle = toast("Sending…", {
+      action: { label: "Undo", run: () => undo(it.key) },
+      onClose: () => {
+        it.handle = null;
+        if (!dead && it.state === "waiting" && items.has(it.key)) mirror();
+      },
+    });
     mirror();
-    it.handle = toast("Sending…", { action: { label: "Undo", run: () => undo(it.key) } });
     it.timer = setTimeout(() => go(it), UNDO_MS);
     return { ok: true, key: it.key, draftId: it.draft.draftId };
   }
@@ -234,7 +240,7 @@ export function createOutbox(ctx) {
     pending: () => [...items.values()].map(({ key, at, draft, state }) => ({ key, at, draft, state })),
     destroy() {
       dead = true;clearInterval(draftTimer);
-      for (const it of items.values()) clearTimeout(it.timer);
+      for (const it of items.values()) { clearTimeout(it.timer); it.handle?.close?.(); }
       for (const f of offs.splice(0)) try { f(); } catch {}
     },
   };

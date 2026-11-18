@@ -120,14 +120,15 @@ export function view(el, ctx) {
     chips.hidden = !c.length;
   }
   function drawOutbox(s) {
-    box.replaceChildren(...s.outbox.map((it) => {
+    const inline = s.outbox.filter(it => !it.undoInToast);
+    box.replaceChildren(...inline.map((it) => {
       const subj = it.draft?.subject || "(No Subject)";
       const act = it.state === "waiting" ? ui.btn("Undo", { small: true, act: "undo", run: () => ctx.outbox.undo(it.key) })
         : it.state === "failed" || it.state === "queued" ? ui.btn("Try Again", { small: true, act: "retry", run: () => ctx.outbox.retry(it.key) }) : null;
       const say = { waiting: "Sending…", sending: "Sending…", queued: "Waiting for a connection", failed: "Didn’t send" }[it.state] || "";
       return ui.el("div", { class: "ifl-row ml-sending", data: { key: it.key, state: it.state } }, ui.el("span", { class: "ifl-tx" }, ui.el("b", { text: subj }), ui.el("small", { text: say })), act ? ui.el("span", { class: "ifl-trail" }, act) : null);
     }));
-    box.hidden = !s.outbox.length;
+    box.hidden = !inline.length;
   }
 
   // (Mail unreachable, or its switch off: Try Again, or Mail at its own address, in a new tab, spec §8)

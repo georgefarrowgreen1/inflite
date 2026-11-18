@@ -146,6 +146,7 @@ export default (M) => {
       const chips = new Map();
       tokens.append(input);
       const draw = () => {
+        input.placeholder = c[key].length ? " " : "Name or email";
         for (const [p, node] of chips) if (!c[key].includes(p)) { node.remove(); chips.delete(p); }
         let previous = null;
         for (const p of c[key]) {

@@ -7,6 +7,7 @@
 .m-mail .ml-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 var(--ml-gap); }
 .m-mail .ml-chips .ifl-chip::after { content: "✕"; margin-left: 6px; opacity: .7; }
 .m-mail .ml-out { display: grid; gap: 6px; margin: 0 0 var(--ml-gap); }
+.m-mail .ml-out[hidden] { display: none; }
 .m-mail .ml-sending { border-radius: var(--ifl-radius-row, 16px); background: var(--ifl-surface-2, var(--glass-ctl)); }
 .m-mail .ml-sending[data-state="failed"] { background: color-mix(in srgb, var(--danger) 14%, transparent); }
 .m-mail .ml-day { margin: 18px 4px 6px; font-size: 13px; font-weight: 600; color: var(--text-3); text-transform: none; }

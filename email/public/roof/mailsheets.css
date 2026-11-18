@@ -168,7 +168,7 @@
 .ifl-sheet[data-app=mail] .mc-tools :is(.ifl-btn,.ifl-icon-btn) { display: grid; place-items: center; background: transparent; border: 0; box-shadow: none; color: var(--mc-ink); min-width: 44px; min-height: 44px; padding: 0; }
 .ifl-sheet[data-app=mail] .mc-tools [aria-expanded=true] { background: var(--press); }
 .ifl-sheet[data-app=mail] .mc-status { margin-inline-start: auto; color: var(--mc-muted); font-size: 12px; text-align: end; }
-.ifl-sheet[data-app=mail] :is(.mc-format,.mc-more):not([hidden]) { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
+.ifl-sheet[data-app=mail] .mc-format:not([hidden]) { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
 .ifl-sheet[data-app=mail] .mc-format .ifl-btn { min-height: 44px; }
 .ifl-sheet[data-app=mail] .mc-quote { margin: 8px 0; border: 0; border-radius: 16px; }
 .ifl-sheet[data-app=mail] .mc-quote summary { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
@@ -185,5 +185,40 @@
   .ifl-sheet[data-app=mail] .mc-letter .mc-row:focus-within { box-shadow: none; }
   .ifl-sheet[data-app=mail][data-sheet=mail-compose] .ifs-head [data-act=send] { background: ButtonFace; color: ButtonText; border: 1px solid ButtonText; }
 }
-.ifl-sheet[data-app=mail] .mc-follow { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; width:100%; font-size:.9rem; }
-.ifl-sheet[data-app=mail] .mc-follow input { min-height:44px; max-width:100%; font:inherit; color:inherit; background:var(--glass-ctl); border:0; border-radius:12px; padding-inline:10px; }
+/* A committed address leaves just a caret until the next recipient is typed. */
+.ifl-sheet[data-app=mail] .mc-chip ~ input:placeholder-shown {
+  flex: 1 1 12px; width: 12px; min-width: 12px;
+}
+.ifl-sheet[data-app=mail] .mc-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: calc(100% - 16px); padding-inline: 10px;
+}
+.ifl-sheet[data-app=mail] .mc-chip span { overflow: hidden; text-overflow: ellipsis; }
+.ifl-sheet[data-app=mail] .mc-chip::after { content: "×"; flex: none; font-size: 14px; color: var(--mc-muted); }
+.ifl-sheet[data-app=mail] .mc-chips input:-webkit-autofill {
+  -webkit-background-clip: text; -webkit-text-fill-color: var(--mc-ink); caret-color: var(--mc-ink);
+}
+.ifl-sheet[data-app=mail] .mc-more:not([hidden]) {
+  display: grid; gap: 0; margin-bottom: 8px; padding: 0 12px;
+  max-height: min(240px, 36dvh, calc(var(--vvh, 100dvh) * .36));
+  overflow: auto; overscroll-behavior: contain;
+  background: var(--glass-ctl); border-radius: 16px;
+}
+.ifl-sheet[data-app=mail] .mc-more > .ifl-btn,
+.ifl-sheet[data-app=mail] .mc-follow summary {
+  display: flex; align-items: center; justify-content: flex-start; gap: 10px;
+  min-height: 46px; width: 100%; padding: 4px 2px; border: 0; border-radius: 0;
+  background: transparent; box-shadow: none; color: var(--mc-ink);
+  font: inherit; font-size: 15px; font-weight: 550; text-align: start; cursor: pointer;
+}
+.ifl-sheet[data-app=mail] .mc-follow summary::-webkit-details-marker { display: none; }
+.ifl-sheet[data-app=mail] .mc-more > * + * { border-top: 1px solid var(--mc-line); }
+.ifl-sheet[data-app=mail] .mc-more > button.destructive { color: var(--danger); }
+.ifl-sheet[data-app=mail] .mc-more :is(svg,.ifl-glyph) { width: 18px; height: 18px; flex: none; }
+.ifl-sheet[data-app=mail] .mc-follow summary small { margin-inline-start: auto; color: var(--mc-muted); font-size: 13px; white-space: nowrap; }
+.ifl-sheet[data-app=mail] .mc-time { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; }
+.ifl-sheet[data-app=mail] .mc-time input {
+  flex: 1; min-width: 0; min-height: 44px; padding-inline: 8px; font: inherit;
+  color: var(--mc-ink); background: var(--glass-ctl); border: 0; border-radius: 10px;
+}
+.ifl-sheet[data-app=mail] .mc-time button { min-height: 44px; }
