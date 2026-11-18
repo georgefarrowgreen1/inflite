@@ -49,10 +49,11 @@
   <link rel="modulepreload" href="/roof/ui.js">
   <link rel="modulepreload" href="/roof/search.js">
   <link rel="modulepreload" href="/roof/send.js">
+  <script type="module" src="/roof/wallpaper.js"></script>
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-<div class="sky" aria-hidden="true"><div class="aura a1"></div><div class="aura a2"></div><div class="aura a3"></div></div>
+<div class="sky" aria-hidden="true"><canvas></canvas></div>
 
 <!-- The session is unknown until the account answers. Slow startup never means signed out. -->
 <main class="today-start" id="sessionState" aria-label="Opening InFlite" aria-busy="true">

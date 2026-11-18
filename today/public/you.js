@@ -24,6 +24,7 @@
 //   goTo(root, ctx, id, drawn) → /#you=<id>: its section scrolled to (notify, apps, quiet, rules, phone, account,
 //   signout), or its sheet (notify-weather, notify-mail), once drawn (drawYou's promise)
 //   openWxNotify(root, ctx) → the Weather Notifications sheet
+import { wallpaperPreference, setWallpaper } from "/roof/wallpaper.js";
 import { esc, G } from "/cards.js";
 
 const LEVELS = [["do", "Do"], ["suggest", "Suggest"], ["quiet", "Quiet"]];
@@ -261,7 +262,7 @@ function paint(root, ctx) {
       go('id="youOut"', "Sign out", "On this device")
     ].join(""))],
     ["personalise", "Appearance & Today", "Colours, Liquid Glass and your daily view", "sun",
-      sec("youPersonal", "", [link("appearance","Appearance","Theme, palette and Liquid Glass intensity"),
+      sec("youPersonal", "", [link("appearance","Appearance","Theme, palette, wallpaper and Liquid Glass"),
         link("units","Weather units","Temperature, wind, rain, pressure and clock"),
         ctx.life ? link("customise","Customise Today","Sections and card order") : ""].join("")) + FOLDERS.rules],
     ["notifications", "Notifications", "Quiet hours, morning briefing and alerts", "bell",
@@ -502,12 +503,17 @@ function appearance(ctx) {
       input.onchange = () => save(key,input.value);
       return ui.row({title:label,trail:input});
     };
+    const wallpaper = el("select", {"aria-label":"Dark wallpaper on this device"},
+      [["lava","Midnight Lava"],["still","Midnight Lava · still"],["plain","Plain"]].map(([value,text]) => el("option",{value,text})));
+    wallpaper.value = wallpaperPreference();
+    wallpaper.onchange = () => setWallpaper(wallpaper.value);
     const strength = el("input",{type:"range",min:0,max:100,value:pref.glassStrength,"aria-label":"Glass intensity",disabled:!pref.glass});
     const amount = el("output",{text:pref.glassStrength+"%"});
     strength.oninput = () => {amount.textContent = strength.value+"%";};
     strength.onchange = () => save("glassStrength",Number(strength.value));
     form.append(ui.list([
       select("Mode","appearance",[["auto","System"],["light","Light"],["dark","Dark"]]),
+      ui.row({title:"Dark wallpaper",sub:"On this device",trail:wallpaper}),
       select("Colour palette","palette",Object.entries(theme.palettes).map(([id,p])=>[id,p.name])),
       ui.row({title:"Liquid Glass",trail:ui.sw(pref.glass,on=>save("glass",on),{label:"Liquid Glass"})}),
       ui.row({title:"Glass intensity",trail:el("span",{class:"settings-range"},strength,amount)})

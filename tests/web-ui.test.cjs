@@ -1809,6 +1809,11 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
     await page.waitForFunction(() => !document.querySelector('.settings-appearance fieldset')?.disabled &&
       document.querySelector('.settings-appearance select')?.value === 'dark');
     assert.equal(pref.appearance,'dark');
+    const wallpaper = page.getByRole('combobox', {name:'Dark wallpaper on this device'});
+    await wallpaper.selectOption('plain');
+    assert.equal(await page.locator('html[data-midnight-lava]').count(), 0);
+    await wallpaper.selectOption('still');
+    await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
     await page.keyboard.press('Escape');
     let email = {emailOk:true,chat:{emails:{},pigeons:true},weather:{email:{}},account:{fixed:true}};
     await page.route('**/account/api/account/notify', async route => {
@@ -1832,5 +1837,54 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
     await page.goBack();
     await page.locator('[data-category=notifications]').waitFor();
     assert.deepEqual(errors,[]);
+  } finally { await ctx.close(); }
+});
+
+test('Midnight Lava carries the same visible scene through the app drawer, Calendar and a reload', async () => {
+  const {ctx, page, errors} = await open({initialPath:'/?os=1', scheme:'dark', hubApps:{calendar:true}, viewApps:{calendar:true}});
+  try {
+    await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
+    const image = () => page.locator('.sky canvas').evaluate(c => c.toDataURL());
+    const first = await image();
+    await page.evaluate(() => { window.wallpaperNode = document.querySelector('.sky canvas'); });
+    async function checkVisibleScene() {
+      const sky = page.locator('.sky canvas');
+      // Capture the viewport before sampling it. A clipped WebKit screenshot
+      // can omit composited fixed layers.
+      async function gutter() {
+        await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+        const {PNG} = require('playwright-core/lib/utilsBundle');
+        const shot = PNG.sync.read(await page.screenshot());
+        const x = 4;
+        return Array.from({length:180}, (_, y) => shot.data.readUInt32BE(((240 + y) * shot.width + x) * 4));
+      }
+      const visible = await gutter();
+      await sky.evaluate(c => { c.style.visibility = 'hidden'; });
+      const hidden = await gutter();
+      await sky.evaluate(c => { c.style.visibility = ''; });
+      assert.notDeepEqual(visible, hidden, 'the wallpaper paints through the app gutter');
+      assert.ok(await sky.evaluate(c => c === window.wallpaperNode));
+      assert.equal(await image(), first);
+    }
+    await checkVisibleScene();
+    await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('still'));
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await page.locator('.ws-dock-launcher').click();
+    await page.getByRole('dialog', {name:'Your apps'}).getByRole('button', {name:'Calendar', exact:true}).click();
+    await page.locator('.m-calendar:visible').waitFor();
+    await page.waitForFunction(() => !document.documentElement.dataset.vt);
+    await checkVisibleScene();
+    await page.goBack();
+    await page.locator('#workspace[data-mode=today]').waitFor();
+    await page.waitForFunction(() => !document.documentElement.dataset.vt);
+    await checkVisibleScene();
+    await page.goto(origin + '/?os=1');
+    await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
+    assert.equal(await image(), first, 'same-tab navigation restores the exact still frame');
+    await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('lava'));
+    await page.waitForFunction(before => document.querySelector('.sky canvas').toDataURL() !== before, first);
+    await page.emulateMedia({colorScheme:'light'});
+    await page.waitForFunction(() => !document.documentElement.hasAttribute('data-midnight-lava'));
+    assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
