@@ -7,6 +7,7 @@ const {readFileSync,existsSync}=require('node:fs');
 const {resolve,extname}=require('node:path');
 const {chromium,webkit}=require('playwright');
 let devices=new Map();
+const checkpointFixtures = new Map();
 let browser,server,origin,requests=[],objects=new Map(),operations=new Map(),prefs={order:['weather','fitness','markets','chat'],hidden:[]};
 const html='<!doctype html><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/roof/roof.css"><link rel="stylesheet" href="/roof/controls.css"><main id="today"></main>';
 before(async()=>{
@@ -26,6 +27,20 @@ before(async()=>{
     const prior=owned.find(t=>t.tab===data.tab);
     if(!prior||prior.seq<data.seq)devices.set(owner,[...owned.filter(t=>t.tab!==data.tab),{...data,updatedAt:Date.now()}]);
     return answer({ok:true});
+   }
+   if(action==='upload-parts') {
+     const fixture = checkpointFixtures.get(owner);
+     if(!fixture) return answer({error:'Unknown owner'},404);
+     const {received,sent}=fixture;
+     if(req.method==='GET') return answer({partSize:1024*1024,parts:Object.fromEntries([...received].map(([i,chunk]) =>
+       [i,require('node:crypto').createHash('sha256').update(chunk).digest('hex')]))});
+     if(req.method==='PUT') {
+       const index=Number(u.searchParams.get('part'));
+       if(index===1 && !fixture.allowSecond) return req.socket.destroy();
+       sent.push(index); received.set(index,bytes); return answer({ok:true});
+     }
+     const {item}=objects.get(u.searchParams.get('id')); item.status='ready'; item.version++;
+     return answer({item});
    }
    if(action==='uploads'){const prior=operations.get(owner+data.operationId);if(prior)return answer({item:prior});const id=String(objects.size+1).padStart(32,'0'),item={id,parentId:data.parentId,name:data.name,kind:'file',mime:data.mime,size:data.size,status:'pending',createdAt:Date.now(),modifiedAt:Date.now(),version:1};operations.set(owner+data.operationId,item);objects.set(id,{item,owner});return answer({item})}
    if(action==='content'&&req.method==='PUT'){const record=objects.get(u.searchParams.get('id'));if(!record||record.owner!==owner)return answer({error:'Missing'},404);record.bytes=bytes;Object.assign(record.item,{status:'ready',version:2});return answer({item:record.item})}
@@ -90,4 +105,34 @@ test('closing one tab withdraws just that handoff while Today stays open on anot
   await weather.close();await weatherRow.waitFor({state:'hidden',timeout:20000});assert.ok(await chatRow.isVisible());
   await chat.close();await desktop.locator('.continuation-card').waitFor({state:'hidden',timeout:20000});
  }finally{await first.close();await second.close()}
+});
+
+test('an upload from the Mail Drive picker resumes in Files after a tab restart', async () => {
+  const ctx = await browser.newContext(), owner = 'picker_owner', partSize = 1024 * 1024;
+  const received = new Map(), sent = [];
+  const fixture = {received,sent,allowSecond:false};
+  checkpointFixtures.set(owner, fixture);
+  try {
+    await ctx.route('**/api/files/list*', r => r.fulfill({json:{items:[],folder:null,ancestors:[],cursor:null,revision:1,
+      usage:{used:0,reserved:0,limit:10000000,nodes:0,nodeLimit:5000,fileLimit:26214400}}}));
+    const page = await ctx.newPage(); await boot(page,owner);
+    await page.evaluate(async () => {
+      const {createFilesService}=await import('/roof/files-service.js');
+      const {createFilesDialogs}=await import('/roof/files-dialogs.js');
+      T.service=createFilesService(T.F,{sources:()=>[]}); T.dialogs=createFilesDialogs(T.F,{service:T.service});
+      T.dialogs.forApp('mail').open({title:'Attach from InFlite Files',multiple:true,maxBytes:20*1024*1024});
+    });
+    const dialog = page.getByRole('dialog',{name:'Attach from InFlite Files'});
+    await dialog.getByRole('button',{name:'Upload to Drive'}).waitFor();
+    const content = Buffer.concat([Buffer.alloc(partSize,65),Buffer.from('remaining bytes')]);
+    await dialog.locator('input[type=file]').setInputFiles({name:'coast.txt',mimeType:'text/plain',buffer:content});
+    await page.waitForFunction(() => T.service.transfers()[0]?.status === 'failed');
+    await dialog.getByText('coast.txt',{exact:true}).waitFor();
+    assert.deepEqual(sent,[0]); assert.ok(await page.evaluate(() => T.service.transfers()[0].progress > 0));
+    await page.close(); fixture.allowSecond = true;
+    const reopened=await ctx.newPage(); await boot(reopened,owner);
+    await reopened.evaluate(async()=>{const {createFilesService}=await import('/roof/files-service.js'); T.service=createFilesService(T.F,{sources:()=>[]});});
+    await reopened.waitForFunction(() => T.service.transfers()[0]?.status === 'done');
+    assert.deepEqual(sent,[0,1]); assert.deepEqual(Buffer.concat([...received.values()]),content);
+  } finally { checkpointFixtures.delete(owner); await ctx.close(); }
 });

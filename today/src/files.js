@@ -7,8 +7,8 @@ import { bodyUpTo } from "./body.js";
 import { fetchUpstream } from "./upstream.js";
 
 const MAX_FILE = 25 * 1024 * 1024, MAX_JSON = 4096, MAX_REPLY = 128 * 1024;
-const ROUTES = new Set(["GET list", "GET item", "GET limits", "POST search", "POST folders", "POST uploads", "POST move", "POST trash", "POST restore", "POST copy", "POST favourite", "PATCH item", "DELETE item", "GET content", "PUT content", "GET history", "POST replacements", "DELETE replacements", "PUT replacement-content", "POST restore-version", "GET open-tabs", "PUT open-tabs", "GET continuity", "PUT continuity", "GET preferences", "PUT preferences"]);
-const QUERY = new Set(["id", "parentId", "view", "sort", "kind", "cursor", "version", "download", "versionId", "uploadId"]);
+const ROUTES = new Set(["GET upload-parts", "PUT upload-parts", "POST upload-parts", "GET list", "GET item", "GET limits", "POST search", "POST folders", "POST uploads", "POST move", "POST trash", "POST restore", "POST copy", "POST favourite", "PATCH item", "DELETE item", "GET content", "PUT content", "GET history", "POST replacements", "DELETE replacements", "PUT replacement-content", "POST restore-version", "GET open-tabs", "PUT open-tabs", "GET continuity", "PUT continuity", "GET preferences", "PUT preferences"]);
+const QUERY = new Set(["id", "parentId", "view", "sort", "kind", "cursor", "version", "download", "versionId", "uploadId", "part"]);
 const SAFE = { "Cache-Control": "private, no-store", "Content-Security-Policy": "sandbox; default-src 'none'; frame-ancestors 'none'", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin", "Referrer-Policy": "no-referrer" };
 const json = (status, error) => new Response(JSON.stringify({ error }), { status, headers: { ...SAFE, "Content-Type": "application/json; charset=utf-8" } });
 export const isFilesAPI = pathname => pathname === "/api/files" || pathname.startsWith("/api/files/");
@@ -27,7 +27,7 @@ export async function filesAPI(request, env) {
     if (!QUERY.has(key) || query.has(key) || value.length > 160 || /[\u0000-\u001f\u007f]/.test(value)) return json(400, "That file request is invalid.");
     query.set(key, value);
   }
-  const binary = method === "PUT" && ["content","replacement-content"].includes(action);
+  const binary = method === "PUT" && ["content","replacement-content","upload-parts"].includes(action);
   const headers = forwardHeaders(request, todayOrigin(env, request), { accept: "application/json" });
   if (expectedOwner !== null) headers.set("X-Inflite-Files-Owner", expectedOwner);
   const ip = request.headers.get("CF-Connecting-IP");
@@ -35,15 +35,16 @@ export async function filesAPI(request, env) {
   let body = null, overflow = false;
   if (!read) {
     if (binary) {
+      const limit = action === "upload-parts" ? 1024 * 1024 : MAX_FILE;
       const length = request.headers.get("Content-Length");
-      if (length != null && (!/^\d{1,10}$/.test(length) || Number(length) > MAX_FILE)) return json(413, "Choose a file no larger than 25 MB.");
+      if (length != null && (!/^\d{1,10}$/.test(length) || Number(length) > limit)) return json(413, "Choose a file no larger than 25 MB.");
       headers.set("Content-Type", "application/octet-stream");
       if (length != null) headers.set("Content-Length", length);
       if (request.body) {
         let count = 0;
         body = request.body.pipeThrough(new TransformStream({ transform(chunk, controller) {
           count += chunk.byteLength;
-          if (count > MAX_FILE) { overflow = true; controller.error(new Error("File upload is too large")); return; }
+          if (count > limit) { overflow = true; controller.error(new Error("File upload is too large")); return; }
           controller.enqueue(chunk);
         } }));
       }
@@ -62,7 +63,7 @@ export async function filesAPI(request, env) {
   }
   try {
     const suffix = query.size ? `?${query}` : "";
-    const response = await fetchUpstream((target, init) => appFetch(env, target, init), `${env.ACCOUNT_ORIGIN}/api/account/today/files/${action}${suffix}`, { method, headers, body: body ?? undefined, redirect: "manual", ...(body instanceof ReadableStream ? { duplex: "half" } : {}) }, { signal: request.signal, timeout: binary || action === "copy" ? 120e3 : 20e3 });
+    const response = await fetchUpstream((target, init) => appFetch(env, target, init), `${env.ACCOUNT_ORIGIN}/api/account/today/files/${action}${suffix}`, { method, headers, body: body ?? undefined, redirect: "manual", ...(body instanceof ReadableStream ? { duplex: "half" } : {}) }, { signal: request.signal, timeout: binary || action === "upload-parts" || action === "copy" ? 120e3 : 20e3 });
     if (overflow) { response.body?.cancel().catch(() => {}); return json(413, "Choose a file no larger than 25 MB."); }
     if (response.status >= 300 && response.status < 400) { response.body?.cancel().catch(() => {}); return json(502, "Files couldn’t reach your account. Try again."); }
     const type = response.headers.get("Content-Type")?.split(";")[0].trim();

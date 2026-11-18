@@ -83,13 +83,13 @@ export function createDriveClient(F) {
   }
   const lost = status => { if (status === 401 && live()) Promise.resolve(F.session.lost?.()).catch(() => {}); };
   async function request(action, { method = "GET", query, body, ...lease } = {}) {
-    const task = scope(lease, action === "copy" ? 120000 : 20000);
+    const task = scope(lease, action === "copy" || action === "upload-parts" ? 120000 : 20000);
     try {
       const params = new URLSearchParams();
       for (const [key, value] of Object.entries(query || {})) if (value != null && value !== "") params.set(key, String(value));
       task.check();
       const response = await fetch(`/api/files/${action}${params.size ? "?" + params : ""}`, { method, credentials: "same-origin", mode: "same-origin", cache: "no-store", redirect: "error", signal: task.signal,
-        headers: { "X-Inflite-Files-Owner": owner, Accept: "application/json", ...(method !== "GET" ? { "X-Inflite": "1", "Content-Type": "application/json" } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+        headers: { "X-Inflite-Files-Owner": owner, Accept: "application/json", ...(method !== "GET" ? { "X-Inflite": "1", "Content-Type": body instanceof Blob ? "application/octet-stream" : "application/json" } : {}) }, ...(body === undefined ? {} : { body: body instanceof Blob ? body : JSON.stringify(body) }) });
       task.check();
       const text = await bounded(response, 128 * 1024, task); task.check();
       let value; try { if (text.length > 128 * 1024) throw new Error(); value = JSON.parse(text); } catch (_) { throw failure(null, response.status); }
@@ -119,6 +119,8 @@ export function createDriveClient(F) {
   function uploadContent(id, file, { onProgress = () => {}, replacement=false, ...lease } = {}) {
     checkedId(id);
     if (!(file instanceof Blob) || file.size > MAX) return Promise.reject(new FilesError("Choose a file no larger than 25 MB.", 413));
+    if (file.size > 1024 * 1024) return import('./upload-parts.js').then(({sendParts}) =>
+      sendParts(request, replacement ? {uploadId:id} : {id}, file, onProgress, lease)).then(itemAnswer);
     const task = scope(lease, 120000);
     return new Promise((resolve, reject) => {
       let xhr, finished = false; const stop = () => xhr?.abort();

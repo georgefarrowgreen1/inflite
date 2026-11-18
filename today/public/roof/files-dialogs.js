@@ -42,6 +42,11 @@ export function createFilesDialogs(F, { service } = {}) {
       const newFolder = F.ui.btn("New folder", { small: true, run: createFolder });
       const controls = el("div", { class: "ifd-tools" }, search, newFolder);
       const body = el("div", { class: "ifd" }, path, controls, mode === "save" ? el("label", { class: "ifd-name" }, el("span", { text: "File name" }), name) : null, list, status, pager);
+      if (mode === 'open' && service.upload && service.transfers) {
+        import('./upload-parts.js').then(({addPickerUploads}) => {
+          if (current()) addPickerUploads(F, service, { controls, list, folder:()=>folderId, current, maxBytes, multiple, signal:controller.signal });
+        }).catch(() => {});
+      }
       const job = { cancel: () => finish(null) }; pending = job;
       function finish(value) {
         if (closed) return; closed = true; episode++; listingRead?.abort(); controller.abort(); for (const child of children) child.now(); children.clear();

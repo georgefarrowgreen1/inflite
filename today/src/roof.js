@@ -55,6 +55,7 @@ export async function roofPage(request, env) {
   const h = new Headers(res.headers);
   for (const k of ["ETag", "Last-Modified", "Content-Security-Policy-Report-Only"]) h.delete(k);
   for (const [k, v] of Object.entries(PAGE_HEADERS)) h.set(k, v);
+  h.set("X-InFlite-Shell", "1");
   if (method === "HEAD") { if (res.body) res.body.cancel().catch(() => {}); return new Response(null, { status: res.status, statusText: res.statusText, headers: h }); }
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
 }

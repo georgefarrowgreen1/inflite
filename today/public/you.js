@@ -29,7 +29,8 @@ import { esc, G } from "/cards.js";
 const LEVELS = [["do", "Do"], ["suggest", "Suggest"], ["quiet", "Quiet"]];
 const APPS = [["today", "Today"], ["chat", "Chat"], ["weather", "Weather"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"]];
 // (each app's version as its server says it now: asked as About opens, at most once a minute)
-const LIVE = {}, LIVE_PATH = { chat: "/chats/", weather: "/weather/", fitness: "/fitness/", markets: "/markets/", mail: "/mail/" };
+const NATIVE_VERSIONS = [["calendar","Calendar"],["notes","Notes"],["people","People"]];
+const LIVE = {}, LIVE_PATH = { calendar:"/calendar/", notes:"/notes/", people:"/people/", chat: "/chats/", weather: "/weather/", fitness: "/fitness/", markets: "/markets/", mail: "/mail/" };
 let liveAt = 0;
 function liveVersions(root, ctx) {
   if (Date.now() - liveAt < 60e3) return;
@@ -225,7 +226,7 @@ function paint(root, ctx) {
   const list = Array.isArray(Y.devices?.devices) ? Y.devices.devices : [];
   if (ctx.hub && Y.devices && list.length) sections.youDevices = sec("youDevices", "Other Devices", list.map(deviceRow).join(""));
   // About: each app's version as it is now (asked of each app as About opens), else as it last said it here
-  const ver = APPS.filter(([k]) => k !== "mail" || admin).map(([k, name]) => {
+  const ver = [...APPS, ...NATIVE_VERSIONS].filter(([k]) => k !== "mail" || admin).map(([k, name]) => {
     let b = k === "today" ? ctx.BUILD : LIVE[k] || null;
     try { b ||= localStorage.getItem(`ifl-build:${k}`); } catch {}
     return row(`v-${k}`, name, null, `<span class="val">${b ? `V${esc(b)}` : "—"}</span>`);

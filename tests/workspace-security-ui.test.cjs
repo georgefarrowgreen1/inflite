@@ -235,7 +235,7 @@ test('cold record search opens the exact contact and Back restores the filtered 
       if (q === 'coast') searches.add(kind);
       return r.fulfill({ json: { records: q === 'coast' ? [records[kind]] : [], cursor: null } });
     });
-    await page.route('**/people/version', r => r.fulfill({ json: { build: '4.31' } }));
+    await page.route('**/people/version', r => r.fulfill({ json: { build: '4.31.1' } }));
     await page.route('**/api/organise/record?*', r => {
       assert.equal(new URL(r.request().url()).searchParams.get('id'), records.people.id);
       return r.fulfill({ json: { record: records.people } });
