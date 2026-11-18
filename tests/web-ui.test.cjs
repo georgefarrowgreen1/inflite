@@ -1924,5 +1924,22 @@ test('app launch keeps exposed wallpaper pixels stationary throughout the transi
     }
     await motion.evaluate(animations => animations.forEach(a => a.finish()));
     await page.locator('.m-calendar:visible').waitFor();
+
+    // With live drift enabled, returning home should animate only the feed.
+    const sky = await page.locator('.sky canvas').elementHandle();
+    await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('lava'));
+    await page.locator('.ws-dock [data-ws-action=today]').evaluate(button => button.click());
+    const returning = await page.waitForFunction(() => {
+      const screen = document.querySelector('#workspace');
+      const animation = screen?.querySelector('.ws-canvas')?.getAnimations()[0];
+      if (!animation) return false;
+      animation.pause();
+      return animation;
+    });
+    assert.equal(await page.locator('#workspace').evaluate(n => n.getAnimations().length), 0);
+    assert.equal(await sky.evaluate(c => c === document.querySelector('.sky canvas')), true);
+    await returning.evaluate(a => a.finish());
+    const before = await sky.evaluate(c => c.toDataURL());
+    await page.waitForFunction(pixels => document.querySelector('.sky canvas').toDataURL() !== pixels, before);
   } finally { await ctx.close(); }
 });

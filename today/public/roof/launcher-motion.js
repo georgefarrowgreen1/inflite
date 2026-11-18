@@ -23,11 +23,12 @@ export function launcherTransition({kind,origin,change,target=origin?.target,cur
   const clear=()=>{clearTimeout(timer);if(owners.get(html)!==token)return;owners.delete(html);delete html.dataset.vt;for(const key of ['--ifl-launch-from','--ifl-launch-radius'])html.style.removeProperty(key)};
   const stop=finish=>{if(gone)return;if(finish)apply();gone=true;try{vt?.skipTransition()}catch(_){}for(const a of animations)a.cancel();clear()};
   if(matchMedia('(prefers-reduced-motion: reduce)').matches||doc.hidden){apply();return stop}
-  if(!point()){apply();clear();return stop}
+  const liveWallpaper = 'midnightLava' in html.dataset;
+  if(!liveWallpaper && !point()){apply();clear();return stop}
   owners.set(html,token);html.dataset.vt=kind;
   // A document snapshot briefly replaces the live wallpaper during a launch.
   // With Midnight Lava, animate only the incoming screen over the existing canvas.
-  if(typeof doc.startViewTransition==='function' && !('midnightLava' in html.dataset)){
+  if(typeof doc.startViewTransition==='function' && !liveWallpaper){
     try{vt=doc.startViewTransition(()=>{const result=apply();if(current())point();return result})}catch(_){clear();apply();return stop}
     for(const name of ['ready','updateCallbackDone'])vt[name]?.catch?.(()=>{});
     vt.finished.then(()=>{apply();clear()},()=>{apply();clear()});timer=setTimeout(()=>stop(true),1600);return stop;
@@ -36,8 +37,19 @@ export function launcherTransition({kind,origin,change,target=origin?.target,cur
   // No wrapper, reparenting, bitmap clone, animated blur or page-sized layout writes.
   const node=apply();if(!node?.animate){clear();return stop}
   try{
-    const p=normaliseLauncherOrigin(origin,innerWidth,innerHeight),r=node.getBoundingClientRect(),ox=p.x+p.width/2-r.left,oy=p.y+p.height/2-r.top;
-    animations.push(node.animate([{opacity:.65,transform:'scale(.94)',transformOrigin:`${ox}px ${oy}px`},{opacity:1,transform:'none',transformOrigin:`${ox}px ${oy}px`}],{duration:closing?280:420,easing:'cubic-bezier(.2,.85,.22,1)'}));
+    if (liveWallpaper) {
+      // The Today and Files headers share their route's root. Animate its content
+      // so the header and dock are already settled when the first frame appears.
+      const content = node.id === 'workspace' ? node.querySelector('.ws-canvas') || node : node;
+      const from = closing ? 'translateY(-3px)' : 'translateY(6px)';
+      animations.push(content.animate([
+        {opacity: .95, transform: from},
+        {opacity: 1, transform: 'none'}
+      ], {duration: closing ? 180 : 220, easing: 'cubic-bezier(.2,.8,.2,1)'}));
+    } else {
+      const p=normaliseLauncherOrigin(origin,innerWidth,innerHeight),r=node.getBoundingClientRect(),ox=p.x+p.width/2-r.left,oy=p.y+p.height/2-r.top;
+      animations.push(node.animate([{opacity:.65,transform:'scale(.94)',transformOrigin:`${ox}px ${oy}px`},{opacity:1,transform:'none',transformOrigin:`${ox}px ${oy}px`}],{duration:closing?280:420,easing:'cubic-bezier(.2,.85,.22,1)'}));
+    }
     Promise.allSettled(animations.map(a=>a.finished)).then(clear);timer=setTimeout(clear,700);
   }catch(_){clear()}
   return stop;
