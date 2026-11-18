@@ -24,7 +24,7 @@
 //   goTo(root, ctx, id, drawn) → /#you=<id>: its section scrolled to (notify, apps, quiet, rules, phone, account,
 //   signout), or its sheet (notify-weather, notify-mail), once drawn (drawYou's promise)
 //   openWxNotify(root, ctx) → the Weather Notifications sheet
-import { wallpaperPreference, setWallpaper } from "/roof/wallpaper.js";
+import { wallpaperPreference, setWallpaper, lavaColours, wallpaperColour, setWallpaperColour } from "/roof/wallpaper.js";
 import { esc, G } from "/cards.js";
 
 const LEVELS = [["do", "Do"], ["suggest", "Suggest"], ["quiet", "Quiet"]];
@@ -262,7 +262,7 @@ function paint(root, ctx) {
       go('id="youOut"', "Sign out", "On this device")
     ].join(""))],
     ["personalise", "Appearance & Today", "Colours, Liquid Glass and your daily view", "sun",
-      sec("youPersonal", "", [link("appearance","Appearance","Theme, palette, wallpaper and Liquid Glass"),
+      sec("youPersonal", "", [link("appearance","Appearance","Theme, palette, Lava wallpaper and Liquid Glass"),
         link("units","Weather units","Temperature, wind, rain, pressure and clock"),
         ctx.life ? link("customise","Customise Today","Sections and card order") : ""].join("")) + FOLDERS.rules],
     ["notifications", "Notifications", "Quiet hours, morning briefing and alerts", "bell",
@@ -466,7 +466,10 @@ function appearance(ctx) {
   const theme = globalThis.InFliteAppearance, ui = ctx.frame.ui, el = ui.el;
   if (!theme) return ctx.openAccount("appearance");
   const owner = ctx.view.user.id, body = el("div", {class:"settings-appearance"});
-  const h = ctx.frame.sheet.open({sheet:"settings-appearance",title:"Appearance",body});
+  const listeners = new AbortController();
+  const h = ctx.frame.sheet.open({sheet:"settings-appearance",title:"Appearance",body,onClose:()=>listeners.abort()});
+  let syncWallpaperControls;
+  window.addEventListener("inflite:wallpaper-storage", () => syncWallpaperControls?.(), {signal:listeners.signal});
   const active = () => current(ctx) && !h.closed;
   async function load() {
     body.replaceChildren(ui.skeleton("rows",3));
@@ -504,9 +507,26 @@ function appearance(ctx) {
       return ui.row({title:label,trail:input});
     };
     const wallpaper = el("select", {"aria-label":"Dark wallpaper on this device"},
-      [["lava","Midnight Lava"],["still","Midnight Lava · still"],["plain","Plain"]].map(([value,text]) => el("option",{value,text})));
-    wallpaper.value = wallpaperPreference();
-    wallpaper.onchange = () => setWallpaper(wallpaper.value);
+      [["lava","Lava · drifting"],["still","Lava · still"],["plain","Plain"]].map(([value,text]) => el("option",{value,text})));
+    const colours = el("fieldset", {class:"lava-colours"}, el("legend",{text:"Lava colour"}));
+    const swatches = el("div", {class:"lava-swatches"});
+    for (const {value, name} of lavaColours) {
+      const radio = el("input", {type:"radio", name:"lava-colour", value});
+      radio.onchange = () => { if (radio.checked) setWallpaperColour(value); };
+      swatches.append(el("label", {data:{lava:value}}, radio,
+        el("span",{class:"lava-swatch", "aria-hidden":"true"}), el("span",{text:name})));
+    }
+    colours.append(swatches);
+    syncWallpaperControls = () => {
+      wallpaper.value = wallpaperPreference();
+      colours.hidden = wallpaper.value === "plain";
+      for (const radio of swatches.querySelectorAll("input")) radio.checked = radio.value === wallpaperColour();
+    };
+    syncWallpaperControls();
+    wallpaper.onchange = () => {
+      setWallpaper(wallpaper.value);
+      colours.hidden = wallpaper.value === "plain";
+    };
     const strength = el("input",{type:"range",min:0,max:100,value:pref.glassStrength,"aria-label":"Glass intensity",disabled:!pref.glass});
     const amount = el("output",{text:pref.glassStrength+"%"});
     strength.oninput = () => {amount.textContent = strength.value+"%";};
@@ -514,6 +534,7 @@ function appearance(ctx) {
     form.append(ui.list([
       select("Mode","appearance",[["auto","System"],["light","Light"],["dark","Dark"]]),
       ui.row({title:"Dark wallpaper",sub:"On this device",trail:wallpaper}),
+      colours,
       select("Colour palette","palette",Object.entries(theme.palettes).map(([id,p])=>[id,p.name])),
       ui.row({title:"Liquid Glass",trail:ui.sw(pref.glass,on=>save("glass",on),{label:"Liquid Glass"})}),
       ui.row({title:"Glass intensity",trail:el("span",{class:"settings-range"},strength,amount)})

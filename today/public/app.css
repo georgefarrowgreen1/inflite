@@ -1519,12 +1519,12 @@ inflite-settings-account[hidden] { display: none; }
 .sky > canvas { display: none; }
 html[data-midnight-lava] body { background: transparent; }
 html[data-midnight-lava] .sky {
-  inset: 0; height: 100lvh; pointer-events: none; background: #100d16;
+  inset: 0; height: 100lvh; pointer-events: none; background: rgb(var(--lava-base));
   view-transition-name: inflite-wallpaper;
 }
 html[data-midnight-lava] .sky > canvas { display: block; width: 100%; height: 100%; }
 html[data-midnight-lava] :is(#workspace.ifl-workspace, .ifl-workspace .ws-shell, .ifl-workspace .ws-canvas) { background: transparent; }
-html[data-midnight-lava] { --midnight-header-shade: linear-gradient(to bottom, #100d1699, #100d1640 60%, transparent); }
+html[data-midnight-lava] { --midnight-header-shade: linear-gradient(to bottom, rgb(var(--lava-base) / .6), rgb(var(--lava-base) / .25) 60%, transparent); }
 html[data-midnight-lava] .ifl-workspace .ws-toolbar { background: var(--midnight-header-shade); }
 html[data-midnight-lava]::view-transition-group(inflite-wallpaper) { z-index: -1; animation: none; }
 html[data-midnight-lava]::view-transition-old(inflite-wallpaper) { display: none; }
@@ -1535,4 +1535,24 @@ html[data-midnight-lava]::view-transition-new(inflite-wallpaper) { animation: no
     --ifl-glass-blur: blur(var(--ifl-glass-radius)) saturate(105%);
     background-color: color-mix(in srgb, var(--ifl-surface) calc(100% - 55% * var(--ifl-glass-strength)), transparent);
   }
+}
+
+/* The same hues carry from the preview swatches into the shell's header shade. */
+html[data-midnight-lava], .lava-swatches [data-lava=midnight] { --lava-base: 16 13 22; --lava-cool: #4c2358; --lava-warm: #ad584a; }
+html[data-midnight-lava=jade], .lava-swatches [data-lava=jade] { --lava-base: 5 13 12; --lava-cool: #12534a; --lava-warm: #52a16a; }
+html[data-midnight-lava=cobalt], .lava-swatches [data-lava=cobalt] { --lava-base: 6 10 21; --lava-cool: #233d80; --lava-warm: #3383ba; }
+html[data-midnight-lava=lagoon], .lava-swatches [data-lava=lagoon] { --lava-base: 4 12 19; --lava-cool: #223e83; --lava-warm: #2c9e76; }
+.settings-appearance .lava-colours { padding: 0 16px 12px; }
+.lava-colours legend { padding: 0; font-size: .875rem; font-weight: 600; color: var(--ifl-muted); }
+.lava-swatches { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 5px; margin-top: 6px; }
+.lava-swatches label { position: relative; display: grid; gap: 4px; min-height: 44px; text-align: center; cursor: pointer; font-size: .8rem; }
+.lava-swatches input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; margin: 0; cursor: pointer; }
+.lava-swatch { display: block; height: 33px; border-radius: 10px; background:
+  radial-gradient(ellipse at 16% 115%, var(--lava-warm) 4%, transparent 57%),
+  radial-gradient(ellipse at 84% -25%, var(--lava-cool) 20%, transparent 65%), rgb(var(--lava-base)); }
+.lava-swatches input:checked + .lava-swatch::after { content: "✓"; display: grid; place-content: center; height: 100%; color: white; font-size: 1rem; font-weight: 700; }
+.lava-swatches input:focus-visible + .lava-swatch { outline: 2px solid var(--ifl-accent-ink); outline-offset: 2px; }
+@media (forced-colors: active) {
+  .lava-swatch { border: 1px solid ButtonText; }
+  .lava-swatches input:checked + .lava-swatch::after { color: Highlight; }
 }

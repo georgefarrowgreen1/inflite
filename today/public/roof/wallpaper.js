@@ -1,14 +1,33 @@
 // The wallpaper belongs to the document. App routes only replace content above it.
 const preferenceKey = "inflite:dark-wallpaper";
+const colourKey = "inflite:lava-colour";
 const sceneKey = "inflite:midnight-lava:v1";
 const choices = ["lava", "still", "plain"];
 const radii = [.28, .11, .23, .14, .27, .064];
 const range = (low, high) => low + Math.random() * (high - low);
 
-function readPreference() {
-  try { return localStorage.getItem(preferenceKey); } catch { return null; }
+// All colourways use the same field and lighting. Warmth shifts across a pool
+// and the rim catches more light on its upper edge.
+const pigments = {
+  midnight: {name:"Midnight", base:[11,9,17], haze:[12,6,19], pool:[47,16,56], warmth:[61,10,-27], depth:[22,0,14], rim:[66,27,58], glint:[72,43,-33]},
+  jade: {name:"Jade", base:[5,13,12], haze:[5,16,13], pool:[7,48,38], warmth:[22,20,-17], depth:[7,17,9], rim:[30,74,58], glint:[37,32,6]},
+  cobalt: {name:"Cobalt", base:[6,10,21], haze:[7,12,22], pool:[20,29,77], warmth:[-11,33,8], depth:[9,12,18], rim:[45,63,97], glint:[-9,38,29]},
+  lagoon: {name:"Lagoon", base:[4,12,19], haze:[5,13,19], pool:[19,31,78], warmth:[-12,57,-49], depth:[8,14,14], rim:[44,71,97], glint:[-12,36,-37]}
+};
+export const lavaColours = Object.entries(pigments).map(([value, p]) => ({value, name:p.name}));
+
+function readPreference(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
 }
-let preference = readPreference();
+let preference = readPreference(preferenceKey);
+let colour = readPreference(colourKey);
+export const wallpaperColour = () => Object.hasOwn(pigments, colour) ? colour : "midnight";
+export function setWallpaperColour(value) {
+  if (!Object.hasOwn(pigments, value)) return;
+  colour = value;
+  try { localStorage.setItem(colourKey, value); } catch {}
+  sync();
+}
 export const wallpaperPreference = () => choices.includes(preference) ? preference : "lava";
 export function setWallpaper(value) {
   if (!choices.includes(value)) return;
@@ -81,6 +100,7 @@ function paint() {
   if (previous && !still.matches && wallpaperPreference() === "lava") drift(Math.min(.5, (now - previous) / 1000), aspect);
   previous = now;
   const pixels = frame.data;
+  const ink = pigments[wallpaperColour()];
   const sx = .77 * Math.max(1, aspect), sy = .77 * Math.max(1, 1 / aspect);
   // X and Y terms are separable, so compute distances once per column and row.
   const columns = pools.map(p => Array.from({length:w}, (_, x) => (x / w - p.x) * sx));
@@ -100,9 +120,11 @@ function paint() {
       const light = Math.max(0, (nx * .51 + ny * .86) / (Math.sqrt(nx * nx + ny * ny) || 1));
       const ambient = Math.min(1, field * .42), hot = Math.max(0, Math.min(1, (1 - x / w) * .58 + warm));
       const sheen = rim * (.2 + .8 * light), depth = 1 / (1 + Math.max(0, level) * .85);
-      pixels[index++] = 11 + ambient * 12 + inside * (47 + hot * 61 + depth * 22) + sheen * (66 + hot * 72);
-      pixels[index++] = 9 + ambient * 6 + inside * (16 + hot * 10) + sheen * (27 + hot * 43);
-      pixels[index++] = 17 + ambient * 19 + inside * (56 - hot * 27 + depth * 14) + sheen * (58 - hot * 33);
+      for (let channel = 0; channel < 3; channel++) {
+        pixels[index++] = ink.base[channel] + ambient * ink.haze[channel]
+          + inside * (ink.pool[channel] + hot * ink.warmth[channel] + depth * ink.depth[channel])
+          + sheen * (ink.rim[channel] + hot * ink.glint[channel]);
+      }
       pixels[index++] = 255;
     }
   }
@@ -115,7 +137,8 @@ function sync() {
   const night = root.dataset.theme ? root.dataset.theme === "dark" : dark.matches;
   const enabled = canvas && night && wallpaperPreference() !== "plain" && !contrast.matches;
   if (enabled) ctx ||= canvas.getContext("2d", {alpha:false});
-  root.toggleAttribute("data-midnight-lava", Boolean(enabled && ctx));
+  if (enabled && ctx) root.dataset.midnightLava = wallpaperColour();
+  else delete root.dataset.midnightLava;
   if (!enabled || !ctx || document.hidden || suspended) return;
   pools ||= readScene() || newScene();
   paint();
@@ -127,7 +150,11 @@ if (canvas) {
   new MutationObserver(sync).observe(root, {attributes:true, attributeFilter:["data-theme"]});
   new ResizeObserver(sync).observe(canvas.parentElement);
   addEventListener("storage", event => {
-    if (!event.key || event.key === preferenceKey) { preference = readPreference(); sync(); }
+    if (event.storageArea !== localStorage || (event.key && event.key !== preferenceKey && event.key !== colourKey)) return;
+    preference = readPreference(preferenceKey);
+    colour = readPreference(colourKey);
+    sync();
+    window.dispatchEvent(new Event("inflite:wallpaper-storage"));
   });
   document.addEventListener("visibilitychange", () => { if (document.hidden) checkpoint(); sync(); });
   addEventListener("pagehide", () => { suspended = true; checkpoint(); sync(); });

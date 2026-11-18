@@ -1812,8 +1812,22 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
     const wallpaper = page.getByRole('combobox', {name:'Dark wallpaper on this device'});
     await wallpaper.selectOption('plain');
     assert.equal(await page.locator('html[data-midnight-lava]').count(), 0);
+    const colours = page.getByRole('group', {name:'Lava colour', exact:true});
+    assert.equal(await colours.isVisible(), false);
     await wallpaper.selectOption('still');
-    await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
+    const canvas = page.locator('html[data-midnight-lava] .sky canvas');
+    await canvas.waitFor();
+    const original = await canvas.evaluate(c => c.toDataURL());
+    const rendered = new Set([original]);
+    for (const colour of ['Jade','Cobalt','Lagoon','Midnight']) {
+      await colours.getByRole('radio', {name:colour,exact:true}).check();
+      assert.equal(await page.locator('html').getAttribute('data-midnight-lava'), colour.toLowerCase());
+      const pixels = await canvas.evaluate(c => c.toDataURL());
+      if (colour === 'Midnight') assert.equal(pixels, original, 'colour changes preserve the exact pool positions');
+      else rendered.add(pixels);
+    }
+    assert.equal(rendered.size, 4, 'each colourway paints distinct pixels');
+
     await page.keyboard.press('Escape');
     let email = {emailOk:true,chat:{emails:{},pigeons:true},weather:{email:{}},account:{fixed:true}};
     await page.route('**/account/api/account/notify', async route => {
@@ -1854,6 +1868,7 @@ test('Midnight Lava carries the same visible scene through the app drawer, Calen
   try {
     await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
     const image = () => page.locator('.sky canvas').evaluate(c => c.toDataURL());
+    await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaperColour('lagoon'));
     const first = await image();
     await page.evaluate(() => { window.wallpaperNode = document.querySelector('.sky canvas'); });
     async function checkVisibleScene() {
@@ -1890,7 +1905,8 @@ test('Midnight Lava carries the same visible scene through the app drawer, Calen
     await checkVisibleScene();
     await page.goto(origin + '/?os=1');
     await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
-    assert.equal(await image(), first, 'same-tab navigation restores the exact still frame');
+    assert.equal(await page.locator('html').getAttribute('data-midnight-lava'), 'lagoon');
+    assert.equal(await image(), first, 'same-tab navigation restores the colourway and exact still frame');
     await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('lava'));
     await page.waitForFunction(before => document.querySelector('.sky canvas').toDataURL() !== before, first);
     await page.emulateMedia({colorScheme:'light'});
