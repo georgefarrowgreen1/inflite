@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.55";
+const BUILD = "4.6.1";
 // (what's new in it, said once it's in)
-const NEWS = "Search across apps, filter results and preview files in place.";
+const NEWS = "Search People, Notes and Calendar without opening them. Linked files open directly in preview.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.31/store.js","/os.webmanifest"];
@@ -221,8 +221,11 @@ const IFL = (() => {
   const U = { app: "", build: "", url: "version", field: "build", busy: null, save: null, files: null, ready: null, fresh: "", at: 0, back: Date.now(), touch: 0, going: false, told: "" };
   const typing = () => { const a = document.activeElement; return !!a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || (a.tagName === "INPUT" && !a.readOnly && !/^(button|checkbox|radio|range|submit|reset|file|color)$/.test(a.type))); };
   const busyNow = () => typing() || !!open || !!document.querySelector("dialog[open], .ifa-layer, [aria-busy='true']") || !!U.busy?.();
-  // (a version's parts as numbers: 1.76 after 1.8, as 1.80 is written)
-  const older = (a, b) => { const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
+  // Three-part releases follow the legacy two-part series within each major.
+  const older = (a, b) => {
+    const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
+    return (x[0] - y[0] || x.length - y.length || x[1] - y[1] || (x[2] || 0) - (y[2] || 0)) < 0;
+  };
   function updates(o) {
     Object.assign(U, o);
     const touched = () => { U.touch = Date.now(); };

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "release:shell": "node tools/shell-release.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test:web": "npm run test:launcher && node --test --test-concurrency=1 tests/web-ui.test.cjs tests/mail-private-cache-ui.test.cjs tests/mail-body-security-ui.test.cjs tests/today-mail-motion.test.cjs tests/today-mail-geometry.test.cjs tests/workspace-ui.test.cjs tests/workspace-security-ui.test.cjs tests/workspace-windows-ui.test.cjs tests/workspace-files-ui.test.cjs tests/workspace-actions-ui.test.cjs tests/mail-workspace-ui.test.cjs tests/workspace-scroll-ui.test.cjs tests/workspace-native-intent-ui.test.cjs tests/files-explorer-ui.test.cjs tests/files-host-ui.test.cjs tests/workspace-activity-ui.test.cjs tests/workspace-recovery-ui.test.cjs tests/files-dialogs-ui.test.cjs tests/workspaces-retired-ui.test.cjs tests/canonical-boot-ui.test.cjs tests/workspace-launcher-ui.test.cjs tests/dock-continuity-ui.test.cjs tests/appearance-ui.test.cjs tests/glass-material-ui.test.cjs tests/glass-controls-ui.test.cjs tests/appearance-dock-ui.test.cjs tests/offline-work-ui.test.cjs",

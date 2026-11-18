@@ -80,3 +80,14 @@ export function openDocumentHit(F, files, sheet, hit) {
     return previewFile(F, files, item, { ...context, panel });
   }).catch(error => { if (current()) panel.append(F.ui.el('p', { role: 'status', text: error.message })); });
 }
+
+export function openFileReference(F, files, item, originCurrent) {
+  const controller = new AbortController();
+  const panel = F.ui.el('div', { class: 'ifl-search-detail' });
+  const sheet = F.sheet.open({ sheet: 'file-preview', title: item.name, body: panel, onClose: () => controller.abort() });
+  const current = () => originCurrent() && !controller.signal.aborted && !sheet.closed;
+  previewFile(F, files, item, { panel, current, signal: controller.signal }).catch(error => {
+    if (current()) panel.append(F.ui.el('p', { role: 'status', text: error.message }));
+  });
+  return true;
+}

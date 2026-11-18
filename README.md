@@ -24,8 +24,7 @@ reminder. Signed out, it's InFlite's way in: the InFlite mark and sign-in contro
   georgefarrowgreen repo's `weather/roof/`, served at `/weather/roof/*` through the hub (`today/src/hub.js`,
   `today/src/roof.js`), and `/weather/` is the framework's own page. The switch: the `ROOF_OFF` secret (the georgefarrowgreen repo's `roof.yml`)
   puts Weather back to milestone 1's page of the hub in seconds.
-- **Its version** is `BUILD` and `NEWS` in `today/public/app.js`, raised by 0.01 with every change that's pushed;
-  `/version` says it, for InFlite's updater (`IFL.updates`).
+- **Shell releases use major.feature.minor**, starting with `4.6.1`. Increment the last number for fixes and refinements (`4.6.2`). For a new feature release, increment the middle number and start the minor at one (`4.7.1`). For a major release, start the new series at `5.0.1`. Run `npm run release:shell -- minor "Release note"` (or use `feature` or `major`) to set `BUILD` and `NEWS` together. The menu, updater and `/version` use that build. Independently versioned InFlite apps adopt the same format on their next release, using their own major number.
 
 The root `wrangler.toml` stays at the root, as Workers Builds deploys it from there: `main` is `today/src/index.js`,
 the assets `./today/public`. It's only at inflite.ai (no workers.dev address, no preview addresses).

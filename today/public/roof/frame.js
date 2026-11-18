@@ -301,6 +301,7 @@ export function createFrame(opts = {}) {
     launchMotion: null,
     go(path, o = {}) {
       if (gone) return;
+      if (o.replace && F.nav.returnFromRecord?.(path, o.from)) return;
       if (!o.launch) F.sheet.closeAll();
       let u = T(() => new URL(String(path), L.href));
       if (!u) return;

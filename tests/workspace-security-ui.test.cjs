@@ -210,6 +210,67 @@ test('Search shows a late exact Drive match, previews the selected version and r
     await documents.getByRole('button', { name: 'Back', exact: true }).click();
     await documents.getByRole('button', { name: 'Close', exact: true }).click();
     assert.equal(await search.inputValue(), 'coast route');
+    await page.evaluate(() => audit.F.sheet.top().now());
+    await page.evaluate(id => audit.capabilities.fitness.openReference({ app: 'files', id }), older.id);
+    await page.locator('dialog[data-sheet="file-preview"]').getByRole('img', { name: 'Elevation profile' }).waitFor();
+    assert.deepEqual(contentsRead, [older.id, note.id, older.id]);
+    await clean();
+  } finally { await ctx.close(); }
+});
+
+test('cold record search opens the exact contact and Back restores the filtered results', async t => {
+  const { ctx, page, clean } = await open();
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const kinds = ['people', 'notes', 'calendar'];
+    const records = Object.fromEntries(kinds.map((kind, index) => [kind, {
+      id: String(index + 1).repeat(32), kind, title: 'Coast ' + kind, version: 1, updatedAt: 1
+    }]));
+    const editors = [], searches = new Set();
+    page.on('request', req => {
+      if (/\/(people|notes|calendar)\/roof\/.*\.js$/.test(new URL(req.url()).pathname)) editors.push(req.url());
+    });
+    await page.route('**/api/organise/list', r => {
+      const { kind, q } = r.request().postDataJSON();
+      if (q === 'coast') searches.add(kind);
+      return r.fulfill({ json: { records: q === 'coast' ? [records[kind]] : [], cursor: null } });
+    });
+    await page.route('**/people/version', r => r.fulfill({ json: { build: '4.31' } }));
+    await page.route('**/api/organise/record?*', r => {
+      assert.equal(new URL(r.request().url()).searchParams.get('id'), records.people.id);
+      return r.fulfill({ json: { record: records.people } });
+    });
+    await page.evaluate(() => {
+      Object.assign(audit.enabled, { people: true, notes: true, calendar: true });
+      audit.F.setRoof(undefined, audit.enabled);
+      audit.F.search.open();
+    });
+    const input = page.getByRole('combobox', { name: 'Search everything' });
+    await page.evaluate(() => performance.mark('start-record-search'));
+    await input.fill('coast');
+    const row = page.getByRole('option').filter({ hasText: records.people.title });
+    await row.first().waitFor();
+    const sample = await page.evaluate(() => {
+      const start = performance.getEntriesByName('start-record-search')[0].startTime;
+      const resources = performance.getEntriesByType('resource').filter(e => e.startTime >= start);
+      return { milliseconds: Math.round(performance.now() - start),
+        decodedResponseBytes: resources.reduce((total, entry) => total + entry.decodedBodySize, 0) };
+    });
+    for (const record of Object.values(records)) await page.getByRole('option').filter({ hasText: record.title }).first().waitFor();
+    assert.deepEqual([...searches].sort(), [...kinds].sort());
+    assert.deepEqual(editors, []);
+    t.diagnostic(JSON.stringify({ ...sample, editorModulesRequested: editors.length }));
+    const filter = page.getByLabel('Filter by app').getByRole('button', { name: 'People', exact: true });
+    await filter.click();
+    await row.click();
+    await page.getByRole('button', { name: 'Open in People' }).click();
+    await page.waitForURL('**/people/#item=' + records.people.id);
+    await page.locator('#m-people').getByText(records.people.title, { exact: true }).first().waitFor();
+    await page.evaluate(() => audit.F.nav.back());
+    await row.waitFor();
+    assert.equal(await input.inputValue(), 'coast');
+    assert.equal(await filter.getAttribute('aria-pressed'), 'true');
+    assert.equal(await row.getAttribute('aria-selected'), 'true');
     await clean();
   } finally { await ctx.close(); }
 });

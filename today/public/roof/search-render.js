@@ -1,6 +1,6 @@
 // Loaded on the first typed query. Opening Search can focus the field synchronously.
 import { REGISTRY } from "./router.js";
-import { match } from "./search.js";
+import { collect, match, rank } from "./search.js";
 const SHOW = 3;
 // (and more ways in, as you type)
 const ALSO = [["Rain radar", "weather", "/weather/#radar"], ["16-day forecast", "weather", "/weather/#days"], ["Add a friend", "chats", "/chats/#add"], ["Friend requests", "chats", "/chats/#requests"]];
@@ -48,4 +48,17 @@ export function resultGroups(r, { ui, input, group, rowOf, wide, draw }) {
   }
   if (r.more.length) gs.push(group("more", "More", r.more.map((x, i) => rowOf(x.e, `more-${i}`))));
   return gs;
+}
+
+export function showResults({ groups: source, settled }, context, list, status, query, view, recent) {
+  const results = rank(view ? view.filter(source, settled) : source, query, { recent });
+  const groups = resultGroups(results, context);
+  list.replaceChildren(...groups);
+  status.textContent = settled && !groups.length ? `Nothing for “${query}”` : "";
+}
+
+
+export function createQuery(F, yours, providers) {
+  const apps = appsProvider(F, yours);
+  return (query, update, lease) => collect([apps, ...providers].filter(p => p.id !== "mail" || yours("mail")), query, update, lease);
 }

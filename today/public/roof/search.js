@@ -8,7 +8,7 @@
 //   closes). The empty field: your apps as a row of icons, Recent (what you opened from here, with Clear) and a few
 //   shortcuts; no provider asked. Typed: every provider (80 ms debounce), each answer drawn as it comes (one slower than
 //   300 ms when it arrives; one that throws left out), ranked (rank below): a Top hit, then groups best first, three
-//   each with "Show all", the letters that matched in bold, "Nothing for “…”" through textContent. The query never
+//   each with "Show all", the letters that matched in bold, "Nothing for “…”" through textContent. The query
 //   is sent to authorised app providers. It is never added to browser history or Recent; only an opened result with
 //   an address is kept, in Recent (RECENT, on this device, for this account; Today's sign-out clears it).
 // collect(providers, q, update(groups, settled), { slow }) → Promise: the merging, ordered by order then id, each group
@@ -203,11 +203,12 @@ const SHORTCUTS = [["Rain radar", "weather", "/weather/#radar", "rain"], ["Add a
   ["Holdings", "markets", "/markets/#holdings", "trend"], ["Quiet Hours", null, "/#you=quiet", "moon"]];
 let n = 0;
 export function createSearch(F) {
-  let renderer, apps;
+  let renderer, searchProviders;
   const provs = new Set();
   let h = null, t = 0, gen = 0, discoveryView;
-  function open() {
+  function open(resume) {
     if (h) return h;
+    if (typeof resume?.query !== "string") resume = null;
     const ui = F.ui, id = `ifl-sr-${++n}`, yours = yoursOf(F), has = (a) => !a || F.session?.view?.apps?.[a] !== false;
     const input = ui.el("input", { type: "search", role: "combobox", maxlength: 160, placeholder: "Search InFlite", "aria-label": "Search everything", "aria-controls": id, "aria-expanded": "true", "aria-autocomplete": "list", autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", enterkeyhint: "go" });
     const clear = ui.el("button", { class: "ifl-clear", type: "button", "aria-label": "Clear", hidden: true }, ui.icon("x"));
@@ -215,20 +216,23 @@ export function createSearch(F) {
     const list = ui.el("div", { class: "ifl-results", id, role: "listbox", "aria-label": "Results" });
     const say = ui.el("p", { class: "ifl-none", role: "status" });
     let pinned = false, previewing = false;
-    const view = discoveryView?.(F, {
+    function focusResult(key) {
+      const row = opts.find(o => o.dataset.result === key);
+      if (row) { pinned = true; mark(opts.indexOf(row), false); row.focus({ preventScroll: true }); }
+    }
+    const view = discoveryView?.(F, { resume, focusResult, query: () => input.value, expanded: () => wide,
       list, sheet: () => h, redraw: draw,
       select(row) { pinned = true; previewing = true; mark(opts.indexOf(row), false); },
       restore(row) {
         previewing = false;
         if (!input.isConnected) return;
         draw();
-        const i = opts.findIndex(o => o.dataset.result === row.dataset.result);
-        if (i >= 0) { mark(i, false); opts[i].focus({ preventScroll: true }); }
+        focusResult(row.dataset.result);
       },
       resetSelection() { pinned = false; }
     });
-    const wide = new Set();
-    let opts = [], at = -1, last = null, lastQ = "", was = null, waiting = false, asked = null;
+    const wide = new Set(resume?.wide);
+    let opts = [], at = -1, last = null, lastQ = resume?.query || "", was = null, waiting = false, asked = null;
     // (the highlighted one: aria-activedescendant on the field, aria-selected on it, kept in sight)
     const mark = (i, scroll = true) => {
       at = opts.length ? Math.max(-1, Math.min(opts.length - 1, i)) : -1;
@@ -279,20 +283,16 @@ export function createSearch(F) {
       done(-1);
     };
     // typed: Top hit, the groups, then the offers to look further
-    const drawn = (r, settled, q) => {
-      const gs = renderer.resultGroups(r, { ui, input, group, rowOf, wide, draw });
+    function draw() {
+      const q = input.value.trim();
+      if (!q) return home();
+      if (!last) return;
       const selected = q === was && pinned ? opts[at]?.dataset.result : null;
-      list.replaceChildren(...gs);
-      say.textContent = q && !gs.length && settled ? `Nothing for “${q}”` : "";
-      // (a late answer leaves the highlight where ↑/↓ put it; a new query starts it at the top)
+      renderer.showResults(last, { ui, input, group, rowOf, wide, draw }, list, say, q, view, recents(F));
       done(0);
       if (selected) { const i = opts.findIndex(o => o.dataset.result === selected); if (i >= 0) mark(i, false); }
       was = q;
-    };
-    function draw() {
-      const q = input.value.trim();
-      if (!q) home();
-      else if (last) drawn(rank(view ? view.filter(last.groups) : last.groups, q, { recent: recents(F) }), last.settled, q);
+      view?.restored?.(last.settled);
     }
     let queryController=null;
     const run = () => {
@@ -308,8 +308,8 @@ export function createSearch(F) {
       asked = import("./search-render.js").then(module => {
         if (!current()) return;
         renderer = module;
-        apps ||= module.appsProvider(F, yours);
-        return collect([apps, ...provs].filter(p => p.id !== "mail" || yours("mail")), q, (groups, settled) => {
+        searchProviders ||= module.createQuery(F, yours, provs);
+        return searchProviders(q, (groups, settled) => {
           last = { groups, settled };
           if (!previewing) draw();
         }, { signal: queryController.signal, current });
@@ -337,6 +337,7 @@ export function createSearch(F) {
     });
     clear.addEventListener("click", () => { input.value = ""; input.focus(); run(); });
     h = F.sheet.open({ sheet: "search", title: view ? "Search InFlite" : "Search everything", focus: input, body: ui.el("div", { class: "ifl-search" }, box, view?.filters, say, list), onClose: () => { queryController?.abort();h = null; gen++; clearTimeout(t); } });
+    input.value = lastQ;
     input.focus({ preventScroll: true });
     run();
     return h;

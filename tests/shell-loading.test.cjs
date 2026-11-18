@@ -35,3 +35,16 @@ test('cancelled, background and retired-account switches do not become failed lo
 test('telemetry is bounded per app, and startup finishes after paint exactly once',async()=>{
  const h=metrics();h.m.startup();h.at(900);h.frames.shift()();h.frames.shift()();h.m.startup();assert.equal(h.frames.length,0);h.hide();h.show();h.m.begin('today')();h.hide();h.show();h.m.begin('today')();h.hide();assert.equal(h.sent.length,2);assert.equal((await h.payloads())[0].m.startup,900);h.m.dispose();
 });
+
+test('the offline worker orders three-part builds numerically after the old series', () => {
+  const src = readFileSync(require.resolve('../today/public/sw.js'), 'utf8');
+  const { compareBuild, keepList } = vm.runInNewContext(src + '\n;({compareBuild,keepList})', {
+    self: { location: new URL('https://inflite.ai/'), addEventListener() {} }, URL
+  });
+  const ordered = ['3.99', '4.01', '4.55', '4.6.1', '4.6.2', '4.6.10', '4.7.1', '5.0.1'];
+  for (const [i, a] of ordered.entries()) for (const [j, b] of ordered.entries())
+    assert.equal(Math.sign(compareBuild(a, b)), Math.sign(i - j));
+  const files = ['/organise/releases/4.6.1/store.js'];
+  assert.deepEqual(Array.from(keepList({ app: 'notes', build: '4.6.1', files })), files);
+  assert.equal(keepList({ app: 'notes', build: '4.6.1.beta', files }), null);
+});

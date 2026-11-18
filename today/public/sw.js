@@ -135,12 +135,13 @@ const NET = { weather: /^\/weather\/(radar|radarmix|mapstyle|mapgl|mapleaf|rainm
 // Only static code/styles may enter a build cache. API aliases and documents
 // must never become a retained response, even after a mistaken keep message.
 const ORGANISE_ASSETS = new Set(["/organise/app.js", "/organise/store.js", "/organise/model.js", "/organise/editor.js", "/organise/links.js", "/organise/actions.js", "/organise/organise.css", "/organise/editor.css", "/organise/import.js", "/organise/connected.js"]);
-const organiseAsset = (p) => ORGANISE_ASSETS.has(p) || /^\/organise\/releases\/\d+\.\d{2}\/[\w.-]+$/.test(p) && ORGANISE_ASSETS.has('/organise/'+p.split('/').at(-1));
+const organiseAsset = (p) => ORGANISE_ASSETS.has(p) || /^\/organise\/releases\/\d+\.(?:\d{2}|\d+\.\d+)\/[\w.-]+$/.test(p) && ORGANISE_ASSETS.has('/organise/'+p.split('/').at(-1));
 const ORGANISE_APPS = ["calendar","notes","people"];
 const moduleAsset = (p) => /\.(?:js|css)$/.test(p) && !/\/api(?:\/|$)/i.test(p);
 const keeping = new Map(), keepQueue = new Map();
+const validBuild = value => typeof value === "string" && /^\d{1,8}\.(?:\d{2}|\d{1,8}\.\d{1,8})$/.test(value);
 function keepList(d) {
-  if (!d || !KEEP_APPS.includes(d.app) || typeof d.build !== "string" || !/^\d+\.\d{2}$/.test(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
+  if (!d || !KEEP_APPS.includes(d.app) || !validBuild(d.build) || !Array.isArray(d.files) || !d.files.length || d.files.length > KEEP_MAX) return null;
   const base = `/${d.app}/`, out = new Set();
   for (const f of d.files) {
     if (typeof f !== "string" || (!f.startsWith(base) && !(ORGANISE_APPS.includes(d.app) && organiseAsset(f))) || !moduleAsset(f) || !/^\/[\w./-]+$/.test(f) || /\/vendor\//.test(f) || NET[d.app]?.test(f) || f === base + "sw.js" || f === base + "version" || f.endsWith("/")) return null;
@@ -165,13 +166,16 @@ function keep(d) {
   keepQueue.set(d.app, job);
   return job;
 }
-// (a build as a number to compare: 1.65 → 165, 10.00 → 1000; the apps' builds always have two decimals)
-const buildNo = (b) => Number(b.replace(".", ""));
+// Within the same major, the three-part release series follows the legacy series.
+function compareBuild(a, b) {
+  const left = a.split('.').map(Number), right = b.split('.').map(Number);
+  return left[0] - right[0] || left.length - right.length || left[1] - right[1] || (left[2] || 0) - (right[2] || 0);
+}
 async function keepNow(app, build, files) {
   const prefix = `roof-${app}-`, name = prefix + build;
-  const builds = (await caches.keys()).filter((k) => k.startsWith(prefix) && /^\d+\.\d{2}$/.test(k.slice(prefix.length)));
+  const builds = (await caches.keys()).filter((k) => k.startsWith(prefix) && validBuild(k.slice(prefix.length)));
   // (a later build kept already: an old tab's ask, never kept over it)
-  if (builds.some((k) => buildNo(k.slice(prefix.length)) > buildNo(build))) return false;
+  if (builds.some((k) => compareBuild(k.slice(prefix.length), build) > 0)) return false;
   const had = builds.includes(name);
   if (!(had && (await whole(name, files)))) {
     let got;
@@ -222,7 +226,7 @@ async function fromModule(e, u) {
   const prefix = `roof-${modOf(u)}-`;
   const kept = async () => {
     try {
-      const release=/\/releases\/(\d+\.\d{2})\//.exec(u.pathname)?.[1];
+      const release=/\/releases\/(\d+\.(?:\d{2}|\d+\.\d+))\//.exec(u.pathname)?.[1];
       for (const k of (await caches.keys()).sort().reverse()) if ((!release||k.endsWith('-'+release)) && (k.startsWith(prefix) || organiseAsset(u.pathname) && ORGANISE_APPS.some(app=>k.startsWith(`roof-${app}-`)))) { const m = await (await caches.open(k)).match(u.pathname); if (m) return m; }
     } catch {}
     return null;

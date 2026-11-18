@@ -1,4 +1,4 @@
-import { createDiscoveryView, discover } from './discovery350.js';
+import { createDiscoveryView, discover, searchRecords, isRecordApp } from './discovery350.js';
 import { initialFavourites, normaliseFavourites, toggleFavourite, launcherStatus } from "./launcher-model.js";
 import { captureLauncherOrigin, launcherTransition } from "./launcher-motion.js";
 // Unified InFlite shell: singleton apps, Files and account-scoped actions.
@@ -200,6 +200,10 @@ export async function createWorkspace(F, options = {}) {
   async function searchApp(app,query,lease={}){
     const valid=()=>live()&&appOn(app)&&!lease.signal?.aborted&&guarded(()=>!lease.current||lease.current(),false);
     if(!valid())return {status:'disabled',entries:[]};
+    if (isRecordApp(app)) {
+      const store = await organiseStores.get(app);
+      return searchRecords(F, app, query, { signal: lease.signal, current: valid }, store);
+    }
     const handle=acquire(app);
     if(!handle.el.isConnected||handle.el.hidden){if(!backgroundSlots.has(app)){const slot=F.ui.el('div');background.append(slot);backgroundSlots.set(app,slot)}handle.attach({container:backgroundSlots.get(app),workspace:handle.fw.workspace,navigate(){},back(){},section(){},header(){},fill(){}})}
     await loadApp(app,handle,lease);if(!valid())return {status:'error',entries:[]};
@@ -208,8 +212,20 @@ export async function createWorkspace(F, options = {}) {
   }
   async function openSource(source){
     if(!live()||!source||!['mail','chats','fitness','weather','markets','files','calendar','notes','people'].includes(source.app))return false;
-    if(['calendar','notes','people'].includes(source.app))return openApp(source.app,'/'+source.app+'/#item='+source.id);
-    if(source.app==='files'){try{const item=await files.locate(source.id,{current:live});return live()&&item?openFiles(item.kind==='file'?item.name:'',{kind:'drive',folderId:item.kind==='folder'?item.id:item.parentId,view:'folder'}):false}catch(e){if(live())F.toast(e.message);return false}}
+    if (isRecordApp(source.app)) {
+      if (!/^[a-f0-9]{32}$/.test(source.id)) return false;
+      return openApp(source.app, '/' + source.app + '/#item=' + source.id);
+    }
+    if (source.app === 'files') {
+      const origin = F.route, current = () => live() && F.route === origin;
+      try {
+        const item = await files.locate(source.id, { current });
+        if (!current()) return false;
+        if (item.kind === 'folder') return openFiles('', item.location);
+        const { openFileReference } = await import('./search-file.js');
+        return current() && openFileReference(F, files, item, current);
+      } catch (error) { if (current()) F.toast(error.message); return false; }
+    }
     const {sourcePath}=await import('./actions-ui.js');if(!live())return false;
     const expected=await openApp(source.app,sourcePath(source),false,true,{current:live});if(!expected||!live())return false;
     if(source.item&&['mail','chats'].includes(source.app))return runIntent(source.app,'reveal-source',source.item,{current:()=>live()&&F.route===expected});return true;
@@ -459,7 +475,7 @@ export async function createWorkspace(F, options = {}) {
       id: 'discover-' + app, group: REGISTRY[app]?.name || 'Files', order: 22, scope: 'account',
       async search(query, lease) {
         if (query.trim().length < 2 || !live() || app !== 'files' && !appOn(app)) return [];
-        return live() ? discover(F, { app, query, lease, files, searchApp, openApp, runIntent }) : [];
+        return live() ? discover(F, { app, query, lease, files, searchApp, openApp, openSource, runIntent }) : [];
       }
     }));
   }
