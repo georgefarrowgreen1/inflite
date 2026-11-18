@@ -23,6 +23,6 @@ export const connector = {
     "/mail/roof/bodyframe.js", "/mail/roof/outbox.js",
     "/mail/roof/mail.css", "/mail/roof/reader.css", "/mail/roof/mailsheets.css",
   ],
-  lazy: ["/mail/roof/compose.js", "/mail/roof/signin.js", "/mail/roof/mailsettings.js", "/mail/roof/viewer.js", "/mail/roof/workspace.js", "/mail/roof/workspace.css"],
+  lazy: ["/mail/roof/compose.js", "/mail/roof/signin.js", "/mail/roof/mailsettings.js", "/mail/roof/viewer.js", "/mail/roof/workspace.js", "/mail/roof/workspace.css", "/mail/roof/contact-card.js"],
   mini: (answer) => { const c = answer?.cards?.mail; const n = Number(c?.people); return c && Number.isFinite(n) ? { kind: "num", num: String(n), label: "From people" } : null; },
 };

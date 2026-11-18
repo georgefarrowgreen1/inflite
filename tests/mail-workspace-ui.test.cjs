@@ -278,3 +278,85 @@ test('A pending message has one visible Undo, including after another notificati
     await t.clean();
   } finally { await t.ctx.close(); }
 });
+
+test('Mail opens the newest message and hands a selected quick reply to a saved compose draft', async () => {
+  const t = await open({width:390,paneWidth:390});
+  try {
+    const newest = t.mail.msgs.find(m => m.from.name === 'Leo Martins' && m.folder === 'inbox');
+    const older = t.mail.msgs.find(m => m.threadId === newest.threadId && m.id !== newest.id);
+    await t.page.locator(`.ml-row[data-thread="${newest.threadId}"]`).click();
+    const latest = t.page.locator('.mr-msgs .mr-card');
+    assert.equal(await latest.getAttribute('data-mid'), newest.id);
+    await latest.locator('.mr-mhead').click();
+    assert.ok((await latest.locator('.mr-addresses').innerText()).includes(newest.from.email));
+    const earlier = t.page.locator(`.mr-older [data-mid="${older.id}"]`);
+    assert.equal(await earlier.locator('iframe').count(),0);
+    await earlier.locator('.mr-mhead').click();
+    await earlier.locator('iframe').waitFor({state:'attached'});
+    await earlier.locator('.mr-mhead').click();
+    assert.equal(await earlier.locator('iframe').count(),0);
+    const words = 'Friday works. See you there!';
+    const input = t.page.getByRole('textbox',{name:'Reply to Leo'});
+    await input.fill(words);
+    await input.evaluate(el => el.setSelectionRange(7,12,'backward'));
+    await t.page.getByRole('button',{name:'Expand reply'}).click();
+    const sheet = t.page.getByRole('dialog',{name:'Reply',exact:true});
+    const body = sheet.getByRole('textbox',{name:'Message',exact:true});
+    assert.equal(await body.inputValue(), words);
+    assert.deepEqual(await body.evaluate(el => [el.selectionStart,el.selectionEnd,el.selectionDirection]),[7,12,'backward']);
+    assert.equal(await sheet.locator('.mc-chip').first().getAttribute('title'),newest.from.email);
+    await sheet.locator('[data-close]').click();
+    await t.page.waitForFunction(() => !document.querySelector('dialog[open]'));
+    assert.equal(await input.inputValue(),'');
+    await t.page.waitForFunction(() => T.toasts.includes('Draft saved'));
+    const save = t.mail.log.find(r => r.method === 'POST' && r.path === '/api/drafts');
+    assert.ok(save.body.text.startsWith(words));
+    assert.equal(save.body.quote.of,newest.id);
+    await t.clean();
+  } finally {await t.ctx.close();}
+});
+
+test('Contact cards transfer chosen People fields and review incoming changes before saving', async () => {
+  const t=await open({width:390,paneWidth:390});
+  const person={id:'b'.repeat(32),version:3,title:'Sam Taylor',email:'sam@example.com',phone:'07700 900123',organisation:'Northline'};
+  const saves=[];
+  try {
+    await t.ctx.route('**/api/people-cards/*',async route=>{
+      const save=route.request().url().endsWith('/save');
+      if(save)saves.push(route.request().postDataJSON());
+      await route.fulfill({json:save?{record:person}:{records:[person],cursor:null,owner:'owner-a'}});
+    });
+    const msg=t.mail.msgs.find(m=>m.from.name==='Leo Martins' && m.folder==='inbox');
+    msg.attachments.push({id:'vcard1',filename:'Sam Taylor.vcf',type:'text/vcard',size:128});
+    await t.ctx.route('**/api/attachments/vcard1/export',r=>r.fulfill({contentType:'application/octet-stream',body:'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Sam Taylor\r\nEMAIL:sam@example.com\r\nTEL:07700 900321\r\nEND:VCARD\r\n'}));
+    await t.page.locator('.ml-row[data-thread="'+msg.threadId+'"]').click();
+    await t.page.getByRole('button',{name:'Save to People'}).click();
+    const card=t.page.locator('.ifl-contact-card');
+    await card.getByRole('button',{name:'Update contact'}).waitFor();
+    assert.equal(await card.getByLabel('Save destination').inputValue(),person.id);
+    assert.ok((await card.innerText()).includes('Currently 07700 900123'));
+    assert.equal(saves.length,0);
+    await card.getByRole('button',{name:'Update contact'}).click();
+    await card.getByRole('button',{name:'Done'}).click();
+    assert.deepEqual(saves[0].fields,{phone:'07700 900321'});
+    assert.equal(saves[0].version,3);
+    await t.page.getByRole('button',{name:'Expand reply'}).click();
+    await t.page.getByRole('button',{name:'Add Files',exact:true}).click();
+    await card.getByRole('button',{name:'Share contact'}).click();
+    await card.getByLabel('Contact from People').selectOption({label:'Sam Taylor · sam@example.com'});
+    await card.getByLabel(/Phone/).check();
+    await card.getByRole('button',{name:'Attach contact card'}).click();
+    const sheet=t.page.locator('[data-sheet=mail-compose]');
+    await sheet.getByRole('button',{name:'Edit shared details'}).click();
+    assert.ok(await card.getByLabel(/Phone/).isChecked());
+    assert.equal(await card.getByLabel(/Organisation/).isChecked(),false);
+    await card.getByRole('button',{name:'Close contact card'}).click();
+    await sheet.locator('[data-close]').click();
+    await t.page.waitForFunction(()=>T.toasts.includes('Draft saved'));
+    const payload=t.mail.log.find(r=>r.path==='/api/drafts' && r.method==='POST').body;
+    const vcf=Buffer.from(payload.attachments[0].content,'base64').toString();
+    assert.match(vcf,/FN:Sam Taylor\r\n/);assert.match(vcf,/TEL:07700 900123\r\n/);
+    assert.doesNotMatch(vcf,/ORG:|NOTE:|Northline/);
+    await t.clean();
+  } finally {await t.ctx.close();}
+});

@@ -9,7 +9,7 @@
 // (mail-app-2: the copies of "/" kept before this, which a message frame at /body/ may have taken the place of, dropped as
 // this one takes over: below)
 const SHELL = "mail-app-2";
-const FILES = ["/", "/app.js", "/app.css", "/theme.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png"];
+const FILES = ["/", "/app.js", "/app.css", "/theme.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/roof/contact-card.js", "/roof/mailsheets.css"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();
   // (not waited on long: a worker that takes over late holds the updater up. The parts of the Mail just kept, after it)

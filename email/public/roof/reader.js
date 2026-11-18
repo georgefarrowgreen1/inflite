@@ -60,13 +60,13 @@ export function view(el, ctx) {
     cur.head = E("header", { class: "mr-head", tabindex: "-1" });
     cur.spots = E("div", { class: "mr-spots", role: "group", "aria-label": "Spotted by Mail", hidden: true });
     cur.msgs = E("div", { class: "mr-msgs" });
-    cur.historyLabel = E("summary");
+    cur.historyLabel = E("h3");
     cur.older = E("div", { class: "mr-older" });
-    cur.history = E("details", { class: "mr-history", hidden: true }, cur.historyLabel, cur.older);
+    cur.history = E("section", { class: "mr-history", hidden: true }, cur.historyLabel, cur.older);
     cur.change = E("div", { class:"mr-change", role:"group", "aria-label":"Calendar change" });
     cur.foot = E("footer", { class: "mr-foot" });
     cur.bar = E("div", { class: "mr-bar", role: "toolbar", "aria-label": "Conversation" });
-    el.replaceChildren(cur.bar, cur.head, cur.history, cur.spots, cur.msgs, cur.change, cur.foot);
+    el.replaceChildren(cur.bar, cur.head, cur.msgs, cur.change, cur.spots, cur.history, cur.foot);
     // (the newest message's frame, made on the tap from the row's latestId, while the thread is still on its way)
     if (row?.latestId) {
       cur.expanded.add(row.latestId);
@@ -88,9 +88,7 @@ export function view(el, ctx) {
   }
   function loaded(t) {
     const msgs = t.messages || [];
-    if (!cur.expanded.size && msgs[0]) cur.expanded.add(msgs[0].id);
-
-    // (the early frame was for the newest; if Mail says otherwise, that one opens too)
+    if (!cur.qr) cur.expanded.clear();
     if (msgs[0]) cur.expanded.add(msgs[0].id);
     for (const mid of cur.expanded) meta(mid);
   }
@@ -120,12 +118,12 @@ export function view(el, ctx) {
       c.top.setAttribute("aria-expanded", String(!c.addresses.hidden));
     });
     c.addresses = E("p", {class:"mr-addresses",hidden:true});
+    c.envelope = E("details", { class: "mr-envelope", hidden: true }, E("summary", {text:"Message details"}));
     c.body = E("div", { class: "mr-body" });
     c.banner = E("p", { class: "mr-remote", hidden: true }, E("span", { text: "Remote pictures are hidden to protect your privacy." }), " ",
       ui.btn("Load", { small: true, act: "load-remote", run: () => { c.loaded = true; c.banner.hidden = true; cur?.frames.get(m.id)?.allowImages(); } }));
     c.files = E("div", { class: "mr-files" });
-    c.when = E("p", { class: "mr-when" });
-    c.el.append(c.top, c.addresses, c.banner, c.body, c.files, c.when);
+    c.el.append(c.top, c.addresses, c.envelope, c.banner, c.body, c.files);
     cur.cards.set(m.id, c);
     paintCard(c, m, early);
     return c.el;
@@ -135,16 +133,24 @@ export function view(el, ctx) {
     c.el.classList.toggle("open", open);
     c.el.classList.toggle("unread", !!m.unread && m.folder === "inbox");
     const newest = store.get().thread?.t?.messages?.[0]?.id === m.id;
+    c.envelope.hidden = newest || !open;
+    if (!newest) {
+      if (c.addresses.parentNode !== c.envelope) c.envelope.append(c.addresses);
+      c.addresses.hidden = false;
+      if (!open) c.envelope.open = false;
+    } else if (c.addresses.parentNode !== c.el) {
+      c.top.after(c.addresses);
+      c.addresses.hidden = true;
+    }
     c.top.setAttribute("aria-expanded", String(newest ? !c.addresses.hidden : open));
-    c.addresses.textContent = [["From", [m.from]], ["To", m.to], ["Cc", m.cc]].map(([label, people]) => {
+    c.addresses.textContent = [["From", [m.from]], ["To", m.to], ["Cc", m.cc], ...(sent ? [["Bcc", m.bcc]] : [])].map(([label, people]) => {
       const addresses = (people || []).map(p => p?.email).filter(Boolean).join(", ");
       return addresses ? label + ": " + addresses : "";
-    }).filter(Boolean).join("\n");
+    }).concat(m.date ? logic.fmtLongDate?.(m.date) : "").filter(Boolean).join("\n");
     const to = (m.to || []).map((p) => (!sent && p.email === m.mailbox ? "you" : logic.displayName(p))).join(", ");
     c.top.replaceChildren(ui.avatar(logic.displayName(m.from) || "?"), E("span", { class: "mr-who" },
-      E("b", { text: open ? who : who.split(/\s+/)[0] }), E("small", { text: open ? (to ? `to ${to}` : m.from?.email || "") : m.snippet || "" })),
+      E("b", { text: who }), E("small", { text: open ? (to ? `to ${to}` : m.from?.email || "") : m.snippet || "" })),
       E("span", { class: "mr-date", text: m.date ? logic.fmtListDate?.(m.date) || "" : "" }));
-    c.when.textContent = open && m.date ? logic.fmtLongDate?.(m.date) || "" : "";
     if (!open) { dropFrame(m.id); c.body.replaceChildren(); c.files.replaceChildren(); c.filesFor = null; c.banner.hidden = true; return; }
     if (!cur.frames.has(m.id)) {
       const f = bodyFrame(m, { theme: fw.theme(), images: remoteOn(), eager: early || m.id === store.get().thread.t?.messages?.[0]?.id });
@@ -177,6 +183,23 @@ export function view(el, ctx) {
     });
     c.files.replaceChildren(gal || "", ...rest.map((a) => E("a", { class: "mr-file", href: api.fileUrl(a.id), target: "_blank", rel: "noopener", data: { act: "file" } },
       ctx.icon("attachment"), E("span", {}, E("b", { text: a.filename || "File" }), E("small", { text: logic.fmtSize?.(a.size) || "" })))));
+    for (const file of rest.filter(f=>/\.vcf$/i.test(f.filename) || /^text\/(?:x-)?vcard(?:;|$)/i.test(f.type))) {
+      const review = ui.btn("Save to People", {small:true,run:async()=>{
+        const view=cur, current=()=>cur===view && cur?.expanded.has(c.id) && !fw.signal.aborted && fw.session.user.id===owner && store.get().access==="ok";
+        try {
+          if(current())await ctx.open.contactCard({anchor:review,base:MAIL,owner,current,read:()=>{
+            if(file.size>512*1024)throw Error("Choose a card smaller than 512 KB.");
+            return api.picture(file.id,{export:true});
+          }});
+        } catch {if(current())fw.toast("Couldn’t open this contact card.");}
+      }});
+      const link=[...c.files.querySelectorAll("a")].find(a=>a.href===api.fileUrl(file.id));
+      if(link){
+        const tile=E("div",{class:"mail-vcard"},E("span",{class:"mail-card-identity"},ctx.icon("recipient"),E("span",{},E("small",{text:"Contact card"}),E("strong",{text:(file.filename||"Contact").replace(/\.vcf$/i,"")}))));
+        link.replaceWith(tile);link.replaceChildren(E("span",{text:"Download vCard"}));
+        tile.append(E("div",{class:"mail-card-actions"},review,link));
+      }else c.files.append(review);
+    }
     if (list.length && fw.workspace?.files?.save) {
       const save = async attachment => {
         const thread = cur?.id, current = () => !fw.signal.aborted && fw.session.user.id === owner && cur?.id === thread && cur?.cards.get(c.id) === c && cur.expanded.has(c.id) && store.get().access === "ok" && c.filesFor === list;
@@ -294,11 +317,9 @@ export function view(el, ctx) {
 
   // ---- the head, the bar and the foot
   function paintHead(t) {
-    const ps = (t.people || []).slice(0, 4).map((p) => (p.me ? "you" : (p.name || p.email || "").split(/[\s@]/)[0]));
-    const who = ps.length > 1 ? `${ps.slice(0, -1).join(", ")} and ${ps[ps.length - 1]}` : ps[0] || "";
     cur.head.replaceChildren(...[
       E("h2", { class: "mr-subject", text: t.subject || "(No Subject)" }),
-      E("p", { class: "mr-meta", text: [who && who[0].toUpperCase() + who.slice(1), t.count > 1 && `${t.count} messages`, t.trashed ? "In Trash" : t.done && "Done"].filter(Boolean).join(" · ") }),
+      t.trashed || t.done ? E("p", { class: "mr-meta", text: t.trashed ? "In Trash" : "Done" }) : null,
       t.reminder ? E("div",{class:"mr-later"}, E("span",{text:"Follow up if unanswered · "+logic.fmtWhen(t.reminder.due)}),
         ui.btn("Clear",{small:true,run:async()=>{
           try { await api.batch({ids:[t.id],action:"cancel-followup",messageId:t.reminder.message_id}); if(cur?.id===t.id) await load(t.id); ctx.actions.load({quiet:true}); }
@@ -320,14 +341,19 @@ export function view(el, ctx) {
     for (const b of cur.bar.querySelectorAll("[data-act=more]")) b.replaceChildren(ctx.icon("more"));
     if (!cur.qr) cur.qr = quick(t);
     const newest = t.messages?.find((m) => m.folder !== "sent") || t.messages?.[0];
-    const reply = pill("Reply", "reply", "reply", () => write(t, "reply"));
+    cur.updateReplyTarget(newest);
     const extras = cur.extras || (cur.extras = E("details", { class: "mr-options" }));
-    extras.replaceChildren(E("summary", { "aria-label": "More reply options", text: "⌄" }), cur.qr,
-      E("div", { class: "mr-replies" }, pill("Reply All", "reply-all", "reply-all", () => write(t, "replyAll")),
-        pill("Forward", "forward", "forward", () => write(t, "forward")),
-        newest ? E("a", { class: "ifl-btn small", href: api.rawUrl(newest.id), target: "_blank", rel: "noopener", data: { act: "original" }, text: "Open Original" }) : null));
-    if (!pad()) extras.append(E("div", { class:"mr-acts" }, ...acts(t)));
-    cur.foot.replaceChildren(reply, extras);
+    if (!extras.firstChild) {
+      const summary = E("summary", { "aria-label": "More conversation actions" }, ctx.icon("more"));
+      extras.append(summary);
+      cur.menu = E("div", {class:"mr-menu"});
+      extras.append(cur.menu);
+      cur.foot.append(cur.qr, extras);
+    }
+    cur.menu.replaceChildren(E("div", { class: "mr-replies" }, pill("Reply All", "reply-all", "reply-all", () => write(t, "replyAll")),
+      pill("Forward", "forward", "forward", () => write(t, "forward")),
+      newest ? E("a", { class: "ifl-btn small", href: api.rawUrl(newest.id), target: "_blank", rel: "noopener", data: { act: "original" }, text: "Open Original" }) : null));
+    if (!pad()) cur.menu.append(E("div", {class:"mr-acts"}, ...acts(t)));
     for (const b of cur.foot.querySelectorAll("[data-act=more]")) b.replaceChildren(ctx.icon("more"));
   }
   // (replies go to the newest message someone else sent, or the newest if it's all yours)
@@ -342,16 +368,67 @@ export function view(el, ctx) {
   }
   // a reply typed at the foot: to whoever wrote last, sent through the outbox as compose sends (app.js:4796–4846)
   function quick(t) {
-    const last = t.messages?.find((m) => m.folder !== "sent");
-    const first = last ? (logic.displayName(last.from) || "").split(/\s+/)[0] : "";
-    const said = first ? `Reply to ${first}` : "Reply";
-    const f = E("textarea", { class: "mr-qr-text", rows: "1", placeholder: `${said}…`, "aria-label": said, enterkeyhint: "enter" });
+    let replyTo;
+    const f = E("textarea", { class: "mr-qr-text", rows: "1", enterkeyhint: "enter" });
     f.value = replies.get(t.id);
     const send = ui.iconBtn("send", { label: "Send", act: "send", run: () => go() });
-    send.replaceChildren(ctx.icon("reply"));
+    send.replaceChildren(ctx.icon("send-up"));
+    const expand = ui.iconBtn("expand", { label: "Expand reply", act: "reply", run: () => promote() });
+    expand.replaceChildren(ctx.icon("expand"));
     // (busy from the tap until the outbox answers, so a second tap can't send it twice)
     let busy = false;
-    const sync = () => { send.disabled = busy || !f.value.trim(); };
+    const sync = () => { send.disabled = busy || !f.value.trim(); expand.disabled = busy; f.readOnly = busy; };
+    const view = cur;
+    view.updateReplyTarget = message => {
+      if (!message || (replyTo && (busy || f.value))) return;
+      replyTo = message;
+      const recipient = message.folder === "sent" ? message.to?.[0] : message.from;
+      const first = recipient && logic.displayName(recipient)?.split(/\s+/)[0];
+      const label = first ? `Reply to ${first}` : "Reply";
+      f.placeholder = label + "…";
+      f.setAttribute("aria-label", label);
+    };
+    expand.addEventListener("pointerdown", event => event.preventDefault());
+    const current = () => cur === view && !fw.signal?.aborted && fw.session.user.id === owner && store.get().access === "ok";
+    async function promote() {
+      if (busy) return;
+      const words = f.value;
+      const selection = [f.selectionStart, f.selectionEnd, f.selectionDirection];
+      busy = true; sync();
+      try {
+        const m = replyTo && await meta(replyTo.id);
+        if (!current()) return;
+        if (!m) return fw.toast("Couldn’t open that message. Try again in a moment.");
+        const draft = logic.replyDraft(m, "reply", me());
+        await ctx.open.compose({ ...draft, text: words, quickSelection: selection, onQuickOwned() {
+          if (fw.signal?.aborted || fw.session.user.id !== owner) return;
+          if (replies.get(t.id) === words) replies.set(t.id, "");
+          if (f.value === words) f.value = "";
+          sync();
+        } }, current);
+      } catch {
+        // The opener reports import errors. The inline field still owns the reply.
+      } finally { busy = false; sync(); }
+    }
+    // iOS can shrink or pan the visual viewport without resizing the layout viewport.
+    const viewport = globalThis.visualViewport;
+    const fit = () => {
+      const inset = viewport && f === el.ownerDocument?.activeElement
+        ? Math.max(0, globalThis.innerHeight - viewport.height - viewport.offsetTop) : 0;
+      if (inset > 100) view.foot.style.setProperty("--mail-keyboard-bottom", (Math.ceil(inset) + 6) + "px");
+      else view.foot.style.removeProperty("--mail-keyboard-bottom");
+      view.foot.toggleAttribute("data-keyboard", inset > 100);
+    };
+    if (viewport) {
+      f.addEventListener("focus", fit);
+      f.addEventListener("blur", fit);
+      viewport.addEventListener("resize", fit);
+      viewport.addEventListener("scroll", fit);
+      view.releaseViewport = () => {
+        viewport.removeEventListener("resize", fit);
+        viewport.removeEventListener("scroll", fit);
+      };
+    }
     f.addEventListener("input", () => { replies.set(t.id, f.value); sync(); });
     f.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } });
     sync();
@@ -361,7 +438,7 @@ export function view(el, ctx) {
       busy = true; sync();
       let r = null;
       try {
-        const m = await target(t);
+        const m = replyTo && await meta(replyTo.id);
         if (!m) r = { ok: false, error: "Couldn’t send that. Try again in a moment." };
         else {
           const d = logic.replyDraft(m, "reply", me());
@@ -381,7 +458,7 @@ export function view(el, ctx) {
       }
       sync();
     }
-    return E("div", { class: "mr-qr" }, f, send);
+    return E("div", { class: "mr-qr" }, f, expand, send);
   }
 
   function paintChange(t) {
@@ -444,18 +521,18 @@ export function view(el, ctx) {
     cur.msgs.querySelector(".ifl-skeleton")?.remove();
     paintHead(t);
     paintSpots(t);
-    // oldest first, as a conversation reads; the newest at the foot, by the reply (cards already made stay where they are)
+    // The newest body leads. Older messages stay folded until opened in place.
     const earlier = Math.max(0, (t.messages?.length || 0) - 1);
     cur.history.hidden = !earlier;
     cur.historyLabel.textContent = earlier + (earlier === 1 ? " earlier message" : " earlier messages");
     let prev = null;
-    for (const m of [...(t.messages || [])].reverse()) {
+    for (const m of t.messages || []) {
       const meta = th.metas?.[m.id], full = meta ? { ...m, ...meta } : m;
       let c = cur.cards.get(m.id);
       if (!c) { card(full); c = cur.cards.get(m.id); }
       else paintCard(c, full);
       const group = m.id === t.messages[0].id ? cur.msgs : cur.older;
-      if (c.el.parentNode !== group) { if (group === cur.older && prev) prev.after(c.el); else group.prepend(c.el); }
+      if (c.el.parentNode !== group || (group === cur.older && c.el.previousElementSibling !== prev)) { if (group === cur.older && prev) prev.after(c.el); else group.prepend(c.el); }
       if (group === cur.older) prev = c.el;
     }
     for (const [id, c] of cur.cards) if (!(t.messages || []).some((m) => m.id === id)) { dropFrame(id); c.el.remove(); cur.cards.delete(id); }
@@ -464,6 +541,7 @@ export function view(el, ctx) {
   }
   function shut() {
     if (!cur) return;
+    cur.releaseViewport?.();
     for (const f of cur.frames.values()) f?.destroy?.();
     for (const u of cur.urls) URL.revokeObjectURL(u);
     cur = null;

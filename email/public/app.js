@@ -35,6 +35,7 @@
       '<circle cx="5.5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.7" fill="currentColor" stroke="none"/>',
     filter: '<path d="M4 7h16M7 12h10M10 17h4"/>',
     x: '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>',
+    expand: '<path d="M14 4h6v6m0-6-7 7M10 20H4v-6m0 6 7-7"/>',
     arrowUp: '<path d="M12 19.5v-15M5.5 11 12 4.5l6.5 6.5"/>',
     arrowRight: '<path d="M4.5 12h15M13 5.5l6.5 6.5-6.5 6.5"/>',
     clip: '<path d="m20.5 11.2-8.3 8.3a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.4 8.4a1.7 1.7 0 0 1-2.4-2.4l7.7-7.7"/>',
@@ -299,9 +300,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.22";
+  const BUILD = "2.23";
   // (what's new in it, said once it's in)
-  const NEWS = "Tap a recipient to see their address. Compose tools now share one compact toolbar.";
+  const NEWS = "Read the newest message first, expand a quick reply, and share contact cards from People.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.
@@ -3713,18 +3714,18 @@ const IFL = (() => {
     return loading;
   }
 
-  // (with the newest, those that open by themselves: unread in the inbox, the newest few of them (a busy list's dozens
-  // would each be fetched and drawn at once); the rest are a tap away)
-  const unreadFew = (msgs) => msgs.filter((m) => m.unread && m.folder === "inbox").slice(0, 5);
-
   // Replies go to the newest message someone else sent (or the newest, if it's all yours)
-  async function withReplyTarget(threadId, fn) {
+  async function withReplyTarget(threadId, fn, messageId) {
     try {
+      if (messageId) {
+        await fn(await loadBody(messageId));
+        return;
+      }
       // (the open conversation being asked for again, as something's come in it: its newest, once that's here)
       await S.threadFresh;
       const t = S.thread?.id === threadId && S.thread.messages ? S.thread : await api.thread(threadId);
       const target = t.messages.find((m) => m.folder !== "sent") || t.messages[0];
-      fn(await loadBody(target.id));
+      await fn(await loadBody(target.id));
     } catch (err) {
       toast(err.message, { error: true });
     }
@@ -3745,7 +3746,7 @@ const IFL = (() => {
     try {
       const full = await api.thread(id);
       if (token !== S.detailToken) return;
-      S.expanded = new Set([full.messages[0], ...unreadFew(full.messages)].filter(Boolean).map((m) => m.id));
+      S.expanded = new Set(full.messages.slice(0, 1).map(m => m.id));
       await Promise.all([...S.expanded].map((mid) => loadBody(mid).catch(() => null)));
       if (token !== S.detailToken) return;
       S.thread = full;
@@ -3753,7 +3754,7 @@ const IFL = (() => {
       const head = els.detailScroll.querySelector(".conv-head"), had = !!head && head === document.activeElement, ring = had && head.matches(":focus-visible");
       renderDetail({ keepScroll: true });
       if (had && document.activeElement === document.body) els.detailScroll.querySelector(".conv-head")?.focus({ preventScroll: true, focusVisible: ring });
-      scrollToNewest();
+      els.detailScroll.scrollTop = 0;
       if (full.unread) act(id, "read", {}, { quiet: true });
       // (a reply's likely now: the compose sheet, which sends it, asked for while nothing else is going on)
       warmPart("compose");
@@ -3765,10 +3766,7 @@ const IFL = (() => {
     }
   }
 
-  // The conversation that's open, asked for again once the list says it's changed (a message come in it, say, while
-  // Mail was in the background): what's new added at the foot, opened, where the newest is, and the rest as it was (what
-  // was open, where you'd scrolled to); read, as opening it reads it, if it's on the screen. Meanwhile a reply from the
-  // foot waits for it (withReplyTarget), so it answers the newest
+  // Refresh the open conversation without moving its scroll position or interrupting a reply.
   function refreshThread() {
     const t = S.thread, row = t && S.threads.find((x) => x.id === t.id);
     if (!row || t.loading || !t.messages || (row.date === t.date && row.count === t.count)) return;
@@ -3776,19 +3774,22 @@ const IFL = (() => {
     S.threadFresh = (async () => {
       const full = await api.thread(t.id);
       const had = new Set(t.messages.map((m) => m.id)), fresh = full.messages.filter((m) => !had.has(m.id));
-      const few = unreadFew(fresh), open = fresh.filter((m) => m === full.messages[0] || few.includes(m));
+      const open = fresh.filter(m => m === full.messages[0]);
       await Promise.all(open.map((m) => loadBody(m.id).catch(() => null)));
       if (token !== S.detailToken || S.thread !== t) return;
       open.forEach((m) => S.expanded.add(m.id));
       S.thread = full;
-      // (only new ones, each newer than any before: added; else, something gone say, drawn again)
+      // Prepend new mail and fold the previous newest message in place.
       const box = els.detailScroll?.querySelector(".msgs"), newest = t.messages[0]?.date || 0;
       if (box && t.messages.every((m) => full.messages.some((x) => x.id === m.id)) && fresh.every((m) => m.date >= newest)) {
-        for (const m of [...fresh].reverse()) box.append(messageCard(m));
+        if (fresh.length && t.messages[0]) {
+          S.expanded.delete(t.messages[0].id);
+          renderCard(t.messages[0].id);
+        }
+        for (const m of [...fresh].reverse()) box.prepend(messageCard(m));
         renderConvHead();
       } else renderDetail({ keepScroll: true });
-      // (the bar at the foot drawn again for whoever wrote last, unless a reply's being typed in it)
-      if (!els.detailToolbar?.contains(document.activeElement)) qrKeep = null;
+      // Refresh the recipient label while retaining the live editor.
       renderDetailChrome();
       if (full.unread && !document.hidden && (S.layout !== "phone" || S.depth > 0)) act(full.id, "read", {}, { quiet: true });
     })()
@@ -3816,13 +3817,13 @@ const IFL = (() => {
     setKids(
       els.detailNav,
       S.layout === "phone" ? gbtn("chevronLeft", `Back to ${listTitle()}`, goBack) : null,
-      // (the conversation's subject beside the way back, in the bar, as the list has its title beside your photo)
+      // Keep the mailbox in the navigation bar and the subject in the reading pane.
       t
         ? h(
             "div.bar-title",
-            { role: "heading", "aria-level": "1", title: t.subject || "(No Subject)" },
+            {},
             t.starred ? icon("flagFill", "flag-ic") : null,
-            h("span", t.subject || "(No Subject)"),
+            h("span", listTitle()),
             // (on iPhone, where the list's title is out of sight, the dot comes with you)
             S.layout === "phone" ? statusDot() : null
           )
@@ -3840,32 +3841,11 @@ const IFL = (() => {
     );
     els.detailNav.dataset.thread = t?.id || "";
     if (keep && document.activeElement === document.body) els.detailNav.querySelector(`button[aria-label="${CSS.escape(keep)}"]`)?.focus({ preventScroll: true, focusVisible: ring });
-    els.detailNavTitle.textContent = t?.subject || "";
-    const lead = t && leadAction(t);
-    // (what to do with it, as pills; and a reply written right here, without the compose sheet)
-    setKids(
-      els.detailToolbar,
-      ...(t
-        ? [
-            h(
-              "div.d-acts",
-              h(
-                `button.d-pill.glass${lead.act === "done" ? ".done-pill" : ""}`,
-                { type: "button", onclick: () => act(t.id, lead.act) },
-                icon(lead.ic),
-                lead.act === "done" ? "Done" : lead.label
-              ),
-              t.trashed ? null : h("button.d-pill.glass", { type: "button", onclick: (e) => laterMenu(e.currentTarget, t) }, icon("clock"), "Later"),
-              h(
-                "button.d-pill.glass.icon-only",
-                { type: "button", "aria-label": t.trashed ? "Delete Forever" : "Move to Trash", onclick: (e) => (t.trashed ? confirmDelete(e.currentTarget, t.id) : act(t.id, "trash")) },
-                icon("trash")
-              )
-            ),
-            quickReply(t),
-          ]
-        : [])
-    );
+
+    if (!t) { setKids(els.detailToolbar); return; }
+    const quick = quickReply(t);
+    if (quick.parentNode !== els.detailToolbar) setKids(els.detailToolbar, quick);
+
   }
 
   // A reply written in the bar at the foot of a conversation: to whoever wrote last, sent (with Undo) as the compose
@@ -3873,10 +3853,23 @@ const IFL = (() => {
   let qrKeep = null;
   function quickReply(t) {
     // (the same field while the same conversation is open, so redrawing the bar keeps what's typed, and the focus)
-    if (qrKeep && qrKeep.id === t.id && qrKeep.ready === !!t.messages) return qrKeep.el;
-    const el = buildQuickReply(t);
-    qrKeep = { id: t.id, ready: !!t.messages, el };
-    return el;
+    if (!qrKeep || qrKeep.id !== t.id) qrKeep = { id: t.id, el: buildQuickReply(t) };
+    const last = t.messages?.find(m => m.folder !== "sent") || t.messages?.[0];
+    const field = qrKeep.el.querySelector(".qr-field");
+    if (last && (!field.value || !field.dataset.replyMessage)) {
+      field.dataset.replyMessage = last.id;
+      const recipient = last?.folder === "sent" ? last.to?.[0] : last?.from;
+      const who = recipient ? (displayName(recipient) || "").split(/\s+/)[0] : "";
+      const via = last?.mailbox && last.mailbox !== S.me?.defaultFrom && mine(last.mailbox) ? ` from ${last.mailbox.split("@")[0]}@` : "";
+      const label = (who ? "Reply to " + who : "Reply") + via;
+      field.placeholder = label + "…";
+      field.setAttribute("aria-label", label);
+    } else if (!field.dataset.replyMessage) {
+      field.placeholder = "Reply…";
+      field.setAttribute("aria-label", "Reply");
+    }
+    for (const action of qrKeep.el.querySelectorAll(".qr-more")) action.disabled = !t.messages?.length;
+    return qrKeep.el;
   }
 
   // The replies typed at the foot, one for each conversation, kept on this device as the compose sheet's message is: so
@@ -3898,16 +3891,11 @@ const IFL = (() => {
   }
 
   function buildQuickReply(t) {
-    const last = t.messages?.find((m) => m.folder !== "sent");
-    const who = last ? (displayName(last.from) || "").split(/\s+/)[0] : "";
-    // (said, when the reply goes from an address other than the default: the one the mail came to)
-    const via = last?.mailbox && last.mailbox !== S.me?.defaultFrom && mine(last.mailbox) ? ` from ${last.mailbox.split("@")[0]}@` : "";
-    const said = who ? `Reply to ${who}${via}` : `Reply${via}`;
     // (what's typed is kept for each conversation, so a redraw, or going to another and back, never loses it; it goes
     // once the reply's on its way, and comes back if it couldn't be)
     const drafts = qrDrafts();
     // (Return on the keyboard makes a new line, as it does in a message, and says so; the arrow beside it sends)
-    const field = h("textarea.qr-field", { rows: 1, placeholder: `${said}…`, "aria-label": said, enterkeyhint: "enter" });
+    const field = h("textarea.qr-field", { rows: 1, enterkeyhint: "enter" });
     field.value = drafts.get(t.id) || "";
     const send = h("button.qr-send", { type: "button", "aria-label": "Send", disabled: true }, icon("arrowUp"));
     const grow = () => {
@@ -3931,7 +3919,7 @@ const IFL = (() => {
         queueSend(c);
         queued = true;
         drafts.delete(t.id);
-      }).then(() => {
+      }, field.dataset.replyMessage).then(() => {
         if (queued) return;
         drafts.set(t.id, text);
         if (field.isConnected && !field.value) { field.value = text; grow(); }
@@ -3941,10 +3929,30 @@ const IFL = (() => {
     field.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.preventDefault(), go());
     });
+    let expanding = false;
+    const expand = h("button.qr-more", { type: "button", "aria-label": "Expand reply", title: "Expand reply", onpointerdown: e => e.preventDefault(), disabled: !!t.loading, onclick: async () => {
+      if (expanding) return;
+      expanding = true;
+      const words = field.value;
+      const selection = [field.selectionStart, field.selectionEnd, field.selectionDirection];
+      const current = () => !sheetState && field.isConnected && S.thread?.id === t.id && field.value === words && (S.layout !== "phone" || S.depth > 0);
+      try {
+        await withReplyTarget(t.id, m => {
+          if (!current()) return;
+          return openCompose({ ...replyDraft(m, "reply"), text: words, quickSelection: selection,
+            onQuickOwned() {
+              if (drafts.get(t.id) === words) drafts.delete(t.id);
+              if (field.value === words) { field.value = ""; grow(); }
+            }
+          }, current);
+        }, field.dataset.replyMessage);
+      } finally { expanding = false; }
+    } }, icon("expand"));
     return h(
       "div.qr.glass",
       h("button.qr-more", { type: "button", "aria-label": "Reply All, Forward and more", disabled: !!t.loading, onclick: (e) => replyMenu(e.currentTarget) }, icon("reply")),
       field,
+      expand,
       send
     );
   }
@@ -3963,7 +3971,12 @@ const IFL = (() => {
     const t = S.thread;
     if (!t) return;
     const newest = t.messages?.find((m) => m.folder !== "sent");
+    const lead = leadAction(t);
     showMenu(anchor, [
+      { label: lead.label, icon: lead.ic, action: () => act(t.id, lead.act) },
+      !t.trashed && { label: "Later", icon: "clock", action: () => laterMenu(anchor,t) },
+      !t.trashed && { label: "Move to Trash", icon: "trash", destructive:true, action: () => act(t.id,"trash") },
+      "-",
       { label: t.starred ? "Unflag" : "Flag", icon: "flag", action: () => act(t.id, t.starred ? "unflag" : "flag") },
       { label: "Mark as Unread", icon: "envelopeBadge", action: () => act(t.id, "unread") },
       "-",
@@ -3991,9 +4004,9 @@ const IFL = (() => {
       convHead(t),
       // (a booking Mail spotted in it, Mail on Your Day: the strip, parts/spot.js)
       t.spots?.length ? spotSlot(t) : null,
-      // (oldest first, as a conversation reads; the newest at the foot, by the reply)
+      // Newest first, with older messages opened individually.
       t.failed ? loadFailed(t.failed, () => openThread(t.id, { fromNav: true }))
-        : t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", [...t.messages].reverse().map(messageCard))
+        : t.loading || !t.messages ? h("div.load-more", h("div.spinner")) : h("div.msgs", t.messages.map(messageCard))
     );
     setKids(els.detailScroll, content);
     els.detailScroll.scrollTop = keepScroll ? top : 0;
@@ -4001,16 +4014,6 @@ const IFL = (() => {
   }
 
   const spotSlot = (t) => { const el = h("div.spot-slot"); fromPart("spot", "strip", { quiet: true })(el, t); return el; };
-
-  // (opened: at the newest message, with the earlier ones above it)
-  function scrollToNewest() {
-    const cards = els.detailScroll.querySelectorAll(".mcard");
-    if (cards.length < 2) return;
-    const card = [...cards].find((c) => c.classList.contains("unread") && c.classList.contains("open")) || cards[cards.length - 1];
-    const top = card.getBoundingClientRect().top - els.detailScroll.getBoundingClientRect().top + els.detailScroll.scrollTop;
-    els.detailScroll.scrollTop = Math.max(0, top - 120);
-    els.detail.classList.toggle("scrolled", els.detailScroll.scrollTop > 28);
-  }
 
   // Only the conversation's heading again (flagged, Later, People or Updates), leaving its messages as they are
   function renderConvHead() {
@@ -4031,20 +4034,11 @@ const IFL = (() => {
   }
 
   function convHead(t) {
-    // (who's in it, their faces stacked, and how many messages; where it is, only when it's put away)
-    const ps = (t.people || []).slice(0, 4);
-    const names = ps.map((p) => (p.me ? "you" : (p.name || p.email || "").split(/[\s@]/)[0]));
-    const who = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0] || "";
-    const meta = h(
-      "div.conv-meta",
-      ps.length > 1 ? h("span.conv-faces", ps.map((p) => avatar(p.me ? { name: S.me?.displayName, email: p.email, me: true } : p, "face"))) : null,
-      h("span", [who && who[0].toUpperCase() + who.slice(1), t.count > 1 && `${t.count} messages`, t.trashed ? "In Trash" : t.done && "Done"].filter(Boolean).join(" · "))
-    );
     return h(
       "header.conv-head",
       { tabindex: "-1" },
-      t.subject && t.subject.length > 48 ? h("h2.conv-subject", t.subject) : null,
-      meta,
+      h("h1.conv-subject", t.subject || "(No Subject)"),
+      t.trashed || t.done ? h("div.conv-meta", t.trashed ? "In Trash" : "Done") : null,
       t.snoozeUntil
         ? h(
             "div.later-note",
@@ -4060,6 +4054,13 @@ const IFL = (() => {
     const open = S.expanded.has(m.id);
     const full = S.bodies.get(m.id);
     const me = m.folder === "sent";
+    const newest = S.thread?.messages?.[0]?.id === m.id;
+    const envelope = full || m;
+    const addresses = h("div.msg-addresses", {hidden:newest},
+      ...[["From", [envelope.from]], ["To", envelope.to], ["Cc", envelope.cc], ...(me ? [["Bcc", envelope.bcc]] : [])].map(([name, people]) => {
+        const value = (people || []).map(p => p?.email).filter(Boolean).join(", ");
+        return value ? h("div", name + ": " + value) : null;
+      }), h("div", fmtLongDate(m.date)));
     const toLine = [m.to?.length && `to ${m.to.map((p) => (me ? displayName(p) : p.email === m.mailbox ? "you" : displayName(p))).join(", ")}`, m.cc?.length && `cc ${m.cc.map(displayName).join(", ")}`]
       .filter(Boolean)
       .join(" · ");
@@ -4069,7 +4070,11 @@ const IFL = (() => {
       open
         ? h(
             "button.msg-head",
-            { type: "button", "aria-expanded": "true", onclick: () => toggleMessage(m.id) },
+            { type: "button", "aria-expanded": newest ? "false" : "true", onclick: event => {
+              if (!newest) return toggleMessage(m.id);
+              addresses.hidden = !addresses.hidden;
+              event.currentTarget.setAttribute("aria-expanded", String(!addresses.hidden));
+            } },
             avatar(m.from),
             h("div.msg-meta", h("div.msg-top", h("b", me ? "You" : displayName(m.from)), h("span", fmtListDate(m.date))), h("div.msg-sub", toLine || m.from.email))
           )
@@ -4078,11 +4083,12 @@ const IFL = (() => {
             "button.msg-head.folded",
             { type: "button", "aria-expanded": "false", onclick: () => toggleMessage(m.id) },
             avatar(m.from, "fold-av"),
-            h("div.msg-line", h("b", me ? "You" : (displayName(m.from) || "").split(/\s+/)[0]), h("span", ` · ${m.snippet || ""}`))
+            h("div.msg-line", h("b", me ? "You" : displayName(m.from)), h("span", m.snippet || "")), h("small.msg-date", fmtListDate(m.date))
           ),
+      newest ? addresses : open ? h("details.msg-envelope", h("summary", "Message details"), addresses) : null,
       open
         ? full
-          ? [messageBody(full), full.attachments?.length ? attachmentsEl(full.attachments) : null, h("div.msg-foot", fmtLongDate(m.date))]
+          ? [messageBody(full), full.attachments?.length ? attachmentsEl(full.attachments) : null]
           : S.bodyErr?.has(m.id)
             ? loadFailed(S.bodyErr.get(m.id), () => { S.bodyErr.delete(m.id); renderCard(m.id); loadBody(m.id).catch(() => {}).finally(() => renderCard(m.id)); })
             : (bodyAgain(m.id), h("div.load-more", h("div.spinner")))
@@ -4372,6 +4378,22 @@ pre{white-space:pre-wrap}
                 h("div", attName(a.filename), h("div.att-size", [kind === "pdf" ? "PDF Document" : kind === "video" ? "Video" : null, fmtSize(a.size)].filter(Boolean).join(" · "))),
                 icon(kind ? "chevronRight" : "download", "att-go"),
               ];
+              if (/\.vcf$/i.test(a.filename) || /^text\/(?:x-)?vcard(?:;|$)/i.test(a.type)) {
+                const currentThread=S.thread?.id;
+                return h("div.mail-vcard",h("span.mail-card-identity",icon("doc"),h("span",h("small","Contact card"),h("strong",(a.filename || "Contact").replace(/\.vcf$/i,"")))),
+                  h("div.mail-card-actions",
+                  h("button.pill",{type:"button",onclick:(e)=>{
+                    const anchor=e.currentTarget;
+                    return contactCard({anchor,current:()=>anchor.isConnected && S.thread?.id===currentThread,read:async()=>{
+                      if(a.size>512*1024) throw Error("Choose a card smaller than 512 KB.");
+                      const url=new URL(a.url,location.origin);
+                      if(url.origin!==location.origin || !/^\/api\/attachments\/[\w-]+$/.test(url.pathname))throw Error("Invalid attachment.");
+                      const response=await fetch(url,{credentials:"same-origin",redirect:"error"});
+                      if(!response.ok)throw Error("Couldn’t open the attachment.");
+                      return response.blob();
+                    }});
+                  }},"Save to People"),h("a.pill",{href:downloadUrl(a.url),download:a.filename},"Download vCard")));
+              }
               return kind
                 ? h("button.att", { type: "button", onclick: (e) => openViewer(a, e.currentTarget) }, inner)
                 : h("a.att", { href: downloadUrl(a.url), download: a.filename, rel: "noopener" }, inner);
@@ -4401,12 +4423,13 @@ pre{white-space:pre-wrap}
 
   // The sheet's fields take the focus within the tap that opens it, so the keyboard comes up on iPhone: a tap before it's
   // here holds the keyboard up meanwhile, in a field of its own that the sheet's own takes over from (holdKeyboard)
-  function openCompose(init) {
+  function openCompose(init, current = () => true) {
+    if (!current()) return;
     if (PARTS.compose?.mod) return PARTS.compose.mod.openCompose(init);
     if (sheetState) return;
     const held = holdKeyboard();
     return part("compose")
-      .then((m) => m.openCompose(init), partFailed)
+      .then((m) => current() && m.openCompose(init), partFailed)
       .finally(() => held && (held.el.remove(), (keyHeld = null)));
   }
   const openDraft = (id) => fromPart("compose", "openDraft")(id);
@@ -4511,7 +4534,7 @@ pre{white-space:pre-wrap}
   // till it's sent, saved as a draft or thrown away: so a draft that couldn't be saved, the app closed in the background,
   // or a sign-in that's run out, loses nothing. Offered again when Mail next opens
   const UNSENT = "mail:unsent";
-  const keepUnsent = (c) => { try { const { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId } = c; localStorage.setItem(UNSENT, JSON.stringify({ mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId, at: Date.now() })); } catch {} };
+  const keepUnsent = (c) => { try { const { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId } = c; localStorage.setItem(UNSENT, JSON.stringify({ mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId, at: Date.now() })); return true; } catch { return false; } };
   const forgetUnsent = () => { try { localStorage.removeItem(UNSENT); } catch {} };
   function offerUnsent() {
     let u = null;
@@ -4968,9 +4991,15 @@ pre{white-space:pre-wrap}
   // What a part uses of Mail's own: given once, as the first is loaded. What changes as Mail goes (a menu open, a sheet,
   // the viewer) read, and set, through it as it is now
   let partsCtx = null;
+  async function contactCard(options) {
+    try {
+      const mod=await import("/roof/contact-card.js");
+      if(options.current())mod.openContactCard({...options,demo:DEMO});
+    } catch { toast("Couldn’t open the contact card.",{error:true}); }
+  }
   function partsContext() {
     return (partsCtx ||= {
-      icon, h, setKids, avatar, displayName, locale, debounce, wait, dayMs, fmtSize, extOf, kindOf, downloadUrl,
+      contactCard, icon, h, setKids, avatar, displayName, locale, debounce, wait, dayMs, fmtSize, extOf, kindOf, downloadUrl,
       textToHtml, htmlToText, bodyInner, parseAddress, EMAIL_RE, fileToBase64, dataBlob,
       IFL, DEMO, STANDALONE, PUSH_OK, ApiError, api, S, els, ADDR_COLORS, RECENT_KEY,
       showMenu, closeMenu, confirmMenu, undoFor, toast, sigFor, addrColor, mine, focusedBefore,

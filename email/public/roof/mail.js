@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.22";
-export const NEWS = "Tap a recipient to see their address. Compose tools now share one compact toolbar.";
+export const BUILD = "2.23";
+export const NEWS = "Read the newest message first, expand a quick reply, and share contact cards from People.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
@@ -85,6 +85,7 @@ export async function mount(root, fw) {
   const settingsJs = () => fw.lazy((q) => import("./mailsettings.js" + q));
   const signinJs = () => fw.lazy((q) => import("./signin.js" + q));
   Object.assign(ctx.open, {
+    contactCard: opener(() => fw.lazy((q) => import("./contact-card.js" + q)), (m, options) => options.current() ? m.openContactCard(options) : null),
     compose: opener(() => fw.lazy((q) => import("./compose.js" + q)), (m, init, current = () => true) => current() ? m.openCompose(ctx, init || {}) : null),
     later: (ids) => openLater(ctx, ids), views: () => openViews(ctx), rowMenu: (t) => openRowMenu(ctx, t), unsub: (t) => openUnsub(ctx, t),
     settings: opener(settingsJs, (m, page) => m.openSettings(ctx, page ?? null)),

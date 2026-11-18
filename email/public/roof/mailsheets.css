@@ -234,3 +234,28 @@
   color: var(--mc-ink); background: var(--glass-ctl); border: 0; border-radius: 10px;
 }
 .ifl-sheet[data-app=mail] .mc-time button { min-height: 44px; }
+
+/* Contact card review in either Mail surface. */
+[data-app=mail].ifl-contact-card{color-scheme:inherit;box-sizing:border-box;width:min(26rem,calc(100% - 1.5rem));max-height:82dvh;overflow:auto;border:1px solid color-mix(in srgb,currentColor 12%,transparent);border-radius:24px;padding:1.15rem;color:var(--ifl-ink,var(--text,CanvasText));background:var(--ifl-surface,var(--surface,Canvas));box-shadow:0 16px 70px #0003;font:inherit;margin:auto}
+[data-app=mail].ifl-contact-card::backdrop{background:#15202066}
+[data-app=mail].ifl-contact-card header,[data-app=mail].ifl-contact-card .icc-fields label{display:flex;align-items:center;justify-content:space-between;gap:.8rem}
+[data-app=mail].ifl-contact-card h2{margin:0;font-size:1.32rem;letter-spacing:-.035em}
+[data-app=mail].ifl-contact-card button,[data-app=mail].ifl-contact-card select{min-height:44px;font:inherit;color:inherit;border-radius:14px;border:0;background:color-mix(in srgb,currentColor 8%,transparent);padding:.55rem .85rem}
+[data-app=mail].ifl-contact-card .icc-close{width:44px;border-radius:50%;font-size:1.4rem}
+[data-app=mail].ifl-contact-card .icc-body{display:grid;gap:.55rem;margin-top:1rem;min-width:0}
+[data-app=mail].ifl-contact-card .icc-body select{width:100%;min-width:0}
+[data-app=mail].ifl-contact-card .icc-fields label{min-height:52px;padding:.4rem .25rem;border-top:1px solid color-mix(in srgb,currentColor 12%,transparent)}
+[data-app=mail].ifl-contact-card .icc-fields label span{min-width:0;overflow-wrap:anywhere}
+[data-app=mail].ifl-contact-card .icc-fields small,[data-app=mail].ifl-contact-card .icc-fields strong{display:block}
+[data-app=mail].ifl-contact-card small,[data-app=mail].ifl-contact-card .icc-status{opacity:.78;font-size:.84rem}
+[data-app=mail].ifl-contact-card .icc-fields input{width:20px;height:20px;flex:none;accent-color:var(--ifl-ink,Highlight)}
+[data-app=mail].ifl-contact-card .icc-primary{background:var(--ifl-ink,CanvasText);color:var(--ifl-surface,Canvas);font-weight:600}
+[data-app=mail].ifl-contact-card button:disabled{opacity:.45}
+[data-app=mail].ifl-contact-card .icc-status{margin:.75rem 0 0}
+[data-app=mail].ifl-contact-card .icc-status:empty{display:none}
+.m-mail .mail-vcard,.ifl-sheet[data-app=mail] .mail-vcard{display:grid;gap:10px;align-content:start;min-width:0;max-width:100%;padding:12px;border-radius:16px;background:var(--ifl-surface-2,var(--surface-2,Canvas));border:1px solid color-mix(in srgb,currentColor 12%,transparent)}
+.m-mail .mail-card-identity,.ifl-sheet[data-app=mail] .mail-card-identity{display:flex;align-items:center;gap:10px;min-width:0;overflow-wrap:anywhere}
+.m-mail .mail-card-identity strong,.ifl-sheet[data-app=mail] .mail-card-identity strong{display:block;font-size:1rem}
+.m-mail .mail-card-identity small,.ifl-sheet[data-app=mail] .mail-card-identity small{display:block;opacity:.76}
+.m-mail .mail-card-actions,.ifl-sheet[data-app=mail] .mail-card-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.m-mail .mail-card-actions .mc-file::after,.ifl-sheet[data-app=mail] .mail-card-actions .mc-file::after{content:none}

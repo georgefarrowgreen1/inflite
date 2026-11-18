@@ -244,3 +244,36 @@ test('forced-colors: native Mail compose, quick reply and compound settings reta
     await noErrors(page, errors);
   } finally { await ctx.close(); }
 });
+
+test('Standalone Mail expands a quick reply with its cursor, recipient and draft text intact', async () => {
+  const {ctx,page,errors} = await open({native:true,width:390,theme:'light'});
+  try {
+    await page.locator('.sheet.open').getByRole('button',{name:'Close',exact:true}).click();
+    await page.locator('.row[data-id]').first().click();
+    const field = page.locator('.qr-field');
+    await field.fill('Thursday works for me.');
+    await field.evaluate(el => el.setSelectionRange(3,9,'backward'));
+    await page.getByRole('button',{name:'Expand reply'}).click();
+    const editor = page.locator('.sheet.open .compose-text');
+    assert.equal(await editor.inputValue(),'Thursday works for me.');
+    assert.deepEqual(await editor.evaluate(el => [el.selectionStart,el.selectionEnd,el.selectionDirection]),[3,9,'backward']);
+    assert.ok(await page.locator('.sheet.open [data-k=to] .token').count());
+    assert.equal(await field.inputValue(),'');
+    await noErrors(page,errors);
+  } finally {await ctx.close();}
+});
+
+test('Standalone Mail attaches My card without losing the open draft',async()=>{
+  const {ctx,page,errors}=await open({native:true,width:390,theme:'light'});
+  try {
+    await page.locator('.sheet.open .compose-text').fill('My details for Saturday');
+    await page.getByRole('button',{name:'Files',exact:true}).click();
+    const picker=page.locator('.ifl-contact-card');
+    await picker.getByRole('button',{name:'Share contact'}).click();
+    await picker.getByRole('button',{name:'Attach contact card'}).click();
+    await page.locator('.sheet.open .mail-vcard').waitFor();
+    assert.match(await page.locator('.sheet.open .mail-vcard').innerText(),/Contact card/i);
+    assert.equal(await page.locator('.sheet.open .compose-text').inputValue(),'My details for Saturday');
+    await noErrors(page,errors);
+  }finally{await ctx.close();}
+});

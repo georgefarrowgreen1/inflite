@@ -1,4 +1,5 @@
 import { dueFollowups, validDue } from "./followups.js";
+import { peopleCards } from './people-cards.js';
 import { exportAttachment } from "./attachment-export.js";
 import { sharedNotFound } from "../../shared/not-found.js";
 import { accountView, accessOf, passOn, forgetCheck, accountCookie, quietNow } from "./auth.js";
@@ -263,6 +264,11 @@ async function api(request, env, ctx, url, fromAccount = false, hub = null) {
     const err = new HttpError(401, access === "notadmin" ? "Mail is only for the site’s admin." : "Sign in to open Mail.");
     err.access = access;
     throw err;
+  }
+  if (method === 'POST' && ['/api/people-cards/list', '/api/people-cards/save'].includes(pathname)) {
+    const input = await jsonBody(request, 8192);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Choose a contact.');
+    return json(await peopleCards(request, env, pathname.split('/').pop(), input));
   }
   await ensureSchema(env);
 

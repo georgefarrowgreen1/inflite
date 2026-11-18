@@ -106,9 +106,9 @@ export function openCompose(ctx, init = {}) {
   };
   const loading = !!c.draftId && !init.to && !init.subject && !init.text;
   const blank = !c.draftId && !c.quote && !c.quoteOld && !c.subject && !c.text && !c.files.length && !LISTS.some((k) => c[k].length);
-  if (!c.draftId && !c.text) { const s = sigFor(c.from); if (s) c.text = `\n\n${s}`; }
+  if (!c.draftId && (!c.text || init.quickSelection)) { const s = sigFor(c.from); if (s) c.text += `\n\n${s}`; }
   const sigOf = () => JSON.stringify([fieldsOf(c), c.files.map((f) => (isFile(f) ? `${f.name}:${f.size}` : f?.ref || f?.i))]);
-  let snap = sigOf(), saved = null, ended = null, keepT = 0, h = null, sending = false, wrote = false, off = null;
+  let snap = init.quickSelection && init.text ? null : sigOf(), saved = null, ended = null, keepT = 0, h = null, sending = false, wrote = false, off = null;
   const dirty = () => sigOf() !== snap;
   // (an earlier compose's words still only on this phone: this one never writes over them while they're there)
   let leftAt = null;
@@ -125,7 +125,9 @@ export function openCompose(ctx, init = {}) {
     c.files = [...got, ...c.files];
     if (!ended) drawFiles();
   }
-  const keep = () => { if (held()) return false; const k = ctx.outbox.keepUnsent(fieldsOf(c)); if (k) wrote = true; return k; };
+  let quickOwned = init.onQuickOwned;
+  const claimQuick = () => { quickOwned?.(); quickOwned = null; };
+  const keep = () => { if (held()) return false; const k = ctx.outbox.keepUnsent(fieldsOf(c)); if (k) { wrote = true; claimQuick(); } return k; };
   const EMAIL_RE = logic.EMAIL_RE || /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   // ---- To, Cc, Bcc: each person a chip; what's typed made one at a comma, Return or on leaving; suggestions by POST
@@ -308,6 +310,12 @@ export function openCompose(ctx, init = {}) {
     const name = f.name || f.filename || "File";
     const x = el("button", { type: "button", class: "mc-file", "aria-label": `Remove ${name}` }, ctx.icon("attachment"), el("span", { text: name }));
     x.addEventListener("click", () => { c.files.splice(i, 1); drawFiles(); changed(); });
+    if (isFile(f) && /\.vcf$/i.test(name)) {
+      const edit = ui.btn("Edit shared details", {small:true,run:()=>openCards(edit,f)});
+      const identity=el("span",{class:"mail-card-identity"},ctx.icon("recipient"),el("span",{},el("small",{text:"Contact card"}),el("strong",{text:name.replace(/\.vcf$/i,"")}),el("small",{text:f.contactSummary||name})));
+      x.textContent="Remove";
+      return el("div",{class:"mail-vcard"},identity,el("div",{class:"mail-card-actions"},edit,x));
+    }
     return x;
   }));
   const pick = el("input", { type: "file", multiple: true, hidden: true, "aria-label": "Add Files", tabindex: "-1" });
@@ -423,7 +431,20 @@ export function openCompose(ctx, init = {}) {
       text.focus(); editText();
     } }));
   }
-  const attach = ui.iconBtn("attachment", { label: "Add Files", act: "files", run: () => pick.click() });
+  async function openCards(anchor, initial) {
+    const current = () => !ended && !sending && !h?.closed && !fw.signal.aborted && fw.session.user.id === owner && store.get().access === "ok";
+    try {
+      if (!current()) return;
+      await ctx.open.contactCard({anchor,base:MAIL,owner,current,me,from:c.from,initial,pickFile:()=>pick.click(),attach(file){
+        if (!current()) return;
+        const total=c.files.reduce((sum,f)=>sum+(f===initial?0:f.size||0),0);
+        if(total+file.size>MAX) throw Error("Files are limited to 20 MB");
+        if(initial){const i=c.files.indexOf(initial);if(i<0)return;c.files[i]=file;}else c.files.push(file);
+        drawFiles();changed();
+      }});
+    } catch { if(current())fw.toast("Couldn’t open attachments. Try again."); }
+  }
+  const attach = ui.iconBtn("attachment", { label: "Add Files", act: "files", run: () => openCards(attach) });
   attach.replaceChildren(ctx.icon("attachment"));
   const status = el("small", { class: "mc-status", role: "status" });
   const group = el("div", { class: "mc-toolgroup", role: "group", "aria-label": "Message tools" }, attach, formatButton);
@@ -515,6 +536,7 @@ export function openCompose(ctx, init = {}) {
   // ---- closing: Send, Delete Draft, or any other way (kept, S4-D18)
   function end(how) {
     ended = how;
+    if (how === "delete" || how === "send") claimQuick();
     h.close();
   }
   function closed() {
@@ -543,6 +565,7 @@ export function openCompose(ctx, init = {}) {
       const r = await api.saveDraft(draftOf(fieldsOf(c), await draftFiles(c.files)), null, { keepalive: !bytes });
       if (!r?.id) throw new Error("Mail did not confirm the draft");
       c.draftId = r.id;
+      claimQuick();
       if (kept && stamp(ctx.outbox.unsent()) === at) ctx.outbox.dropUnsent();
       fw.toast("Draft saved");
     })();
@@ -664,6 +687,10 @@ export function openCompose(ctx, init = {}) {
       snap = sigOf();
       h.setBusy(false);
     }, () => { if (!ended) { h.setBusy(false); fw.toast("Couldn’t open that draft. Try again in a moment."); } });
+  }
+  if (init.quickSelection) {
+    text.setSelectionRange(...init.quickSelection);
+    if (init.text) ready.then(() => { if (!ended && !held()) keep(); });
   }
   return h;
 }

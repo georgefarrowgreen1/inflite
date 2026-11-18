@@ -103,8 +103,10 @@ export default (M) => {
     // (the signature for the address it's from, under a new message or reply, as Settings has it; kept as c.sig, so a
     // change of address changes it too, while it's as it was put in)
     c.sig = sigFor(c.from) || "";
-    if (!init.draftId && !c.text && c.sig) c.text = `\n\n${c.sig}`;
-    const snapshot = JSON.stringify([c.to, c.cc, c.bcc, c.subject, c.text, c.attachments.length]);
+    if (!init.draftId && (!c.text || init.quickSelection) && c.sig) c.text += `\n\n${c.sig}`;
+    let onQuickOwned = init.onQuickOwned;
+    const claimQuick = () => { onQuickOwned?.(); onQuickOwned = null; };
+    const snapshot = init.quickSelection && init.text ? null : JSON.stringify([c.to, c.cc, c.bcc, c.subject, c.text, c.attachments.length]);
 
     const scrim = h("div.sheet-scrim");
     const titleEl = h("h2");
@@ -441,6 +443,10 @@ export default (M) => {
         ...c.attachments.map((a, i) => {
           const img = /^image\//.test(a.type) && (a.preview || a.url);
           const ext = extOf(a.filename);
+          if (a.file && /\.vcf$/i.test(a.filename)) return h("div.mail-vcard",
+            h("span.mail-card-identity",icon("doc"),h("span",h("small","Contact card"),h("strong",a.filename.replace(/\.vcf$/i,"")),h("small",a.file.contactSummary||a.filename))),
+            h("div.mail-card-actions",h("button.pill",{type:"button",onclick:e=>sharing(e.currentTarget,a)},"Edit shared details"),
+            h("button.pill",{type:"button","aria-label":"Remove "+a.filename,onclick:()=>{c.attachments.splice(i,1);drawAtts();update();}},"Remove")));
           return h(
             "div.c-att",
             { title: `${a.filename}, ${fmtSize(a.size)}`, class: img ? "pic" : null },
@@ -525,6 +531,12 @@ export default (M) => {
     const photoInput = h("input", { type: "file", multiple: true, accept: "image/*,video/*", style: { display: "none" }, onchange: () => (addFiles(photoInput.files), (photoInput.value = "")) });
     const cameraInput = h("input", { type: "file", accept: "image/*", capture: "environment", style: { display: "none" }, onchange: () => (addFiles(cameraInput.files), (cameraInput.value = "")) });
     const tool = (name, label, onclick, cls = "") => h(`button.c-tool${cls}`, { type: "button", "aria-label": label, title: label, onpointerdown: (e) => e.preventDefault(), onclick }, icon(name));
+    function sharing(anchor, initial) {
+      return M.contactCard({anchor,me:S.me,from:c.from,current:()=>sheet.isConnected && M.sheetState?.c===c,initial:initial?.file,pickFile:()=>fileInput.click(),attach:file=>{
+        if(initial){const i=c.attachments.indexOf(initial);if(i<0)return; const total=c.attachments.reduce((sum,a)=>sum+(a===initial?0:a.size||0),0);if(total+file.size>MAX_ATTACH)throw Error("Attachments are limited to 20 MB");c.attachments.splice(i,1);}
+        addFiles([file]);
+      }});
+    }
     const accessory = h(
       "div.compose-accessory",
       h(
@@ -533,7 +545,7 @@ export default (M) => {
         h("span.c-sep"),
         tool("photo", "Photos", () => photoInput.click()),
         S.layout === "phone" ? tool("camera", "Camera", () => cameraInput.click()) : null,
-        tool("clip", "Files", () => fileInput.click()),
+        tool("clip", "Files", e => sharing(e.currentTarget)),
         hint,
         tool("chevronDown", "Hide Keyboard", () => document.activeElement?.blur?.(), ".c-kb")
       ),
@@ -587,6 +599,7 @@ export default (M) => {
       }
       closeSheet("sending");
       queueSend(c, { sheet: true });
+      claimQuick();
     }
 
     function closeSheet(mode) {
@@ -677,6 +690,7 @@ export default (M) => {
             attachments: await draftAttachments(c.attachments),
           });
           forgetUnsent();
+          claimQuick();
           toast("Draft Saved", { icon: "drafts" });
           refreshCounts();
           loadList({ quiet: true });
@@ -686,6 +700,7 @@ export default (M) => {
         }
       },
       deleteDraft: async () => {
+        claimQuick();
         forgetUnsent();
         closeSheet();
         if (c.draftId) {
@@ -720,6 +735,7 @@ export default (M) => {
     sheet.classList.add("open");
     requestAnimationFrame(autoGrow);
 
+    if (init.quickSelection && init.text && keepUnsent(c)) claimQuick();
     // Focus synchronously so iOS raises the keyboard within the tap.
     if (c.mode === "new" && !c.to.length) fields.to.input.focus({ preventScroll: true });
     else if (c.mode !== "new" || c.draftId) {
@@ -727,7 +743,7 @@ export default (M) => {
       else {
         textArea.focus({ preventScroll: true });
         try {
-          textArea.setSelectionRange(0, 0);
+          textArea.setSelectionRange(...(init.quickSelection || [0, 0]));
         } catch {}
       }
     }
