@@ -138,9 +138,13 @@ test('The signature stays editable and follows the sender in a phone reply', asy
     const signature = sheet.getByRole('button', { name: 'Edit signature in this message' });
     assert.equal(await body.inputValue(), '');
     assert.equal(await signature.textContent(), 'Sent from iPhone');
+    const footer = sheet.locator('.mc-signoff');
+    await footer.locator('img').evaluate(img => img.decode());
+    assert.equal(await footer.locator('small').textContent(),'george@example.com · InFlite');
     await body.fill('See you at nine.');
     await sheet.getByRole('combobox', { name: 'From' }).selectOption('work@example.com');
     assert.equal(await signature.textContent(), 'George at work');
+    assert.equal(await footer.locator('small').textContent(),'work@example.com · InFlite');
     assert.equal(await body.inputValue(), 'See you at nine.');
     await sheet.getByRole('textbox', { name: 'Subject', exact: true }).press('Enter');
     assert.ok(await body.evaluate(el => el === document.activeElement));
@@ -157,6 +161,8 @@ for (const [width, theme] of [[320, 'dark'], [390, 'light'], [1440, 'dark']]) te
   const { ctx, page, errors } = await open({ native: true, width, theme });
   try {
     const sheet = page.locator('.sheet.open'), input = sheet.getByRole('textbox', { name: 'To', exact: true });
+    await sheet.locator('.compose-signoff img').evaluate(img => img.decode());
+    assert.match(await sheet.locator('.compose-signoff small').textContent(),/InFlite$/);
     await roundedWindow(sheet);
     await input.fill('friend@example.com');
     const ring = await input.evaluate(el => { const i = getComputedStyle(el), r = getComputedStyle(el.closest('.field')); return { outline: i.outlineStyle, radius: parseFloat(r.borderTopLeftRadius), shadow: r.boxShadow }; });

@@ -299,9 +299,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.00";
+  const BUILD = "2.20";
   // (what's new in it, said once it's in)
-  const NEWS = "A focused reader, calendar change reviews, follow-ups and attachment search";
+  const NEWS = "Outgoing Mail now uses the InFlite Signature template";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.

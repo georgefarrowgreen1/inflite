@@ -6600,3 +6600,9 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
   .navbar::before,.sheet,.menu,.toast,.rows,.mcard,.thread-card,.set-group { background: Canvas; color: CanvasText; border: 1px solid CanvasText; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
   .sheet-body .field,.sheet .c-subject,.sheet .compose-text,.qr,.search,.set-seg { background: Field; color: FieldText; border-color: ButtonText; }
 }
+
+.compose-signoff { display:flex; gap:12px; align-items:center; margin:12px 0; padding:16px 0; border-top:1px solid var(--line); }
+.compose-signoff img { border-radius:8px; width:32px; height:32px; flex:none; }
+.compose-signoff > div { min-width:0; overflow-wrap:anywhere; }
+.compose-signoff small { display:block; font-size:13px; color:var(--text-2); }
+.compose-signoff button { min-height:44px; max-width:100%; padding:0; border:0; background:transparent; color:inherit; font:inherit; font-weight:600; white-space:pre-line; text-align:start; overflow-wrap:anywhere; }

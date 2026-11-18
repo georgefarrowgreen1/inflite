@@ -62,7 +62,7 @@ test('attachment search returns files from the named sender, and inbox follow-up
     assert.equal((await people()).followups,undefined);
     // Exercise the actual composer draft/send contract and inbound reply transaction.
     const {default:worker} = await import('../email/src/index.js');
-    const objects = new Map(), background = [];
+    const objects = new Map(), background = [], deliveries = [];
     const ctx = {waitUntil: promise => background.push(promise)};
     const drain = async () => { while (background.length) await background.shift(); };
     Object.assign(env, {
@@ -72,7 +72,7 @@ test('attachment search returns files from the named sender, and inbox follow-up
         get:async k=>objects.has(k)?{json:async()=>JSON.parse(objects.get(k))}:null,
         delete:async keys=>[].concat(keys).forEach(k=>objects.delete(k))
       },
-      EMAIL:{send:async()=>({messageId:'outbound@inflite.ai'})}
+      EMAIL:{send:async message=>{ deliveries.push(message); return {messageId:'outbound@inflite.ai'}; }}
     });
     const savedFetch = globalThis.fetch;
     try {
@@ -90,6 +90,10 @@ test('attachment search returns files from the named sender, and inbox follow-up
       const draft = await post('drafts',{to:[{email:'reuben@example.com'}],text:'Please confirm by Friday.',subject:'Saturday ride',followUpAt:due});
       const sent = await post('send',{draftId:draft.id,key:'reminder-test-001'});
       await drain();
+      assert.equal(deliveries.length,1);
+      assert.equal(deliveries[0].text,'Please confirm by Friday.');
+      assert.match(deliveries[0].html, /src="https:\/\/inflite\.ai\/icon-192\.png"/);
+      assert.equal(JSON.parse(objects.get('body/'+sent.id+'.json')).html,deliveries[0].html);
       const scheduled = sql.prepare('SELECT * FROM mail_followups WHERE message_id=?').get(sent.id);
       assert.equal(scheduled.due,due);
       const raw = ['From: Reuben <reuben@example.com>','To: hello@inflite.ai','Subject: Re: Saturday ride',
@@ -101,4 +105,30 @@ test('attachment search returns files from the named sender, and inbox follow-up
       assert.equal(sql.prepare('SELECT * FROM mail_followups WHERE message_id=?').get(sent.id),undefined);
     } finally { globalThis.fetch = savedFetch; }
   } finally { sql.close(); }
+});
+
+test('Signature styles the sender’s own sign-off once above quoted history', async () => {
+  const {signedMessage,withQuote} = await import('../email/src/quote.js');
+  const identity = {name:'George Farrow-Green',from:'hello@inflite.ai',signature:'Cheers & thanks,\nGeorge'};
+  const words = 'See you Saturday!\n\n'+identity.signature;
+  const authored = signedMessage(words,identity);
+  const quote = {header:'Reuben wrote:',text:'Morning?',html:'<p>Morning?</p>'};
+  const result = withQuote(words,quote,authored);
+  assert.equal(result.text,words+'\n\nReuben wrote:\n\n> Morning?');
+  assert.equal(result.html.split('Cheers &amp; thanks,').length,2);
+  assert.match(result.html, /<strong>Cheers &amp; thanks,<br>George<\/strong>/);
+  assert.ok(result.html.indexOf('George Farrow-Green · InFlite') < result.html.indexOf('Reuben wrote:'));
+  assert.equal(result.html.includes('<h1'),false);
+  const edited = signedMessage('See you!\n\nGeorge',identity);
+  assert.equal(edited.includes('See you!<br><br>George'),false);
+  assert.match(edited, /<strong>George<\/strong>/);
+  const legacy = withQuote('Reply',quote);
+  const formatted = signedMessage(legacy.text,identity,legacy.html);
+  assert.ok(formatted.indexOf('<table') < formatted.indexOf('Reuben wrote:'));
+  const rich = signedMessage('',identity,'<html><body><p><b>Hello</b></p></body></html>');
+  assert.match(rich, /<b>Hello<\/b>/);
+  assert.ok(rich.indexOf('</table>') < rich.indexOf('</body>'));
+  const alias = signedMessage('Hello',{name:'A < B',from:'team@inflite.ai'});
+  assert.match(alias, /A &lt; B · InFlite/);
+  assert.match(signedMessage('Hello',{from:'team@inflite.ai'}), /team@inflite.ai/);
 });

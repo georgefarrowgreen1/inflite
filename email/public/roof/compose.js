@@ -230,10 +230,23 @@ export function openCompose(ctx, init = {}) {
   const text = el("textarea", { class: "mc-text", placeholder: "Write your message…", "aria-label": "Message", data: { key: "text" } });
   let signatureTail = "";
   const signature = el("button", { type: "button", class: "mc-signature", "aria-label": "Edit signature in this message" });
+  const defaultSignOff = el("strong"), byline = el("small");
+  const footer = el("div", { class:"mc-signoff" }, el("img", {src:"/icon-192.png",alt:"",width:32,height:32}),
+    el("div", {}, defaultSignOff, signature, byline));
+  function drawSignOff() {
+    const name = me.addresses?.find(a => a.email === c.from)?.name || me.displayName || "";
+    const first = name.split(/\s+/)[0] || c.from;
+    const sender = name || c.from;
+    defaultSignOff.textContent = first;
+    defaultSignOff.hidden = !!signatureTail;
+    const signOff = signatureTail ? signature.textContent : first;
+    byline.textContent = sender && sender !== signOff ? sender + " · InFlite" : "InFlite";
+  }
   signature.addEventListener("click", () => {
     const start = text.value.length + 2;
     signatureTail = "";
     signature.hidden = true;
+    drawSignOff();
     text.value = c.text;
     text.focus();
     text.setSelectionRange(start, c.text.length);
@@ -245,6 +258,7 @@ export function openCompose(ctx, init = {}) {
     signature.textContent = current;
     signature.setAttribute("aria-description", current);
     signature.hidden = !signatureTail;
+    drawSignOff();
   }
   function editText() { c.text = text.value + signatureTail; changed(); }
   showText();
@@ -382,7 +396,7 @@ export function openCompose(ctx, init = {}) {
   const identity = el("span", { class: "mc-identity" }, from || el("span", { text: c.from || "Default address" }));
   const sender = el("label", { class: "mc-sender" }, ctx.icon("envelope"),
     el("span", { class: "mc-account" }, el("small", { text: "From" }), identity));
-  const letter = el("div", { class: "mc-letter" }, to, ccRow, sugg, subject, text, signature, filesEl, quoteEl);
+  const letter = el("div", { class: "mc-letter" }, to, ccRow, sugg, subject, text, footer, filesEl, quoteEl);
   const body = el("div", { class: "mc" }, sender, letter, el("div", { class: "mc-accessories" }, followHint, formatting, more, prog, tools), pick);
   if (fw.workspace?.files?.fromDrop) {
     const isDriveDrop = event => [...(event.dataTransfer?.types || [])].includes("application/x-inflite-files-token");

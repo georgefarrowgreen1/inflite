@@ -102,8 +102,8 @@ export default (M) => {
     };
     // (the signature for the address it's from, under a new message or reply, as Settings has it; kept as c.sig, so a
     // change of address changes it too, while it's as it was put in)
-    c.sig = !init.draftId && !c.text ? sigFor(c.from) : "";
-    if (c.sig) c.text = `\n\n${c.sig}`;
+    c.sig = sigFor(c.from) || "";
+    if (!init.draftId && !c.text && c.sig) c.text = `\n\n${c.sig}`;
     const snapshot = JSON.stringify([c.to, c.cc, c.bcc, c.subject, c.text, c.attachments.length]);
 
     const scrim = h("div.sheet-scrim");
@@ -341,6 +341,8 @@ export default (M) => {
               swapSig(addr);
               c.from = addr;
               drawFrom();
+              showSignOff();
+              autoGrow();
               update();
             },
           })),
@@ -355,8 +357,6 @@ export default (M) => {
       if (was && !c.text.endsWith(was)) return;
       c.text = (was ? c.text.slice(0, -was.length) : c.text.trimEnd()) + (next ? `\n\n${next}` : "");
       c.sig = next;
-      textArea.value = c.text;
-      autoGrow();
     }
 
     function drawFrom() {
@@ -392,12 +392,42 @@ export default (M) => {
       "aria-label": "Message",
       placeholder: "Message",
       oninput: () => {
-        c.text = textArea.value;
+        c.text = textArea.value + signatureTail;
         autoGrow();
         update();
       },
     });
-    textArea.value = c.text;
+    let signatureTail = "";
+    const defaultSignOff = h("strong"), byline = h("small");
+    const signatureButton = h("button", { type:"button", "aria-label":"Edit signature in this message", onclick:() => {
+      const start = textArea.value.length + 2;
+      signatureTail = "";
+      textArea.value = c.text;
+      drawSignOff();
+      autoGrow();
+      textArea.focus();
+      textArea.setSelectionRange(start, c.text.length);
+    }});
+    const footer = h("div.compose-signoff", h("img", {src:"/inflite.svg",alt:"",width:32,height:32}),
+      h("div", defaultSignOff, signatureButton, byline));
+    function drawSignOff() {
+      const name = S.me?.addresses?.find(a => a.email === c.from)?.name || S.me?.displayName || "";
+      const first = name.split(/\s+/)[0] || c.from;
+      const sender = name || c.from;
+      const signOff = signatureTail ? signatureTail.slice(2) : first;
+      defaultSignOff.textContent = first;
+      defaultSignOff.hidden = !!signatureTail;
+      signatureButton.textContent = signOff;
+      signatureButton.hidden = !signatureTail;
+      byline.textContent = sender && sender !== signOff ? sender + " · InFlite" : "InFlite";
+    }
+    function showSignOff() {
+      const saved = sigFor(c.from);
+      signatureTail = saved && c.text.endsWith("\n\n" + saved) ? "\n\n" + saved : "";
+      textArea.value = signatureTail ? c.text.slice(0,-signatureTail.length) : c.text;
+      drawSignOff();
+    }
+    showSignOff();
     const autoGrow = () => {
       textArea.style.height = "auto";
       textArea.style.height = `${Math.max(c.attachments.length ? 120 : 220, textArea.scrollHeight)}px`;
@@ -483,6 +513,7 @@ export default (M) => {
       ccRow,
       subjectInput,
       textArea,
+      footer,
       attsEl,
       quoteEl
     );
@@ -782,10 +813,10 @@ export default (M) => {
     openCompose(job.c);
   }
 
-  async function buildPayload(c) {
+  async function buildPayload(c, structured = false) {
     let text = c.text;
-    let html = `<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45;color:#1c1c1e">${textToHtml(c.text)}</div>`;
-    if (c.quote) {
+    let html = structured ? undefined : `<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45;color:#1c1c1e">${textToHtml(c.text)}</div>`;
+    if (c.quote && !structured) {
       const qText = c.quote.text || htmlToText(c.quote.html);
       text += `\n\n${c.quote.header}\n\n${c.quote.forward ? qText : qText.split("\n").map((l) => `> ${l}`).join("\n")}`;
       // (pictures shown from Mail's own attachments are Mail's links, no use to anyone else: they're left out)
@@ -805,7 +836,7 @@ export default (M) => {
       bcc: c.bcc,
       subject: c.subject,
       text,
-      html,
+      ...(structured ? { quote: c.quote } : { html }),
       inReplyTo: c.inReplyTo,
       references: c.references,
       attachments,
@@ -819,7 +850,7 @@ export default (M) => {
     // (on its way till Mail answers: the updater waits for it)
     pendingSends.add(job);
     try {
-      const payload = await buildPayload(job.c);
+      const payload = await buildPayload(job.c, !M.DEMO);
       await api.send({ ...payload, key: job.id }, { keepalive });
       toast("Message Sent", { icon: "check" });
       outbox.drop(job.id);

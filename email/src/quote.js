@@ -58,9 +58,9 @@ export async function quoteFrom(env, { of, mode }) {
 }
 
 // The words of a message with its quote: buildPayload's (app.js), made here. → { text, html }
-export function withQuote(words, quote) {
+export function withQuote(words, quote, authoredHtml) {
   let text = String(words || "");
-  let html = `<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45;color:#1c1c1e">${textToHtml(text)}</div>`;
+  let html = authoredHtml ?? messageHtml(text);
   if (quote) {
     const qText = quote.text || htmlToText(quote.html);
     text += `\n\n${quote.header}\n\n${quote.forward ? qText : qText.split("\n").map((l) => `> ${l}`).join("\n")}`;
@@ -79,6 +79,27 @@ export function linkify(escaped) {
   );
 }
 export const textToHtml = (text) => linkify(escapeHtml(text || "")).replace(/\r?\n/g, "<br>");
+
+function messageHtml(words) {
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45;color:#1c1c1e">${textToHtml(words)}</div>`;
+}
+
+// Keep the mark decorative so clients that block images still show the identity.
+// Use ordinary email table layout and a public, recipient-independent image URL.
+export function signedMessage(words, { name, from, signature }, richHtml) {
+  const sender = name || from;
+  const first = name?.split(/\s+/)[0] || from;
+  const closing = [signature, name, first].find(value => value && words.endsWith("\n\n" + value));
+  const signOff = !richHtml && closing ? closing : first;
+  const attribution = sender === signOff ? "InFlite" : sender + " · InFlite";
+  const footer = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;border-top:1px solid #d4d8dc;font:16px/1.45 Arial,Helvetica,sans-serif"><tr><td width="32" valign="middle" style="width:32px;padding:16px 12px 0 0"><img src="https://inflite.ai/icon-192.png" alt="" width="32" height="32" style="display:block;border:0;border-radius:8px"></td><td valign="middle" style="padding-top:16px;overflow-wrap:anywhere"><strong>${textToHtml(signOff)}</strong><br><span style="font-size:13px">${escapeHtml(attribution)}</span></td></tr></table>`;
+  if (!richHtml) return messageHtml(closing ? words.slice(0, -closing.length - 2) : words) + footer;
+  // Older standalone clients supply an assembled reply. Their attribution and
+  // quoted history belong below the new sender. Preserve other rich messages.
+  const boundary = richHtml.search(/<br><div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#6e6e73;font-size:14px">|<\/body\s*>|<\/html\s*>/i);
+  const end = boundary < 0 ? richHtml.length : boundary;
+  return richHtml.slice(0, end) + footer + richHtml.slice(end);
+}
 
 const NAMED = {
   amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", "#39": "'", hellip: "\u2026", mdash: "\u2014", ndash: "\u2013",

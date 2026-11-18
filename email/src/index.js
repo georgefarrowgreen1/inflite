@@ -18,7 +18,7 @@ import { settings, updateSettings, listAddresses, createAddress, updateAddress, 
 import { listThreads, getThread, threadAction, counts, wakeSnoozed, unsubInfo, readAll } from "./threads.js";
 import { vapid, pushAll, pushEndpointOk, peopleUnread, noticeInflite } from "./push.js";
 import { listedOrigins, hubOf, hubHeaders, preflight, hubRefusal, hubNavigation, RASTER } from "./hubgate.js";
-import { cleanQuote, quoteFrom, withQuote } from "./quote.js";
+import { cleanQuote, quoteFrom, signedMessage, withQuote } from "./quote.js";
 import { keyOk, card, notice, searchParams } from "./connect.js";
 import { body } from "./body.js";
 import { appFetch } from "./apps.js";
@@ -580,12 +580,6 @@ async function me(env, view) {
   return json({ displayName: senderName(env, view), domain: env.DOMAIN, defaultFrom, identities, addresses, signature, account: publicUser(view) });
 }
 
-// (the name a message from an address goes out under: the address's own, as Settings has it, else yours)
-async function nameFor(env, view, from) {
-  const a = await addressOf(env, from).catch(() => null);
-  return a?.name || senderName(env, view);
-}
-
 // The same action on several conversations (Mark All as Read, say)
 async function threadBatch(env, { ids, every, ...body }) {
   // (Mark All as Read on a whole list, every: what it is, as it's asked for; however much of it has been loaded)
@@ -951,7 +945,8 @@ async function send(env, ctx, body, view) {
   const size = (Array.isArray(body.attachments) ? body.attachments : []).reduce((n, a) => n + String(a?.content || "").length * 0.75, 0);
   if (size > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
   const from = checkFrom(env, body.from || (await defaultAddress(env)));
-  const name = flat(await nameFor(env, view, from)).trim();
+  const address = await addressOf(env, from).catch(() => null);
+  const name = flat(address?.name || senderName(env, view)).trim();
   const to = normalizeRecipients(body.to);
   const cc = normalizeRecipients(body.cc);
   const bcc = normalizeRecipients(body.bcc);
@@ -963,11 +958,11 @@ async function send(env, ctx, body, view) {
 
   const subject = flat(body.subject || "").slice(0, 998);
   let text = String(body.text || "");
-  let html = body.html ? String(body.html) : undefined;
-  // (quoted here, from Mail's own copy, when the page has none: InFlite's never has the original's body, S4-D4)
-  if (!html && (fromDraft || body.quote)) {
+  const signature = address?.signature || (await env.DB.prepare("SELECT v FROM meta WHERE k = 'signature'").first())?.v || "";
+  let html = signedMessage(text, { name, from, signature }, body.html && String(body.html));
+  if (!body.html && body.quote) {
     const q = cleanQuote(body.quote);
-    ({ text, html } = withQuote(text, q?.header ? q : q ? await quoteFrom(env, q) : null));
+    ({ text, html } = withQuote(text, q?.header ? q : q ? await quoteFrom(env, q) : null, html));
   }
   const inReplyTo = cleanMessageId(body.inReplyTo);
   const references = (Array.isArray(body.references) ? body.references.join(" ") : String(body.references || ""))
