@@ -47,17 +47,25 @@ const contrast = matchMedia("(prefers-contrast: more), (forced-colors: active)")
 let bubbles, ctx, preview;
 let suspended = false, light = false, lastSample = -Infinity;
 
-function drawPreview() {
-  if (!preview || !ctx) return;
-  const scale = Math.min(1, 480 / Math.max(canvas.width,canvas.height));
+function drawPreview(frameScene = false) {
+  if (!preview?.isConnected || !ctx || !bubbles) return;
+  const scale = Math.min(1, 960 / Math.max(canvas.width,canvas.height));
   const w = Math.max(1,Math.round(canvas.width*scale)), h = Math.max(1,Math.round(canvas.height*scale));
-  if (preview.width !== w || preview.height !== h) { preview.width = w; preview.height = h; }
+  if (frameScene || preview.width !== w || preview.height !== h) {
+    preview.width = w; preview.height = h;
+    // Frame the largest orb when opening or rotating. The scene can then drift freely.
+    preview.style.setProperty("--scene-aspect", String(w/h));
+    preview.style.setProperty("--scene-x", String(bubbles[0].x));
+    preview.style.setProperty("--scene-y", String(bubbles[0].y));
+  }
   preview.getContext("2d")?.drawImage(canvas, 0, 0, w, h);
 }
 export function previewWallpaper(target, signal) {
-  preview = target;
-  drawPreview();
-  signal.addEventListener("abort", () => { if (preview === target) preview = null; }, {once:true});
+  if (preview !== target) {
+    preview = target;
+    signal.addEventListener("abort", () => { if (preview === target) preview = null; }, {once:true});
+  }
+  drawPreview(true);
 }
 
 function checkpoint() {

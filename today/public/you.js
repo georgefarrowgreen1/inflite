@@ -269,7 +269,7 @@ function paint(root, ctx) {
       go('id="youOut"', "Sign out", "On this device")
     ].join(""))],
     ["personalise", "Appearance & Today", "Colours, Liquid Glass and your daily view", "sun",
-      sec("youPersonal", "", [link("appearance","Appearance","Theme, palette, Bubbles wallpaper and Liquid Glass"),
+      sec("youPersonal", "", [link("appearance","Appearance","Theme, palette, Orbs wallpaper and Liquid Glass"),
         link("units","Weather units","Temperature, wind, rain, pressure and clock"),
         ctx.life ? link("customise","Customise Today","Sections and card order") : ""].join("")) + FOLDERS.rules],
     ["notifications", "Notifications", "Quiet hours, morning briefing and alerts", "bell",
@@ -492,6 +492,8 @@ function appearance(ctx) {
   const owner = ctx.view.user.id, body = el("div", {class:"settings-appearance"});
   const listeners = new AbortController();
   const h = ctx.frame.sheet.open({sheet:"settings-appearance",title:"Appearance",body,onClose:()=>listeners.abort()});
+  const saving = el("span",{class:"appearance-saving",role:"status"});
+  h.el.querySelector("[data-close]").before(saving);
   const sample = el("canvas");
   const favourites = document.querySelector(".ws-dock-apps");
   const apps = favourites ? Array.from(favourites.querySelectorAll("[data-launcher-app]"), b => b.dataset.launcherApp)
@@ -499,7 +501,6 @@ function appearance(ctx) {
   const dock = el("div",{class:"settings-preview-dock"},ui.icon("sun"),
     apps.map(app => app === "files" ? ui.icon("file") : ui.icon(null,{app,size:24})),ui.icon("grid"));
   const preview = el("div",{class:"settings-dock-preview","aria-hidden":"true"},sample,dock);
-  previewWallpaper(sample,listeners.signal);
   let previewing = false;
   function cancelPreview() {
     if (previewing) theme.cancelGlassPreview();
@@ -524,39 +525,60 @@ function appearance(ctx) {
     }
   }
   function draw(pref) {
-    const form = el("fieldset"), status = el("p",{class:"you-foot",role:"status"});
+    const form = el("fieldset",{class:"appearance-layout","aria-label":"Appearance settings"});
+    const status = el("p",{class:"you-foot",role:"status"});
     async function save(key,value) {
       if (!active() || form.disabled) return;
+      if (pref[key] === value) { cancelPreview(); return; }
+      const focus = form.contains(document.activeElement) ? document.activeElement : null;
       form.disabled = true;
-      status.textContent = "Saving…";
+      status.textContent = "";
+      saving.textContent = "Saving…";
       try {
         const result = await accountPreference(ctx,"prefs","PUT",{[key]:value});
-        if (!ctx.current() || result.id !== owner) return;
+        if (!ctx.current()) return;
+        if (result.id !== owner) throw Error("Your account changed. Open Settings again.");
         previewing = false;
-        theme.accept({...result.prefs,id:owner},{animate:true});
-        if (active()) draw({...result.prefs,id:owner});
+        pref = {...result.prefs,id:owner};
+        theme.accept(pref,{animate:true});
       } catch (error) {
         cancelPreview();
         if (!active()) return;
         if (error.uncertain) body.replaceChildren(ui.error({title:"Appearance",body:error.message,acts:[{label:"Reload preferences",run:load}]}));
-        else { draw(pref); body.querySelector('[role=status]').textContent = error.message; }
-      } finally { form.disabled = false; }
+        else status.textContent = error.message;
+      } finally {
+        saving.textContent = "";
+        if (active() && form.isConnected) {
+          syncAccountControls();
+          form.disabled = false;
+          if (focus && (document.activeElement === document.body || document.activeElement === h.el)) focus.focus({preventScroll:true});
+        }
+      }
     }
-    const select = (label,key,items) => {
-      const input = el("select", {"aria-label":label},items.map(([value,text])=>el("option",{value,text})));
-      input.value = pref[key];
-      input.onchange = () => save(key,input.value);
-      return ui.row({title:label,trail:input});
-    };
-    const wallpaper = el("select", {"aria-label":"Wallpaper on this device"},
-      [["bubbles","Bubbles · drifting"],["still","Bubbles · still"],["plain","Plain"]].map(([value,text]) => el("option",{value,text})));
-    const colours = el("fieldset", {class:"lava-colours"}, el("legend",{text:"Bubble colour"}));
-    const swatches = el("div", {class:"lava-swatches"});
-    for (const {value, name} of bubbleColours) {
-      const radio = el("input", {type:"radio", name:"lava-colour", value});
+    const mode = ui.seg([["auto","System"],["light","Light"],["dark","Dark"]],pref.appearance,
+      value => save("appearance",value),{label:"Mode"});
+    mode.classList.add("appearance-mode");
+    mode.querySelector('[data-value="auto"]').prepend(el("span",{class:"appearance-system-icon","aria-hidden":"true"}));
+    mode.querySelector('[data-value="light"]').prepend(ui.icon("sun"));
+    mode.querySelector('[data-value="dark"]').prepend(ui.icon("moon"));
+
+    const select = (label,items) => el("select",{"aria-label":label},items.map(([value,text])=>el("option",{value,text})));
+    const choice = (title,input,sub) => el("label",{class:"appearance-choice"},
+      el("span",{class:"appearance-label"},title,sub ? el("small",{text:sub}) : null),
+      el("span",{class:"appearance-picker"},input,ui.icon("down")));
+    const wallpaper = select("Wallpaper on this device",[["bubbles","Orbs · drifting"],["still","Orbs · still"],["plain","Plain"]]);
+    const colours = el("fieldset",{class:"orb-colours"},el("legend",{text:"Orb colour"}));
+    const swatches = el("div",{class:"orb-swatches"});
+    for (const {value,name,body:base,shade,rim} of bubbleColours) {
+      const radio = el("input", {type:"radio", name:"orb-colour", value});
       radio.onchange = () => { if (radio.checked) setWallpaperColour(value); };
-      swatches.append(el("label", {data:{lava:value}}, radio,
-        el("span",{class:"lava-swatch", "aria-hidden":"true"}), el("span",{text:name})));
+      const swatch = el("span",{class:"orb-swatch","aria-hidden":"true"});
+      swatch.style.setProperty("--orb-body",base);
+      swatch.style.setProperty("--orb-shade",shade);
+      swatch.style.setProperty("--orb-warm",rim[0]);
+      swatch.style.setProperty("--orb-cool",rim[3]);
+      swatch.style.setProperty("--orb-rim",rim[5]);
+      swatches.append(el("label",{},radio,swatch,el("span",{text:name})));
     }
     colours.append(swatches);
     syncWallpaperControls = () => {
@@ -567,30 +589,47 @@ function appearance(ctx) {
     syncWallpaperControls();
     wallpaper.onchange = () => {
       setWallpaper(wallpaper.value);
-      colours.hidden = wallpaper.value === "plain";
+      syncWallpaperControls();
     };
-    const strength = el("input",{type:"range",min:0,max:100,value:pref.glassStrength,"aria-label":"Glass intensity",disabled:!pref.glass});
-    const amount = el("output",{text:pref.glassStrength+"%"});
+    const palette = select("Colour palette",Object.entries(theme.palettes).map(([id,p])=>[id,p.name]));
+    palette.onchange = () => save("palette",palette.value);
+    const glass = ui.sw(pref.glass,on=>save("glass",on),{label:"Liquid Glass"});
+    const strength = el("input",{type:"range",id:"appearance-strength",min:0,max:100});
+    const amount = el("output",{for:strength.id,"aria-hidden":"true"});
+    const range = el("div",{class:"settings-range"},
+      el("div",{},el("label",{for:strength.id,text:"Glass intensity"}),amount),strength);
+    function showStrength() {
+      const value = strength.value + "%";
+      amount.textContent = value;
+      strength.setAttribute("aria-valuetext",value);
+      strength.style.setProperty("--range-fill",value);
+    }
     strength.oninput = () => {
-      amount.textContent = strength.value+"%";
+      showStrength();
       previewing = theme.setGlass({glassStrength:Number(strength.value)},{preview:true});
     };
     strength.onpointercancel = () => {
       cancelPreview();
       strength.value = pref.glassStrength;
-      amount.textContent = strength.value+"%";
+      showStrength();
     };
     strength.onchange = () => save("glassStrength",Number(strength.value));
-    form.append(ui.list([
-      select("Mode","appearance",[["auto","System"],["light","Light"],["dark","Dark"]]),
-      ui.row({title:"Wallpaper",sub:"On this device",trail:wallpaper}),
-      colours,
-      select("Colour palette","palette",Object.entries(theme.palettes).map(([id,p])=>[id,p.name])),
-      ui.row({title:"Liquid Glass",trail:ui.sw(pref.glass,on=>save("glass",on),{label:"Liquid Glass"})}),
-      preview,
-      ui.row({title:"Glass intensity",trail:el("span",{class:"settings-range"},strength,amount)})
-    ]));
+    function syncAccountControls() {
+      mode.set(pref.appearance);
+      palette.value = pref.palette;
+      glass.input.checked = pref.glass;
+      range.hidden = strength.disabled = !pref.glass;
+      strength.value = pref.glassStrength;
+      showStrength();
+    }
+    syncAccountControls();
+    form.append(el("div",{class:"appearance-sample"},preview,mode),
+      el("div",{class:"appearance-options"},
+        choice("Wallpaper",wallpaper,"On this device"),colours,
+        choice("Colour palette",palette),
+        el("label",{class:"appearance-choice"},"Liquid Glass",glass),range));
     body.replaceChildren(form,status);
+    previewWallpaper(sample,listeners.signal);
   }
   load();
 }

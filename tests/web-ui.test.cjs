@@ -1826,7 +1826,7 @@ for (const width of [320, 390, 1440]) test(`Ride overview requires an available 
   } finally {await ctx.close();}
 });
 
-for (const width of [390, 1440]) test(`unified settings search and appearance at ${width}px`, async () => {
+for (const width of [320, 390, 1440]) test(`unified settings search and appearance at ${width}px`, async () => {
   const {page, ctx, errors} = await open({width,initialPath:'/#settings',waitForDay:false});
   try {
     const owner = fixture('session').user.id;
@@ -1840,20 +1840,24 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
     const search = page.getByRole('searchbox',{name:'Search settings'});
     await search.waitFor();
     await save(page, `settings-home-${width}`);
-    await search.fill('liquid glass');
+    await search.fill('orbs');
     const appearance = page.getByRole('button',{name:/Appearance Theme/});
     await appearance.waitFor();
     assert.equal(await page.locator('[data-setting=security]').isVisible(),false);
     await appearance.click();
-    const mode = page.getByRole('combobox',{name:'Mode',exact:true});
-    await mode.selectOption('dark');
-    await page.waitForFunction(() => !document.querySelector('.settings-appearance fieldset')?.disabled &&
-      document.querySelector('.settings-appearance select')?.value === 'dark');
+    const mode = page.getByRole('radiogroup',{name:'Mode',exact:true});
+    const dark = mode.getByRole('radio',{name:'Dark',exact:true});
+    await mode.getByRole('radio',{name:'System',exact:true}).focus();
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction(() => InFliteAppearance.snapshot().appearance === 'dark' && !document.querySelector('.appearance-layout').disabled);
+    assert.equal(await dark.isChecked(),true);
+    assert.equal(await dark.evaluate(n => n === document.activeElement),true);
     assert.equal(pref.appearance,'dark');
     const wallpaper = page.getByRole('combobox', {name:'Wallpaper on this device'});
+    assert.deepEqual(await wallpaper.locator('option').allTextContents(),['Orbs · drifting','Orbs · still','Plain']);
     await wallpaper.selectOption('plain');
     assert.equal(await page.locator('html[data-midnight-lava]').count(), 0);
-    const colours = page.getByRole('group', {name:'Bubble colour', exact:true});
+    const colours = page.getByRole('group', {name:'Orb colour', exact:true});
     assert.equal(await colours.isVisible(), false);
     await wallpaper.selectOption('still');
     const canvas = page.locator('html[data-midnight-lava] .sky canvas');
@@ -1872,10 +1876,16 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
         expected.getContext('2d').drawImage(document.querySelector('.sky canvas'), 0, 0, expected.width, expected.height);
         return expected.toDataURL() === preview.toDataURL();
       }),true);
-      if (colour === 'Opal') assert.equal(pixels, original, 'colour changes preserve the exact bubble scene');
+      if (colour === 'Opal') assert.equal(pixels, original, 'colour changes preserve the exact orb scene');
       else rendered.add(pixels);
     }
     assert.equal(rendered.size, 5, 'each colourway paints distinct pixels');
+    assert.ok(await page.locator('.settings-dock-preview canvas').evaluate(canvas => {
+      const frame = canvas.parentElement.getBoundingClientRect(), scene = canvas.getBoundingClientRect();
+      const x = scene.left + scene.width * Number(canvas.style.getPropertyValue('--scene-x'));
+      const y = scene.top + scene.height * Number(canvas.style.getPropertyValue('--scene-y'));
+      return x >= frame.left && x <= frame.right && y >= frame.top && y <= frame.bottom;
+    }), 'the preview includes the main orb on both wide and tall screens');
     const slider = page.getByRole('slider',{name:'Glass intensity'});
     const adjust = value => slider.evaluate((n,v) => {
       n.value = v;
@@ -1888,6 +1898,28 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
     await slider.dispatchEvent('change');
     await page.waitForFunction(()=>document.querySelector('.settings-range input')?.value === '82' && !document.querySelector('.settings-appearance fieldset').disabled);
     assert.equal(pref.glassStrength,82);
+    const glass = page.getByRole('switch',{name:'Liquid Glass'});
+    await glass.uncheck();
+    await slider.waitFor({state:'hidden'});
+    await glass.check();
+    await slider.waitFor();
+    assert.equal(await slider.inputValue(),'82');
+    const palette = page.getByRole('combobox',{name:'Colour palette'});
+    await palette.selectOption('graphite');
+    await page.waitForFunction(()=>InFliteAppearance.snapshot().palette === 'graphite' && !document.querySelector('.appearance-layout').disabled);
+    await mode.getByRole('radio',{name:'Light',exact:true}).click();
+    await page.waitForFunction(()=>InFliteAppearance.snapshot().appearance === 'light' && !document.querySelector('.appearance-layout').disabled);
+    assert.equal(await colours.getByRole('radio',{name:'Opal'}).isChecked(),true);
+    const geometry = await page.locator('.settings-appearance').evaluate(n => ({
+      content:n.scrollWidth, width:n.clientWidth,
+      swatches:Array.from(n.querySelectorAll('.orb-swatches label'),label => [label.offsetWidth,label.offsetHeight]),
+      modeHeight:n.querySelector('.appearance-mode [role=radio]').offsetHeight,
+      slider:n.querySelector('input[type=range]').offsetWidth
+    }));
+    assert.ok(geometry.content <= geometry.width + 1);
+    assert.ok(geometry.swatches.every(([w,h])=>w>=44 && h>=44));
+    assert.ok(geometry.modeHeight>=44);
+    assert.ok(geometry.slider>200);
     await adjust(10);
 
     await page.keyboard.press('Escape');
@@ -2272,9 +2304,11 @@ test('Settings recovers a stalled read and reconciles an unconfirmed appearance 
     await page.getByText('Account took too long to respond. Try again.').waitFor();
     stuck = false;
     await page.getByRole('button',{name:'Try again',exact:true}).click();
-    await page.getByRole('combobox',{name:'Mode',exact:true}).selectOption('dark');
+    const dark = page.getByRole('radio',{name:'Dark',exact:true});
+    await dark.click();
     await page.getByRole('button',{name:'Reload preferences'}).click();
-    await page.waitForFunction(()=>document.querySelector('.settings-appearance select')?.value === 'dark');
+    await dark.waitFor();
+    assert.equal(await dark.isChecked(),true);
     assert.equal(writes,1);
   } finally { await ctx.close(); }
 });

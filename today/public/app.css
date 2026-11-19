@@ -1532,10 +1532,6 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 }
 
 .settings-preferences fieldset, .settings-appearance fieldset { margin: 0; padding: 0; min-width: 0; border: 0; }
-.settings-appearance select { min-height: 44px; color: inherit; background: var(--ifl-glass-control); border: 1px solid var(--ifl-line); border-radius: 12px; padding: 0 8px; font: inherit; }
-.settings-range { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 6px; }
-.settings-range input { max-width: 26vw; min-height: 44px; accent-color: var(--acc-ink); }
-.settings-range output { min-width: 4ch; font-variant-numeric: tabular-nums; }
 
 inflite-settings-account {
   display: block;
@@ -1593,44 +1589,108 @@ html[data-midnight-lava]::view-transition-new(inflite-wallpaper) { animation: no
   }
 }
 
-/* The same hues carry from the preview swatches into the shell's header shade. */
-html[data-midnight-lava], .lava-swatches [data-lava=opal] { --lava-base: 16 14 26; --lava-cool: #79a9b5; --lava-warm: #f1ae95; }
-html[data-midnight-lava=midnight], .lava-swatches [data-lava=midnight] { --lava-base: 16 14 26; --lava-cool: #65529e; --lava-warm: #ca87b3; }
-html[data-midnight-lava=jade], .lava-swatches [data-lava=jade] { --lava-base: 5 13 12; --lava-cool: #12534a; --lava-warm: #52a16a; }
-html[data-midnight-lava=cobalt], .lava-swatches [data-lava=cobalt] { --lava-base: 6 10 21; --lava-cool: #233d80; --lava-warm: #3383ba; }
-html[data-midnight-lava=lagoon], .lava-swatches [data-lava=lagoon] { --lava-base: 4 12 19; --lava-cool: #223e83; --lava-warm: #2c9e76; }
-.settings-appearance .lava-colours { padding: 0 16px 12px; }
-.lava-colours legend { padding: 0; font-size: .875rem; font-weight: 600; color: var(--ifl-muted); }
-.lava-swatches { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 5px; margin-top: 6px; }
-.lava-swatches label { position: relative; display: grid; gap: 4px; min-height: 44px; text-align: center; cursor: pointer; font-size: .8rem; }
-.lava-swatches input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; margin: 0; cursor: pointer; }
-.lava-swatch { display: block; height: 33px; border-radius: 10px; background:
-  radial-gradient(circle at 70% 70%, var(--lava-warm), var(--lava-cool) 13%, transparent 15%),
-  radial-gradient(circle at 32% 57%, color-mix(in srgb, var(--lava-warm) 65%, white), var(--lava-cool) 31%, transparent 33%), rgb(var(--lava-base)); }
-html[data-midnight-lava] .lava-swatches .lava-swatch { background-color: light-dark(#f3f1f4, rgb(var(--lava-base))); }
-.lava-swatches input:checked + .lava-swatch::after { text-shadow: 0 1px 3px #222; content: "✓"; display: grid; place-content: center; height: 100%; color: white; font-size: 1rem; font-weight: 700; }
-.lava-swatches input:focus-visible + .lava-swatch { outline: 2px solid var(--ifl-accent-ink); outline-offset: 2px; }
+dialog.ifl-sheet[data-sheet=settings-appearance] {
+  --sheet-inset: clamp(16px, 4.5vw, 24px);
+  --sheet-bottom-pad: max(12px, env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
+}
+dialog[data-sheet=settings-appearance] > .ifs-body { overflow-y: auto; overscroll-behavior: contain; padding-block: 4px 6px; }
+dialog[data-sheet=settings-appearance] .ifs-head::before { box-shadow: none; }
+dialog[data-sheet=settings-appearance] .ifs-btn { min-width: 44px; min-height: 44px; }
+.settings-appearance .you-foot { margin: 4px 0 0; }
+.appearance-saving { color: var(--ifl-muted); font-size: .8125rem; }
+.settings-appearance .you-foot:empty { display: none; }
+.appearance-layout, .appearance-sample { display: grid; min-width: 0; }
+.appearance-layout { gap: 12px; }
+.appearance-sample { align-content: start; gap: 8px; }
+.appearance-options { min-width: 0; }
+.appearance-mode.ifl-seg-sm { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); padding: 2px; background: var(--ifl-surface-2); box-shadow: none; }
+.appearance-mode.ifl-seg-sm [role=radio] { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 4px; color: var(--ifl-muted); font-weight: 500; }
+.appearance-mode.ifl-seg-sm [role=radio]::after { content: none; }
+.appearance-mode.ifl-seg-sm [role=radio][aria-checked=true] {
+  background: light-dark(var(--ifl-raised), color-mix(in srgb, var(--ifl-surface) 80%, white)); color: var(--ifl-text); font-weight: 650;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ifl-text) 24%, transparent), 0 1px 4px #0002;
+}
+.appearance-mode :is(.ifl-glyph, svg), .appearance-system-icon { display: block; width: 15px; height: 15px; flex: none; }
+.appearance-system-icon { border: 1.5px solid currentColor; border-radius: 50%; background: linear-gradient(to right, currentColor 50%, transparent 50%); }
+.appearance-choice { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 50px; cursor: pointer; font-size: 1rem; font-weight: 500; }
+.appearance-label { display: grid; gap: 2px; }
+.appearance-label small, .orb-colours legend, .settings-range label { color: var(--ifl-muted); font-size: .8125rem; font-weight: 500; }
+.appearance-picker { display: inline-flex; align-items: center; position: relative; max-width: 64%; }
+.appearance-picker select {
+  width: 100%; min-height: 44px; padding: 0 22px 0 4px; border: 0; border-radius: 6px;
+  appearance: none; background: transparent; color: var(--ifl-text); font: inherit; font-weight: 450; text-align: end; cursor: pointer;
+}
+.appearance-picker option { color: var(--ifl-text); background: var(--ifl-surface); }
+.appearance-picker .ifl-glyph { position: absolute; right: 0; pointer-events: none; color: var(--ifl-muted); }
+.appearance-picker :is(.ifl-glyph, svg) { width: 15px; height: 15px; }
+.appearance-picker select:focus-visible, .settings-range input:focus-visible { outline: 2px solid var(--ifl-accent-ink); }
+.appearance-choice + .appearance-choice, .orb-colours + .appearance-choice { border-top: 1px solid var(--ifl-line); }
+.settings-appearance .orb-colours { padding-bottom: 12px; }
+.orb-colours legend { padding: 5px 0 6px; }
+.orb-swatches { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); }
+.orb-swatches label {
+  position: relative; display: grid; justify-items: center; align-content: start; gap: 7px; padding: 5px 0;
+  color: var(--ifl-muted); font-size: .75rem; line-height: 1.25; cursor: pointer;
+}
+.orb-swatches input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; opacity: 0; margin: 0; cursor: pointer; }
+.orb-swatch {
+  position: relative; display: block; width: 34px; aspect-ratio: 1; border-radius: 50%;
+  background:
+    radial-gradient(ellipse 44% 51% at 38% 30%, color-mix(in srgb, var(--orb-body) 78%, white), transparent 100%),
+    radial-gradient(ellipse at 52% 48%, var(--orb-body) 6%, transparent 67%),
+    radial-gradient(ellipse at 78% 29%, var(--orb-warm) 2%, transparent 56%),
+    conic-gradient(from 45deg, var(--orb-warm), var(--orb-body), var(--orb-cool), var(--orb-rim), var(--orb-warm));
+  box-shadow: inset -1px -3px 5px color-mix(in srgb, var(--orb-shade) 42%, transparent);
+}
+.orb-swatches input:checked + .orb-swatch { outline: 2px solid var(--ifl-text); outline-offset: 3px; }
+.orb-swatches input:checked ~ span:last-child { color: var(--ifl-text); font-weight: 650; }
+.orb-swatches input:focus-visible ~ span:last-child { text-decoration: underline 2px; text-underline-offset: 3px; }
+.settings-range > div { display: flex; justify-content: space-between; align-items: baseline; }
+.settings-range output { color: var(--ifl-text); font-size: .8125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.settings-range input {
+  display: block; appearance: none; width: 100%; height: 44px; margin: 0; padding: 0 2px; background: transparent; cursor: pointer;
+  --rail: linear-gradient(to right, var(--ifl-accent-ink) var(--range-fill), color-mix(in srgb, var(--ifl-muted) 50%, var(--ifl-surface)) var(--range-fill));
+}
+.settings-range input::-webkit-slider-runnable-track { height: 4px; border-radius: 8px; background: var(--rail); }
+.settings-range input::-moz-range-track { height: 4px; border-radius: 8px; background: var(--rail); }
+.settings-range input::-webkit-slider-thumb { appearance: none; width: 23px; height: 23px; margin-top: -9.5px; border: 1px solid #0003; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0003; }
+.settings-range input::-moz-range-thumb { width: 22px; height: 22px; border: 1px solid #0003; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0003; }
 @media (forced-colors: active) {
-  .lava-swatch { border: 1px solid ButtonText; }
-  .lava-swatches input:checked + .lava-swatch::after { color: Highlight; }
+  .orb-swatch, .appearance-mode [role=radio][aria-checked=true] { border: 1px solid ButtonText; }
+  .orb-swatches input:checked + .orb-swatch { outline-color: Highlight; }
+  .settings-range input { appearance: auto; }
 }
 
-/* A small window onto the current wallpaper. The full scene stays in its original
-   aspect ratio with its bottom edge at the dock, as on the home screen. */
+/* Keep the full canvas proportions for the dock's optical sampler. Crop the
+   window around the current orb scene, including after a device rotation. */
 .settings-dock-preview {
-  position: relative; isolation: isolate; display: grid; place-items: end center;
-  height: 80px; margin: 8px 16px 0; padding-bottom: 10px; overflow: hidden;
-  border-radius: 16px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--ifl-line);
+  container-type: size; position: relative; isolation: isolate; display: grid; place-items: end center;
+  height: clamp(108px, 17svh, 148px); overflow: hidden;
+  border-radius: 18px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--ifl-line);
 }
-.settings-dock-preview canvas { display: none; position: absolute; bottom: 0; left: 0; width: 100%; height: auto; }
+.settings-dock-preview canvas {
+  --scene-width: max(100cqw, calc(100cqh * var(--scene-aspect, 1)));
+  --scene-height: max(100cqh, calc(100cqw / var(--scene-aspect, 1)));
+  position: absolute; display: none; width: var(--scene-width); height: var(--scene-height); max-width: none;
+  left: clamp(calc(100cqw - var(--scene-width)), calc(43cqw - var(--scene-x, .5) * var(--scene-width)), 0px);
+  top: clamp(calc(100cqh - var(--scene-height)), calc(40cqh - var(--scene-y, .5) * var(--scene-height)), 0px);
+}
 html[data-midnight-lava] .settings-dock-preview canvas { display: block; }
 .settings-preview-dock {
-  position: relative; display: flex; align-items: center; gap: 7px; padding: 6px 9px;
+  position: relative; display: flex; align-items: center; gap: 7px; padding: 6px 9px; margin-bottom: 12px;
   border-radius: 16px; border: 1px solid var(--ifl-glass-line); background: var(--ifl-glass);
   box-shadow: var(--ifl-glass-shadow); -webkit-backdrop-filter: var(--ifl-glass-blur); backdrop-filter: var(--ifl-glass-blur);
 }
 .settings-preview-dock img { width: 22px; height: 22px; border-radius: 6px; }
 .settings-preview-dock :is(.ifl-glyph, svg) { width: 16px; height: 16px; }
+@media (min-width: 700px) {
+  dialog.ifl-sheet[data-sheet=settings-appearance] { width: min(740px, calc(100% - 48px)); --sheet-bottom-pad: 18px; }
+  .appearance-layout { grid-template-columns: minmax(0, .94fr) minmax(0, 1fr); gap: 28px; }
+  .appearance-sample { grid-template-rows: minmax(156px, 1fr) auto; align-content: stretch; }
+  .appearance-options { padding-left: 24px; border-left: 1px solid var(--ifl-line); }
+  .settings-dock-preview { height: auto; }
+}
 @media (prefers-reduced-transparency: no-preference) and (prefers-contrast: no-preference) {
   html[data-midnight-lava][data-glass=on] .settings-preview-dock {
     --ifl-glass-blur: blur(var(--ifl-glass-radius)) saturate(105%);

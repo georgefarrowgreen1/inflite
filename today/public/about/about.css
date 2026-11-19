@@ -129,7 +129,23 @@
   font-size: 1.6rem;
 }
 
-.about-page .brand img { border-radius: 22%; }
+.about-page .brand { flex: none; gap: .65rem; text-decoration: none; }
+.about-page .brand > img { width: 2.5rem; height: 2.5rem; border-radius: 22%; }
+.brand-name { display: grid; gap: .15rem; line-height: 1; }
+.brand-company {
+  display: flex;
+  align-items: center;
+  gap: .24rem;
+  color: var(--muted);
+  font-size: .75rem;
+  line-height: 1.2;
+  font-weight: 530;
+  letter-spacing: 0;
+}
+.about-page .brand-company img { width: 1.55rem; height: auto; filter: invert(1); }
+@media (prefers-color-scheme: light) {
+  .about-page .brand-company img { filter: none; }
+}
 .about-nav nav { gap: clamp(1.25rem, 4vw, 3.5rem); }
 .about-nav nav a { font-size: .95rem; }
 
@@ -451,7 +467,7 @@
   }
 
   .about-nav .brand { font-size: 1.4rem; }
-  .about-nav .brand img { width: 32px; height: 32px; }
+  .about-page .brand > img { width: 2.25rem; height: 2.25rem; }
 
   .about-nav nav {
     grid-column: 1 / -1;
@@ -480,5 +496,5 @@
 
   .app-list .featured-app img { width: 3.1rem; }
   .enquiry-fields { gap: 0; }
-  .about-footer .foot { gap: .3rem 1.5rem; }
+  .about-footer .foot { gap: .45rem 1.5rem; }
 }

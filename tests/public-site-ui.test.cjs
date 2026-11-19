@@ -7,7 +7,7 @@ const { createServer } = require('node:http');
 const { chromium, webkit } = require('playwright');
 
 const origin = 'https://inflite.ai';
-const assets = path.resolve(__dirname, '../today/public');
+const assets = path.resolve(process.env.WEB_UI_PUBLIC || path.resolve(__dirname, '../today/public'));
 const pages = ['/about/', '/privacy/', '/storage/', '/terms/'];
 const mime = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
@@ -69,6 +69,13 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.goto(site + '/about/');
     const sky = page.locator('.about-sky canvas[data-painted]');
     await sky.waitFor();
+    for (const region of ['banner','contentinfo']) {
+      const brand = page.getByRole(region).getByRole('link',{name:'InFlite, a GFG company',exact:true});
+      assert.equal(await brand.getAttribute('href'),'/about/');
+      const logo = brand.locator('img[alt="GFG"]');
+      await logo.evaluate(img => img.decode());
+      assert.ok(await logo.isVisible());
+    }
     const image = () => sky.evaluate(canvas => canvas.toDataURL());
     await page.emulateMedia({colorScheme:'light'});
     const stillFrame = await image();

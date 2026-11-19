@@ -22,7 +22,7 @@ export const minerals = {
   lagoon: {name:"Lagoon", light:{base:"#eff5f6", atmosphere:"#cfe3e4"}, base:"#08131c", atmosphere:"#163746", body:"#659591", shade:"#214652", pearl:"#d9f6eb",
     rim:["#79cfab","#93d6bd","#a4c8ff","#5976ad","#326c9a","#5bb4b9","#52bdaa","#99d8bd"]}
 };
-export const bubbleColours = Object.entries(minerals).map(([value, {name}]) => ({value, name}));
+export const bubbleColours = Object.entries(minerals).map(([value, ink]) => ({value, ...ink}));
 
 function direction() {
   const angle = range(0, tau), speed = range(.0032, .007);
