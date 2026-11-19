@@ -83,6 +83,9 @@ const refuse = (status, error) => json({ error }, status);
 const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.origin === "https://os.inflite.ai" && ["/about", "/about/", "/about/index.html"].includes(url.pathname) && ["GET", "HEAD"].includes(request.method)) {
+      return Response.redirect("https://inflite.ai/about/", 301);
+    }
     if (url.pathname === "/_errors/404" && ["GET", "HEAD"].includes(request.method)) return renderNotFound(request, env);
     if (url.pathname === "/version" && request.method === "GET") return version(env, request);
     if (/^\/(calendar|notes|people)(?:\/|$)/.test(url.pathname)) return organisePage(request,env);

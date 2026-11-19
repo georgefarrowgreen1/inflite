@@ -17,7 +17,9 @@
   "devDependencies": {
     "axe-core": "4.10.2",
     "playwright": "1.62.1",
-    "esbuild": "0.28.2",
     "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "esbuild": "0.28.2"
   }
 }
