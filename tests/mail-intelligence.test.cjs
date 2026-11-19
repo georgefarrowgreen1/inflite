@@ -69,7 +69,7 @@ test('attachment search returns files from the named sender, and inbox follow-up
       DOMAIN:'inflite.ai', DEFAULT_FROM:'hello@inflite.ai', ACCOUNT_ORIGIN:'https://account.test', HUB_KEY:'fixture', HUB_ORIGIN:'https://inflite.ai', HUB_API:'1',
       MAIL:{
         put:async (k,v)=>objects.set(k,v),
-        get:async k=>objects.has(k)?{json:async()=>JSON.parse(objects.get(k))}:null,
+        get:async k=>objects.has(k)?{body:objects.get(k),json:async()=>JSON.parse(objects.get(k))}:null,
         delete:async keys=>[].concat(keys).forEach(k=>objects.delete(k))
       },
       EMAIL:{send:async message=>{ deliveries.push(message); return {messageId:'outbound@inflite.ai'}; }}
@@ -139,18 +139,41 @@ test('attachment search returns files from the named sender, and inbox follow-up
       const unsubscribeUrl = 'https://list.example.test/leave';
       sql.prepare("UPDATE messages SET from_email = ?, unsub = ?, unsub_post = 1 WHERE id = '1'")
         .run('list@example.test', '<' + unsubscribeUrl + '>');
-      let unsubscribeStatus = 302;
+      let pageRequests = 0;
       const accountFetch = globalThis.fetch;
       globalThis.fetch = async (url, options) => {
         if (String(url) !== unsubscribeUrl) return accountFetch(url, options);
-        assert.equal(options.redirect, 'manual');
-        return new Response(null, { status: unsubscribeStatus });
+        pageRequests++;
+        return new Response(null, { status: 204 });
       };
+      const res = await worker.fetch(new Request('https://email.inflite.ai/api/unsubscribe/t1', {
+        headers:{Cookie:'account=abcdefghijklmnopqrstuvwxyz', 'Sec-Fetch-Site':'same-origin'},
+      }), env, ctx);
+      assert.equal(res.status, 200);
+      const {how, page} = await res.json();
+      assert.deepEqual({how, page}, {how:'page', page:unsubscribeUrl});
       assert.deepEqual(await post('unsubscribe/t1', {}), { ok:false, open:unsubscribeUrl });
+      assert.equal(pageRequests, 0);
       assert.equal(sql.prepare("SELECT folder FROM messages WHERE id = '1'").get().folder, 'inbox');
-      unsubscribeStatus = 204;
+      sql.prepare("UPDATE messages SET unsub = ?, unsub_post = 0 WHERE id = '1'").run('<mailto:leave@list.example.test>');
+      env.EMAIL.send = async message => { deliveries.push(message); };
       assert.deepEqual(await post('unsubscribe/t1', {}), { ok:true });
+      assert.deepEqual(deliveries.at(-1), {
+        from:'hello@inflite.ai', to:'leave@list.example.test', subject:'unsubscribe', text:'unsubscribe',
+      });
       assert.equal(sql.prepare("SELECT folder FROM messages WHERE id = '1'").get().folder, 'archive');
+
+      const safeGet = id => worker.fetch(new Request('https://email.inflite.ai/api/attachments/' + id, {
+        headers:{Cookie:'account=abcdefghijklmnopqrstuvwxyz', 'Sec-Fetch-Site':'same-origin'},
+      }), env, ctx);
+      sql.prepare('UPDATE attachments SET filename = ?, type = ? WHERE id = ?').run('Coast (🗺️).gpx', 'text/html', 'a1');
+      objects.set('att/a1', 'Fixture file');
+      const attachment = await safeGet('a1');
+      assert.equal(attachment.status, 200);
+      assert.equal(attachment.headers.get('Content-Type'), 'application/octet-stream');
+      assert.match(attachment.headers.get('Content-Disposition'), /^attachment; filename="[^"]+"; filename\*=UTF-8''Coast%20%28/);
+      assert.equal(attachment.headers.get('X-Content-Type-Options'), 'nosniff');
+      assert.equal(await attachment.text(), 'Fixture file');
     } finally { globalThis.fetch = savedFetch; }
   } finally { sql.close(); }
 });

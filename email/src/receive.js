@@ -1,9 +1,13 @@
 import PostalMime from "postal-mime";
+import { bodyUpTo } from "../../shared/bounded-body.js";
 import { ensureSchema, findThread, cleanMessageId, upsertContacts, bumpVersion } from "./db.js";
 import { pushAll, peopleUnread, noticeInflite } from "./push.js";
 import { arrivalFor } from "./addresses.js";
 import { quietNow } from "./auth.js";
 import { spotStored } from "./spot.js";
+
+const MAX_RAW_MAIL = 25 * 1024 * 1024;
+const TOO_LARGE = "Mail accepts messages up to 25 MB.";
 
 // Handles mail delivered by Cloudflare Email Routing. Nothing that arrives is lost: the original is kept first, and if
 // reading it fails (twice: a database that's briefly not answering shouldn't make good mail unreadable) it still shows in
@@ -11,6 +15,11 @@ import { spotStored } from "./spot.js";
 // original (pending/) until it's in: with the database not answering at all, or the run stopped partway (out of time,
 // say), the scheduled run reads it in from there (retryPending).
 export async function receiveEmail(message, env, ctx) {
+  if (message.rawSize > MAX_RAW_MAIL) {
+    message.raw?.cancel?.().catch(() => {});
+    message.setReject(TOO_LARGE);
+    return;
+  }
   // (to an address that isn't one of yours, with Settings set to turn those away: refused, so its sender hears)
   let arrival = { address: null, reject: false };
   try {
@@ -23,8 +32,12 @@ export async function receiveEmail(message, env, ctx) {
     message.setReject("This address doesn’t exist.");
     return;
   }
+  const raw = await bodyUpTo(new Response(message.raw), MAX_RAW_MAIL, { raw: true });
+  if (raw === null) {
+    message.setReject(TOO_LARGE);
+    return;
+  }
   const id = crypto.randomUUID();
-  const raw = await new Response(message.raw).arrayBuffer();
   await env.MAIL.put(`raw/${id}.eml`, raw, { httpMetadata: { contentType: "message/rfc822" } });
   // (coming: from a run that may still be going, which retryPending leaves to it a while)
   await keepNote(env, id, { to: message.to || "", from: message.from || "", at: Date.now(), coming: true });
@@ -88,6 +101,11 @@ export async function retryPending(env, ctx) {
       if (note?.coming && Date.now() - (Number(note.at) || 0) < 10 * 60e3) continue;
       // (already in, or nothing left to read in)
       if (!row && orig) {
+        if (orig.size > MAX_RAW_MAIL) {
+          await keepUnread(env, note || {}, id, orig.size);
+          await env.MAIL.delete(o.key);
+          continue;
+        }
         const raw = await orig.arrayBuffer();
         const { address } = await arrivalFor(env, note?.to);
         const message = { to: note?.to || "", from: note?.from || "", rawSize: raw.byteLength };

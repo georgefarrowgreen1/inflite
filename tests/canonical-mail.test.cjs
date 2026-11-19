@@ -1,6 +1,28 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const origin='https://email.inflite.ai';
+test('Mail denies the very next private request after the same session is revoked', async () => {
+  const { default: mail } = await import('../email/src/index.js');
+  let checks = 0, revoked = false;
+  const env = { ACCOUNT_ORIGIN: 'https://account.inflite.ai', APPS: { fetch: async request => {
+    assert.equal(request.headers.get('Cookie'), 'account=abcdefghijklmnopqrstuvwxyz');
+    assert.equal(request.redirect, 'manual');
+    assert.equal(new URL(request.url).pathname, '/api/account/mail/me');
+    checks++;
+    return Response.json(revoked ? { signedIn: false } : { signedIn: true, admin: true, passkey: true, fresh: true });
+  } } };
+  const get = path => mail.fetch(new Request(origin + path, {
+    headers: { Cookie: 'account=abcdefghijklmnopqrstuvwxyz', 'Sec-Fetch-Site': 'same-origin' },
+  }), env, {});
+  const first = await get('/api/session');
+  assert.equal((await first.json()).access, 'ok');
+  revoked = true;
+  const inbox = await get('/api/threads');
+  assert.equal(inbox.status, 401);
+  assert.equal((await inbox.json()).access, 'signin');
+  assert.equal(checks, 2);
+});
+
 test('canonical standalone Mail wraps its legacy feature surface at the isolated origin even with the native module on',async()=>{
  const {mailPage}=await import('../today/src/mailhost.js');
  const env={ROOF_MAIL:'1',MAIL_ORIGIN:origin,AUTH_ORIGIN:'https://auth.inflite.ai'};

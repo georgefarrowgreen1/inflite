@@ -1,10 +1,11 @@
 import { assetBuild } from "../../shared/asset-build.js";
+import { bodyUpTo } from "../../shared/bounded-body.js";
 import { sameOriginPost } from "../../shared/browser-origin.js";
 import { dueFollowups, validDue } from "./followups.js";
 import { peopleCards } from './people-cards.js';
-import { exportAttachment } from "./attachment-export.js";
+import { exportAttachment, attachmentDisposition } from "./attachment-export.js";
 import { sharedNotFound } from "../../shared/not-found.js";
-import { accountView, accessOf, passOn, forgetCheck, accountCookie, quietNow } from "./auth.js";
+import { accountView, accessOf, passOn, accountCookie, quietNow } from "./auth.js";
 import {
   bumpVersion,
   mailVersion,
@@ -244,7 +245,6 @@ async function api(request, env, ctx, url, fromAccount = false, hub = null) {
 
   // Signing out of Mail signs out of the account everywhere it's shared, as in the other inflite apps.
   if (pathname === "/api/logout" && method === "POST") {
-    forgetCheck(request);
     const r = await passOn(env, request, "signout", {});
     const res = json({ ok: r.status === 200 });
     for (const c of r.setCookies) res.headers.append("Set-Cookie", c);
@@ -332,14 +332,7 @@ async function route(request, env, ctx, url, view, hub = null) {
   }
   if (pathname === "/api/photo" && method === "GET") return photo(env, request, url);
   if ((m = pathname.match(/^\/api\/unsubscribe\/([\w-]+)$/))) {
-    if (method === "GET") {
-      const info = await unsubInfo(env, m[1]);
-      if (!info) throw new HttpError(404, "This sender doesn't say how to unsubscribe.");
-      const how = info.oneClick && info.https ? "oneclick" : info.mailto ? "mail" : info.https ? "page" : null;
-      // (their page, where that's the way: opened by the tap itself, as a page opened after waiting for Mail is blocked)
-      return json({ sender: info.sender, opened: info.opened, of: info.of, how, to: info.mailto ? mailtoTo(info.mailto) : null, page: how === "page" ? info.https : null });
-    }
-    if (method === "POST") return unsubscribe(env, m[1]);
+    if (method === "GET" || method === "POST") return unsubscribe(env, m[1], method);
   }
   if (pathname === "/api/counts" && method === "GET") return json(await counts(env));
   if (pathname === "/api/threads" && method === "GET") return json(await listThreads(env, url));
@@ -422,51 +415,38 @@ async function route(request, env, ctx, url, view, hub = null) {
   throw new HttpError(404, "Not found");
 }
 
-// Unsubscribe: by the sender's one-click address (RFC 8058) if it has one, else by the email it gives; failing both, the
-// page it gives, for Mail to open. Then everything from it that's waiting goes to Done.
-// (the address a sender's unsubscribe email goes to, shown before it's sent; its subject and body kept short and plain)
 function mailtoTo(mailto) {
   try {
-    const to = decodeURIComponent(new URL(mailto).pathname);
-    return EMAIL_RE.test(to) ? to : null;
+    const address = new URL(mailto);
+    if (address.protocol !== "mailto:") return null;
+    const to = decodeURIComponent(address.pathname);
+    return to.length <= 254 && !/[\x00-\x1f\x7f]/.test(to) && EMAIL_RE.test(to) ? to : null;
   } catch {
     return null;
   }
 }
-async function unsubscribe(env, threadId) {
+function unsubscribePage(value) {
+  if (typeof value !== "string" || /[\u0000-\u001f\u007f]/.test(value)) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.port && !url.username && !url.password ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+async function unsubscribe(env, threadId, method) {
   const info = await unsubInfo(env, threadId);
   if (!info) throw new HttpError(404, "This sender doesn't say how to unsubscribe.");
-  let done = false;
-  if (info.oneClick && info.https) {
-    try {
-      const u = new URL(info.https);
-      if (u.protocol === "https:" && !u.port && !u.username) {
-        const r = await fetch(u, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "List-Unsubscribe=One-Click",
-          redirect: "manual",
-          signal: AbortSignal.timeout(8000),
-        });
-        done = r.ok;
-      }
-    } catch {
-      console.error("one-click unsubscribe failed");
-    }
+  const page = unsubscribePage(info.https), to = mailtoTo(info.mailto);
+  const how = info.oneClick && page ? "page" : to ? "mail" : page ? "page" : null;
+  if (!how) throw new HttpError(404, "This sender doesn't say how to unsubscribe.");
+  if (method === "GET") {
+    return json({ sender: info.sender, opened: info.opened, of: info.of, how, to: how === "mail" ? to : null, page: how === "page" ? page : null });
   }
-  if (!done && info.mailto) {
-    const to = mailtoTo(info.mailto);
-    if (to) {
-      // (from the default address, and saying only "unsubscribe": the sender's header chooses where it goes, never what
-      // it says, nor which of your addresses it's from, so an unsubscribe can't be made into a message from you)
-      await env.EMAIL.send({ from: checkFrom(env, null), to, subject: "unsubscribe", text: "unsubscribe" });
-      done = true;
-    }
-  }
-  if (!done) {
-    if (info.https) return json({ ok: false, open: info.https });
-    throw new HttpError(502, "Couldn't unsubscribe. Try the link in one of their emails.");
-  }
+  // Sender-controlled URLs are offered as browser links. Only a confirmed
+  // email unsubscribe sends a request and moves the sender's messages to Done.
+  if (how === "page") return json({ ok: false, open: page });
+  await env.EMAIL.send({ from: checkFrom(env, null), to, subject: "unsubscribe", text: "unsubscribe" });
   await env.DB.prepare(`UPDATE messages SET folder = 'archive', snooze_until = NULL WHERE from_email = ?1 AND folder = 'inbox'`)
     .bind(info.sender.email)
     .run();
@@ -855,16 +835,18 @@ async function attachment(env, id, url, request, hub = null) {
   const range = request?.headers.get("Range");
   const obj = row && (await env.MAIL.get(`att/${id}`, range ? { range: request.headers } : undefined));
   if (!obj) throw new HttpError(404, "Attachment not found");
-  const name = (row.filename || "attachment").replace(/["\\\r\n]/g, "_");
   // (shown in place only if it's a picture, a sound, a film or a PDF; anything else, an HTML page say, is a download,
   // so it never opens as a page of Mail's own)
-  const type = row.type || "application/octet-stream", viewable = /^(image\/(png|jpe?g|gif|webp|avif|heic|bmp)|audio\/[\w.+-]+|video\/[\w.+-]+|application\/pdf)$/i.test(type);
+  const declared = row.type || "";
+  const viewable = RASTER.test(declared) || /^(audio\/[\w.+-]+|video\/[\w.+-]+|application\/pdf)$/i.test(declared);
+  const type = viewable ? declared : "application/octet-stream";
   const download = url.searchParams.has("download") || !viewable;
   const headers = {
     "Content-Type": type,
-    "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${name}"; filename*=UTF-8''${encodeURIComponent(row.filename || "attachment")}`,
+    "Content-Disposition": attachmentDisposition(row.filename, download ? "attachment" : "inline"),
     "Cache-Control": "private, no-store",
     "Accept-Ranges": "bytes",
+    "Referrer-Policy": "no-referrer",
     // Never let an attachment run script on our origin. (A PDF, which browsers refuse to show in a sandbox, is shown
     // by their own viewer, which runs nothing of ours; and only ever inside Mail.)
     "Content-Security-Policy": /^application\/pdf$/i.test(type)
@@ -1267,25 +1249,6 @@ function whose(request, env, headers) {
   if (ip) headers["CF-Connecting-IP"] = ip;
   if (ip && env.HUB_KEY) Object.assign(headers, { "X-Hub-Key": env.HUB_KEY, "X-Hub-IP": ip });
   return headers;
-}
-
-// (a body of max bytes at most, or null: one that says it's longer refused before any of it's read, and one that doesn't
-// say read no further than that)
-async function bodyUpTo(request, max) {
-  const length = request.headers.get("Content-Length");
-  if (length !== null && !(Number(length) >= 0 && Number(length) <= max)) return null;
-  if (!request.body) return "";
-  const reader = request.body.getReader(), parts = [];
-  for (let n = 0; ; ) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if ((n += value.byteLength) > max) {
-      reader.cancel().catch(() => {});
-      return null;
-    }
-    parts.push(value);
-  }
-  return new TextDecoder().decode(await new Blob(parts).arrayBuffer());
 }
 
 // Small API objects by default; composing mail has its own attachment-sized cap.

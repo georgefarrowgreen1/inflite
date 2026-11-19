@@ -98,3 +98,30 @@ test('Mail caps JSON before parsing; fallbacks cannot swallow a size error', asy
   await assert.rejects(jsonBody(streamRequest([large])), e => e.status === 413);
   assert.equal((await jsonBody(streamRequest([large]), 36 * 1024 * 1024)).text.length, 65536);
 });
+
+test('oversized inbound Mail is rejected and its original is never written', async () => {
+  const { receiveEmail } = await import('../email/src/receive.js');
+  const mb = 1024 * 1024;
+  const chunk = new Uint8Array(mb);
+  let stored = 0;
+  const env = {
+    DB: { prepare: () => ({ first: async () => ({ v: '14' }), bind: () => ({ first: async () => null }) }) },
+    MAIL: { put: async () => { stored++; } },
+  };
+  for (const [size, expectedReads] of [[26 * mb, 0], [1, 26]]) {
+    let reads = 0, cancelled = false, rejected;
+    const raw = new ReadableStream({
+      pull(controller) {
+        if (++reads <= 27) controller.enqueue(chunk);
+        else controller.close();
+      },
+      cancel() { cancelled = true; },
+    }, { highWaterMark: 0 });
+    await receiveEmail({ raw, rawSize: size, to: 'owner@example.test', setReject: reason => { rejected = reason; } }, env, {});
+    assert.match(rejected, /up to 25 MB/);
+    assert.equal(reads, expectedReads);
+    assert.equal(cancelled, true);
+    assert.equal(raw.locked, false);
+  }
+  assert.equal(stored, 0);
+});

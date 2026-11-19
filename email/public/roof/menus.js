@@ -109,13 +109,18 @@ export async function openUnsub(ctx, t) {
   const body = ui.el("div", { class: "ml-sheet ml-unsub" }, ui.el("p", { class: "ifl-sub", text: words }));
   // (their page: opened by the tap itself, a link, as one opened once Mail's answered can be blocked as a pop-up)
   const acts = info?.page && /^https:\/\//i.test(info.page)
-    ? [{ label: "Unsubscribe", primary: true, destructive: true, act: "unsub", href: info.page }]
+    ? [{ label: "Open unsubscribe page", primary: true, act: "unsub", href: info.page }]
     : [{ label: "Unsubscribe", primary: true, destructive: true, act: "unsub", run: async () => {
       h?.setBusy(true);
       try {
         const r = await api.unsubscribe(t.id);
         h?.close();
-        if (r?.open && /^https:\/\//i.test(r.open)) { const w = globalThis.open(r.open, "_blank", "noopener"); if (!w) fw.toast(`Finish on ${who}’s page`); return; }
+        if (r?.open && /^https:\/\//i.test(r.open)) {
+          fw.toast(`Finish on ${who}’s page`, {
+            action: { label: "Open", run: () => globalThis.open(r.open, "_blank", "noopener,noreferrer") },
+          });
+          return;
+        }
         fw.toast(`Unsubscribed from ${who}`);
         actions.counts(); actions.load({ quiet: true });
       } catch (e) { h?.setBusy(false); fw.toast(e.message || "Couldn’t unsubscribe. Try again."); }

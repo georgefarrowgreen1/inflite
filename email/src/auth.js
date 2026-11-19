@@ -7,7 +7,6 @@ import { appFetch } from "./apps.js";
 // (and the mark that the browser has just changed its sign-in, ifl_rw=1, so the account asks its main database who's
 // signed in, not a copy near the visitor that may be a moment behind: georgefarrowgreen functions/_account.js markWrote)
 const COOKIE_RE = /(?:^|;\s*)((?:__Secure-)?account=[A-Za-z0-9_-]{20,100}|ifl_rw=1)(?=;|$)/g;
-const CHECK_TTL = 10 * 1000;
 
 // Only the account's cookie (and that mark) is passed on, never anything else the browser sent.
 export function accountCookie(request) {
@@ -25,29 +24,21 @@ function forwardHeaders(request, cookie) {
   return h;
 }
 
-// Answers that let someone in are kept ten seconds per sign-in (signed out elsewhere, that's as long as Mail goes on letting them in), so each mail request doesn't ask the account's address again.
-const checked = new Map();
-
-export function forgetCheck(request) {
-  const cookie = accountCookie(request);
-  if (cookie) checked.delete(cookie);
-}
-
 export async function accountView(env, request) {
   const cookie = accountCookie(request);
   if (!cookie) return { signedIn: false };
-  const hit = checked.get(cookie);
-  if (hit && Date.now() - hit.at < CHECK_TTL) return hit.view;
-  // (not waited on for ever: a slow account's address is the same as one that's down)
-  const res = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/mail/me`, { headers: forwardHeaders(request, cookie), signal: AbortSignal.timeout(8000) }).catch(() => null);
-  if (!res?.ok) throw Object.assign(new Error("Couldn’t reach your inflite account. Try again in a moment."), { status: 502, publicMessage: "Couldn’t reach your inflite account. Try again in a moment." });
-  const view = await res.json();
-  if (checked.size > 200) checked.clear();
-  if (accessOf(view) === "ok") {
-    checked.set(cookie, { at: Date.now(), view });
-    // (the account's Quiet Hours, kept here for new mail's notices, which come with no one's sign-in to ask with)
-    if (view.quiet) keepQuiet(env, view.quiet).catch(() => {});
+  // Private Mail checks the current sign-in and permissions on every request.
+  const res = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/mail/me`, {
+    headers: forwardHeaders(request, cookie), redirect: "manual", signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
+  if (!res?.ok) {
+    res?.body?.cancel().catch(() => {});
+    const message = "Couldn’t reach your InFlite account. Try again in a moment.";
+    throw Object.assign(new Error(message), { status: 502, publicMessage: message });
   }
+  const view = await res.json();
+  // Keep Quiet Hours for notices that arrive without a browser session.
+  if (accessOf(view) === "ok" && view.quiet) keepQuiet(env, view.quiet).catch(() => {});
   return view;
 }
 
@@ -82,7 +73,9 @@ export function accessOf(view) {
 export async function passOn(env, request, path, body) {
   const headers = forwardHeaders(request, accountCookie(request));
   headers.set("Content-Type", "application/json");
-  const res = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/mail/${path}`, { method: "POST", headers, body: JSON.stringify(body || {}) });
+  const res = await appFetch(env, `${env.ACCOUNT_ORIGIN}/api/account/mail/${path}`, {
+    method: "POST", headers, body: JSON.stringify(body || {}), redirect: "manual", signal: AbortSignal.timeout(8000),
+  });
   let data = {};
   try {
     data = await res.json();

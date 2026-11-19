@@ -284,9 +284,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.24.6";
+  const BUILD = "2.24.7";
   // (what's new in it, said once it's in)
-  const NEWS = "Removed unused Mail code.";
+  const NEWS = "Improved Mail security and unsubscribe handling.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.

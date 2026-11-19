@@ -597,15 +597,8 @@ export default (M) => {
     const who = displayName(info.sender) || info.sender.email;
     const layer = h("div.menu-layer.center.unsub-layer");
     const close = () => closeMenu();
-    // (their page: opened by the tap itself, a link, as one opened once Mail's answered can be blocked as a pop-up. Asked
-    // of Mail first, and its page then turned away, the toast has it to open instead)
-    const finish = (url) => {
-      const w = url && window.open(url, "_blank");
-      if (w) w.opener = null;
-      toast(`Finish on ${who}'s page`, w || !url ? { icon: "news" } : { icon: "news", actionLabel: "Open", duration: 10000, action: () => window.open(url, "_blank", "noopener") });
-    };
     const go = info.page
-      ? h("a.pbtn.danger-btn", { href: info.page, target: "_blank", rel: "noopener noreferrer", onclick: () => (close(), finish()) }, "Unsubscribe")
+      ? h("a.pbtn.danger-btn", { href: info.page, target: "_blank", rel: "noopener noreferrer", onclick: close }, "Open unsubscribe page")
       : h("button.pbtn.danger-btn", { type: "button" }, "Unsubscribe");
     if (!info.page) go.addEventListener("click", async () => {
       go.disabled = true;
@@ -613,7 +606,10 @@ export default (M) => {
       try {
         const r = await api.unsubscribe(t.id);
         close();
-        if (r.open) return finish(r.open);
+        if (r.open) return toast(`Finish on ${who}'s page`, {
+          icon: "news", actionLabel: "Open", duration: 10000,
+          action: () => window.open(r.open, "_blank", "noopener,noreferrer")
+        });
         toast(`Unsubscribed from ${who}`, { icon: "check" });
         refreshCounts();
         loadList({ quiet: true });
