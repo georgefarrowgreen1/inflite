@@ -65,13 +65,25 @@ test('public pages and contact form work without signing in, from phone to deskt
     await sky.waitFor();
     const image = () => sky.evaluate(canvas => canvas.toDataURL());
     const stillFrame = await image();
+    const wing = page.locator('.intro-art');
+    assert.equal(await wing.getAttribute('data-wing-motion'), null);
+    assert.equal(await wing.locator('.wing-canvas').isVisible(), false);
     assert.equal(await page.locator('.wallpaper-controls, .privacy-feature').count(), 0);
     await page.getByRole('link', { name: 'Explore the apps' }).click();
     assert.equal(new URL(page.url()).hash, '#apps');
     assert.equal(await image(), stillFrame, 'a reduced-motion scene stays still while scrolling');
     await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await wing.scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => {
+      const art = document.querySelector('.intro-art[data-wing-motion]');
+      return art && (art.hasAttribute('data-wing-live') || art.querySelector('img').getAnimations().length > 0);
+    });
     await page.waitForFunction(before => document.querySelector('.about-sky canvas').toDataURL() !== before, stillFrame);
+    await page.getByRole('link', { name: 'Explore the apps' }).click();
+    await page.waitForFunction(() => !document.querySelector('.intro-art').hasAttribute('data-wing-motion'));
     await page.emulateMedia({ reducedMotion: 'reduce' });
+    await wing.scrollIntoViewIfNeeded();
+    assert.equal(await wing.locator('.wing-canvas').isVisible(), false);
     assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
     for (const pagePath of pages) {
       if (pagePath !== '/about/') await page.locator('footer a[href="' + pagePath + '"]').click();
