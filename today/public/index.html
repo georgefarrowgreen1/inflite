@@ -51,6 +51,7 @@
   <link rel="modulepreload" href="/roof/send.js">
   <link rel="modulepreload" href="/roof/refractor.js">
   <link rel="modulepreload" href="/roof/lava-field.js">
+  <link rel="modulepreload" href="/roof/lava-detail.js">
   <script type="module" src="/roof/wallpaper.js"></script>
   <script type="module" src="/app.js"></script>
 </head>
@@ -80,6 +81,7 @@
 
 <!-- Sign-in controls are shown only after the account confirms the session ended. -->
 <main class="today-out ifl-in" id="out" aria-label="InFlite" hidden>
+  <div class="ifl-entry">
   <div class="ifl-top">
     <div class="ifl-logo ifl-arrival" aria-hidden="true">
       <span class="ifl-arrival-lights"><span class="ifl-arrival-light ifl-arrival-blue"></span><span class="ifl-arrival-light ifl-arrival-coral"></span><span class="ifl-arrival-light ifl-arrival-teal"></span><span class="ifl-arrival-light ifl-arrival-violet"></span></span>
@@ -117,10 +119,12 @@
     </div>
   </div>
   <div class="ifl-cta">
+    <h1 class="ifl-entry-title">Sign in to InFlite</h1>
     <p class="today-said" id="outSaid" role="status" hidden></p>
     <p class="ifl-brand"><img src="/inflite.svg" alt="" width="22" height="22">Powered by InFlite</p>
     <a class="ifl-go pill primary" id="signin" href="https://auth.inflite.ai/">Sign in</a>
     <p class="ifl-new"><a id="join" href="https://auth.inflite.ai/">Create an account</a> · <a href="/about/">About InFlite</a></p>
+  </div>
   </div>
 </main>
 

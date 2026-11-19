@@ -498,7 +498,8 @@ async function open({ width = 390, scheme = 'light', answer = day, signedIn = tr
     const req = route.request(), url = new URL(req.url());
     if (url.origin !== origin) return route.abort();
     if (legacyShell && url.pathname === '/') {
-      const html = (await readFile(resolve(publicDir, 'index.html'), 'utf8')).replace(/<main[^>]*id="sessionState"[\s\S]*?<\/main>/, '').replace('id="out" aria-label="InFlite" hidden', 'id="out" aria-label="InFlite"');
+      let html = (await readFile(resolve(publicDir, 'index.html'), 'utf8')).replace('id="out" aria-label="InFlite" hidden', 'id="out" aria-label="InFlite"');
+      if (legacyShell !== 'overlap') html = html.replace(/<main[^>]*id="sessionState"[\s\S]*?<\/main>/, '');
       const policy = await readFile(resolve(publicDir, '_headers'), 'utf8');
       return route.fulfill({ body: html, headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': /Content-Security-Policy: (.*)/.exec(policy)[1] } });
     }
@@ -896,6 +897,39 @@ test('an unavailable or malformed startup session offers Retry and recovers with
       assert.deepEqual(errors, []);
     } finally { await ctx.close(); }
   }
+});
+
+test('desktop sign-in replaces the opening screen and fits a short window', async () => {
+  let release, observed;
+  const gate = new Promise(r => release = r), seen = new Promise(r => observed = r);
+  const {ctx, page, errors} = await open({width:1440, waitForReady:false, legacyShell:'overlap', signedIn:false,
+    intercept:async (route, {url}) => {
+      if (url.pathname !== '/api/session') return false;
+      observed(); await gate;
+      await route.fulfill({json:{signedIn:false}});
+      return true;
+    }});
+  try {
+    await seen;
+    await page.getByText('Still connecting…').waitFor();
+    assert.equal(await page.locator('#out').isVisible(), false);
+    assert.equal(await page.locator('#sessionState').isVisible(), true);
+    release();
+    const title = page.getByRole('heading', {name:'Sign in to InFlite'});
+    await title.waitFor();
+    assert.equal(await page.locator('#sessionState').isVisible(), false);
+    for (const viewport of [{width:1440,height:844}, {width:1024,height:440}]) {
+      await page.setViewportSize(viewport);
+      const entry = await page.locator('#out .ifl-entry').boundingBox();
+      const logo = await page.locator('#out .ifl-logo').boundingBox();
+      const label = await title.boundingBox();
+      const signIn = await page.locator('#signin').boundingBox();
+      assert.ok(logo.y + logo.height <= label.y && label.y + label.height <= signIn.y);
+      assert.ok(entry.y >= 0 && entry.y + entry.height <= viewport.height);
+      assert.ok(Math.abs(entry.x + entry.width / 2 - viewport.width / 2) < 2);
+    }
+    assert.deepEqual(errors, []);
+  } finally { release(); await ctx.close(); }
 });
 
 test('secondary 401s and worker sign-out hints keep the current screen until the session is confirmed', async () => {

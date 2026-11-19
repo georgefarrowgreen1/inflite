@@ -89,6 +89,7 @@ a { color: inherit; }
 .num { font-variant-numeric: tabular-nums; }
 /* (neither the way in nor your day until the script knows which: theme.js, for at most 4 seconds) */
 html.boot #out, html.boot #in { display: none; }
+#sessionState:not([hidden]) ~ :is(#out, #in) { display: none !important; }
 
 /* the sky: three slow lights over the gradient */
 .sky { position: fixed; inset: 0 0 calc(0px - var(--fix-gap, 0px)); z-index: -1; overflow: hidden; background: var(--ifl-page, var(--sky-c)); }
@@ -1419,6 +1420,66 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 .today-start[aria-busy=false] .opening-feedback p { color: var(--danger); }
 @media(min-width:900px) { .opening-preview { grid-template-columns: 1.3fr 1fr; align-items: start; } }
 
+.today-out .ifl-entry-title { display: none; }
+@media (min-width: 800px) and (hover: hover) and (pointer: fine) {
+  .today-out:not([hidden]), .today-start:not([hidden]) {
+    display: grid;
+    place-items: center;
+    min-height: 100vh;
+    min-height: 100svh;
+    max-width: none;
+    padding: clamp(20px, 5vh, 60px) 24px;
+    --entry-panel: color-mix(in srgb, var(--ifl-surface) 89%, transparent);
+  }
+  .today-out .ifl-entry, .today-start .opening-feedback {
+    width: min(100%, 416px);
+    padding: clamp(24px, 5vh, 42px);
+    border: 1px solid var(--ifl-line);
+    border-radius: 32px;
+    background: var(--entry-panel);
+    box-shadow: 0 24px 80px rgb(0 0 0 / .22);
+  }
+  .today-out :is(.ifl-top, .ifl-cta) {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    animation: none;
+  }
+  .today-out .ifl-logo {
+    width: 108px;
+    height: 108px;
+    margin: 0 0 22px;
+  }
+  .today-out .ifl-entry-title {
+    display: block;
+    margin: 0 0 26px;
+    font: 700 clamp(26px, 2.6vw, 32px)/1.12 var(--font-d);
+    letter-spacing: -.035em;
+    text-align: center;
+    text-wrap: balance;
+  }
+  .today-out .ifl-brand { display: none; }
+  .today-out .ifl-new {
+    position: static;
+    margin: 8px 0 -6px;
+    font-size: 14px;
+  }
+  .today-out .ifl-new a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 6px; }
+  .today-out .ifl-new a:hover { text-decoration: underline; }
+  .today-start :is(.opening-head, .opening-preview) { display: none; }
+  .today-start .opening-feedback { margin: 0; text-wrap: pretty; }
+  .today-start[aria-busy=true] .opening-feedback::after {
+    content: "";
+    width: min(100%, 120px);
+    height: 2px;
+    border-radius: 999px;
+    background: var(--ifl-accent);
+  }
+}
+
 /* Account continuation remains a compact, quiet Today card. */
 .continuation-card{margin:16px 0;padding:18px;border-radius:28px;background:var(--card,var(--inset));border:1px solid var(--line,#8882)}
 .continuation-card h2{font-size:16px;margin:0 0 10px}.continuation-row{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;padding:14px 16px;margin-top:8px;border:0;border-radius:20px;background:var(--inset,#8881);color:inherit;text-align:start;font:inherit;min-height:56px}.continuation-row span:first-child{min-width:0}.continuation-row strong,.continuation-row small{display:block;overflow-wrap:anywhere}.continuation-row small{font-size:12px;color:var(--text-2,#777);margin-top:4px}.continuation-row:focus-visible{outline:2px solid var(--acc-ink);outline-offset:3px}
@@ -1518,6 +1579,7 @@ html[data-midnight-lava] .sky {
   view-transition-name: inflite-wallpaper;
 }
 html[data-midnight-lava] .sky > canvas { display: block; width: 100%; height: 100%; }
+.sky > .lava-detail { position: absolute; inset: 0; }
 html[data-midnight-lava] :is(#workspace.ifl-workspace, .ifl-workspace .ws-shell, .ifl-workspace .ws-canvas) { background: transparent; }
 html[data-midnight-lava] { --midnight-header-shade: linear-gradient(to bottom, rgb(var(--lava-base) / .6), rgb(var(--lava-base) / .25) 60%, transparent); }
 html[data-midnight-lava] .ifl-workspace .ws-toolbar { background: var(--midnight-header-shade); }

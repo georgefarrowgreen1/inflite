@@ -1,4 +1,5 @@
 // The wallpaper belongs to the document. App routes only replace content above it.
+import {createDetailedLava} from "./lava-detail.js";
 import {wallpaperFrame} from "./refractor.js";
 import {radii, pigments, newLavaScene, driftLava, drawLavaFrame} from "./lava-field.js";
 export {lavaColours} from "./lava-field.js";
@@ -41,10 +42,11 @@ function readScene() {
 
 const root = document.documentElement;
 const canvas = document.querySelector(".sky > canvas");
+const desktop = matchMedia("(min-width: 900px) and (hover: hover) and (pointer: fine)");
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const still = matchMedia("(prefers-reduced-motion: reduce)");
 const contrast = matchMedia("(prefers-contrast: more), (forced-colors: active)");
-let pools, ctx, frame, timer, previous;
+let pools, ctx, frame, detail, timer, previous;
 let suspended = false;
 
 let preview;
@@ -69,7 +71,13 @@ function checkpoint() {
 function paint() {
   const width = canvas.clientWidth, height = canvas.clientHeight;
   if (!width || !height) return;
-  const scale = Math.min(1, 220 / Math.max(width, height));
+  if (desktop.matches && detail === undefined) {
+    detail = createDetailedLava();
+    detail?.canvas.addEventListener("webglcontextlost", sync, {once:true});
+  }
+  const detailed = desktop.matches && detail?.available();
+  const limit = desktop.matches && !detailed ? 480 : 220;
+  const scale = Math.min(1, limit / Math.max(width, height));
   const w = Math.max(1, Math.round(width * scale)), h = Math.max(1, Math.round(height * scale));
   if (!frame || frame.width !== w || frame.height !== h) {
     canvas.width = w; canvas.height = h;
@@ -78,7 +86,13 @@ function paint() {
   const now = performance.now(), aspect = w / h;
   if (previous && !still.matches && wallpaperPreference() === "lava") driftLava(pools, Math.min(.5, (now - previous) / 1000), aspect);
   previous = now;
-  drawLavaFrame(ctx, frame, pools, wallpaperColour());
+  const colour = wallpaperColour();
+  drawLavaFrame(ctx, frame, pools, colour);
+  if (detailed) {
+    detail.paint(width, height, pools, colour, aspect);
+    if (!detail.canvas.isConnected) canvas.after(detail.canvas);
+  }
+  if (detail) detail.canvas.hidden = !detailed;
   wallpaperFrame(canvas, frame);
   drawPreview();
 }
@@ -95,10 +109,27 @@ function sync() {
   pools ||= readScene() || newLavaScene();
   paint();
   if (!still.matches && wallpaperPreference() === "lava") timer = setInterval(paint, 250);
+  else if (desktop.matches && detail?.available()) {
+    // Some browsers do not dispatch a resize or media event for a density-only change.
+    let density = devicePixelRatio;
+    timer = setInterval(() => {
+      if (density === devicePixelRatio) return;
+      density = devicePixelRatio;
+      paint();
+    }, 1000);
+  }
 }
 
 if (canvas) {
-  for (const media of [dark, still, contrast]) media.addEventListener("change", sync);
+  for (const media of [desktop, dark, still, contrast]) media.addEventListener("change", sync);
+  // Moving a window between displays can change its density without resizing the canvas element.
+  function watchDensity() {
+    matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener("change", () => {
+      watchDensity();
+      sync();
+    }, {once:true});
+  }
+  watchDensity();
   new MutationObserver(sync).observe(root, {attributes:true, attributeFilter:["data-theme"]});
   new ResizeObserver(sync).observe(canvas.parentElement);
   addEventListener("storage", event => {

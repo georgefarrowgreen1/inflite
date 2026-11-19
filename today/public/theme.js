@@ -43,7 +43,6 @@ document.documentElement.classList.add("boot");
 setTimeout(() => {
   const state = document.getElementById("sessionState");
   if (!state || state.hidden || state.getAttribute("aria-busy") !== "true") return;
-  document.documentElement.classList.remove("boot");
   document.getElementById("sessionSaid").textContent = "Still connecting…";
 }, 4000);
 // If the module itself never starts, its request timeout cannot offer recovery.
@@ -59,6 +58,10 @@ setTimeout(() => {
     if (out) { out.hidden = true; out.before(state); } else document.body?.prepend(state);
   }
   if (state.hidden) return;
+  for (const id of ["out", "in"]) {
+    const screen = document.getElementById(id);
+    if (screen) screen.hidden = true;
+  }
   state.setAttribute("aria-busy", "false");
   document.getElementById("sessionSaid").textContent = "Couldn’t open InFlite. Try again.";
   document.getElementById("sessionRetry").hidden = false;

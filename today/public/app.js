@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.11.7";
+const BUILD = "4.11.8";
 // (what's new in it, said once it's in)
-const NEWS = "The About page now uses InFlite’s Midnight purple theme.";
+const NEWS = "Desktop sign-in is centered and Lava renders in higher detail.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.31.2/store.js","/os.webmanifest"];
@@ -1800,11 +1800,12 @@ function anyway() {
 
 // ---------------------------------------------------------------- the two states
 function lift() { document.documentElement.classList.remove("boot"); }
+function showShellScreen(screen) {
+  for (const id of ["sessionState", "out", "in"]) $(`#${id}`).hidden = id !== screen;
+}
 function sessionWaiting(said) {
   if (S.view) { if (said) toast(said); return; }
-  $("#out").hidden = true;
-  $("#in").hidden = true;
-  $("#sessionState").hidden = false;
+  showShellScreen("sessionState");
   $("#sessionState").setAttribute("aria-busy", "false");
   $("#sessionSaid").textContent = said || "Couldn’t check your connection. Try again.";
   $("#sessionRetry").hidden = false;
@@ -1814,9 +1815,7 @@ function showOut(said = "") {
   sheetOpen && closeSheet();
   IFL.close(true);
   $("#sessionState").setAttribute("aria-busy", "false");
-  $("#sessionState").hidden = true;
-  $("#in").hidden = true;
-  $("#out").hidden = false;
+  showShellScreen("out");
   $("#outSaid").textContent = said;
   $("#outSaid").hidden = !said;
   $("#out").classList.toggle("said", !!said);
@@ -1873,10 +1872,8 @@ function signedIn(view, { offline = false } = {}) {
   appearance(view.user.appearance, view.user.palette, view.user.id);
   if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; }
   if (!S.morning || !("lines" in S.morning)) S.morning = view.morning || S.morning;
-  $("#out").hidden = true;
   $("#sessionState").setAttribute("aria-busy", "false");
-  $("#sessionState").hidden = true;
-  $("#in").hidden = false;
+  showShellScreen("in");
   frame();
   shellPerformance.startup(F.signal);
   if (waitingAnswer) { const a = waitingAnswer; waitingAnswer = null; gotCards(a); }
@@ -3173,13 +3170,15 @@ const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui",
 // An installed copy can briefly have the previous cached HTML with this script.
 // Give that shell the same neutral state before asking anything about the account.
 function ensureSessionUI() {
-  if ($("#sessionState")) return;
-  const out = $("#out"), state = document.createElement("main");
-  state.id = "sessionState"; state.className = "today-start";
-  state.setAttribute("aria-label", "Opening InFlite"); state.setAttribute("aria-busy", "true");
-  // Static public markup only: never clone the sign-in page or its SVG IDs.
-  state.innerHTML = `<header class="opening-head" aria-hidden="true"><img src="/icon.svg" alt="" width="40" height="40"><span>InFlite</span></header><div class="opening-feedback"><p id="sessionSaid" role="status">Opening InFlite…</p><a class="pill primary" id="sessionRetry" href="" hidden>Try Again</a></div>`;
-  out.before(state); out.hidden = true;
+  if (!$("#sessionState")) {
+    const state = document.createElement("main");
+    state.id = "sessionState"; state.className = "today-start";
+    state.setAttribute("aria-label", "Opening InFlite"); state.setAttribute("aria-busy", "true");
+    // Static public markup only: never clone the sign-in page or its SVG IDs.
+    state.innerHTML = `<header class="opening-head" aria-hidden="true"><img src="/icon.svg" alt="" width="40" height="40"><span>InFlite</span></header><div class="opening-feedback"><p id="sessionSaid" role="status">Opening InFlite…</p><a class="pill primary" id="sessionRetry" href="" hidden>Try Again</a></div>`;
+    $("#out").before(state);
+  }
+  showShellScreen("sessionState");
 }
 function start() {
   ensureSessionUI();
