@@ -529,7 +529,7 @@ function appearance(ctx) {
   const apps = favourites ? Array.from(favourites.querySelectorAll("[data-launcher-app]"), b => b.dataset.launcherApp)
     : ["weather","fitness","markets","chat"];
   const dock = el("div",{class:"settings-preview-dock"},ui.icon("sun"),
-    apps.map(app => app === "files" ? ui.icon("file") : ui.icon(null,{app,size:24})),ui.icon("grid"));
+    apps.map(app => ui.icon(null,{app,size:24})),ui.icon("grid"));
   const preview = el("div",{class:"settings-dock-preview","aria-hidden":"true"},sample,dock);
   let previewing = false;
   function cancelPreview() {

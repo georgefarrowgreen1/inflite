@@ -1,7 +1,7 @@
 // Geometry only: native snapshots never enter storage or cloned application DOM.
 // The dock keeps its own View Transition name and stays outside fallback transforms.
 export function captureLauncherOrigin(opener) {
-  const node=opener?.querySelector?.('.ws-dock-symbol,.ifl-appic,.wsl-files-mark')||opener;
+  const node=opener?.querySelector?.('.ws-dock-symbol,.ifl-appic')||opener;
   if(!node?.getBoundingClientRect)return null;
   const r=node.getBoundingClientRect();
   return r.width>0&&r.height>0?{x:r.x,y:r.y,width:r.width,height:r.height,vw:innerWidth,vh:innerHeight}:null;

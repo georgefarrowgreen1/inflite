@@ -316,19 +316,10 @@
   padding-block: clamp(1.35rem, 3vw, 2rem);
 }
 
-.app-list :is(img, .app-file) {
+.app-list img {
   display: block;
   flex: none;
   border-radius: .8rem;
-}
-
-.app-list .app-file {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  background: #3669bc;
-  color: white;
 }
 
 .app-list h3 {

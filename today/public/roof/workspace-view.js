@@ -24,7 +24,7 @@ const APP_ICONS = { chats: "chat" };
 const asText = value => value == null ? "" : String(value);
 const words = (node, value) => { const text = asText(value); if (node.textContent !== text) node.textContent = text; };
 const callable = value => typeof value === "function";
-const appSymbol = app => icon(null, { app: APP_ICONS[app] || app, size: 32 });
+const appSymbol = (app, size = 32) => icon(null, { app: APP_ICONS[app] || app, size });
 function badge(button,state){
   button.querySelector('.wsl-badge')?.remove();button.removeAttribute('aria-description');
   if(!state)return;button.setAttribute('aria-description',state.label);
@@ -67,8 +67,8 @@ export function createWorkspaceView(root, callbacks = {}) {
   const savedNav = el("div", { class: "ws-saved-nav" }), savedRecords = new Map();
   const sideNav = el("nav", { class: "ws-workspace-nav", "aria-label": "InFlite" }, todaySide, savedNav);
   const create = callable(callbacks.onCreateWorkspace) ? bindButton("New workspace", "plus", "create-workspace", opener => invoke("onCreateWorkspace", opener), "ws-sidebar-button ws-create") : null;
-  const files = callable(callbacks.onFiles) ? bindButton("Files", "file", "files", opener => invoke("onFiles", opener), "ws-sidebar-button") : null;
-  if (files) files.append(el("span", { text: "Files" }));
+  const files = callable(callbacks.onFiles) ? bindButton("Files", null, "files", opener => invoke("onFiles", opener), "ws-sidebar-button") : null;
+  if (files) files.append(appSymbol("files", 24), el("span", { text: "Files" }));
   const activity = callable(callbacks.onActivity) ? bindButton("Activity", "clock", "activity", () => invoke("onActivity"), "ws-sidebar-button") : null;
   const activityCount = el("span", { class: "ws-system-count", hidden: true, "aria-hidden": "true" });
   if (activity) activity.append(el("span", { text: "Activity" }), activityCount);
@@ -608,7 +608,9 @@ export function createWorkspaceView(root, callbacks = {}) {
     const place=()=>reconcile(dockApps, dockRecords, pinned, a => a.id, a => {
       const b = button(a.name || APP_NAMES[a.id] || a.id, null, action(`app:${a.id}`, opener => { if (model.mode === "workspace" && layoutOf().windows[a.id]?.minimized) restoreWindow(a.id); else if(a.id==="files")invoke("onFiles",captureLauncherOrigin(opener));else invoke("onApp", a.id, captureLauncherOrigin(opener)); }), "ws-dock-button");
       b.dataset.launcherApp=a.id;
-      b.append(el("span", { class: "ws-dock-symbol" }, a.id==="files"?el("span",{class:"wsl-files-mark","aria-hidden":"true"},icon("file")):appSymbol(a.icon || a.id)), el("span", { class: "ws-dock-label" })); if (callable(callbacks.onAppDrop) && ["mail", "fitness"].includes(a.id)) b.dataset.appDrop = a.id; return b;
+      b.append(el("span", { class: "ws-dock-symbol" }, appSymbol(a.icon || a.id)), el("span", { class: "ws-dock-label" }));
+      if (callable(callbacks.onAppDrop) && ["mail", "fitness"].includes(a.id)) b.dataset.appDrop = a.id;
+      return b;
     }, (b, a) => { const name = a.name || APP_NAMES[a.id] || a.id, inWorkspace = mode === "workspace" && paneApps().includes(a.id), minimized = inWorkspace && layoutOf().windows[a.id].minimized; b.disabled=a.available===false;badge(b,a.available===false?null:a.indicator);words(b.lastElementChild, name); b.setAttribute("aria-label", minimized ? `Restore ${name}` : name); b.title = minimized ? `Restore ${name}` : name; b.toggleAttribute("data-running", inWorkspace); b.toggleAttribute("data-minimized", minimized); setCurrent(b, mode === "files" && a.id === "files" || mode === "app" && a.id === model.activeApp || inWorkspace && !minimized && a.id === model.foregroundApp); });
     if(moved)animateOrder(dockApps,place);else place();dockApps.dataset.order=orderKey;
     for(const old of dockApps.querySelectorAll('.ws-dock-add'))old.remove();
@@ -672,13 +674,12 @@ export function createWorkspaceView(root, callbacks = {}) {
     const state=id=>id==='files'?model.fileIndicator:(model.apps||[]).find(a=>a.id===id)?.indicator;
     const refresh=()=>{for(const b of grid.querySelectorAll('[data-launcher-app]'))badge(b,editing?null:state(b.dataset.launcherApp))};
     launcherRefresh=refresh;
-    const mark=id=>id==='files'?el('span',{class:'wsl-files-mark','aria-hidden':'true'},icon('file')):icon(null,{app:APP_ICONS[id]||id,size:40});
     const launchButton=(label,glyph,callback,cls,args=[])=>el('button',{type:'button',class:cls,'aria-label':label,on:{click(){if(!liveBody())return;getSheet()?.now();invoke(callback,...args)}}},glyph,el('span',{text:label}));
     function paintGrid() {
       grid.replaceChildren();favs.replaceChildren();favs.hidden=!editing;
       if(editing)for(const [index,id]of favourites().entries()){
         const name=id==='files'?'Files':APP_NAMES[id];
-        favs.append(el('button',{type:'button',class:'wsl-favourite',data:{launcherFavourite:id},'aria-label':`Move ${name}, position ${index+1} of ${favourites().length}`},mark(id),el('span',{text:name})));
+        favs.append(el('button',{type:'button',class:'wsl-favourite',data:{launcherFavourite:id},'aria-label':`Move ${name}, position ${index+1} of ${favourites().length}`},appSymbol(id, 40),el('span',{text:name})));
       }
       const list=appItems().filter(a=>a?.id&&LAUNCHER_APPS.includes(a.id)&&a.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
       for(const a of list){
@@ -688,7 +689,7 @@ export function createWorkspaceView(root, callbacks = {}) {
           if(editing){const next=toggleFavourite(favourites(),a.id);if(next.full){status.textContent='Unpin an app to make room.';return}invoke('onFavourites',next.items);model.favourites=next.items;paintGrid();return}
           if (b.hasAttribute('aria-current')) { getSheet()?.close(); return; }
           const launch=captureLauncherOrigin(b);if(a.id==='files')invoke('onFiles',launch);else invoke('onApp',a.id,launch);
-        }}},mark(a.id),el('span',{text:a.name}));
+        }}},appSymbol(a.id, 40),el('span',{text:a.name}));
         b.disabled=!allowed()&&!(editing&&pinned);
         if(editing){b.setAttribute('aria-pressed',String(pinned));if(pinned)b.append(el('span',{class:'wsl-pinned','aria-hidden':'true'},icon('check')))}else setCurrent(b,model.mode==='files'?a.id==='files':model.mode==='app'&&model.activeApp===a.id);
         grid.append(b);

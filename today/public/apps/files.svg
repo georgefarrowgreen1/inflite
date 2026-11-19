@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x2="0" y2="1">
+      <stop stop-color="#fff"/>
+      <stop offset=".52" stop-color="#fafafb"/>
+      <stop offset="1" stop-color="#eff0f3"/>
+    </linearGradient>
+    <linearGradient id="tab" x2=".12" y2="1">
+      <stop stop-color="#49c6ff"/>
+      <stop offset="1" stop-color="#117fde"/>
+    </linearGradient>
+    <linearGradient id="paper" x2="0" y2="1">
+      <stop stop-color="#f6fdff"/>
+      <stop offset="1" stop-color="#c8e5ff"/>
+    </linearGradient>
+    <linearGradient id="pocket" x2=".14" y2="1">
+      <stop stop-color="#2fc5ff"/>
+      <stop offset=".52" stop-color="#0b9df2"/>
+      <stop offset="1" stop-color="#1164d9"/>
+    </linearGradient>
+    <linearGradient id="edge" x2="0" y2="1">
+      <stop stop-color="#b8efff" stop-opacity=".94"/>
+      <stop offset=".46" stop-color="#3ca5fd" stop-opacity=".46"/>
+      <stop offset="1" stop-color="#124eac" stop-opacity=".53"/>
+    </linearGradient>
+    <path id="front" d="M226 398h572a79 79 0 0 1 79 88l-25 193a105 105 0 0 1-104 92H276a105 105 0 0 1-104-92l-25-193a79 79 0 0 1 79-88Z"/>
+    <filter id="shadow" x="-.18" y="-.2" width="1.36" height="1.4">
+      <feGaussianBlur stdDeviation="20"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#tile)"/>
+  <use href="#front" fill="#1452a1" opacity=".22" filter="url(#shadow)" transform="translate(0 23)"/>
+  <path d="M164 376a96 96 0 0 1 96-96h122c27 0 46 8 65 27l47 47h274a92 92 0 0 1 92 92v153H164Z"
+    fill="url(#tab)" stroke="url(#edge)" stroke-width="10"/>
+  <rect x="189" y="373" width="646" height="147" rx="53" fill="url(#paper)"/>
+  <use href="#front" fill="url(#pocket)" stroke="url(#edge)" stroke-width="11"/>
+</svg>

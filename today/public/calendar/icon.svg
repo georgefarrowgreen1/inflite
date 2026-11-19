@@ -1,1 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g" x2=".6" y2="1"><stop stop-color="#5cc75d"/><stop offset="1" stop-color="#25874b"/></linearGradient></defs><rect width="128" height="128" rx="30" fill="url(#g)"/><g fill="none" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><rect x="27" y="31" width="74" height="70" rx="17"/><path d="M28 50h72M45 23v17m38-17v17"/><path d="M45 66h13m13 0h13M45 83h13m13 0h13"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x2="0" y2="1">
+      <stop stop-color="#fff"/>
+      <stop offset=".52" stop-color="#fafafb"/>
+      <stop offset="1" stop-color="#eff0f3"/>
+    </linearGradient>
+    <linearGradient id="date" x2="0" y2="1">
+      <stop stop-color="#2e3037"/>
+      <stop offset="1" stop-color="#14151a"/>
+    </linearGradient>
+    <linearGradient id="marker" x2="0" y2="1">
+      <stop stop-color="#fe6171"/>
+      <stop offset="1" stop-color="#db354f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#tile)"/>
+  <rect x="363" y="179" width="298" height="58" rx="29" fill="url(#marker)"/>
+  <g fill="none" stroke="url(#date)" stroke-width="66" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M280 382c30-35 78-54 131-54 76 0 125 42 125 104 0 60-46 100-112 104h-44m44 0c74 0 130 45 130 112 0 77-62 123-148 123-62 0-111-22-148-62"/>
+    <path d="m636 414 103-82v439"/>
+  </g>
+</svg>

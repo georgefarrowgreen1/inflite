@@ -11,8 +11,11 @@ for(const [width,height] of[[320,760],[390,760],[844,390],[1440,900]])test(`app 
    dock:document.querySelector('.ws-dock').getBoundingClientRect().bottom
  }));
  assert.ok(Math.abs(edges.drawer-edges.dock)<=1,JSON.stringify(edges));
- const grid=t.menu.getByRole('group',{name:'Apps',exact:true});assert.equal(await grid.locator('.wsl-app').count(),9);assert.equal(await grid.locator('img').count(),8);
- for(const name of ['Calendar','Notes','People'])assert.equal(await grid.getByRole('button',{name,exact:true}).count(),1);
+ const grid=t.menu.getByRole('group',{name:'Apps',exact:true});assert.equal(await grid.locator('.wsl-app').count(),9);assert.equal(await grid.locator('img').count(),9);
+ for (const name of ['Calendar', 'Notes', 'People', 'Files']) {
+   const icon = grid.getByRole('button', {name, exact:true}).locator('img');
+   assert.equal(await icon.getAttribute('src'), `/apps/${name.toLowerCase()}.svg`);
+ }
  await t.page.waitForFunction(()=>[...document.querySelectorAll('.wsl-app img')].every(n=>n.complete&&n.naturalWidth>0));
  const cols=await grid.evaluate(n=>getComputedStyle(n).gridTemplateColumns.split(' ').length);assert.equal(cols,3);
  for(const button of await t.menu.locator('.ws-launcher button').all()){const b=await button.boundingBox();if(b&&await button.isVisible())assert.ok(b.height>=44,JSON.stringify({name:await button.getAttribute("aria-label"),box:b}));}
