@@ -1,11 +1,12 @@
 import { documents } from "./settings-documents.js";
-import { connectContactForm } from "./about/contact.js";
+import { connectContactForm } from "./contact/form.js";
 
 const readableTags = new Set(["section", "h2", "p", "ul", "ol", "li", "a", "strong", "em"]);
 const localDocuments = {
   "/about/": "/#settings=about-apps",
   "/about/#apps": "/#settings=about-apps",
   "/about/#contact": "/#settings=about-contact",
+  "/contact/": "/#settings=about-contact",
   "/privacy/": "/#settings=about-privacy",
   "/storage/": "/#settings=about-storage",
   "/terms/": "/#settings=about-terms",
@@ -62,7 +63,7 @@ function catalogue(body, source, ui) {
 function contact(body, source, frame) {
   const { el } = frame.ui;
   const section = source.querySelector("#contact");
-  readingContent(body, section.querySelectorAll(".enquiry-copy p"));
+  readingContent(body, section.querySelectorAll(".contact-intro p, .contact-alternative"));
   let form = contactForms.get(frame);
   if (!form) {
     const published = section.querySelector("form");
@@ -92,7 +93,7 @@ function contact(body, source, frame) {
 
 export function renderSettingsDocument(slot, page, frame) {
   const source = document.createElement("template");
-  source.innerHTML = documents[page === "apps" || page === "contact" ? "about" : page];
+  source.innerHTML = documents[page === "apps" ? "about" : page];
   const body = frame.ui.el("article", { class: "settings-document-article" });
   if (page === "apps") catalogue(body, source.content, frame.ui);
   else if (page === "contact") contact(body, source.content, frame);

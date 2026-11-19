@@ -171,34 +171,25 @@
   .about-page .brand-company img { filter: none; }
 }
 
-.launch,
-.enquiry button {
+.launch {
   display: inline-flex;
   align-items: center;
-  gap: .85rem;
+  justify-self: end;
+  gap: .45rem;
   border-radius: 100vw;
   background: var(--accent);
   color: var(--accent-ink);
-  padding: .65rem 1.05rem;
-  min-height: 44px;
-  font-size: .93rem;
-  font-weight: 680;
-  text-decoration: none;
-}
-
-.launch {
-  justify-self: end;
-  gap: .45rem;
   padding: .5rem .85rem .5rem 1rem;
-  line-height: 1.15;
+  min-height: 44px;
   font-size: .875rem;
+  font-weight: 680;
+  line-height: 1.15;
   white-space: nowrap;
+  text-decoration: none;
 }
 
 .launch span { font-size: 1.1em; }
 .launch:active { background: color-mix(in srgb, var(--accent) 85%, var(--ink)); }
-
-.enquiry button:hover:not(:disabled) { background: var(--ink); }
 
 @media (hover: hover) {
   .launch:hover { background: color-mix(in srgb, var(--accent) 90%, var(--ink)); }
@@ -220,15 +211,6 @@
   position: relative;
   z-index: 1;
   padding-block: 1.25rem;
-}
-
-.section-label {
-  color: var(--accent);
-  font-size: .8rem;
-  font-weight: 690;
-  letter-spacing: .15em;
-  text-transform: uppercase;
-  margin-bottom: clamp(1rem, 2vw, 1.8rem);
 }
 
 .introduction h1 {
@@ -281,8 +263,7 @@
   border-block: 1px solid var(--line);
 }
 
-.ecosystem::before,
-.enquiry::before {
+.ecosystem::before {
   content: "";
   position: absolute;
   z-index: -1;
@@ -386,58 +367,6 @@
 
 .featured-app p { max-width: 39ch; }
 
-.enquiry {
-  background: rgb(var(--sky) / .72);
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1.5rem clamp(2rem, 7vw, 7rem);
-  align-items: start;
-  padding-block: clamp(3.25rem, 7vw, 7rem);
-}
-
-.enquiry::before {
-  height: min(80%, 18rem);
-  inset: auto 0 0;
-  background: radial-gradient(ellipse at calc(100% - var(--scene-position, 62%)) 100%,
-    rgb(var(--scene-light, var(--light)) / .13), transparent 71%);
-}
-
-.enquiry-copy p {
-  margin-top: 1rem;
-  max-width: 43ch;
-  color: var(--muted);
-  font-size: clamp(1rem, 1.6vw, 1.2rem);
-}
-
-.enquiry-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: .8rem;
-}
-
-.enquiry label { font-size: .93rem; }
-
-.enquiry :is(input, textarea) {
-  font-size: 1rem;
-  min-height: 44px;
-  border-color: #8b7d97;
-  background: rgb(var(--sky) / .91);
-}
-
-.enquiry .actions a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font-size: .92rem;
-}
-
-.enquiry #contact-status:not(:empty) {
-  padding-top: .85rem;
-  color: var(--muted);
-}
-
 .about-footer {
   background: rgb(var(--sky) / .82);
   color: var(--ink);
@@ -458,7 +387,7 @@
 }
 
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
-  .about-sky, .ecosystem::before, .ecosystem::after, .enquiry::before { display: none; }
+  .about-sky, .ecosystem::before, .ecosystem::after { display: none; }
 
   .app-list .featured-app {
     background: rgb(var(--sky));
@@ -492,8 +421,6 @@
     background: linear-gradient(162deg, rgb(var(--sky) / .86) 13%, rgb(var(--sky) / .74) 38%, transparent 61%);
   }
   .introduction h1 { font-size: clamp(3rem, 13.9vw, 6.3rem); }
-
-  .enquiry { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 540px) {
@@ -521,8 +448,7 @@
 
   .ecosystem-heading p { max-width: 31ch; }
 
-  .app-list,
-  .enquiry-fields { grid-template-columns: minmax(0, 1fr); }
+  .app-list { grid-template-columns: minmax(0, 1fr); }
 
   .app-list .featured-app {
     align-items: flex-start;
@@ -531,6 +457,5 @@
   }
 
   .app-list .featured-app img { width: 3.1rem; }
-  .enquiry-fields { gap: 0; }
   .about-footer .foot { gap: .45rem 1.5rem; }
 }

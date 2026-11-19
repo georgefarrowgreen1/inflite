@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contact InFlite</title>
+  <meta name="description" content="Get in touch with the InFlite team for help or questions about the apps.">
+  <link rel="canonical" href="https://inflite.ai/contact/">
+  <meta property="og:title" content="Contact InFlite">
+  <meta property="og:description" content="Get in touch with the InFlite team.">
+  <meta property="og:image" content="https://inflite.ai/og.png">
+  <meta property="og:url" content="https://inflite.ai/contact/">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="/icon.svg">
+  <meta name="theme-color" content="#f8f5fa" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0911" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="/about/site.css">
+  <link rel="stylesheet" href="/about/about.css">
+  <link rel="stylesheet" href="/contact/contact.css">
+  <script type="module" src="/contact/form.js"></script>
+  <script type="module" src="/about/bubbles.js"></script>
+</head>
+<body class="about-page contact-page">
+  <div class="about-sky" aria-hidden="true"><canvas></canvas></div>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="about-header">
+    <div class="about-frame about-nav">
+      <a class="brand" href="/about/"><img src="/inflite.svg" alt="" width="36" height="36">InFlite</a>
+      <nav aria-label="Main">
+        <a href="/about/#apps">Apps</a>
+        <a href="/contact/" aria-current="page">Contact</a>
+      </nav>
+      <a class="launch" href="/">Open InFlite <span aria-hidden="true">→</span></a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="about-frame contact-layout" id="contact" aria-labelledby="contact-title">
+      <div class="contact-intro">
+        <h1 id="contact-title">Get in <span>touch.</span></h1>
+        <p>Have a question about InFlite? Your message goes to the team’s support inbox. We’ll use your email to reply.</p>
+        <p>For privacy requests, email <a href="mailto:privacy@inflite.ai">privacy@inflite.ai</a>.</p>
+      </div>
+      <div class="contact-panel">
+        <form id="contact-form" action="/api/contact" method="post" hidden>
+          <label>Your name<input name="name" autocomplete="name" required maxlength="100"></label>
+          <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+          <label>Message<textarea name="message" rows="4" required maxlength="4000"></textarea></label>
+          <label class="trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+          <div class="actions">
+            <button type="submit">Send message <span aria-hidden="true">→</span></button>
+            <a href="/privacy/">Privacy notice</a>
+          </div>
+          <p id="contact-status" role="status" aria-live="polite"></p>
+        </form>
+        <p class="contact-alternative">Prefer email? <a href="mailto:hello@inflite.ai">hello@inflite.ai</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="about-footer">
+    <div class="about-frame foot">
+      <a class="brand brand-with-company" href="/about/" aria-label="InFlite, a GFG company">
+        <img src="/inflite.svg" alt="" width="40" height="40">
+        <span class="brand-name">InFlite<span class="brand-company">a <img src="/about/gfg.svg" alt="GFG" width="26" height="18"> company</span></span>
+      </a>
+      <nav aria-label="Legal"><a href="/privacy/">Privacy</a><a href="/storage/">Cookies &amp; storage</a><a href="/terms/">Terms</a></nav>
+    </div>
+  </footer>
+</body>
+</html>

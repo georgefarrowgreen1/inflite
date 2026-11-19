@@ -18,7 +18,7 @@
   <meta name="theme-color" content="#0b0911" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="/about/site.css">
   <link rel="stylesheet" href="/about/about.css">
-  <script type="module" src="/about/contact.js"></script>
+  <script defer src="/about/legacy-contact.js"></script>
   <link rel="modulepreload" href="/roof/bubbles.js?about">
   <script type="module" src="/about/bubbles.js"></script>
 </head>
@@ -30,7 +30,7 @@
       <a class="brand" href="/about/"><img src="/inflite.svg" alt="" width="36" height="36">InFlite</a>
       <nav aria-label="Main">
         <a href="/about/#apps">Apps</a>
-        <a href="/about/#contact">Contact</a>
+        <a href="/contact/" id="contact">Contact</a>
       </nav>
       <a class="launch" href="/">Open InFlite <span aria-hidden="true">→</span></a>
     </div>
@@ -39,7 +39,6 @@
   <main id="main">
     <section class="about-frame introduction" aria-labelledby="intro-title">
       <div class="intro-copy">
-        <p class="section-label">About InFlite</p>
         <h1 id="intro-title">Make room<br><span>for your day.</span></h1>
         <p class="intro-description">InFlite brings together the people you talk to, the plans you make and the information you check every day.</p>
         <a class="explore" href="#apps"><span aria-hidden="true">↓</span> Explore the apps</a>
@@ -99,27 +98,6 @@
             <div><h3>Markets</h3><p>Follow prices, compare charts and keep a watchlist of the markets you follow.</p></div>
           </li>
         </ul>
-      </div>
-    </section>
-
-    <section class="about-frame enquiry" id="contact" aria-labelledby="contact-title">
-      <div class="enquiry-copy">
-        <h2 id="contact-title">Get in touch.</h2>
-        <p>Have a question about InFlite? Your message goes to the team’s support inbox. We’ll use your email to reply.</p>
-        <p>For privacy requests, email <a href="mailto:privacy@inflite.ai">privacy@inflite.ai</a>.</p>
-      </div>
-      <div>
-        <form id="contact-form" action="/api/contact" method="post" hidden>
-          <div class="enquiry-fields">
-            <label>Your name<input name="name" autocomplete="name" required maxlength="100"></label>
-            <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
-          </div>
-          <label>Message<textarea name="message" rows="5" required maxlength="4000"></textarea></label>
-          <label class="trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
-          <div class="actions"><button type="submit">Send message <span aria-hidden="true">→</span></button><a href="/privacy/">Privacy notice</a></div>
-          <p id="contact-status" role="status" aria-live="polite"></p>
-        </form>
-        <noscript><a href="mailto:hello@inflite.ai">Email hello@inflite.ai</a></noscript>
       </div>
     </section>
   </main>

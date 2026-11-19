@@ -1,0 +1,184 @@
+.contact-page {
+  --field-line: #92829e;
+  --control-fill: color-mix(in srgb, var(--ink) 5%, transparent);
+  --panel: #201929;
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.contact-page .about-nav [aria-current] {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.contact-page :is(.skip, .about-footer a, a[href^="mailto:"]) {
+  border-radius: .6rem;
+}
+
+.contact-page main {
+  display: grid;
+  flex: 1;
+  align-items: center;
+}
+
+.contact-layout {
+  width: min(100% - clamp(2rem, 7vw, 8rem), 76rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .94fr);
+  align-items: start;
+  gap: clamp(2rem, 6vw, 6rem);
+  padding-block: clamp(3rem, 8vh, 7rem);
+}
+
+.contact-intro h1 {
+  font-size: clamp(4.5rem, 9.7vw, 9.5rem);
+  font-weight: 640;
+  line-height: .86;
+  letter-spacing: -.08em;
+  margin-inline-start: -.055em;
+}
+
+.contact-intro h1 span {
+  display: block;
+  color: var(--accent);
+}
+
+.contact-intro p {
+  max-width: 35ch;
+  margin-block-start: 1rem;
+  color: var(--muted);
+  font-size: clamp(1rem, 1.55vw, 1.23rem);
+}
+
+.contact-intro p:first-of-type { margin-block-start: clamp(1.5rem, 4vw, 3rem); }
+
+.contact-panel {
+  position: relative;
+  padding: clamp(1.1rem, 3.2vw, 2.5rem);
+  border: 1px solid var(--line);
+  border-radius: clamp(1.65rem, 3vw, 2.25rem);
+  background: var(--panel);
+}
+
+.contact-panel form label {
+  font-size: .95rem;
+  margin-block-end: .85rem;
+}
+
+.contact-panel :is(input, textarea) {
+  min-height: 48px;
+  margin-block-start: .15rem;
+  border: 1px solid var(--field-line);
+  padding: .65rem 1rem;
+  background: var(--control-fill);
+  font-size: 1rem;
+}
+
+.contact-panel input { border-radius: 999px; }
+
+.contact-panel textarea {
+  min-height: 6.25rem;
+  border-radius: 1.25rem;
+  resize: none;
+}
+
+.contact-panel :is(input, textarea):focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.contact-panel .actions {
+  gap: .4rem .6rem;
+  margin-block-start: 1.25rem;
+}
+
+.contact-panel button {
+  display: inline-flex;
+  align-items: center;
+  gap: .85rem;
+  min-height: 48px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding-inline: 1.1rem;
+}
+
+.contact-panel button span { font-size: 1.2em; line-height: 1; }
+.contact-panel button:active { background: color-mix(in srgb, var(--accent) 80%, var(--ink)); }
+
+@media (hover: hover) {
+  .contact-panel button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 90%, var(--ink)); }
+}
+
+.contact-panel .actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: .75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--control-fill);
+  font-size: .95rem;
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .contact-panel .actions a:hover {
+    background: color-mix(in srgb, var(--ink) 10%, transparent);
+    text-decoration: underline;
+  }
+}
+
+.contact-alternative,
+#contact-status:not(:empty) {
+  margin-block-start: 1rem;
+  color: var(--muted);
+  font-size: .95rem;
+}
+
+.contact-alternative {
+  border-block-start: 1px solid var(--line);
+  padding-block-start: .85rem;
+}
+
+#contact-form[hidden] + .contact-alternative {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.contact-page .about-sky::after {
+  background: linear-gradient(to bottom, rgb(var(--sky) / .88) 7%, rgb(var(--sky) / .84) 50%, rgb(var(--sky) / .69) 67%, rgb(var(--sky) / .32));
+}
+
+@media (prefers-color-scheme: light) {
+  .contact-page {
+    --field-line: #877692;
+    --panel: #f4edf8;
+  }
+}
+
+@media (max-width: 800px) {
+  .contact-layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding-block: clamp(2rem, 6vw, 3rem);
+  }
+
+  .contact-intro h1 {
+    font-size: clamp(3.6rem, 13.8vw, 6.6rem);
+    line-height: .92;
+  }
+
+  .contact-intro h1 span { display: inline; }
+
+  .contact-page .about-sky::after {
+    background: linear-gradient(113deg, rgb(var(--sky) / .91) 12%, rgb(var(--sky) / .73) 62%, rgb(var(--sky) / .48));
+  }
+}
+
+@media (forced-colors: active) {
+  .contact-panel, .contact-panel :is(button, input, textarea, .actions a) { border: 1px solid ButtonText; }
+  .contact-page .about-nav [aria-current] { text-decoration: underline; }
+}

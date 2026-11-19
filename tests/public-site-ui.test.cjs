@@ -8,7 +8,7 @@ const { chromium, webkit } = require('playwright');
 
 const origin = 'https://inflite.ai';
 const assets = path.resolve(process.env.WEB_UI_PUBLIC || path.resolve(__dirname, '../today/public'));
-const pages = ['/about/', '/privacy/', '/storage/', '/terms/'];
+const pages = ['/about/', '/privacy/', '/storage/', '/terms/', '/contact/'];
 const mime = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
 async function assertCompanyBrand(region) {
@@ -80,7 +80,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     await sky.waitFor();
     const header = page.getByRole('banner');
     assert.equal(await header.getByAltText('GFG', { exact: true }).count(), 0);
-    for (const [name, href] of [['InFlite', '/about/'], ['Apps', '/about/#apps'], ['Contact', '/about/#contact'], ['Open InFlite', '/']]) {
+    for (const [name, href] of [['InFlite', '/about/'], ['Apps', '/about/#apps'], ['Contact', '/contact/'], ['Open InFlite', '/']]) {
       const link = header.getByRole('link', { name, exact: true });
       assert.equal(await link.getAttribute('href'), href);
       const box = await link.boundingBox();
@@ -95,7 +95,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.waitForFunction(before => document.querySelector('.about-sky canvas').toDataURL() === before, stillFrame);
     assert.equal(await page.locator('canvas').count(), 1, 'the orbs are the only animated artwork');
     assert.equal(await page.locator('body').evaluate(body => getComputedStyle(body).getPropertyValue('-webkit-user-select') || getComputedStyle(body).userSelect), 'none');
-    assert.equal(await page.getByLabel('Your name').evaluate(input => getComputedStyle(input).getPropertyValue('-webkit-user-select') || getComputedStyle(input).userSelect), 'text');
+    assert.equal(await page.locator('form').count(), 0);
     assert.equal(await page.locator('.wallpaper-controls, .privacy-feature').count(), 0);
     await page.getByRole('link', { name: 'Explore the apps' }).click();
     assert.equal(new URL(page.url()).hash, '#apps');
@@ -108,7 +108,8 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.equal(await image(), frozen);
     assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
     for (const pagePath of pages) {
-      if (pagePath !== '/about/') await page.locator('footer a[href="' + pagePath + '"]').click();
+      if (pagePath === '/contact/') await page.getByRole('banner').getByRole('link', { name: 'Contact' }).click();
+      else if (pagePath !== '/about/') await page.locator('footer a[href="' + pagePath + '"]').click();
       assert.equal(new URL(page.url()).pathname, pagePath);
       assert.equal(await page.locator('main h1').count(), 1);
       await assertCompanyBrand(page.getByRole('contentinfo'));
@@ -130,7 +131,11 @@ test('public pages and contact form work without signing in, from phone to deskt
       assert.deepEqual(violations, []);
     }
 
-    await page.locator('a[href="/about/#contact"]').first().click();
+    await page.getByRole('heading', { name: 'Get in touch.' }).waitFor();
+    assert.equal(await page.getByRole('banner').getByRole('link', { name: 'Contact' }).getAttribute('aria-current'), 'page');
+    await page.goto(site + '/about/#contact');
+    await page.waitForURL(site + '/contact/');
+    assert.equal(await page.getByLabel('Your name').evaluate(input => getComputedStyle(input).getPropertyValue('-webkit-user-select') || getComputedStyle(input).userSelect), 'text');
     await page.getByLabel('Your name').fill('Fixture Sender');
     await page.getByLabel('Email address').fill('sender@example.test');
     const message = page.getByLabel('Message', { exact: true });
@@ -151,8 +156,16 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.deepEqual(sent.map(({ cookie, origin }) => [cookie, origin]), [[undefined, site], [undefined, site]]);
     assert.deepEqual(sent[1].fields, { name: 'Fixture Sender', email: 'sender@example.test', message: 'Please help with this fixture.', website: '' });
     assert.equal(await message.inputValue(), '');
-    assert.equal(await page.locator('.app-list li').count(), 10);
+    assert.ok(await page.getByRole('link', { name: 'hello@inflite.ai' }).isVisible());
     await page.setViewportSize({ width: 1440, height: 960 });
+    await page.emulateMedia({ colorScheme: 'dark' });
+    const heading = await page.getByRole('heading', { name: 'Get in touch.' }).boundingBox();
+    const form = await page.locator('form').boundingBox();
+    assert.ok(heading.x + heading.width <= form.x, 'the contact form sits beside the introduction on desktop');
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+    await page.goto(site + '/about/');
+    assert.equal(await page.locator('.app-list li').count(), 10);
     await page.locator('.introduction').scrollIntoViewIfNeeded();
     assert.ok(await page.getByRole('link', {name:'Explore the apps'}).isVisible());
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
