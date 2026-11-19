@@ -2070,11 +2070,11 @@ for (const width of [320, 1440]) test(`About documents and Contact stay in Setti
   } finally { await ctx.close(); }
 });
 
-for(const width of [390,1440])test(`People shows Chat friends and saves extra details only as owned contacts at ${width}px`,async()=>{
+for(const width of [390,1440])test(`People uses one profile for Chat friends and saved contacts at ${width}px`,async()=>{
   const apps={people:true,chats:true},existing='b'.repeat(32),records=new Map([[existing,{
-    kind:'people',id:existing,title:'Existing contact',email:'existing@example.test',links:[],version:1,updatedAt:1,
+    kind:'people',id:existing,title:'Existing contact',email:'existing@example.test',phone:'+44 7700 900000',links:[],version:1,updatedAt:1,
   }]]),writes=[];
-  const {page,ctx,errors}=await open({width,initialPath:'/?os=1',waitForDay:false,hubApps:apps,viewApps:apps,
+  const {page,ctx,errors}=await open({width,scheme:width===390?'dark':'light',initialPath:'/?os=1',waitForDay:false,hubApps:apps,viewApps:apps,
     intercept:async (route,{url,request})=>{
       if(url.pathname==='/api/organise/list'){
         const {kind,q='',related}=request.postDataJSON();
@@ -2120,11 +2120,30 @@ for(const width of [390,1440])test(`People shows Chat friends and saves extra de
     assert.equal(await row('Hidden group').count(),0);
     assert.equal(await people.getByText('Private location').count(),0);
     assert.equal(writes.length,0);
+    const profile=people.locator('.org-person');
+    const details=profile.getByLabel('Contact details');
+    const back=()=>page.getByRole('button',{name:'Back to Contacts',exact:true}).click();
+    await row('Existing contact').click();
+    await profile.getByRole('heading',{name:'Existing contact',exact:true}).waitFor();
+    assert.ok(await details.getByText('existing@example.test',{exact:true}).isVisible());
+    assert.ok(await details.getByRole('link',{name:'+44 7700 900000',exact:true}).isVisible());
+    await profile.getByRole('button',{name:'Edit contact',exact:true}).waitFor();
+    await save(page,`people-contact-${width}`);
+    await back();
     const search=people.getByRole('searchbox',{name:'Search People'});
     await search.fill('@taylor');await row('Jamie Friend').waitFor({state:'hidden'});
     await row('Taylor Friend').click();
-    const sheet=page.getByRole('dialog',{name:'Chat friend',exact:true});
-    await sheet.getByRole('button',{name:'Add details',exact:true}).click();
+    await profile.getByRole('heading',{name:'Taylor Friend',exact:true}).waitFor();
+    assert.equal(new URL(page.url()).hash,'#friend=friend-1');
+    assert.equal(await page.getByRole('dialog',{name:'Chat friend',exact:true}).count(),0);
+    assert.ok(await details.getByText('@taylor',{exact:true}).isVisible());
+    const messageAction=profile.getByRole('button',{name:'Message',exact:true});
+    const addDetails=profile.getByRole('button',{name:'Add details',exact:true});
+    assert.ok(await messageAction.isVisible());
+    assert.equal((await messageAction.boundingBox()).y,(await addDetails.boundingBox()).y);
+    assert.ok(await profile.evaluate(node=>node.scrollWidth<=node.clientWidth+1));
+    await save(page,`people-chat-friend-${width}`);
+    await addDetails.click();
     const name=people.getByRole('textbox',{name:'Name',exact:true});
     await name.waitFor();assert.equal(await name.inputValue(),'Taylor Friend');
     assert.equal(writes.length,0);
@@ -2134,20 +2153,30 @@ for(const width of [390,1440])test(`People shows Chat friends and saves extra de
     await people.getByText('Saved to your account',{exact:true}).waitFor();
     assert.equal(writes[0].details,'Private contact notes');
     assert.deepEqual(writes[0].links,[{app:'chats',id:'friend-1'}]);
-    await page.getByRole('button',{name:'Back to Contacts',exact:true}).click();
+    assert.ok(await details.getByText('taylor@example.test',{exact:true}).isVisible());
+    assert.ok(await details.getByText('@taylor',{exact:true}).isVisible());
+    await back();
     await search.fill('');
     await row('Jamie Friend').click();
-    await sheet.getByRole('button',{name:'Link to existing contact',exact:true}).click();
+    await profile.getByRole('heading',{name:'Jamie Friend',exact:true}).waitFor();
+    await people.getByText('More actions',{exact:true}).click();
+    await people.getByRole('button',{name:'Link to existing contact',exact:true}).click();
     await page.getByRole('dialog',{name:'Choose a contact',exact:true}).getByRole('button',{name:'Existing contact',exact:true}).click();
     await name.waitFor();assert.equal(await people.getByRole('textbox',{name:'Email',exact:true}).inputValue(),'existing@example.test');
     await people.getByRole('button',{name:'Save',exact:true}).click();
     await people.getByText('Saved to your account',{exact:true}).waitFor();
     assert.deepEqual(writes[1].links,[{app:'chats',id:'friend-2'}]);
-    await page.getByRole('button',{name:'Back to Contacts',exact:true}).click();
+    await back();
     await row('Morgan Friend').waitFor();
     assert.equal(await row('Taylor Friend').count(),1);
     assert.equal(await row('Jamie Friend').count(),0);
+    await row('Morgan Friend').click();
+    await profile.getByRole('heading',{name:'Morgan Friend',exact:true}).waitFor();
     await page.evaluate(()=>mockChatState('locked'));
+    await people.getByText('Chats is locked',{exact:true}).waitFor();
+    assert.equal(await profile.count(),0);
+    assert.equal(await people.getByText('@morgan',{exact:true}).count(),0);
+    await back();
     await people.getByRole('link',{name:'Unlock Chats to see friends'}).waitFor();
     assert.equal(await people.getByText(/Chat friend/).count(),0);
     assert.equal(await row('Morgan Friend').count(),0);

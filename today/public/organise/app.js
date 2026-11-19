@@ -6,12 +6,12 @@ export async function mountApp(root,F,kind){
  const ui=F.ui,el=ui.el,store=await(F.workspace?.organiseStore?.(kind)||createStore(F,kind)),life=F.signal,live=()=>!life.aborted;let libraryY=null,libraryFocus=null,datesKey='',route=null,shown=false,loaded=false,reading=0,query='',cursor=null,ids=new Set(),editor=null,editorId=null,editorLoad=0,loading=false,error='',reminders=[],date=localDay(),section=SECTIONS[kind][0][0],searchTimer=0,external=[],noteFilter='all',noteView='list',feedRefreshedAt=0;
  const friends=new Map();
  const contactsClient=kind==='people'?createSystemClient(F,{prefix:'/api/organise/'}):null;
- let watchFriends=null,friendSheet=null,editorSeed=null;
+ let watchFriends=null,friendState='',friendsLoaded=false,friendView=null,editorSeed=null;
  root.classList.add('org');root.dataset.organise=kind;root.dataset.notesView=noteView;
  const safe=fn=>()=>{try{Promise.resolve(fn()).catch(e=>{if(live())F.toast(e.message)})}catch(e){if(live())F.toast(e.message)}};
  const button=(label,run,primary=false)=>ui.btn(label,{primary,run:safe(run)});
- const rememberLibrary=()=>{if(!editor){libraryY=scrollY;libraryFocus=document.activeElement?.closest('[data-record]')?.dataset.record||null}};
- const go=(id,seed)=>{rememberLibrary();editorSeed=seed?{id,...seed}:null;F.nav.go('/'+kind+'/#item='+id)},home=()=>F.nav.go('/'+kind+'/#'+section,{replace:true,kind:'pop'}),fresh=()=>{rememberLibrary();F.nav.go('/'+kind+'/#new')};
+ const rememberLibrary=()=>{if(!root.dataset.detail){libraryY=scrollY;libraryFocus=document.activeElement?.closest('[data-record]')?.dataset.record||null}};
+ const go=(id,seed,replace=false)=>{rememberLibrary();editorSeed=seed?{id,...seed}:null;F.nav.go('/'+kind+'/#item='+id,{replace})},home=()=>F.nav.go('/'+kind+'/#'+section,{replace:true,kind:'pop'}),fresh=()=>{rememberLibrary();F.nav.go('/'+kind+'/#new')};
  const createLabel=kind==='calendar'?'New event':kind==='notes'?'New note':'Add person';
  const search=el('input',{type:'search',class:'org-search',maxlength:160,placeholder:kind==='people'?'Search contacts':kind==='notes'?'Search notes':'Search events','aria-label':'Search '+NAMES[kind]}),status=el('p',{class:'org-status',role:'status'}),list=el('div',{class:'org-list'}),detail=el('section',{class:'org-detail',hidden:true,'aria-label':NAMES[kind]+' editor'}),more=button('Show more',()=>load(true)),retry=button('Try again',()=>load());
  const count=el('span',{class:'org-library-count'}),createButton=ui.btn(createLabel,{icon:'plus',primary:true,run:fresh}),caption=el('div',{class:'org-library-caption'},kind==='calendar'?el('h2',{text:'Schedule'}):null,count);
@@ -56,7 +56,7 @@ export async function mountApp(root,F,kind){
   else if(kind==='people')rows.sort((a,b)=>a.title.localeCompare(b.title));else rows.sort((a,b)=>b.updatedAt-a.updatedAt);
   return kind==='notes'&&noteFilter==='lists'?rows.filter(v=>(v.checkCount??v.checklist?.length??0)>0):rows;
  };
- function header(){F.header.set({title:NAMES[kind],back:{label:['item','new'].includes(route?.key)?'Back to '+(kind==='people'?'Contacts':NAMES[kind]):'Back'},line:'',crumb:{text:'InFlite',app:kind},sections:null,section,acts:kind==='calendar'?[{icon:'settings',label:'Connected calendars',run:()=>F.workspace?.life?.calendars()}]:kind==='people'?[{icon:'more',label:'Contacts actions',run:()=>{const body=el('div',{class:'org'},button('Import contacts',()=>{h.now();return importContacts()}));const h=F.sheet.open({sheet:'contacts-actions',title:'Contacts',body})}}]:[]})}
+ function header(){F.header.set({title:NAMES[kind],back:{label:['item','new','friend'].includes(route?.key)?'Back to '+(kind==='people'?'Contacts':NAMES[kind]):'Back'},line:'',crumb:{text:'InFlite',app:kind},sections:null,section,acts:kind==='calendar'?[{icon:'settings',label:'Connected calendars',run:()=>F.workspace?.life?.calendars()}]:kind==='people'?[{icon:'more',label:'Contacts actions',run:()=>{const body=el('div',{class:'org'},button('Import contacts',()=>{h.now();return importContacts()}));const h=F.sheet.open({sheet:'contacts-actions',title:'Contacts',body})}}]:[]})}
  function dateLabel(d,options){return new Date(d+'T12:00:00').toLocaleDateString([],options)}
  function paintDates(rows){
   const nextKey=JSON.stringify([date,section,rows.map(v=>[v.id,v.start,v.end,v.startDate,v.endDate])]);if(datesKey===nextKey)return;datesKey=nextKey;
@@ -112,19 +112,21 @@ export async function mountApp(root,F,kind){
   if(kind==='calendar'||!list.isEqualNode(nextList))list.replaceChildren(...nextList.childNodes);
   if(active&&document.activeElement?.dataset.record!==active)list.querySelector('[data-record="'+CSS.escape(active)+'"]')?.focus({preventScroll:true});editor?.status();
  }
- function receiveFriends(values,state){
+ function receiveFriends(values,state,loaded){
   if(!live()||!shown)return;
+  friendState=state;friendsLoaded=!!loaded;
   friends.clear();
   for(const friend of values)friends.set(friend.id,friend);
-  if(friendSheet&&!friends.has(friendSheet.id))friendSheet.sheet.now();
   chatStatus.hidden=!['locked','signin','key','unavailable'].includes(state);
   chatStatus.replaceChildren(el('a',{href:'/chats/#friends',text:state==='locked'?'Unlock Chats to see friends':'Open Chats to see friends'}));
-  paint();
+  paint();paintFriend();editor?.refreshFriend();
  }
  function stopFriends(){
   watchFriends?.();watchFriends=null;
-  friendSheet?.sheet.now();friends.clear();
+  friends.clear();friendState='';friendsLoaded=false;
   if(chatStatus)chatStatus.hidden=true;
+  editor?.refreshFriend();
+  if(friendView){friendView=null;detail.replaceChildren();}
  }
  async function existingFriend(id,current){
   const local=contactsWithChat().get(id);
@@ -133,44 +135,71 @@ export async function mountApp(root,F,kind){
   return result.records.find(value=>chatLink(value,id))?.id;
  }
  function openFriend(id){
-  const friend=friends.get(id);
-  if(!friend||!shown)return;
+  if(!friends.has(id)||!shown)return;
+  rememberLibrary();
+  F.nav.go(F.nav.href('friend',id));
+ }
+ const editorModule=()=>Promise.all([import('./editor.js'),import('/roof/modules.js').then(m=>m.loadStyles(new URL('./editor.css',import.meta.url).pathname))]).then(([module])=>module);
+ async function showFriend(r){
+  const mine=++editorLoad;
+  await editor?.flush();
+  if(!live()||!shown||route!==r||mine!==editorLoad)return;
+  editor?.destroy();editor=null;editorId='chat:'+r.arg;
+  detail.hidden=false;root.dataset.detail='true';
+  detail.replaceChildren(el('p',{role:'status',text:'Opening contact…'}));
+  const view=friendView={route:r,module:null,key:null};
+  paint();
+  try{
+   view.module=await editorModule();
+   if(friendView===view)paintFriend();
+  }catch(error){
+   if(friendView===view&&route===r&&shown&&live())detail.replaceChildren(ui.error({title:'This contact couldn’t open',body:error.message,acts:[{label:'Try again',run:safe(()=>showFriend(r))}]}));
+  }
+ }
+ function paintFriend(){
+  const view=friendView;
+  if(!view?.module||!live()||!shown||route!==view.route)return;
+  const id=view.route.arg,friend=friends.get(id);
+  const key=friend?JSON.stringify([friend.name,friend.handle]):'missing:'+(friendsLoaded?'loaded':friendState);
+  if(view.key===key)return;
+  view.key=key;
+  if(!friend){
+   const waiting=!friendsLoaded&&(!friendState||friendState==='ready');
+   detail.replaceChildren(waiting?el('p',{role:'status',text:'Opening contact…'}):
+    ui.empty({title:friendState==='locked'?'Chats is locked':'Chat friend unavailable',
+     body:friendState==='locked'?'Unlock Chats to view this profile.':'Open Chats to check your friends.',
+     acts:[{label:'Open Chats',href:'/chats/#friends'}]}));
+   return;
+  }
+  const profile=el('section',{class:'org-profile'}),extra=el('details',{class:'org-extra org-people-extra'},el('summary',{text:'More actions'}));
   const message=el('p',{class:'org-status',role:'status'});
-  let sheet;
-  const openedOn=route;
-  const current=()=>live()&&shown&&route===openedOn&&friends.has(id),active=()=>current()&&!sheet.closed;
+  const active=()=>live()&&shown&&route===view.route&&friendView===view&&detail.contains(profile)&&friends.has(id);
   const chat={id};
+  let selecting=false;
   async function select(useExisting){
-   if(!active())return;
-   sheet.setBusy(true);message.textContent='';
+   if(!active()||selecting)return;
+   selecting=true;profile.setAttribute('aria-busy','true');message.textContent='';
    try{
     const existing=await existingFriend(id,active);
     if(!active())return;
-    if(existing){sheet.now();go(existing);return}
+    if(existing){go(existing,null,true);return}
     if(useExisting){
      const {chooseLink}=await import('./links.js');
      if(!active())return;
-     sheet.now();
      const selected=await chooseLink(F,'chats',{contactsOnly:true});
-     if(selected&&current())go(selected.id,{chat});
+     if(selected&&active())go(selected.id,{chat},true);
     }else{
      if(!store.ready())throw Error('Private device storage is unavailable. Try again before adding details.');
      const recordId=operationId();
-     sheet.now();
-     go(recordId,{chat,initial:{id:recordId,kind:'people',title:friend.name,links:[],version:0}});
+     go(recordId,{chat,initial:{id:recordId,kind:'people',title:friend.name,links:[],version:0}},true);
     }
    }catch(error){if(active())message.textContent=error.message}
-   finally{if(active())sheet.setBusy(false)}
+   finally{selecting=false;profile.removeAttribute('aria-busy')}
   }
-  const body=el('div',{class:'org'},el('section',{class:'org-profile'},ui.avatar(friend.name),
-   el('h2',{text:friend.name}),friend.handle&&friend.name!=='@'+friend.handle?el('p',{class:'org-muted',text:'@'+friend.handle}):null,
-   el('p',{class:'org-muted',text:'Chat friend'})),message);
-  sheet=F.sheet.open({sheet:'people-chat-friend',title:'Chat friend',body,acts:[
-   {label:'Add details',primary:true,run:()=>select(false)},
-   {label:'Link to existing contact',run:()=>select(true)},
-   {label:'Open conversation',run:()=>{if(active()){sheet.now();F.nav.go(pathOf({app:'chats',id}))}}}
-  ],onClose(){if(friendSheet?.sheet===sheet)friendSheet=null}});
-  friendSheet={id,sheet};
+  view.module.renderPersonProfile(profile,F,{value:{title:friend.name},handle:friend.handle,
+   edit:{label:'Add details',run:()=>select(false)},chat:()=>{if(active())F.nav.go(pathOf({app:'chats',id}))}});
+  extra.append(el('div',{class:'org-toolbar'},ui.btn('Link to existing contact',{icon:'link',run:()=>select(true)})));
+  detail.replaceChildren(profile,message,extra);
  }
  async function importContacts(){const [m]=await Promise.all([import('./import.js'),import('/roof/modules.js').then(m=>m.loadStyles(new URL('./editor.css',import.meta.url).pathname))]);if(live()&&shown)m.openImport({F,store,onImported:()=>load()})}
  async function load(append=false){
@@ -187,9 +216,9 @@ export async function mountApp(root,F,kind){
  }
  async function openEditor(id,{initial,chat}={}){
   const mine=++editorLoad;if(editorId===id&&editor&&!chat)return;await editor?.flush();if(!live()||mine!==editorLoad)return;editor?.destroy();editor=null;editorId=id;detail.hidden=false;root.dataset.detail='true';detail.replaceChildren(el('p',{role:'status',text:'Opening…'}));
-  try{const [module,value]=await Promise.all([import('./editor.js'),initial?Promise.resolve(initial):store.get(id),import('/roof/modules.js').then(m=>m.loadStyles(new URL('./editor.css',import.meta.url).pathname))]);if(!live()||mine!==editorLoad)return;
+  try{const [module,value]=await Promise.all([editorModule(),initial?Promise.resolve(initial):store.get(id)]);if(!live()||mine!==editorLoad)return;
    if(chat&&!friends.has(chat.id)){home();return;}
-   editor=module.createEditor({F,kind,id,value,store,detail,go,home,date,chat,onSaved:()=>{ids.add(id);paint()},exportValue,linkPicker:()=>import('./links.js').then(m=>m.chooseLink(F,kind)),prepareInvitation});paint();
+   editor=module.createEditor({F,kind,id,value,store,detail,go,home,date,chat,friendFor:id=>friends.get(id),onSaved:()=>{ids.add(id);paint()},exportValue,linkPicker:()=>import('./links.js').then(m=>m.chooseLink(F,kind)),prepareInvitation});paint();
   }catch(e){if(live()&&mine===editorLoad)detail.replaceChildren(ui.error({title:'This item could not open',body:e.message,acts:[{label:'Try again',run:()=>{editorId=null;openEditor(id,{initial,chat})}}]}))}
  }
  async function create(initial){if(!store.ready())throw Error('Enable private device storage before creating an item.');const id=operationId(),value=initial||{title:kind==='notes'?'Untitled note':'',links:[],...(kind==='notes'?{text:'',checklist:[]}:kind==='people'?{email:'',phone:'',organisation:'',details:''}:{description:'',allDay:false,start:new Date(date+'T09:00:00').getTime(),end:new Date(date+'T10:00:00').getTime(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})};
@@ -214,7 +243,8 @@ export async function mountApp(root,F,kind){
  const clear=()=>{clearTimeout(searchTimer);stopFriends();editor?.destroy();unregister?.();root.replaceChildren()};life.addEventListener('abort',clear,{once:true});
  return{
   show(r){
-   shown=true;route=r;
+   const wasDetail=!!root.dataset.detail;
+   shown=true;route=r;friendView=null;
    const seed=editorSeed?.id===r.arg?editorSeed:undefined;editorSeed=null;
    if(kind==='people'&&!watchFriends)watchFriends=F.watchChatFriends?.(receiveFriends);
    if(kind==='calendar'&&r.key==='date'&&/^\d{4}-\d{2}-\d{2}$/.test(r.arg||'')){date=r.arg;day.value=date;section='week'}
@@ -223,15 +253,16 @@ export async function mountApp(root,F,kind){
    if(!loaded&&!loading||kind==='calendar')load();
    if(r.key==='new'){create().catch(e=>F.toast(e.message));return}
    if(r.key==='item'&&/^[a-f0-9]{32}$/.test(r.arg||'')){openEditor(r.arg,seed);return}
+   if(kind==='people'&&r.key==='friend'&&/^[\w-]{1,40}$/.test(r.arg||'')){safe(()=>showFriend(r))();return}
    const mine=++editorLoad,previous=editor;
    Promise.resolve(previous?.flush()).then(()=>{
     if(!live()||mine!==editorLoad||!shown||route!==r)return;
     previous?.destroy();editor=null;editorId=null;detail.hidden=true;delete root.dataset.detail;paint();
-    if(previous&&libraryY!==null){scrollTo(0,libraryY);if(libraryFocus)list.querySelector('[data-record="'+CSS.escape(libraryFocus)+'"]')?.focus({preventScroll:true})}
+    if(wasDetail&&libraryY!==null){scrollTo(0,libraryY);if(libraryFocus)list.querySelector('[data-record="'+CSS.escape(libraryFocus)+'"]')?.focus({preventScroll:true})}
    }).catch(e=>{if(live())F.toast(e.message)});
   },
   hide(){shown=false;stopFriends();if(kind==='people')paint();editor?.flush()},
-  back(){if(editor){editor.close();return true}return false},
+  back(){if(editor){editor.close();return true}if(route?.key==='friend'){home();return true}return false},
   busy:()=>!!editor?.dirty()||store.busy(),
   flush:async()=>{await editor?.flush();return store.flush()},
   sendable:()=>null,workspace:()=>null,unmount:clear

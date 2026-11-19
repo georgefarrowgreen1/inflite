@@ -120,18 +120,19 @@ export const placesProvider = (F) => connectorProvider(F, "weather");
 // People receives a read-only projection of the signed-in account's friends.
 // The Chat worker stays responsible for its lock, account and friendship state.
 export function watchChatFriends(service, owner, update) {
-  let account = null, friends = [];
+  let account = null, friends = [], loaded = false;
   return service.on("*", ({ topic, data }) => {
     const state = service.state;
     const available = state === "ready" || state === "offline";
     if (topic === "state") {
-      if (!available) { account = null; friends = []; }
+      if (!available) { account = null; friends = []; loaded = false; }
     } else if (topic === "me") {
-      if (account !== data?.id) friends = [];
+      if (account !== data?.id) { friends = []; loaded = false; }
       account = available ? data?.id : null;
     } else if (topic === "friends") {
       const unique = new Map();
-      if (available && account === owner && Array.isArray(data)) {
+      loaded = available && account === owner && Array.isArray(data);
+      if (loaded) {
         for (const friend of data) {
           if (friend?.blocked || typeof friend?.id !== "string" || !/^[\w-]{1,40}$/.test(friend.id)) continue;
           const handle = typeof friend.handle === "string" && /^[\w.-]{1,64}$/.test(friend.handle) ? friend.handle : "";
@@ -141,7 +142,8 @@ export function watchChatFriends(service, owner, update) {
       }
       friends = [...unique.values()];
     } else return;
-    update(available && account === owner ? friends : [], state);
+    const otherAccount = available && account && account !== owner;
+    update(available && account === owner ? friends : [], otherAccount ? "unavailable" : state, loaded);
   });
 }
 

@@ -1,6 +1,33 @@
 import {createSystemClient,operationId} from '/roof/system-client.js';
 import {addDays,localDay,localInput,parseLocal,zone,pathOf} from './model.js';
-export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportValue,linkPicker,prepareInvitation,chat}){
+
+export function renderPersonProfile(profile, F, {value, handle, chat, edit, saveState}) {
+ const {avatar, btn, el} = F.ui;
+ profile.classList.add('org-person');
+ const identity = el('div', {class:'org-person-identity'}, avatar(value.title),
+  el('div', {}, el('h2', {text:value.title}), saveState));
+ const mail = F.workspace?.handoffs;
+ const emailHref = value.email ? 'mailto:' + encodeURIComponent(value.email) : '';
+ const actions = el('div', {class:'org-person-actions'},
+  chat ? btn('Message', {icon:'bubble', primary:true, run:chat}) : null,
+  emailHref ? btn('Email', {icon:'mail', ...(mail?.can('mail','text')
+   ? {run:()=>mail.send('mail','text',{subject:'Hello '+value.title,text:'',to:value.email})}
+   : {href:emailHref})}) : null,
+  btn(edit.label, {icon:'pen', primary:!chat&&!saveState, run:edit.run}));
+ const fields = [
+  ['Email',value.email],
+  ['Phone',value.phone ? el('a',{href:'tel:'+encodeURIComponent(value.phone),text:value.phone}) : null],
+  ['Organisation',value.organisation],
+  ['Chat handle',handle && value.title!=='@'+handle ? '@'+handle : null],
+  ['Contact notes',value.details],
+ ];
+ const details = el('dl', {class:'org-person-details','aria-label':'Contact details'},
+  fields.filter(([,content])=>content).map(([label,content])=>el('div',{},el('dt',{text:label}),el('dd',{},content))));
+ profile.replaceChildren(identity, actions, details.childElementCount ? details :
+  el('p', {class:'org-muted org-person-empty',text:'No contact details yet.'}));
+}
+
+export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportValue,linkPicker,prepareInvitation,chat,friendFor}){
  const ui=F.ui,el=ui.el,life=F.signal;let dead=false,dirty=!!value.formDraft,formKept=!!value.formDraft,editEpoch=0,timer=0,version=value.version||0,writing=Promise.resolve(),links=structuredClone(value.links||[]),checklist=structuredClone(value.checklist||[]),labels=new Map((value.linkedLabels||[]).map(r=>[r.app+':'+r.id,r.unavailable?'Unavailable '+r.app:r.title||r.app])),lastSaved=JSON.stringify(value),mounted=true;
  if(chat&&!links.some(ref=>ref.app==='chats'&&ref.id===chat.id)){
   if(links.length>=12)throw Error('Remove a linked item before linking this Chat friend.');
@@ -38,35 +65,59 @@ export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportVa
  function close(){if(kind==='notes'){flush().then(()=>{if(!dirty)home()});return}if(!dirty)return home();const h=F.sheet.open({sheet:'organise-unsaved',title:'Keep editing?',body:el('p',{text:'This item has changes that have not been saved.'}),acts:[{label:'Keep editing',run:()=>h.now()},{label:'Keep draft & close',run:async()=>{h.setBusy(true);try{await flush();h.now();home()}catch(e){F.toast(e.message)}finally{h.setBusy(false)}}},{label:'Discard changes',destructive:true,run:async()=>{clearTimeout(timer);await store.dropForm(id);dirty=false;h.now();home()}}]})}
  const retry=button('Retry save',()=>store.retry(id)),review=button('Review account version',async()=>{let remote=null;try{remote=await store.remote(id)}catch(e){if(e.status!==404)throw e}if(!live())return;const h=F.sheet.open({sheet:'organise-conflict',title:'Review conflicting changes',body:el('div',{class:'org'},el('p',{text:'Your local work is kept. Choose which copy to continue with.'}),el('h3',{text:'On this device'}),el('pre',{class:'org-conflict',text:JSON.stringify(read(),null,2)}),el('h3',{text:'In your account'}),el('pre',{class:'org-conflict',text:remote?JSON.stringify(remote,null,2):'This item was deleted.'}),button('Save my work as a new copy',async()=>{await flush();const next=await store.copy(id);h.now();F.nav.go('/'+kind+'/#item='+next)}),button('Use account version',async()=>{await store.discard(id);h.now();dirty=false;home()}))});}),recovery=el('div',{class:'org-recovery',hidden:true},retry,review);
  const remove=button('Delete',()=>{const h=F.sheet.open({sheet:'organise-delete',title:'Delete this '+(kind==='notes'?'note':kind==='people'?'person':'event')+'?',body:el('p',{text:'Linked files and items in other apps will stay in place.'}),acts:[{label:'Cancel',run:()=>h.now()},{label:'Delete',destructive:true,run:async()=>{try{await flush();const r=store.view(id);if(r?.pending)throw Error('Finish or review the pending save before deleting.');if(version){await store.save(id,read(),{version,deleted:true})}dirty=false;h.now();home()}catch(e){F.toast(e.message)}}}]});});remove.hidden=!version;
- const saveButton=button('Save',save,true),editButton=button(kind==='people'?'Edit contact':'Edit event',()=>setEditing(true)),tools=el('div',{class:'org-toolbar org-editor-tools'},saved,kind==='notes'?null:editButton,kind==='notes'?null:saveButton);
+ const saveButton=button('Save',save,true),editButton=kind==='calendar'?button('Edit event',()=>setEditing(true)):null,tools=el('div',{class:'org-toolbar org-editor-tools'},saved,editButton,kind==='notes'?null:saveButton);
  const share=button('Use in another app',async()=>{await flush();if(live())await F.workspace?.life?.share({app:kind,id})});
  const profile=el('section',{class:'org-profile'});
+ let profileHandle;
+ function renderLinks(refs){
+  if(!refs.length)return;
+  const linked=el('div',{class:'org-profile-links org-related'},el('h3',{text:'Linked items'}));
+  for(const r of refs)linked.append(button(labels.get(r.app+':'+r.id)||r.app[0].toUpperCase()+r.app.slice(1),()=>r.app==='files'?F.workspace?.openReference(r):F.nav.go(pathOf(r))));
+  profile.append(linked);
+ }
+ function renderContact(){
+  const ref=links.find(r=>r.app==='chats');
+  profileHandle=ref&&friendFor?.(ref.id)?.handle;
+  renderPersonProfile(profile,F,{value:read(),handle:profileHandle,saveState:saved,edit:{label:'Edit contact',run:()=>setEditing(true)},
+   chat:ref?()=>F.nav.go(pathOf(ref)):null});
+  renderLinks(links.filter(r=>r!==ref));
+ }
  function setEditing(edit){
-  form.hidden=!edit;profile.hidden=edit;editButton.hidden=edit;saveButton.hidden=!edit;
+  form.hidden=!edit;profile.hidden=edit;saveButton.hidden=!edit;
+  if(editButton)editButton.hidden=edit;
+  if(kind==='people'){
+   tools.hidden=!edit;
+   if(edit)tools.prepend(saved);else renderContact();
+  }
   if(!edit){
+   if(kind==='people')return;
    const v=read(),fields=el('div',{class:'org-contact-details'});
-   if(kind==='people'){
-    for(const [label,text]of [['Email',v.email],['Phone',v.phone],['Notes',v.details]])if(text){const content=label==='Phone'?el('a',{href:'tel:'+encodeURIComponent(text),text}):el('span',{text});fields.append(el('div',{},el('small',{text:label}),content))}
-    profile.replaceChildren(...[ui.avatar(v.title),el('h2',{text:v.title}),v.organisation?el('p',{class:'org-muted',text:v.organisation}):null,fields.childElementCount?fields:null].filter(Boolean));
-    const contactActions=el('div',{class:'org-toolbar'});
-    if(v.email&&F.workspace?.handoffs?.can('mail','text'))contactActions.append(button('Email',()=>F.workspace.handoffs.send('mail','text',{subject:'Hello '+v.title,text:'',to:v.email})));
-    const chat=links.find(r=>r.app==='chats');if(chat)contactActions.append(button('Open conversation',()=>F.nav.go(pathOf(chat))));
-    if(contactActions.childElementCount)profile.append(contactActions);
-   }else{
     const date=v.allDay?new Date(v.startDate+'T12:00:00'):new Date(v.start),end=v.allDay?new Date(addDays(v.endDate,-1)+'T12:00:00'):new Date(v.end);
     fields.append(...[el('div',{},el('small',{text:v.allDay?'Date':'Starts'}),el('span',{text:date.toLocaleDateString([],{weekday:'long',day:'numeric',month:'long',year:'numeric'})+(v.allDay?' · All day':' · '+date.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))})),(!v.allDay||v.endDate>addDays(v.startDate,1))?el('div',{},el('small',{text:'Ends'}),el('span',{text:end.toLocaleDateString([],{day:'numeric',month:'long'})+(v.allDay?'':' · '+end.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))})):null].filter(Boolean));
     if(v.description)fields.append(el('div',{},el('small',{text:'Details'}),el('span',{text:v.description})));
     profile.replaceChildren(el('span',{class:'org-empty-icon'},ui.icon('calendar')),el('h2',{text:v.title}),fields);
-   }
-   if(links.length){const linked=el('div',{class:'org-profile-links org-related'},el('h3',{text:'Linked items'}));for(const r of links)linked.append(button(labels.get(r.app+':'+r.id)||r.app[0].toUpperCase()+r.app.slice(1),()=>r.app==='files'?F.workspace?.openReference(r):F.nav.go(pathOf(r))));profile.append(linked)}
+   renderLinks(links);
   }else{queueMicrotask(()=>{if(live()&&F.workspace?.active())title.focus({preventScroll:true})})}
  }
  const footer=el('div',{class:'org-toolbar org-editor-footer'},share,button('Save a copy to Files',()=>{if(!title.value.trim())throw Error('Add a title first.');return exportValue({...read(),id})}),remove);
- const extra=el('details',{class:'org-extra'},el('summary',{text:kind==='notes'?'Linked items & actions':'More actions'}));
+ const extra=el('details',{class:kind==='people'?'org-extra org-people-extra':'org-extra'},el('summary',{text:kind==='notes'?'Linked items & actions':'More actions'}));
  if(kind==='notes'){const linksHead=linksBox.previousElementSibling;extra.append(linksHead,linksBox)}extra.append(footer);
  detail.replaceChildren(...[tools,profile,form,message,recovery,kind==='calendar'?button('Prepare invitation',()=>prepareInvitation({...read(),id})):null,extra].filter(Boolean));
  if(kind!=='notes')setEditing(!version||dirty);else profile.hidden=true;
- if(kind==='people'&&version){const related=el('section',{class:'org-related'},el('h3',{text:'Related notes and events'}),el('p',{class:'org-muted',text:'Loading linked items…'}));detail.append(related);const c=createSystemClient(F,{prefix:'/api/organise/'});Promise.all(['notes','calendar'].map(app=>c.request('list',{method:'POST',body:{kind:app,related:{app:'people',id},limit:12}}).then(r=>r.records))).then(groups=>{if(!live())return;related.replaceChildren(el('h3',{text:'Related notes and events'}));const rows=groups.flat();if(!rows.length)related.hidden=true;for(const v of rows)related.append(button(v.title,()=>F.nav.go('/'+v.kind+'/#item='+v.id)))}).catch(()=>{if(live())related.lastElementChild.textContent='Linked items could not refresh. Reopen this person to retry.'})}
+ if(kind==='people'&&version){
+  const related=el('section',{class:'org-related',hidden:true},el('h3',{text:'Related notes and events'}));
+  detail.insertBefore(related,extra);
+  const c=createSystemClient(F,{prefix:'/api/organise/'});
+  Promise.all(['notes','calendar'].map(app=>c.request('list',{method:'POST',body:{kind:app,related:{app:'people',id},limit:12}}).then(r=>r.records))).then(groups=>{
+   if(!live())return;
+   const rows=groups.flat();related.hidden=!rows.length;
+   for(const v of rows)related.append(button(v.title,()=>F.nav.go('/'+v.kind+'/#item='+v.id)));
+  }).catch(()=>{if(live()){related.hidden=false;related.append(el('p',{class:'org-muted',text:'Related items couldn’t load.'}));}});
+ }
 status();queueMicrotask(()=>{if(live()&&F.workspace?.active()&&!form.hidden&&(!version||kind!=='notes')){title.focus({preventScroll:true});if(kind==='notes'&&title.value==='Untitled note')title.select()}});
- return{status,close,flush,dirty:()=>dirty,destroy(){dead=true;mounted=false;clearTimeout(timer);detail.replaceChildren()}};
+ return{status,close,flush,dirty:()=>dirty,refreshFriend(){
+  if(kind!=='people'||!live()||profile.hidden)return;
+  const ref=links.find(r=>r.app==='chats');
+  if(profileHandle!==(ref&&friendFor?.(ref.id)?.handle))renderContact();
+ },destroy(){dead=true;mounted=false;clearTimeout(timer);detail.replaceChildren()}};
 }

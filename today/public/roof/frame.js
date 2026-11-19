@@ -683,7 +683,8 @@ export function createFrame(opts = {}) {
     const closedSheet = () => ({ el: ui.el("dialog"), body: ui.el("div"), closed: true, close() {}, now() {}, push: () => ui.el("div"), pop() {}, setBusy() {} });
     function watchFriends(update) {
       const owner = sess().view?.user?.id;
-      if (!owner || !live() || !isOn("chats")) return () => {};
+      if (!owner || !live()) return () => {};
+      if (!isOn("chats")) { update([], "disabled"); return () => {}; }
       const starting = svc("chats");
       const signal = svcs.chats.controller.signal;
       let stopped = false, off;
@@ -694,12 +695,12 @@ export function createFrame(opts = {}) {
         signal.removeEventListener("abort", releasedService);
         m.controller.signal.removeEventListener("abort", stop);
       };
-      const releasedService = () => { if (!stopped && live()) update([], ""); stop(); };
+      const releasedService = () => { if (!stopped && live()) update([], "disabled"); stop(); };
       signal.addEventListener("abort", releasedService, { once: true });
       m.controller.signal.addEventListener("abort", stop, { once: true });
       Promise.all([starting, import("./connectors.js")]).then(([service, { watchChatFriends }]) => {
         if (!current()) return;
-        off = watchChatFriends(service, owner, (friends, state) => { if (current()) update(friends, state); });
+        off = watchChatFriends(service, owner, (friends, state, loaded) => { if (current()) update(friends, state, loaded); });
         if (!current()) off();
       }).catch(() => { if (current()) update([], "unavailable"); stop(); });
       return stop;
