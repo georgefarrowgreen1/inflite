@@ -923,9 +923,9 @@ function base64ToBytes(b64) {
 
 async function send(env, ctx, body, view) {
   body = body && typeof body === "object" ? body : {};
-  // Sending a saved draft, as InFlite's page sends ({ draftId, key } and nothing else): its fields, files and quote, as
+  // InFlite sends a saved draft by ID with its idempotency key and verified owner. Use its saved fields, files and quote, as
   // kept here (S4-D4). One already sent under that key says so, though its draft has gone.
-  const fromDraft = typeof body.draftId === "string" && Object.keys(body).every((k) => k === "draftId" || k === "key");
+  const fromDraft = typeof body.draftId === "string" && Object.keys(body).every((k) => k === "draftId" || k === "key" || k === "accountOwner");
   if (fromDraft) {
     const k = typeof body.key === "string" && /^[\w-]{8,64}$/.test(body.key) ? body.key : null;
     const was = k && (await env.DB.prepare(`SELECT id FROM sends WHERE key = ?1 AND id IS NOT NULL`).bind(k).first());

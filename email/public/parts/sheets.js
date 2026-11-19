@@ -1,8 +1,10 @@
 // Mail's sheets for now and then, loaded the first time one's needed (app.js: part("sheets")): Settings, Notifications
-// turned on or off on this device, and Unsubscribe. Given what it uses of Mail's own (M: app.js partsContext); what it
+// turned on or off on this device, and occasional conversation actions. Given what it uses of Mail's own (M: app.js partsContext); what it
 // gives back is what app.js calls.
 export default (M) => {
   const { icon, h, setKids, avatar, displayName, locale, debounce, DEMO, STANDALONE, PUSH_OK, api, S, els, showMenu, closeMenu, confirmMenu, toast, ADDR_COLORS, loadList, refreshCounts, addrColor } = M;
+
+  const { act, closeOpenSwipe, fmtWhen, editing, edited, leaveThread, removeRow, renderRows, renderDetail, listAsk, canUseDrafts } = M;
 
   // Send From, from the menu: your addresses, the one new mail goes from ticked; another chosen is made the default
   function sendFromMenu(anchor) {
@@ -666,5 +668,164 @@ export default (M) => {
     });
   }
 
-  return { sendFromMenu, openSettings, togglePush, unsubSheet, contactCard, saveContactAttachment };
+  function at(days, hour, minute = 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(hour, minute, 0, 0);
+    return d.getTime();
+  }
+
+  function laterChoices() {
+    const now = new Date();
+    const hr = now.getHours(), dow = now.getDay();
+    const out = [];
+    if (hr >= 6 && hr < 17) {
+      const half = 1800000;
+      out.push({ label: "Later Today", until: Math.ceil((Date.now() + 3 * 3600000) / half) * half });
+    }
+    if (hr < 18) out.push({ label: "This Evening", until: at(0, 18) });
+    out.push({ label: "Tomorrow Morning", until: at(1, 8), timeOnly: true });
+    if (dow >= 1 && dow <= 4) out.push({ label: "This Weekend", until: at(6 - dow, 9) });
+    out.push({ label: "Next Week", until: at(((8 - dow) % 7) || 7, 8) });
+    return out;
+  }
+
+  function laterMenu(anchor, t) {
+    if (!canUseDrafts() || !anchor?.isConnected) return;
+    showMenu(
+      anchor,
+      [
+        ...laterChoices().map((c) => ({ label: c.label, hint: c.timeOnly ? new Date(c.until).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" }) : fmtWhen(c.until), action: () => act(t.id, "snooze", { until: c.until }) })),
+        "-",
+        { label: "Choose a Time…", icon: "calendar", action: () => pickTime(t) },
+        t.snoozeUntil && { label: "Back to Inbox Now", icon: "inbox", action: () => act(t.id, "unsnooze") },
+      ],
+      { title: t.snoozeUntil ? `Comes back ${fmtWhen(t.snoozeUntil)}` : "Bring it back…" }
+    );
+    closeOpenSwipe();
+  }
+
+  // A date and time of one's own, in a small glass card
+  function pickTime(t) {
+    if (!canUseDrafts()) return;
+    closeMenu(true);
+    const pad = (n) => String(n).padStart(2, "0");
+    const local = (ms) => {
+      const d = new Date(ms);
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    const input = h("input.when", { type: "datetime-local", value: local(at(1, 8)), min: local(Date.now() + 60000) });
+    const layer = h("div.menu-layer.center");
+    const close = () => closeMenu();
+    const set = () => {
+      if (!canUseDrafts()) return;
+      const until = new Date(input.value).getTime();
+      if (!Number.isFinite(until) || until <= Date.now()) return toast("Choose a time in the future", { icon: "clock", error: true });
+      close();
+      act(t.id, "snooze", { until });
+    };
+    const card = h(
+      "div.menu.picker",
+      { role: "dialog", "aria-label": "Choose a Time" },
+      h("div.menu-title", "Bring it back on…"),
+      input,
+      h("div.picker-btns", h("button.pbtn", { type: "button", onclick: close }, "Cancel"), h("button.pbtn.primary", { type: "button", onclick: set }, "Later"))
+    );
+    layer.addEventListener("pointerdown", (e) => e.target === layer && close());
+    input.addEventListener("keydown", (e) => e.key === "Enter" && set());
+    card.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      const f = [...card.querySelectorAll("input,button")];
+      if (e.shiftKey && document.activeElement === f[0]) (e.preventDefault(), f[f.length - 1].focus());
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) (e.preventDefault(), f[0].focus());
+    });
+    layer.append(card);
+    document.body.append(layer);
+    // (a menu as far as Esc and the focus are concerned)
+    M.menuState = { layer, menu: card, opener: document.activeElement };
+    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add("open")));
+    input.focus({ preventScroll: true });
+  }
+
+  async function deleteThread(id) {
+    editing();
+    try {
+      await leaveThread(id);
+      if (!canUseDrafts()) return;
+      removeRow(id);
+      try {
+        await api.threadAction(id, { action: "delete" });
+        toast("Deleted", { icon: "trash" });
+      } catch (err) {
+        toast(err.message, { error: true });
+        loadList({ quiet: true });
+      }
+      refreshCounts();
+    } finally {
+      edited();
+    }
+  }
+
+  // (forever: asked first)
+  async function confirmDelete(anchor, id) {
+    if (!canUseDrafts()) return;
+    const confirmed = await confirmMenu(anchor, "This conversation will be deleted. This can’t be undone.", "Delete Forever", { destructive: true });
+    if (confirmed && canUseDrafts()) return deleteThread(id);
+  }
+
+  async function emptyTrash(anchor) {
+    if (!canUseDrafts()) return;
+    const n = S.counts.trash || S.threads.length;
+    const sure = await confirmMenu(
+      anchor || els.listNavTitle,
+      `${n === 1 ? "1 conversation" : `${n || "All"} conversations`} will be deleted. This can’t be undone.`,
+      "Empty Trash",
+      { destructive: true }
+    );
+    if (!sure || !canUseDrafts()) return;
+    editing();
+    try {
+      S.threads = [];
+      renderRows();
+      if (S.thread?.trashed) {
+        S.thread = null;
+        S.selectedId = null;
+        renderDetail();
+      }
+      try {
+        await api.emptyTrash();
+        toast("Trash Emptied", { icon: "trash" });
+      } catch (err) {
+        toast(err.message, { error: true });
+      }
+      refreshCounts();
+    } finally {
+      edited();
+    }
+  }
+
+  // (the whole list, as the server has it: not only the conversations loaded so far, a page of forty at a time)
+  async function markAllRead() {
+    if (!canUseDrafts() || (!S.threads.some((t) => t.unread) && !S.hasMore)) return;
+    editing();
+    let again = false;
+    try {
+      for (const t of S.threads) if (t.unread) t.unread = 0;
+      if (S.view === "unread") {
+        S.threads = [];
+      }
+      renderRows();
+      try {
+        await api.threadBatch({ action: "read", every: listAsk() });
+      } catch (err) {
+        toast(err.message, { error: true });
+      }
+      refreshCounts();
+    } finally {
+      again = edited();
+    }
+    if (!again) loadList({ quiet: true });
+  }
+
+  return { laterMenu, confirmDelete, emptyTrash, markAllRead, sendFromMenu, openSettings, togglePush, unsubSheet, contactCard, saveContactAttachment };
 };

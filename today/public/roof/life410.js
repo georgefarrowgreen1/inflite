@@ -159,7 +159,10 @@ export async function createLifeTools(F,{system,files,organiseStore,today,editTo
   return h;
  }
  async function share(ref){
-  if(!live()||!ref||!['notes','calendar','people','files'].includes(ref.app))return;const kind=ref.app,source={app:kind,id:ref.id},store=kind==='files'?null:await organiseStore(kind),v=kind==='files'?await files.locate(ref.id,{current:live}):await store.get(ref.id);if(!live()||!v)return;
+  const kind=ref?.app;
+  if(!live()||!Object.hasOwn(NAME,kind))return;
+  const source={app:kind,id:ref.id},store=kind==='files'?null:await organiseStore(kind),v=kind==='files'?await files.locate(ref.id,{current:live}):await store.get(ref.id);
+  if(!live()||!v)return;
   const body=el('div',{class:'life'},el('div',{class:'life-source'},ui.icon(null,{app:kind,size:40}),el('div',{},el('small',{text:NAME[kind]}),el('strong',{text:v.title||v.name}))),el('p',{class:'life-hint',text:'Choose what to create. The original stays in place.'}));let h;
   const choose=(label,icon,copy,fn)=>body.append(el('button',{type:'button',class:'life-action',on:{click:()=>{if(!live()||h.closed)return;h.now();Promise.resolve(fn()).catch(e=>{if(live())F.toast(e.message)})}}},el('span',{class:'life-action-icon'},ui.icon(icon)),el('span',{class:'life-action-copy'},el('strong',{text:label}),el('small',{text:copy})),ui.icon('chev')));
   choose('Remind me','bell','Follow up with a date and repeat schedule',()=>system.capture(source));

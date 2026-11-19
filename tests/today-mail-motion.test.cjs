@@ -210,6 +210,21 @@ test('Mail reduced motion removes the composer immediately and stops indefinite 
   } finally { await ctx.close(); }
 });
 
+test('Standalone Mail loads the Later picker from a conversation menu and schedules the selected time', async () => {
+  const { ctx, page, errors } = await open({ nativeMail: true, width: 1440, motion: 'reduce' });
+  try {
+    await page.locator('.row[data-id]').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Later…' }).click();
+    await page.getByRole('menuitem', { name: 'Choose a Time…' }).click();
+    const picker = page.getByRole('dialog', { name: 'Choose a Time' });
+    const time = picker.locator('input[type="datetime-local"]');
+    assert.equal(await time.evaluate(el => document.activeElement === el), true);
+    await picker.getByRole('button', { name: 'Later', exact: true }).click();
+    await page.getByText(/^Later: /).waitFor();
+    await noErrors(page, errors);
+  } finally { await ctx.close(); }
+});
+
 for (const width of [390, 1440]) test(`Mail recipients retain keyboard focus and existing chips through edits at ${width}px`, async () => {
   const { ctx, page, errors } = await open({ nativeMail: true, width });
   try {
