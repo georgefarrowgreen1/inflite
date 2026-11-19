@@ -2006,6 +2006,68 @@ for (const width of [320, 390, 1440]) test(`unified settings search and appearan
   } finally { await ctx.close(); }
 });
 
+for (const width of [320, 1440]) test(`About documents and Contact stay in Settings at ${width}px`, async () => {
+  const messages = [];
+  let outcome = 503;
+  const {page,ctx,errors} = await open({width,initialPath:'/#settings=about',waitForDay:false,
+    intercept:async (route,{url,request}) => {
+      if (url.pathname !== '/api/contact') return false;
+      messages.push({data:request.postDataJSON(),cookie:request.headers().cookie});
+      await route.fulfill({status:outcome,json:outcome === 201 ? {ok:true} : {error:'Unavailable'}});
+      return true;
+    }});
+  try {
+    await ctx.addCookies([{name:'contact-fixture',value:'sample-session',url:page.url()}]);
+    await page.evaluate(() => { window.aboutSettingsDocument = document; });
+    const about = page.locator('#you [data-group=about]');
+    const body = page.locator('.settings-document');
+    async function enter(title,key) {
+      await about.getByRole('link',{name:title,exact:true}).click();
+      await body.getByRole('heading',{name:title,exact:true}).waitFor();
+      assert.equal(new URL(page.url()).pathname,'/');
+      assert.equal(new URL(page.url()).hash,'#settings=about-' + key);
+      assert.ok(await body.evaluate(n => n.scrollWidth <= n.clientWidth + 1));
+    }
+    const back = () => page.locator('.settings-document-back').click();
+    await enter('About the apps','apps');
+    await body.getByRole('heading',{name:'Calendar',exact:true}).waitFor();
+    assert.equal(await body.locator('li').count(),10);
+    await back();
+    for (const [title,key,heading] of [
+      ['Privacy notice','privacy','Your controls and rights'],
+      ['Cookies and device storage','storage','Changing or clearing storage'],
+      ['Terms of use','terms','Your choices and legal rights']
+    ]) {
+      await enter(title,key);
+      await body.getByRole('heading',{name:heading,exact:true}).waitFor();
+      await back();
+    }
+    await enter('Contact InFlite','contact');
+    await body.getByLabel('Your name',{exact:true}).fill('Fixture Sender');
+    await body.getByLabel('Email address',{exact:true}).fill('sender@example.test');
+    const message = body.getByLabel('Message',{exact:true});
+    await message.fill('A private draft for the support form.');
+    await body.getByRole('link',{name:'Privacy notice',exact:true}).click();
+    await body.getByRole('heading',{name:'Your controls and rights',exact:true}).waitFor();
+    await page.goBack();
+    assert.equal(await message.inputValue(),'A private draft for the support form.');
+    const submit = body.getByRole('button',{name:'Send message'});
+    await submit.click();
+    await body.getByText(/Delivery couldn’t be confirmed/).waitFor();
+    assert.equal(await message.inputValue(),'A private draft for the support form.');
+    outcome = 201;
+    await submit.click();
+    await body.getByText(/Message received/).waitFor();
+    assert.deepEqual(messages,Array(2).fill({data:{name:'Fixture Sender',email:'sender@example.test',
+      message:'A private draft for the support form.',website:''},cookie:undefined}));
+    assert.equal(await message.inputValue(),'');
+    assert.equal(await page.evaluate(() => window.aboutSettingsDocument === document),true);
+    assert.equal(await body.locator('iframe').count(),0);
+    assert.deepEqual(errors,[]);
+    assert.deepEqual(await page.evaluate(() => window.__csp),[]);
+  } finally { await ctx.close(); }
+});
+
 // Sample the exposed app gutter from a whole viewport screenshot. Cropped
 // WebKit screenshots can omit composited fixed layers.
 async function wallpaperPixels(page) {

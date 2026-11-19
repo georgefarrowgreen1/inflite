@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, renameSync,
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { sealShellWorker } from './shell-integrity.mjs';
+import { settingsDocuments } from './settings-documents.mjs';
 
 const source = fileURLToPath(new URL('../today/public/', import.meta.url));
 
@@ -11,6 +12,7 @@ export function buildShellAssets(destination, transform) {
   const previous = join(stage, 'previous');
   try {
     cpSync(source, next, { recursive: true });
+    writeFileSync(join(next, "settings-documents.js"), settingsDocuments(pathToFileURL(join(next, "index.html"))));
     const roof = join(next, 'roof');
     for (const entry of readdirSync(roof, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith('.js')) continue;

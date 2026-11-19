@@ -29,6 +29,11 @@ import { esc, G } from "/cards.js";
 
 const LEVELS = [["do", "Do"], ["suggest", "Suggest"], ["quiet", "Quiet"]];
 const APPS = [["today", "Today"], ["chat", "Chat"], ["weather", "Weather"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"]];
+const ABOUT_PAGES = [
+  ["apps", "About the apps"], ["contact", "Contact InFlite"], ["privacy", "Privacy notice"],
+  ["storage", "Cookies and device storage"], ["terms", "Terms of use"],
+];
+const aboutPage = section => ABOUT_PAGES.find(([id]) => (section || "").replace(/^settings-/, "") === "about-" + id);
 // (each app's version as its server says it now: asked as About opens, at most once a minute)
 const NATIVE_VERSIONS = [["calendar","Calendar"],["notes","Notes"],["people","People"]];
 const LIVE = {}, LIVE_PATH = { calendar:"/calendar/", notes:"/notes/", people:"/people/", chat: "/chats/", weather: "/weather/", fitness: "/fitness/", markets: "/markets/", mail: "/mail/" };
@@ -110,7 +115,7 @@ export async function drawYou(root, ctx) {
   if (!root || !ctx?.view || !current(ctx)) return;
   // (drawn at once with what's known, then again as each answer comes)
   paint(root, ctx);
-  if (accountSection(ctx.section)) return;
+  if (accountSection(ctx.section) || aboutPage(ctx.section)) return;
   const ask = (path) => ctx.call(path).catch((e) => (ctx.missing(e) ? false : null));
   const sub = await ctx.sub().catch(() => null);
   if (!current(ctx)) return;
@@ -146,7 +151,9 @@ function paint(root, ctx) {
   if (!current(ctx)) return;
   const u = ctx.view.user || {}, admin = ctx.view.apps?.mail === true;
   const account = accountSection(ctx.section);
-  if (account && root.dataset.settingsOwner === String(u.id) && root.dataset.settingsSection === ctx.section && root.querySelector("inflite-settings-account")) return;
+  const about = aboutPage(ctx.section);
+  if (root.dataset.settingsOwner === String(u.id) && root.dataset.settingsSection === ctx.section &&
+      (account && root.querySelector("inflite-settings-account") || about && root.querySelector(".settings-document-body[data-ready]"))) return;
   // (a section: its heading, one group, a line of small print under it; icons: its rows lead with an icon, the lines
   // between them start where the words do)
   const sec = (id, title, body, foot = "", icons = false) => body ? `<section class="you-sec" id="${id}">${title ? `<h2 class="you-h">${esc(title)}</h2>` : ""}<div class="group glass${icons ? " icons" : ""}">${body}</div>${foot ? `<p class="you-foot">${foot}</p>` : ""}</section>` : "";
@@ -233,13 +240,8 @@ function paint(root, ctx) {
     try { b ||= localStorage.getItem(`ifl-build:${k}`); } catch {}
     return row(`v-${k}`, name, null, `<span class="val">${b ? `V${esc(b)}` : "—"}</span>`);
   }).join("");
-  const aboutLinks = [
-    ["/about/", "About the apps"],
-    ["/about/#contact", "Contact InFlite"],
-    ["/privacy/", "Privacy notice"],
-    ["/storage/", "Cookies and device storage"],
-    ["/terms/", "Terms of use"],
-  ].map(([href, title]) => `<a class="row go" href="${href}">${tx(title, "")}<span class="chev">${G.chev}</span></a>`).join("");
+  const aboutLinks = ABOUT_PAGES.map(([id, title]) =>
+    `<a class="row go" href="/#settings=about-${id}">${tx(title, "")}<span class="chev">${G.chev}</span></a>`).join("");
   FOLDERS.versions = sec("youVersions", "About InFlite", aboutLinks + ver);
   const link = (action, title, description, lead = "") => go(`data-setting="${action}"`, title, description, "", lead);
   const options = ctx.frame?.session?.apps || {};
@@ -290,20 +292,25 @@ function paint(root, ctx) {
   const focused = sameVisit && root.contains(document.activeElement) ? document.activeElement : null;
   root.dataset.settingsOwner = u.id;
   root.dataset.settingsSection = ctx.section || "";
+  root.toggleAttribute("data-about-page", !!about);
   const currentCategory = selected || (matchMedia("(min-width: 900px)").matches ? "account" : null);
   const nav = groups.map(([key,title,sub,icon]) =>
     `<a class="row go settings-category" href="/#settings=${key}" data-category="${key}" ${currentCategory === key ? 'aria-current="page"' : ""}>${ic(icon,"grey")}${tx(title,sub)}<span class="chev">${G.chev}</span></a>`).join("");
   const details = groups.map(([key,title,, ,html]) =>
     `<section class="settings-detail" data-group="${key}" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${html}</section>`).join("");
-  const detailNav = account ? `<header class="settings-account-bar">
+  const detailNav = about ? `<a class="settings-back settings-document-back" href="/#settings=about"><span aria-hidden="true">‹</span> About InFlite</a>` : account ? `<header class="settings-account-bar">
     <a class="settings-back" href="/#settings" aria-label="Back to all settings">${sv('<path d="m15 5-7 7 7 7"/>')}</a>
     <h1>Account &amp; security</h1>
     <button type="button" aria-label="Search">${sv('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>')}</button>
   </header>` : `<a class="settings-back" href="/#settings"><span aria-hidden="true">‹</span> All settings</a>`;
+  const documentPage = about ? `<section class="settings-document" aria-labelledby="settings-document-title">
+    <h2 id="settings-document-title" tabindex="-1">${esc(about[1])}</h2><div class="settings-document-body"></div></section>` : "";
   root.innerHTML = `<div class="settings-sidebar">
     ${sections.youAccount}<label class="settings-search">${sv('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>')}<input type="search" aria-label="Search settings" placeholder="Search settings" autocomplete="off"></label>
     <nav class="group glass icons" aria-label="Settings categories">${nav}</nav></div>
-    <div class="settings-content">${detailNav}${details}<p class="settings-empty" role="status" hidden>No matching settings</p></div>`;
+    <div class="settings-content">${detailNav}${documentPage}${details}<p class="settings-empty" role="status" hidden>No matching settings</p></div>`;
+  const doc = root.querySelector(".settings-document");
+  if (doc) mountAboutDocument(doc.querySelector(".settings-document-body"), about, ctx);
   if (account) {
     root.querySelector(".settings-account-bar button").addEventListener("click", () => ctx.frame.search.open());
     const detail = root.querySelector('[data-group="account"]');
@@ -337,7 +344,8 @@ function paint(root, ctx) {
     root.toggleAttribute("data-filtering", !!words.length);
     const frame = root.querySelector("inflite-settings-account");
     if (frame) frame.hidden = !!words.length;
-    let count = 0;
+    if (doc) doc.hidden = !!words.length;
+    let count = doc && !doc.hidden ? 1 : 0;
     for (const section of root.querySelectorAll('[data-group]')) {
       const key = section.dataset.group, title = section.getAttribute('aria-label');
       let any = false;
@@ -351,7 +359,7 @@ function paint(root, ctx) {
         block.hidden = !hits || !!frame && !words.length && key === "account";
         any ||= !!hits;
       }
-      section.hidden = words.length ? !any : key !== (selected || 'account');
+      section.hidden = words.length ? !any : !!doc || key !== (selected || 'account');
       if (!section.hidden) count++;
     }
     root.dataset.detail = selected ? "true" : "false";
@@ -383,6 +391,27 @@ function paint(root, ctx) {
   });
 }
 
+function mountAboutDocument(slot, [id, title], ctx) {
+  const ui = ctx.frame.ui;
+  const active = () => current(ctx) && slot.isConnected;
+  async function load() {
+    slot.replaceChildren(ui.skeleton("rows", 2));
+    slot.setAttribute("aria-busy", "true");
+    try {
+      const { renderSettingsDocument } = await import("/settings-about.js");
+      if (!active()) return;
+      renderSettingsDocument(slot, id, ctx.frame);
+      slot.dataset.ready = "";
+    } catch {
+      if (active()) slot.replaceChildren(ui.error({ title: "Page unavailable", body: `${title} couldn’t open.`,
+        acts: [{ label: "Reload page", run: () => location.reload() }] }));
+    } finally {
+      if (active()) slot.removeAttribute("aria-busy");
+    }
+  }
+  load();
+}
+
 function deviceRow(d) {
   const apps = (Array.isArray(d.apps) ? d.apps : []).map((a) => NAMES[a]).filter(Boolean);
   const sub = [apps.length ? and(apps) : "", d.home ? "on its Home Screen" : ""].filter(Boolean).join(", ");
@@ -392,6 +421,7 @@ function deviceRow(d) {
 const FOLDERS = { rules: "", apps: "", versions: "" };
 function categoryFor(section) {
   const key = (section || "").replace(/^settings-/, "");
+  if (aboutPage(section)) return "about";
   if (["notifications","account","about","devices","apps","personalise"].includes(key)) return key;
   if (["quiet","phone","notify","notify-weather","notify-mail","markets-alerts","emails"].includes(key)) return "notifications";
   if (["weather","fitness","chats","mail","markets","calendars","sharing"].includes(key)) return "apps";
@@ -760,6 +790,11 @@ function fillEvery(sheet, root, ctx) {
 export async function goTo(root, ctx, id, drawn) {
   if (!current(ctx)) return;
   const key = id.replace(/^settings-/, "");
+  if (aboutPage(id)) {
+    const page = root.querySelector(".settings-document");
+    if (page && !page.contains(document.activeElement)) page.querySelector("h2").focus({ preventScroll: true });
+    return;
+  }
   if (key === "notify-weather") return openWxNotify(root, ctx);
   if (key === "emails") return emailPreferences(root,ctx);
   if (["module","account-security"].includes(key)) return ctx.security?.();

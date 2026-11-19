@@ -18,7 +18,8 @@ export async function contact(request, env) {
   const url = new URL(request.url);
   if (request.method !== "POST") return reply(405);
   const site = request.headers.get("Sec-Fetch-Site");
-  if (url.origin !== "https://inflite.ai" || request.headers.get("Origin") !== url.origin || (site && site !== "same-origin")) return reply(403);
+  if (!["https://inflite.ai", "https://os.inflite.ai"].includes(url.origin) ||
+      request.headers.get("Origin") !== url.origin || (site && site !== "same-origin")) return reply(403);
   if (url.search) return reply(400);
   if (request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json") return reply(415);
   // Cloudflare supplies this at ingress. Never use a forwarded address or a hub header supplied by the browser.

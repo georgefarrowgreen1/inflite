@@ -31,3 +31,22 @@ test('Mail opens its isolated legacy view through a direct canonical public link
  assert.ok(!html.includes('href="https://email.inflite.ai/"'));
  assert.ok(html.includes('data-mail="https://email.inflite.ai"'),'iframe transport stays isolated');
 });
+
+test('Contact works from either InFlite host with its own origin',async()=>{
+ const api=await worker,calls=[];
+ const env={HUB_KEY:'fixture',APPS:{fetch:async r=>{
+  calls.push(await r.json());
+  return Response.json({ok:true},{status:201});
+ }}};
+ const os='https://os.inflite.ai',main='https://inflite.ai',fields={name:'Sample',email:'sample@example.test',message:'Hello',website:''};
+ function submit(host,origin,site='same-origin'){
+  return api.fetch(new Request(host+'/api/contact',{method:'POST',headers:{
+   Origin:origin,'Sec-Fetch-Site':site,'Content-Type':'application/json','CF-Connecting-IP':'192.0.2.10'
+  },body:JSON.stringify(fields)}),env,{});
+ }
+ assert.equal((await submit(main,main)).status,201);
+ assert.equal((await submit(os,os)).status,201);
+ assert.equal((await submit(os,main,'same-site')).status,403);
+ assert.equal((await submit('https://example.test','https://example.test')).status,403);
+ assert.deepEqual(calls,[fields,fields]);
+});
