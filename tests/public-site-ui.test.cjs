@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { createServer } = require('node:http');
-const { chromium } = require('playwright');
+const { chromium, webkit } = require('playwright');
 
 const origin = 'https://inflite.ai';
 const assets = path.resolve(__dirname, '../today/public');
@@ -24,7 +24,7 @@ test('installed shell leaves online public page navigations to the site', () => 
   }
 });
 
-test('public pages and contact form work at phone width without signing in', async () => {
+test('public pages and contact form work without signing in, from phone to desktop', async () => {
   const unexpected = [], sent = [], errors = [], accessed = new Set();
   let receipt = 503, pending, browser;
   const server = createServer(async (req, res) => {
@@ -49,8 +49,11 @@ test('public pages and contact form work at phone width without signing in', asy
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const site = 'http://127.0.0.1:' + server.address().port;
   try {
-    browser = await chromium.launch({ args: ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'], executablePath: process.env.CHROMIUM || (fs.existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined) });
-    const context = await browser.newContext({ viewport: { width: 320, height: 720 }, serviceWorkers: 'block' });
+    const executablePath = process.env.CHROMIUM || (fs.existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined);
+    browser = process.env.WEB_UI_BROWSER === 'webkit' ? await webkit.launch() : await chromium.launch({
+      executablePath, args: ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'],
+    });
+    const context = await browser.newContext({ viewport: { width: 320, height: 720 }, reducedMotion: 'reduce', serviceWorkers: 'block' });
     context.on('request', request => {
       if (new URL(request.url()).origin !== site) unexpected.push(request.url());
     });
@@ -58,6 +61,18 @@ test('public pages and contact form work at phone width without signing in', asy
     page.on('pageerror', e => errors.push(e.message));
     await context.addCookies([{ name: 'fixture', value: 'signed-in', url: site }]);
     await page.goto(site + '/about/');
+    const sky = page.locator('.about-sky canvas[data-painted]');
+    await sky.waitFor();
+    const image = () => sky.evaluate(canvas => canvas.toDataURL());
+    const stillFrame = await image();
+    assert.equal(await page.locator('.wallpaper-controls, .privacy-feature').count(), 0);
+    await page.getByRole('link', { name: 'Explore the apps' }).click();
+    assert.equal(new URL(page.url()).hash, '#apps');
+    assert.equal(await image(), stillFrame, 'a reduced-motion scene stays still while scrolling');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.waitForFunction(before => document.querySelector('.about-sky canvas').toDataURL() !== before, stillFrame);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
     for (const pagePath of pages) {
       if (pagePath !== '/about/') await page.locator('footer a[href="' + pagePath + '"]').click();
       assert.equal(new URL(page.url()).pathname, pagePath);
@@ -101,8 +116,20 @@ test('public pages and contact form work at phone width without signing in', asy
     assert.deepEqual(sent.map(({ cookie, origin }) => [cookie, origin]), [[undefined, site], [undefined, site]]);
     assert.deepEqual(sent[1].fields, { name: 'Fixture Sender', email: 'sender@example.test', message: 'Please help with this fixture.', website: '' });
     assert.equal(await message.inputValue(), '');
+    assert.equal(await page.locator('.app-list li').count(), 10);
+    const heroLayout = () => page.locator('.introduction').evaluate(section => {
+      const copy = section.querySelector('.intro-copy').getBoundingClientRect();
+      const art = section.querySelector('.intro-art').getBoundingClientRect();
+      return art.top >= copy.bottom ? 'stacked' : art.left + art.width / 2 > copy.right ? 'side-by-side' : 'overlapping';
+    });
+    assert.equal(await heroLayout(), 'stacked');
+    await page.setViewportSize({ width: 1440, height: 960 });
+    assert.equal(await heroLayout(), 'side-by-side');
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.getByRole('navigation', { name: 'Legal' }).getByRole('link', { name: 'Privacy' }).click();
+    assert.equal(new URL(page.url()).pathname, '/privacy/');
     assert.deepEqual(errors, []);
     assert.deepEqual(unexpected, []);
-    assert.ok(accessed.has('/about/fold.webp'));
+    assert.ok(accessed.has('/about/glass-wing-768.webp'));
   } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
 });

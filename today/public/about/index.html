@@ -1,57 +1,139 @@
 <!doctype html>
 <html lang="en-GB">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>InFlite · Your everyday apps</title>
-<meta name="description" content="Explore the InFlite apps, learn how they use your information and contact the team.">
-<link rel="canonical" href="https://inflite.ai/about/">
-<meta property="og:title" content="InFlite · Your everyday apps">
-<meta property="og:description" content="Explore the InFlite apps, learn how they use your information and contact the team.">
-<meta property="og:image" content="https://inflite.ai/og.png">
-<meta property="og:url" content="https://inflite.ai/about/">
-<meta property="og:type" content="website">
-<link rel="icon" href="/icon.svg">
-<link rel="stylesheet" href="/about/site.css">
-<script defer src="/about/contact.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>About InFlite · Make room for your day</title>
+  <meta name="description" content="Get to know the InFlite apps for the people, plans and information that make up your day. Read about privacy or get in touch.">
+  <link rel="canonical" href="https://inflite.ai/about/">
+  <meta property="og:title" content="About InFlite · Make room for your day">
+  <meta property="og:description" content="Get to know the InFlite apps for the people, plans and information that make up your day.">
+  <meta property="og:image" content="https://inflite.ai/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:url" content="https://inflite.ai/about/">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="/icon.svg">
+  <meta name="theme-color" content="#050d0c">
+  <link rel="stylesheet" href="/about/site.css">
+  <link rel="stylesheet" href="/about/about.css">
+  <script defer src="/about/contact.js"></script>
+  <link rel="modulepreload" href="/roof/lava-field.js?about">
+  <script type="module" src="/about/lava.js"></script>
 </head>
-<body><a class="skip" href="#main">Skip to content</a>
-<header><div class="frame top"><a class="brand" href="/about/"><img src="/inflite.svg" alt="" width="34" height="34">InFlite</a>
-<nav aria-label="Main"><a href="/about/#apps">Apps</a><a href="/about/#contact">Contact</a><a class="open" href="/">Open InFlite</a></nav></div></header>
+<body class="about-page">
+  <div class="about-sky" aria-hidden="true"><canvas></canvas></div>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="about-header">
+    <div class="about-frame about-nav">
+      <a class="brand" href="/about/"><img src="/inflite.svg" alt="" width="36" height="36">InFlite</a>
+      <nav aria-label="Main">
+        <a href="/about/#apps">Apps</a>
+        <a href="/about/#contact">Contact</a>
+      </nav>
+      <a class="launch" href="/">Open InFlite <span aria-hidden="true">→</span></a>
+    </div>
+  </header>
 
-<main id="main">
-<section class="hero"><div class="frame herocopy">
-<h1>Your day,<br>in one place.</h1><p>Meet the InFlite apps for the people, plans and information you come back to every day.</p><a class="herocta" href="#apps">Explore the apps <span aria-hidden="true">↓</span></a></div>
-</section>
-<section class="frame catalog" id="apps" aria-labelledby="apps-title">
-<h2 id="apps-title">The apps</h2>
-<ul class="apps">
-<li><img src="/inflite.svg" width="46" height="46" alt="" loading="lazy"><div><h3>Today</h3><p>Get a single view of your forecast, plans and the things that need your attention.</p></div></li>
-<li><img src="/apps/mail.svg" width="46" height="46" alt="" loading="lazy"><div><h3>Mail</h3><p>Read, write and follow up on email. Find the people you write to through your contacts.</p></div></li>
-<li><img src="/apps/calendar.svg" width="46" height="46" alt="" loading="lazy"><div><h3>Calendar</h3><p>Keep appointments and reminders together, and see where they fit in your day.</p></div></li>
-<li><img src="/apps/notes.svg" width="46" height="46" alt="" loading="lazy"><div><h3>Notes</h3><p>Capture a thought, write a longer note or work through a checklist.</p></div></li>
-<li><img src="/apps/people.svg" width="46" height="46" alt="" loading="lazy"><div><h3>People</h3><p>Keep contact details and follow-ups together so the next conversation is easier to start.</p></div></li>
-<li><span class="fileicon" aria-hidden="true"><svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></span><div><h3>Files</h3><p>Keep documents and photos in your Drive and find them again when you need them.</p></div></li>
-<li><img src="/apps/chat.svg" width="46" height="46" alt="" loading="lazy"><div><h3>Chats</h3><p>Send messages to friends and follow the journey of the pigeon carrying your words.</p></div></li>
-<li><img src="/apps/weather.svg" width="46" height="46" alt="" loading="lazy"><div><h3>Weather</h3><p>Check the forecast, rainfall and weather alerts for places you care about.</p></div></li>
-<li><img src="/apps/fitness.svg" width="46" height="46" alt="" loading="lazy"><div><h3>Fitness</h3><p>Plan training, review activities and see how your progress changes over time.</p></div></li>
-<li><img src="/apps/markets.svg" width="46" height="46" alt="" loading="lazy"><div><h3>Markets</h3><p>Follow prices, compare charts and keep a watchlist of the markets you follow.</p></div></li>
-</ul>
-</section>
-<section class="privacyband"><div class="frame privacy">
-<h2>Your privacy<br>on InFlite.</h2><div><p>See what each app uses, what happens when you connect a service and how to request a copy of your information.</p><a href="/privacy/">Read the privacy notice <span aria-hidden="true">→</span></a></div></div>
-</section>
-<section class="frame contact" id="contact" aria-labelledby="contact-title"><div>
-<h2 id="contact-title">Contact us</h2><p>Have a question about InFlite? Your message goes to the team’s support inbox. We’ll use your email to reply.</p><p>For a privacy request, email <a href="mailto:privacy@inflite.ai">privacy@inflite.ai</a>.</p></div>
-<div>
-<form id="contact-form" action="/api/contact" method="post" hidden>
-<label>Your name<input name="name" autocomplete="name" required maxlength="100"></label>
-<label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
-<label>Message<textarea name="message" rows="5" required maxlength="4000"></textarea></label>
-<label class="trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label><div class="actions"><button type="submit">Send message</button><a href="/privacy/">Privacy notice</a></div><p id="contact-status" role="status" aria-live="polite"></p></form>
-<noscript><a href="mailto:hello@inflite.ai">Email hello@inflite.ai</a></noscript></div>
-</section>
-</main>
-<footer><div class="frame foot"><a class="brand" href="/about/">InFlite</a>
-<nav aria-label="Legal"><a href="/privacy/">Privacy</a><a href="/storage/">Cookies &amp; storage</a><a href="/terms/">Terms</a></nav></div></footer>
-</body></html>
+  <main id="main">
+    <section class="about-frame introduction" aria-labelledby="intro-title">
+      <div class="intro-copy">
+        <p class="section-label">About InFlite</p>
+        <h1 id="intro-title">Make room<br><span>for your day.</span></h1>
+        <p class="intro-description">InFlite brings together the people you talk to, the plans you make and the information you check every day.</p>
+        <a class="explore" href="#apps"><span aria-hidden="true">↓</span> Explore the apps</a>
+      </div>
+      <div class="intro-art">
+        <img src="/about/glass-wing-768.webp"
+          srcset="/about/glass-wing-768.webp 768w, /about/glass-wing-1440.webp 1440w"
+          sizes="(max-width: 800px) 94vw, (max-width: 1440px) 52vw, 750px"
+          width="1440" height="960" alt="" fetchpriority="high">
+      </div>
+    </section>
+
+    <section class="ecosystem" id="apps" aria-labelledby="apps-title">
+      <div class="about-frame">
+        <div class="ecosystem-heading">
+          <h2 id="apps-title">Meet the apps.</h2>
+          <p>Start with an overview in Today, then go straight to the app you need.</p>
+        </div>
+        <ul class="app-list" role="list">
+          <li class="featured-app">
+            <img src="/inflite.svg" width="76" height="76" alt="" loading="lazy">
+            <div>
+              <h3>Today</h3>
+              <p>See your forecast, plans and the things that need your attention in a single view.</p>
+            </div>
+          </li>
+          <li>
+            <img src="/apps/mail.svg" width="48" height="48" alt="" loading="lazy">
+            <div><h3>Mail</h3><p>Read, write and follow up on email. Find the people you write to through your contacts.</p></div>
+          </li>
+          <li>
+            <img src="/apps/calendar.svg" width="48" height="48" alt="" loading="lazy">
+            <div><h3>Calendar</h3><p>Keep appointments and reminders together, and see where they fit in your day.</p></div>
+          </li>
+          <li>
+            <img src="/apps/notes.svg" width="48" height="48" alt="" loading="lazy">
+            <div><h3>Notes</h3><p>Capture a thought, write a longer note or work through a checklist.</p></div>
+          </li>
+          <li>
+            <img src="/apps/people.svg" width="48" height="48" alt="" loading="lazy">
+            <div><h3>People</h3><p>Keep contact details and follow-ups together so the next conversation is easier to start.</p></div>
+          </li>
+          <li>
+            <span class="app-file" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>
+            </span>
+            <div><h3>Files</h3><p>Keep documents and photos in your Drive and find them again when you need them.</p></div>
+          </li>
+          <li>
+            <img src="/apps/chat.svg" width="48" height="48" alt="" loading="lazy">
+            <div><h3>Chats</h3><p>Send messages to friends and follow the journey of the pigeon carrying your words.</p></div>
+          </li>
+          <li>
+            <img src="/apps/weather.svg" width="48" height="48" alt="" loading="lazy">
+            <div><h3>Weather</h3><p>Check the forecast, rainfall and weather alerts for places you care about.</p></div>
+          </li>
+          <li>
+            <img src="/apps/fitness.svg" width="48" height="48" alt="" loading="lazy">
+            <div><h3>Fitness</h3><p>Plan training, review activities and see how your progress changes over time.</p></div>
+          </li>
+          <li>
+            <img src="/apps/markets.svg" width="48" height="48" alt="" loading="lazy">
+            <div><h3>Markets</h3><p>Follow prices, compare charts and keep a watchlist of the markets you follow.</p></div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="about-frame enquiry" id="contact" aria-labelledby="contact-title">
+      <div class="enquiry-copy">
+        <h2 id="contact-title">Get in touch.</h2>
+        <p>Have a question about InFlite? Your message goes to the team’s support inbox. We’ll use your email to reply.</p>
+        <p>For privacy requests, email <a href="mailto:privacy@inflite.ai">privacy@inflite.ai</a>.</p>
+      </div>
+      <div>
+        <form id="contact-form" action="/api/contact" method="post" hidden>
+          <div class="enquiry-fields">
+            <label>Your name<input name="name" autocomplete="name" required maxlength="100"></label>
+            <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+          </div>
+          <label>Message<textarea name="message" rows="5" required maxlength="4000"></textarea></label>
+          <label class="trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+          <div class="actions"><button type="submit">Send message <span aria-hidden="true">→</span></button><a href="/privacy/">Privacy notice</a></div>
+          <p id="contact-status" role="status" aria-live="polite"></p>
+        </form>
+        <noscript><a href="mailto:hello@inflite.ai">Email hello@inflite.ai</a></noscript>
+      </div>
+    </section>
+  </main>
+
+  <footer class="about-footer">
+    <div class="about-frame foot">
+      <a class="brand" href="/about/"><img src="/inflite.svg" alt="" width="30" height="30">InFlite</a>
+      <nav aria-label="Legal"><a href="/privacy/">Privacy</a><a href="/storage/">Cookies &amp; storage</a><a href="/terms/">Terms</a></nav>
+    </div>
+  </footer>
+</body>
+</html>
