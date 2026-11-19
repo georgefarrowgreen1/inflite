@@ -60,11 +60,11 @@ test('the staged shell exposes one build to /version and the offline installer',
   t.after(() => rmSync(temp, { recursive: true, force: true }));
   const destination = resolve(temp, 'assets');
   buildShellAssets(destination, transformSync);
-  const asset = path => readFileSync(resolve(destination, '.' + path));
+  const asset = path => readFileSync(resolve(destination, path === '/' ? 'index.html' : '.' + path));
   const origin = 'https://inflite.ai';
   const env = { ASSETS: { async fetch(request) {
     const pathname = new URL(request.url).pathname;
-    const bytes = asset(pathname === '/' ? '/index.html' : pathname);
+    const bytes = asset(pathname);
     if (request.headers.has('Range')) return new Response(bytes.subarray(0, 16384), { status: 206 });
     return new Response(bytes);
   } } };
@@ -75,6 +75,7 @@ test('the staged shell exposes one build to /version and the offline installer',
   assert.ok(asset('/app.js').includes('const BUILD = "' + release + '";'));
   assert.deepEqual(asset('/index.html'), readFileSync(resolve(__dirname, '../today/public/index.html')));
   const integrity = JSON.parse(/^const INTEGRITY = (.*);$/m.exec(sw)[1]);
+  assert.ok(integrity['/'], 'the entry document is verified along with its scripts');
   for (const [path, hash] of Object.entries(integrity)) {
     assert.equal('sha256-' + createHash('sha256').update(asset(path)).digest('base64'), hash, path);
   }

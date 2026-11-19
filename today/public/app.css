@@ -1610,6 +1610,8 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
     --entry-panel: color-mix(in srgb, var(--ifl-surface) 89%, transparent);
   }
   .today-out .ifl-entry {
+    display: grid;
+    gap: clamp(14px, 3.5svh, 22px);
     width: min(100%, 416px);
     padding: clamp(24px, 5vh, 42px);
     border: 1px solid var(--ifl-line);
@@ -1627,13 +1629,14 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
     animation: none;
   }
   .today-out .ifl-logo {
-    width: 108px;
-    height: 108px;
-    margin: 0 0 22px;
+    width: clamp(72px, 20svh, 108px);
+    height: clamp(72px, 20svh, 108px);
+    margin: 0;
   }
+  .today-out .ifl-logo img { width: min(96px, 100%); height: auto; }
   .today-out .ifl-entry-title {
     display: block;
-    margin: 0 0 26px;
+    margin: 0 0 clamp(14px, 4svh, 26px);
     font: 700 clamp(26px, 2.6vw, 32px)/1.12 var(--font-d);
     letter-spacing: -.035em;
     text-align: center;

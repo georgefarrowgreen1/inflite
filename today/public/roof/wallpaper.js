@@ -1,6 +1,5 @@
 // The wallpaper belongs to the document. App routes only replace content above it.
 import {bubbleMotion} from "./bubble-motion.js";
-import {wallpaperFrame} from "./refractor.js";
 import {minerals, defaultBubbleColour, newBubbleScene, validBubbleScene, driftBubbles, respondingBubbles, drawBubbles, sizeBubbleCanvas} from "./bubbles.js";
 export {bubbleColours} from "./bubbles.js";
 
@@ -44,8 +43,17 @@ const workspace = document.getElementById("in");
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const still = matchMedia("(prefers-reduced-motion: reduce)");
 const contrast = matchMedia("(prefers-contrast: more), (forced-colors: active)");
-let bubbles, ctx, preview;
+let bubbles, ctx, preview, refraction, wallpaperFrame;
 let suspended = false, light = false, lastSample = -Infinity;
+
+function prepareRefraction() {
+  const prefs = window.InFliteAppearance?.snapshot();
+  if (refraction || workspace?.hidden !== false || contrast.matches || !prefs?.glass || !prefs.glassStrength) return;
+  refraction = import("./refractor.js").then(module => {
+    wallpaperFrame = module.wallpaperFrame;
+    if (ctx) wallpaperFrame(canvas);
+  }).catch(() => { refraction = null; });
+}
 
 function drawPreview(frameScene = false) {
   if (!preview?.isConnected || !ctx || !bubbles) return;
@@ -86,7 +94,7 @@ function paint(dt, pointer, live) {
   // Avoid a synchronous WebKit pixel readback on every high-refresh frame.
   const now = performance.now();
   if (!dt || !moving || now-lastSample >= 1000/30) {
-    wallpaperFrame(canvas);
+    wallpaperFrame?.(canvas);
     drawPreview();
     lastSample = now;
   }
@@ -109,9 +117,11 @@ function sync() {
   const visible = enabled && ctx && !document.hidden && !suspended;
   const live = !still.matches && wallpaperPreference() === "bubbles";
   setMotion?.(visible ? (live ? "live" : "still") : "off");
+  prepareRefraction();
 }
 
 if (canvas) {
+  addEventListener("inflite:appearance", prepareRefraction);
   for (const media of [dark, still, contrast]) media.addEventListener("change", sync);
   function watchDensity() {
     matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener("change", () => {

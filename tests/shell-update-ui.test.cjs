@@ -7,15 +7,19 @@ const { createHash } = require('node:crypto');
 const source = readFileSync(require.resolve('../today/public/sw.js'), 'utf8');
 
 test('an interrupted shell install preserves offline launch and a complete update waits for open tabs', async () => {
-  let build = '4.6.1', interrupt = false, stableRequests = 0;
+  let build = '4.6.1', interrupt = false, mixedDocument = false, sentSession = false, stableRequests = 0;
+  const documentFor = version => '<title>' + version + '</title>';
+  const scriptFor = version => 'const BUILD = "' + version + '";';
   const server = createServer((req, res) => {
     const path = req.url.split('?')[0];
     if (interrupt && path === '/cards.js') { res.writeHead(503).end(); return; }
+    if (path === '/layout.js' && req.headers.cookie) sentSession = true;
     res.setHeader('Cache-Control', 'no-store');
     if (path === '/sw.js') {
       res.setHeader('Content-Type', 'text/javascript');
       const sums = JSON.parse(/^const INTEGRITY = (.*);$/m.exec(source)[1]);
-      for (const key of Object.keys(sums)) sums[key] = 'sha256-' + createHash('sha256').update(key === '/app.js' ? 'const BUILD = "' + build + '";' : key === '/day.css' ? '/* stable */' : build).digest('base64');
+      const bodies = { '/': documentFor(build), '/app.js': scriptFor(build), '/day.css': '/* stable */' };
+      for (const key of Object.keys(sums)) sums[key] = 'sha256-' + createHash('sha256').update(bodies[key] ?? build).digest('base64');
       res.end(source.replace(/^const INTEGRITY = .*;$/m, 'const INTEGRITY = ' + JSON.stringify(sums) + ';')
         .replace(/const RELEASE = "[\d.]+";/, 'const RELEASE = "' + build + '";'));
     } else if (path === '/day.css') {
@@ -24,8 +28,8 @@ test('an interrupted shell install preserves offline launch and a complete updat
       stableRequests++;
       res.end('/* stable */');
     } else if (path === '/') {
-      res.setHeader('Content-Type', 'text/html'); res.end('<title>' + build + '</title>');
-    } else if (path === '/app.js') res.end('const BUILD = "' + build + '";');
+      res.setHeader('Content-Type', 'text/html'); res.end(documentFor(mixedDocument ? '4.6.1' : build));
+    } else if (path === '/app.js') res.end(scriptFor(build));
     else res.end(build);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -33,6 +37,7 @@ test('an interrupted shell install preserves offline launch and a complete updat
   try {
     browser = await chromium.launch({executablePath: process.env.CHROMIUM || (existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined)});
     const ctx = await browser.newContext(), url = 'http://127.0.0.1:' + server.address().port;
+    await ctx.addCookies([{ name: 'ifl-session', value: 'sample-session', url }]);
     let page = await ctx.newPage();
     await page.goto(url);
     await page.evaluate(async () => { await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready; });
@@ -48,7 +53,9 @@ test('an interrupted shell install preserves offline launch and a complete updat
       await reg.update();
       return state;
     });
-    build = '4.6.2'; interrupt = true;
+    build = '4.6.2'; mixedDocument = true;
+    assert.equal(await update(), 'redundant', 'a root document from a different release cannot install');
+    mixedDocument = false; interrupt = true;
     assert.equal(await update(), 'redundant');
     await ctx.setOffline(true); await page.close(); page = await ctx.newPage();
     await page.goto(url); assert.equal(await page.title(), '4.6.1');
@@ -77,6 +84,7 @@ test('an interrupted shell install preserves offline launch and a complete updat
     await ctx.setOffline(true); await page.goto(url);
     await page.waitForFunction(async () => (await fetch('/cards.js')).text().then(text => text === '4.6.2'));
     await page.reload(); assert.equal(await page.title(), '4.6.2');
+    assert.equal(sentSession, false, 'shell staging fetches public files without a session cookie');
     await ctx.setOffline(false);
     await page.evaluate(async () => {
       const cache = await caches.open('inflite-shell-set-4.6.2');

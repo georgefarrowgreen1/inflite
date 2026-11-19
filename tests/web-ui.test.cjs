@@ -223,7 +223,8 @@ test('motion: sheet height releases for keyboard, resize, hidden, reduced motion
 test('motion: opening Search flushes pending route snapshots before the dialog and retains focus against late callbacks', async () => {
   const { ctx, page, errors } = await open({ motion: 'no-preference' });
   try {
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
+      (await import('/roof/wallpaper.js')).setWallpaper('plain');
       window.__modalSnapshots = [];
       document.startViewTransition = update => {
         let finish, ready;
@@ -375,7 +376,8 @@ test('motion: reduced motion removes spatial feedback and decorative loops pause
 test('motion: late snapshot callbacks cannot restore an old route or clear a newer transition', async () => {
   const { ctx, page, errors } = await open({ motion: 'no-preference' });
   try {
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
+      (await import('/roof/wallpaper.js')).setWallpaper('plain');
       window.__snapshots = [];
       document.startViewTransition = update => {
         let finish;
@@ -2271,8 +2273,8 @@ test('system glass refracts the dock edge, keeps its centre clear and follows ap
       (await import('/roof/wallpaper.js')).setWallpaper('still');
       InFliteAppearance.setGlass({glass:true, glassStrength:100}, {preview:true});
     });
-    const mode = await page.locator('html').getAttribute('data-refractor');
-    assert.equal(mode, process.env.WEB_UI_BROWSER === 'webkit' ? 'wallpaper' : 'backdrop');
+    const mode = process.env.WEB_UI_BROWSER === 'webkit' ? 'wallpaper' : 'backdrop';
+    await page.locator(`html[data-refractor="${mode}"]`).waitFor();
     const box = await dock.boundingBox();
     // Uniform stripes make a displaced sample distinguishable from blur or a flat tint.
     await dock.evaluate(n => {

@@ -19,7 +19,7 @@ export function buildShellAssets(destination, transform) {
       const path = join(roof, entry.name);
       const { code } = transform(readFileSync(path, 'utf8'), {
         sourcefile: basename(path), format: 'esm', target: 'esnext', charset: 'utf8',
-        legalComments: 'none', minifySyntax: true, minifyWhitespace: true,
+        legalComments: 'none', minify: true,
       });
       writeFileSync(path, code);
     }
