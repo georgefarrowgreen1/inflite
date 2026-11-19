@@ -2070,6 +2070,93 @@ for (const width of [320, 1440]) test(`About documents and Contact stay in Setti
   } finally { await ctx.close(); }
 });
 
+for(const width of [390,1440])test(`People shows Chat friends and saves extra details only as owned contacts at ${width}px`,async()=>{
+  const apps={people:true,chats:true},existing='b'.repeat(32),records=new Map([[existing,{
+    kind:'people',id:existing,title:'Existing contact',email:'existing@example.test',links:[],version:1,updatedAt:1,
+  }]]),writes=[];
+  const {page,ctx,errors}=await open({width,initialPath:'/?os=1',waitForDay:false,hubApps:apps,viewApps:apps,
+    intercept:async (route,{url,request})=>{
+      if(url.pathname==='/api/organise/list'){
+        const {kind,q='',related}=request.postDataJSON();
+        const result=kind==='people'?[...records.values()].filter(value=>
+          value.title.toLowerCase().includes(q.toLowerCase())&&(!related||value.links.some(ref=>ref.app===related.app&&ref.id===related.id))):[];
+        await route.fulfill({json:{records:result,cursor:null}});return true;
+      }
+      if(url.pathname!=='/api/organise/record')return false;
+      if(request.method()==='PUT'){
+        const {id,kind,value,version}=request.postDataJSON();
+        writes.push(value);
+        const record={id,kind,...value,version:version+1,updatedAt:Date.now()};
+        records.set(id,record);await route.fulfill({json:{record}});return true;
+      }
+      const record=records.get(url.searchParams.get('id'));
+      await route.fulfill({status:record?200:404,json:record?{record}:{error:'Missing contact'}});return true;
+    }});
+  try{
+    const owner=fixture('session').user.id;
+    await ctx.route('**/chats/roof/service.js',route=>route.fulfill({contentType:'text/javascript',body:`
+      export async function startService(){
+        const listeners=new Set(),owner=${JSON.stringify(owner)};
+        let state='ready';
+        const friends=[{id:'friend-1',name:'Taylor Friend',handle:'taylor',place:'Private location'},
+          {id:'friend-2',name:'Jamie Friend',handle:'jamie'},{id:'friend-3',name:'Morgan Friend',handle:'morgan'},
+          {id:'blocked-1',name:'Blocked person',blocked:true}];
+        function publish(topic,data){
+          for(const [key,callback] of listeners)if(key==='*')callback({topic,data});else if(key===topic)callback(data);
+        }
+        window.mockChatState=next=>{state=next;publish('state',{state});if(state==='ready'){publish('me',{id:owner});publish('friends',friends)}};
+        return {get state(){return state},facade:{},release(){listeners.clear()},on(key,callback){
+          const listener=[key,callback];listeners.add(listener);
+          if(key==='*')for(const [topic,data] of [['state',{state}],['me',{id:owner}],['friends',friends],['groups',[{id:'group-1',name:'Hidden group'}]]])callback({topic,data});
+          return ()=>listeners.delete(listener);
+        }};
+      }`}));
+    await page.locator('.ws-dock-launcher').click();
+    await page.getByRole('dialog',{name:'Your apps'}).getByRole('button',{name:'People',exact:true}).click();
+    const people=page.locator('.m-people:visible');
+    const row=name=>people.locator('.org-record').filter({hasText:name});
+    await row('Taylor Friend').waitFor();
+    assert.equal(await row('Blocked person').count(),0);
+    assert.equal(await row('Hidden group').count(),0);
+    assert.equal(await people.getByText('Private location').count(),0);
+    assert.equal(writes.length,0);
+    const search=people.getByRole('searchbox',{name:'Search People'});
+    await search.fill('@taylor');await row('Jamie Friend').waitFor({state:'hidden'});
+    await row('Taylor Friend').click();
+    const sheet=page.getByRole('dialog',{name:'Chat friend',exact:true});
+    await sheet.getByRole('button',{name:'Add details',exact:true}).click();
+    const name=people.getByRole('textbox',{name:'Name',exact:true});
+    await name.waitFor();assert.equal(await name.inputValue(),'Taylor Friend');
+    assert.equal(writes.length,0);
+    await people.getByRole('textbox',{name:'Email',exact:true}).fill('taylor@example.test');
+    await people.getByRole('textbox',{name:'Contact notes',exact:true}).fill('Private contact notes');
+    await people.getByRole('button',{name:'Save',exact:true}).click();
+    await people.getByText('Saved to your account',{exact:true}).waitFor();
+    assert.equal(writes[0].details,'Private contact notes');
+    assert.deepEqual(writes[0].links,[{app:'chats',id:'friend-1'}]);
+    await page.getByRole('button',{name:'Back to Contacts',exact:true}).click();
+    await search.fill('');
+    await row('Jamie Friend').click();
+    await sheet.getByRole('button',{name:'Link to existing contact',exact:true}).click();
+    await page.getByRole('dialog',{name:'Choose a contact',exact:true}).getByRole('button',{name:'Existing contact',exact:true}).click();
+    await name.waitFor();assert.equal(await people.getByRole('textbox',{name:'Email',exact:true}).inputValue(),'existing@example.test');
+    await people.getByRole('button',{name:'Save',exact:true}).click();
+    await people.getByText('Saved to your account',{exact:true}).waitFor();
+    assert.deepEqual(writes[1].links,[{app:'chats',id:'friend-2'}]);
+    await page.getByRole('button',{name:'Back to Contacts',exact:true}).click();
+    await row('Morgan Friend').waitFor();
+    assert.equal(await row('Taylor Friend').count(),1);
+    assert.equal(await row('Jamie Friend').count(),0);
+    await page.evaluate(()=>mockChatState('locked'));
+    await people.getByRole('link',{name:'Unlock Chats to see friends'}).waitFor();
+    assert.equal(await people.getByText(/Chat friend/).count(),0);
+    assert.equal(await row('Morgan Friend').count(),0);
+    await row('Taylor Friend').waitFor();
+    assert.deepEqual(errors,[]);
+    assert.deepEqual(await page.evaluate(()=>window.__csp),[]);
+  }finally{await ctx.close()}
+});
+
 // Sample the exposed app gutter from a whole viewport screenshot. Cropped
 // WebKit screenshots can omit composited fixed layers.
 async function wallpaperPixels(page) {

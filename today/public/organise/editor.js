@@ -1,7 +1,11 @@
 import {createSystemClient,operationId} from '/roof/system-client.js';
 import {addDays,localDay,localInput,parseLocal,zone,pathOf} from './model.js';
-export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportValue,linkPicker,prepareInvitation}){
+export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportValue,linkPicker,prepareInvitation,chat}){
  const ui=F.ui,el=ui.el,life=F.signal;let dead=false,dirty=!!value.formDraft,formKept=!!value.formDraft,editEpoch=0,timer=0,version=value.version||0,writing=Promise.resolve(),links=structuredClone(value.links||[]),checklist=structuredClone(value.checklist||[]),labels=new Map((value.linkedLabels||[]).map(r=>[r.app+':'+r.id,r.unavailable?'Unavailable '+r.app:r.title||r.app])),lastSaved=JSON.stringify(value),mounted=true;
+ if(chat&&!links.some(ref=>ref.app==='chats'&&ref.id===chat.id)){
+  if(links.length>=12)throw Error('Remove a linked item before linking this Chat friend.');
+  links.push({app:'chats',id:chat.id});dirty=true;formKept=false;
+ }
  const owner=F.session.view?.user?.id||F.session.user?.id;
  const live=()=>!dead&&!life.aborted&&(F.session.view?.user?.id||F.session.user?.id)===owner,safe=fn=>()=>{try{Promise.resolve(fn()).catch(e=>{if(live())message.textContent=e.message})}catch(e){if(live())message.textContent=e.message}};
  const button=(text,fn,primary=false)=>ui.btn(text,{primary,run:safe(fn)}),message=el('p',{role:'status',class:'org-status'}),saved=el('span',{class:'org-save-state',role:'status'}),form=el('form',{class:'org-form'});
@@ -9,7 +13,7 @@ export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportVa
  const title=field(kind==='people'?'Name':'Title','text',value.title,160,true);title.autocomplete=kind==='people'?'name':'off';title.placeholder=kind==='people'?'Full name':kind==='notes'?'Title':'Event title';
  let text,email,phone,organisation,description,allDay,start,end,startDate,endDate,checks=null;
  if(kind==='notes'){text=field('Note','textarea',value.text||'',64000);text.classList.add('org-note-body');text.placeholder='Start writing…';checks=el('div',{class:'org-checklist'});form.append(checks);paintChecks();form.append(button('Add checklist item',()=>{if(checklist.length>=200)throw Error('Use up to 200 items.');checklist.push({id:operationId(),text:'',done:false});paintChecks();changed();checks.lastElementChild?.querySelector('input[type=text]')?.focus()}));}
- if(kind==='people'){organisation=field('Organisation','text',value.organisation,160);email=field('Email','email',value.email,254);email.autocomplete='email';phone=field('Phone','tel',value.phone,40);phone.autocomplete='tel';text=field('Contact notes','textarea',value.details,4000);}
+ if(kind==='people'){if(chat)form.append(el('p',{class:'org-muted',text:'These details are private to your InFlite account.'}));organisation=field('Organisation','text',value.organisation,160);email=field('Email','email',value.email,254);email.autocomplete='email';phone=field('Phone','tel',value.phone,40);phone.autocomplete='tel';text=field('Contact notes','textarea',value.details,4000);}
  if(kind==='calendar'){
   description=field('Description','textarea',value.description,4000);allDay=el('input',{type:'checkbox',checked:value.allDay,'aria-label':'All-day event'});form.append(el('label',{class:'org-check'},allDay,el('span',{text:'All day'})));
   const first=value.allDay?value.startDate:localDay(value.start),last=value.allDay?value.endDate:addDays(first,1);
@@ -61,7 +65,7 @@ export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportVa
  const extra=el('details',{class:'org-extra'},el('summary',{text:kind==='notes'?'Linked items & actions':'More actions'}));
  if(kind==='notes'){const linksHead=linksBox.previousElementSibling;extra.append(linksHead,linksBox)}extra.append(footer);
  detail.replaceChildren(...[tools,profile,form,message,recovery,kind==='calendar'?button('Prepare invitation',()=>prepareInvitation({...read(),id})):null,extra].filter(Boolean));
- if(kind!=='notes')setEditing(!version||!!value.formDraft);else profile.hidden=true;
+ if(kind!=='notes')setEditing(!version||dirty);else profile.hidden=true;
  if(kind==='people'&&version){const related=el('section',{class:'org-related'},el('h3',{text:'Related notes and events'}),el('p',{class:'org-muted',text:'Loading linked items…'}));detail.append(related);const c=createSystemClient(F,{prefix:'/api/organise/'});Promise.all(['notes','calendar'].map(app=>c.request('list',{method:'POST',body:{kind:app,related:{app:'people',id},limit:12}}).then(r=>r.records))).then(groups=>{if(!live())return;related.replaceChildren(el('h3',{text:'Related notes and events'}));const rows=groups.flat();if(!rows.length)related.hidden=true;for(const v of rows)related.append(button(v.title,()=>F.nav.go('/'+v.kind+'/#item='+v.id)))}).catch(()=>{if(live())related.lastElementChild.textContent='Linked items could not refresh. Reopen this person to retry.'})}
 status();queueMicrotask(()=>{if(live()&&F.workspace?.active()&&!form.hidden&&(!version||kind!=='notes')){title.focus({preventScroll:true});if(kind==='notes'&&title.value==='Untitled note')title.select()}});
  return{status,close,flush,dirty:()=>dirty,destroy(){dead=true;mounted=false;clearTimeout(timer);detail.replaceChildren()}};

@@ -681,6 +681,29 @@ export function createFrame(opts = {}) {
   function makeFw(m) {
     const app = m.app, live = () => liveModule(m), mine = () => live() && shown?.id === "m:" + app;
     const closedSheet = () => ({ el: ui.el("dialog"), body: ui.el("div"), closed: true, close() {}, now() {}, push: () => ui.el("div"), pop() {}, setBusy() {} });
+    function watchFriends(update) {
+      const owner = sess().view?.user?.id;
+      if (!owner || !live() || !isOn("chats")) return () => {};
+      const starting = svc("chats");
+      const signal = svcs.chats.controller.signal;
+      let stopped = false, off;
+      const current = () => !stopped && !signal.aborted && live() && isOn("chats") && sess().view?.user?.id === owner;
+      const stop = () => {
+        stopped = true;
+        off?.();
+        signal.removeEventListener("abort", releasedService);
+        m.controller.signal.removeEventListener("abort", stop);
+      };
+      const releasedService = () => { if (!stopped && live()) update([], ""); stop(); };
+      signal.addEventListener("abort", releasedService, { once: true });
+      m.controller.signal.addEventListener("abort", stop, { once: true });
+      Promise.all([starting, import("./connectors.js")]).then(([service, { watchChatFriends }]) => {
+        if (!current()) return;
+        off = watchChatFriends(service, owner, (friends, state) => { if (current()) update(friends, state); });
+        if (!current()) off();
+      }).catch(() => { if (current()) update([], "unavailable"); stop(); });
+      return stop;
+    }
     return {
       settings: opts.settings && (options => live() && (mine() || m.host?.visible) && opts.settings(app,options)),
       contract: CONTRACT, app, screenEl: m.el, signal: m.controller.signal, ui,
@@ -726,6 +749,7 @@ export function createFrame(opts = {}) {
         return p.then((x) => { if (!live()) throw released(); return x; }, (e) => { if (!live()) throw released(); fails[app] = (fails[app] || 0) + 1; version(m, true); throw e; });
       },
       stale: () => stale,
+      ...(app === "people" && { watchChatFriends: watchFriends }),
       service: () => live() ? svc(app).then((s) => { if (!live()) throw released(); return s; }) : Promise.reject(released()),
       tabs: { away: (v) => { if (live()) F.tabs.away(!!v && mine()); }, badge: (n) => { if (live()) F.tabs.badge(REGISTRY[app].tab, n); } },
     };

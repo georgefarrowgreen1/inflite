@@ -116,6 +116,35 @@ export function connectorProvider(F, app) {
   return () => { dead = true; off(); };
 }
 export const placesProvider = (F) => connectorProvider(F, "weather");
+
+// People receives a read-only projection of the signed-in account's friends.
+// The Chat worker stays responsible for its lock, account and friendship state.
+export function watchChatFriends(service, owner, update) {
+  let account = null, friends = [];
+  return service.on("*", ({ topic, data }) => {
+    const state = service.state;
+    const available = state === "ready" || state === "offline";
+    if (topic === "state") {
+      if (!available) { account = null; friends = []; }
+    } else if (topic === "me") {
+      if (account !== data?.id) friends = [];
+      account = available ? data?.id : null;
+    } else if (topic === "friends") {
+      const unique = new Map();
+      if (available && account === owner && Array.isArray(data)) {
+        for (const friend of data) {
+          if (friend?.blocked || typeof friend?.id !== "string" || !/^[\w-]{1,40}$/.test(friend.id)) continue;
+          const handle = typeof friend.handle === "string" && /^[\w.-]{1,64}$/.test(friend.handle) ? friend.handle : "";
+          const name = typeof friend.name === "string" ? friend.name.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, " ").trim().slice(0, 160) : "";
+          if (name || handle) unique.set(friend.id, { id: friend.id, name: name || '@' + handle, handle });
+        }
+      }
+      friends = [...unique.values()];
+    } else return;
+    update(available && account === owner ? friends : [], state);
+  });
+}
+
 export function chatsProvider(F, svc) {
   let list = { friends: [], groups: [] };
   const off = svc.on("*", ({ topic: t, data: v }) => { if (t === "friends" || t === "groups") list = { ...list, [t]: Array.isArray(v) ? v : [] }; });

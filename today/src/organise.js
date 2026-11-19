@@ -7,7 +7,7 @@ export function organisePage(request,env){
  if(!roofOn(env,m[1]))return new Response('App unavailable',{status:503});
  if(!m[2])return new Response(null,{status:308,headers:{Location:'/'+m[1]+'/'+u.search,'Cache-Control':'no-store'}});
  if(m[2]==='/'||m[2]==='/index.html')return roofPage(request,env);
- if(m[2]==='/version')return Response.json({app:m[1],v:'4.31.2',build:'4.31.2'},{headers:{'Cache-Control':'no-store'}});
+ if(m[2]==='/version')return Response.json({app:m[1],v:'4.32.1',build:'4.32.1'},{headers:{'Cache-Control':'no-store'}});
  return env.ASSETS.fetch(request);
 }
 // Reuse the bounded private transport, with a fixed, disjoint capability set.

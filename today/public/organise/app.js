@@ -4,17 +4,21 @@ import {localDay,addDays,eventDay,overlaps,linkedEvents,pathOf,noteText,eventICS
 const NAMES={calendar:'Calendar',notes:'Notes',people:'People'},SECTIONS={calendar:[['week','Week'],['agenda','Month']],notes:[['all','All notes']],people:[['contacts','Contacts']]};
 export async function mountApp(root,F,kind){
  const ui=F.ui,el=ui.el,store=await(F.workspace?.organiseStore?.(kind)||createStore(F,kind)),life=F.signal,live=()=>!life.aborted;let libraryY=null,libraryFocus=null,datesKey='',route=null,shown=false,loaded=false,reading=0,query='',cursor=null,ids=new Set(),editor=null,editorId=null,editorLoad=0,loading=false,error='',reminders=[],date=localDay(),section=SECTIONS[kind][0][0],searchTimer=0,external=[],noteFilter='all',noteView='list',feedRefreshedAt=0;
+ const friends=new Map();
+ const contactsClient=kind==='people'?createSystemClient(F,{prefix:'/api/organise/'}):null;
+ let watchFriends=null,friendSheet=null,editorSeed=null;
  root.classList.add('org');root.dataset.organise=kind;root.dataset.notesView=noteView;
  const safe=fn=>()=>{try{Promise.resolve(fn()).catch(e=>{if(live())F.toast(e.message)})}catch(e){if(live())F.toast(e.message)}};
  const button=(label,run,primary=false)=>ui.btn(label,{primary,run:safe(run)});
  const rememberLibrary=()=>{if(!editor){libraryY=scrollY;libraryFocus=document.activeElement?.closest('[data-record]')?.dataset.record||null}};
- const go=id=>{rememberLibrary();F.nav.go('/'+kind+'/#item='+id)},home=()=>F.nav.go('/'+kind+'/#'+section,{replace:true,kind:'pop'}),fresh=()=>{rememberLibrary();F.nav.go('/'+kind+'/#new')};
+ const go=(id,seed)=>{rememberLibrary();editorSeed=seed?{id,...seed}:null;F.nav.go('/'+kind+'/#item='+id)},home=()=>F.nav.go('/'+kind+'/#'+section,{replace:true,kind:'pop'}),fresh=()=>{rememberLibrary();F.nav.go('/'+kind+'/#new')};
  const createLabel=kind==='calendar'?'New event':kind==='notes'?'New note':'Add person';
  const search=el('input',{type:'search',class:'org-search',maxlength:160,placeholder:kind==='people'?'Search contacts':kind==='notes'?'Search notes':'Search events','aria-label':'Search '+NAMES[kind]}),status=el('p',{class:'org-status',role:'status'}),list=el('div',{class:'org-list'}),detail=el('section',{class:'org-detail',hidden:true,'aria-label':NAMES[kind]+' editor'}),more=button('Show more',()=>load(true)),retry=button('Try again',()=>load());
  const count=el('span',{class:'org-library-count'}),createButton=ui.btn(createLabel,{icon:'plus',primary:true,run:fresh}),caption=el('div',{class:'org-library-caption'},kind==='calendar'?el('h2',{text:'Schedule'}):null,count);
  const actions=el('div',{class:'org-library-head'},caption,createButton),searchBox=el('label',{class:'org-search-box'},ui.icon('search'),search);
  const noteTools=kind==='notes'?el('div',{class:'org-library-options'},ui.seg([['all','All notes'],['lists','Checklists']],noteFilter,value=>{noteFilter=value;paint()},{label:'Notes collection'}),ui.iconBtn('grid',{label:'Switch notes layout',run:()=>{noteView=noteView==='list'?'grid':'list';root.dataset.notesView=noteView;paint()}})):null;
- const sidebar=el('section',{class:'org-browser'},actions,searchBox,status,retry,list,more);retry.hidden=true;actions.hidden=searchBox.hidden=kind!=='calendar';if(noteTools)sidebar.insertBefore(noteTools,searchBox);
+ const chatStatus=kind==='people'?el('p',{class:'org-muted',hidden:true}):null;
+ const sidebar=el('section',{class:'org-browser'},actions,searchBox,status,retry,chatStatus,list,more);retry.hidden=true;actions.hidden=searchBox.hidden=kind!=='calendar';if(noteTools)sidebar.insertBefore(noteTools,searchBox);
  const weekStrip=el('nav',{class:'org-week-strip','aria-label':'Choose a date'}),monthTitle=el('h2'),monthGrid=el('div',{class:'org-month-grid'});
  const day=el('input',{type:'date',value:date,'aria-label':'Calendar date'}),datePicker=el('label',{class:'org-date-picker'},monthTitle,day);
  const changeDate=n=>{const d=new Date(date+'T12:00:00');if(section==='week')date=addDays(date,n*7);else{d.setDate(1);d.setMonth(d.getMonth()+n);date=localDay(d)}day.value=date;load()};
@@ -26,9 +30,27 @@ export async function mountApp(root,F,kind){
  }
  const layout=el('div',{class:'org-layout'},sidebar,detail);root.replaceChildren(layout);
  function range(){const first=section==='week'?date:date.slice(0,8)+'01',start=addDays(first,-((new Date(first+'T12:00:00').getDay()+6)%7));return[start,addDays(start,section==='week'?7:42)]}
- const matches=v=>!query||ids.has(v.id)||[v.title,v.preview,v.text,v.description,v.details,v.email,v.organisation,...(v.checklist||[]).map(c=>c.text)].some(t=>t?.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+ const friendMatches=friend=>!query||[friend.name,friend.handle,'@'+friend.handle].some(value=>value.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+ const matches=v=>!query||ids.has(v.id)||v.chatFriend&&friendMatches(v.chatFriend)||[v.title,v.preview,v.text,v.description,v.details,v.email,v.organisation,...(v.checklist||[]).map(c=>c.text)].some(t=>t?.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+ const chatLink=(contact,id)=>contact.links?.some(ref=>ref.app==='chats'&&ref.id===id);
+ function contactsWithChat(){
+  const linked=new Map(),saved=new Map(store.snapshot().map(value=>[value.id,value]));
+  for(const value of store.localForms())saved.set(value.id,value);
+  for(const value of saved.values())for(const ref of value.links||[]){
+   if(ref.app==='chats'&&friends.has(ref.id)&&!linked.has(ref.id))linked.set(ref.id,value);
+  }
+  return linked;
+ }
  const currentRows=()=>{
   const pending=[...store.localForms(),...store.pending()],map=new Map([...ids].map(id=>[id,store.view(id)]));for(const v of pending)map.set(v.id,v);
+  if(kind==='people'&&friends.size){
+   const linked=contactsWithChat();
+   for(const friend of friends.values()){
+    const saved=linked.get(friend.id);
+    if(saved){if(map.has(saved.id)||friendMatches(friend))map.set(saved.id,{...saved,...map.get(saved.id),chatFriend:friend});}
+    else if(friendMatches(friend))map.set('chat:'+friend.id,{id:'chat:'+friend.id,title:friend.name,chatFriend:friend,chatOnly:true});
+   }
+  }
   let rows=[...map.values()].filter(v=>v&&!v.deleted&&matches(v));
   if(kind==='calendar'){const [a,b]=range();rows=rows.filter(v=>overlaps(v,a,b)).concat(external.filter(v=>overlaps(v,a,b)&&matches(v)));rows.sort((a,b)=>eventDay(a).localeCompare(eventDay(b))||(a.start||0)-(b.start||0));}
   else if(kind==='people')rows.sort((a,b)=>a.title.localeCompare(b.title));else rows.sort((a,b)=>b.updatedAt-a.updatedAt);
@@ -52,7 +74,7 @@ export async function mountApp(root,F,kind){
   status.dataset.tone=error?'error':'';more.hidden=!cursor;more.disabled=loading;retry.hidden=!error;retry.disabled=loading;
   const allRows=currentRows();let rows=allRows;if(kind==='calendar'){paintDates(allRows);const monthEnd=localDay(new Date(Number(date.slice(0,4)),Number(date.slice(5,7)),1));rows=allRows.filter(v=>overlaps(v,date,section==='week'?addDays(date,1):monthEnd));caption.firstChild.textContent=section==='week'?dateLabel(date,{weekday:'long',day:'numeric',month:'short'}):'Upcoming';}
   count.textContent=rows.length?(rows.length+(cursor?'+':'')+' '+(kind==='notes'?(rows.length===1?'note':'notes'):kind==='people'?(rows.length===1?'person':'people'):(rows.length===1?'item':'items'))):'';
-  const isEmpty=loaded&&!loading&&!query&&!store.snapshot().some(v=>!v.deleted)&&!store.localForms().length;const quiet=kind!=='calendar'&&(isEmpty||!loaded&&loading);actions.hidden=quiet;searchBox.hidden=quiet;if(noteTools)noteTools.hidden=quiet;
+  const isEmpty=loaded&&!loading&&!query&&!friends.size&&!store.snapshot().some(v=>!v.deleted)&&!store.localForms().length;const quiet=kind!=='calendar'&&!rows.length&&(isEmpty||!loaded&&loading);actions.hidden=quiet;searchBox.hidden=quiet;if(noteTools)noteTools.hidden=quiet;
   const nextList=list.cloneNode(false);let group='',groupBox=nextList;
   if(!rows.length&&!loading){
    const first=!query&&kind!=='calendar'&&(kind!=='notes'||noteFilter==='all'),empty=el('section',{class:first?'org-welcome':'org-empty'});
@@ -67,7 +89,7 @@ export async function mountApp(root,F,kind){
   for(const v of rows){
    const key=kind==='calendar'?eventDay(v)<date?date:eventDay(v):kind==='people'?(v.title.trim()[0]||'#').toLocaleUpperCase():noteView==='list'?(localDay(v.updatedAt||Date.now())===localDay()?'Today':localDay(v.updatedAt||Date.now())===addDays(localDay(),-1)?'Yesterday':'Earlier'):'';
    if(key&&key!==group){group=key;nextList.append(el('h3',{class:'org-day-label',text:kind==='calendar'?dateLabel(group,{weekday:'long',day:'numeric',month:'long'}):group}));groupBox=el('div',{class:'org-record-group'});nextList.append(groupBox)}
-   const b=el('button',{type:'button',class:'org-record',data:{record:v.id},'aria-current':editorId===v.id?'true':null,on:{click:safe(()=>v.source?openExternal(v):go(v.id))}}),copy=el('span',{class:'org-record-copy'},el('strong',{text:v.title}));
+   const b=el('button',{type:'button',class:'org-record',data:{record:v.id},'aria-current':editorId===v.id?'true':null,on:{click:safe(()=>v.chatOnly?openFriend(v.chatFriend.id):v.source?openExternal(v):go(v.id))}}),copy=el('span',{class:'org-record-copy'},el('strong',{text:v.title}));
    if(kind==='calendar'){
     const time=v.ride?'To plan':v.allDay?(v.source?'Date only':'All day'):new Date(v.start).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
     b.append(el('span',{class:'org-event-time'},el('strong',{text:time}),!v.allDay&&v.end-v.start>60000?el('small',{text:new Date(v.end).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}):null));
@@ -77,7 +99,11 @@ export async function mountApp(root,F,kind){
     b.append(el('span',{class:'org-note-symbol'},ui.icon((v.checkCount??v.checklist?.length??0)?'check':'file')));const preview=(v.matchPreview??v.preview??v.text??'').trim();copy.append(el('span',{class:'org-note-preview org-muted',text:preview||'No additional text'}));
     const total=v.checkCount??v.checklist?.length??0,done=v.doneCount??v.checklist?.filter(x=>x.done).length??0;
     copy.append(el('span',{class:'org-note-meta'},el('span',{text:v.updatedAt?new Date(v.updatedAt).toLocaleDateString([],{month:'short',day:'numeric'}):'Just now'}),total?el('span',{text:done+' / '+total+' checked'}):null));
-   }else{b.append(el('span',{class:'org-record-avatar'},ui.avatar(v.title)));copy.append(el('span',{class:'org-muted',text:v.organisation||v.email||v.phone||'Contact'}));}
+   }else{
+    b.append(el('span',{class:'org-record-avatar'},ui.avatar(v.title)));
+    const sub=v.organisation||v.email||v.phone||(v.chatFriend?.handle&&v.title!=='@'+v.chatFriend.handle?'@'+v.chatFriend.handle:'');
+    copy.append(el('span',{class:'org-muted',text:v.chatFriend?[sub,'Chat friend'].filter(Boolean).join(' · '):sub||'Contact'}));
+   }
    b.append(copy);if(kind!=='notes')b.append(ui.icon('chev'));
    if(v.formDraft)b.append(el('span',{class:'org-pending',text:'Draft'}));if(v.pending)b.append(el('span',{class:'org-pending',text:v.state==='conflict'?'Review':v.state==='failed'?'Retry':'Saving'}));groupBox.append(b);
   }
@@ -85,6 +111,66 @@ export async function mountApp(root,F,kind){
   // Calendar feed actions also carry source details that are not visible in the row.
   if(kind==='calendar'||!list.isEqualNode(nextList))list.replaceChildren(...nextList.childNodes);
   if(active&&document.activeElement?.dataset.record!==active)list.querySelector('[data-record="'+CSS.escape(active)+'"]')?.focus({preventScroll:true});editor?.status();
+ }
+ function receiveFriends(values,state){
+  if(!live()||!shown)return;
+  friends.clear();
+  for(const friend of values)friends.set(friend.id,friend);
+  if(friendSheet&&!friends.has(friendSheet.id))friendSheet.sheet.now();
+  chatStatus.hidden=!['locked','signin','key','unavailable'].includes(state);
+  chatStatus.replaceChildren(el('a',{href:'/chats/#friends',text:state==='locked'?'Unlock Chats to see friends':'Open Chats to see friends'}));
+  paint();
+ }
+ function stopFriends(){
+  watchFriends?.();watchFriends=null;
+  friendSheet?.sheet.now();friends.clear();
+  if(chatStatus)chatStatus.hidden=true;
+ }
+ async function existingFriend(id,current){
+  const local=contactsWithChat().get(id);
+  if(local)return local.id;
+  const result=await contactsClient.request('list',{method:'POST',body:{kind:'people',related:{app:'chats',id},limit:1},current});
+  return result.records.find(value=>chatLink(value,id))?.id;
+ }
+ function openFriend(id){
+  const friend=friends.get(id);
+  if(!friend||!shown)return;
+  const message=el('p',{class:'org-status',role:'status'});
+  let sheet;
+  const openedOn=route;
+  const current=()=>live()&&shown&&route===openedOn&&friends.has(id),active=()=>current()&&!sheet.closed;
+  const chat={id};
+  async function select(useExisting){
+   if(!active())return;
+   sheet.setBusy(true);message.textContent='';
+   try{
+    const existing=await existingFriend(id,active);
+    if(!active())return;
+    if(existing){sheet.now();go(existing);return}
+    if(useExisting){
+     const {chooseLink}=await import('./links.js');
+     if(!active())return;
+     sheet.now();
+     const selected=await chooseLink(F,'chats',{contactsOnly:true});
+     if(selected&&current())go(selected.id,{chat});
+    }else{
+     if(!store.ready())throw Error('Private device storage is unavailable. Try again before adding details.');
+     const recordId=operationId();
+     sheet.now();
+     go(recordId,{chat,initial:{id:recordId,kind:'people',title:friend.name,links:[],version:0}});
+    }
+   }catch(error){if(active())message.textContent=error.message}
+   finally{if(active())sheet.setBusy(false)}
+  }
+  const body=el('div',{class:'org'},el('section',{class:'org-profile'},ui.avatar(friend.name),
+   el('h2',{text:friend.name}),friend.handle&&friend.name!=='@'+friend.handle?el('p',{class:'org-muted',text:'@'+friend.handle}):null,
+   el('p',{class:'org-muted',text:'Chat friend'})),message);
+  sheet=F.sheet.open({sheet:'people-chat-friend',title:'Chat friend',body,acts:[
+   {label:'Add details',primary:true,run:()=>select(false)},
+   {label:'Link to existing contact',run:()=>select(true)},
+   {label:'Open conversation',run:()=>{if(active()){sheet.now();F.nav.go(pathOf({app:'chats',id}))}}}
+  ],onClose(){if(friendSheet?.sheet===sheet)friendSheet=null}});
+  friendSheet={id,sheet};
  }
  async function importContacts(){const [m]=await Promise.all([import('./import.js'),import('/roof/modules.js').then(m=>m.loadStyles(new URL('./editor.css',import.meta.url).pathname))]);if(live()&&shown)m.openImport({F,store,onImported:()=>load()})}
  async function load(append=false){
@@ -99,11 +185,12 @@ export async function mountApp(root,F,kind){
   }catch(e){if(live()&&mine===reading)error=navigator.onLine===false?'Offline · your pending changes are kept on this device.':e.message}
   finally{if(live()&&mine===reading){loading=false;paint()}}
  }
- async function openEditor(id,{initial}={}){
-  const mine=++editorLoad;if(editorId===id&&editor)return;await editor?.flush();if(!live()||mine!==editorLoad)return;editor?.destroy();editor=null;editorId=id;detail.hidden=false;root.dataset.detail='true';detail.replaceChildren(el('p',{role:'status',text:'Opening…'}));
+ async function openEditor(id,{initial,chat}={}){
+  const mine=++editorLoad;if(editorId===id&&editor&&!chat)return;await editor?.flush();if(!live()||mine!==editorLoad)return;editor?.destroy();editor=null;editorId=id;detail.hidden=false;root.dataset.detail='true';detail.replaceChildren(el('p',{role:'status',text:'Opening…'}));
   try{const [module,value]=await Promise.all([import('./editor.js'),initial?Promise.resolve(initial):store.get(id),import('/roof/modules.js').then(m=>m.loadStyles(new URL('./editor.css',import.meta.url).pathname))]);if(!live()||mine!==editorLoad)return;
-   editor=module.createEditor({F,kind,id,value,store,detail,go,home,date,onSaved:()=>{ids.add(id);paint()},exportValue,linkPicker:()=>import('./links.js').then(m=>m.chooseLink(F,kind)),prepareInvitation});paint();
-  }catch(e){if(live()&&mine===editorLoad)detail.replaceChildren(ui.error({title:'This item could not open',body:e.message,acts:[{label:'Try again',run:()=>{editorId=null;openEditor(id)}}]}))}
+   if(chat&&!friends.has(chat.id)){home();return;}
+   editor=module.createEditor({F,kind,id,value,store,detail,go,home,date,chat,onSaved:()=>{ids.add(id);paint()},exportValue,linkPicker:()=>import('./links.js').then(m=>m.chooseLink(F,kind)),prepareInvitation});paint();
+  }catch(e){if(live()&&mine===editorLoad)detail.replaceChildren(ui.error({title:'This item could not open',body:e.message,acts:[{label:'Try again',run:()=>{editorId=null;openEditor(id,{initial,chat})}}]}))}
  }
  async function create(initial){if(!store.ready())throw Error('Enable private device storage before creating an item.');const id=operationId(),value=initial||{title:kind==='notes'?'Untitled note':'',links:[],...(kind==='notes'?{text:'',checklist:[]}:kind==='people'?{email:'',phone:'',organisation:'',details:''}:{description:'',allDay:false,start:new Date(date+'T09:00:00').getTime(),end:new Date(date+'T10:00:00').getTime(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})};
   if(kind==='notes')await store.save(id,value,{version:0});
@@ -124,6 +211,29 @@ export async function mountApp(root,F,kind){
  });
  const incoming=e=>{if(live()&&shown&&e.detail?.owner===(F.session.view?.user?.id||F.session.user?.id)&&e.detail?.kind===kind)load()};window.addEventListener('inflite:organise-change',incoming,{signal:life});
  const visibility=()=>{if(shown&&document.visibilityState==='visible')load()};document.addEventListener('visibilitychange',visibility,{signal:life});
- const clear=()=>{clearTimeout(searchTimer);editor?.destroy();unregister?.();root.replaceChildren()};life.addEventListener('abort',clear,{once:true});
- return{show(r){shown=true;route=r;if(kind==='calendar'&&r.key==='date'&&/^\d{4}-\d{2}-\d{2}$/.test(r.arg||'')){date=r.arg;day.value=date;section='week'}if(!['item','new'].includes(r.key))section=r.section||section;viewSwitch?.set(section);header();if(!loaded&&!loading||kind==='calendar')load();if(r.key==='new'){create().catch(e=>F.toast(e.message));return}if(r.key==='item'&&/^[a-f0-9]{32}$/.test(r.arg||'')){openEditor(r.arg);return}const mine=++editorLoad,previous=editor;Promise.resolve(previous?.flush()).then(()=>{if(!live()||mine!==editorLoad||!shown||route!==r)return;previous?.destroy();editor=null;editorId=null;detail.hidden=true;delete root.dataset.detail;paint();if(previous&&libraryY!==null){scrollTo(0,libraryY);if(libraryFocus)list.querySelector('[data-record="'+CSS.escape(libraryFocus)+'"]')?.focus({preventScroll:true})}}).catch(e=>{if(live())F.toast(e.message)})},hide(){shown=false;editor?.flush()},back(){if(editor){editor.close();return true}return false},busy:()=>!!editor?.dirty()||store.busy(),flush:async()=>{await editor?.flush();return store.flush()},sendable:()=>null,workspace:()=>null,unmount:clear};
+ const clear=()=>{clearTimeout(searchTimer);stopFriends();editor?.destroy();unregister?.();root.replaceChildren()};life.addEventListener('abort',clear,{once:true});
+ return{
+  show(r){
+   shown=true;route=r;
+   const seed=editorSeed?.id===r.arg?editorSeed:undefined;editorSeed=null;
+   if(kind==='people'&&!watchFriends)watchFriends=F.watchChatFriends?.(receiveFriends);
+   if(kind==='calendar'&&r.key==='date'&&/^\d{4}-\d{2}-\d{2}$/.test(r.arg||'')){date=r.arg;day.value=date;section='week'}
+   if(!['item','new'].includes(r.key))section=r.section||section;
+   viewSwitch?.set(section);header();
+   if(!loaded&&!loading||kind==='calendar')load();
+   if(r.key==='new'){create().catch(e=>F.toast(e.message));return}
+   if(r.key==='item'&&/^[a-f0-9]{32}$/.test(r.arg||'')){openEditor(r.arg,seed);return}
+   const mine=++editorLoad,previous=editor;
+   Promise.resolve(previous?.flush()).then(()=>{
+    if(!live()||mine!==editorLoad||!shown||route!==r)return;
+    previous?.destroy();editor=null;editorId=null;detail.hidden=true;delete root.dataset.detail;paint();
+    if(previous&&libraryY!==null){scrollTo(0,libraryY);if(libraryFocus)list.querySelector('[data-record="'+CSS.escape(libraryFocus)+'"]')?.focus({preventScroll:true})}
+   }).catch(e=>{if(live())F.toast(e.message)});
+  },
+  hide(){shown=false;stopFriends();if(kind==='people')paint();editor?.flush()},
+  back(){if(editor){editor.close();return true}return false},
+  busy:()=>!!editor?.dirty()||store.busy(),
+  flush:async()=>{await editor?.flush();return store.flush()},
+  sendable:()=>null,workspace:()=>null,unmount:clear
+ };
 }
