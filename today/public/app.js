@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.12.7";
+const BUILD = "4.12.8";
 // (what's new in it, said once it's in)
-const NEWS = "A simpler About header with refined navigation controls.";
+const NEWS = "An Opal orb opens InFlite, and Today refreshes with a thin sweep.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.31.2/store.js","/os.webmanifest"];
@@ -1799,17 +1799,40 @@ function anyway() {
 }
 
 // ---------------------------------------------------------------- the two states
+let openingSlow = 0;
 function lift() { document.documentElement.classList.remove("boot"); }
 function showShellScreen(screen) {
+  if (screen !== "sessionState") clearTimeout(openingSlow);
+  if (screen !== "in") $(".opening-exit")?.remove();
   for (const id of ["sessionState", "out", "in"]) $(`#${id}`).hidden = id !== screen;
 }
 function sessionWaiting(said) {
   if (S.view) { if (said) toast(said); return; }
+  clearTimeout(openingSlow);
   showShellScreen("sessionState");
   $("#sessionState").setAttribute("aria-busy", "false");
   $("#sessionSaid").textContent = said || "Couldn’t check your connection. Try again.";
   $("#sessionRetry").hidden = false;
   lift();
+}
+function revealOpening() {
+  const art = $('#sessionState:not([hidden])[aria-busy="true"] .opening-art');
+  if (!art || document.hidden || matchMedia("(prefers-reduced-motion: reduce), (forced-colors: active), (prefers-contrast: more)").matches) return;
+  const orb = art.querySelector(".opening-orb");
+  if (!orb?.offsetWidth || Number(getComputedStyle(orb).opacity) < .7) return;
+
+  // Leave the artwork over the live screen for the short handoff. It carries
+  // no controls or status text, so input and announcements go to the new screen.
+  const exit = art.cloneNode(true);
+  exit.classList.add("opening-exit");
+  exit.style.setProperty("--opening-backdrop", getComputedStyle(art, "::before").background);
+  exit.style.setProperty("--opening-surface-transform", getComputedStyle(orb, "::after").transform);
+  const sweepWidth = art.querySelector(".opening-sweep")?.offsetWidth || orb.offsetWidth;
+  exit.style.setProperty("--opening-stretch", String(Math.max(1.25, sweepWidth / orb.offsetWidth)));
+  const brand = art.parentElement.querySelector(".opening-head");
+  if (brand) exit.append(brand.cloneNode(true));
+  document.body.append(exit);
+  setTimeout(() => exit.remove(), 390);
 }
 function showOut(said = "") {
   sheetOpen && closeSheet();
@@ -1869,6 +1892,7 @@ function signedIn(view, { offline = false } = {}) {
   // (a copy kept for anyone else: gone)
   forgetKept(CARDS_KEY(view.user.id));
   if (!offline) keepSession(view);
+  revealOpening();
   appearance(view.user.appearance, view.user.palette, view.user.id);
   if (was !== view.user.id) { S.answer = null; S.kept = false; S.dayLine = null; }
   if (!S.morning || !("lines" in S.morning)) S.morning = view.morning || S.morning;
@@ -3084,10 +3108,16 @@ let loadSequence = 0;
 async function load({ fresh = false } = {}) {
   globalThis.__iflSessionStarted = true;
   const attempt = ++loadSequence;
-  if (!S.view && !$("#sessionState").hidden) {
-    $("#sessionState").setAttribute("aria-busy", "true");
+  clearTimeout(openingSlow);
+  const opening = $("#sessionState");
+  if (!S.view && !opening.hidden) {
+    opening.setAttribute("aria-busy", "true");
     $("#sessionSaid").textContent = "Opening InFlite…";
     $("#sessionRetry").hidden = true;
+    openingSlow = setTimeout(() => {
+      if (attempt === loadSequence && !opening.hidden && opening.getAttribute("aria-busy") === "true")
+        $("#sessionSaid").textContent = "Still connecting…";
+    }, 4000);
   }
   let scope = requests.generation;
   const current = () => attempt === loadSequence && scope === requests.generation;
@@ -3170,13 +3200,18 @@ const ROOF_FILES = ["frame", "router", "header", "tabs", "sheet", "toast", "ui",
 // An installed copy can briefly have the previous cached HTML with this script.
 // Give that shell the same neutral state before asking anything about the account.
 function ensureSessionUI() {
-  if (!$("#sessionState")) {
-    const state = document.createElement("main");
+  let state = $("#sessionState");
+  if (!state) {
+    state = document.createElement("main");
     state.id = "sessionState"; state.className = "today-start";
     state.setAttribute("aria-label", "Opening InFlite"); state.setAttribute("aria-busy", "true");
     // Static public markup only: never clone the sign-in page or its SVG IDs.
-    state.innerHTML = `<header class="opening-head" aria-hidden="true"><img src="/icon.svg" alt="" width="40" height="40"><span>InFlite</span></header><div class="opening-feedback"><p id="sessionSaid" role="status">Opening InFlite…</p><a class="pill primary" id="sessionRetry" href="" hidden>Try Again</a></div>`;
+    state.innerHTML = `<header class="opening-head" aria-hidden="true"><img src="/icon.svg" alt="" width="36" height="36"><span>InFlite</span></header><div class="opening-feedback"><p id="sessionSaid" role="status">Opening InFlite…</p><a class="pill primary" id="sessionRetry" href="" hidden>Try Again</a></div>`;
     $("#out").before(state);
+  }
+  if (!state.querySelector(".opening-art")) {
+    state.querySelector(".opening-preview")?.remove();
+    state.insertAdjacentHTML("afterbegin", '<div class="opening-art" aria-hidden="true"><span class="opening-orb"></span><span class="opening-sweep"></span></div>');
   }
   showShellScreen("sessionState");
 }

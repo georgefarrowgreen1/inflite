@@ -41,6 +41,7 @@ document.documentElement.classList.add("boot");
 // A slow request stays a neutral loading state. Retry belongs to a failed
 // request; app.js owns that timeout and hides Retry when a new attempt starts.
 setTimeout(() => {
+  if (globalThis.__iflSessionStarted) return;
   const state = document.getElementById("sessionState");
   if (!state || state.hidden || state.getAttribute("aria-busy") !== "true") return;
   document.getElementById("sessionSaid").textContent = "Still connecting…";

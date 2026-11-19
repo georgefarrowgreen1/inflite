@@ -20,7 +20,7 @@ before(async () => {
       const file = resolve(publicDir, '.' + (path === '/' ? '/index.html' : path));
       if (!file.startsWith(publicDir + '/')) throw new Error('outside public');
       const body = await readFile(file);
-      const type = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml', '.png': 'image/png' }[extname(file)] || 'application/octet-stream';
+      const type = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp' }[extname(file)] || 'application/octet-stream';
       const headers = { 'Content-Type': type };
       if (extname(file) === '.html') {
         const policy = await readFile(resolve(publicDir, '_headers'), 'utf8');
@@ -1104,10 +1104,67 @@ test('a cached day stays hidden until identity is confirmed and is discarded for
   } finally {releaseSession();releaseCards();await t.ctx.close();}
 });
 
+for (const scenario of [
+  {name:'slow opening', width:390, motion:'no-preference', paint:true},
+  {name:'fast opening', width:390, motion:'no-preference', paint:false},
+  {name:'opening with Reduce Motion', width:1440, motion:'reduce', paint:true},
+]) test(`${scenario.name} hands off to the ready shell without waiting for the day`, async () => {
+  let allowSession, allowDay;
+  const session = new Promise(resolve => allowSession = resolve);
+  const cards = new Promise(resolve => allowDay = resolve);
+  const t = await open({width:scenario.width, motion:scenario.motion, waitForReady:false,
+    intercept:async (route,{url,view,answer}) => {
+      if (url.pathname === '/api/session') {
+        await session;
+        await route.fulfill({json:view});
+        return true;
+      }
+      if (url.pathname === '/api/today') {
+        await cards;
+        await route.fulfill({json:answer});
+        return true;
+      }
+      return false;
+    }});
+  try {
+    const orb = t.page.locator('#sessionState .opening-orb');
+    await orb.waitFor();
+    if (scenario.paint) await t.page.waitForFunction(() => getComputedStyle(document.querySelector('.opening-orb')).opacity === '1');
+    else await orb.evaluate(node => {
+      const opening = node.getAnimations().find(animation => animation.animationName === 'loading-appear');
+      opening.pause();
+      opening.currentTime = 0;
+    });
+    assert.equal(await orb.evaluate(node => getComputedStyle(node,'::after').animationName),
+      scenario.motion === 'reduce' ? 'none' : 'opening-drift');
+    await t.page.evaluate(() => {
+      window.openingHandoff = [];
+      new MutationObserver(changes => {
+        for (const change of changes) for (const node of change.addedNodes) {
+          if (node.matches?.('.opening-exit')) window.openingHandoff.push({
+            hidden:node.getAttribute('aria-hidden'), input:getComputedStyle(node).pointerEvents
+          });
+        }
+      }).observe(document.body,{childList:true});
+    });
+    allowSession();
+    await t.page.locator('#in:not([hidden])').waitFor();
+    assert.equal(await t.page.locator('#sessionState').isVisible(),false);
+    assert.equal(await t.page.locator('#top .day-top').count(),0,'the day is still pending');
+    const handoff = await t.page.evaluate(() => openingHandoff);
+    assert.deepEqual(handoff,scenario.paint && scenario.motion !== 'reduce' ? [{hidden:'true',input:'none'}] : []);
+    await t.page.locator('.opening-exit').waitFor({state:'detached'});
+    allowDay();
+    await t.page.locator('#top .day-top').waitFor();
+    assert.deepEqual(t.errors,[]);
+    assert.deepEqual(await t.page.evaluate(() => window.__csp),[]);
+  } finally { allowSession(); allowDay(); await t.ctx.close(); }
+});
+
 test('a failed bootstrap script keeps a public shell and eventually offers recovery', async () => {
   const t=await open({waitForReady:false,blockBootstrap:true});
   try {
-    await t.page.locator('.opening-preview').waitFor();
+    await t.page.locator('.opening-orb').waitFor();
     assert.equal(await t.page.locator('#signin').isVisible(),false);
     assert.equal(await t.page.locator('#sessionRetry').isVisible(),false);
     await t.page.locator('#sessionRetry').waitFor({timeout:15000});

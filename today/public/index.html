@@ -67,11 +67,8 @@
 
 <!-- The session is unknown until the account answers. Slow startup never means signed out. -->
 <main class="today-start" id="sessionState" aria-label="Opening InFlite" aria-busy="true">
-  <header class="opening-head" aria-hidden="true"><img src="/icon.svg" alt="" width="40" height="40"><span>InFlite</span></header>
-  <div class="opening-preview" aria-hidden="true">
-    <div class="opening-card"><i class="opening-line short"></i><i class="opening-line title"></i><i class="opening-well"></i><i class="opening-line"></i></div>
-    <div class="opening-card"><i class="opening-line short"></i><i class="opening-line title"></i><i class="opening-line"></i></div>
-  </div>
+  <div class="opening-art" aria-hidden="true"><span class="opening-orb"></span><span class="opening-sweep"></span></div>
+  <header class="opening-head" aria-hidden="true"><img src="/icon.svg" alt="" width="36" height="36"><span>InFlite</span></header>
   <div class="opening-feedback">
     <p id="sessionSaid" role="status">Opening InFlite…</p>
     <a class="pill primary" id="sessionRetry" href="" hidden>Try Again</a>
