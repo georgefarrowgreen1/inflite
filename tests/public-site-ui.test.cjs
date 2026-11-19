@@ -11,6 +11,15 @@ const assets = path.resolve(process.env.WEB_UI_PUBLIC || path.resolve(__dirname,
 const pages = ['/about/', '/privacy/', '/storage/', '/terms/'];
 const mime = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
+async function assertCompanyBrand(region) {
+  const brand = region.getByRole('link', { name: 'InFlite, a GFG company', exact: true });
+  assert.equal(await brand.getAttribute('href'), '/about/');
+  const logo = brand.getByAltText('GFG', { exact: true });
+  assert.equal(await logo.getAttribute('src'), '/about/gfg.svg');
+  await logo.evaluate(img => img.decode());
+  assert.ok(await logo.isVisible());
+}
+
 test('installed shell leaves online public page navigations to the site', () => {
   const events = new Map();
   const self = { location: new URL('/sw.js', origin), addEventListener: (name, handler) => events.set(name, handler) };
@@ -69,13 +78,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.goto(site + '/about/');
     const sky = page.locator('.about-sky canvas[data-painted]');
     await sky.waitFor();
-    for (const region of ['banner','contentinfo']) {
-      const brand = page.getByRole(region).getByRole('link',{name:'InFlite, a GFG company',exact:true});
-      assert.equal(await brand.getAttribute('href'),'/about/');
-      const logo = brand.locator('img[alt="GFG"]');
-      await logo.evaluate(img => img.decode());
-      assert.ok(await logo.isVisible());
-    }
+    await assertCompanyBrand(page.getByRole('banner'));
     const image = () => sky.evaluate(canvas => canvas.toDataURL());
     await page.emulateMedia({colorScheme:'light'});
     const stillFrame = await image();
@@ -101,6 +104,7 @@ test('public pages and contact form work without signing in, from phone to deskt
       if (pagePath !== '/about/') await page.locator('footer a[href="' + pagePath + '"]').click();
       assert.equal(new URL(page.url()).pathname, pagePath);
       assert.equal(await page.locator('main h1').count(), 1);
+      await assertCompanyBrand(page.getByRole('contentinfo'));
       const problems = await page.evaluate(() => {
         const errors = [];
         if (document.documentElement.scrollWidth > innerWidth) errors.push('horizontal overflow');
@@ -147,6 +151,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.getByRole('navigation', { name: 'Legal' }).getByRole('link', { name: 'Privacy' }).click();
     assert.equal(new URL(page.url()).pathname, '/privacy/');
+    await assertCompanyBrand(page.getByRole('contentinfo'));
     assert.deepEqual(errors, []);
     assert.deepEqual(unexpected, []);
     assert.ok(accessed.has('/roof/bubbles.js'));

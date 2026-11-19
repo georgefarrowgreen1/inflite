@@ -117,8 +117,7 @@
   border-bottom: 1px solid var(--line);
 }
 
-.about-nav a,
-.about-footer nav a {
+.about-nav a {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
@@ -129,20 +128,7 @@
   font-size: 1.6rem;
 }
 
-.about-page .brand { flex: none; gap: .65rem; text-decoration: none; }
-.about-page .brand > img { width: 2.5rem; height: 2.5rem; border-radius: 22%; }
-.brand-name { display: grid; gap: .15rem; line-height: 1; }
-.brand-company {
-  display: flex;
-  align-items: center;
-  gap: .24rem;
-  color: var(--muted);
-  font-size: .75rem;
-  line-height: 1.2;
-  font-weight: 530;
-  letter-spacing: 0;
-}
-.about-page .brand-company img { width: 1.55rem; height: auto; filter: invert(1); }
+.about-page .brand-company img { filter: invert(1); }
 @media (prefers-color-scheme: light) {
   .about-page .brand-company img { filter: none; }
 }
@@ -404,8 +390,6 @@
   color: var(--ink);
 }
 
-.about-footer .brand { font-size: 1.4rem; }
-.about-footer .foot { padding-block: 1.25rem; }
 
 @keyframes about-arrival {
   from { transform: translateY(.55rem); opacity: .72; }
@@ -467,7 +451,6 @@
   }
 
   .about-nav .brand { font-size: 1.4rem; }
-  .about-page .brand > img { width: 2.25rem; height: 2.25rem; }
 
   .about-nav nav {
     grid-column: 1 / -1;

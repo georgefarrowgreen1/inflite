@@ -13,6 +13,20 @@ header{background:#111916;color:white}
 nav{gap:clamp(.8rem,3vw,2.25rem)}
 nav a{text-decoration:none;font-weight:570;font-size:.93rem}
 nav a:hover,.brand:hover{text-decoration:underline}
+.brand-with-company { flex: none; gap: .65rem; text-decoration: none; }
+.brand-with-company > img { width: 2.5rem; height: 2.5rem; border-radius: 22%; }
+.brand-name { display: grid; gap: .15rem; line-height: 1; }
+.brand-company {
+  display: flex;
+  align-items: center;
+  gap: .24rem;
+  color: var(--muted);
+  font-size: .75rem;
+  line-height: 1.2;
+  font-weight: 530;
+  letter-spacing: 0;
+}
+.brand-company img { width: 1.55rem; height: auto; }
 .open,button{border-radius:99px;padding:.68rem 1.05rem}
 .open{border:1px solid #697971}
 h1,h2,h3{line-height:1.05;letter-spacing:-.055em}
@@ -25,7 +39,10 @@ button:disabled{opacity:.65}
 .actions{gap:1.3rem;flex-wrap:wrap}
 .trap{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}
 footer{border-top:1px solid var(--line)}
-.foot{padding-block:1.6rem}
+.foot{padding-block:1.25rem;flex-wrap:wrap;row-gap:.45rem}
+.foot .brand-with-company{font-size:1.4rem}
+.foot nav{flex-wrap:wrap;row-gap:0}
+.foot nav a{display:inline-flex;align-items:center;min-height:44px}
 .policy{max-width:47rem;margin:auto;padding:3.25rem 1.35rem 5rem}
 .policy h1{font-size:clamp(2.8rem,6vw,5rem);margin:1.6rem 0 .4rem}
 .policy h2{font-size:clamp(1.65rem,3vw,2.1rem);margin:2.4rem 0 .75rem}
@@ -34,8 +51,10 @@ footer{border-top:1px solid var(--line)}
 @media(max-width:640px){
 .top{flex-wrap:wrap}
 .brand{font-size:1.2rem}
-.brand img{width:29px;height:29px}
+.brand:not(.brand-with-company) img{width:29px;height:29px}
 .open{padding:.5rem .7rem}
 nav a{font-size:.85rem}
-.foot{flex-wrap:wrap}
+}
+@media(max-width:540px){
+.brand-with-company > img{width:2.25rem;height:2.25rem}
 }
