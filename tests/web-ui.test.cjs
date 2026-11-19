@@ -1853,7 +1853,7 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
     const wallpaper = page.getByRole('combobox', {name:'Dark wallpaper on this device'});
     await wallpaper.selectOption('plain');
     assert.equal(await page.locator('html[data-midnight-lava]').count(), 0);
-    const colours = page.getByRole('group', {name:'Lava colour', exact:true});
+    const colours = page.getByRole('group', {name:'Bubble colour', exact:true});
     assert.equal(await colours.isVisible(), false);
     await wallpaper.selectOption('still');
     const canvas = page.locator('html[data-midnight-lava] .sky canvas');
@@ -1864,8 +1864,14 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
       await colours.getByRole('radio', {name:colour,exact:true}).check();
       assert.equal(await page.locator('html').getAttribute('data-midnight-lava'), colour.toLowerCase());
       const pixels = await canvas.evaluate(c => c.toDataURL());
-      assert.equal(await page.locator('.settings-dock-preview canvas').evaluate(c => c.toDataURL()),pixels);
-      if (colour === 'Midnight') assert.equal(pixels, original, 'colour changes preserve the exact pool positions');
+      assert.equal(await page.locator('.settings-dock-preview canvas').evaluate(preview => {
+        const expected = document.createElement('canvas');
+        expected.width = preview.width;
+        expected.height = preview.height;
+        expected.getContext('2d').drawImage(document.querySelector('.sky canvas'), 0, 0, expected.width, expected.height);
+        return expected.toDataURL() === preview.toDataURL();
+      }),true);
+      if (colour === 'Midnight') assert.equal(pixels, original, 'colour changes preserve the exact bubble scene');
       else rendered.add(pixels);
     }
     assert.equal(rendered.size, 4, 'each colourway paints distinct pixels');
@@ -1919,7 +1925,7 @@ async function wallpaperPixels(page) {
   return Array.from({length:64}, (_, i) => shot.data.readUInt32BE(((300 + i) * shot.width + 2) * 4));
 }
 
-test('Midnight Lava carries the same visible scene through the app drawer, Calendar and a reload', async () => {
+test('Midnight Bubbles carries the same visible scene through the app drawer, Calendar and a reload', async () => {
   const {ctx, page, errors} = await open({initialPath:'/?os=1', scheme:'dark', hubApps:{calendar:true}, viewApps:{calendar:true}});
   try {
     await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
@@ -2048,7 +2054,8 @@ test('system glass refracts the dock edge, keeps its centre clear and follows ap
         c.fillRect(0,0,raster.width,raster.height);
         c.fillStyle = '#fafafa';
         c.fillRect(0,0,Math.ceil((box.x + 22) * raster.width / sky.clientWidth),raster.height);
-        (await import('/roof/refractor.js')).wallpaperFrame(sky,c.getImageData(0,0,raster.width,raster.height));
+        sky.getContext('2d').drawImage(raster,0,0);
+        (await import('/roof/refractor.js')).wallpaperFrame(sky);
       }
       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
       return Math.floor(box.y + box.height/2);
@@ -2065,8 +2072,11 @@ test('system glass refracts the dock edge, keeps its centre clear and follows ap
         document.querySelector('#ifl-system-lens feDisplacementMap').setAttribute('scale','0');
       } else {
         const box = node.getBoundingClientRect(), sky = document.querySelector('.sky canvas').getBoundingClientRect();
-        node.style.setProperty('--ifl-lens-size', sky.width+'px '+sky.height+'px');
-        node.style.setProperty('--ifl-lens-position', (sky.left-box.left)+'px '+(sky.top-box.top)+'px');
+        // The live aligner can run between screenshots. Override the pseudo-element's
+        // crop directly so a late layout pass cannot restore the refracted measurement.
+        const styles = Array.from(document.styleSheets).find(sheet => sheet.href?.endsWith('/app.css'));
+        styles.insertRule(`.ws-dock::after { background-size: ${sky.width}px ${sky.height}px !important;
+          background-position: ${sky.left-box.left}px ${sky.top-box.top}px !important; }`, styles.cssRules.length);
       }
     }, mode);
     const off = await shot();
@@ -2085,7 +2095,7 @@ test('system glass refracts the dock edge, keeps its centre clear and follows ap
   } finally { await ctx.close(); }
 });
 
-test('Lava drawer follows a short drag, rotates in place and releases the dock on dismissal', async () => {
+test('Bubbles drawer follows a short drag, rotates in place and releases the dock on dismissal', async () => {
   const {ctx,page,errors} = await open({initialPath:'/?os=1',scheme:'dark',motion:'no-preference'});
   try {
     await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('still'));

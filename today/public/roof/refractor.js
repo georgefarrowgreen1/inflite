@@ -23,25 +23,30 @@ if (backdrop && displacement) {
 }
 const moving = new Set();
 let fullLayout = true;
-let strength = 0, source, pixels, glassCanvas, pending = 0;
+let strength = 0, source, glassCanvas, sample, pending = 0;
 
 // WebKit exposes its CSS canvas as a live image. All rims share the already rendered
 // wallpaper pixels, including in Still mode. Only their crop changes when a surface moves.
 function publish() {
-  if (!namedCanvas || !strength || !pixels || !root.hasAttribute("data-midnight-lava") || document.hidden) return;
-  if (!glassCanvas || glassCanvas.canvas.width !== pixels.width || glassCanvas.canvas.height !== pixels.height) {
-    glassCanvas = document.getCSSCanvasContext("2d", "ifl-lava", pixels.width, pixels.height);
+  if (!namedCanvas || !strength || !source || !root.hasAttribute("data-midnight-lava") || document.hidden) return;
+  const scale = Math.min(1, 480 / Math.max(source.width, source.height));
+  const w = Math.max(1, Math.round(source.width*scale)), h = Math.max(1, Math.round(source.height*scale));
+  if (!glassCanvas || glassCanvas.canvas.width !== w || glassCanvas.canvas.height !== h) {
+    glassCanvas = document.getCSSCanvasContext("2d", "ifl-lava", w, h);
+    sample ||= document.createElement("canvas").getContext("2d", {willReadFrequently:true});
+    sample.canvas.width = w;
+    sample.canvas.height = h;
+    schedule();
   }
-  glassCanvas?.putImageData(pixels, 0, 0);
+  // WebKit propagates putImageData to every CSS canvas consumer, including open sheets.
+  sample.drawImage(source, 0, 0, w, h);
+  glassCanvas?.putImageData(sample.getImageData(0,0,w,h), 0, 0);
 }
 
-export function wallpaperFrame(canvas, frame) {
+export function wallpaperFrame(canvas) {
   if (!namedCanvas) return;
-  const resized = pixels !== frame;
   source = canvas;
-  pixels = frame;
   publish();
-  if (resized) schedule();
 }
 
 function align() {

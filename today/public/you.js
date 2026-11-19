@@ -24,7 +24,7 @@
 //   goTo(root, ctx, id, drawn) → /#you=<id>: its section scrolled to (notify, apps, quiet, rules, phone, account,
 //   signout), or its sheet (notify-weather, notify-mail), once drawn (drawYou's promise)
 //   openWxNotify(root, ctx) → the Weather Notifications sheet
-import { previewWallpaper, wallpaperPreference, setWallpaper, lavaColours, wallpaperColour, setWallpaperColour } from "/roof/wallpaper.js";
+import { previewWallpaper, wallpaperPreference, setWallpaper, bubbleColours, wallpaperColour, setWallpaperColour } from "/roof/wallpaper.js";
 import { esc, G } from "/cards.js";
 
 const LEVELS = [["do", "Do"], ["suggest", "Suggest"], ["quiet", "Quiet"]];
@@ -269,7 +269,7 @@ function paint(root, ctx) {
       go('id="youOut"', "Sign out", "On this device")
     ].join(""))],
     ["personalise", "Appearance & Today", "Colours, Liquid Glass and your daily view", "sun",
-      sec("youPersonal", "", [link("appearance","Appearance","Theme, palette, Lava wallpaper and Liquid Glass"),
+      sec("youPersonal", "", [link("appearance","Appearance","Theme, palette, Bubbles wallpaper and Liquid Glass"),
         link("units","Weather units","Temperature, wind, rain, pressure and clock"),
         ctx.life ? link("customise","Customise Today","Sections and card order") : ""].join("")) + FOLDERS.rules],
     ["notifications", "Notifications", "Quiet hours, morning briefing and alerts", "bell",
@@ -549,10 +549,10 @@ function appearance(ctx) {
       return ui.row({title:label,trail:input});
     };
     const wallpaper = el("select", {"aria-label":"Dark wallpaper on this device"},
-      [["lava","Lava · drifting"],["still","Lava · still"],["plain","Plain"]].map(([value,text]) => el("option",{value,text})));
-    const colours = el("fieldset", {class:"lava-colours"}, el("legend",{text:"Lava colour"}));
+      [["bubbles","Bubbles · drifting"],["still","Bubbles · still"],["plain","Plain"]].map(([value,text]) => el("option",{value,text})));
+    const colours = el("fieldset", {class:"lava-colours"}, el("legend",{text:"Bubble colour"}));
     const swatches = el("div", {class:"lava-swatches"});
-    for (const {value, name} of lavaColours) {
+    for (const {value, name} of bubbleColours) {
       const radio = el("input", {type:"radio", name:"lava-colour", value});
       radio.onchange = () => { if (radio.checked) setWallpaperColour(value); };
       swatches.append(el("label", {data:{lava:value}}, radio,
