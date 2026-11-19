@@ -1,4 +1,5 @@
 // The wallpaper belongs to the document. App routes only replace content above it.
+import {bubbleMotion} from "./bubble-motion.js";
 import {wallpaperFrame} from "./refractor.js";
 import {minerals, newBubbleScene, validBubbleScene, driftBubbles, drawBubbles, sizeBubbleCanvas} from "./bubbles.js";
 export {bubbleColours} from "./bubbles.js";
@@ -43,7 +44,7 @@ const workspace = document.getElementById("in");
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const still = matchMedia("(prefers-reduced-motion: reduce)");
 const contrast = matchMedia("(prefers-contrast: more), (forced-colors: active)");
-let bubbles, ctx, timer, previous, preview;
+let bubbles, ctx, preview;
 let suspended = false;
 
 function drawPreview() {
@@ -63,39 +64,28 @@ function checkpoint() {
   if (bubbles) try { sessionStorage.setItem(sceneKey, JSON.stringify(bubbles)); } catch {}
 }
 
-function paint() {
+const setMotion = canvas && bubbleMotion(canvas, paint);
+
+function paint(dt, pointer) {
   if (!sizeBubbleCanvas(canvas, canvas.clientWidth, canvas.clientHeight)) return;
-  const now = performance.now(), aspect = canvas.width / canvas.height;
+  const aspect = canvas.width / canvas.height;
   bubbles ||= readScene() || newBubbleScene(aspect);
-  if (previous && !still.matches && wallpaperPreference() === "bubbles") {
-    driftBubbles(bubbles, Math.min(.5, (now-previous)/1000), aspect);
-  }
-  previous = now;
-  drawBubbles(ctx, bubbles, wallpaperColour(), workspace && !workspace.hidden ? .53 : 0);
+  const highlight = (dt || pointer) ? driftBubbles(bubbles,dt,aspect,pointer) : null;
+  drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,highlight);
   wallpaperFrame(canvas);
   drawPreview();
+  return highlight;
 }
 
 function sync() {
-  clearInterval(timer);
-  previous = 0;
   const night = root.dataset.theme ? root.dataset.theme === "dark" : dark.matches;
   const enabled = canvas && night && wallpaperPreference() !== "plain" && !contrast.matches;
   if (enabled) ctx ||= canvas.getContext("2d", {alpha:false});
   if (enabled && ctx) root.dataset.midnightLava = wallpaperColour();
   else delete root.dataset.midnightLava;
-  if (!enabled || !ctx || document.hidden || suspended) return;
-  paint();
-  if (!still.matches && wallpaperPreference() === "bubbles") timer = setInterval(paint, 1000 / 15);
-  else {
-    // Some browsers do not dispatch a resize or media event for a density-only change.
-    let density = devicePixelRatio;
-    timer = setInterval(() => {
-      if (density === devicePixelRatio) return;
-      density = devicePixelRatio;
-      paint();
-    }, 1000);
-  }
+  const visible = enabled && ctx && !document.hidden && !suspended;
+  const live = !still.matches && wallpaperPreference() === "bubbles";
+  setMotion?.(visible ? (live ? "live" : "still") : "off");
 }
 
 if (canvas) {

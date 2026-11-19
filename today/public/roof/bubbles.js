@@ -18,10 +18,12 @@ function direction() {
 }
 
 // Spread out the first frame. The starting points play no part in subsequent motion.
-export function newBubbleScene(aspect = 1) {
+export function newBubbleScene(aspect = 1, opening) {
   const bubbles = [];
   for (const radius of sizes) {
-    const candidate = () => [range(.09, .91), range(.09, .91)];
+    const candidate = !bubbles.length && opening
+      ? () => [range(...opening.x), range(...opening.y)]
+      : () => [range(.09, .91), range(.09, .91)];
     let [x, y] = candidate();
     for (let n = 0; n < 24 && bubbles.some((b, i) =>
       Math.hypot((x-b.x) * Math.max(1,aspect), (y-b.y) * Math.max(1,1/aspect)) < (radius+sizes[i]) * 1.22); n++) {
@@ -38,41 +40,134 @@ export function validBubbleScene(scene) {
   return Array.isArray(scene) && scene.length === sizes.length && scene.every(b =>
     b && ["x","y","vx","vy","dx","dy","turn","phase","angle","tempo"].every(key => Number.isFinite(b[key])) &&
     b.x >= 0 && b.x <= 1 && b.y >= 0 && b.y <= 1 && b.turn >= 0 && b.turn <= 65 &&
-    b.tempo >= .03 && b.tempo <= .07 && [b.vx,b.vy,b.dx,b.dy].every(v => Math.abs(v) <= .01));
+    b.tempo >= .03 && b.tempo <= .07 &&
+    [b.dx,b.dy].every(v => Math.abs(v) <= .011) && Math.hypot(b.vx,b.vy) <= .041 &&
+    [b.strainX,b.strainY].every(v => v === undefined || (Number.isFinite(v) && Math.abs(v) <= .091)));
 }
 
-function advanceAxis(position, velocity, desired, dt, extent) {
-  // Gently turn back at the viewport boundary. There is no fixed centre or orbit.
-  const margin = Math.min(.13, .08 / extent);
-  const towardInside = position < margin ? 1 : position > 1-margin ? -1 : 0;
-  if (towardInside && desired * towardInside < 0) desired *= -1;
-  velocity += (desired - velocity) * -Math.expm1(-dt / 3.8);
-  return [clamp(position + velocity * dt / extent), velocity, desired];
+// The same outline is used for drawing, hit testing and contact distances.
+// Strain is expressed in screen axes, so a sideways tap squeezes horizontally.
+const pose = b => .32 * b.angle + .13 * Math.sin(b.phase);
+function profile(b, angle) {
+  const a = angle - pose(b);
+  return 1 + .105*Math.sin(b.phase)*Math.cos(2*a-.55)
+    + .066*Math.cos(.65*b.phase+b.angle)*Math.sin(3*a+b.angle)
+    + .04*Math.sin(1.1*b.phase-b.angle)*Math.cos(4*a+.3)
+    - (b.strainX || 0)*Math.cos(2*angle) - (b.strainY || 0)*Math.sin(2*angle);
 }
 
-export function driftBubbles(bubbles, dt, aspect) {
-  for (const b of bubbles) {
+function squeeze(b, nx, ny, amount) {
+  const x = (b.strainX || 0) + amount*(nx*nx-ny*ny);
+  const y = (b.strainY || 0) + amount*2*nx*ny;
+  const limit = Math.max(1, Math.hypot(x,y)/.09);
+  b.strainX = x/limit;
+  b.strainY = y/limit;
+}
+
+function wall(b, radius, distance, nx, ny, dt) {
+  const overlap = .94*radius - distance;
+  if (overlap <= 0) return;
+  const inward = b.vx*nx + b.vy*ny;
+  const acceleration = Math.min(.018, overlap*.18 + Math.max(0,-inward)*.85);
+  b.vx += nx*acceleration*dt;
+  b.vy += ny*acceleration*dt;
+  const steering = Math.min(0, b.dx*nx + b.dy*ny);
+  b.dx -= 1.8*steering*nx;
+  b.dy -= 1.8*steering*ny;
+  squeeze(b,nx,ny,Math.min(.12,overlap/radius)*dt);
+}
+
+function contact(a, b, i, j, width, height, dt) {
+  const x = (b.x-a.x)*width, y = (b.y-a.y)*height;
+  const distance = Math.hypot(x,y);
+  if (distance > 1.35*(sizes[i]+sizes[j])) return;
+  // Coincident centres can occur after a resize or restoring an earlier scene.
+  const angle = distance > .00001 ? Math.atan2(y,x) : a.angle + j;
+  const nx = Math.cos(angle), ny = Math.sin(angle);
+  const overlap = sizes[i]*profile(a,angle) + sizes[j]*profile(b,angle+Math.PI) - distance;
+  if (overlap <= 0) return;
+  const closing = Math.min(0,(b.vx-a.vx)*nx + (b.vy-a.vy)*ny);
+  const push = Math.min(.024, overlap*.24 - closing*.95)*dt;
+  const massA = sizes[i]**2, shareA = sizes[j]**2/(massA+sizes[j]**2);
+  const shareB = 1-shareA;
+  a.vx -= nx*push*shareA; a.vy -= ny*push*shareA;
+  b.vx += nx*push*shareB; b.vy += ny*push*shareB;
+  // Turn the underlying drift apart too, so a pair can leave contact.
+  const steer = -1.65*Math.min(0,(b.dx-a.dx)*nx + (b.dy-a.dy)*ny);
+  a.dx -= nx*steer*shareA; a.dy -= ny*steer*shareA;
+  b.dx += nx*steer*shareB; b.dy += ny*steer*shareB;
+  const pressure = Math.min(.18, overlap/(sizes[i]+sizes[j]) - closing) * dt;
+  squeeze(a,nx,ny,pressure*(.3+shareA));
+  squeeze(b,nx,ny,pressure*(.3+shareB));
+}
+
+function pickBubble(bubbles, pointer, width, height) {
+  if (!pointer) return null;
+  let nearest = null;
+  for (let i = 0; i < bubbles.length; i++) {
+    const b = bubbles[i];
+    const x = (pointer.x-b.x)*width, y = (pointer.y-b.y)*height;
+    const angle = Math.atan2(y,x);
+    const distance = Math.hypot(x,y) / (sizes[i]*profile(b,angle));
+    if (distance > 1.35 || (nearest && distance >= nearest.distance)) continue;
+    nearest = {index:i, distance, x:x/sizes[i], y:y/sizes[i], amount:pointer.strength * clamp((1.35-distance)/.45)};
+    if (distance <= 1) break; // Frontmost visible surface.
+  }
+  return nearest;
+}
+
+export function driftBubbles(bubbles, dt, aspect, pointer = null) {
+  const width = Math.max(1,aspect), height = Math.max(1,1/aspect);
+  const hit = pickBubble(bubbles,pointer,width,height);
+  const recover = Math.exp(-dt*1.7);
+  for (let i = 0; i < bubbles.length; i++) {
+    const b = bubbles[i];
+    b.strainX = (b.strainX || 0)*recover;
+    b.strainY = (b.strainY || 0)*recover;
     b.turn -= dt;
     if (b.turn <= 0) {
       [b.dx, b.dy] = direction();
       b.turn = range(16, 60);
     }
-    [b.x, b.vx, b.dx] = advanceAxis(b.x, b.vx, b.dx, dt, Math.max(1,aspect));
-    [b.y, b.vy, b.dy] = advanceAxis(b.y, b.vy, b.dy, dt, Math.max(1,1/aspect));
-    b.phase = (b.phase + dt * b.tempo) % (tau * 20);
+    const ease = -Math.expm1(-dt / (2.1 + sizes[i]*8));
+    b.vx += (b.dx-b.vx)*ease;
+    b.vy += (b.dy-b.vy)*ease;
+    if (hit?.index === i) {
+      const angle = hit.distance < .035 ? Math.atan2(b.vy,b.vx) : Math.atan2(-hit.y,-hit.x);
+      const nx = Math.cos(angle), ny = Math.sin(angle);
+      const tap = pointer.tap && hit.distance <= 1;
+      const impulse = tap ? .027/(1+3*sizes[i]) : .0013*dt*hit.amount;
+      b.vx += nx*impulse; b.vy += ny*impulse;
+      if (tap) squeeze(b,nx,ny,.082);
+    }
+
+    wall(b,sizes[i]*profile(b,Math.PI),b.x*width,1,0,dt);
+    wall(b,sizes[i]*profile(b,0),(1-b.x)*width,-1,0,dt);
+    wall(b,sizes[i]*profile(b,-Math.PI/2),b.y*height,0,1,dt);
+    wall(b,sizes[i]*profile(b,Math.PI/2),(1-b.y)*height,0,-1,dt);
   }
+  for (let i = 0; i < bubbles.length; i++) {
+    for (let j = i+1; j < bubbles.length; j++) contact(bubbles[i],bubbles[j],i,j,width,height,dt);
+  }
+  for (const b of bubbles) {
+    const speed = Math.max(1, Math.hypot(b.vx,b.vy)/.04);
+    b.vx /= speed; b.vy /= speed;
+    const steer = Math.max(1, Math.hypot(b.dx,b.dy)/.008);
+    b.dx /= steer; b.dy /= steer;
+    b.x = clamp(b.x + b.vx*dt/width);
+    b.y = clamp(b.y + b.vy*dt/height);
+    b.phase = (b.phase + dt*b.tempo) % (tau*20);
+  }
+  return hit;
 }
 
 const segments = 40;
 // A periodic cubic spline keeps the silhouette and its tangent continuous at every scale.
 function outline(b) {
   const points = [];
-  const pear = .115 * Math.sin(b.phase);
-  const trefoil = .073 * Math.cos(.65*b.phase + b.angle);
-  const square = .047 * Math.sin(1.1*b.phase - b.angle);
   for (let i = 0; i < segments; i++) {
     const a = tau*i/segments;
-    const r = 1 + pear*Math.cos(2*a-.55) + trefoil*Math.sin(3*a+b.angle) + square*Math.cos(4*a+.3);
+    const r = profile(b,a);
     points.push([r*Math.cos(a), r*Math.sin(a)]);
   }
   const path = new Path2D();
@@ -103,6 +198,32 @@ function wash(ctx, x, y, rx, ry, angle, stops) {
 // change on a frame, even at 4K. Smaller bubbles see a different face of the light.
 const materials = new WeakMap();
 const glows = new WeakMap();
+// Bake a repeatable, low-contrast grain into the material so the surface carries
+// its own texture through a turn. The backdrop and UI receive no noise.
+let grainTile;
+function applyGrain(ctx, index) {
+  if (!grainTile) {
+    grainTile = document.createElement("canvas");
+    grainTile.width = grainTile.height = 192;
+    const tile = grainTile.getContext("2d");
+    const image = tile.createImageData(192,192);
+    let seed = 727;
+    for (let i = 0; i < image.data.length; i += 4) {
+      seed = (Math.imul(seed,1664525) + 1013904223) >>> 0;
+      const difference = (seed >>> 24) - ((seed >>> 12) & 255);
+      const light = difference > 0 ? 255 : 0;
+      image.data[i] = image.data[i+1] = image.data[i+2] = light;
+      image.data[i+3] = Math.round(Math.abs(difference)*.082);
+    }
+    tile.putImageData(image,0,0);
+  }
+  ctx.save();
+  ctx.setTransform(1,0,0,1,index*31,index*17);
+  ctx.fillStyle = ctx.createPattern(grainTile,"repeat");
+  ctx.fillRect(-index*31,-index*17,ctx.canvas.width,ctx.canvas.height);
+  ctx.restore();
+}
+
 function material(ink, index) {
   if (!materials.has(ink)) materials.set(ink, []);
   const textures = materials.get(ink);
@@ -126,23 +247,30 @@ function material(ink, index) {
   wash(ctx,-.12,-.93,1.06,.43,-.27,[[0,ink.pearl],[.5,ink.pearl+"8a"],[1,ink.pearl+"00"]]);
   // Light refracted back into the lower shell, with a faint chromatic fringe.
   wash(ctx,-.12,-.23,1.15,1.24,-.49,[[0,ink.flash+"00"],[.66,ink.flash+"00"],
-    [.80,ink.flash+"45"],[.87,ink.pearl+"94"],[.895,ink.bloom+"7d"],[.94,ink.flash+"28"],[1,ink.flash+"00"]]);
+    [.78,ink.flash+"36"],[.862,ink.pearl+"78"],[.90,ink.bloom+"69"],[.965,ink.flash+"1f"],[1,ink.flash+"00"]]);
+  applyGrain(ctx,index);
   textures[index] = surface;
   return surface;
 }
 
-function paintBubble(ctx, bubble, x, y, radius, ink, index) {
+function paintBubble(ctx, bubble, x, y, radius, ink, index, highlight) {
   ctx.save();
   ctx.translate(x,y);
   ctx.scale(radius,radius);
-  ctx.rotate(.32 * bubble.angle + .13 * Math.sin(bubble.phase));
   const shell = outline(bubble);
   ctx.clip(shell);
   ctx.save();
-  ctx.rotate(.29 * Math.sin(bubble.phase + index) + .25 * index);
+  ctx.rotate(pose(bubble) + .29 * Math.sin(bubble.phase + index) + .25 * index);
   const offset = .085 * Math.sin(bubble.phase);
   ctx.drawImage(material(ink,index), -1.5+offset, -1.5, 3, 3);
   ctx.restore();
+  if (highlight) {
+    ctx.save();
+    ctx.globalAlpha = highlight.amount;
+    wash(ctx,highlight.x*.60,highlight.y*.60,.63,.48,-.45,
+      [[0,ink.pearl+"53"],[.48,ink.flash+"1a"],[1,ink.flash+"00"]]);
+    ctx.restore();
+  }
   const edge = ctx.createLinearGradient(-.86,-.72,.78,.91);
   edge.addColorStop(0,ink.pearl+"cf");
   edge.addColorStop(.32,ink.bloom+"1c");
@@ -163,7 +291,7 @@ export function sizeBubbleCanvas(canvas, width, height) {
   return true;
 }
 
-export function drawBubbles(ctx, bubbles, colour, shade = 0) {
+export function drawBubbles(ctx, bubbles, colour, shade = 0, highlight = null) {
   const {width, height} = ctx.canvas;
   const ink = minerals[colour], short = Math.min(width,height);
   ctx.fillStyle = ink.base;
@@ -176,10 +304,10 @@ export function drawBubbles(ctx, bubbles, colour, shade = 0) {
     glows.set(ink,glow);
   }
   ctx.drawImage(glows.get(ink), main.x*width-short*.81, main.y*height-short*.70, short*1.62, short*1.40);
-  // Foreground bubbles occlude distant ones naturally as they pass.
+  // Paint back to front, matching the order used by hit tests.
   for (let i = bubbles.length-1; i >= 0; i--) {
     const b = bubbles[i];
-    paintBubble(ctx,b,b.x*width,b.y*height,short*sizes[i],ink,i);
+    paintBubble(ctx,b,b.x*width,b.y*height,short*sizes[i],ink,i,highlight?.index === i ? highlight : null);
   }
   if (shade) {
     ctx.globalAlpha = shade;

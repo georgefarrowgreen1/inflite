@@ -65,29 +65,19 @@ test('public pages and contact form work without signing in, from phone to deskt
     await sky.waitFor();
     const image = () => sky.evaluate(canvas => canvas.toDataURL());
     const stillFrame = await image();
-    const wing = page.locator('.intro-art');
+    assert.equal(await page.locator('canvas').count(), 1, 'the orbs are the only animated artwork');
     assert.equal(await page.locator('body').evaluate(body => getComputedStyle(body).getPropertyValue('-webkit-user-select') || getComputedStyle(body).userSelect), 'none');
     assert.equal(await page.getByLabel('Your name').evaluate(input => getComputedStyle(input).getPropertyValue('-webkit-user-select') || getComputedStyle(input).userSelect), 'text');
-    assert.equal(await wing.locator('img').getAttribute('draggable'), 'false');
-    assert.equal(await wing.evaluate(art => art.dispatchEvent(new MouseEvent('contextmenu', { cancelable: true }))), false);
-    assert.equal(await wing.getAttribute('data-wing-motion'), null);
-    assert.equal(await wing.locator('.wing-canvas').isVisible(), false);
     assert.equal(await page.locator('.wallpaper-controls, .privacy-feature').count(), 0);
     await page.getByRole('link', { name: 'Explore the apps' }).click();
     assert.equal(new URL(page.url()).hash, '#apps');
     assert.equal(await image(), stillFrame, 'a reduced-motion scene stays still while scrolling');
     await page.emulateMedia({ reducedMotion: 'no-preference' });
-    await wing.scrollIntoViewIfNeeded();
-    await page.waitForFunction(() => {
-      const art = document.querySelector('.intro-art[data-wing-motion]');
-      return art && (art.hasAttribute('data-wing-live') || art.querySelector('img').getAnimations().length > 0);
-    });
     await page.waitForFunction(before => document.querySelector('.about-sky canvas').toDataURL() !== before, stillFrame);
-    await page.getByRole('link', { name: 'Explore the apps' }).click();
-    await page.waitForFunction(() => !document.querySelector('.intro-art').hasAttribute('data-wing-motion'));
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await wing.scrollIntoViewIfNeeded();
-    assert.equal(await wing.locator('.wing-canvas').isVisible(), false);
+    const frozen = await image();
+    await page.waitForTimeout(200);
+    assert.equal(await image(), frozen);
     assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
     for (const pagePath of pages) {
       if (pagePath !== '/about/') await page.locator('footer a[href="' + pagePath + '"]').click();
@@ -133,19 +123,15 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.deepEqual(sent[1].fields, { name: 'Fixture Sender', email: 'sender@example.test', message: 'Please help with this fixture.', website: '' });
     assert.equal(await message.inputValue(), '');
     assert.equal(await page.locator('.app-list li').count(), 10);
-    const heroLayout = () => page.locator('.introduction').evaluate(section => {
-      const copy = section.querySelector('.intro-copy').getBoundingClientRect();
-      const art = section.querySelector('.intro-art').getBoundingClientRect();
-      return art.top >= copy.bottom ? 'stacked' : art.left + art.width / 2 > copy.right ? 'side-by-side' : 'overlapping';
-    });
-    assert.equal(await heroLayout(), 'stacked');
     await page.setViewportSize({ width: 1440, height: 960 });
-    assert.equal(await heroLayout(), 'side-by-side');
+    await page.locator('.introduction').scrollIntoViewIfNeeded();
+    assert.ok(await page.getByRole('link', {name:'Explore the apps'}).isVisible());
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.getByRole('navigation', { name: 'Legal' }).getByRole('link', { name: 'Privacy' }).click();
     assert.equal(new URL(page.url()).pathname, '/privacy/');
     assert.deepEqual(errors, []);
     assert.deepEqual(unexpected, []);
-    assert.ok(accessed.has('/about/glass-wing-768.webp'));
+    assert.ok(accessed.has('/roof/bubbles.js'));
+    assert.ok(!Array.from(accessed).some(pathname => /wing/.test(pathname)));
   } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
 });
