@@ -66,6 +66,10 @@ test('public pages and contact form work without signing in, from phone to deskt
     const image = () => sky.evaluate(canvas => canvas.toDataURL());
     const stillFrame = await image();
     const wing = page.locator('.intro-art');
+    assert.equal(await page.locator('body').evaluate(body => getComputedStyle(body).getPropertyValue('-webkit-user-select') || getComputedStyle(body).userSelect), 'none');
+    assert.equal(await page.getByLabel('Your name').evaluate(input => getComputedStyle(input).getPropertyValue('-webkit-user-select') || getComputedStyle(input).userSelect), 'text');
+    assert.equal(await wing.locator('img').getAttribute('draggable'), 'false');
+    assert.equal(await wing.evaluate(art => art.dispatchEvent(new MouseEvent('contextmenu', { cancelable: true }))), false);
     assert.equal(await wing.getAttribute('data-wing-motion'), null);
     assert.equal(await wing.locator('.wing-canvas').isVisible(), false);
     assert.equal(await page.locator('.wallpaper-controls, .privacy-feature').count(), 0);

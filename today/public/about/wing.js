@@ -13,7 +13,7 @@ const fragment = `
   uniform sampler2D artwork;
   uniform vec2 size;
   uniform vec2 crop;
-  uniform vec2 gesture;
+  uniform vec3 interaction;
   uniform vec3 jade;
   uniform float time;
 
@@ -27,23 +27,32 @@ const fragment = `
     float across = dot(uv - 0.5, normal);
     float tip = (along - 0.5) * 2.0;
 
+    // Distances are measured in screen space so the lens stays round in the phone crop.
+    vec2 lens = (point - interaction.xy) * size / max(size.x, size.y);
+    float proximity = exp(-18.0 * dot(lens, lens));
+    float pressure = interaction.z * proximity;
     float lift = sin(time * 0.39 + along * 2.8);
     float twist = sin(time * 0.57 - along * 4.7);
-    vec2 bent = uv + normal * (lift * 0.022 + tip * twist * 0.038
-      + across * sin(time * 0.32) * 0.11 + gesture.y * (0.027 + abs(tip) * 0.03))
-      + spine * (twist * 0.015 + gesture.x * 0.023);
+    vec2 bent = uv + normal * (lift * 0.020 + tip * twist * 0.033
+      + across * sin(time * 0.32) * 0.10 - pressure * (0.025 + dot(lens, normal) * 0.09))
+      + spine * (twist * 0.013 - pressure * dot(lens, spine) * 0.12);
 
     vec3 glass = texture2D(artwork, bent).rgb;
-    float glint = along - 0.5 - sin(time * 0.53) * 0.31 - gesture.x * 0.33 + across * 0.28;
+    float glint = along - 0.5 - sin(time * 0.53) * 0.31 + across * 0.28;
     float beam = exp(-44.0 * glint * glint);
-    float detail = smoothstep(0.23, 0.88, max(glass.r, max(glass.g, glass.b)));
-    float interference = 0.68 + 0.32 * sin(24.0 * across - time * 0.74 + along * 5.0);
-    vec2 split = normal * detail * beam * 0.0037;
+    float detail = smoothstep(0.18, 0.83, max(glass.r, max(glass.g, glass.b)));
+    float interference = 0.72 + 0.28 * sin(24.0 * across - time * 0.74 + along * 5.0);
+
+    // A narrow caustic sits inside the broader light pulled across the glass.
+    float edge = dot(lens, normal) + 0.04;
+    float caustic = pressure * exp(-120.0 * edge * edge);
+    vec2 split = normal * detail * (beam * 0.0026 + caustic * 0.0035);
     glass.r = texture2D(artwork, bent + split).r;
     glass.b = texture2D(artwork, bent - split).b;
 
-    vec3 tint = vec3(0.28, 0.40, 0.18) + jade * vec3(0.25, 0.42, 0.32);
-    glass = glass * (0.96 + 0.07 * lift) + tint * detail * beam * interference * 0.54;
+    vec3 tint = vec3(0.30, 0.43, 0.21) + jade * vec3(0.28, 0.42, 0.32);
+    glass *= 0.97 + 0.06 * lift;
+    glass += (1.0 - glass) * tint * detail * (beam * interference * 0.52 + pressure * 0.45 + caustic * 0.62);
     gl_FragColor = vec4(glass, 1.0);
   }
 `;
@@ -79,13 +88,13 @@ function createRenderer(canvas) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  const uniform = Object.fromEntries(["size", "crop", "gesture", "jade", "time"]
+  const uniform = Object.fromEntries(["size", "crop", "interaction", "jade", "time"]
     .map(name => [name, gl.getUniformLocation(program, name)]));
   return {
     upload(image) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     },
-    draw(width, height, imageAspect, time, x, y, light) {
+    draw(width, height, imageAspect, time, x, y, pressure, light) {
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
@@ -94,7 +103,7 @@ function createRenderer(canvas) {
       gl.viewport(0, 0, width, height);
       gl.uniform2f(uniform.size, width, height);
       gl.uniform2f(uniform.crop, Math.min(1, aspect / imageAspect), Math.min(1, imageAspect / aspect));
-      gl.uniform2f(uniform.gesture, x, y);
+      gl.uniform3f(uniform.interaction, x, y, pressure);
       gl.uniform3fv(uniform.jade, light);
       gl.uniform1f(uniform.time, time);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -105,15 +114,16 @@ function createRenderer(canvas) {
 export function animateWing(art) {
   const canvas = art.querySelector("canvas");
   const image = art.querySelector("img");
-  let renderer, uploaded, width, height;
+  let renderer, uploaded, width, height, displayWidth, displayHeight;
   let enabled = false, visible = false, request = 0, previous = 0;
   let time = Math.random() * 35;
-  let x = 0, y = 0, targetX = 0, targetY = 0;
+  let x = .5, y = .5, targetX = .5, targetY = .5, pressure = 0, targetPressure = 0;
+  let pressedPointer;
   let light = [0.1, 0.34, 0.22];
 
   function animate(now) {
     request = requestAnimationFrame(animate);
-    if (previous && now - previous < 30) return;
+    if (previous && now - previous < 15) return;
     const dt = previous ? Math.min(.06, (now - previous) / 1000) : 0;
     previous = now;
     time += dt;
@@ -123,12 +133,12 @@ export function animateWing(art) {
       renderer.upload(image);
       uploaded = image.currentSrc;
     }
-    const response = -Math.expm1(-dt * 3.8);
+    const response = -Math.expm1(-dt * 15);
     x += (targetX - x) * response;
-    const lift = Math.min(.65, scrollY / Math.max(1, innerHeight));
-    y += (targetY - lift - y) * response;
+    y += (targetY - y) * response;
+    pressure += (targetPressure - pressure) * -Math.expm1(-dt * (targetPressure > pressure ? 16 : 5));
 
-    renderer.draw(width, height, image.naturalWidth / image.naturalHeight, time, x, y, light);
+    renderer.draw(width, height, image.naturalWidth / image.naturalHeight, time, x, y, pressure, light);
     if (dt && !art.hasAttribute("data-wing-live")) art.dataset.wingLive = "";
   }
 
@@ -144,14 +154,20 @@ export function animateWing(art) {
       previous = 0;
     }
     // Keep the last frame while offscreen. The original image is the still version.
+    if (!active) {
+      pressedPointer = undefined;
+      targetPressure = pressure = 0;
+      if (renderer === null) updateFallback();
+    }
     if (!enabled) art.removeAttribute("data-wing-live");
   }
 
   new ResizeObserver(([entry]) => {
-    const rect = entry.contentRect;
-    const scale = Math.min(devicePixelRatio, 1.5, 1120 / Math.max(1, rect.width));
-    width = Math.round(rect.width * scale);
-    height = Math.round(rect.height * scale);
+    ({width:displayWidth, height:displayHeight} = entry.contentRect);
+    // Give Retina phones native detail and cap the GPU surface on wider screens.
+    const scale = Math.min(devicePixelRatio, 3, Math.sqrt(1_650_000 / Math.max(1, displayWidth * displayHeight)));
+    width = Math.round(displayWidth * scale);
+    height = Math.round(displayHeight * scale);
     sync();
   }).observe(art);
   new IntersectionObserver(([entry]) => {
@@ -172,13 +188,49 @@ export function animateWing(art) {
     renderer = undefined;
     sync();
   });
-  const hero = art.closest(".introduction");
-  hero.addEventListener("pointermove", event => {
-    if (event.pointerType !== "mouse") return;
-    targetX = event.clientX / innerWidth - .5;
-    targetY = event.clientY / innerHeight - .5;
+  function updateFallback() {
+    art.style.setProperty("--wing-x", (targetX - .5) * targetPressure * 10 + "px");
+    art.style.setProperty("--wing-y", (targetY - .5) * targetPressure * 8 + "px");
+  }
+
+  function aim(event, strength) {
+    targetX = Math.max(0, Math.min(1, event.offsetX / displayWidth));
+    targetY = Math.max(0, Math.min(1, event.offsetY / displayHeight));
+    if (pressure < .015 && targetPressure === 0) {
+      x = targetX;
+      y = targetY;
+    }
+    targetPressure = strength;
+    if (renderer === null) updateFallback();
+  }
+
+  function release(event) {
+    const leavingHover = event.type === "pointerleave" && event.pointerType === "mouse" && pressedPointer === undefined;
+    if (pressedPointer !== event.pointerId && !leavingHover) return;
+    pressedPointer = undefined;
+    if (event.type === "pointerup" && event.pointerType === "mouse") {
+      aim(event, .75);
+    } else {
+      targetPressure = 0;
+      if (renderer === null) updateFallback();
+    }
+  }
+
+  art.addEventListener("pointerdown", event => {
+    if (!enabled || !visible || !displayWidth || !displayHeight || !event.isPrimary || event.button !== 0) return;
+    pressedPointer = event.pointerId;
+    aim(event, 1);
+    pressure = Math.max(pressure, .32);
   }, {passive:true});
-  hero.addEventListener("pointerleave", () => { targetX = targetY = 0; });
+  art.addEventListener("pointermove", event => {
+    if (!enabled || !visible || !displayWidth || !displayHeight) return;
+    if (pressedPointer === event.pointerId) aim(event, 1);
+    else if (event.pointerType === "mouse" && pressedPointer === undefined) aim(event, .75);
+  }, {passive:true});
+  for (const type of ["pointerleave", "pointerup", "pointercancel", "lostpointercapture"]) {
+    art.addEventListener(type, release, {passive:true});
+  }
+  art.addEventListener("contextmenu", event => event.preventDefault());
 
   return {
     setLighting(value) { light = value; },
