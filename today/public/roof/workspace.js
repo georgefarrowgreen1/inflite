@@ -491,7 +491,7 @@ export async function createWorkspace(F, options = {}) {
     systemActions: () => [
       {id:'quick-capture',label:'Quick Capture',detail:'Save a thought, reminder, photo or file',keywords:['capture','inbox','save','note'],current:live,run:()=>lifeTools().then(v=>live()&&v?.capture())},
       {id:'today-customise',label:'Customise Today',detail:'Choose cards and sections',keywords:['layout','reorder','hide'],current:live,run:()=>lifeTools().then(v=>live()&&v?.customise())},
-      {id:'security-module',label:'Security Module',detail:'Sessions, permissions and private security activity',keywords:['security','permissions','access','devices','privacy'],current:live,run:()=>security().then(s=>live()&&s?.open())},
+      {id:'security-module',label:'Security',detail:'Sign-in, sessions, app access and activity',keywords:['security module','password','passkeys','permissions','access','devices','privacy'],current:live,run:()=>security().then(s=>live()&&s?.open())},
       {id:'calendar-connections',label:'Connected calendars',detail:'Google Calendar, Outlook and iCalendar files',keywords:['subscribe','ics','calendar'],current:live,run:()=>lifeTools().then(v=>live()&&v?.calendars())},
       {id:'queued-file-recovery',label:'Queued file recovery',detail:'Retry or save files kept on this device',keywords:['upload','recover'],current:live,run:()=>files.recovery()},
       {id:'open-reminders',label:'Reminders',detail:'Actions linked to your apps',keywords:['tasks','todo','follow up'],current:live,run:()=>system().then(s=>live()&&s?.openList())},

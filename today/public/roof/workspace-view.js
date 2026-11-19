@@ -700,7 +700,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     edit.addEventListener('click',()=>{if(!liveBody())return;editing=!editing;paintGrid()});
     input.addEventListener('input',()=>{query=input.value;paintGrid()});
     input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!editing){event.preventDefault();grid.querySelector('button:not(:disabled)')?.click()}});
-    const security=callable(callbacks.onSecurity)?launchButton('Security Module',icon('lock'),'onSecurity','wsl-security'):null;
+    const security=callable(callbacks.onSecurity)?launchButton('Security',icon('lock'),'onSecurity','wsl-security'):null;
     security?.append(icon('chev'));
     const preferences = callable(callbacks.onSettings) ? launchButton('Settings',icon('settings'),'onSettings','wsl-settings') : null;
     preferences?.append(icon('chev'));

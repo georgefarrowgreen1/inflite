@@ -5,7 +5,7 @@ export class SettingsAccount extends HTMLElement {
     this.session?.abort();
   }
 
-  async mount({owner, part, sheets}) {
+  async mount({owner, part, action, sheets, onSecurity}) {
     this.session?.abort();
     const session = this.session = new AbortController();
     const root = this.shadowRoot || this.attachShadow({mode:"open"});
@@ -21,7 +21,7 @@ export class SettingsAccount extends HTMLElement {
     this.setAttribute("aria-busy","true");
     const loading = document.createElement("p");
     loading.setAttribute("role","status");
-    loading.textContent = "Loading account…";
+    loading.textContent = action ? "Loading security settings…" : "Loading account…";
     root.replaceChildren(loading);
     try {
       const css = document.createElement("link");
@@ -36,6 +36,7 @@ export class SettingsAccount extends HTMLElement {
       if (session.signal.aborted) return;
       const page = document.createElement("div");
       page.id = "page";
+      if (action) page.hidden = true;
       const main = document.createElement("div");
       main.id = "main";
       page.append(main);
@@ -48,15 +49,18 @@ export class SettingsAccount extends HTMLElement {
       toast.className = "toast";
       toast.setAttribute("role","status");
       root.append(page, dialog, toast);
-      await startAccount({root, element:this, owner, part, sheets, signal:session.signal});
-      if (!session.signal.aborted) loading.remove();
-    } catch {
+      const ready = await startAccount({root, element:this, owner, part, action, sheets, onSecurity, signal:session.signal});
+      if (session.signal.aborted) return false;
+      loading.remove();
+      return !action || ready === true;
+    } catch (error) {
       if (session.signal.aborted) return;
       session.abort();
+      if (action) throw error;
       loading.textContent = "Couldn’t load your account.";
       const retry = document.createElement("button");
       retry.type = "button"; retry.textContent = "Try again";
-      retry.onclick = () => this.mount({owner,part,sheets});
+      retry.onclick = () => this.mount({owner,part,sheets,onSecurity});
       root.replaceChildren(loading,retry);
     } finally {
       if (session === this.session) this.removeAttribute("aria-busy");

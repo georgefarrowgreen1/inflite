@@ -264,8 +264,7 @@ function paint(root, ctx) {
   const groups = [
     ["account", "Account & security", "Profile, sign-in and personal data", "shield", sec("youIdentity", "", [
       link("profile","Edit profile","Name, photo and handle"),
-      link("security","Sign-in and security","Password, passkeys and sessions"),
-      ctx.security ? link("module","Security Module","App access and security activity") : "",
+      link("security","Security","Password, passkeys, sessions, app access and activity"),
       link("data","Your data","Export your information or manage your account"),
       go('id="youOut"', "Sign out", "On this device")
     ].join(""))],
@@ -319,7 +318,10 @@ function paint(root, ctx) {
     });
     detail.append(pane);
     import("/settings-account.js").then(() => {
-      if (pane.isConnected) pane.mount({owner:String(u.id), part:account[1], sheets:ctx.frame.sheet});
+      if (pane.isConnected) pane.mount({
+        owner:String(u.id), part:account[1] === "security" && ctx.security ? undefined : account[1],
+        sheets:ctx.frame.sheet, onSecurity:ctx.security
+      });
     }).catch(() => {
       if (!pane.isConnected) return;
       const retry = document.createElement("button");
@@ -370,7 +372,7 @@ function paint(root, ctx) {
   for (const b of root.querySelectorAll('[data-setting]')) b.addEventListener('click', () => {
     const key = b.dataset.setting;
     if (key === 'sharing') return openFolder('apps',root,ctx);
-    if (key === 'module') return ctx.security();
+    if (key === 'security' && ctx.security) return ctx.security();
     if (key === 'remembered') return ctx.remembered();
     if (key === 'calendars' || key === 'customise') return ctx.life(key);
     if (key === 'emails') return emailPreferences(root,ctx);
@@ -478,7 +480,7 @@ function emailPreferences(root,ctx) {
       ui.list([toggle("When a reported problem is fixed",prefs.account.fixed,on=>({account:{fixed:on}}))],{label:"Account"}));
     list.disabled = !prefs.emailOk;
     body.replaceChildren(list,status,el("p",{class:"you-foot",text:"Security emails about sign-ins and account changes are always sent."}));
-    if (!prefs.emailOk) body.prepend(ui.row({title:"Verify your email to receive app updates",trail:"chevron",run:()=>ctx.openAccount("security")}));
+    if (!prefs.emailOk) body.prepend(ui.row({title:"Verify your email to receive app updates",trail:"chevron",run:()=>ctx.security ? ctx.security({view:"sign-in"}) : ctx.openAccount("security")}));
   }
   load();
 }
@@ -721,7 +723,7 @@ export async function goTo(root, ctx, id, drawn) {
   const key = id.replace(/^settings-/, "");
   if (key === "notify-weather") return openWxNotify(root, ctx);
   if (key === "emails") return emailPreferences(root,ctx);
-  if (key === "module") return ctx.security?.();
+  if (["module","account-security"].includes(key)) return ctx.security?.();
   if (key === "notify-mail") return openMailNotifyFrom(ctx);
   if (["weather","fitness","chats","markets","mail"].includes(key)) return ctx.editApp(key);
   if (key === "appearance") return appearance(ctx);
