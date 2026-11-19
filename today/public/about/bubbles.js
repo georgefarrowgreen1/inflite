@@ -1,5 +1,5 @@
 // The public About page has its own decorative scene.
-import {newBubbleScene, driftBubbles, drawBubbles, sizeBubbleCanvas} from "/roof/bubbles.js?about";
+import {defaultBubbleColour, newBubbleScene, driftBubbles, drawBubbles, sizeBubbleCanvas} from "/roof/bubbles.js?about";
 import {bubbleMotion} from "/roof/bubble-motion.js?about";
 
 const canvas = document.querySelector(".about-sky canvas");
@@ -21,17 +21,17 @@ if (context) {
   const setMotion = bubbleMotion(canvas,paint);
   let suspended = false;
 
-  function paint(dt, pointer) {
+  function paint(dt, pointer, live) {
     if (!sizeBubbleCanvas(canvas, canvas.clientWidth, canvas.clientHeight)) return;
     const aspect = canvas.width / canvas.height;
     // Compose the first frame beside the copy. The motion solver never sees these bounds.
     bubbles ||= newBubbleScene(aspect, canvas.clientWidth > 800
-      ? {x:[.66,.84], y:[.30,.50]} : {x:[.65,.82], y:[.49,.63]});
-    const highlight = (dt || pointer) ? driftBubbles(bubbles,dt,aspect,pointer) : null;
-    drawBubbles(context,bubbles,"midnight",0,highlight);
+      ? {x:[.66,.84], y:[.40,.49]} : {x:[.61,.76], y:[.61,.71]});
+    if (dt || pointer) driftBubbles(bubbles,dt,aspect,pointer);
+    const moving = drawBubbles(context,bubbles,defaultBubbleColour,0,live);
     if (!canvas.hasAttribute("data-painted")) canvas.dataset.painted = "";
     main.style.setProperty("--scene-position", (100 * bubbles[0].x).toFixed(1) + "%");
-    return highlight;
+    return moving;
   }
 
   function sync() {

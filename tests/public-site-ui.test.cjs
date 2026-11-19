@@ -22,6 +22,12 @@ test('installed shell leaves online public page navigations to the site', () => 
       } });
     }
   }
+  let intercepted = false;
+  events.get('fetch')({
+    request: { url: origin + '/roof/bubble-surface.js', method:'GET', referrer:origin + '/roof/bubbles.js?about' },
+    respondWith() { intercepted = true; },
+  });
+  assert.equal(intercepted, false, 'public optics follow the renderer even while an older shell is installed');
 });
 
 test('public pages and contact form work without signing in, from phone to desktop', async () => {

@@ -1,14 +1,25 @@
+import {outlineSegments, stepSurface, settleSurface, surfaceIsMoving, paintSurface} from "./bubble-surface.js";
+
 // Positions are fractions of the viewport. Sizes and speeds are fractions of its short edge.
 const sizes = [.30, .165, .082, .037];
 const tau = Math.PI * 2;
 const range = (low, high) => low + Math.random() * (high - low);
 const clamp = value => Math.max(0, Math.min(1, value));
 
+export const defaultBubbleColour = "opal";
+// Rim swatches travel clockwise from the right-hand edge. Keep existing
+// colourways available to people who chose them explicitly in Appearance.
 export const minerals = {
-  midnight: {name:"Midnight", base:"#100e1a", atmosphere:"#352340", deep:"#302043", violet:"#65529e", bloom:"#dc94b8", pearl:"#f1d9eb", flash:"#8ed6f0"},
-  jade: {name:"Jade", base:"#091311", atmosphere:"#12362e", deep:"#123a37", violet:"#267f71", bloom:"#92bf78", pearl:"#d6f1cf", flash:"#88d9c7"},
-  cobalt: {name:"Cobalt", base:"#0a0f1d", atmosphere:"#1c304a", deep:"#18284d", violet:"#4459a0", bloom:"#6caee4", pearl:"#d1e5ff", flash:"#9eacfa"},
-  lagoon: {name:"Lagoon", base:"#08131c", atmosphere:"#163746", deep:"#163348", violet:"#326c9a", bloom:"#52bdaa", pearl:"#cef4e2", flash:"#a4c8ff"}
+  opal: {name:"Opal", base:"#100e1a", atmosphere:"#382331", body:"#f1d5c8", shade:"#c3673a", pearl:"#fffcf7",
+    rim:["#ffdb49","#e8cd86","#bdd2bd","#469bb9","#e8c1d5","#f57a9e","#e85152","#f19c35"]},
+  midnight: {name:"Midnight", base:"#100e1a", atmosphere:"#352340", body:"#89749f", shade:"#392843", pearl:"#f1d9eb",
+    rim:["#a581b4","#708fbc","#8ed6f0","#656bb6","#8c5f9d","#dc94b8","#a56da7","#6c5793"]},
+  jade: {name:"Jade", base:"#091311", atmosphere:"#12362e", body:"#57907a", shade:"#1a4941", pearl:"#d6f1cf",
+    rim:["#a9be76","#98c296","#88d9c7","#3e9796","#287e73","#6cb28c","#a4bc79","#77b193"]},
+  cobalt: {name:"Cobalt", base:"#0a0f1d", atmosphere:"#1c304a", body:"#647ca9", shade:"#263353", pearl:"#e1edff",
+    rim:["#6caee4","#69c4e5","#9eacfa","#6674bd","#514e9a","#8b7dc9","#6d9ee2","#7eabdd"]},
+  lagoon: {name:"Lagoon", base:"#08131c", atmosphere:"#163746", body:"#659591", shade:"#214652", pearl:"#d9f6eb",
+    rim:["#79cfab","#93d6bd","#a4c8ff","#5976ad","#326c9a","#5bb4b9","#52bdaa","#99d8bd"]}
 };
 export const bubbleColours = Object.entries(minerals).map(([value, {name}]) => ({value, name}));
 
@@ -50,9 +61,9 @@ export function validBubbleScene(scene) {
 const pose = b => .32 * b.angle + .13 * Math.sin(b.phase);
 function profile(b, angle) {
   const a = angle - pose(b);
-  return 1 + .105*Math.sin(b.phase)*Math.cos(2*a-.55)
-    + .066*Math.cos(.65*b.phase+b.angle)*Math.sin(3*a+b.angle)
-    + .04*Math.sin(1.1*b.phase-b.angle)*Math.cos(4*a+.3)
+  return 1 + .072*Math.sin(b.phase)*Math.cos(2*a-.55)
+    + .048*Math.cos(.65*b.phase+b.angle)*Math.sin(3*a+b.angle)
+    + .031*Math.sin(1.1*b.phase-b.angle)*Math.cos(4*a+.3)
     - (b.strainX || 0)*Math.cos(2*angle) - (b.strainY || 0)*Math.sin(2*angle);
 }
 
@@ -132,6 +143,7 @@ export function driftBubbles(bubbles, dt, aspect, pointer = null) {
     const ease = -Math.expm1(-dt / (2.1 + sizes[i]*8));
     b.vx += (b.dx-b.vx)*ease;
     b.vy += (b.dy-b.vy)*ease;
+    stepSurface(b,dt,hit?.index === i ? hit : null,pointer);
     if (hit?.index === i) {
       const angle = hit.distance < .035 ? Math.atan2(b.vy,b.vx) : Math.atan2(-hit.y,-hit.x);
       const nx = Math.cos(angle), ny = Math.sin(angle);
@@ -161,13 +173,13 @@ export function driftBubbles(bubbles, dt, aspect, pointer = null) {
   return hit;
 }
 
-const segments = 40;
+const segments = outlineSegments;
 // A periodic cubic spline keeps the silhouette and its tangent continuous at every scale.
-function outline(b) {
+function outline(b, rim) {
   const points = [];
   for (let i = 0; i < segments; i++) {
     const a = tau*i/segments;
-    const r = profile(b,a);
+    const r = rim[i] = profile(b,a);
     points.push([r*Math.cos(a), r*Math.sin(a)]);
   }
   const path = new Path2D();
@@ -194,14 +206,10 @@ function wash(ctx, x, y, rx, ry, angle, stops) {
   ctx.restore();
 }
 
-// Cache soft reflections once per colourway. Only the vector edge, pose and crop
-// change on a frame, even at 4K. Smaller bubbles see a different face of the light.
-const materials = new WeakMap();
 const glows = new WeakMap();
-// Bake a repeatable, low-contrast grain into the material so the surface carries
-// its own texture through a turn. The backdrop and UI receive no noise.
+// The grain is fixed to each surface and stays fine when the interior is magnified.
 let grainTile;
-function applyGrain(ctx, index) {
+function applyGrain(ctx,index,radius) {
   if (!grainTile) {
     grainTile = document.createElement("canvas");
     grainTile.width = grainTile.height = 192;
@@ -213,72 +221,29 @@ function applyGrain(ctx, index) {
       const difference = (seed >>> 24) - ((seed >>> 12) & 255);
       const light = difference > 0 ? 255 : 0;
       image.data[i] = image.data[i+1] = image.data[i+2] = light;
-      image.data[i+3] = Math.round(Math.abs(difference)*.082);
+      image.data[i+3] = Math.round(Math.abs(difference)*.043);
     }
     tile.putImageData(image,0,0);
   }
   ctx.save();
-  ctx.setTransform(1,0,0,1,index*31,index*17);
+  const density = Math.max(1,devicePixelRatio*.61);
+  ctx.scale(density/radius,density/radius);
+  ctx.translate(index*31,index*17);
   ctx.fillStyle = ctx.createPattern(grainTile,"repeat");
-  ctx.fillRect(-index*31,-index*17,ctx.canvas.width,ctx.canvas.height);
+  const reach = 1.33*radius/density;
+  ctx.fillRect(-reach-index*31,-reach-index*17,reach*2,reach*2);
   ctx.restore();
 }
 
-function material(ink, index) {
-  if (!materials.has(ink)) materials.set(ink, []);
-  const textures = materials.get(ink);
-  if (textures[index]) return textures[index];
-  const surface = document.createElement("canvas");
-  surface.width = surface.height = [640,384,224,128][index];
-  const ctx = surface.getContext("2d", {alpha:false});
-  const unit = surface.width / 3;
-  ctx.setTransform(unit, 0, 0, unit, surface.width/2, surface.height/2);
-  const flip = index % 2 ? -1 : 1;
-  ctx.scale(flip,1);
-  const body = ctx.createLinearGradient(-.65,-1, .65,1);
-  for (const [position, colour] of [[0,ink.pearl],[.18,ink.bloom],[.43,ink.violet],[.78,ink.deep],[1,ink.violet]]) {
-    body.addColorStop(position,colour);
-  }
-  ctx.fillStyle = body;
-  ctx.fillRect(-1.5,-1.5,3,3);
-  wash(ctx,-.33,-.4,1.18,1.02,-.5,[[0,ink.pearl+"ed"],[.42,ink.bloom+"bc"],[1,ink.bloom+"00"]]);
-  wash(ctx,.7,-.03,1.12,.61,-1.06,[[0,ink.flash+"ce"],[.5,ink.violet+"85"],[1,ink.violet+"00"]]);
-  wash(ctx,-.64,.55,.9,.63,-.6,[[0,ink.violet+"ea"],[.58,ink.deep+"8a"],[1,ink.deep+"00"]]);
-  wash(ctx,-.12,-.93,1.06,.43,-.27,[[0,ink.pearl],[.5,ink.pearl+"8a"],[1,ink.pearl+"00"]]);
-  // Light refracted back into the lower shell, with a faint chromatic fringe.
-  wash(ctx,-.12,-.23,1.15,1.24,-.49,[[0,ink.flash+"00"],[.66,ink.flash+"00"],
-    [.78,ink.flash+"36"],[.862,ink.pearl+"78"],[.90,ink.bloom+"69"],[.965,ink.flash+"1f"],[1,ink.flash+"00"]]);
-  applyGrain(ctx,index);
-  textures[index] = surface;
-  return surface;
-}
-
-function paintBubble(ctx, bubble, x, y, radius, ink, index, highlight) {
+const rim = new Float32Array(segments);
+function paintBubble(ctx, bubble, x, y, radius, ink, index, live) {
   ctx.save();
   ctx.translate(x,y);
   ctx.scale(radius,radius);
-  const shell = outline(bubble);
+  const shell = outline(bubble,rim);
   ctx.clip(shell);
-  ctx.save();
-  ctx.rotate(pose(bubble) + .29 * Math.sin(bubble.phase + index) + .25 * index);
-  const offset = .085 * Math.sin(bubble.phase);
-  ctx.drawImage(material(ink,index), -1.5+offset, -1.5, 3, 3);
-  ctx.restore();
-  if (highlight) {
-    ctx.save();
-    ctx.globalAlpha = highlight.amount;
-    wash(ctx,highlight.x*.60,highlight.y*.60,.63,.48,-.45,
-      [[0,ink.pearl+"53"],[.48,ink.flash+"1a"],[1,ink.flash+"00"]]);
-    ctx.restore();
-  }
-  const edge = ctx.createLinearGradient(-.86,-.72,.78,.91);
-  edge.addColorStop(0,ink.pearl+"cf");
-  edge.addColorStop(.32,ink.bloom+"1c");
-  edge.addColorStop(.62,ink.flash+"0a");
-  edge.addColorStop(1,ink.flash+"bf");
-  ctx.strokeStyle = edge;
-  ctx.lineWidth = .012;
-  ctx.stroke(shell);
+  paintSurface(ctx,bubble,radius,rim,ink,index,live);
+  applyGrain(ctx,index,radius);
   ctx.restore();
 }
 
@@ -291,7 +256,7 @@ export function sizeBubbleCanvas(canvas, width, height) {
   return true;
 }
 
-export function drawBubbles(ctx, bubbles, colour, shade = 0, highlight = null) {
+export function drawBubbles(ctx, bubbles, colour, shade = 0, live = true) {
   const {width, height} = ctx.canvas;
   const ink = minerals[colour], short = Math.min(width,height);
   ctx.fillStyle = ink.base;
@@ -304,10 +269,13 @@ export function drawBubbles(ctx, bubbles, colour, shade = 0, highlight = null) {
     glows.set(ink,glow);
   }
   ctx.drawImage(glows.get(ink), main.x*width-short*.81, main.y*height-short*.70, short*1.62, short*1.40);
+  let moving = false;
   // Paint back to front, matching the order used by hit tests.
   for (let i = bubbles.length-1; i >= 0; i--) {
     const b = bubbles[i];
-    paintBubble(ctx,b,b.x*width,b.y*height,short*sizes[i],ink,i,highlight?.index === i ? highlight : null);
+    if (!live) settleSurface(b);
+    if (surfaceIsMoving(b)) moving = true;
+    paintBubble(ctx,b,b.x*width,b.y*height,short*sizes[i],ink,i,live);
   }
   if (shade) {
     ctx.globalAlpha = shade;
@@ -315,4 +283,5 @@ export function drawBubbles(ctx, bubbles, colour, shade = 0, highlight = null) {
     ctx.fillRect(0, 0, width, height);
     ctx.globalAlpha = 1;
   }
+  return moving;
 }

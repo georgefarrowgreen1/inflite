@@ -1,34 +1,56 @@
-// One clock for ambient drift and input. The wallpaper never owns a gesture.
+// Observe gestures through the page. Controls, text entry and native scrolling keep ownership.
 export function bubbleMotion(canvas, paint) {
   const controls = 'a, button, input, select, textarea, label, summary, form, dialog, iframe, [contenteditable], [role=button], [role=tab], [role=slider], [role=menuitem], [role=switch], [role=link]';
   let mode = "off", timer, frame = 0, previous;
-  let press, point, tap;
+  let press, point, lift;
 
   function eligible(event) {
-    return mode === "live" && event.isPrimary &&
-      !event.composedPath().some(node => node.matches?.(controls));
+    return mode === "live" && !event.composedPath().some(node => node.matches?.(controls));
   }
 
-  function location(event, hover) {
-    const now = performance.now();
-    return {x:event.clientX, y:event.clientY, hover, time:now, since:point?.hover ? point.since : now};
+  function clearInput() { press = point = lift = null; }
+
+  function aim(x,y,down) {
+    point = {x,y,down,since:point?.down === down ? point.since : performance.now()};
   }
 
-  function lightAt(p, now) {
-    if (p.hover) return .85 * -Math.expm1(-Math.max(0,now-p.since)/120);
-    return (p.release ?? 1) * Math.exp(-Math.max(0,now-p.time)/310);
+  function begin(event,id,x,y,touch) {
+    if (!eligible(event)) { clearInput(); return; }
+    press = {id,x,y,time:performance.now(),touch,moved:false};
+    lift = null;
+    aim(x,y,true);
+    queue();
+  }
+
+  function move(event,id,x,y) {
+    if (!eligible(event)) { clearInput(); return; }
+    if (press?.id !== id) return;
+    const dx = Math.abs(x-press.x), dy = Math.abs(y-press.y);
+    if (!press.moved && press.touch && dy > 8 && dy > dx) { clearInput(); return; }
+    if (Math.hypot(dx,dy) > 9) press.moved = true;
+    aim(x,y,true);
+  }
+
+  function end(event,id,x,y) {
+    if (press?.id !== id) return;
+    if (!eligible(event)) { clearInput(); return; }
+    const tap = !press.moved && Math.hypot(x-press.x,y-press.y) < 10 && performance.now()-press.time < 550;
+    lift = {x,y,release:true,tap};
+    if (press.touch) point = null;
+    else aim(x,y,false);
+    press = null;
+    queue();
   }
 
   function sample(now) {
-    const p = tap || point;
+    const p = lift || point;
     if (!p) return null;
-    const strength = lightAt(p,now);
-    if (!p.hover && strength < .01) { point = null; return null; }
+    lift = null;
     const box = canvas.getBoundingClientRect();
     if (!box.width || !box.height) return null;
-    const input = {x:(p.x-box.left)/box.width, y:(p.y-box.top)/box.height, strength, tap:!!tap};
-    tap = null;
-    return input;
+    const strength = p.release ? 1 : .25+.75 * -Math.expm1(-Math.max(0,now-p.since)/85);
+    return {x:(p.x-box.left)/box.width, y:(p.y-box.top)/box.height,
+      down:!!p.down, release:!!p.release, tap:!!p.tap, strength};
   }
 
   function queue() {
@@ -38,46 +60,55 @@ export function bubbleMotion(canvas, paint) {
   function render(now) {
     frame = 0;
     clearTimeout(timer);
+    if (previous !== undefined && now-previous < 1000/65 && mode === "live") { queue(); return; }
     const dt = previous === undefined ? 0 : Math.min(.35,Math.max(0,(now-previous)/1000));
     previous = now;
-    const contact = paint(dt,mode === "live" ? sample(now) : null);
-    if (mode === "live") timer = setTimeout(queue,1000/(contact ? 30 : 15));
+    const live = mode === "live";
+    const responding = paint(dt,live ? sample(now) : null,live);
+    if (live && responding) queue();
+    else if (live) timer = setTimeout(queue,45);
   }
 
-  function clearInput() { press = point = tap = null; }
-
   window.addEventListener("pointerdown", event => {
-    if (!event.isPrimary) { clearInput(); return; }
-    if (event.button !== 0 || !eligible(event)) return;
-    press = {id:event.pointerId, x:event.clientX, y:event.clientY, time:performance.now()};
+    if (event.pointerType === "touch" || !event.isPrimary || event.button !== 0) return;
+    begin(event,event.pointerId,event.clientX,event.clientY,false);
   }, {passive:true});
   window.addEventListener("pointermove", event => {
-    if (press?.id === event.pointerId && Math.hypot(event.clientX-press.x,event.clientY-press.y) > 10) press = null;
-    if (event.pointerType === "touch") return;
+    if (event.pointerType === "touch" || !event.isPrimary) return;
+    if (press) { move(event,event.pointerId,event.clientX,event.clientY); return; }
     if (!eligible(event) || event.buttons) { point = null; return; }
-    const waking = !point;
-    point = location(event,true);
-    if (waking) queue();
+    const entering = !point;
+    aim(event.clientX,event.clientY,false);
+    if (entering) queue();
   }, {passive:true});
   window.addEventListener("pointerup", event => {
-    const start = press;
-    press = null;
-    if (start?.id !== event.pointerId || !eligible(event) || performance.now()-start.time > 650 ||
-        Math.hypot(event.clientX-start.x,event.clientY-start.y) > 10) return;
-    point = location(event,event.pointerType === "mouse");
-    tap = point;
-    queue();
+    if (event.pointerType !== "touch") end(event,event.pointerId,event.clientX,event.clientY);
   }, {passive:true});
   window.addEventListener("pointerout", event => {
-    if (event.relatedTarget !== null || event.pointerType === "touch") return;
-    press = null;
-    if (point?.hover) {
-      point.time = performance.now();
-      point.release = lightAt(point,point.time);
-      point.hover = false;
-    }
+    if (event.pointerType !== "touch" && !event.relatedTarget) clearInput();
   }, {passive:true});
-  window.addEventListener("pointercancel", clearInput, {passive:true});
+  window.addEventListener("pointercancel", event => {
+    if (event.pointerType !== "touch") clearInput();
+  }, {passive:true});
+
+  // Browsers may cancel Pointer Events when a touch becomes a pan. Track the
+  // original finger passively so a horizontal brush can finish and a scroll can win.
+  window.addEventListener("touchstart", event => {
+    if (event.touches.length !== 1) { clearInput(); return; }
+    const t = event.touches[0];
+    begin(event,t.identifier,t.clientX,t.clientY,true);
+  }, {passive:true});
+  window.addEventListener("touchmove", event => {
+    if (!press?.touch || event.touches.length !== 1) return;
+    const t = event.touches[0];
+    move(event,t.identifier,t.clientX,t.clientY);
+  }, {passive:true});
+  window.addEventListener("touchend", event => {
+    if (!press?.touch || event.touches.length) return;
+    const t = event.changedTouches[0];
+    end(event,t.identifier,t.clientX,t.clientY);
+  }, {passive:true});
+  window.addEventListener("touchcancel", clearInput, {passive:true});
   window.addEventListener("scroll", clearInput, {capture:true, passive:true});
   window.addEventListener("blur", clearInput);
 
@@ -91,12 +122,11 @@ export function bubbleMotion(canvas, paint) {
     if (mode === "off") return;
     render(performance.now());
     if (mode === "still") {
-      // A display-density change can occur without a CSS resize, even on a static scene.
       let density = devicePixelRatio;
       timer = setInterval(() => {
         if (density === devicePixelRatio) return;
         density = devicePixelRatio;
-        paint(0,null);
+        paint(0,null,false);
       },1000);
     }
   };

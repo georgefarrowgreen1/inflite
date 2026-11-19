@@ -1594,13 +1594,14 @@ html[data-midnight-lava]::view-transition-new(inflite-wallpaper) { animation: no
 }
 
 /* The same hues carry from the preview swatches into the shell's header shade. */
-html[data-midnight-lava], .lava-swatches [data-lava=midnight] { --lava-base: 16 14 26; --lava-cool: #65529e; --lava-warm: #ca87b3; }
+html[data-midnight-lava], .lava-swatches [data-lava=opal] { --lava-base: 16 14 26; --lava-cool: #79a9b5; --lava-warm: #f1ae95; }
+html[data-midnight-lava=midnight], .lava-swatches [data-lava=midnight] { --lava-base: 16 14 26; --lava-cool: #65529e; --lava-warm: #ca87b3; }
 html[data-midnight-lava=jade], .lava-swatches [data-lava=jade] { --lava-base: 5 13 12; --lava-cool: #12534a; --lava-warm: #52a16a; }
 html[data-midnight-lava=cobalt], .lava-swatches [data-lava=cobalt] { --lava-base: 6 10 21; --lava-cool: #233d80; --lava-warm: #3383ba; }
 html[data-midnight-lava=lagoon], .lava-swatches [data-lava=lagoon] { --lava-base: 4 12 19; --lava-cool: #223e83; --lava-warm: #2c9e76; }
 .settings-appearance .lava-colours { padding: 0 16px 12px; }
 .lava-colours legend { padding: 0; font-size: .875rem; font-weight: 600; color: var(--ifl-muted); }
-.lava-swatches { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 5px; margin-top: 6px; }
+.lava-swatches { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 5px; margin-top: 6px; }
 .lava-swatches label { position: relative; display: grid; gap: 4px; min-height: 44px; text-align: center; cursor: pointer; font-size: .8rem; }
 .lava-swatches input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; margin: 0; cursor: pointer; }
 .lava-swatch { display: block; height: 33px; border-radius: 10px; background:

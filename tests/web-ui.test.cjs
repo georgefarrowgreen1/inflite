@@ -1860,7 +1860,8 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
     await canvas.waitFor();
     const original = await canvas.evaluate(c => c.toDataURL());
     const rendered = new Set([original]);
-    for (const colour of ['Jade','Cobalt','Lagoon','Midnight']) {
+    assert.equal(await colours.getByRole('radio', {name:'Opal',exact:true}).isChecked(),true);
+    for (const colour of ['Jade','Cobalt','Lagoon','Midnight','Opal']) {
       await colours.getByRole('radio', {name:colour,exact:true}).check();
       assert.equal(await page.locator('html').getAttribute('data-midnight-lava'), colour.toLowerCase());
       const pixels = await canvas.evaluate(c => c.toDataURL());
@@ -1871,10 +1872,10 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
         expected.getContext('2d').drawImage(document.querySelector('.sky canvas'), 0, 0, expected.width, expected.height);
         return expected.toDataURL() === preview.toDataURL();
       }),true);
-      if (colour === 'Midnight') assert.equal(pixels, original, 'colour changes preserve the exact bubble scene');
+      if (colour === 'Opal') assert.equal(pixels, original, 'colour changes preserve the exact bubble scene');
       else rendered.add(pixels);
     }
-    assert.equal(rendered.size, 4, 'each colourway paints distinct pixels');
+    assert.equal(rendered.size, 5, 'each colourway paints distinct pixels');
     const slider = page.getByRole('slider',{name:'Glass intensity'});
     const adjust = value => slider.evaluate((n,v) => {
       n.value = v;
@@ -1924,6 +1925,50 @@ async function wallpaperPixels(page) {
   const shot = PNG.sync.read(await page.screenshot());
   return Array.from({length:64}, (_, i) => shot.data.readUInt32BE(((300 + i) * shot.width + 2) * 4));
 }
+
+test('an orb bends locally under a press and its light travels outward after a tap', async () => {
+  const {ctx,page} = await open({scheme:'dark'});
+  try {
+    const response = await page.evaluate(async () => {
+      const {drawBubbles} = await import('/roof/bubbles.js');
+      const {stepSurface} = await import('/roof/bubble-surface.js');
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 256;
+      const raster = canvas.getContext('2d', {willReadFrequently:true});
+      // Hold the geometry and the studio lights still to isolate the optical response.
+      const body = {x:.5,y:.5,phase:.72,angle:.15,tempo:.05};
+      const hit = {distance:0,x:0,y:0,amount:1};
+      const frame = (live=true) => {
+        drawBubbles(raster,[body],'opal',0,live);
+        return raster.getImageData(0,0,256,256).data;
+      };
+      const rest = frame();
+      function difference(inner,outer) {
+        const pixels = frame();
+        let changed = 0;
+        for (let y=50; y<206; y++) for (let x=50; x<206; x++) {
+          const r = Math.hypot(x-128,y-128);
+          if (r < inner || r > outer) continue;
+          const i = 4*(y*256+x);
+          if ([0,1,2].some(c => Math.abs(rest[i+c]-pixels[i+c]) > 12)) changed++;
+        }
+        return changed;
+      }
+      for (let i=0; i<10; i++) stepSurface(body,1/60,hit,{down:true});
+      const core = difference(0,24), distant = difference(48,68);
+      const still = frame(false).every((v,i) => rest[i] === v);
+      stepSurface(body,1/60,hit,{tap:true,release:true});
+      const early = difference(36,54);
+      for (let i=0; i<32; i++) stepSurface(body,1/60,null,null);
+      const outward = difference(36,54);
+      for (let i=0; i<300; i++) stepSurface(body,1/60,null,null);
+      return {core,distant,still,early,outward,settled:frame().every((v,i) => rest[i] === v)};
+    });
+    assert.ok(response.core > 100 && response.distant < 12, JSON.stringify(response));
+    assert.ok(response.outward > response.early + 70, JSON.stringify(response));
+    assert.ok(response.still && response.settled);
+  } finally { await ctx.close(); }
+});
 
 test('Midnight Bubbles carries the same visible scene through the app drawer, Calendar and a reload', async () => {
   const {ctx, page, errors} = await open({initialPath:'/?os=1', scheme:'dark', hubApps:{calendar:true}, viewApps:{calendar:true}});

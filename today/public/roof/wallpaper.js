@@ -1,7 +1,7 @@
 // The wallpaper belongs to the document. App routes only replace content above it.
 import {bubbleMotion} from "./bubble-motion.js";
 import {wallpaperFrame} from "./refractor.js";
-import {minerals, newBubbleScene, validBubbleScene, driftBubbles, drawBubbles, sizeBubbleCanvas} from "./bubbles.js";
+import {minerals, defaultBubbleColour, newBubbleScene, validBubbleScene, driftBubbles, drawBubbles, sizeBubbleCanvas} from "./bubbles.js";
 export {bubbleColours} from "./bubbles.js";
 
 const preferenceKey = "inflite:dark-wallpaper";
@@ -14,7 +14,7 @@ function readPreference(key) {
 }
 let preference = readPreference(preferenceKey);
 let colour = readPreference(colourKey);
-export const wallpaperColour = () => Object.hasOwn(minerals, colour) ? colour : "midnight";
+export const wallpaperColour = () => Object.hasOwn(minerals, colour) ? colour : defaultBubbleColour;
 export function setWallpaperColour(value) {
   if (!Object.hasOwn(minerals, value)) return;
   colour = value;
@@ -66,15 +66,15 @@ function checkpoint() {
 
 const setMotion = canvas && bubbleMotion(canvas, paint);
 
-function paint(dt, pointer) {
+function paint(dt, pointer, live) {
   if (!sizeBubbleCanvas(canvas, canvas.clientWidth, canvas.clientHeight)) return;
   const aspect = canvas.width / canvas.height;
   bubbles ||= readScene() || newBubbleScene(aspect);
-  const highlight = (dt || pointer) ? driftBubbles(bubbles,dt,aspect,pointer) : null;
-  drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,highlight);
+  if (dt || pointer) driftBubbles(bubbles,dt,aspect,pointer);
+  const moving = drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,live);
   wallpaperFrame(canvas);
   drawPreview();
-  return highlight;
+  return moving;
 }
 
 function sync() {
