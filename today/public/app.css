@@ -19,7 +19,6 @@
   --edge: inset 0 0 0 0 transparent;
   --lift: var(--ifl-shadow-card, 0 3px 14px rgba(0,0,0,.12));
   --blur: none;
-  --sheen: none;
   --dim: rgba(0, 0, 0, 0.5);
   --ifh-ink: var(--text); --ifh-ink-2: var(--text-2); --ifh-tint: var(--tint-text); --ifh-glass: var(--ifl-surface, #191c19); --ifh-band: var(--ifl-page, #101210);
   /* each app's own colour */
@@ -51,7 +50,6 @@
   --tint: var(--ifl-accent, #73d781); --tint-deep: var(--ifl-accent-fill, #73d781); --tint-text: var(--ifl-accent-ink, #97e84e); --danger: #d12a1f; --good: #1f9d55; --good-text: #167a42; --warn: #945600;
   --edge: inset 0 0 0 0 transparent;
   --lift: var(--ifl-shadow-card, 0 3px 14px rgba(0,0,0,.12));
-  --sheen: none;
   --dim: rgba(10, 14, 30, 0.32);
   --ifh-glass: var(--ifl-surface, #191c19); --ifh-band: var(--ifl-page, #101210);
   --cloud-glass: #c3cee0; --solid: var(--ifl-surface, #191c19);
@@ -69,7 +67,6 @@
   --tint: var(--ifl-accent, #73d781); --tint-deep: var(--ifl-accent-fill, #73d781); --tint-text: var(--ifl-accent-ink, #97e84e); --danger: #d12a1f; --good: #1f9d55; --good-text: #167a42; --warn: #945600;
   --edge: inset 0 0 0 0 transparent;
   --lift: var(--ifl-shadow-card, 0 3px 14px rgba(0,0,0,.12));
-  --sheen: none;
   --dim: rgba(10, 14, 30, 0.32);
   --ifh-glass: var(--ifl-surface, #191c19); --ifh-band: var(--ifl-page, #101210);
   --cloud-glass: #c3cee0; --solid: var(--ifl-surface, #191c19);
@@ -586,7 +583,6 @@ label.row:active { background: var(--press); }
 #youAccount .you-me {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px;
   align-items: center; min-height: 106px; padding: 20px;
-  background: linear-gradient(115deg, rgb(255 255 255 / .10), transparent 65%);
 }
 .you-me .you-ph { width: 62px; height: 62px; font-size: 22px; box-shadow: 0 0 0 1px rgb(128 128 128 / .22); }
 .you-me .tx b { font-size: clamp(1.15rem, 2.3vw, 1.45rem); font-weight: 650; line-height: 1.12; letter-spacing: -.035em; overflow-wrap: anywhere; }
@@ -1118,11 +1114,11 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 
 /* Pointer light follows one curated surface; content, primary fills and input geometry stay stable. */
 @media (hover: hover) and (pointer: fine) {
-  :root[data-glass="on"] :is(.ifm-pop, .ifm-grp, .ifm-note, .ifm-card, .ifm-row, .ifh-acts, .ifh-act, .ifl-back, .ifl-tabs, .ifs-btn, .ifa-sheet, .ifb, .ifl-sheet, .glass, .ifl-card, .ifl-list, .ifl-tile, .ws-dock, .ws-dock-button, .ws-launcher button, .pill, .ifl-btn, .ifl-chip.action, .ifl-icon-btn, .ch-composer, .ch-field, .mr-bar, .ifx-toolbar, .ifx-sidebar, .ch-attach, .ch-send, .mk-ib, .mv, .ib:not(:has(> i)), .chip-btn, .addb, .tool, .btn:is(.quiet,.ghost), .appearance-palette, .appear, .org-record, .org-date, .ifx-button, .ifx-icon-button, .ifx-action, .ifx-file-main, .ifx-location, button.gbtn, button.c-tool, button.menu-item, .icon-btn, .pill-btn, .row-btn, .acct-btn, .round:not(.me), button.row)[data-ifl-pointer]:not(:is(.primary, .is-primary, .destructive, .is-destructive, .filled, .ch-send, .on, .selected, .warn, .error, .danger, :disabled, [aria-disabled="true"], [aria-pressed="true"], [aria-selected="true"], [data-selected="true"], [aria-current])) {
+  :root[data-glass="on"] :is(.ifm-pop, .ifm-row, .ifh-acts, .ifh-act, .ifl-back, .ifl-tabs, .ifs-btn, .ifa-sheet, .ifb, .ifl-sheet, .ws-dock, .ws-dock-button, .ws-launcher button, .pill, .ifl-btn, .ifl-chip.action, .ifl-icon-btn, .ch-composer, .ch-field, .mr-bar, .ifx-toolbar, .ifx-sidebar, .ch-attach, .ch-send, .mk-ib, .mv, .ib:not(:has(> i)), .chip-btn, .addb, .tool, .btn:is(.quiet,.ghost), .appearance-palette, .appear, .org-date, .ifx-button, .ifx-icon-button, .ifx-action, .ifx-location, button.gbtn, button.c-tool, button.menu-item, .icon-btn, .pill-btn, .row-btn, .acct-btn, .round:not(.me), button.row)[data-ifl-pointer]:not(:is(.primary, .is-primary, .destructive, .is-destructive, .filled, .ch-send, .on, .selected, .warn, .error, .danger, :disabled, [aria-disabled="true"], [aria-pressed="true"], [aria-selected="true"], [data-selected="true"], [aria-current])) {
     background-image: var(--ifl-glass-shine, none);
   }
 }
-:root[data-glass="on"] :is(.ifh-act, .ifl-back, .ifs-btn, .ifm-card, .ifm-row, .ws-dock-button, .ws-launcher button, .pill, .ifl-btn, .ifl-chip.action, .ifl-icon-btn, .ch-attach, .ch-send, .mk-ib, .mv, .ib:not(:has(> i)), .chip-btn, .addb, .tool, .btn:is(.quiet,.ghost), .appearance-palette, .appear, .org-record, .org-date, .ifx-button, .ifx-icon-button, .ifx-action, .ifx-file-main, .ifx-location, button.gbtn, button.c-tool, button.menu-item, .icon-btn, .pill-btn, .row-btn, .acct-btn, .round:not(.me), button.row):focus-visible:not(:is(.primary, .is-primary, .destructive, .is-destructive, .filled, .ch-send, .on, .selected, .warn, .error, .danger, :disabled, [aria-disabled="true"], [aria-pressed="true"], [aria-selected="true"], [data-selected="true"], [aria-current])) {
+:root[data-glass="on"] :is(.ifh-act, .ifl-back, .ifs-btn, .ifm-row, .ws-dock-button, .ws-launcher button, .pill, .ifl-btn, .ifl-chip.action, .ifl-icon-btn, .ch-attach, .ch-send, .mk-ib, .mv, .ib:not(:has(> i)), .chip-btn, .addb, .tool, .btn:is(.quiet,.ghost), .appearance-palette, .appear, .org-date, .ifx-button, .ifx-icon-button, .ifx-action, .ifx-location, button.gbtn, button.c-tool, button.menu-item, .icon-btn, .pill-btn, .row-btn, .acct-btn, .round:not(.me), button.row):focus-visible:not(:is(.ifm-grp, .ifm-note, .ifm-card, .glass, .ifl-card, .ifl-list, .ifl-tile, .appearance-glass-preview-pane, .org-record, .ifx-file-main, .primary, .is-primary, .destructive, .is-destructive, .filled, .ch-send, .on, .selected, .warn, .error, .danger, :disabled, [aria-disabled="true"], [aria-pressed="true"], [aria-selected="true"], [data-selected="true"], [aria-current])) {
   background-image: var(--ifl-glass-shine, none);
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -1348,7 +1344,7 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 .ifl-nt-row:is(.dragging, .gone) .ifl-nt-back { opacity: 1; }
 .ifl-nt-row[data-dir="left"] .ifl-nt-back > span:first-child, .ifl-nt-row[data-dir="right"] .ifl-nt-back > span:last-child { visibility: hidden; }
 .ifl-nt-row:not(.far):not(.gone) .ifl-nt-back { background: color-mix(in srgb, #d70015 70%, var(--solid)); }
-.ifl-nt-card { position: relative; z-index: 1; display: flex; align-items: stretch; border-radius: inherit; background: var(--sheen), linear-gradient(var(--glass), var(--glass)), var(--solid); box-shadow: var(--edge), var(--lift);
+.ifl-nt-card { position: relative; z-index: 1; display: flex; align-items: stretch; border-radius: inherit; background: var(--solid); box-shadow: var(--edge), var(--lift);
   transform: translate3d(var(--dx, 0px), 0, 0) scale(var(--press-s, 1)); transition: transform var(--ifl-motion-release, .42s) var(--ease-spring); touch-action: pan-y pinch-zoom; -webkit-user-select: none; user-select: none; }
 /* (pressed: a little give, as a tap on a phone feels) */
 .ifl-nt-row:not(.dragging):not(.gone) .ifl-nt-card:has(.ifl-nt-main:active) { --press-s: var(--ifl-press-card, .985); transition-duration: var(--ifl-motion-press, .09s); }
@@ -1435,8 +1431,7 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 /* Liquid Glass content stays still: depth is painted, with no live filter per card. */
 :is(.glass, .tcard.wx, .apps-shortcut, .opening-card, .continuation-card, .ride-overview section) {
   background-color: var(--ifl-surface);
-  background-image: linear-gradient(155deg, color-mix(in srgb, var(--ifl-glass-highlight, #fff) 22%, transparent), transparent 48%);
-  box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-glass-shadow, var(--ifl-shadow-card));
+  box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-shadow-card);
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 .tcard { gap: 14px; }
@@ -1444,18 +1439,18 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 .tc-head .tc-app { letter-spacing: -.15px; }
 .tc-head img, .row .ic.app, .apps-list .ifl-lead img { box-shadow: 0 2px 5px color-mix(in srgb, var(--ifl-text) 10%, transparent); }
 .tc-foot { gap: 8px; }
-.seg, .tc-reply-f input { background: var(--ifl-glass-control, var(--ifl-surface-2)); box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)); }
-.seg button[aria-pressed="true"] { background: linear-gradient(175deg, #ffffff26, transparent 75%), var(--ifl-accent-gradient); box-shadow: inset 0 1px 0 #ffffff4d, var(--ifl-shadow-control); }
+.seg, .tc-reply-f input { background: var(--ifl-glass-control, var(--ifl-surface-2)); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)); }
+.seg button[aria-pressed="true"] { background: var(--ifl-accent-gradient); box-shadow: var(--ifl-shadow-control); }
 .apps-edit, .ifl-nt-set, .ifl-nt-all {
   background: var(--ifl-glass-control, var(--ifl-surface-2));
   box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line));
 }
 :is(.wx-hour.now, .ft-stat, .mk-quote, .continuation-row, .opening-well) {
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ifl-glass-highlight, #fff) 50%, transparent), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line));
+  box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line));
 }
 .ifl-nt-card {
-  background: linear-gradient(150deg, color-mix(in srgb, var(--ifl-glass-highlight, #fff) 24%, transparent), transparent 58%), var(--ifl-surface);
-  box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-glass-shadow, var(--ifl-shadow-card));
+  background: var(--ifl-surface);
+  box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-shadow-card);
 }
 .ifl-nt-more { background: var(--ifl-glass-control, var(--ifl-surface-2)); }
 @media (hover: hover) {

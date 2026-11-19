@@ -90,10 +90,10 @@
 /* Shared editing wells, with the message and image canvases left isolated. */
 .ifl-sheet[data-app=mail] :is(.mc-row,.mc-subject,.mc-text,.mc-from,.ms-input,.ms-sig) { border-color: var(--ifl-glass-line, var(--line)); border-radius: var(--ifl-radius-row, 16px); background: var(--ifl-glass-control, var(--glass-ctl)); }
 .ifl-sheet[data-app=mail] :is(.mc-chips input,.mc-subject,.mc-text,.mc-from,.ms-input,.ms-sig) { font-family: inherit; font-size: 16px; color: var(--ifl-text, var(--text)); }
-.ifl-sheet[data-app=mail] :is(.mc-chip,.mc-file) { border: 1px solid var(--ifl-glass-line, var(--line)); background-image: linear-gradient(155deg, var(--ifl-glass-highlight, transparent), transparent 60%); }
+.ifl-sheet[data-app=mail] :is(.mc-chip,.mc-file) { border: 1px solid var(--ifl-glass-line, var(--line)); }
 .ifl-sheet[data-app=mail] .mv-stage { border-radius: var(--ifl-radius-card, 26px); }
 .ifl-sheet[data-app=mail] .mc-row:focus-within { border-color: var(--ifl-accent-ink, var(--acc-ink)); }
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .ifl-sheet[data-app=mail] :is(.mc-row,.mc-subject,.mc-text,.mc-from,.ms-input,.ms-sig) { background: var(--ifl-surface-2); } .ifl-sheet[data-app=mail] :is(.mc-chip,.mc-file) { background-image: none; } }
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .ifl-sheet[data-app=mail] :is(.mc-row,.mc-subject,.mc-text,.mc-from,.ms-input,.ms-sig) { background: var(--ifl-surface-2); } }
 @media (forced-colors: active) { .ifl-sheet[data-app=mail] :is(.mc-row,.mc-subject,.mc-text,.mc-from,.ms-input,.ms-sig,.mc-chip,.mc-file) { background: Field; color: FieldText; border-color: ButtonText; box-shadow: none; } }
 
 /* The composer has a fixed envelope header and tools. Only the letter scrolls. */

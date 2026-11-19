@@ -249,7 +249,9 @@ test('Standalone Mail expands a quick reply with its cursor, recipient and draft
   const {ctx,page,errors} = await open({native:true,width:390,theme:'light'});
   try {
     await page.locator('.sheet.open').getByRole('button',{name:'Close',exact:true}).click();
-    await page.locator('.row[data-id]').first().click();
+    const row = page.locator('.row[data-id]').first();
+    assert.equal(await row.locator('..').evaluate(el => getComputedStyle(el).backgroundImage), 'none');
+    await row.click();
     const field = page.locator('.qr-field');
     await field.fill('Thursday works for me.');
     await field.evaluate(el => el.setSelectionRange(3,9,'backward'));

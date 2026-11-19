@@ -1,14 +1,14 @@
-.ifl-files { --files-sheen: linear-gradient(155deg, var(--ifl-glass-highlight, transparent), transparent 65%); display: grid; gap: 16px; min-width: 0; }
+.ifl-files { display: grid; gap: 16px; min-width: 0; }
 .ifl-files > input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--ifl-glass-line); border-radius: var(--ifl-radius-row); padding: 14px 18px; background: var(--ifl-glass-control); min-height: 44px; color: inherit; font: inherit; font-size: 16px; }
 .ifl-files-filters { display: flex; flex-wrap: wrap; gap: 10px; }
 .ifl-files-filter { display: grid; flex: 1 1 100px; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--ifl-muted); }
 .ifl-files-filter > span { padding-inline: 12px; }
 .ifl-files-filter select { min-width: 0; max-width: 100%; padding: 12px; border-radius: var(--ifl-radius-row); border: 1px solid var(--ifl-glass-line); color: var(--ifl-text); background: var(--ifl-glass-control); min-height: 44px; font: inherit; font-size: 16px; }
 .ifl-files-status:empty { display: none; }
-.ifl-files-source { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--ifl-glass-line); border-radius: var(--ifl-radius-group); background: var(--ifl-surface) var(--files-sheen); font-size: 13px; margin-bottom: 8px; }
+.ifl-files-source { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--ifl-glass-line); border-radius: var(--ifl-radius-group); background: var(--ifl-surface); font-size: 13px; margin-bottom: 8px; }
 .ifl-files-source > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .ifl-files-source .ifl-btn { flex-shrink: 0; }
-.ifl-files-item { min-width: 0; padding: 5px; border: 1px solid var(--ifl-glass-line); border-radius: var(--ifl-radius-group); background: var(--ifl-surface) var(--files-sheen); margin-bottom: 10px; overflow: hidden; }
+.ifl-files-item { min-width: 0; padding: 5px; border: 1px solid var(--ifl-glass-line); border-radius: var(--ifl-radius-group); background: var(--ifl-surface); margin-bottom: 10px; overflow: hidden; }
 .ifl-files-item .ifl-row { width: 100%; min-height: 64px; border: 0; border-radius: 20px; background: transparent; text-align: start; }
 .ifl-files-item .ifl-tx { min-width: 0; }
 .ifl-files-item .ifl-tx b { display: block; white-space: normal; overflow-wrap: anywhere; }
@@ -20,5 +20,3 @@
 .ifl-sheet[data-sheet="workspace-files"] { width: min(680px, calc(100% - 24px)); margin-inline: auto; }
 .ifl-files :is(button,input,select):focus-visible { outline: 2px solid var(--ifl-accent-ink); outline-offset: 3px; }
 @media (prefers-reduced-motion: no-preference) { .ifl-files-item .ifl-row { transition: background .16s ease, transform .16s ease; } .ifl-files-item .ifl-row:active { transform: scale(.99); } }
-
-@media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.ifl-files{--files-sheen:none}}

@@ -4,11 +4,11 @@
 @media(forced-colors:active){.s350-action-row,.s350-suggestion,.s350-card,.s350-today,.s350-device{border:1px solid CanvasText}.system350 button:focus-visible{outline:2px solid Highlight}.s350-action-row>.ifl-icon-btn svg{opacity:1!important}}
 
 /* Shared support sheets use the same materials as the app surfaces. */
-.s350-today,.s350-card,.s350-suggestion,.s350-device,.s350-action-row{border:1px solid var(--ifl-glass-line,var(--ifl-line));border-radius:var(--ifl-radius-card,26px);background-color:var(--ifl-surface);background-image:linear-gradient(155deg,var(--ifl-glass-highlight,transparent),transparent 65%)}
+.s350-today,.s350-card,.s350-suggestion,.s350-device,.s350-action-row{border:1px solid var(--ifl-glass-line,var(--ifl-line));border-radius:var(--ifl-radius-card,26px);background-color:var(--ifl-surface);}
 .s350-action-row{border-radius:var(--ifl-radius-group,22px)}
 .system350 :is(input:not([type=checkbox]),textarea,select),.s350-choice,.s350-file-chip{border:1px solid var(--ifl-glass-line,var(--ifl-line));border-radius:var(--ifl-radius-row,16px);background:var(--ifl-glass-control,var(--ifl-surface-2))}
 .s350-segments{border:1px solid var(--ifl-glass-line,var(--ifl-line));border-radius:var(--ifl-radius-pill,999px);background:var(--ifl-glass-control,var(--ifl-surface-2))}.s350-segments>.ifl-btn[aria-pressed=true]{background:var(--ifl-surface);box-shadow:var(--ifl-shadow-control)}
 .s350-action-row>.ifl-icon-btn{background:var(--ifl-surface);border-color:var(--ifl-glass-line,var(--ifl-line))}
 @media(prefers-reduced-motion:reduce){.system350 button:active{transform:none}.system350 button{transition:none}}
-@media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.s350-today,.s350-card,.s350-suggestion,.s350-device,.s350-action-row{background-image:none}.system350 :is(input:not([type=checkbox]),textarea,select),.s350-choice,.s350-file-chip,.s350-segments{background:var(--ifl-surface-2)}}
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.system350 :is(input:not([type=checkbox]),textarea,select),.s350-choice,.s350-file-chip,.s350-segments{background:var(--ifl-surface-2)}}
 @media(forced-colors:active){.s350-today,.s350-card,.s350-suggestion,.s350-device,.s350-action-row,.s350-choice,.s350-file-chip,.s350-segments{background:Canvas;color:CanvasText;border-color:CanvasText;box-shadow:none}.system350 :is(input:not([type=checkbox]),textarea,select){background:Field;color:FieldText;border-color:ButtonText}.s350-segments>.ifl-btn[aria-pressed=true]{background:Highlight;color:HighlightText}}

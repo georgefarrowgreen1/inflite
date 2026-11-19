@@ -11,7 +11,6 @@
     --ift-tint: var(--ifl-accent-ink, #97e84e); --ift-on: var(--ifl-on-accent, #10150d); --tint: var(--ifl-accent, #2ea84d); --tint-deep: var(--ifl-accent-fill, #74df36); --tint-text: var(--ifl-accent-ink, #97e84e); --danger: #ff6a5f; --good: #4fdc8e; --warn: #ffbd4a; --flag: #ffa53a;
     --edge: 0 0 0 1px var(--line);
     --lift: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
-    --sheen: none;
     --dim: rgba(0, 0, 0, .48);
     --mail-text: var(--text); --mail-link: var(--tint-text); --mail-quote: var(--text-2); --mail-rule: var(--line);
   --blur: none;
@@ -70,7 +69,6 @@
     --ift-tint: var(--ifl-accent-ink, #247a35); --ift-on: var(--ifl-on-accent, #10150d); --tint: var(--ifl-accent, #2ea84d); --tint-deep: var(--ifl-accent-fill, #74df36); --tint-text: var(--ifl-accent-ink, #247a35); --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
     --edge: 0 0 0 1px var(--line);
     --lift: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
-    --sheen: none;
     --dim: rgba(15, 20, 12, .25);
     --mail-text: var(--text); --mail-link: var(--tint-text); --mail-quote: var(--text-2); --mail-rule: var(--line);
   }
@@ -86,7 +84,6 @@
     --ift-tint: var(--ifl-accent-ink, #247a35); --ift-on: var(--ifl-on-accent, #10150d); --tint: var(--ifl-accent, #2ea84d); --tint-deep: var(--ifl-accent-fill, #74df36); --tint-text: var(--ifl-accent-ink, #247a35); --danger: #d12a1f; --good: #1f9d55; --warn: #945600; --flag: #f08a00;
     --edge: 0 0 0 1px var(--line);
     --lift: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
-    --sheen: none;
     --dim: rgba(15, 20, 12, .25);
     --mail-text: var(--text); --mail-link: var(--tint-text); --mail-quote: var(--text-2); --mail-rule: var(--line);
 }
@@ -183,30 +180,6 @@ svg.i {
   backdrop-filter: none;
   box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
   border-radius: 999px;
-}
-
-/* Specular highlight that follows the finger. */
-.glass::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(
-    120px circle at var(--px, 50%) var(--py, 50%),
-    rgba(255, 255, 255, 0.55),
-    rgba(255, 255, 255, 0) 70%
-  );
-  opacity: 0;
-  transition: opacity 0.4s var(--ease-out);
-  pointer-events: none;
-  mix-blend-mode: soft-light;
-  z-index: 1;
-  display: none;
-}
-
-.glass.lit::after {
-  opacity: 1;
-  transition-duration: 0.1s;
 }
 
 .glass.tinted {
@@ -1176,7 +1149,7 @@ html.embed .pane.list .subtitle {
   left: 4px;
   width: calc(50% - 4px);
   border-radius: 999px;
-  background: var(--sheen), var(--glass-strong);
+  background: var(--glass-strong);
   box-shadow: var(--edge), 0 2px 10px rgba(0, 0, 0, 0.18);
   transition: transform var(--ifl-motion-release, .42s) var(--spring);
 }
@@ -6464,11 +6437,11 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 
 /* Pointer light follows one curated surface; content, primary fills and input geometry stay stable. */
 @media (hover: hover) and (pointer: fine) {
-  :root[data-glass="on"] :is(.ifm-pop, .ifm-grp, .ifm-note, .ifm-card, .ifm-row, .ifh-acts, .ifh-act, .ifl-back, .ifl-tabs, .ifs-btn, .ifa-sheet, .ifb, .ifl-sheet, .glass, .ifl-card, .ifl-list, .ifl-tile, .ws-dock, .ws-dock-button, .ws-launcher button, .pill, .ifl-btn, .ifl-chip.action, .ifl-icon-btn, .ch-composer, .ch-field, .mr-bar, .ifx-toolbar, .ifx-sidebar, .ch-attach, .ch-send, .mk-ib, .mv, .ib:not(:has(> i)), .chip-btn, .addb, .tool, .btn:is(.quiet,.ghost), .appearance-palette, .appear, .org-record, .org-date, .ifx-button, .ifx-icon-button, .ifx-action, .ifx-file-main, .ifx-location, button.gbtn, button.c-tool, button.menu-item, .icon-btn, .pill-btn, .row-btn, .acct-btn, .round:not(.me), button.row)[data-ifl-pointer]:not(:is(.primary, .is-primary, .destructive, .is-destructive, .filled, .ch-send, .on, .selected, .warn, .error, .danger, :disabled, [aria-disabled="true"], [aria-pressed="true"], [aria-selected="true"], [data-selected="true"], [aria-current])) {
+  :root[data-glass="on"] :is(.ifm-pop, .ifm-row, .ifh-acts, .ifh-act, .ifl-back, .ifl-tabs, .ifs-btn, .ifa-sheet, .ifb, .ifl-sheet, .ws-dock, .ws-dock-button, .ws-launcher button, .pill, .ifl-btn, .ifl-chip.action, .ifl-icon-btn, .ch-composer, .ch-field, .mr-bar, .ifx-toolbar, .ifx-sidebar, .ch-attach, .ch-send, .mk-ib, .mv, .ib:not(:has(> i)), .chip-btn, .addb, .tool, .btn:is(.quiet,.ghost), .appearance-palette, .appear, .org-date, .ifx-button, .ifx-icon-button, .ifx-action, .ifx-location, button.gbtn, button.c-tool, button.menu-item, .icon-btn, .pill-btn, .row-btn, .acct-btn, .round:not(.me), button.row)[data-ifl-pointer]:not(:is(.primary, .is-primary, .destructive, .is-destructive, .filled, .ch-send, .on, .selected, .warn, .error, .danger, :disabled, [aria-disabled="true"], [aria-pressed="true"], [aria-selected="true"], [data-selected="true"], [aria-current])) {
     background-image: var(--ifl-glass-shine, none);
   }
 }
-:root[data-glass="on"] :is(.ifh-act, .ifl-back, .ifs-btn, .ifm-card, .ifm-row, .ws-dock-button, .ws-launcher button, .pill, .ifl-btn, .ifl-chip.action, .ifl-icon-btn, .ch-attach, .ch-send, .mk-ib, .mv, .ib:not(:has(> i)), .chip-btn, .addb, .tool, .btn:is(.quiet,.ghost), .appearance-palette, .appear, .org-record, .org-date, .ifx-button, .ifx-icon-button, .ifx-action, .ifx-file-main, .ifx-location, button.gbtn, button.c-tool, button.menu-item, .icon-btn, .pill-btn, .row-btn, .acct-btn, .round:not(.me), button.row):focus-visible:not(:is(.primary, .is-primary, .destructive, .is-destructive, .filled, .ch-send, .on, .selected, .warn, .error, .danger, :disabled, [aria-disabled="true"], [aria-pressed="true"], [aria-selected="true"], [data-selected="true"], [aria-current])) {
+:root[data-glass="on"] :is(.ifh-act, .ifl-back, .ifs-btn, .ifm-row, .ws-dock-button, .ws-launcher button, .pill, .ifl-btn, .ifl-chip.action, .ifl-icon-btn, .ch-attach, .ch-send, .mk-ib, .mv, .ib:not(:has(> i)), .chip-btn, .addb, .tool, .btn:is(.quiet,.ghost), .appearance-palette, .appear, .org-date, .ifx-button, .ifx-icon-button, .ifx-action, .ifx-location, button.gbtn, button.c-tool, button.menu-item, .icon-btn, .pill-btn, .row-btn, .acct-btn, .round:not(.me), button.row):focus-visible:not(:is(.ifm-grp, .ifm-note, .ifm-card, .glass, .ifl-card, .ifl-list, .ifl-tile, .appearance-glass-preview-pane, .org-record, .ifx-file-main, .primary, .is-primary, .destructive, .is-destructive, .filled, .ch-send, .on, .selected, .warn, .error, .danger, :disabled, [aria-disabled="true"], [aria-pressed="true"], [aria-selected="true"], [data-selected="true"], [aria-current])) {
   background-image: var(--ifl-glass-shine, none);
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -6579,7 +6552,7 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 /* Mail-specific optical surfaces; shared chrome is generated above. */
 .navbar::before { background: var(--ifl-glass, var(--glass)); -webkit-backdrop-filter: var(--ifl-glass-blur, none); backdrop-filter: var(--ifl-glass-blur, none); border-bottom: 1px solid var(--ifl-glass-line, var(--sep)); }
 .sheet { background: var(--ifl-glass-window, var(--sheet)); -webkit-backdrop-filter: var(--ifl-glass-window-blur, none); backdrop-filter: var(--ifl-glass-window-blur, none); box-shadow: var(--ifl-glass-shadow, var(--lift)); border: 1px solid var(--ifl-glass-line, var(--sep)); }
-.rows,.mcard,.thread-card,.set-group { background-color: var(--ifl-surface, var(--glass)); background-image: linear-gradient(155deg, color-mix(in srgb, var(--ifl-glass-highlight, transparent) 18%, transparent), transparent 60%); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--sep)), var(--ifl-shadow-card); }
+.rows,.mcard,.thread-card,.set-group { background-color: var(--ifl-surface, var(--glass)); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--sep)), var(--ifl-shadow-card); }
 .mcard { border-radius: var(--ifl-radius-card, 26px); }
 .thread-card { border-radius: var(--ifl-radius-group, 22px); }
 .sheet-body .field,.sheet .c-subject,.sheet .compose-text,.qr,.search,.set-seg { background: var(--ifl-glass-control, var(--bg-fill)); border-color: var(--ifl-glass-line, var(--sep)); }
@@ -6597,7 +6570,6 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 .menu-item.destructive { background:color-mix(in srgb,var(--red) 7%,var(--ifl-surface)); border-radius:var(--ifl-radius-row); }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   .navbar::before,.sheet,.menu,.toast { background: var(--ifl-surface, var(--glass)); -webkit-backdrop-filter: none; backdrop-filter: none; }
-  .rows,.mcard,.thread-card,.set-group { background-image: none; }
   .sheet-body .field,.sheet .c-subject,.sheet .compose-text,.qr,.search,.set-seg { background: var(--ifl-surface-2, var(--bg-fill)); }
 }
 @media (forced-colors: active) {

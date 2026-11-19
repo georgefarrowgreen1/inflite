@@ -79,14 +79,13 @@
 
 /* Static glass edges keep long inboxes inexpensive to scroll. */
 .m-mail .ml-wrap { box-shadow: var(--ifl-shadow-control); }
-.m-mail .ml-row { background-color: var(--ifl-surface, var(--solid)); background-image: linear-gradient(155deg, var(--ifl-glass-highlight, transparent), transparent 58%); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--line)); }
+.m-mail .ml-row { background-color: var(--ifl-surface, var(--solid)); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--line)); }
 .m-mail .ml-row.selected { background-color: color-mix(in srgb, var(--ifl-accent, var(--acc)) 16%, var(--ifl-surface, var(--solid))); }
 .m-mail .ml-row:active { background-color: var(--press); }
-.m-mail .ml-sending, .m-mail .ml-resume-draft { border: 1px solid var(--ifl-glass-line, var(--line)); border-radius: var(--ifl-radius-row, 16px); background-image: linear-gradient(155deg, var(--ifl-glass-highlight, transparent), transparent 58%); }
+.m-mail .ml-sending, .m-mail .ml-resume-draft { border: 1px solid var(--ifl-glass-line, var(--line)); border-radius: var(--ifl-radius-row, 16px); }
 .m-mail .ml-from, .m-mail .ml-subj { line-height: 1.35; }
 .m-mail .ml-snip { line-height: 1.45; }
 .m-mail .ml-day { letter-spacing: .01em; }
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .m-mail .ml-row, .m-mail .ml-sending, .m-mail .ml-resume-draft { background-image: none; } }
 @media (forced-colors: active) { .m-mail .ml-row, .m-mail .ml-sending, .m-mail .ml-resume-draft { background: Canvas; color: CanvasText; box-shadow: none; border: 1px solid CanvasText; } .m-mail .ml-row.selected { outline: 2px solid Highlight; outline-offset: -2px; } }
 
 /* Continuous mailbox rows. The swipe underlay appears only during a gesture. */

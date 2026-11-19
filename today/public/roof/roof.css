@@ -1,7 +1,7 @@
 @import url("./controls.css");
 
 /* InFlite's framework styles (One roof, spec §3.13, D18). Linked after app.css by index.html, so app.css's tokens
-   (--text*, --glass*, --solid, --line, --press, --edge, --lift, --sheen, --blur, --r-card/-group/-hero, --danger,
+   (--text*, --glass*, --solid, --line, --press, --edge, --lift, --blur, --r-card/-group/-hero, --danger,
    --good, --good-text, --warn, --ease-out/-glide/-spring, --c-<app>, and the shared surfaces every app uses rather than
    its own light and dark pairs: --inset (a card set into a card), --raised (the chosen one of a few), --badge (a count))
    stay as they are; this adds the framework's.
@@ -493,16 +493,15 @@ html[data-motion-paused] :is(.aura, .pg-track .cb svg, .tcard.loading .sk i), ht
 .ifh-conversation .ifh-act { min-width: 44px; min-height: 44px; }
 @media (max-width: 359px) { .ifh-conversation .ifh-t { padding-left: 40px; } .ifh-person, .ifh-person .ifl-avatar { width: 32px; height: 32px; } .ifh-conversation .ifh-name { font-size: 20px !important; } }
 
-/* Shared Liquid Glass surfaces: content uses a painted rim; only floating layers blur. */
+/* Content surfaces use a uniform fill, a fine border and a soft shadow. */
 :is(.ifl-card, .ifl-card.hero, .ifl-list, .ifl-tile, .ifl-error) {
   background-color: var(--ifl-surface);
-  background-image: linear-gradient(150deg, color-mix(in srgb, var(--ifl-glass-highlight, #fff) 22%, transparent), transparent 52%);
-  box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-glass-shadow, var(--ifl-shadow-card));
+  box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-shadow-card);
 }
 .ifl-sheet .ifl-list { background: var(--ifl-glass-inset, var(--ifl-surface-2)); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)); }
 :is(.ifl-segs, .ifl-seg-sm, .ifl-stat, .ifl-field, .ifl-chip.action, .ifl-icon-btn, .ifs-btn) {
   background: var(--ifl-glass-control, var(--ifl-surface-2));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ifl-glass-highlight, #fff) 65%, transparent), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line));
+  box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line));
 }
 .ifl-field:focus-within {
   background: var(--ifl-surface-2);

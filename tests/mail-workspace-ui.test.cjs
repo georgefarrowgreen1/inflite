@@ -284,8 +284,11 @@ test('Mail opens the newest message and hands a selected quick reply to a saved 
   try {
     const newest = t.mail.msgs.find(m => m.from.name === 'Leo Martins' && m.folder === 'inbox');
     const older = t.mail.msgs.find(m => m.threadId === newest.threadId && m.id !== newest.id);
-    await t.page.locator(`.ml-row[data-thread="${newest.threadId}"]`).click();
+    const row = t.page.locator(`.ml-row[data-thread="${newest.threadId}"]`);
+    assert.equal(await row.evaluate(el => getComputedStyle(el).backgroundImage), 'none');
+    await row.click();
     const latest = t.page.locator('.mr-msgs .mr-card');
+    assert.equal(await latest.evaluate(el => getComputedStyle(el).backgroundImage), 'none');
     assert.equal(await latest.getAttribute('data-mid'), newest.id);
     await latest.locator('.mr-mhead').click();
     assert.ok((await latest.locator('.mr-addresses').innerText()).includes(newest.from.email));

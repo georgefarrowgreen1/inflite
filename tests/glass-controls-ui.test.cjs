@@ -45,7 +45,11 @@ async function frames(page){await page.evaluate(()=>new Promise(resolve=>request
 async function cached(page){return page.evaluate(key=>JSON.parse(localStorage.getItem(key)),KEY)}
 async function glass(page){return page.evaluate(()=>InFliteAppearance.snapshot())}
 async function noPointer(page){await frames(page);assert.equal(await page.locator('[data-ifl-pointer]').count(),0,'no surface retains pointer state');assert.equal(await page.locator('[style*="--ifl-pointer-"]').count(),0,'local pointer coordinates are removed')}
-async function hoverCard(page,x=40,y=30){const box=await page.locator('#glass-card').boundingBox();await page.mouse.move(box.x+x,box.y+y);await frames(page)}
+async function hoverControl(page,x=.25,y=.45){
+ const box=await page.locator('#glass-action').boundingBox();
+ await page.mouse.move(box.x+box.width*x,box.y+box.height*y);
+ await frames(page);
+}
 async function finish(t){assert.deepEqual(t.errors,[]);assert.deepEqual(t.writes,[],'Appearance runtime never writes account preferences');await t.ctx.close()}
 
 test('cached glass preferences and legacy defaults apply before the first page script',async()=>{
@@ -73,11 +77,19 @@ test('omitted glass fields preserve the current owner while a different owner st
  }finally{await t.ctx.close()}
 });
 
-test('pointer light follows one neutral surface, bounds frame work and leaves clicks and draft input native',async()=>{
+test('cards stay matte and pointer light on controls leaves clicks and draft input native',async()=>{
  const t=await open();try{
-  await hoverCard(t.page);const first=await t.page.locator('#glass-card').evaluate(n=>({x:n.style.getPropertyValue('--ifl-pointer-x'),y:n.style.getPropertyValue('--ifl-pointer-y'),image:getComputedStyle(n).backgroundImage}));assert.equal(await t.page.locator('[data-ifl-pointer]').count(),1);assert.ok(Number.isFinite(parseFloat(first.x))&&Number.isFinite(parseFloat(first.y)));
-  await hoverCard(t.page,150,60);const next=await t.page.locator('#glass-card').evaluate(n=>({x:n.style.getPropertyValue('--ifl-pointer-x'),y:n.style.getPropertyValue('--ifl-pointer-y'),image:getComputedStyle(n).backgroundImage}));assert.notDeepEqual(next,first,'light position follows the pointer');assert.notEqual(first.image,'none','pointer light is rendered');assert.notEqual(next.image,first.image,'the rendered gradient resolves the local pointer coordinates');
-  const burst=await t.page.evaluate(async()=>{const n=T.card,r=n.getBoundingClientRect(),original=CSSStyleDeclaration.prototype.setProperty;let writes=0;CSSStyleDeclaration.prototype.setProperty=function(k,...args){if(k==='--ifl-pointer-x'||k==='--ifl-pointer-y')writes++;return original.call(this,k,...args)};try{for(let i=0;i<120;i++)n.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerType:'mouse',clientX:r.x+30+i,clientY:r.y+30}));const immediate=writes;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return{immediate,writes,active:document.querySelectorAll('[data-ifl-pointer]').length}}finally{CSSStyleDeclaration.prototype.setProperty=original}});
+  const card=t.page.locator('#glass-card');
+  for(const appearance of ['light','dark']){
+   await t.page.evaluate(appearance=>InFliteAppearance.accept({appearance,palette:'coast',glass:true,glassStrength:100}),appearance);
+   const box=await card.boundingBox();
+   await t.page.mouse.move(box.x+30,box.y+20);
+   await noPointer(t.page);
+   assert.equal(await card.evaluate(n=>getComputedStyle(n).backgroundImage),'none',appearance+' card has no sheen');
+  }
+  await hoverControl(t.page);const first=await t.page.locator('#glass-action').evaluate(n=>({x:n.style.getPropertyValue('--ifl-pointer-x'),y:n.style.getPropertyValue('--ifl-pointer-y'),image:getComputedStyle(n).backgroundImage}));assert.equal(await t.page.locator('[data-ifl-pointer]').count(),1);assert.ok(Number.isFinite(parseFloat(first.x))&&Number.isFinite(parseFloat(first.y)));
+  await hoverControl(t.page,.75,.65);const next=await t.page.locator('#glass-action').evaluate(n=>({x:n.style.getPropertyValue('--ifl-pointer-x'),y:n.style.getPropertyValue('--ifl-pointer-y'),image:getComputedStyle(n).backgroundImage}));assert.notDeepEqual(next,first,'light position follows the pointer');assert.notEqual(first.image,'none','pointer light is rendered');assert.notEqual(next.image,first.image,'the rendered gradient resolves the local pointer coordinates');
+  const burst=await t.page.evaluate(async()=>{const n=T.action,r=n.getBoundingClientRect(),original=CSSStyleDeclaration.prototype.setProperty;let writes=0;CSSStyleDeclaration.prototype.setProperty=function(k,...args){if(k==='--ifl-pointer-x'||k==='--ifl-pointer-y')writes++;return original.call(this,k,...args)};try{for(let i=0;i<120;i++)n.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerType:'mouse',clientX:r.x+10+i,clientY:r.y+r.height/2}));const immediate=writes;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return{immediate,writes,active:document.querySelectorAll('[data-ifl-pointer]').length}}finally{CSSStyleDeclaration.prototype.setProperty=original}});
   assert.equal(burst.immediate,0,'moves are coalesced until a frame');assert.ok(burst.writes<=4,'one bounded x/y update per frame: '+JSON.stringify(burst));assert.equal(burst.active,1);
   await t.page.getByRole('button',{name:'Neutral glass action',exact:true}).click();assert.equal(await t.page.evaluate(()=>T.clicks),1);assert.deepEqual(await t.page.evaluate(()=>T.clickDefaults),[false]);
   const input=t.page.getByRole('textbox',{name:'Private draft'});await input.fill('Pointer light cannot replace this draft');assert.equal(await input.inputValue(),'Pointer light cannot replace this draft');
@@ -88,13 +100,13 @@ test('pointer light follows one neutral surface, bounds frame work and leaves cl
 test('master off, zero intensity and live accessibility preferences clear pointer light immediately',async()=>{
  const t=await open();try{
   for(const preference of ['glass','strength','motion','prefers-reduced-transparency','prefers-contrast','forced-colors']){
-   await hoverCard(t.page);assert.equal(await t.page.locator('[data-ifl-pointer]').count(),1,preference+' starts with one active surface');
+   await hoverControl(t.page);assert.equal(await t.page.locator('[data-ifl-pointer]').count(),1,preference+' starts with one active surface');
    if(preference==='glass')await t.page.evaluate(()=>InFliteAppearance.setGlass({glass:false}));else if(preference==='strength')await t.page.evaluate(()=>InFliteAppearance.setGlass({glassStrength:0}));else if(preference==='motion')await t.page.emulateMedia({reducedMotion:'reduce'});else if(preference==='forced-colors')await t.page.emulateMedia({forcedColors:'active'});else await t.page.evaluate(name=>__glassPreference(name,true),preference);
-   await noPointer(t.page);await hoverCard(t.page,100,35);await noPointer(t.page);
+   await noPointer(t.page);await hoverControl(t.page,.7,.6);await noPointer(t.page);
    if(preference==='glass')await t.page.evaluate(()=>InFliteAppearance.setGlass({glass:true}));else if(preference==='strength')await t.page.evaluate(()=>InFliteAppearance.setGlass({glassStrength:70}));else if(preference==='motion')await t.page.emulateMedia({reducedMotion:'no-preference'});else if(preference==='forced-colors')await t.page.emulateMedia({forcedColors:'none'});else await t.page.evaluate(name=>__glassPreference(name,false),preference);
    await t.page.mouse.move(1,1);
   }
-  await hoverCard(t.page);await t.page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'))});await noPointer(t.page);await finish(t);
+  await hoverControl(t.page);await t.page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'))});await noPointer(t.page);await finish(t);
  }finally{await t.ctx.close()}
 });
 

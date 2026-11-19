@@ -109,8 +109,8 @@
 
 /* Reading layers stay solid; the floating toolbar carries the optical glass. */
 .m-mail .mr-bar { border: 1px solid var(--ifl-glass-line, var(--line)); background: var(--ifl-glass-strong, var(--ifl-surface)); box-shadow: var(--ifl-glass-shadow, var(--ifl-shadow-control)); -webkit-backdrop-filter: var(--ifl-glass-blur, none); backdrop-filter: var(--ifl-glass-blur, none); }
-.m-mail .mr-card, .m-mail .mr-spot { border-color: var(--ifl-glass-line, var(--line)); background-image: linear-gradient(155deg, var(--ifl-glass-highlight, transparent), transparent 56%); }
-.m-mail .mr-qr { border-color: var(--ifl-glass-line, var(--line)); border-radius: var(--ifl-radius-card, 26px); background-color: var(--ifl-surface); background-image: linear-gradient(155deg, var(--ifl-glass-highlight, transparent), transparent 58%); }
+.m-mail .mr-card, .m-mail .mr-spot { border-color: var(--ifl-glass-line, var(--line)); }
+.m-mail .mr-qr { border-color: var(--ifl-glass-line, var(--line)); border-radius: var(--ifl-radius-card, 26px); background-color: var(--ifl-surface); }
 .m-mail .mr-file, .m-mail .mr-later { border: 1px solid var(--ifl-glass-line, var(--line)); border-radius: var(--ifl-radius-row, 16px); background: var(--ifl-glass-control, var(--glass-ctl)); }
 .m-mail .mr-qr-text { font: inherit; font-size: 16px; line-height: 1.45; color: var(--ifl-text, var(--text)); }
 .m-mail .mr-meta, .m-mail .mr-who small { line-height: 1.45; }

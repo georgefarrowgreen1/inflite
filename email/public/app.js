@@ -285,9 +285,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.24.3";
+  const BUILD = "2.24.4";
   // (what's new in it, said once it's in)
-  const NEWS = "Drafts keep your latest edits and attachments, and sending recovers more reliably after a connection drops.";
+  const NEWS = "Mail cards use a clean, even finish in light and dark mode.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.
@@ -1814,43 +1814,6 @@ const IFL = (() => {
   };
 
   const els = {};
-
-  // ---------------------------------------------------------------------------
-  // Glass interaction: a specular highlight follows the finger.
-  // ---------------------------------------------------------------------------
-
-  // (its box measured once per touch, and moved at most once a frame)
-  // (pinching zooms, for anyone who needs it larger: Safari isn't told otherwise)
-
-  let litEl = null, litRect = null, litPos = null, litFrame = 0;
-  function light(e) {
-    litPos = [e.clientX - litRect.left, e.clientY - litRect.top];
-    litFrame ||= requestAnimationFrame(() => {
-      litFrame = 0;
-      if (!litEl || !litPos) return;
-      litEl.style.setProperty("--px", `${litPos[0]}px`);
-      litEl.style.setProperty("--py", `${litPos[1]}px`);
-    });
-  }
-  document.addEventListener(
-    "pointerdown",
-    (e) => {
-      const g = e.target.closest?.(".glass");
-      if (!g) return;
-      litEl = g;
-      litRect = g.getBoundingClientRect();
-      light(e);
-      g.classList.add("lit");
-    },
-    { passive: true }
-  );
-  document.addEventListener("pointermove", (e) => litEl && light(e), { passive: true });
-  const unlight = () => {
-    litEl?.classList.remove("lit");
-    litEl = null;
-  };
-  document.addEventListener("pointerup", unlight, { passive: true });
-  document.addEventListener("pointercancel", unlight, { passive: true });
 
   // ---------------------------------------------------------------------------
   // Menus & toasts

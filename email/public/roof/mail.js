@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.24.3";
-export const NEWS = "Drafts keep your latest edits and attachments, and sending recovers more reliably after a connection drops.";
+export const BUILD = "2.24.4";
+export const NEWS = "Mail cards use a clean, even finish in light and dark mode.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
