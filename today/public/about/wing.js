@@ -14,7 +14,7 @@ const fragment = `
   uniform vec2 size;
   uniform vec2 crop;
   uniform vec3 interaction;
-  uniform vec3 jade;
+  uniform float ambientLight;
   uniform float time;
 
   void main() {
@@ -50,9 +50,9 @@ const fragment = `
     glass.r = texture2D(artwork, bent + split).r;
     glass.b = texture2D(artwork, bent - split).b;
 
-    vec3 tint = vec3(0.30, 0.43, 0.21) + jade * vec3(0.28, 0.42, 0.32);
+    float intensity = 0.38 + ambientLight * 0.43;
     glass *= 0.97 + 0.06 * lift;
-    glass += (1.0 - glass) * tint * detail * (beam * interference * 0.52 + pressure * 0.45 + caustic * 0.62);
+    glass += (1.0 - glass) * intensity * detail * (beam * interference * 0.52 + pressure * 0.45 + caustic * 0.62);
     gl_FragColor = vec4(glass, 1.0);
   }
 `;
@@ -88,7 +88,7 @@ function createRenderer(canvas) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  const uniform = Object.fromEntries(["size", "crop", "interaction", "jade", "time"]
+  const uniform = Object.fromEntries(["size", "crop", "interaction", "ambientLight", "time"]
     .map(name => [name, gl.getUniformLocation(program, name)]));
   return {
     upload(image) {
@@ -104,7 +104,7 @@ function createRenderer(canvas) {
       gl.uniform2f(uniform.size, width, height);
       gl.uniform2f(uniform.crop, Math.min(1, aspect / imageAspect), Math.min(1, imageAspect / aspect));
       gl.uniform3f(uniform.interaction, x, y, pressure);
-      gl.uniform3fv(uniform.jade, light);
+      gl.uniform1f(uniform.ambientLight, light);
       gl.uniform1f(uniform.time, time);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
@@ -119,7 +119,7 @@ export function animateWing(art) {
   let time = Math.random() * 35;
   let x = .5, y = .5, targetX = .5, targetY = .5, pressure = 0, targetPressure = 0;
   let pressedPointer;
-  let light = [0.1, 0.34, 0.22];
+  let light = .24;
 
   function animate(now) {
     request = requestAnimationFrame(animate);
@@ -233,7 +233,7 @@ export function animateWing(art) {
   art.addEventListener("contextmenu", event => event.preventDefault());
 
   return {
-    setLighting(value) { light = value; },
+    setLightIntensity(value) { light = value; },
     setMotion(value) { enabled = value; sync(); }
   };
 }

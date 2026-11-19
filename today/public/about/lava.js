@@ -26,7 +26,7 @@ if (context) {
     const now = performance.now();
     if (previous) driftLava(pools, Math.min(.25, (now - previous) / 1000), frame.width / frame.height);
     previous = now;
-    drawLavaFrame(context, frame, pools, "jade");
+    drawLavaFrame(context, frame, pools, "midnight");
 
     // Use a light already present in the field for the wing and the section edges.
     const pool = pools[2];
@@ -34,11 +34,11 @@ if (context) {
     const y = Math.max(0, Math.min(frame.height - 1, Math.round(pool.y * frame.height)));
     const pixel = 4 * (y * frame.width + x);
     const [r, g, b] = frame.data.subarray(pixel, pixel + 3);
-    wing.setLighting([r / 255, g / 255, b / 255]);
+    wing.setLightIntensity((.25 * r + .5 * g + .25 * b) / 255);
     const scroll = reduce.matches ? 0 : Math.min(1, Math.max(0, scrollY) / (2 * innerHeight));
     const position = 20 + 48 * x / frame.width + 16 * scroll;
     main.style.setProperty("--scene-position", position.toFixed(1) + "%");
-    main.style.setProperty("--scene-light", [r + 55, g + 78, b + 49].join(" "));
+    main.style.setProperty("--scene-light", [r + 48, g + 37, b + 82].join(" "));
   }
 
   function sync() {

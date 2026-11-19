@@ -1,11 +1,12 @@
 .about-page {
   color-scheme: dark;
-  --sky: 5 13 12;
-  --light: 86 174 125;
-  --accent: #d6f4af;
-  --ink: #f6f7ef;
-  --muted: #c8d3cb;
-  --line: rgb(240 247 240 / .17);
+  --sky: 11 9 17;
+  --light: 156 95 205;
+  --accent: #e7d0ff;
+  --accent-ink: #160e21;
+  --ink: #f8f4fa;
+  --muted: #d3c8da;
+  --line: rgb(247 238 252 / .17);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", system-ui, sans-serif;
   --font-d: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", "Helvetica Neue", system-ui, sans-serif;
   isolation: isolate;
@@ -82,7 +83,7 @@
 .about-page .skip {
   z-index: 3;
   background: var(--accent);
-  color: #0b1412;
+  color: var(--accent-ink);
 }
 
 .about-page .skip:focus-visible { outline-color: white; }
@@ -126,7 +127,7 @@
   gap: .85rem;
   border-radius: 100vw;
   background: var(--accent);
-  color: #0b1412;
+  color: var(--accent-ink);
   padding: .65rem 1.05rem;
   min-height: 44px;
   font-size: .93rem;
@@ -137,7 +138,7 @@
 .launch { justify-self: end; }
 
 .launch:hover,
-.enquiry button:hover:not(:disabled) { background: #f6f7ef; }
+.enquiry button:hover:not(:disabled) { background: var(--ink); }
 
 .introduction {
   display: grid;
@@ -194,14 +195,14 @@
   place-items: center;
   width: 2.75rem;
   height: 2.75rem;
-  border: 1px solid rgb(240 247 240 / .36);
+  border: 1px solid rgb(247 238 252 / .36);
   border-radius: 50%;
   color: var(--accent);
   font: 1.25rem/1 var(--font);
 }
 
 .explore:hover { text-decoration: underline; }
-.explore:hover span { background: var(--accent); color: #0b1412; }
+.explore:hover span { background: var(--accent); color: var(--accent-ink); }
 
 .intro-art {
   position: relative;
@@ -210,6 +211,7 @@
   margin-inline: -9% -3%;
   touch-action: pan-y;
   mix-blend-mode: screen;
+  --wing-tone: hue-rotate(194deg) saturate(.92);
   --art-fade: radial-gradient(ellipse at 54% 48%, #000 30%, #000c 51%, transparent 76%);
   mask-image: var(--art-fade),
     linear-gradient(90deg, transparent, #000 11%, #000 90%, transparent),
@@ -225,7 +227,7 @@
   height: 100%;
   object-fit: cover;
   object-position: 55% 52%;
-  filter: saturate(.88);
+  filter: var(--wing-tone);
 }
 
 .wing-canvas {
@@ -236,7 +238,7 @@
   height: 100%;
   visibility: hidden;
   opacity: 0;
-  filter: saturate(.88);
+  filter: var(--wing-tone);
 }
 
 .intro-art[data-wing-live] .wing-canvas {
@@ -392,7 +394,7 @@
 .enquiry :is(input, textarea) {
   font-size: 1rem;
   min-height: 44px;
-  border-color: #7d8a83;
+  border-color: #8b7d97;
   background: rgb(var(--sky) / .91);
 }
 
@@ -417,9 +419,9 @@
 .about-footer .foot { padding-block: 1.25rem; }
 
 @keyframes about-wing-drift {
-  0%, 100% { transform: scale(1.025) rotate(-.65deg) translate(-.45%, 1%); filter: saturate(.88) brightness(.97); }
-  37% { transform: scale(1.045, 1.01) rotate(.9deg) translate(.75%, -1%); filter: saturate(.93) brightness(1.13); }
-  72% { transform: scale(1.018, 1.038) rotate(-.2deg) translate(.2%, .1%); filter: saturate(.87) brightness(1.02); }
+  0%, 100% { transform: scale(1.025) rotate(-.65deg) translate(-.45%, 1%); filter: var(--wing-tone) brightness(.97); }
+  37% { transform: scale(1.045, 1.01) rotate(.9deg) translate(.75%, -1%); filter: var(--wing-tone) brightness(1.13); }
+  72% { transform: scale(1.018, 1.038) rotate(-.2deg) translate(.2%, .1%); filter: var(--wing-tone) brightness(1.02); }
 }
 
 @keyframes about-arrival {
