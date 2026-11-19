@@ -110,10 +110,10 @@
 
 .about-nav {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 1.25rem;
-  padding-block: .9rem;
+  gap: .75rem 1rem;
+  padding-block: .75rem;
   border-bottom: 1px solid var(--line);
 }
 
@@ -125,15 +125,51 @@
 
 .about-nav .brand {
   justify-self: start;
-  font-size: 1.6rem;
+  gap: .55rem;
+  font-size: 1.5rem;
+  line-height: 1;
+  border-radius: .65rem;
+}
+
+.about-nav .brand img {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 22%;
+}
+
+.about-nav nav {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.about-nav nav a {
+  justify-content: center;
+  min-width: 44px;
+  padding-inline: .9rem;
+  border-radius: 999px;
+  font-size: .875rem;
+  font-weight: 610;
+  line-height: 1.2;
+}
+
+.about-nav nav a:focus-visible { outline-offset: -2px; }
+.about-nav nav a:active { background: color-mix(in srgb, var(--ink) 15%, transparent); }
+
+@media (hover: hover) {
+  .about-nav nav a:hover {
+    background: color-mix(in srgb, var(--ink) 9%, transparent);
+    text-decoration: none;
+  }
 }
 
 .about-page .brand-company img { filter: invert(1); }
 @media (prefers-color-scheme: light) {
   .about-page .brand-company img { filter: none; }
 }
-.about-nav nav { gap: clamp(1.25rem, 4vw, 3.5rem); }
-.about-nav nav a { font-size: .95rem; }
 
 .launch,
 .enquiry button {
@@ -150,10 +186,27 @@
   text-decoration: none;
 }
 
-.launch { justify-self: end; }
+.launch {
+  justify-self: end;
+  gap: .45rem;
+  padding: .5rem .85rem .5rem 1rem;
+  line-height: 1.15;
+  font-size: .875rem;
+  white-space: nowrap;
+}
 
-.launch:hover,
+.launch span { font-size: 1.1em; }
+.launch:active { background: color-mix(in srgb, var(--accent) 85%, var(--ink)); }
+
 .enquiry button:hover:not(:disabled) { background: var(--ink); }
+
+@media (hover: hover) {
+  .launch:hover { background: color-mix(in srgb, var(--accent) 90%, var(--ink)); }
+}
+
+@media (forced-colors: active) {
+  .about-nav nav, .launch { border: 1px solid ButtonText; }
+}
 
 .introduction {
   display: grid;
@@ -399,7 +452,7 @@
 @media (prefers-reduced-motion: no-preference) {
   .about-page [data-arrived] { animation: about-arrival .7s cubic-bezier(.2, .7, .2, 1) both; }
 
-  .about-page :is(.launch, .explore span, button) {
+  .about-page :is(.launch, .about-nav nav a, .explore span, button) {
     transition: background-color .2s ease, border-color .2s ease;
   }
 }
@@ -445,20 +498,20 @@
 
 @media (max-width: 540px) {
   .about-nav {
-    grid-template-columns: 1fr auto;
-    gap: .05rem 1rem;
-    padding: .6rem 0 .15rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: .35rem .6rem;
+    padding-block: .45rem .65rem;
   }
 
-  .about-nav .brand { font-size: 1.4rem; }
-
-  .about-nav nav {
+  .about-nav .brand {
     grid-column: 1 / -1;
-    grid-row: 2;
-    gap: 1.5rem;
+    font-size: 1.4rem;
   }
 
-  .launch { padding-inline: .85rem; }
+  .about-nav .brand img { width: 2rem; height: 2rem; }
+  .about-nav nav { justify-self: start; }
+  .about-nav nav a { padding-inline: .65rem; }
+
   .intro-description { max-width: 33ch; }
 
   .ecosystem-heading {

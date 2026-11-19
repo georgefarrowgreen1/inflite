@@ -78,7 +78,14 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.goto(site + '/about/');
     const sky = page.locator('.about-sky canvas[data-painted]');
     await sky.waitFor();
-    await assertCompanyBrand(page.getByRole('banner'));
+    const header = page.getByRole('banner');
+    assert.equal(await header.getByAltText('GFG', { exact: true }).count(), 0);
+    for (const [name, href] of [['InFlite', '/about/'], ['Apps', '/about/#apps'], ['Contact', '/about/#contact'], ['Open InFlite', '/']]) {
+      const link = header.getByRole('link', { name, exact: true });
+      assert.equal(await link.getAttribute('href'), href);
+      const box = await link.boundingBox();
+      assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= 320, name + ' fits with a 44px touch target');
+    }
     const image = () => sky.evaluate(canvas => canvas.toDataURL());
     await page.emulateMedia({colorScheme:'light'});
     const stillFrame = await image();
