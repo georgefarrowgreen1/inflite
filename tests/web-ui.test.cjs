@@ -344,22 +344,29 @@ test('motion: horizontal gestures and viewport changes cancel sheet dismissal sa
 test('motion: reduced motion removes spatial feedback and decorative loops pause in the background', async () => {
   const { ctx, page, errors } = await open({ motion: 'no-preference' });
   try {
+    const indicator = page.locator('#kept');
+    await indicator.evaluate(el => {
+      el.hidden = false;
+      el.setAttribute('data-refreshing', '');
+    });
+    const sweep = prop => indicator.evaluate((el, prop) => getComputedStyle(el, '::after')[prop], prop);
+    assert.equal(await sweep('animationName'), 'day-refresh-sweep');
     await page.evaluate(() => {
       let hidden = false;
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => hidden ? 'hidden' : 'visible' });
       window.__motionHidden = (value, notify = true) => { hidden = value; if (notify) document.dispatchEvent(new Event('visibilitychange')); };
       __motionHidden(true);
     });
-    assert.equal(await page.locator('.aura').first().evaluate(e => getComputedStyle(e).animationPlayState), 'paused');
+    assert.equal(await sweep('animationPlayState'), 'paused');
     await page.evaluate(() => { __motionHidden(false, false); dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); });
-    assert.equal(await page.locator('.aura').first().evaluate(e => getComputedStyle(e).animationPlayState), 'running');
+    assert.equal(await sweep('animationPlayState'), 'running');
     await page.emulateMedia({ reducedMotion: 'reduce' });
+    assert.equal(await sweep('animationName'), 'none');
     await page.locator('#tabs [data-tab="apps"]').click();
     await page.waitForFunction(() => !document.querySelector('#apps').hidden && !document.documentElement.dataset.vt);
     await page.locator('.apps-shortcut').first().hover(); await page.mouse.down();
     assert.equal(await page.locator('.apps-shortcut').first().evaluate(e => getComputedStyle(e).transform), 'none');
     await page.mouse.move(0, 0); await page.mouse.up();
-    assert.equal(await page.locator('.aura').first().evaluate(e => getComputedStyle(e).animationName), 'none');
     assert.deepEqual(errors, []);
     assert.deepEqual(await page.evaluate(() => window.__rejections), []);
   } finally { await ctx.close(); }
