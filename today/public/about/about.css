@@ -19,6 +19,21 @@
   -webkit-touch-callout: none;
 }
 
+@media (prefers-color-scheme: light) {
+  .about-page {
+    color-scheme: light;
+    --sky: 248 245 250;
+    --light: 147 101 184;
+    --accent: #604080;
+    --accent-ink: #fff;
+    --ink: #271f30;
+    --muted: #504658;
+    --line: rgb(64 44 80 / .22);
+  }
+  .about-page .app-list .featured-app { background: rgb(var(--sky) / .88); }
+  .about-page .explore span { border-color: var(--line); }
+}
+
 .about-page :is(input, textarea) {
   -webkit-user-select: text;
   user-select: text;

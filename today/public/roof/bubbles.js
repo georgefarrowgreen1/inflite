@@ -6,19 +6,20 @@ const tau = Math.PI * 2;
 const range = (low, high) => low + Math.random() * (high - low);
 const clamp = value => Math.max(0, Math.min(1, value));
 
+export const respondingBubbles = bubbles => bubbles.some(surfaceIsMoving);
 export const defaultBubbleColour = "opal";
 // Rim swatches travel clockwise from the right-hand edge. Keep existing
 // colourways available to people who chose them explicitly in Appearance.
 export const minerals = {
-  opal: {name:"Opal", base:"#100e1a", atmosphere:"#382331", body:"#f1d5c8", shade:"#c3673a", pearl:"#fffcf7",
+  opal: {name:"Opal", light:{base:"#f4f1ef", atmosphere:"#e6dada"}, base:"#100e1a", atmosphere:"#382331", body:"#f1d5c8", shade:"#c3673a", pearl:"#fffcf7",
     rim:["#ffdb49","#e8cd86","#bdd2bd","#469bb9","#e8c1d5","#f57a9e","#e85152","#f19c35"]},
-  midnight: {name:"Midnight", base:"#100e1a", atmosphere:"#352340", body:"#89749f", shade:"#392843", pearl:"#f1d9eb",
+  midnight: {name:"Midnight", light:{base:"#f4f1f7", atmosphere:"#ded4e8"}, base:"#100e1a", atmosphere:"#352340", body:"#89749f", shade:"#392843", pearl:"#f1d9eb",
     rim:["#a581b4","#708fbc","#8ed6f0","#656bb6","#8c5f9d","#dc94b8","#a56da7","#6c5793"]},
-  jade: {name:"Jade", base:"#091311", atmosphere:"#12362e", body:"#57907a", shade:"#1a4941", pearl:"#d6f1cf",
+  jade: {name:"Jade", light:{base:"#eff5f1", atmosphere:"#d3e4d9"}, base:"#091311", atmosphere:"#12362e", body:"#57907a", shade:"#1a4941", pearl:"#d6f1cf",
     rim:["#a9be76","#98c296","#88d9c7","#3e9796","#287e73","#6cb28c","#a4bc79","#77b193"]},
-  cobalt: {name:"Cobalt", base:"#0a0f1d", atmosphere:"#1c304a", body:"#647ca9", shade:"#263353", pearl:"#e1edff",
+  cobalt: {name:"Cobalt", light:{base:"#f0f3f9", atmosphere:"#d4dfee"}, base:"#0a0f1d", atmosphere:"#1c304a", body:"#647ca9", shade:"#263353", pearl:"#e1edff",
     rim:["#6caee4","#69c4e5","#9eacfa","#6674bd","#514e9a","#8b7dc9","#6d9ee2","#7eabdd"]},
-  lagoon: {name:"Lagoon", base:"#08131c", atmosphere:"#163746", body:"#659591", shade:"#214652", pearl:"#d9f6eb",
+  lagoon: {name:"Lagoon", light:{base:"#eff5f6", atmosphere:"#cfe3e4"}, base:"#08131c", atmosphere:"#163746", body:"#659591", shade:"#214652", pearl:"#d9f6eb",
     rim:["#79cfab","#93d6bd","#a4c8ff","#5976ad","#326c9a","#5bb4b9","#52bdaa","#99d8bd"]}
 };
 export const bubbleColours = Object.entries(minerals).map(([value, {name}]) => ({value, name}));
@@ -127,6 +128,8 @@ function pickBubble(bubbles, pointer, width, height) {
   return nearest;
 }
 
+const tapStrains = new WeakMap();
+
 export function driftBubbles(bubbles, dt, aspect, pointer = null) {
   const width = Math.max(1,aspect), height = Math.max(1,1/aspect);
   const hit = pickBubble(bubbles,pointer,width,height);
@@ -150,9 +153,16 @@ export function driftBubbles(bubbles, dt, aspect, pointer = null) {
       const tap = pointer.tap && hit.distance <= 1;
       const impulse = tap ? .027/(1+3*sizes[i]) : .0013*dt*hit.amount;
       b.vx += nx*impulse; b.vy += ny*impulse;
-      if (tap) squeeze(b,nx,ny,.082);
+      if (tap) tapStrains.set(b,{nx,ny,remaining:.082});
     }
 
+    const strain = tapStrains.get(b);
+    if (strain) {
+      const applied = strain.remaining * -Math.expm1(-dt/.022);
+      squeeze(b,strain.nx,strain.ny,applied);
+      strain.remaining -= applied;
+      if (strain.remaining < .0001) tapStrains.delete(b);
+    }
     wall(b,sizes[i]*profile(b,Math.PI),b.x*width,1,0,dt);
     wall(b,sizes[i]*profile(b,0),(1-b.x)*width,-1,0,dt);
     wall(b,sizes[i]*profile(b,-Math.PI/2),b.y*height,0,1,dt);
@@ -209,6 +219,7 @@ function wash(ctx, x, y, rx, ry, angle, stops) {
 const glows = new WeakMap();
 // The grain is fixed to each surface and stays fine when the interior is magnified.
 let grainTile;
+const grainPatterns = new WeakMap();
 function applyGrain(ctx,index,radius) {
   if (!grainTile) {
     grainTile = document.createElement("canvas");
@@ -229,7 +240,8 @@ function applyGrain(ctx,index,radius) {
   const density = Math.max(1,devicePixelRatio*.61);
   ctx.scale(density/radius,density/radius);
   ctx.translate(index*31,index*17);
-  ctx.fillStyle = ctx.createPattern(grainTile,"repeat");
+  if (!grainPatterns.has(ctx)) grainPatterns.set(ctx,ctx.createPattern(grainTile,"repeat"));
+  ctx.fillStyle = grainPatterns.get(ctx);
   const reach = 1.33*radius/density;
   ctx.fillRect(-reach-index*31,-reach-index*17,reach*2,reach*2);
   ctx.restore();
@@ -240,48 +252,99 @@ function paintBubble(ctx, bubble, x, y, radius, ink, index, live) {
   ctx.save();
   ctx.translate(x,y);
   ctx.scale(radius,radius);
-  const shell = outline(bubble,rim);
-  ctx.clip(shell);
+  ctx.clip(outline(bubble,rim));
   paintSurface(ctx,bubble,radius,rim,ink,index,live);
   applyGrain(ctx,index,radius);
   ctx.restore();
 }
 
 // Use the same antialiased vector drawing on touch, desktop and software-rendered devices.
-export function sizeBubbleCanvas(canvas, width, height) {
+export function sizeBubbleCanvas(canvas, width, height, interacting = false) {
   if (!width || !height) return false;
-  const scale = Math.min(window.devicePixelRatio || 1, Math.sqrt(3840*2160 / (width*height)), 8192/Math.max(width,height));
+  // The travelling highlights are smooth fields. Limit their backing store
+  // during gestures; static and ambient scenes retain the full display budget.
+  const pixels = interacting ? 640000 : 3840*2160;
+  const scale = Math.min(window.devicePixelRatio || 1, Math.sqrt(pixels/(width*height)),
+    interacting ? 1.25 : Infinity, 8192/Math.max(width,height));
   const w = Math.max(1,Math.floor(width*scale)), h = Math.max(1,Math.floor(height*scale));
   if (w !== canvas.width || h !== canvas.height) { canvas.width = w; canvas.height = h; }
   return true;
 }
 
-export function drawBubbles(ctx, bubbles, colour, shade = 0, live = true) {
-  const {width, height} = ctx.canvas;
-  const ink = minerals[colour], short = Math.min(width,height);
-  ctx.fillStyle = ink.base;
+function paintSky(ctx, ground, main, width, height, short) {
+  ctx.fillStyle = ground.base;
   ctx.fillRect(0,0,width,height);
-  const main = bubbles[0];
-  if (!glows.has(ink)) {
+  if (!glows.has(ground)) {
     const glow = document.createElement("canvas");
     glow.width = glow.height = 192;
-    wash(glow.getContext("2d"),96,96,96,96,0,[[0,ink.atmosphere],[.43,ink.atmosphere+"a0"],[1,ink.atmosphere+"00"]]);
-    glows.set(ink,glow);
+    wash(glow.getContext("2d"),96,96,96,96,0,[[0,ground.atmosphere],[.43,ground.atmosphere+"a0"],[1,ground.atmosphere+"00"]]);
+    glows.set(ground,glow);
   }
-  ctx.drawImage(glows.get(ink), main.x*width-short*.81, main.y*height-short*.70, short*1.62, short*1.40);
-  let moving = false;
-  // Paint back to front, matching the order used by hit tests.
-  for (let i = bubbles.length-1; i >= 0; i--) {
+  ctx.drawImage(glows.get(ground), main.x*width-short*.81, main.y*height-short*.70, short*1.62, short*1.40);
+}
+
+const scenes = new WeakMap();
+function sceneLayer(width,height) {
+  const layer = document.createElement("canvas");
+  layer.width = width; layer.height = height;
+  return layer.getContext("2d");
+}
+
+export function drawBubbles(ctx, bubbles, colour, shade = 0, live = true, light = false) {
+  const {width,height} = ctx.canvas, short = Math.min(width,height);
+  const ink = minerals[colour], ground = light ? ink.light : ink;
+  const main = bubbles[0];
+  let moving = 0, active = -1;
+  for (let i=0; i<bubbles.length; i++) {
+    if (!live) settleSurface(bubbles[i]);
+    if (surfaceIsMoving(bubbles[i])) { moving++; active = i; }
+  }
+  function body(target,i) {
     const b = bubbles[i];
-    if (!live) settleSurface(b);
-    if (surfaceIsMoving(b)) moving = true;
-    paintBubble(ctx,b,b.x*width,b.y*height,short*sizes[i],ink,i,live);
+    paintBubble(target,b,b.x*width,b.y*height,short*sizes[i],ink,i,live);
+  }
+  let left = 0, top = 0, w = width, h = height;
+  if (moving === 1) {
+    // Keep the painter's order on both sides of the touched orb. Restore only its
+    // old and new bounds between ambient updates, including after release.
+    let scene = scenes.get(ctx);
+    if (!scene || scene.width !== width || scene.height !== height) {
+      scene = {width,height,back:sceneLayer(width,height)};
+      scenes.set(ctx,scene);
+    }
+    const b = bubbles[active], x = b.x*width, y = b.y*height;
+    const rebuild = scene.body !== b || scene.ground !== ground || scene.shade !== shade ||
+      Math.abs(main.phase-scene.phase) >= main.tempo/20;
+    if (rebuild) {
+      paintSky(scene.back,ground,main,width,height,short);
+      for (let i=bubbles.length-1; i>active; i--) body(scene.back,i);
+      if (active > 0) {
+        scene.front ||= sceneLayer(width,height);
+        scene.front.clearRect(0,0,width,height);
+        for (let i=active-1; i>=0; i--) body(scene.front,i);
+      }
+      scene.phase = main.phase; scene.body = b; scene.ground = ground; scene.shade = shade;
+    } else {
+      const extent = Math.ceil(short*sizes[active]*1.3)+2;
+      left = Math.max(0,Math.floor(Math.min(x,scene.x)-extent));
+      top = Math.max(0,Math.floor(Math.min(y,scene.y)-extent));
+      w = Math.min(width,Math.ceil(Math.max(x,scene.x)+extent))-left;
+      h = Math.min(height,Math.ceil(Math.max(y,scene.y)+extent))-top;
+    }
+    scene.x = x; scene.y = y;
+    ctx.drawImage(scene.back.canvas,left,top,w,h,left,top,w,h);
+    body(ctx,active);
+    if (active > 0) ctx.drawImage(scene.front.canvas,left,top,w,h,left,top,w,h);
+  } else {
+    scenes.delete(ctx);
+    paintSky(ctx,ground,main,width,height,short);
+    for (let i=bubbles.length-1; i>=0; i--) body(ctx,i);
   }
   if (shade) {
     ctx.globalAlpha = shade;
-    ctx.fillStyle = ink.base;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = ground.base;
+    ctx.fillRect(left,top,w,h);
     ctx.globalAlpha = 1;
   }
-  return moving;
+  return moving > 0;
 }

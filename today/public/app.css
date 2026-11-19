@@ -1575,12 +1575,12 @@ inflite-settings-account[hidden] { display: none; }
 .sky > canvas { display: none; }
 html[data-midnight-lava] body { background: transparent; }
 html[data-midnight-lava] .sky {
-  inset: 0; height: 100lvh; pointer-events: none; background: rgb(var(--lava-base));
+  inset: 0; height: 100lvh; pointer-events: none; background: var(--orb-ground);
   view-transition-name: inflite-wallpaper;
 }
 html[data-midnight-lava] .sky > canvas { display: block; width: 100%; height: 100%; }
 html[data-midnight-lava] :is(#workspace.ifl-workspace, .ifl-workspace .ws-shell, .ifl-workspace .ws-canvas) { background: transparent; }
-html[data-midnight-lava] { --midnight-header-shade: linear-gradient(to bottom, rgb(var(--lava-base) / .6), rgb(var(--lava-base) / .25) 60%, transparent); }
+html[data-midnight-lava] { --midnight-header-shade: linear-gradient(to bottom, color-mix(in srgb, var(--orb-ground) 60%, transparent), color-mix(in srgb, var(--orb-ground) 25%, transparent) 60%, transparent); }
 html[data-midnight-lava] .ifl-workspace .ws-toolbar { background: var(--midnight-header-shade); }
 html[data-midnight-lava]::view-transition-group(inflite-wallpaper) { z-index: -1; animation: none; }
 html[data-midnight-lava]::view-transition-old(inflite-wallpaper) { display: none; }
@@ -1607,7 +1607,8 @@ html[data-midnight-lava=lagoon], .lava-swatches [data-lava=lagoon] { --lava-base
 .lava-swatch { display: block; height: 33px; border-radius: 10px; background:
   radial-gradient(circle at 70% 70%, var(--lava-warm), var(--lava-cool) 13%, transparent 15%),
   radial-gradient(circle at 32% 57%, color-mix(in srgb, var(--lava-warm) 65%, white), var(--lava-cool) 31%, transparent 33%), rgb(var(--lava-base)); }
-.lava-swatches input:checked + .lava-swatch::after { content: "✓"; display: grid; place-content: center; height: 100%; color: white; font-size: 1rem; font-weight: 700; }
+html[data-midnight-lava] .lava-swatches .lava-swatch { background-color: light-dark(#f3f1f4, rgb(var(--lava-base))); }
+.lava-swatches input:checked + .lava-swatch::after { text-shadow: 0 1px 3px #222; content: "✓"; display: grid; place-content: center; height: 100%; color: white; font-size: 1rem; font-weight: 700; }
 .lava-swatches input:focus-visible + .lava-swatch { outline: 2px solid var(--ifl-accent-ink); outline-offset: 2px; }
 @media (forced-colors: active) {
   .lava-swatch { border: 1px solid ButtonText; }

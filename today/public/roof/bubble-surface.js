@@ -6,7 +6,11 @@ const stride = cells + 1;
 const count = stride * stride;
 export const outlineSegments = 40;
 const spacing = 2 * edge / cells;
-const tick = 1 / 60;
+const tick = 1 / 120;
+// Preserve the material's relaxation times as the solver takes half-size steps.
+const follow = 1-Math.sqrt(.68), trail = 1-Math.sqrt(.979);
+const loadPressure = 1-Math.sqrt(.73), releasePressure = 1-Math.sqrt(.82);
+const rimDamping = Math.sqrt(.88), damping = Math.sqrt(.977);
 const courant = (.97 * tick / spacing) ** 2;
 const tau = Math.PI * 2;
 const waves = new WeakMap();
@@ -38,7 +42,7 @@ export function stepSurface(bubble, dt, hit, input) {
   let wave = waves.get(bubble);
   if (!contact && !wave) return false;
   if (!wave) {
-    wave = {h:new Float32Array(count), last:new Float32Array(count), next:new Float32Array(count),
+    wave = {h:new Float32Array(count), last:new Float32Array(count), next:new Float32Array(count), display:new Float32Array(count),
       tx:hit.x, ty:hit.y, x:hit.x, y:hit.y, tailX:hit.x, tailY:hit.y, pressure:0, age:0, remainder:0};
     waves.set(bubble,wave);
   }
@@ -47,47 +51,57 @@ export function stepSurface(bubble, dt, hit, input) {
   if (contact) { wave.tx = hit.x; wave.ty = hit.y; }
   wave.age = target || (contact && input.tap) ? 0 : wave.age + dt;
   // A quick lift can land between two display frames. Seed its velocity once.
-  if (contact && input.tap) {
-    for (let i = 0; i < count; i++) {
-      const dx = mesh[i].x-hit.x, dy = mesh[i].y-hit.y;
-      const footprint = 1 - (dx*dx+dy*dy)/.095;
-      if (footprint > 0) wave.last[i] += .034 * footprint ** 3;
-    }
-  }
+  if (contact && input.tap) wave.tap = {x:hit.x,y:hit.y};
   wave.remainder += Math.min(.16,dt);
   while (wave.remainder >= tick) {
     wave.remainder -= tick;
-    wave.x += (wave.tx-wave.x)*.32;
-    wave.y += (wave.ty-wave.y)*.32;
+    wave.x += (wave.tx-wave.x)*follow;
+    wave.y += (wave.ty-wave.y)*follow;
     // A sweep pulls a shallow fold behind the fingertip. Its end catches up
     // when the pointer rests, restoring the round footprint of a held press.
-    wave.tailX += (wave.x-wave.tailX)*.021;
-    wave.tailY += (wave.y-wave.tailY)*.021;
+    wave.tailX += (wave.x-wave.tailX)*trail;
+    wave.tailY += (wave.y-wave.tailY)*trail;
     const trailX = wave.tailX-wave.x, trailY = wave.tailY-wave.y;
     const trailLengthSq = trailX*trailX+trailY*trailY;
     const alongScale = 1/Math.max(.001,trailLengthSq);
     const taper = .54*Math.min(1,trailLengthSq*22);
-    wave.pressure += (target-wave.pressure)*(target > wave.pressure ? .27 : .18);
+    wave.pressure += (target-wave.pressure)*(target > wave.pressure ? loadPressure : releasePressure);
     const {h, last, next} = wave;
+    const left = Math.min(wave.x,wave.tailX)-.37, right = Math.max(wave.x,wave.tailX)+.37;
+    const top = Math.min(wave.y,wave.tailY)-.37, bottom = Math.max(wave.y,wave.tailY)+.37;
     // A damped membrane with a soft brush load. Heights propagate after the
     // brush lifts, including on the frames with no new pointer events.
     for (let y = 1; y < cells; y++) {
       for (let x = 1, i = y*stride+1; x < cells; x++, i++) {
         const m = mesh[i], value = h[i];
         const laplace = h[i-1]+h[i+1]+h[i-stride]+h[i+stride]-4*value;
-        const absorption = m.r > 1.03 ? .88 : .977;
+        const absorption = m.r > 1.03 ? rimDamping : damping;
         let force = -4*value;
-        const dx = m.x-wave.x, dy = m.y-wave.y;
-        const along = clamp((dx*trailX+dy*trailY)*alongScale);
-        const bx = dx-along*trailX, by = dy-along*trailY;
-        const brush = 1 - (bx*bx+by*by)/.13;
-        if (brush > 0) force -= brush*brush*(1-taper*along)*wave.pressure*(37 + 105*value);
+        if (wave.pressure > .0001 && m.x >= left && m.x <= right && m.y >= top && m.y <= bottom) {
+          const dx = m.x-wave.x, dy = m.y-wave.y;
+          const along = clamp((dx*trailX+dy*trailY)*alongScale);
+          const bx = dx-along*trailX, by = dy-along*trailY;
+          const brush = 1 - (bx*bx+by*by)/.13;
+          if (brush > 0) force -= brush*brush*(1-taper*along)*wave.pressure*(37 + 105*value);
+        }
         next[i] = value + (value-last[i])*absorption + courant*laplace + tick*tick*force;
       }
     }
+    if (wave.tap) {
+      for (let i=0; i<count; i++) {
+        const dx = mesh[i].x-wave.tap.x, dy = mesh[i].y-wave.tap.y;
+        const footprint = 1-(dx*dx+dy*dy)/.095;
+        if (footprint > 0) next[i] -= .017*footprint**3;
+      }
+      wave.tap = null;
+    }
     wave.last = h; wave.h = next; wave.next = last;
   }
-  if (wave.age < 4.8) return true;
+  if (wave.age < 4.8) {
+    const fraction = wave.remainder/tick;
+    for (let i=0; i<count; i++) wave.display[i] = wave.last[i]+fraction*(wave.h[i]-wave.last[i]);
+    return true;
+  }
   waves.delete(bubble);
   return false;
 }
@@ -162,9 +176,9 @@ function studioLight(ink) {
 
 // The smooth optical field is independent of output resolution. Interpolate
 // normals first, then sample colour. A curved softbox stays curved at a dimple.
-function surfaceTile(bubble, radius) {
+function surfaceTile(bubble, radius, responding) {
   let tile = tiles.get(bubble);
-  const samples = Math.max(1,Math.min(6,Math.ceil(radius*2.64/cells)));
+  const samples = Math.max(1,Math.min(responding ? 4 : 6,Math.ceil(radius*2.64/cells)));
   if (tile?.samples === samples) return tile;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = cells*samples;
@@ -177,8 +191,8 @@ function surfaceTile(bubble, radius) {
 }
 
 export function paintSurface(ctx,bubble,radius,rim,ink,index,live) {
-  const tile = surfaceTile(bubble,radius);
-  const wave = waves.get(bubble)?.h;
+  const wave = waves.get(bubble)?.display;
+  const tile = surfaceTile(bubble,radius,!!wave);
   // A brush can run at display cadence. Undisturbed bodies have very slow
   // optical motion and can reuse their lighting between ambient frames.
   if (live && !wave && !tile.wasTouched && ink === tile.ink &&
@@ -191,6 +205,8 @@ export function paintSurface(ctx,bubble,radius,rim,ink,index,live) {
   tile.strainX = bubble.strainX || 0; tile.strainY = bubble.strainY || 0;
   const {u,v,pigmentU,pigmentV,recess} = tile, palette = studioLight(ink);
   const span = (mapSize-1)*.5;
+  // Allow the interpolation cell on either side of the antialiased silhouette.
+  const visibleRadius = Math.max(...rim)+2*spacing;
   const light = bubble.phase*9 + index*.89;
   const tiltX = .37*Math.sin(light)+.15*Math.sin(bubble.phase*4+1.2);
   const tiltY = .33*Math.cos(light*.8+index);
@@ -201,7 +217,9 @@ export function paintSurface(ctx,bubble,radius,rim,ink,index,live) {
   const archX = .15*Math.cos(arch), archY = .15*Math.sin(arch);
   const crossX = .12*Math.cos(cross), crossY = .12*Math.sin(cross);
   for (let i = 0; i < count; i++) {
-    const p = mesh[i], skin = mix(rim[p.a],rim[p.b],p.fraction);
+    const p = mesh[i];
+    if (p.r > visibleRadius+2*spacing) continue;
+    const skin = mix(rim[p.a],rim[p.b],p.fraction);
     const lat = Math.min(latitudeScale,Math.round(p.r/skin*latitudeScale));
     const nz = front[lat];
     const driftA = p.archCos*archX-p.archSin*archY;
@@ -233,8 +251,7 @@ export function paintSurface(ctx,bubble,radius,rim,ink,index,live) {
   for (let cy = 0; cy < cells; cy++) {
     for (let cx = 0; cx < cells; cx++) {
       const i = cy*stride+cx, below = i+stride;
-      // The largest supported silhouette and strain fit within 1.25 radii.
-      if (mesh[i].r > 1.25+spacing*2) continue;
+      if (mesh[i].r > visibleRadius) continue;
       const leftU = (u[below]-u[i])/n, leftV = (v[below]-v[i])/n;
       const rightU = (u[below+1]-u[i+1])/n, rightV = (v[below+1]-v[i+1])/n;
       for (let row = 0; row < n; row++) {

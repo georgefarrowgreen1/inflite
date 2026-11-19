@@ -70,7 +70,12 @@ test('public pages and contact form work without signing in, from phone to deskt
     const sky = page.locator('.about-sky canvas[data-painted]');
     await sky.waitFor();
     const image = () => sky.evaluate(canvas => canvas.toDataURL());
+    await page.emulateMedia({colorScheme:'light'});
     const stillFrame = await image();
+    await page.emulateMedia({colorScheme:'dark'});
+    await page.waitForFunction(before => document.querySelector('.about-sky canvas').toDataURL() !== before, stillFrame);
+    await page.emulateMedia({colorScheme:'light'});
+    await page.waitForFunction(before => document.querySelector('.about-sky canvas').toDataURL() === before, stillFrame);
     assert.equal(await page.locator('canvas').count(), 1, 'the orbs are the only animated artwork');
     assert.equal(await page.locator('body').evaluate(body => getComputedStyle(body).getPropertyValue('-webkit-user-select') || getComputedStyle(body).userSelect), 'none');
     assert.equal(await page.getByLabel('Your name').evaluate(input => getComputedStyle(input).getPropertyValue('-webkit-user-select') || getComputedStyle(input).userSelect), 'text');

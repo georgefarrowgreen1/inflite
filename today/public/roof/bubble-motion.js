@@ -29,6 +29,7 @@ export function bubbleMotion(canvas, paint) {
     if (!press.moved && press.touch && dy > 8 && dy > dx) { clearInput(); return; }
     if (Math.hypot(dx,dy) > 9) press.moved = true;
     aim(x,y,true);
+    queue();
   }
 
   function end(event,id,x,y) {
@@ -60,7 +61,6 @@ export function bubbleMotion(canvas, paint) {
   function render(now) {
     frame = 0;
     clearTimeout(timer);
-    if (previous !== undefined && now-previous < 1000/65 && mode === "live") { queue(); return; }
     const dt = previous === undefined ? 0 : Math.min(.35,Math.max(0,(now-previous)/1000));
     previous = now;
     const live = mode === "live";
@@ -77,9 +77,8 @@ export function bubbleMotion(canvas, paint) {
     if (event.pointerType === "touch" || !event.isPrimary) return;
     if (press) { move(event,event.pointerId,event.clientX,event.clientY); return; }
     if (!eligible(event) || event.buttons) { point = null; return; }
-    const entering = !point;
     aim(event.clientX,event.clientY,false);
-    if (entering) queue();
+    queue();
   }, {passive:true});
   window.addEventListener("pointerup", event => {
     if (event.pointerType !== "touch") end(event,event.pointerId,event.clientX,event.clientY);

@@ -1,7 +1,7 @@
 // The wallpaper belongs to the document. App routes only replace content above it.
 import {bubbleMotion} from "./bubble-motion.js";
 import {wallpaperFrame} from "./refractor.js";
-import {minerals, defaultBubbleColour, newBubbleScene, validBubbleScene, driftBubbles, drawBubbles, sizeBubbleCanvas} from "./bubbles.js";
+import {minerals, defaultBubbleColour, newBubbleScene, validBubbleScene, driftBubbles, respondingBubbles, drawBubbles, sizeBubbleCanvas} from "./bubbles.js";
 export {bubbleColours} from "./bubbles.js";
 
 const preferenceKey = "inflite:dark-wallpaper";
@@ -45,7 +45,7 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 const still = matchMedia("(prefers-reduced-motion: reduce)");
 const contrast = matchMedia("(prefers-contrast: more), (forced-colors: active)");
 let bubbles, ctx, preview;
-let suspended = false;
+let suspended = false, light = false, lastSample = -Infinity;
 
 function drawPreview() {
   if (!preview || !ctx) return;
@@ -67,22 +67,37 @@ function checkpoint() {
 const setMotion = canvas && bubbleMotion(canvas, paint);
 
 function paint(dt, pointer, live) {
-  if (!sizeBubbleCanvas(canvas, canvas.clientWidth, canvas.clientHeight)) return;
-  const aspect = canvas.width / canvas.height;
+  const width = canvas.clientWidth, height = canvas.clientHeight;
+  if (!width || !height) return;
+  const aspect = width/height;
   bubbles ||= readScene() || newBubbleScene(aspect);
   if (dt || pointer) driftBubbles(bubbles,dt,aspect,pointer);
-  const moving = drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,live);
-  wallpaperFrame(canvas);
-  drawPreview();
+  sizeBubbleCanvas(canvas,width,height,live && respondingBubbles(bubbles));
+  const moving = drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,live,light);
+  // The small glass bevel and Settings thumbnail sample the full-rate artwork.
+  // Avoid a synchronous WebKit pixel readback on every high-refresh frame.
+  const now = performance.now();
+  if (!dt || !moving || now-lastSample >= 1000/30) {
+    wallpaperFrame(canvas);
+    drawPreview();
+    lastSample = now;
+  }
   return moving;
 }
 
 function sync() {
-  const night = root.dataset.theme ? root.dataset.theme === "dark" : dark.matches;
-  const enabled = canvas && night && wallpaperPreference() !== "plain" && !contrast.matches;
+  light = root.dataset.theme ? root.dataset.theme === "light" : !dark.matches;
+  const enabled = canvas && wallpaperPreference() !== "plain" && !contrast.matches;
   if (enabled) ctx ||= canvas.getContext("2d", {alpha:false});
-  if (enabled && ctx) root.dataset.midnightLava = wallpaperColour();
-  else delete root.dataset.midnightLava;
+  if (enabled && ctx) {
+    const colour = wallpaperColour();
+    root.dataset.midnightLava = colour;
+    const ink = minerals[colour];
+    root.style.setProperty("--orb-ground", light ? ink.light.base : ink.base);
+  } else {
+    delete root.dataset.midnightLava;
+    root.style.removeProperty("--orb-ground");
+  }
   const visible = enabled && ctx && !document.hidden && !suspended;
   const live = !still.matches && wallpaperPreference() === "bubbles";
   setMotion?.(visible ? (live ? "live" : "still") : "off");

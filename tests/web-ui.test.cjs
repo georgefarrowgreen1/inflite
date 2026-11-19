@@ -1850,7 +1850,7 @@ for (const width of [390, 1440]) test(`unified settings search and appearance at
     await page.waitForFunction(() => !document.querySelector('.settings-appearance fieldset')?.disabled &&
       document.querySelector('.settings-appearance select')?.value === 'dark');
     assert.equal(pref.appearance,'dark');
-    const wallpaper = page.getByRole('combobox', {name:'Dark wallpaper on this device'});
+    const wallpaper = page.getByRole('combobox', {name:'Wallpaper on this device'});
     await wallpaper.selectOption('plain');
     assert.equal(await page.locator('html[data-midnight-lava]').count(), 0);
     const colours = page.getByRole('group', {name:'Bubble colour', exact:true});
@@ -1956,17 +1956,52 @@ test('an orb bends locally under a press and its light travels outward after a t
       }
       for (let i=0; i<10; i++) stepSurface(body,1/60,hit,{down:true});
       const core = difference(0,24), distant = difference(48,68);
+      let previous = frame(), subframes = 0;
+      for (let i=0; i<8; i++) {
+        stepSurface(body,1/240,hit,{down:true});
+        const next = frame();
+        if (next.some((v,j) => Math.abs(v-previous[j]) > 1)) subframes++;
+        previous = next;
+      }
       const still = frame(false).every((v,i) => rest[i] === v);
       stepSurface(body,1/60,hit,{tap:true,release:true});
       const early = difference(36,54);
       for (let i=0; i<32; i++) stepSurface(body,1/60,null,null);
       const outward = difference(36,54);
       for (let i=0; i<300; i++) stepSurface(body,1/60,null,null);
-      return {core,distant,still,early,outward,settled:frame().every((v,i) => rest[i] === v)};
+      return {core,distant,subframes,still,early,outward,settled:frame().every((v,i) => rest[i] === v)};
     });
     assert.ok(response.core > 100 && response.distant < 12, JSON.stringify(response));
     assert.ok(response.outward > response.early + 70, JSON.stringify(response));
+    assert.equal(response.subframes,8, "the surface should change on every 240 Hz display tick");
     assert.ok(response.still && response.settled);
+  } finally { await ctx.close(); }
+});
+
+test('a tapped orb clears its old position and passes behind a foreground orb', async () => {
+  const {ctx,page} = await open();
+  try {
+    const difference = await page.evaluate(async () => {
+      const {drawBubbles} = await import('/roof/bubbles.js');
+      const {stepSurface} = await import('/roof/bubble-surface.js');
+      const bodies = [.54,.28,.84].map(x => ({x,y:.5,phase:.5,angle:0,tempo:.05}));
+      const raster = () => {
+        const c = document.createElement('canvas');
+        c.width = 360; c.height = 240;
+        return c.getContext('2d', {willReadFrequently:true});
+      };
+      const display = raster(), reference = raster();
+      stepSurface(bodies[1],1/60,{x:0,y:0,distance:0,amount:1},{tap:true,release:true});
+      const draw = target => drawBubbles(target,bodies,'opal',.53,true,true);
+      draw(display);
+      bodies[1].x = .49;
+      draw(display);
+      draw(reference);
+      const pixels = target => target.getImageData(0,0,360,240).data;
+      const actual = pixels(display), expected = pixels(reference);
+      return actual.some((v,i) => Math.abs(v-expected[i])>2);
+    });
+    assert.equal(difference,false);
   } finally { await ctx.close(); }
 });
 
@@ -2014,10 +2049,19 @@ test('Midnight Bubbles carries the same visible scene through the app drawer, Ca
     await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
     assert.equal(await page.locator('html').getAttribute('data-midnight-lava'), 'lagoon');
     assert.equal(await image(), first, 'same-tab navigation restores the colourway and exact still frame');
-    await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('lava'));
-    await page.waitForFunction(before => document.querySelector('.sky canvas').toDataURL() !== before, first);
     await page.emulateMedia({colorScheme:'light'});
-    await page.waitForFunction(() => !document.documentElement.hasAttribute('data-midnight-lava'));
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--orb-ground').trim() === '#eff5f6');
+    const lightFrame = await image();
+    assert.notEqual(lightFrame,first);
+    assert.equal(await page.locator('html').getAttribute('data-midnight-lava'),'lagoon');
+    await page.emulateMedia({colorScheme:'dark'});
+    await page.waitForFunction(before => document.querySelector('.sky canvas').toDataURL() === before,first);
+    await page.emulateMedia({colorScheme:'light'});
+    await page.waitForFunction(before => document.querySelector('.sky canvas').toDataURL() === before,lightFrame);
+    await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('lava'));
+    await page.waitForFunction(before => document.querySelector('.sky canvas').toDataURL() !== before, lightFrame);
+    await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('plain'));
+    assert.equal(await page.locator('html[data-midnight-lava]').count(),0);
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });

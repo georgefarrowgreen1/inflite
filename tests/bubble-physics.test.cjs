@@ -39,3 +39,26 @@ test('a tap pushes only the hit surface and the deformation relaxes', async () =
   assert.ok(validBubbleScene(bodies));
   assert.equal(driftBubbles(bodies,.05,2.4,{...tap,x:.98,y:.02}),null);
 });
+
+test('active feedback paints every refresh at 60, 120, 144 and 240 Hz', async () => {
+  const {bubbleMotion} = await import('../today/public/roof/bubble-motion.js');
+  const vm = require('node:vm');
+  for (const hz of [60,120,144,240]) {
+    let pending, frames = 0;
+    const scheduler = vm.runInNewContext('('+bubbleMotion.toString()+')', {
+      window: new EventTarget(), performance:{now:()=>0},
+      requestAnimationFrame(callback) { pending = callback; return 1; },
+      cancelAnimationFrame() { pending = null; }, clearTimeout,
+    });
+    const setMode = scheduler({},() => { frames++; return true; });
+    setMode('live');
+    for (let i=1; i<=hz; i++) {
+      const callback = pending;
+      pending = null;
+      callback(1000*i/hz);
+    }
+    assert.equal(frames,hz+1);
+    setMode('off');
+    assert.equal(pending,null);
+  }
+});

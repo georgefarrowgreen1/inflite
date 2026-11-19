@@ -548,7 +548,7 @@ function appearance(ctx) {
       input.onchange = () => save(key,input.value);
       return ui.row({title:label,trail:input});
     };
-    const wallpaper = el("select", {"aria-label":"Dark wallpaper on this device"},
+    const wallpaper = el("select", {"aria-label":"Wallpaper on this device"},
       [["bubbles","Bubbles · drifting"],["still","Bubbles · still"],["plain","Plain"]].map(([value,text]) => el("option",{value,text})));
     const colours = el("fieldset", {class:"lava-colours"}, el("legend",{text:"Bubble colour"}));
     const swatches = el("div", {class:"lava-swatches"});
@@ -583,7 +583,7 @@ function appearance(ctx) {
     strength.onchange = () => save("glassStrength",Number(strength.value));
     form.append(ui.list([
       select("Mode","appearance",[["auto","System"],["light","Light"],["dark","Dark"]]),
-      ui.row({title:"Dark wallpaper",sub:"On this device",trail:wallpaper}),
+      ui.row({title:"Wallpaper",sub:"On this device",trail:wallpaper}),
       colours,
       select("Colour palette","palette",Object.entries(theme.palettes).map(([id,p])=>[id,p.name])),
       ui.row({title:"Liquid Glass",trail:ui.sw(pref.glass,on=>save("glass",on),{label:"Liquid Glass"})}),
