@@ -16,8 +16,8 @@ export async function receiveEmail(message, env, ctx) {
   try {
     await ensureSchema(env);
     arrival = await arrivalFor(env, message.to);
-  } catch (err) {
-    console.error("couldn't check the address", err);
+  } catch {
+    console.error("couldn't check the address");
   }
   if (arrival.reject) {
     message.setReject("This address doesn’t exist.");
@@ -29,24 +29,22 @@ export async function receiveEmail(message, env, ctx) {
   // (coming: from a run that may still be going, which retryPending leaves to it a while)
   await keepNote(env, id, { to: message.to || "", from: message.from || "", at: Date.now(), coming: true });
   const done = () => env.MAIL.delete(`pending/${id}`).catch(() => {});
-  let err;
   for (let tries = 0; tries < 2; tries++) {
     try {
       await ensureSchema(env);
       await store(message, env, ctx, id, raw, arrival.address);
       return done();
-    } catch (e) {
-      err = e;
+    } catch {
       if (!tries) await new Promise((ok) => setTimeout(ok, 1000));
     }
   }
-  console.error("couldn't read an incoming message", id, err);
-  if (env.FORWARD_TO) ctx.waitUntil(message.forward(env.FORWARD_TO).catch((e) => console.error("forward", e)));
+  console.error("couldn't read an incoming message");
+  if (env.FORWARD_TO) ctx.waitUntil(message.forward(env.FORWARD_TO).catch(() => console.error("forward failed")));
   try {
     await keepUnread(env, message, id, raw.byteLength);
     await done();
-  } catch (e) {
-    console.error("couldn't keep it either; the original is at", `raw/${id}.eml`, e);
+  } catch {
+    console.error("couldn't keep the message for display");
     // (to be read in later, from the original; failing that too, the delivery fails, so it's never taken as delivered
     // with nothing to show for it)
     await keepNote(env, id, { to: message.to || "", from: message.from || "", at: Date.now() });
@@ -99,15 +97,15 @@ export async function retryPending(env, ctx) {
         if (tries >= 2) await keepUnread(env, message, id, raw.byteLength);
         else {
           await keepNote(env, id, { ...note, tries: tries + 1 });
-          await store(message, env, ctx, id, raw, address).catch((err) => {
-            console.error("couldn't read a kept message", id, err);
+          await store(message, env, ctx, id, raw, address).catch(() => {
+            console.error("couldn't read a kept message");
             return keepUnread(env, message, id, raw.byteLength);
           });
         }
       }
       await env.MAIL.delete(o.key);
-    } catch (err) {
-      console.error("couldn't read in a kept message yet", id, err);
+    } catch {
+      console.error("couldn't read in a kept message yet");
     }
   }
 }
@@ -149,7 +147,7 @@ async function store(message, env, ctx, id, raw, address) {
     await env.DB.prepare(`UPDATE messages SET also_to = COALESCE(also_to, ',') || ?2 || ',' WHERE id = ?1 AND instr(COALESCE(also_to, ''), ',' || ?2 || ',') = 0`)
       .bind(dup.id, to1)
       .run();
-    await bumpVersion(env).catch((e) => console.error("version", e));
+    await bumpVersion(env).catch(() => console.error("mail version update failed"));
   };
   // (with no ID of its own, the one made for it is this copy's alone: only ever found kept by the try before this one)
   const dup = await sameAs();
@@ -242,8 +240,8 @@ async function store(message, env, ctx, id, raw, address) {
   }
 
   // (the message is kept by now: these failing mustn't send it down the couldn't-read path, kept and forwarded twice)
-  ctx.waitUntil(upsertContacts(env, [from]).catch((e) => console.error("contacts", e)));
-  await bumpVersion(env).catch((e) => console.error("version", e));
+  ctx.waitUntil(upsertContacts(env, [from]).catch(() => console.error("mail contact update failed")));
+  await bumpVersion(env).catch(() => console.error("mail version update failed"));
   // (Mail on Your Day: its bookings, parcels and bills, while their switches in Settings are on. spotStored never throws:
   // a failure to spot never stops mail being kept)
   ctx.waitUntil(spotStored(env, { email, threadId, messageId: id, sender: from.email, date }));
@@ -270,7 +268,7 @@ async function store(message, env, ctx, id, raw, address) {
 
   // Optional safety net: also forward to a verified address. (Not for one read in later, from what was kept: forwarded
   // as it came)
-  if (env.FORWARD_TO && message.forward) ctx.waitUntil(message.forward(env.FORWARD_TO).catch((e) => console.error("forward", e)));
+  if (env.FORWARD_TO && message.forward) ctx.waitUntil(message.forward(env.FORWARD_TO).catch(() => console.error("forward failed")));
 }
 
 // People or Updates: a rule set for the sender wins; then the address's own setting; then a reply in a conversation you're part of is People; then the

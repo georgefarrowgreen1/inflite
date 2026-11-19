@@ -72,7 +72,8 @@ export function createFrame(opts = {}) {
   // it's locked, signed out or let go of)
   const finds = {};
   const found = (app, s, v) => {
-    if(!v)F.search?.invalidate?.();if(opts.workspace)return;
+    if (!v) F.search?.invalidate?.({ app });
+    if (opts.workspace) return;
     const f = finds[app];
     if (!v) { delete finds[app]; return f?.then((off) => off?.()); }
     if (f) return;
@@ -199,6 +200,28 @@ export function createFrame(opts = {}) {
     });
   }
 
+  function flushModule(m, timeoutMs) {
+    const { instance, controller: { signal } } = m;
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (answer) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
+        resolve({ lost: liveModule(m) ? taskLost(answer) : 0 });
+      };
+      const abort = () => finish({ lost: 0 });
+      const timer = setTimeout(() => finish({ lost: 1 }), timeoutMs);
+      signal.addEventListener("abort", abort, { once: true });
+      Promise.resolve().then(() => {
+        if (!liveModule(m)) return { lost: 0 };
+        if (typeof instance.flush === "function") return instance.flush();
+        return { lost: T(() => instance.busy?.(), true) ? 1 : 0 };
+      }).then(finish, () => finish({ lost: 1 }));
+    });
+  }
+
   const F = {
     route: null,
     continuationTarget: () => opts.resume?.targetFor(reopenRoute(F.route), { y: scrollY, state: H.state }),
@@ -208,7 +231,7 @@ export function createFrame(opts = {}) {
     systemTasks: Object.freeze({ register: registerSystemTask }),
     flush(options = {}) {
       const timeoutMs = typeof options?.timeoutMs === "number" && Number.isFinite(options.timeoutMs) ? Math.max(1, Math.min(2000, options.timeoutMs)) : 2000;
-      const modules = Object.values(mods).map((m) => Promise.race([Promise.resolve().then(() => m.instance?.flush?.()).catch(() => null), new Promise((ok) => setTimeout(ok, 2000))]));
+      const modules = Object.values(mods).filter((m) => m.instance && liveModule(m)).map((m) => flushModule(m, timeoutMs));
       const tasks = [...systemTasks].map((record) => flushSystemTask(record, timeoutMs));
       return Promise.all([...modules, ...tasks])
         .then((a) => ({ lost: a.reduce((n, x) => n + (Number(x?.lost) || 0), 0) }));
@@ -243,6 +266,7 @@ export function createFrame(opts = {}) {
       providers();
       emit("apps", now);
       if (!off.length) return;
+      for (const app of off) F.search.invalidate?.({ app });
       const a = shownMod()?.app;
       for (const x of off) if (x !== a) letGo(x);
       if (!off.includes(a)) return;
@@ -276,6 +300,7 @@ export function createFrame(opts = {}) {
     },
     destroy() {
       if (gone) return;
+      F.search.invalidate?.({ clearAll: true });
       gone = true; lifetime.abort();
       finishMeasure?.("cancelled"); finishMeasure = null;
       resumeRoutes.clear(); routeScroll.clear(); ys.clear(); backTo.clear();
@@ -719,6 +744,7 @@ export function createFrame(opts = {}) {
       send: (spec) => live() ? F.send.send(spec) : Promise.resolve(false),
       sendButton: (spec) => ui.btn("Send", { icon: "send", act: "send", label: `Send ${spec.what || "this"} to a friend`, run: () => live() && F.send.send(typeof spec === "function" ? spec() : spec) }),
       search: {
+        clearPrivate: () => { if (live()) F.search.invalidate?.({ app }); },
         provide(p) {
           if (!live()) return () => {};
           provs[app]?.(); delete provs[app];
@@ -789,7 +815,7 @@ export function createFrame(opts = {}) {
   F.header = createHeader(opts.header, F, { me: opts.me, onMe: opts.onMe });
   F.tabs = createTabs(opts.tabs, F, { me: opts.me });
   F.sheet = createSheets(F, { beforeOpen: () => cancelMotion(true) });
-  F.search = createSearch(F);
+  F.search = createSearch(F, { chatReady: () => isOn("chats") && /^(ready|offline)$/.test(svcs.chats?.value?.state) });
   F.send = createSend(F);
   for (const id of ["today", "apps", "you", "workspace"]) if (opts[id]) F.screen(id, opts[id]);
 

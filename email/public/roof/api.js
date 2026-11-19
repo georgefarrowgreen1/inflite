@@ -50,7 +50,7 @@ function upload(method, url, headers, body, onProgress) {
   });
 }
 
-export function createApi({ base = MAIL, onLost = null, onRefused = null } = {}) {
+export function createApi({ base = MAIL, onLost = null, onRefused = null, draftOwner = null } = {}) {
   async function req(method, path, body, opts = {}) {
     const write = method !== "GET";
     const headers = { ...(write && { "X-Inflite": "1" }), ...(body !== undefined && { "Content-Type": "application/json" }) };
@@ -87,6 +87,11 @@ export function createApi({ base = MAIL, onLost = null, onRefused = null } = {})
   const qs = (o) =>
     new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== "" && v !== false)).toString();
   const enc = encodeURIComponent;
+  const draftWrite = (path, body, opts) => {
+    const accountOwner = draftOwner?.();
+    if (draftOwner && !accountOwner) return Promise.reject(new ApiError(409, "Refresh InFlite to save or send mail."));
+    return req("POST", path, accountOwner ? { ...body, accountOwner } : body, opts);
+  };
   return {
     session: () => req("GET", "/api/session"),
     me: () => req("GET", "/api/me"),
@@ -108,8 +113,8 @@ export function createApi({ base = MAIL, onLost = null, onRefused = null } = {})
     saveSettings: (patch) => req("PATCH", "/api/settings", patch),
     updateAddress: (email, patch) => req("PATCH", `/api/addresses/${enc(email)}`, patch),
     findContacts: (q) => req("POST", "/api/contacts/find", { q }),
-    saveDraft: (draft, onProgress, opts = {}) => req("POST", "/api/drafts", draft, { upload: true, onProgress, ...opts }),
-    sendDraft: (draftId, key, opts = {}) => req("POST", "/api/send", { draftId, key }, opts),
+    saveDraft: (draft, onProgress, opts = {}) => draftWrite("/api/drafts", draft, { upload: true, onProgress, ...opts }),
+    sendDraft: (draftId, key, opts = {}) => draftWrite("/api/send", { draftId, key }, opts),
     sent: (keys) => req("GET", `/api/sends?${qs({ keys: keys.join(",") })}`),
     picture: (id, options = {}) => options.export
       ? req("POST", `/api/attachments/${enc(id)}/export`, {}, { blob: true })

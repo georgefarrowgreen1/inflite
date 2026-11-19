@@ -47,7 +47,8 @@ test('public pages and contact form work without signing in, from phone to deskt
     if (url.pathname === '/api/contact' && req.method === 'POST') {
       const body = [];
       for await (const chunk of req) body.push(chunk);
-      sent.push({ fields: JSON.parse(Buffer.concat(body)), cookie: req.headers.cookie, origin: req.headers.origin });
+      sent.push({ fields: JSON.parse(Buffer.concat(body)), cookie: req.headers.cookie, origin: req.headers.origin,
+        attempt: req.headers['idempotency-key'] });
       if (pending) await pending;
       res.writeHead(receipt, { 'Content-Type': 'application/json' }).end(JSON.stringify(receipt === 201 ? { ok: true } : { error: 'Unavailable' }));
       return;
@@ -137,12 +138,19 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.waitForURL(site + '/contact/');
     assert.equal(await page.getByLabel('Your name').evaluate(input => getComputedStyle(input).getPropertyValue('-webkit-user-select') || getComputedStyle(input).userSelect), 'text');
     await page.getByLabel('Your name').fill('Fixture Sender');
-    await page.getByLabel('Email address').fill('sender@example.test');
+    const email = page.getByLabel('Email address');
+    await email.fill('invalid email');
     const message = page.getByLabel('Message', { exact: true });
     await message.fill('Please help with this fixture.');
     const submit = page.getByRole('button', { name: /send/i });
     await submit.click();
+    assert.equal(sent.length, 0, 'invalid fields never reach the contact server');
+    assert.equal(await email.evaluate(field => field.validity.valid), false);
+    await email.fill('sender@example.test');
+    await submit.focus();
+    await page.keyboard.press('Enter');
     await page.waitForFunction(() => document.querySelector('[role="status"]').textContent.includes('couldn’t be confirmed'));
+    assert.ok(await submit.evaluate(button => button === document.activeElement), 'a failed submission returns keyboard focus to the retry control');
     assert.equal(await message.inputValue(), 'Please help with this fixture.');
     receipt = 201;
     let release;
@@ -154,6 +162,8 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.waitForFunction(() => document.querySelector('[role="status"]').textContent.includes('Message received'));
     assert.equal(sent.length, 2);
     assert.deepEqual(sent.map(({ cookie, origin }) => [cookie, origin]), [[undefined, site], [undefined, site]]);
+    assert.match(sent[0].attempt, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/);
+    assert.equal(sent[1].attempt, sent[0].attempt, 'retry keeps the same delivery receipt key');
     assert.deepEqual(sent[1].fields, { name: 'Fixture Sender', email: 'sender@example.test', message: 'Please help with this fixture.', website: '' });
     assert.equal(await message.inputValue(), '');
     assert.ok(await page.getByRole('link', { name: 'hello@inflite.ai' }).isVisible());

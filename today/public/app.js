@@ -18,12 +18,12 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.14.2";
+const BUILD = "4.14.3";
 // (what's new in it, said once it's in)
-const NEWS = "Refined the shared People profile for saved contacts and Chat friends.";
+const NEWS = "Keeps offline edits safe across tabs and clears private Chat and Mail content when access changes.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.32.2/store.js","/os.webmanifest"];
+const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.32.3/store.js","/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -1552,8 +1552,22 @@ function forgetKept(except = null) {
 // it next. Weather's places and settings are the phone's, as Weather's own Sign Out keeps them: only its copy of your
 // account goes. Each app's look (its appearance, theme) stays too. (todaykept.test.mjs reads each app's own sign-out
 // lists and checks every key in them is here.)
+const MAIL_JOURNALS = ["mail:replies:v1", "mail:unsent:v1", "mail:outbox:v1"];
+const MAIL_LEGACY_JOURNALS = ["mail:replies", "mail:unsent", "mail:outbox"];
+const MAIL_OWNER = "mail:owner";
+function reconcileMailJournals(owner, previousOwner) {
+  try {
+    for (const key of MAIL_JOURNALS) {
+      const record = readJSON(key);
+      if (record?.v !== 1 || record.owner !== owner) localStorage.removeItem(key);
+    }
+    // An older tab can still write these keys. Their bytes have no verified owner.
+    if (previousOwner && previousOwner !== owner) for (const key of MAIL_LEGACY_JOURNALS) localStorage.removeItem(key);
+    localStorage.setItem(MAIL_OWNER, JSON.stringify(owner));
+  } catch {}
+}
 const APP_KEPT = [
-  "mail:replies", "mail:unsent", "mail:outbox", "mail:remote-images", "mail:lens",
+  ...MAIL_JOURNALS, ...MAIL_LEGACY_JOURNALS, MAIL_OWNER, "mail:remote-images", "mail:lens",
   // (Search's Recent: what was opened from it)
   "ifl:recent",
   "markets:last", "markets:years", "markets:recent", "markets:newsRead", "markets:newsHide", "markets:newsSeen", "markets:plan",
@@ -1877,6 +1891,7 @@ function signedIn(view, { offline = false } = {}) {
   if (!view?.user?.id) return signedOutNow();
   const was = S.view?.user?.id;
   if (was !== view.user.id) {
+    const previousOwner = was || readJSON(KEPT)?.id;
     resetRequests();
     // A frame and every mounted store belong to one account. Replacing only
     // Chats leaves the other modules and lazy screen state owned by the old one.
@@ -1887,6 +1902,7 @@ function signedIn(view, { offline = false } = {}) {
       for (const id of ["#top", "#trip", "#waiting", "#coming", "#rest", "#apps", "#you", "#hd"]) $(id).replaceChildren();
     }
     S.morning = null; S.asked5 = false; S.boundary = 0;
+    reconcileMailJournals(view.user.id, previousOwner);
   }
   S.view = view;
   S.links = publicLinks(view.links || S.links);
@@ -2449,15 +2465,22 @@ async function refresh(only = null) {
   try {
     const a = await call(`/api/today?${q}`, { latestKey: "today" });
     if (scope !== requests.generation || S.view?.user?.id !== user) return;
+    if (!a?.cards || typeof a.cards !== "object" || Array.isArray(a.cards)) {
+      throw new Error("Today couldn’t read the latest update. Try again in a moment.");
+    }
     if (!only) return gotCards(a);
-    if (!S.answer || !a?.cards?.[only]) return;
-    S.answer = { ...S.answer, cards: { ...S.answer.cards, [only]: a.cards[only] } };
+    if (!S.answer) return;
+    const updated = a.cards[only];
+    if (!updated || typeof updated !== "object" || Array.isArray(updated)) {
+      throw new Error("This card couldn’t update. Try again in a moment.");
+    }
+    S.answer = { ...S.answer, cards: { ...S.answer.cards, [only]: updated } };
     keepCards(S.answer);
     drawCards();
     if (only === "weather") drawLine();
     const card = $(`.tcard[data-app="${only}"]`);
     card?.classList.add("in");
-    if (a.cards[only].state === "error") toast(a.cards[only].said || "Still couldn’t get it.");
+    if (updated.state === "error") toast(updated.said || "Still couldn’t get it.");
   } catch (e) {
     if (scope !== requests.generation || S.view?.user?.id !== user) return;
     if (!S.answer) return cardsFailed(e);

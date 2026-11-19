@@ -3,6 +3,7 @@
 // back is what app.js calls.
 export default (M) => {
   const { icon, h, fmtSize, S, toast, kindOf, downloadUrl, dataBlob } = M;
+  const { canUseDrafts = () => true } = M;
 
   // (everything in the conversation that opens here, oldest first, as it reads)
   function conversationMedia() {
@@ -12,7 +13,9 @@ export default (M) => {
   }
 
   function openViewer(a, from) {
-    if (M.viewer) return;
+    if (!canUseDrafts() || M.viewer) return;
+    const lifetime = new AbortController();
+    const live = () => canUseDrafts() && !lifetime.signal.aborted;
     let items = conversationMedia();
     if (!items.some((x) => x.id === a.id)) items = [a];
     let index = items.findIndex((x) => x.id === a.id);
@@ -60,12 +63,12 @@ export default (M) => {
     // a video (not loaded to be shown, only its first moments) only once it's asked for
     let kept = null;
     function ready(x, asked) {
-      if (!navigator.canShare || !navigator.share) return null;
+      if (!live() || !navigator.canShare || !navigator.share) return null;
       if (kept?.x === x) return kept.p;
       if (!asked && kindOf(x) === "video") return null;
       const k = (kept = { x, file: null });
       // (a data: address, the demo's, made here rather than fetched: the page's own rules don't let fetch read one)
-      k.p = (x.url.startsWith("data:") ? Promise.resolve().then(() => dataBlob(x.url)) : fetch(x.url, { credentials: "same-origin" })
+      k.p = (x.url.startsWith("data:") ? Promise.resolve().then(() => dataBlob(x.url)) : fetch(x.url, { credentials: "same-origin", signal: lifetime.signal })
         .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("Couldn’t get that file.")))))
         .then((blob) => (k.file = new File([blob], x.filename || "attachment", { type: x.type || blob.type })));
       k.p.catch(() => kept === k && (kept = null));
@@ -138,6 +141,7 @@ export default (M) => {
     const firstImg = slides[index].querySelector(".v-img");
     const fromImg = from?.querySelector?.("img");
     const grow = () => {
+      if (!live()) return;
       el.classList.remove("opening");
       el.classList.add("open");
       if (!firstImg || !fromImg || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -173,14 +177,18 @@ export default (M) => {
       return `inset(${ch}px ${cw}px round ${12 / s}px)`;
     }
 
-    function close() {
-      if (!M.viewer) return;
+    function close({ immediate = false } = {}) {
+      if (M.viewer?.el !== el) return;
+      clearTimeout(M.viewer.tapTimer);
       M.viewer = null;
+      lifetime.abort();
+      kept = null;
       document.removeEventListener("keydown", onKey, true);
       slides.forEach((sl) => sl.querySelector("video")?.pause());
+      if (appEl) appEl.inert = false;
+      if (immediate) { el.remove(); return; }
       el.classList.remove("open");
       el.classList.add("closing");
-      if (appEl) appEl.inert = false;
       // (back into its thumbnail, when the one open is the one tapped and it's still on screen)
       const img = slides[index].querySelector(".v-img");
       const thumb = items[index].id === a.id ? fromImg : null;
@@ -203,16 +211,19 @@ export default (M) => {
     }
 
     async function share(x) {
+      if (!live()) return;
       try {
         if (navigator.canShare && navigator.share) {
           const file = kept?.x === x && kept.file ? kept.file : await ready(x, true);
+          if (!live()) return;
           if (navigator.canShare({ files: [file] })) {
             try {
               return await navigator.share({ files: [file] });
             } catch (err) {
               // (it took longer to come than the tap lasts: it's here now, a tap away)
               if (err?.name !== "NotAllowedError") throw err;
-              return toast("Ready to Share", { icon: "share", actionLabel: "Share", duration: 8000, action: () => navigator.share({ files: [file] }).catch(() => {}) });
+              if (live()) return toast("Ready to Share", { icon: "share", actionLabel: "Share", duration: 8000, action: () => live() && navigator.share({ files: [file] }).catch(() => {}) });
+              return;
             }
           }
         }
@@ -221,7 +232,7 @@ export default (M) => {
         link.click();
         link.remove();
       } catch (err) {
-        if (err?.name !== "AbortError") toast(err.message || "Couldn't share that file.", { error: true });
+        if (live() && err?.name !== "AbortError") toast(err.message || "Couldn't share that file.", { error: true });
       }
     }
 

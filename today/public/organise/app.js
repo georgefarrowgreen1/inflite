@@ -1,11 +1,10 @@
 import {createStore} from './store.js';
 import {createSystemClient,operationId} from '/roof/system-client.js';
-import {localDay,addDays,eventDay,overlaps,linkedEvents,pathOf,noteText,eventICS} from './model.js';
+import {localDay,addDays,eventDay,overlaps,pathOf} from './model.js';
 const NAMES={calendar:'Calendar',notes:'Notes',people:'People'},SECTIONS={calendar:[['week','Week'],['agenda','Month']],notes:[['all','All notes']],people:[['contacts','Contacts']]};
 export async function mountApp(root,F,kind){
- const ui=F.ui,el=ui.el,store=await(F.workspace?.organiseStore?.(kind)||createStore(F,kind)),life=F.signal,live=()=>!life.aborted;let libraryY=null,libraryFocus=null,datesKey='',route=null,shown=false,loaded=false,reading=0,query='',cursor=null,ids=new Set(),editor=null,editorId=null,editorLoad=0,loading=false,error='',reminders=[],date=localDay(),section=SECTIONS[kind][0][0],searchTimer=0,external=[],noteFilter='all',noteView='list',feedRefreshedAt=0;
+ const ui=F.ui,el=ui.el,store=await(F.workspace?.organiseStore?.(kind)||createStore(F,kind)),life=F.signal,live=()=>!life.aborted;let libraryY=null,libraryFocus=null,datesKey='',route=null,shown=false,loaded=false,reading=0,query='',cursor=null,ids=new Set(),editor=null,editorId=null,editorLoad=0,loading=false,error='',date=localDay(),section=SECTIONS[kind][0][0],searchTimer=0,external=[],noteFilter='all',noteView='list',feedRefreshedAt=0;
  const friends=new Map();
- const contactsClient=kind==='people'?createSystemClient(F,{prefix:'/api/organise/'}):null;
  let watchFriends=null,friendState='',friendsLoaded=false,friendView=null,editorSeed=null;
  root.classList.add('org');root.dataset.organise=kind;root.dataset.notesView=noteView;
  const safe=fn=>()=>{try{Promise.resolve(fn()).catch(e=>{if(live())F.toast(e.message)})}catch(e){if(live())F.toast(e.message)}};
@@ -128,12 +127,6 @@ export async function mountApp(root,F,kind){
   editor?.refreshFriend();
   if(friendView){friendView=null;detail.replaceChildren();}
  }
- async function existingFriend(id,current){
-  const local=contactsWithChat().get(id);
-  if(local)return local.id;
-  const result=await contactsClient.request('list',{method:'POST',body:{kind:'people',related:{app:'chats',id},limit:1},current});
-  return result.records.find(value=>chatLink(value,id))?.id;
- }
  function openFriend(id){
   if(!friends.has(id)||!shown)return;
   rememberLibrary();
@@ -147,75 +140,42 @@ export async function mountApp(root,F,kind){
   editor?.destroy();editor=null;editorId='chat:'+r.arg;
   detail.hidden=false;root.dataset.detail='true';
   detail.replaceChildren(el('p',{role:'status',text:'Opening contact…'}));
-  const view=friendView={route:r,module:null,key:null};
+  const view=friendView={route:r,update:null};
+  const current=()=>live()&&shown&&route===r&&friendView===view;
   paint();
   try{
-   view.module=await editorModule();
-   if(friendView===view)paintFriend();
+   const {openFriendProfile}=await editorModule();
+   if(!current())return;
+   view.update=openFriendProfile(F,{detail,id:r.arg,current,store,go,findContact:()=>contactsWithChat().get(r.arg)?.id});
+   paintFriend();
   }catch(error){
    if(friendView===view&&route===r&&shown&&live())detail.replaceChildren(ui.error({title:'This contact couldn’t open',body:error.message,acts:[{label:'Try again',run:safe(()=>showFriend(r))}]}));
   }
  }
  function paintFriend(){
   const view=friendView;
-  if(!view?.module||!live()||!shown||route!==view.route)return;
-  const id=view.route.arg,friend=friends.get(id);
-  const key=friend?JSON.stringify([friend.name,friend.handle]):'missing:'+(friendsLoaded?'loaded':friendState);
-  if(view.key===key)return;
-  view.key=key;
-  if(!friend){
-   const waiting=!friendsLoaded&&(!friendState||friendState==='ready');
-   detail.replaceChildren(waiting?el('p',{role:'status',text:'Opening contact…'}):
-    ui.empty({title:friendState==='locked'?'Chats is locked':'Chat friend unavailable',
-     body:friendState==='locked'?'Unlock Chats to view this profile.':'Open Chats to check your friends.',
-     acts:[{label:'Open Chats',href:'/chats/#friends'}]}));
-   return;
-  }
-  const profile=el('section',{class:'org-profile'}),extra=el('details',{class:'org-extra org-people-extra'},el('summary',{text:'More actions'}));
-  const message=el('p',{class:'org-status',role:'status'});
-  const active=()=>live()&&shown&&route===view.route&&friendView===view&&detail.contains(profile)&&friends.has(id);
-  const chat={id};
-  let selecting=false;
-  async function select(useExisting){
-   if(!active()||selecting)return;
-   selecting=true;profile.setAttribute('aria-busy','true');message.textContent='';
-   try{
-    const existing=await existingFriend(id,active);
-    if(!active())return;
-    if(existing){go(existing,null,true);return}
-    if(useExisting){
-     const {chooseLink}=await import('./links.js');
-     if(!active())return;
-     const selected=await chooseLink(F,'chats',{contactsOnly:true});
-     if(selected&&active())go(selected.id,{chat},true);
-    }else{
-     if(!store.ready())throw Error('Private device storage is unavailable. Try again before adding details.');
-     const recordId=operationId();
-     go(recordId,{chat,initial:{id:recordId,kind:'people',title:friend.name,links:[],version:0}},true);
-    }
-   }catch(error){if(active())message.textContent=error.message}
-   finally{selecting=false;profile.removeAttribute('aria-busy')}
-  }
-  view.module.renderPersonProfile(profile,F,{value:{title:friend.name},handle:friend.handle,
-   edit:{label:'Add details',run:()=>select(false)},chat:()=>{if(active())F.nav.go(pathOf({app:'chats',id}))}});
-  extra.append(el('div',{class:'org-toolbar'},ui.btn('Link to existing contact',{icon:'link',run:()=>select(true)})));
-  detail.replaceChildren(profile,message,extra);
+  view?.update?.(friends.get(view.route.arg),friendState,friendsLoaded);
  }
  async function importContacts(){const [m]=await Promise.all([import('./import.js'),import('/roof/modules.js').then(m=>m.loadStyles(new URL('./editor.css',import.meta.url).pathname))]);if(live()&&shown)m.openImport({F,store,onImported:()=>load()})}
  async function load(append=false){
   if(!live())return;const mine=++reading;loading=true;error='';paint();
   try{const result=await store.list({q:query,cursor:append?cursor:null,...(kind==='calendar'?{range:range()}: {})});if(!live()||mine!==reading||!result)return;if(!append)ids=new Set();for(const v of result.records)ids.add(v.id);cursor=result.cursor;loaded=true;
    if(kind==='calendar'){
-    let feeds=[];try{const refresh=Date.now()-feedRefreshedAt>15*60000;feedRefreshedAt=Date.now();const m=await import('./connected.js');if(live()&&mine===reading)feeds=await m.readFeeds(F,range(),{current:()=>live()&&shown,refresh,onRefresh:()=>load()})}catch(_){}
-    if(!live()||mine!==reading)return;
-    try{const c=createSystemClient(F),rows=[];let cursor=null;for(let page=0;page<5;page++){const r=await c.request('actions',{query:{status:'open',cursor}});if(!live()||mine!==reading)return;rows.push(...(r.actions||[]));cursor=r.cursor;if(!cursor)break}reminders=rows}catch(_){}
-    if(live())external=linkedEvents(F.workspace?.today?.(),reminders).concat(feeds);
+    const current=()=>live()&&shown&&mine===reading;
+    const {calendarSources}=await import('./connected.js');
+    if(!current())return;
+    const refresh=Date.now()-feedRefreshedAt>15*60000;
+    feedRefreshedAt=Date.now();
+    const rows=await calendarSources(F,range(),{current,refresh,onRefresh:()=>load()});
+    if(current())external=rows;
    }
   }catch(e){if(live()&&mine===reading)error=navigator.onLine===false?'Offline · your pending changes are kept on this device.':e.message}
   finally{if(live()&&mine===reading){loading=false;paint()}}
  }
  async function openEditor(id,{initial,chat}={}){
-  const mine=++editorLoad;if(editorId===id&&editor&&!chat)return;await editor?.flush();if(!live()||mine!==editorLoad)return;editor?.destroy();editor=null;editorId=id;detail.hidden=false;root.dataset.detail='true';detail.replaceChildren(el('p',{role:'status',text:'Opening…'}));
+  const mine=++editorLoad;if(editorId===id&&editor&&!chat)return;
+  try{await editor?.flush()}catch(error){if(live()&&shown&&mine===editorLoad){F.toast(error.message);if(editor)go(editorId,null,true)}return}
+  if(!live()||mine!==editorLoad)return;editor?.destroy();editor=null;editorId=id;detail.hidden=false;root.dataset.detail='true';detail.replaceChildren(el('p',{role:'status',text:'Opening…'}));
   try{const [module,value]=await Promise.all([editorModule(),initial?Promise.resolve(initial):store.get(id)]);if(!live()||mine!==editorLoad)return;
    if(chat&&!friends.has(chat.id)){home();return;}
    editor=module.createEditor({F,kind,id,value,store,detail,go,home,date,chat,friendFor:id=>friends.get(id),onSaved:()=>{ids.add(id);paint()},exportValue,linkPicker:()=>import('./links.js').then(m=>m.chooseLink(F,kind)),prepareInvitation});paint();
@@ -223,18 +183,16 @@ export async function mountApp(root,F,kind){
  }
  async function create(initial){if(!store.ready())throw Error('Enable private device storage before creating an item.');const id=operationId(),value=initial||{title:kind==='notes'?'Untitled note':'',links:[],...(kind==='notes'?{text:'',checklist:[]}:kind==='people'?{email:'',phone:'',organisation:'',details:''}:{description:'',allDay:false,start:new Date(date+'T09:00:00').getTime(),end:new Date(date+'T10:00:00').getTime(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})};
   if(kind==='notes')await store.save(id,value,{version:0});
-  if(!live()||!shown)return;await openEditor(id,{initial:{id,kind,...value,version:0}});if(!live()||!shown)return;F.nav.go('/'+kind+'/#item='+id,{replace:true});
+  if(live()&&shown)go(id,{initial:{id,kind,...value,version:0}},true);
  }
- async function openExternal(v){if(v.readOnly)return import('./connected.js').then(m=>live()&&shown&&m.openEvent(F,v,{create}));if(v.ride){const body=el('div',{class:'org'},el('h3',{text:v.title}),el('p',{text:'This ride has no confirmed start time. Review Fitness and Weather, or choose a time to create a linked calendar event.'}));let h;body.append(button('Open Fitness',()=>{h.now();F.nav.go(pathOf(v.source))}),button('Open forecast',()=>{h.now();F.nav.go('/weather/')}),button('Choose event time',()=>{h.now();create({title:v.title,description:'',allDay:false,start:new Date(v.startDate+'T09:00:00').getTime(),end:new Date(v.startDate+'T10:00:00').getTime(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,links:[v.source]})},true));h=F.sheet.open({sheet:'calendar-ride',title:'Plan this ride',body});return}
-  F.nav.go(v.source.app==='reminders'?'/#you=action-'+v.source.id:pathOf(v.source));
- }
+ async function openExternal(v){const {openCalendarSource}=await import('./connected.js');if(live()&&shown)openCalendarSource(F,v,{create})}
  async function exportValue(v){const m=await import('./actions.js');if(live()&&shown)return m.exportValue(F,kind,v)}
  async function prepareInvitation(v){const m=await import('./actions.js');if(live()&&shown)return m.prepareInvitation(F,v)}
  const changed=()=>{F.workspace?.changed();for(const v of store.snapshot())if(!ids.has(v.id)&&v.updatedAt>Date.now()-3000)ids.add(v.id);paint()};store.subscribe(changed);
  search.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{query=search.value.trim();load()},240)});
  const fileMeta=v=>({id:kind+':'+v.id,app:kind,name:v.title+(kind==='calendar'?'.ics':'.txt'),mime:kind==='calendar'?'text/calendar':'text/plain',category:'document',objectId:v.id,intent:'open',downloadIntent:'download',modifiedAt:v.updatedAt});
  const unregister=F.workspace?.provide({snapshot:()=>({status:error?'error':'ready',availability:{local:store.ready(),pending:store.pending().length,saving:store.pending().some(v=>v.state==='saving'),draft:!!editor?.dirty()||store.localForms().length>0,error:store.pending().some(v=>['failed','conflict'].includes(v.state))},actions:[{id:'new',label:kind==='calendar'?'New event':kind==='notes'?'New note':'Add person',enabled:store.ready()}],files:store.snapshot().filter(v=>!v.deleted).map(fileMeta)}),
-  async run(intent,object){if(!live()||!F.workspace.active())return{ok:false};if(intent==='new'){fresh();return{ok:true}}if(intent==='open'&&/^[a-f0-9]{32}$/.test(object||'')){go(object);return{ok:true}}if(intent==='download'&&/^[a-f0-9]{32}$/.test(object||'')){const v=await store.get(object);if(!live()||!F.workspace.active())return{ok:false};const file=new File([kind==='calendar'?eventICS(v):kind==='notes'?noteText(v):[v.title,v.organisation,v.email,v.phone,v.details].filter(Boolean).join('\n')],fileMeta(v).name,{type:fileMeta(v).mime}),url=URL.createObjectURL(file),a=el('a',{href:url,download:file.name,hidden:true});root.append(a);a.click();a.remove();const revoke=()=>URL.revokeObjectURL(url);setTimeout(revoke,1000);life.addEventListener('abort',revoke,{once:true});return{ok:true}}return{ok:false}},
+  async run(intent,object){if(!live()||!F.workspace.active())return{ok:false};if(intent==='new'){fresh();return{ok:true}}if(!/^[a-f0-9]{32}$/.test(object||''))return{ok:false};if(intent==='open'){go(object);return{ok:true}}if(intent==='download'){const [{downloadValue},value]=await Promise.all([import('./actions.js'),store.get(object)]);if(live()&&F.workspace.active())return downloadValue(F,root,kind,value)}return{ok:false}},
   async search(q,lease={}){const result=await store.list({q});return live()&&!lease.signal?.aborted&&(!lease.current||lease.current())?{status:'ready',entries:result.records.slice(0,8).map(v=>({title:v.title,sub:v.matchPreview||v.preview||NAMES[kind],path:'/'+kind+'/#item='+v.id}))}:{status:'error',entries:[]}},
   async files({query:q='',current=()=>true}={}){const r=await store.list({q});return live()&&current()?{status:'ready',more:!!r.cursor,files:r.records.map(fileMeta)}:{status:'error',files:[]}}
  });
@@ -261,7 +219,7 @@ export async function mountApp(root,F,kind){
     if(wasDetail&&libraryY!==null){scrollTo(0,libraryY);if(libraryFocus)list.querySelector('[data-record="'+CSS.escape(libraryFocus)+'"]')?.focus({preventScroll:true})}
    }).catch(e=>{if(live())F.toast(e.message)});
   },
-  hide(){shown=false;stopFriends();if(kind==='people')paint();editor?.flush()},
+  hide(){shown=false;stopFriends();if(kind==='people')paint();editor?.flush().catch(error=>{if(live())F.toast(error.message)})},
   back(){if(editor){editor.close();return true}if(route?.key==='friend'){home();return true}return false},
   busy:()=>!!editor?.dirty()||store.busy(),
   flush:async()=>{await editor?.flush();return store.flush()},

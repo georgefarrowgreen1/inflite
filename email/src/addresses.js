@@ -172,8 +172,8 @@ export async function arrivalFor(env, to) {
     await seed(env, "");
     const [a, catchall] = await Promise.all([addressOf(env, email), metaGet(env, "catchall")]);
     return { address: a, reject: !a && catchall === "reject" };
-  } catch (err) {
-    console.error("addresses", err);
+  } catch {
+    console.error("incoming mail address lookup failed");
     return { address: null, reject: false };
   }
 }

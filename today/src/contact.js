@@ -22,6 +22,8 @@ export async function contact(request, env) {
       request.headers.get("Origin") !== url.origin || (site && site !== "same-origin")) return reply(403);
   if (url.search) return reply(400);
   if (request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json") return reply(415);
+  const attempt = request.headers.get("Idempotency-Key");
+  if (attempt !== null && !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(attempt)) return reply(400);
   // Cloudflare supplies this at ingress. Never use a forwarded address or a hub header supplied by the browser.
   const ip = request.headers.get("CF-Connecting-IP");
   if (!ip || !env.HUB_KEY || !env.APPS) return reply(503);
@@ -33,6 +35,7 @@ export async function contact(request, env) {
 
   try {
     const headers = { "Content-Type": "application/json", "X-Hub-Key": env.HUB_KEY, "X-Hub-IP": ip };
+    if (attempt) headers["Idempotency-Key"] = attempt;
     const res = await fetchUpstream((target, init) => env.APPS.fetch(new Request(target, init)),
       "https://account.inflite.ai/api/inflite-contact", { method: "POST", headers, body, redirect: "manual" }, { signal: request.signal, timeout: 10000 });
     if (res.status === 201 && res.headers.get("Content-Type")?.startsWith("application/json")) {

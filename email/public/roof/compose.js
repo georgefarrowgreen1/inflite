@@ -577,6 +577,10 @@ export function openCompose(ctx, init = {}) {
     const kept = keep();
     const at = kept ? stamp(ctx.outbox.unsent()) : null;
     const bytes = c.files.some(isFile);
+    if (ctx.canRead?.() === false) {
+      if (kept && bytes) fw.toast("Draft text kept on this device. Add its files again after signing in.");
+      return;
+    }
     const job = (async () => {
       if (pendingSave) await pendingSave;
       await filesReady();
@@ -598,7 +602,7 @@ export function openCompose(ctx, init = {}) {
   }
 
   async function send() {
-    if (sending || h.el.getAttribute("aria-busy") === "true") return;
+    if (sending || h.el.getAttribute("aria-busy") === "true" || store.get().access && ctx.canRead?.() === false) return;
     for (const k of LISTS) fields[k].commit();
     const all = LISTS.flatMap((k) => c[k]), bad = all.find((p) => !EMAIL_RE.test(p.email));
     if (!all.length || bad) return fw.toast(bad ? `“${bad.email}” isn’t a valid address` : "Add a recipient");

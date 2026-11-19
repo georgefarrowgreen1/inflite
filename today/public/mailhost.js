@@ -7,9 +7,9 @@
 //   is off); else Mail as it is.
 // - What Mail says, heard only from the frame itself and only from Mail's own address, and only these:
 //     { ifl: "hello", v: 1 }    Mail's in the frame: answered the same, so Mail knows it's InFlite's window it's in;
-//                               then what InFlite's Mail was writing as its switch was turned off (mail:unsent, its
-//                               words), if any, handed in as { ifl: "unsent", v: 1, at, draft }, to Mail's address alone
-//     { ifl: "unsent", v: 1, at, saved: true }   Mail has saved it as a draft: this phone's copy let go, if it's still that one
+//                               then what InFlite's Mail was writing as its switch was turned off (mail:unsent:v1, its
+//                               words), if any, handed in as { ifl: "unsent", v: 2, owner, at, draft } for the same account
+//     { ifl: "unsent", v: 2, owner, at, saved: true }   Mail has saved it as a draft: discard the acknowledged copy
 //     { ifl: "back" }           Mail's Back: to Apps (/#apps), never history's own back (Mail keeps history of its own)
 //     { ifl: "signin", ask }    Mail's Sign In, its word's hash (ask) kept as Mail keeps it: this whole window to the
 //                               sign-in page (data-auth), which comes back here, to /mail/#signin=<code>
@@ -74,24 +74,33 @@
     location.assign(APPS);
   }
 
-  // (what InFlite's Mail was writing when Mail's switch was turned off, kept on this phone as mail:unsent, its words and
+  // (what InFlite's Mail was writing when Mail's switch was turned off, kept on this phone as mail:unsent:v1, its words and
   // never files (One roof stage 4, §8): Mail's API answers no InFlite address from then on, so it couldn't be saved from
-  // here. Handed to Mail in the frame, at Mail's address alone, once Mail's said hello; Mail saves it as a draft and says
-  // so by the copy's time, and this phone's copy goes, unless it's changed since. Never shown on this page)
-  const UNSENT = "mail:unsent";
+  // here. Handed to Mail in the frame after its hello and a fresh check of the owner. Mail acknowledges the copy by
+  // owner and time so it can be cleared from this device.
+  const UNSENT = "mail:unsent:v1";
   const local = () => { try { return localStorage; } catch (_) { return null; } };
   function unsent() {
-    let u = null;
-    try { u = JSON.parse(local()?.getItem(UNSENT) || "null"); } catch (_) { return null; }
+    let record = null;
+    try { record = JSON.parse(local()?.getItem(UNSENT) || "null"); } catch (_) { return null; }
+    if (record?.v !== 1 || typeof record.owner !== "string" || !record.owner) return null;
+    const u = record.value;
     if (!u || typeof u !== "object" || !Number.isFinite(u.at)) return null;
-    return u.subject || String(u.text || "").trim() || ["to", "cc", "bcc"].some((k) => Array.isArray(u[k]) && u[k].length) ? u : null;
+    return u.subject || String(u.text || "").trim() || ["to", "cc", "bcc"].some((k) => Array.isArray(u[k]) && u[k].length) ? record : null;
   }
-  function handIn(frame) {
-    const u = unsent();
-    if (!u) return;
-    const { from, to, cc, bcc, subject, text, inReplyTo, references, draftId, quote, quoteOld } = u;
+  async function handIn(target) {
+    const record = unsent();
+    if (!record) return;
+    let view;
+    try {
+      const response = await fetch("/api/session", { cache: "no-store" });
+      if (response.ok) view = await response.json();
+    } catch (_) { return; }
+    const { owner, value } = record, latest = unsent();
+    if (view?.user?.id !== owner || view.apps?.mail !== true || target !== frame || latest?.owner !== owner || latest.value.at !== value.at) return;
+    const { from, to, cc, bcc, subject, text, inReplyTo, references, draftId, quote, quoteOld } = latest.value;
     const draft = { from, to, cc, bcc, subject, text, inReplyTo, references, draftId, ...(quote?.of && !quoteOld && { quote: { of: quote.of, mode: quote.mode } }) };
-    try { frame.contentWindow.postMessage({ ifl: "unsent", v: 1, at: u.at, draft }, MAIL); } catch (_) {}
+    try { target.contentWindow.postMessage({ ifl: "unsent", v: 2, owner, at: value.at, draft }, MAIL); } catch (_) {}
   }
 
   // What Mail says from its frame. → what was done ("hello", "back", "signin", "unsent"), or null for anything not taken
@@ -104,8 +113,9 @@
       handIn(frame);
       return "hello";
     }
-    if (d.ifl === "unsent" && d.v === 1 && d.saved === true) {
-      if (unsent()?.at === d.at) try { local()?.removeItem(UNSENT); } catch (_) {}
+    if (d.ifl === "unsent" && d.v === 2 && d.saved === true) {
+      const record = unsent();
+      if (record && record.owner === d.owner && record.value.at === d.at) try { local()?.removeItem(UNSENT); } catch (_) {}
       return "unsent";
     }
     if (d.ifl === "back") return back(), "back";

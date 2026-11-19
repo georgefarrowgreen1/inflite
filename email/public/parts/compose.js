@@ -5,6 +5,7 @@
 // calls.
 export default (M) => {
   const { icon, h, setKids, avatar, fmtSize, extOf, debounce, textToHtml, htmlToText, parseAddress, EMAIL_RE, dataBlob, ApiError, api, S, showMenu, closeMenu, confirmMenu, undoFor, toast, sigFor, addrColor, renderListChrome, loadList, refreshCounts, openThread, retryFailed, keepUnsent, forgetUnsent, outbox, pendingSends, focusedBefore } = M;
+  const { canUseDrafts = () => true } = M;
 
   function fileToBase64(blob) {
     return new Promise((resolve, reject) => {
@@ -48,6 +49,7 @@ export default (M) => {
   async function openDraft(id) {
     try {
       const msg = await api.message(id);
+      if (!canUseDrafts()) return;
       const c = msg.compose || { to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.text };
       // (the files kept with it, as files again: sent or saved as if just picked)
       c.attachments = (c.attachments || []).map((a) => {
@@ -69,11 +71,13 @@ export default (M) => {
     const known = new Set([...pendingSends, ...S.failedSends, ...heldSends].map((j) => j.id));
     const kept = [];
     for (const r of await outbox.all()) {
+      if (!canUseDrafts()) break;
       if (!r?.id || !r.c || known.has(r.id)) continue;
       if (Date.now() - r.at > 14 * 864e5) outbox.drop(r.id);
       else if (await take(r)) kept.push(r);
     }
     const went = new Set(kept.length ? (await api.sent(kept.map((r) => r.id)).catch(() => null))?.sent || [] : []);
+    if (!canUseDrafts()) { kept.forEach(letGo); return false; }
     const jobs = [];
     for (const r of kept) {
       if (went.has(r.id)) { outbox.drop(r.id); letGo(r); continue; }
@@ -96,8 +100,8 @@ export default (M) => {
     return jobs.length > 0;
   }
 
-  function openCompose(init = {}) {
-    if (M.sheetState) return;
+  function openCompose(init = {}, recoveredJob = null) {
+    if (!canUseDrafts() || M.sheetState) return;
     closeMenu(true);
     const c = {
       mode: init.mode || "new",
@@ -122,6 +126,16 @@ export default (M) => {
     let onQuickOwned = init.onQuickOwned;
     const claimQuick = () => { onQuickOwned?.(); onQuickOwned = null; };
     const snapshot = init.quickSelection && init.text ? null : JSON.stringify([c.to, c.cc, c.bcc, c.subject, c.text, c.attachments.length]);
+    let draftStamp = init.stamp;
+    const keepDraft = owner => {
+      const stamp = keepUnsent(c, owner);
+      if (stamp) draftStamp = stamp;
+      return stamp;
+    };
+    async function removeRecovered() {
+      if (!recoveredJob) return;
+      try { await outbox.drop(recoveredJob.id); } finally { letGo(recoveredJob); }
+    }
 
     const scrim = h("div.sheet-scrim");
     const titleEl = h("h2");
@@ -615,8 +629,9 @@ export default (M) => {
         const ok = await confirmMenu(sendBtn, "This message has no subject.", "Send Anyway");
         if (!ok) return subjectInput.focus();
       }
+      const stamp = keepDraft();
+      queueSend(c, { stamp, recoveredJob });
       closeSheet("sending");
-      queueSend(c, { sheet: true });
       claimQuick();
     }
 
@@ -625,9 +640,7 @@ export default (M) => {
       if (!st || st !== composeState) return;
       M.sheetState = null;
       clearInterval(st.keepT);
-      // (nothing written: no copy kept; sent, its copy's the outbox's once it has it (queueSend); thrown away or saved,
-      // its own action forgets it once it's done)
-      if (mode !== "sending" && !st.dirty()) forgetUnsent();
+      if (recoveredJob && !mode) releaseEdit(recoveredJob);
       document.activeElement?.blur?.();
       const appEl = document.getElementById("app");
       if (appEl) appEl.inert = false;
@@ -687,12 +700,18 @@ export default (M) => {
     const composeState = M.sheetState = {
       c,
       dirty,
+      keepDraft,
+      recoveredJob,
       closeBtn,
       close: closeSheet,
-      keepT: setInterval(() => { if (dirty()) keepUnsent(c); }, 2000),
+      keepT: setInterval(() => { if (dirty()) keepDraft(); }, 2000),
       saveDraft: async () => {
-        keepUnsent(c);
-        closeSheet();
+        const stamp = keepDraft();
+        if (recoveredJob) {
+          recoveredJob.c = c;
+          recoveredJob.editWrite = outbox.keep(recoveredJob);
+        }
+        closeSheet("saving");
         try {
           await api.saveDraft({
             id: c.draftId,
@@ -707,20 +726,28 @@ export default (M) => {
             quote: c.quote,
             attachments: await draftAttachments(c.attachments),
           });
-          forgetUnsent();
+          if (!canUseDrafts()) return;
+          forgetUnsent(stamp);
+          await removeRecovered();
+          if (!canUseDrafts()) return;
           claimQuick();
           toast("Draft Saved", { icon: "drafts" });
           refreshCounts();
           loadList({ quiet: true });
         } catch (err) {
+          if (!canUseDrafts()) return;
           // (not saved: it's still on this device, and opens again from here)
-          toast(`${err.message} It’s kept on this device.`, { error: true, actionLabel: "Open", duration: 8000, action: () => { forgetUnsent(); openCompose({ ...c }); } });
-        }
+          toast(`${err.message} It’s kept on this device.`, {
+            error: true, actionLabel: "Open", duration: 8000,
+            action: () => recoveredJob ? bringBack(recoveredJob) : openCompose({ ...c, stamp }),
+          });
+        } finally { if (recoveredJob) releaseEdit(recoveredJob); }
       },
       deleteDraft: async () => {
         claimQuick();
-        forgetUnsent();
-        closeSheet();
+        forgetUnsent(draftStamp);
+        closeSheet("discard");
+        removeRecovered();
         if (c.draftId) {
           try {
             await api.remove(c.draftId);
@@ -753,7 +780,7 @@ export default (M) => {
     sheet.classList.add("open");
     requestAnimationFrame(autoGrow);
 
-    if (init.quickSelection && init.text && keepUnsent(c)) claimQuick();
+    if (init.quickSelection && init.text && keepDraft()) claimQuick();
     // Focus synchronously so iOS raises the keyboard within the tap.
     if (c.mode === "new" && !c.to.length) fields.to.input.focus({ preventScroll: true });
     else if (c.mode !== "new" || c.draftId) {
@@ -801,15 +828,27 @@ export default (M) => {
     job.gone = true;
     job.letGo?.();
   };
+  function releaseEdit(job) {
+    const writing = job.editWrite;
+    Promise.resolve(writing).then(() => {
+      if (job.edit && job.editWrite === writing) letGo(job);
+    });
+  }
+  function releaseDrafts() {
+    for (const job of heldSends.splice(0)) releaseEdit(job);
+    if (M.sheetState?.recoveredJob) releaseEdit(M.sheetState.recoveredJob);
+  }
 
-  // sheet: from the compose sheet, whose own copy on this device the outbox's now takes over from
-  function queueSend(c, { sheet = false } = {}) {
-    const job = { id: jobId(), at: Date.now(), c, sheet, cancelled: false, timer: null };
+  // The composer keeps its text before closing. Only a durable outbox write can take over that copy.
+  function queueSend(c, { stamp, recoveredJob } = {}) {
+    if (!canUseDrafts()) return;
+    const job = recoveredJob || { id: jobId() };
+    Object.assign(job, { at: Date.now(), c, stamp, edit: false, cancelled: false, started: false, timer: null });
     pendingSends.add(job);
-    take(job);
+    if (!recoveredJob) take(job);
     outbox.keep(job).then((ok) => {
       job.kept = !!ok;
-      if (sheet) ok ? forgetUnsent() : keepUnsent(c);
+      if (ok) forgetUnsent(stamp);
     });
     // (longer to undo, for those who'd take longer to reach Undo: undoFor)
     const wait = undoFor();
@@ -832,20 +871,22 @@ export default (M) => {
   // own copy kept from the start. With another message open, it opens once that's closed, kept meanwhile (and offered
   // as Mail next opens, should Mail close first)
   function bringBack(job) {
+    if (!canUseDrafts()) { letGo(job); return; }
+    if (job.gone) {
+      job.gone = false;
+      take(job).then(held => held ? bringBack(job) : letGo(job));
+      return;
+    }
     S.failedSends = S.failedSends.filter((j) => j !== job);
     renderListChrome();
+    job.edit = true;
+    job.editWrite = outbox.keep(job);
     if (M.sheetState) {
-      job.edit = true;
       if (!heldSends.includes(job)) heldSends.push(job);
-      // (this window's again while it waits, if it had let it go: one Mail refused, or offered to open)
-      if (job.gone) ((job.gone = false), take(job));
-      outbox.keep(job);
       return toast("It opens again once you’ve closed this one", { icon: "drafts" });
     }
-    outbox.drop(job.id);
-    letGo(job);
-    keepUnsent(job.c);
-    openCompose(job.c);
+    const stamp = keepUnsent(job.c);
+    openCompose({ ...job.c, stamp }, job);
   }
 
   async function buildPayload(c, structured = false) {
@@ -880,27 +921,30 @@ export default (M) => {
   }
 
   async function runSend(job, { keepalive } = {}) {
-    if (job.cancelled || job.started) return;
+    if (!canUseDrafts() || job.cancelled || job.started) return;
     job.started = true;
     // (on its way till Mail answers: the updater waits for it)
     pendingSends.add(job);
     try {
       const payload = await buildPayload(job.c, !M.DEMO);
+      if (!canUseDrafts()) return;
       await api.send({ ...payload, key: job.id }, { keepalive });
+      if (!canUseDrafts()) return;
       toast("Message Sent", { icon: "check" });
       outbox.drop(job.id);
       letGo(job);
-      if (job.sheet && !job.kept) forgetUnsent();
+      forgetUnsent(job.stamp);
       S.failedSends = S.failedSends.filter((j) => j !== job);
       refreshCounts();
       loadList({ quiet: true });
       // (a reply shows in its conversation, if that's the one open: not in another gone to meanwhile)
       if (job.c.inReplyTo && job.c.threadId && S.thread?.id === job.c.threadId) openThread(S.thread.id, { fromNav: true });
     } catch (err) {
+      if (!canUseDrafts()) return;
       // (kept for the dot to offer again, as it is in the outbox for next time, unless Mail said it's the message itself
       // that's wrong: that's to be changed (Edit), and offered to open next time. Signed out, it's sent again once you're
       // back. Where the outbox couldn't keep it, the one copy this device keeps, as before)
-      if (!job.kept) keepUnsent(job.c);
+      if (!job.kept && !job.stamp) job.stamp = keepUnsent(job.c, undefined, { ifEmpty: true });
       const refused = err.status >= 400 && err.status < 500 && err.status !== 401;
       if (refused) {
         job.edit = true;
@@ -925,5 +969,5 @@ export default (M) => {
     }
   }
 
-  return { openCompose, openDraft, offerOutbox, requestCloseCompose, queueSend, runSend };
+  return { openCompose, openDraft, offerOutbox, requestCloseCompose, queueSend, runSend, releaseDrafts };
 };

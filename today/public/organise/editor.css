@@ -17,6 +17,7 @@
 .org input[type=checkbox]:checked{background:var(--org-accent);border-color:var(--org-accent)}
 .org input[type=checkbox]:checked::after{content:"";display:block;width:6px;height:11px;border:solid var(--ifl-page,#fff);border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
 .org-links{display:flex;flex-direction:column;gap:10px}
+.org-links>.org-muted{margin:0;padding:10px 12px;border-radius:16px;background:var(--ifl-surface)}
 .org-link{display:flex;align-items:center;gap:10px;background:var(--ifl-surface-2,#f2f4f2);border-radius:20px;padding:10px 12px}
 .org-link>span:not(.ifl-glyph){flex:1;min-width:0;overflow-wrap:anywhere}
 .org-recovery{padding:16px;border:1px solid var(--org-accent);border-radius:24px;display:flex;flex-wrap:wrap;gap:12px}

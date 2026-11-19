@@ -33,7 +33,9 @@ export const ROOF_FILES = filesOf("weather");
 // forecast, places, radar and map are fetched by the page itself, as Weather does at its own address; and Chats': its
 // voice pigeons played from blob: (media-src), the camera for a friend's code, the microphone for voice, where you are
 // for Look Up (Permissions-Policy, this site's own page only); never 'wasm-unsafe-eval': no Argon2 runs here, S3-D8)
-const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://tilecache.rainviewer.com https://tile.openstreetmap.org https://tiles.openfreemap.org; font-src 'self'; connect-src 'self' wss://streamer.finance.yahoo.com https://email.inflite.ai http://email.ifl.test:8788 https://api.open-meteo.com https://ensemble-api.open-meteo.com https://air-quality-api.open-meteo.com https://marine-api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://previous-runs-api.open-meteo.com https://api.bigdatacloud.net https://nominatim.openstreetmap.org https://api.rainviewer.com https://tiles.openfreemap.org; media-src 'self' blob:; frame-src 'self' https://email.inflite.ai http://email.ifl.test:8788; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
+const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://tilecache.rainviewer.com https://tile.openstreetmap.org https://tiles.openfreemap.org; font-src 'self'; connect-src 'self' wss://streamer.finance.yahoo.com https://email.inflite.ai https://api.open-meteo.com https://ensemble-api.open-meteo.com https://air-quality-api.open-meteo.com https://marine-api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://previous-runs-api.open-meteo.com https://api.bigdatacloud.net https://nominatim.openstreetmap.org https://api.rainviewer.com https://tiles.openfreemap.org; media-src 'self' blob:; frame-src 'self' https://email.inflite.ai; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
+const MAIL_FIXTURE = "http://email.ifl.test:8788";
+export const usesLocalMailFixture = env => env?.TEST_AT === "1" && env.MAIL_ORIGIN === MAIL_FIXTURE;
 export const PAGE_HEADERS = {
   "Content-Security-Policy": CSP,
   "Permissions-Policy": "camera=(self), microphone=(self), geolocation=(self)",
@@ -55,6 +57,7 @@ export async function roofPage(request, env) {
   const h = new Headers(res.headers);
   for (const k of ["ETag", "Last-Modified", "Content-Security-Policy-Report-Only"]) h.delete(k);
   for (const [k, v] of Object.entries(PAGE_HEADERS)) h.set(k, v);
+  if (usesLocalMailFixture(env)) h.set("Content-Security-Policy", CSP.replaceAll("https://email.inflite.ai", "https://email.inflite.ai " + MAIL_FIXTURE));
   h.set("X-InFlite-Shell", "1");
   if (method === "HEAD") { if (res.body) res.body.cancel().catch(() => {}); return new Response(null, { status: res.status, statusText: res.statusText, headers: h }); }
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });

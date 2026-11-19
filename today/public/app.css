@@ -1604,7 +1604,6 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
     display: grid;
     place-items: center;
     min-height: 100vh;
-    min-height: 100svh;
     max-width: none;
     padding: clamp(20px, 5vh, 60px) 24px;
     --entry-panel: color-mix(in srgb, var(--ifl-surface) 89%, transparent);

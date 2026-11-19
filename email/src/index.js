@@ -1,4 +1,5 @@
 import { assetBuild } from "../../shared/asset-build.js";
+import { sameOriginPost } from "../../shared/browser-origin.js";
 import { dueFollowups, validDue } from "./followups.js";
 import { peopleCards } from './people-cards.js';
 import { exportAttachment } from "./attachment-export.js";
@@ -66,10 +67,10 @@ const worker = {
     try {
       res = await api(request, env, ctx, url, !!cors, hub);
     } catch (err) {
-      if (!err.status || err.status >= 500) console.error(err);
+      if (!err?.status || err.status >= 500) console.error("mail request failed");
       // (the words of errors Mail raised itself; never a database's)
-      const said = err.publicMessage || (err.status && err.status < 500 ? err.message : null);
-      res = json({ error: said || "Something went wrong. Try again.", access: err.access }, err.status || 500);
+      const said = err?.publicMessage || (err?.status && err.status < 500 ? err.message : null);
+      res = json({ error: said || "Something went wrong. Try again.", access: err?.access }, err?.status || 500);
     }
     if (cors) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
     // (Vary added to, never put over what a route said)
@@ -99,21 +100,21 @@ const worker = {
           pushAll(env, { title: w.from || "Mail", body: `Back from Later: ${w.subject}`, tag: w.threadId, url: `/#thread=${w.threadId}`, badge })
         )
       );
-    } catch (err) {
-      console.error("scheduled: Later", err);
+    } catch {
+      console.error("scheduled: Later");
     }
     try {
       // An open People inbox polls the mailbox version. Wake it when a
       // reminder becomes due, including when no messages arrived that minute.
       if ((await dueFollowups(env, true)).length) await bumpVersion(env);
-    } catch (error) { console.error("scheduled: mail follow-ups", error); }
+    } catch { console.error("scheduled: mail follow-ups"); }
     // mail that came while the database wasn't answering, read in now it is (receive.js)
-    await retryPending(env, ctx).catch((err) => console.error("scheduled: pending", err));
+    await retryPending(env, ctx).catch(() => console.error("scheduled: pending"));
     // the last 60 days read back, a few at a time, once one of Spot in Your Mail's switches is turned on (spot.js)
-    await readBack(env, { budgetMs: 15000 }).catch((err) => console.error("scheduled: bookings", err));
+    await readBack(env, { budgetMs: 15000 }).catch(() => console.error("scheduled: bookings"));
     // once a day: what's been in the Trash 30 days goes for good, and people kept for addressing mail who've had
     // nothing to or from them in half a year, with no mail left of theirs
-    await tidy(env).catch((err) => console.error("scheduled: tidy", err));
+    await tidy(env).catch(() => console.error("scheduled: tidy"));
   },
 };
 
@@ -354,7 +355,7 @@ async function route(request, env, ctx, url, view, hub = null) {
       const t = await getThread(env, m[1]);
       if (!t) throw new HttpError(404, "Conversation not found");
       // (the bookings, parcels and bills spotted in it, for the strip at its top, while their switches are on)
-      const spots = await threadSpots(env, m[1]).catch((err) => (console.error("spots", err), null));
+      const spots = await threadSpots(env, m[1]).catch(() => (console.error("mail spots failed"), null));
       return json(spots?.length ? { ...t, spots } : t);
     }
     if (method === "POST") {
@@ -407,10 +408,16 @@ async function route(request, env, ctx, url, view, hub = null) {
       .all();
     return json({ sent: results.map((r) => r.key) });
   }
-  if (pathname === "/api/send" && method === "POST") {
-    return send(env, ctx, await jsonBody(request, 36 * 1024 * 1024), view);
+  if (method === "POST" && (pathname === "/api/drafts" || pathname === "/api/send")) {
+    const message = await jsonBody(request, 36 * 1024 * 1024);
+    if (hub && !message?.accountOwner) throw new HttpError(409, "Refresh InFlite to save or send mail.");
+    if (message && Object.hasOwn(message, "accountOwner") && (!view.id || message.accountOwner !== view.id)) {
+      const error = new HttpError(401, "This draft belongs to another account.");
+      error.access = "signin";
+      throw error;
+    }
+    return pathname === "/api/drafts" ? saveDraft(env, message, view) : send(env, ctx, message, view);
   }
-  if (pathname === "/api/drafts" && method === "POST") return saveDraft(env, await jsonBody(request, 36 * 1024 * 1024), view);
 
   throw new HttpError(404, "Not found");
 }
@@ -442,10 +449,10 @@ async function unsubscribe(env, threadId) {
           redirect: "manual",
           signal: AbortSignal.timeout(8000),
         });
-        done = r.status < 400;
+        done = r.ok;
       }
-    } catch (err) {
-      console.error("one-click unsubscribe", err?.message);
+    } catch {
+      console.error("one-click unsubscribe failed");
     }
   }
   if (!done && info.mailto) {
@@ -539,7 +546,7 @@ const roofBuild = assetBuild("/roof/mail.js");
 
 const publicUser = (v) =>
   v?.signedIn
-    ? { name: v.name, handle: v.handle, email: v.email, admin: !!v.admin, appearance: v.appearance || "auto", photoAt: v.photoAt || null }
+    ? { id: v.id, name: v.name, handle: v.handle, email: v.email, admin: !!v.admin, appearance: v.appearance || "auto", photoAt: v.photoAt || null }
     : null;
 
 // Your account's photo, from the account's address with your sign-in. The URL
@@ -1008,24 +1015,25 @@ async function send(env, ctx, body, view) {
     try {
       result = await env.EMAIL.send(message);
     } catch (err) {
-      console.error("send failed", err.code, err.message);
+      const code = err?.code;
+      console.error("mail send failed", ["E_SENDER_NOT_VERIFIED", "E_RATE_LIMIT_EXCEEDED"].includes(code) ? code : "provider");
       if (key) await env.DB.prepare(`DELETE FROM sends WHERE key = ?1 AND at = ?2 AND id IS NULL`).bind(key, claimedAt).run().catch(() => {});
       const hint =
-        err.code === "E_SENDER_NOT_VERIFIED"
+        code === "E_SENDER_NOT_VERIFIED"
           ? `${env.DOMAIN} isn't verified for Email Sending yet.`
-          : err.code === "E_RATE_LIMIT_EXCEEDED"
+          : code === "E_RATE_LIMIT_EXCEEDED"
             ? "Sending limit reached. Try again later."
-            : err.message;
-      throw new HttpError(502, hint || "Couldn't send the message.");
+            : "Couldn't send the message.";
+      throw new HttpError(502, hint);
     }
 
     // Sent: whatever happens to the copy kept here, the answer is that it went (so it's never sent twice).
     const id = crypto.randomUUID();
-    if (key) await env.DB.prepare(`UPDATE sends SET id = ?2 WHERE key = ?1 AND id IS NULL`).bind(key, id).run().catch((err) => console.error("sent, but not noted as sent", err));
+    if (key) await env.DB.prepare(`UPDATE sends SET id = ?2 WHERE key = ?1 AND id IS NULL`).bind(key, id).run().catch(() => console.error("sent, but not noted as sent"));
     try {
       await keepSent(env, ctx, { followUpAt:body.followUpAt, id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId: body.draftId });
-    } catch (err) {
-      console.error("sent, but the copy wasn't kept", err);
+    } catch {
+      console.error("sent, but the copy wasn't kept");
     }
     return id;
   })();
@@ -1232,8 +1240,7 @@ async function saveDraft(env, body, view) {
 async function vitals(request, env, ctx) {
   const none = (status = 204) => new Response(null, { status, headers: { "Cache-Control": "no-store" } });
   if (request.method !== "POST") return none(405);
-  const site = request.headers.get("Sec-Fetch-Site");
-  if (site && site !== "same-origin") return none(403);
+  if (!sameOriginPost(request)) return none(403);
   const body = await bodyUpTo(request, 600);
   if (body === null) return none(413);
   const go = appFetch(env, `${env.ACCOUNT_ORIGIN}/api/vitals`, { method: "POST", headers: whose(request, env, { "Content-Type": "text/plain" }), body, signal: AbortSignal.timeout(5000) }).catch(() => null);
@@ -1244,8 +1251,7 @@ async function vitals(request, env, ctx) {
 async function bugReport(request, env) {
   const out = (status, error) => json({ error }, status);
   if (request.method !== "POST") return out(405, "Not here.");
-  const site = request.headers.get("Sec-Fetch-Site");
-  if (site && site !== "same-origin") return out(403, "Not from here.");
+  if (!sameOriginPost(request)) return out(403, "Not from here.");
   const body = await bodyUpTo(request, 3 * 12000);
   if (body === null || body.length > 12000) return out(413, "That report is too long.");
   const headers = whose(request, env, { "Content-Type": "application/json" });

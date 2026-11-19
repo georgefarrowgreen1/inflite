@@ -66,7 +66,7 @@ test('attachment search returns files from the named sender, and inbox follow-up
     const ctx = {waitUntil: promise => background.push(promise)};
     const drain = async () => { while (background.length) await background.shift(); };
     Object.assign(env, {
-      DOMAIN:'inflite.ai', DEFAULT_FROM:'hello@inflite.ai', ACCOUNT_ORIGIN:'https://account.test', HUB_KEY:'fixture',
+      DOMAIN:'inflite.ai', DEFAULT_FROM:'hello@inflite.ai', ACCOUNT_ORIGIN:'https://account.test', HUB_KEY:'fixture', HUB_ORIGIN:'https://inflite.ai', HUB_API:'1',
       MAIL:{
         put:async (k,v)=>objects.set(k,v),
         get:async k=>objects.has(k)?{json:async()=>JSON.parse(objects.get(k))}:null,
@@ -76,18 +76,25 @@ test('attachment search returns files from the named sender, and inbox follow-up
     });
     const savedFetch = globalThis.fetch;
     try {
-      globalThis.fetch = async () => Response.json({signedIn:true,admin:true,passkey:true,fresh:true,handle:'fixture'});
-      const post = async (path,body,expected = 200) => {
+      globalThis.fetch = async () => Response.json({signedIn:true,admin:true,passkey:true,fresh:true,id:'fixture-owner',handle:'fixture'});
+      const post = async (path,body,expected = 200, origin = 'https://email.inflite.ai') => {
         const res = await worker.fetch(new Request('https://email.inflite.ai/api/'+path,{
-          method:'POST',headers:{Origin:'https://email.inflite.ai',Cookie:'account=abcdefghijklmnopqrstuvwxyz',
-          'X-Inflite':'1','Sec-Fetch-Site':'same-origin','Content-Type':'application/json'},body:JSON.stringify(body)
+          method:'POST',headers:{Origin:origin,Cookie:'account=abcdefghijklmnopqrstuvwxyz',
+          'X-Inflite':'1','Sec-Fetch-Site':origin === 'https://inflite.ai' ? 'same-site' : 'same-origin','Content-Type':'application/json'},body:JSON.stringify(body)
         }),env,ctx);
         const value = await res.json();
         assert.equal(res.status,expected,JSON.stringify(value));
         return value;
       };
       const due = Date.now()+86400000;
-      const draft = await post('drafts',{to:[{email:'reuben@example.com'}],text:'Please confirm by Friday.',subject:'Saturday ride',followUpAt:due});
+      const fields = {to:[{email:'reuben@example.com'}],text:'Please confirm by Friday.',subject:'Saturday ride',followUpAt:due};
+      const hub = 'https://inflite.ai';
+      assert.match((await post('drafts', fields, 409, hub)).error, /Refresh InFlite/);
+      assert.match((await post('send', { ...fields, key:'ownerless-fixture-send' }, 409, hub)).error, /Refresh InFlite/);
+      assert.equal((await post('drafts', { ...fields, accountOwner:'previous-fixture-owner' }, 401)).access, 'signin');
+      assert.equal(sql.prepare("SELECT count(*) AS n FROM messages WHERE folder = 'drafts'").get().n, 0);
+      const draft = await post('drafts',{ ...fields, accountOwner:'fixture-owner' }, 200, hub);
+      assert.equal((await post('send', { draftId:draft.id, key:'other-owner-test', accountOwner:'previous-fixture-owner' }, 401)).access, 'signin');
       const sent = await post('send',{draftId:draft.id,key:'reminder-test-001'});
       await drain();
       assert.equal(deliveries.length,1);
@@ -116,6 +123,34 @@ test('attachment search returns files from the named sender, and inbox follow-up
       assert.equal((await post('send',retry)).id,completed.id);
       assert.equal(deliveries.length,2);
       await drain();
+
+      const diagnostic = 'Fixture provider must not expose recipient@example.test or internal delivery detail';
+      const providerFailure = Object.assign(new Error(diagnostic), { code: 'unreviewed-code' });
+      const logged = [], savedConsoleError = console.error;
+      console.error = (...args) => logged.push(args);
+      try {
+        env.EMAIL.send = async () => { throw providerFailure; };
+        const failed = await post('send', { ...retry, key:'private-failure-003' }, 502);
+        assert.equal(failed.error, "Couldn't send the message.");
+        assert.deepEqual(logged, [['mail send failed', 'provider'], ['mail request failed']]);
+        assert.equal(sql.prepare('SELECT 1 FROM sends WHERE key = ?').get('private-failure-003'), undefined);
+      } finally { console.error = savedConsoleError; }
+
+      const unsubscribeUrl = 'https://list.example.test/leave';
+      sql.prepare("UPDATE messages SET from_email = ?, unsub = ?, unsub_post = 1 WHERE id = '1'")
+        .run('list@example.test', '<' + unsubscribeUrl + '>');
+      let unsubscribeStatus = 302;
+      const accountFetch = globalThis.fetch;
+      globalThis.fetch = async (url, options) => {
+        if (String(url) !== unsubscribeUrl) return accountFetch(url, options);
+        assert.equal(options.redirect, 'manual');
+        return new Response(null, { status: unsubscribeStatus });
+      };
+      assert.deepEqual(await post('unsubscribe/t1', {}), { ok:false, open:unsubscribeUrl });
+      assert.equal(sql.prepare("SELECT folder FROM messages WHERE id = '1'").get().folder, 'inbox');
+      unsubscribeStatus = 204;
+      assert.deepEqual(await post('unsubscribe/t1', {}), { ok:true });
+      assert.equal(sql.prepare("SELECT folder FROM messages WHERE id = '1'").get().folder, 'archive');
     } finally { globalThis.fetch = savedFetch; }
   } finally { sql.close(); }
 });
@@ -148,6 +183,7 @@ test('Signature styles the sender’s own sign-off once above quoted history', a
 
 test('draft recovery preserves server attachments, current edits and a newer local copy', async t => {
   const {createOutbox} = await import('../email/public/roof/outbox.js');
+  const { STORAGE } = await import('../email/public/roof/store.js');
   const data = new Map();
   t.mock.method(globalThis, 'setInterval', () => 0);
   const previous = Object.getOwnPropertyDescriptor(globalThis,'localStorage');
@@ -165,7 +201,7 @@ test('draft recovery preserves server attachments, current edits and a newer loc
       return {id:'one'};
     },
   };
-  const box = createOutbox({api,fw:{},store:{set(){}}});
+  const box = createOutbox({api,fw:{session:{user:{id:'fixture-owner'}}},store:{set(){}}});
   t.after(()=>box.destroy());
   let text = 'first', draftId = null;
   const snapshots = [];
@@ -191,10 +227,141 @@ test('draft recovery preserves server attachments, current edits and a newer loc
   assert.equal(box.unsent().text,'newer local draft');
 
   // A mounted tab finishing its flush must leave another tab's queued message intact.
-  const remote = [{key:'other-tab',at:9,draft:{text:'Queued in a different tab'}}];
-  data.set('mail:outbox',JSON.stringify(remote));
+  const remote = {v:1,owner:'fixture-owner',value:[{key:'other-tab',at:9,draft:{text:'Queued in a different tab'}}]};
+  data.set(STORAGE.outbox,JSON.stringify(remote));
   await box.flush({draftsOnly:true});
-  assert.deepEqual(JSON.parse(data.get('mail:outbox')),remote);
+  assert.deepEqual(JSON.parse(data.get(STORAGE.outbox)),remote);
+});
+
+test('an interrupted offline Mail send keeps its retry key and saved draft through reload', async t => {
+  const { createOutbox } = await import('../email/public/roof/outbox.js');
+  const { STORAGE } = await import('../email/public/roof/store.js');
+  const data = new Map();
+  let online = false;
+  for (const [key, value] of Object.entries({ navigator: { get onLine() { return online; } }, localStorage: {
+    get length() { return data.size; }, key: i => [...data.keys()][i],
+    setItem: (k, v) => data.set(k, v), getItem: k => data.get(k) ?? null, removeItem: k => data.delete(k),
+  } })) {
+    const before = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+    t.after(() => before ? Object.defineProperty(globalThis, key, before) : delete globalThis[key]);
+  }
+  const saves = [], sends = [], checks = [];
+  const api = {
+    async saveDraft(draft) { saves.push(draft); return { id: draft.id || 'existing-fixture-draft' }; },
+    async sendDraft(id, key) { sends.push({ id, key }); if (sends.length === 1) throw new Error('Response interrupted'); },
+    async sent(keys) { checks.push(...keys); return { sent: [] }; },
+  };
+  const ctx = { api, fw: { session: { user: { id: 'fixture-owner' } } }, store: { set() {} } };
+  const first = createOutbox(ctx);
+  t.after(() => first.destroy());
+  const sent = await first.send({ subject: 'Queued fixture', text: 'Keep this through reload' });
+  assert.equal(sent.queued, true);
+  online = true;
+  await first.retry(sent.key);
+  assert.equal(first.pending()[0].state, 'failed');
+  first.destroy();
+
+  const reloaded = createOutbox(ctx);
+  t.after(() => reloaded.destroy());
+  const pending = reloaded.pending()[0];
+  assert.equal(pending?.state, 'failed');
+  assert.equal(pending.draft.text, 'Keep this through reload');
+  await Promise.all([reloaded.retry(sent.key), reloaded.retry(sent.key)]);
+  assert.deepEqual(sends, [{ id: sent.key, key: sent.key }, { id: sent.key, key: sent.key }]);
+  assert.deepEqual(checks, [sent.key, sent.key]);
+  assert.equal(saves.length, 1);
+  assert.deepEqual(reloaded.pending(), []);
+  assert.equal(data.has(STORAGE.outbox), false);
+
+  let turn = Promise.resolve();
+  navigator.locks = { request(_name, run) {
+    const result = turn.then(run);
+    turn = result.catch(() => {});
+    return result;
+  } };
+  const delivered = new Set();
+  api.sent = async keys => ({ sent: keys.filter(key => delivered.has(key)) });
+  api.sendDraft = async (id, key) => { sends.push({ id, key }); delivered.add(key); };
+  online = false;
+  const queued = await reloaded.send({ subject: 'Shared offline queue', text: 'Send once across tabs' });
+  const otherTab = createOutbox(ctx);
+  const flushingTab = createOutbox(ctx);
+  t.after(() => otherTab.destroy());
+  t.after(() => flushingTab.destroy());
+  online = true;
+  const [, , flushed] = await Promise.all([reloaded.retry(queued.key), otherTab.retry(queued.key), flushingTab.flush()]);
+  assert.equal(saves.filter(draft => draft.id === queued.key).length, 1);
+  assert.equal(sends.filter(send => send.key === queued.key).length, 1);
+  assert.deepEqual(flushed, { lost: 0 });
+  assert.deepEqual(flushingTab.pending(), []);
+  assert.deepEqual(otherTab.pending(), []);
+  assert.equal(data.has(STORAGE.outbox), false);
+
+  online = false;
+  const awaitingCheck = await reloaded.send({ subject: 'Check delivery before retry' });
+  online = true;
+  api.sent = async () => { throw new Error('Delivery lookup unavailable'); };
+  await reloaded.retry(awaitingCheck.key);
+  assert.equal(reloaded.pending()[0]?.key, awaitingCheck.key);
+  assert.equal(saves.filter(draft => draft.id === awaitingCheck.key).length, 0);
+  assert.equal(sends.filter(send => send.key === awaitingCheck.key).length, 0);
+});
+
+test('switching Mail owners cannot expose or send previous drafts, queued mail, or quick replies', async t => {
+  const { createOutbox } = await import('../email/public/roof/outbox.js');
+  const { privateJournal, STORAGE } = await import('../email/public/roof/store.js');
+  const data = new Map();
+  let online = false;
+  for (const [key, value] of Object.entries({ navigator: { get onLine() { return online; } }, localStorage: {
+    get length() { return data.size; }, key: i => [...data.keys()][i],
+    setItem: (k, v) => data.set(k, v), getItem: k => data.get(k) ?? null, removeItem: k => data.delete(k),
+  } })) {
+    const before = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+    t.after(() => before ? Object.defineProperty(globalThis, key, before) : delete globalThis[key]);
+  }
+  const calls = [];
+  const api = { async saveDraft() { calls.push('save'); }, async sendDraft() { calls.push('send'); }, async sent() { calls.push('lookup'); } };
+  const box = (id, canDraft) => {
+    const outbox = createOutbox({ api, fw: { session: { user: { id } } }, store: { set() {} }, canDraft });
+    t.after(() => outbox.destroy());
+    return outbox;
+  };
+  const keepOwner = owner => {
+    data.set('today:session', JSON.stringify({ id: owner }));
+    data.set(STORAGE.owner, JSON.stringify(owner));
+  };
+  keepOwner('owner-a');
+  const first = box('owner-a');
+  assert.equal(first.keepUnsent({ text: 'A private draft' }), true);
+  const queued = await first.send({ text: 'A queued draft' });
+  assert.equal(queued.queued, true);
+  assert.equal(privateJournal('owner-a').put(STORAGE.replies, { thread: { text: 'A private reply' } }), true);
+  const reloaded = box('owner-a');
+  assert.equal(reloaded.unsent().text, 'A private draft');
+  assert.equal(reloaded.pending()[0].draft.text, 'A queued draft');
+  const unverified = box('owner-a', () => false);
+  online = true;
+  assert.equal(unverified.unsent(), null);
+  assert.deepEqual(unverified.pending(), []);
+  assert.equal((await unverified.send({ text: 'Wait for account proof' })).ok, false);
+  await unverified.retry(queued.key);
+  assert.deepEqual(calls, []);
+  keepOwner('owner-b');
+  // An old tab can continue to write these flat records after B signs in.
+  data.set('mail:unsent', JSON.stringify({ at: 1, text: 'Unattributed legacy draft' }));
+  data.set('mail:outbox', JSON.stringify([{ key:'legacy-a', at:1, draft:{text:'Unattributed legacy send'} }]));
+  data.set('mail:replies', JSON.stringify({ thread:{text:'Unattributed legacy reply',at:1} }));
+  const second = box('owner-b');
+  assert.equal(second.unsent(), null);
+  assert.deepEqual(second.pending(), []);
+  assert.equal(privateJournal('owner-b').get(STORAGE.replies), null);
+  assert.equal(reloaded.unsent(), null);
+  assert.deepEqual(reloaded.pending(), []);
+  await Promise.all([reloaded.retry(queued.key), second.retry(queued.key)]);
+  assert.deepEqual(calls, []);
+  assert.ok(data.has('mail:unsent'), 'this check leaves unverified legacy words untouched');
 });
 
 test('a calendar series ends on the last retained occurrence across clock changes and exceptions', async () => {

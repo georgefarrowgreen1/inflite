@@ -101,6 +101,7 @@ export async function openUnsub(ctx, t) {
   const { fw, api, logic, actions } = ctx, ui = fw.ui;
   let info;
   try { info = await api.unsubInfo(t.id); } catch (e) { fw.toast(e.message || "Couldn’t ask Mail. Try again."); return null; }
+  if (ctx.canRead?.() === false) return null;
   const who = logic.displayName(info?.sender) || info?.sender?.email || "this sender";
   let h = null;
   const finish = () => { fw.toast(`Finish on ${who}’s page`); };

@@ -922,13 +922,21 @@ test('desktop sign-in replaces the opening screen and fits a short window', asyn
     assert.equal(await page.locator('#sessionState').isVisible(), false);
     for (const viewport of [{width:1440,height:844}, {width:1024,height:440}]) {
       await page.setViewportSize(viewport);
-      const entry = await page.locator('#out .ifl-entry').boundingBox();
-      const logo = await page.locator('#out .ifl-logo').boundingBox();
-      const label = await title.boundingBox();
-      const signIn = await page.locator('#signin').boundingBox();
-      assert.ok(logo.y + logo.height <= label.y && label.y + label.height <= signIn.y);
-      assert.ok(entry.y >= 0 && entry.y + entry.height <= viewport.height);
-      assert.ok(Math.abs(entry.x + entry.width / 2 - viewport.width / 2) < 2);
+      // The reported viewport and the CSS viewport lengths can settle on different frames.
+      await page.waitForFunction(({width,height}) => {
+        const minHeight = parseFloat(getComputedStyle(document.querySelector('#out')).minHeight);
+        return innerWidth === width && innerHeight === height && Math.abs(minHeight - height) < 1;
+      }, viewport);
+      const { entry, logo, label, signIn } = await page.locator('#out .ifl-entry').evaluate(panel => {
+        const bounds = selector => panel.querySelector(selector).getBoundingClientRect().toJSON();
+        return { entry: panel.getBoundingClientRect().toJSON(), logo: bounds('.ifl-logo'),
+          label: bounds('.ifl-entry-title'), signIn: bounds('#signin') };
+      });
+      const size = `${viewport.width}×${viewport.height}`;
+      assert.ok(logo.bottom <= label.top && label.bottom <= signIn.top,
+        `${size}: the logo, title and sign-in button are stacked (${logo.bottom}, ${label.top}, ${label.bottom}, ${signIn.top})`);
+      assert.ok(entry.top >= 0 && entry.bottom <= viewport.height, `${size}: the entry fits vertically (${entry.top}, ${entry.bottom})`);
+      assert.ok(Math.abs(entry.x + entry.width / 2 - viewport.width / 2) < 2, `${size}: the entry is centred`);
     }
     assert.deepEqual(errors, []);
   } finally { release(); await ctx.close(); }
@@ -1047,6 +1055,34 @@ test('an unavailable day shows an explicit retry and recovers without replaying 
     await page.locator('#top .day-top').waitFor();
     assert.equal(requests.filter(r => r.path === '/api/today').length, 2);
     assert.equal(requests.some(r => r.method !== 'GET'), false);
+  } finally { await ctx.close(); }
+});
+
+for (const cached of [false, true]) test(`a malformed Today response recovers with ${cached ? 'a cached' : 'no cached'} day`, async () => {
+  let reads = 0;
+  const saved = structuredClone(day);
+  delete saved.v;
+  const { ctx, page, requests, errors } = await open({
+    waitForDay: false,
+    seedCards: cached ? { id: fixture('session').user.id, answer: saved } : undefined,
+    intercept: async (route, { url }) => {
+      if (url.pathname !== '/api/today' || ++reads !== 1) return false;
+      await route.fulfill({ json: cached ? { cards: [] } : { message: 'Unexpected result' } });
+      return true;
+    },
+  });
+  try {
+    if (cached) {
+      await page.getByText('Couldn’t update. Showing your last saved day.', { exact: true }).waitFor({ timeout: 10000 });
+      assert.equal(await page.locator('.tcard[data-app="weather"]').isVisible(), true);
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    } else {
+      await page.getByText('Today couldn’t load', { exact: true }).waitFor({ timeout: 10000 });
+      await page.getByRole('button', { name: 'Try Again', exact: true }).click();
+    }
+    await page.locator('#top .day-top').waitFor();
+    assert.equal(requests.filter(r => r.path === '/api/today' && r.method === 'GET').length, 2);
+    assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
 
@@ -1636,6 +1672,13 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
     await page.locator('input[aria-label="Test field"]').focus();
     await page.evaluate(() => __viewport(480));
     assert.equal((await placed('keyboard overlays layout')).keyboard, true);
+    await page.waitForFunction(() => {
+      const field = document.activeElement;
+      if (!field?.matches('input[aria-label="Test field"]')) return false;
+      const body = field.closest('.ifs-body').getBoundingClientRect();
+      const box = field.getBoundingClientRect();
+      return box.top >= body.top - 1 && box.bottom <= body.bottom + 1;
+    }, null, { timeout: 1500 });
     await page.setViewportSize({ width: 390, height: 480 });
     await page.evaluate(() => __viewport(480));
     assert.equal((await placed('keyboard also shrinks layout')).keyboard, true);
@@ -1664,7 +1707,23 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
     await page.keyboard.press('Escape');
     await page.locator('dialog[open]').waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Search', 'focus returns to the opener');
-    await page.evaluate(() => { window.__parent = __sheets.open({ title: 'Parent' }); window.__child = __sheets.open({ title: 'Child' }); __child.close(); });
+    const parentScroll = await page.evaluate(async () => {
+      const { el } = await import('/roof/ui.js');
+      window.__parent = __sheets.open({ title: 'Parent', body: el('div', {},
+        ...Array.from({ length: 40 }, (_, i) => el('p', { text: `Parent content ${i}` }))) });
+      __parent.el.scrollTop = 360;
+      const before = __parent.el.scrollTop;
+      const field = el('input', { 'aria-label': 'Child field' });
+      const child = __sheets.open({ title: 'Child', body: field, focus: field });
+      __viewport(480);
+      const during = __parent.el.scrollTop;
+      child.now();
+      const after = __parent.el.scrollTop;
+      __viewport(844);
+      return { before, during, after };
+    });
+    assert.ok(parentScroll.before > 0);
+    assert.deepEqual(parentScroll, { before: parentScroll.before, during: parentScroll.before, after: parentScroll.before });
     await page.getByRole('dialog', { name: 'Child', exact: true }).waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => document.body.classList.contains('sheet-up')), true, 'closing one sheet leaves the other modal');
     await page.evaluate(() => __parent.close());
@@ -2184,6 +2243,59 @@ for(const width of [390,1440])test(`People uses one profile for Chat friends and
     assert.deepEqual(errors,[]);
     assert.deepEqual(await page.evaluate(()=>window.__csp),[]);
   }finally{await ctx.close()}
+});
+
+for (const status of [200, 409]) test(`an older Notes save response (${status}) preserves a newer offline draft in another tab`, async () => {
+  const ctx = await browser.newContext({serviceWorkers:'block'});
+  const fixtureURL = origin + '/organise-journal-fixture';
+  await ctx.route(fixtureURL, route => route.fulfill({contentType:'text/html',body:'<!doctype html><title>Draft journal fixture</title>'}));
+  const page = await ctx.newPage();
+  let release;
+  const hold = new Promise(resolve => { release = resolve; });
+  const id = 'a'.repeat(32);
+  const initialise = async tab => tab.evaluate(async owner => {
+    const { createStore } = await import('/organise/store.js');
+    const signal = new AbortController().signal;
+    window.testNoteStore = await createStore({ signal, session: { user: owner } }, 'notes');
+  }, {id:fixture('session').user.id});
+  const save = (tab, text) => tab.evaluate(({id, text}) =>
+    testNoteStore.save(id, {title:'A shared note',text,links:[],checklist:[]}, {version:1}), {id, text});
+  try {
+    const other = await ctx.newPage();
+    await other.addInitScript(() => Object.defineProperty(navigator, 'onLine', { get: () => false }));
+    await Promise.all([page.goto(fixtureURL), other.goto(fixtureURL)]);
+    await initialise(page);
+    await page.route('**/api/organise/record', async route => {
+      const request = route.request().postDataJSON();
+      await hold;
+      const json = status === 200
+        ? {record:{id,kind:'notes',version:2,...request.value}}
+        : {error:'This note was changed elsewhere.'};
+      await route.fulfill({status,json});
+    });
+    const writeStarted = page.waitForRequest(request => request.url().endsWith('/api/organise/record') && request.method() === 'PUT');
+    await save(page, 'First tab edit');
+    await writeStarted;
+    await initialise(other);
+    await save(other, 'Second tab offline edit');
+    release();
+    await page.waitForFunction(status => status === 200
+      ? testNoteStore.pending().length === 0
+      : testNoteStore.pending().some(v => v.state === 'conflict'), status);
+    await other.reload();
+    await initialise(other);
+    const saved = await other.evaluate(id => testNoteStore.pending().find(v => v.id === id)?.text, id);
+    assert.equal(saved, 'Second tab offline edit');
+    await assert.rejects(save(page, 'A further edit in the stale tab'), /A newer draft was kept in another tab/);
+    const conflict = await page.evaluate(id => testNoteStore.pending().find(v => v.id === id), id);
+    assert.equal(conflict.state, 'conflict');
+    assert.equal(conflict.text, 'A further edit in the stale tab');
+    assert.equal(await page.evaluate(() => testNoteStore.busy()), true);
+    assert.deepEqual(await page.evaluate(() => testNoteStore.flush()), {lost:1});
+    await other.reload();
+    await initialise(other);
+    assert.equal(await other.evaluate(id => testNoteStore.pending().find(v => v.id === id)?.text, id), saved);
+  } finally { release(); await ctx.close(); }
 });
 
 // Sample the exposed app gutter from a whole viewport screenshot. Cropped

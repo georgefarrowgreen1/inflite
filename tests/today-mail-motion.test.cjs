@@ -281,3 +281,189 @@ test('Hosted Mail recipients keep focus and identity while preserving ordered du
     await noErrors(page, errors);
   } finally { await ctx.close(); }
 });
+
+test('Standalone Mail restores text and queued attachments only for their verified account', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
+  ctx.setDefaultTimeout(12000);
+  const { default: demo } = await import('../email/public/parts/demo.js');
+  const sample = demo({ dayMs: 864e5, wait: async () => {}, htmlToText: html => html, ApiError: Error }).demoApi();
+  const list = await sample.threads({ view: 'all', category: 'people' });
+  const thread = await sample.thread(list.threads[0].id);
+  const message = await sample.message(thread.messages[0].id);
+  message.attachments = [{ id: 'sample-image', filename: 'Private sample.svg', type: 'image/svg+xml', url: '/icon.svg', size: 124 }];
+  const ownerA = 'sample-mail-owner-a', ownerB = 'sample-mail-owner-b';
+  let owner = ownerA;
+  const writes = [], lookups = [], draftWrites = [];
+  let finishSave;
+  const save = new Promise(resolve => { finishSave = resolve; });
+  await ctx.route('**/*', async route => {
+    const url = new URL(route.request().url()), path = url.pathname;
+    if (url.origin !== mailOrigin) return route.abort();
+    if (!path.startsWith('/api/')) return route.continue();
+    if (path === '/api/send') {
+      const draft = route.request().postDataJSON(), accepted = draft.accountOwner === owner;
+      writes.push({ draft, accepted });
+      return route.fulfill(accepted ? { json: { id: 'sample-delivery' } } : { status: 401, json: { access: 'signin', error: 'Account changed' } });
+    }
+    if (path === '/api/sends') {
+      lookups.push(owner);
+      return route.fulfill({ json: { sent: [] } });
+    }
+    if (path === '/api/drafts') {
+      draftWrites.push(route.request().postDataJSON());
+      await save;
+      return route.fulfill({ json: { id: 'sample-saved-draft' } });
+    }
+    const answers = {
+      '/api/session': { access: 'ok', accountOrigin: mailOrigin, user: { id: owner, handle: owner } },
+      '/api/me': await sample.me(),
+      '/api/counts': await sample.counts(),
+      '/api/version': { v: 'sample' },
+      '/api/threads': list,
+      ['/api/threads/' + thread.id]: thread,
+      ['/api/messages/' + message.id]: message,
+    };
+    return route.fulfill({ json: answers[path] || {} });
+  });
+  const page = await ctx.newPage(), other = await ctx.newPage(), errors = [];
+  for (const tab of [page, other]) tab.on('pageerror', error => errors.push(error.stack));
+  const compose = tab => tab.locator('.sheet.open');
+  const inbox = tab => tab.getByRole('button', { name: 'New Message', exact: true });
+  const conversation = mailOrigin + '/#thread=' + encodeURIComponent(thread.id);
+  const checkOutbox = (subject, edit) => page.waitForFunction(({ ownerA, subject, edit }) => new Promise(resolve => {
+    const open = indexedDB.open('mail-outbox', 1);
+    open.onerror = () => resolve(false);
+    open.onsuccess = () => {
+      const db = open.result;
+      const request = db.transaction('outbox').objectStore('outbox').index('owner').getAll(ownerA);
+      request.onsuccess = () => {
+        const item = request.result.find(job => job.c.subject === subject);
+        db.close();
+        resolve(edit ? item?.edit === true && item.c.attachments[0]?.bytes?.byteLength > 0 : !item);
+      };
+    };
+  }), { ownerA, subject, edit });
+  try {
+    await page.goto(conversation);
+    await page.locator('.qr-field').fill('A’s private quick reply');
+    await page.evaluate(async id => {
+      localStorage.setItem('mail:unsent', JSON.stringify({ subject: 'Legacy private draft', at: Date.now() }));
+      localStorage.setItem('mail:replies', JSON.stringify({ [id]: { text: 'Legacy quick reply', at: Date.now() } }));
+      await new Promise((ok, fail) => {
+        const request = indexedDB.open('mail', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('outbox', { keyPath: 'id' });
+        request.onerror = () => fail(request.error);
+        request.onsuccess = () => {
+          const db = request.result, tx = db.transaction('outbox', 'readwrite');
+          tx.objectStore('outbox').put({ id: 'legacy-private', at: Date.now(), c: { subject: 'Legacy queued draft' } });
+          tx.oncomplete = () => { db.close(); ok(); };
+          tx.onerror = () => fail(tx.error);
+        };
+      });
+    }, thread.id);
+    await inbox(page).click();
+    await compose(page).locator('.c-subject').fill('A’s private draft');
+    await compose(page).locator('.compose-text').fill('A’s unsent words');
+    await page.reload();
+    await page.getByText('“A’s private draft” wasn’t sent or saved', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Open', exact: true }).click();
+    assert.equal(await compose(page).locator('.compose-text').inputValue(), 'A’s unsent words');
+    await compose(page).getByRole('button', { name: 'Close', exact: true }).click();
+    assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('mail:unsent:v1:' + id))?.text, ownerA), 'A’s unsent words');
+    await page.reload();
+    await page.getByText('“A’s private draft” wasn’t sent or saved', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Open', exact: true }).click();
+    const recipient = compose(page).getByRole('textbox', { name: 'To', exact: true });
+    await recipient.fill('sample@example.com');
+    await recipient.press('Enter');
+    await compose(page).locator('input[type="file"]').first().setInputFiles({ name: 'sample.txt', mimeType: 'text/plain', buffer: Buffer.from('A’s attachment bytes') });
+    await page.evaluate(() => {
+      const read = Blob.prototype.arrayBuffer;
+      const wait = new Promise(resolve => { window.finishAttachmentSave = resolve; });
+      Blob.prototype.arrayBuffer = async function () {
+        if (this instanceof File) await wait;
+        return read.call(this);
+      };
+    });
+    await compose(page).getByRole('button', { name: 'Send', exact: true }).click();
+    assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('mail:unsent:v1:' + id))?.subject, ownerA), 'A’s private draft');
+    owner = ownerB;
+    await page.locator('.login[data-access="signin"]').waitFor();
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].accepted, false);
+    assert.equal(writes[0].draft.accountOwner, ownerA);
+    await page.evaluate(() => window.finishAttachmentSave());
+
+    await other.goto(conversation);
+    assert.equal(await other.locator('.qr-field').inputValue(), '');
+    assert.equal(await other.getByText(/A’s private draft|Legacy private draft/).count(), 0);
+    await other.getByRole('button', { name: 'New Message', exact: true }).waitFor();
+
+    owner = ownerA;
+    await page.goto(mailOrigin + '/?reopen=1#thread=' + encodeURIComponent(thread.id));
+    assert.equal(await page.locator('.qr-field').inputValue(), 'A’s private quick reply');
+    await other.locator('.login[data-access="signin"]').waitFor();
+    assert.equal(await other.locator('.qr-field').count(), 0);
+    await page.getByText('A message didn’t send', { exact: true }).waitFor();
+    assert.deepEqual(lookups, [ownerA]);
+    await page.getByRole('button', { name: 'Try Again', exact: true }).click();
+    await page.getByText('Message Sent', { exact: true }).waitFor();
+    assert.equal(writes.length, 2);
+    assert.equal(writes[1].accepted, true);
+    assert.equal(writes[1].draft.key, writes[0].draft.key);
+    assert.equal(writes[1].draft.accountOwner, ownerA);
+    assert.equal(Buffer.from(writes[1].draft.attachments[0].content, 'base64').toString(), 'A’s attachment bytes');
+
+    await inbox(page).click();
+    const undoRecipient = compose(page).getByRole('textbox', { name: 'To', exact: true });
+    await undoRecipient.fill('sample@example.com');
+    await undoRecipient.press('Enter');
+    await compose(page).locator('.c-subject').fill('Undo attachment');
+    await compose(page).locator('input[type="file"]').first().setInputFiles({ name: 'undo.txt', mimeType: 'text/plain', buffer: Buffer.from('Undo file contents') });
+    await page.bringToFront();
+    await compose(page).getByRole('button', { name: 'Send', exact: true }).click();
+    await page.getByRole('button', { name: 'Undo', exact: true }).waitFor({ state: 'attached' });
+    await page.keyboard.press('z');
+    await compose(page).getByText('undo.txt', { exact: true }).waitFor();
+    await checkOutbox('Undo attachment', true);
+    await compose(page).getByRole('button', { name: 'Close', exact: true }).click();
+    await page.reload();
+    await page.getByText('“Undo attachment” wasn’t sent', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Open', exact: true }).click();
+    await compose(page).getByText('undo.txt', { exact: true }).waitFor();
+    await compose(page).locator('.c-subject').fill('Earlier draft');
+    await compose(page).getByRole('button', { name: 'Close', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Save Draft', exact: true }).click();
+    await inbox(page).click();
+    await compose(page).locator('.c-subject').fill('Newer local draft');
+    await page.waitForFunction(id => JSON.parse(localStorage.getItem('mail:unsent:v1:' + id))?.subject === 'Newer local draft', ownerA);
+    finishSave();
+    await page.getByText('Draft Saved', { exact: true }).waitFor();
+    assert.equal(draftWrites[0].accountOwner, ownerA);
+    assert.equal(Buffer.from(draftWrites[0].attachments[0].content, 'base64').toString(), 'Undo file contents');
+    await checkOutbox('Earlier draft', false);
+    await checkOutbox('Undo attachment', false);
+    assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('mail:unsent:v1:' + id))?.subject, ownerA), 'Newer local draft');
+
+    const resume = page.waitForResponse(response => new URL(response.url()).pathname === '/api/version');
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await resume;
+    assert.equal(await compose(page).locator('.c-subject').inputValue(), 'Newer local draft');
+    owner = ownerB;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.locator('.login[data-access="signin"]').waitFor();
+    assert.equal(await page.evaluate(() => localStorage.getItem('mail:journal-owner')), ownerA);
+    assert.equal(await compose(page).count(), 0);
+
+    owner = ownerA;
+    await page.goto(mailOrigin + '/?attachment=1#thread=' + encodeURIComponent(thread.id));
+    await page.getByLabel(/Private sample\.svg/).click();
+    const viewer = page.getByRole('dialog', { name: 'Attachments', exact: true });
+    await viewer.waitFor();
+    owner = ownerB;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.locator('.login[data-access="signin"]').waitFor();
+    assert.equal(await viewer.count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { finishSave(); await ctx.close(); }
+});

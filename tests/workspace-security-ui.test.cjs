@@ -33,7 +33,7 @@ async function open(){
   const {createFrame}=await import('/roof/frame.js'),{createWorkspace}=await import('/roof/workspace.js'),byId=id=>document.getElementById(id);
   const s=window.audit={user:{id:'owner-a',name:'Owner A'},enabled:{fitness:true,weather:true},mounts:{fitness:0,weather:0},unmounts:{fitness:0,weather:0},runs:[],capabilities:{},waitingShows:0};
   s.wait=new Promise(r=>s.release=r);let ws;
-  const F=s.F=createFrame({root:byId('in'),header:byId('hd'),views:byId('views'),tabs:byId('tabs'),session:()=>({view:{user:s.user},hub:true,apps:s.enabled}),hubAgain:async()=>{},today:{el:byId('today'),title:'Today'},workspace:{el:byId('workspace'),title:'Workspace',onShow:r=>ws?.show(r),onHide:()=>ws?.hide()}});
+  const F=s.F=createFrame({root:byId('in'),header:byId('hd'),views:byId('views'),tabs:byId('tabs'),session:()=>({view:{user:s.user,apps:{mail:s.mailAccess===true}},hub:true,apps:s.enabled}),hubAgain:async()=>{},today:{el:byId('today'),title:'Today'},workspace:{el:byId('workspace'),title:'Workspace',onShow:r=>ws?.show(r),onHide:()=>ws?.hide()}});
   s.nativeAway=F.tabs.away;s.toasts=[];const toast=F.toast;F.toast=(text,...rest)=>{s.toasts.push(text);return toast(text,...rest)};
   ws=s.ws=await createWorkspace(F,{root:byId('workspace'),today:byId('today'),dockRoot:byId('in')});F.nav.go('/weather/',{kind:'section'});
  });
@@ -133,6 +133,99 @@ test('search omits app actions that require the retired shared workspace context
   await page.getByRole('option').filter({hasText:'Inspect route'}).waitFor();
   assert.equal(await page.getByRole('option').filter({hasText:'Weather at route start'}).count(),0);await clean();
  }finally{await ctx.close()}
+});
+
+test('Search keeps unlocked Chat recents in memory and clears them on lock', async () => {
+  const { ctx, page, clean } = await open();
+  try {
+    await page.route('**/chats/roof/chats.js', r => r.fulfill({ contentType: 'text/javascript', body: `
+      export const CONTRACT=1,BUILD='chat-history';
+      export function mount(root) { root.textContent='Chat history fixture'; return { show() {} }; }
+    ` }));
+    await page.route(/\/chats\/(?:roof\/(?:chats|chsheets)\.css|cards\.css)$/, r => r.fulfill({ contentType: 'text/css', body: '' }));
+    await page.route('**/chats/roof/connector.js', r => r.fulfill({ contentType: 'text/javascript', body: 'export const connector={files:[],lazy:[]};' }));
+    await page.route('**/chats/version', r => r.fulfill({ json: { build: 'chat-history' } }));
+    await page.route('**/chats/roof/service.js', r => r.fulfill({ contentType: 'text/javascript', body: `
+      export function startService() {
+        let state = 'ready';
+        const listeners = new Map();
+        window.lockFixtureChats = () => {
+          state = 'locked';
+          listeners.get('state')?.({ state });
+        };
+        return { get state() { return state; }, facade: {}, on(topic, listener) {
+          listeners.set(topic, listener);
+          return () => listeners.delete(topic);
+        }, release() { listeners.clear(); } };
+      }
+    ` }));
+    await page.evaluate(() => {
+      audit.enabled.chats = true;
+      audit.F.setRoof(undefined, audit.enabled);
+      localStorage.setItem('ifl:recent', JSON.stringify({ u: audit.user.id, list: [
+        { title: 'Private conversation', sub: 'Private message excerpt', href: '/chats/#open=fixture-chat' },
+        { title: 'Old private mail subject', href: '/mail/#thread=fixture-thread' },
+        { title: 'Quiet Hours', href: '/#settings=quiet' },
+      ] }));
+      audit.F.search.open();
+    });
+    const privateResult = page.locator('[role="option"][href="/chats/#open=fixture-chat"]');
+    const search = page.getByRole('combobox', { name: 'Search everything' });
+    await search.waitFor();
+    assert.equal(await privateResult.count(), 0, 'Chat has not been unlocked yet');
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('ifl:recent')).list.map(item => item.title)), ['Quiet Hours']);
+    await page.evaluate(async () => {
+      audit.F.sheet.top().now();
+      await audit.F.service('chats');
+      audit.F.search.provide({ id: 'chat-history-test', group: 'Chats', search() {
+        return [{ title: 'Private conversation', sub: 'Private message excerpt', href: '/chats/#open=fixture-chat' }];
+      } });
+      audit.F.search.open();
+    });
+    await search.fill('Private conversation');
+    await privateResult.click();
+    await page.waitForURL('**/chats/#open=fixture-chat');
+    await page.getByText('Chat history fixture', { exact: true }).waitFor();
+    await page.evaluate(() => audit.F.search.open());
+    await privateResult.waitFor();
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('ifl:recent')).list.map(item => item.title)), ['Quiet Hours']);
+    await page.evaluate(() => lockFixtureChats());
+    assert.equal(await privateResult.count(), 0, 'locking retires the open result');
+    await page.evaluate(() => audit.F.search.open());
+    await search.waitFor();
+    assert.equal(await privateResult.count(), 0, 'reopening Search must respect the lock');
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('ifl:recent')).list.map(item => item.title)), ['Quiet Hours']);
+    await clean();
+  } finally { await ctx.close(); }
+});
+
+test('Mail access loss and frame disposal clear private Search recents while keeping app history', async () => {
+  const { ctx, page, clean } = await open();
+  try {
+    await page.evaluate(async () => {
+      audit.mailAccess = true;
+      const { remember } = await import('/roof/search.js');
+      remember(audit.F, { title: 'Mail · Updates', href: '/mail/#updates' });
+      remember(audit.F, { title: 'Private mail subject', sub: 'Private message excerpt', href: '/mail/#thread=fixture-thread' });
+      audit.F.search.open();
+    });
+    const privateResult = page.getByRole('option').filter({ hasText: 'Private mail subject' });
+    await privateResult.waitFor();
+    await page.evaluate(() => audit.F.forModule('mail').search.clearPrivate());
+    assert.equal(await privateResult.count(), 0, 'access cleanup closes Search and retires the result');
+    await page.evaluate(() => audit.F.search.open());
+    assert.equal(await privateResult.count(), 0);
+    await page.getByRole('option').filter({ hasText: 'Mail · Updates' }).waitFor();
+    const result = await page.evaluate(async () => {
+      const { remember, recents } = await import('/roof/search.js');
+      remember(audit.F, { title: 'Unlocked again', href: '/mail/#thread=fixture-thread' });
+      const before = recents(audit.F).map(row => row.title);
+      audit.F.destroy();
+      return { before, after: recents(audit.F), stored: JSON.parse(localStorage.getItem('ifl:recent')).list.map(item => item.title) };
+    });
+    assert.deepEqual(result, { before: ['Unlocked again', 'Mail · Updates'], after: [], stored: ['Mail · Updates'] });
+    await clean();
+  } finally { await ctx.close(); }
 });
 test('an action rejected after its app was left cannot toast in the new screen',async()=>{
  const {ctx,page,settle,clean}=await open();try{

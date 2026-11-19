@@ -89,6 +89,26 @@ test('pending, rejected and timed-out flushes block reload until a successful bo
   mode = 'busy-error'; assert.equal(h.frame.busy(), true, 'busy failure is conservative'); h.frame.destroy();
 });
 
+test('mounted app flush failures and timeouts report uncertain work and release their timers', async () => {
+  const h = host(), wait = deferred();
+  await h.frame.view('weather').load();
+  h.moduleInstance.flush = () => Promise.reject(new Error('Draft could not be kept'));
+  assert.equal((await h.frame.flush()).lost, 1);
+  assert.equal(h.timers.size, 0);
+  h.moduleInstance.flush = () => wait.promise;
+  const pending = h.frame.flush({ timeoutMs: 30 });
+  await drain();
+  h.runTimers(30);
+  assert.equal((await pending).lost, 1);
+  assert.equal(h.timers.size, 0);
+  const retired = h.frame.flush();
+  await drain();
+  h.frame.destroy();
+  assert.equal((await retired).lost, 0);
+  assert.equal(h.timers.size, 0);
+  wait.resolve({ lost: 2 });
+});
+
 test('account changes retire tasks, settle their pending flushes and remove every abort listener', async () => {
   const h = host(), signal = new AbortController(), wait = deferred(); let calls = 0;
   const off = h.frame.systemTasks.register({ busy: () => true, flush: () => { calls++; return wait.promise; } }, { signal: signal.signal });

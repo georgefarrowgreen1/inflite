@@ -15,7 +15,7 @@
 // Nothing from a message's body is here: cards are Meta (summary fields) drawn with textContent; pictures are blob: URLs
 // made only for logic.PICTURES, re-typed, used only in <img src> and revoked when the conversation goes.
 import { bodyFrame, listenFrames, themeAll } from "./bodyframe.js";
-import { STORAGE } from "./store.js";
+import { STORAGE, privateJournal } from "./store.js";
 import { MAIL, MAIL_PAGE } from "./api.js";
 
 const PICTURES = /^image\/(png|jpeg|gif|webp|avif|heic|bmp)$/;
@@ -23,16 +23,29 @@ const isPic = (a) => PICTURES.test(String(a?.type || "").toLowerCase());
 const REPLY_DAYS = 14 * 864e5;
 const remoteOn = () => { try { return localStorage.getItem(STORAGE.remoteImages) === "1"; } catch (_) { return false; } };
 // the replies typed at the foot, one per conversation, kept a fortnight (app.js qrDrafts, 4775–4790)
-const replies = {
-  all() { let k = null; try { k = JSON.parse(localStorage.getItem(STORAGE.replies) || "null"); } catch (_) {} return k && typeof k === "object" && !Array.isArray(k) ? k : {}; },
-  get(id) { const d = this.all()[id]; return d && typeof d.text === "string" && Date.now() - d.at < REPLY_DAYS ? d.text : ""; },
-  set(id, text) { const k = this.all(); for (const [x, d] of Object.entries(k)) if (!(Date.now() - d?.at < REPLY_DAYS)) delete k[x]; if (text) k[id] = { text, at: Date.now() }; else delete k[id]; try { localStorage.setItem(STORAGE.replies, JSON.stringify(k)); } catch (_) {} },
-};
 const thr = (r) => (r && r.thread ? { ...r.thread, messages: r.messages || r.thread.messages || [] } : r);
 
 export function view(el, ctx) {
   const { store, api, logic, fw } = ctx, ui = fw.ui, E = ui.el;
   const owner = fw.session.user.id;
+  const journal = privateJournal(owner, () => !fw.signal?.aborted && fw.session.user.id === owner && ctx.canDraft?.() !== false);
+  const replies = {
+    all() {
+      const drafts = journal.get(STORAGE.replies);
+      return drafts && typeof drafts === "object" && !Array.isArray(drafts) ? drafts : {};
+    },
+    get(id) {
+      const draft = this.all()[id];
+      return draft && typeof draft.text === "string" && Date.now() - draft.at < REPLY_DAYS ? draft.text : "";
+    },
+    set(id, text) {
+      const drafts = this.all();
+      for (const [key, draft] of Object.entries(drafts)) if (!(Date.now() - draft?.at < REPLY_DAYS)) delete drafts[key];
+      if (text) drafts[id] = { text, at: Date.now() };
+      else delete drafts[id];
+      try { journal.put(STORAGE.replies, drafts); } catch {}
+    },
+  };
   let cur = null, touched = 0;
   const offs = [];
   const dismissed = new Set();
@@ -42,7 +55,7 @@ export function view(el, ctx) {
     touched() { touched = Date.now(); ctx.touched?.(); },
   });
   offs.push(off, fw.on("theme", (t) => themeAll(t)));
-  for (const k of ["threadId", "thread", "layout", "offline"]) offs.push(store.on(k, () => draw()));
+  for (const k of ["threadId", "thread", "layout", "offline", "access"]) offs.push(store.on(k, () => draw()));
 
   const me = () => store.get().me || {};
   const pad = () => store.get().layout === "pad";
@@ -77,11 +90,12 @@ export function view(el, ctx) {
     else if (!(s.thread?.loading && s.thread?.t?.id === id)) load(id);
   }
   async function load(id) {
+    const view = cur, current = () => cur === view && ctx.canRead?.() !== false;
     store.set({ thread: { t: null, metas: {}, loading: true, err: null } }, "reader");
     let t;
     try { t = thr(await api.thread(id)); }
-    catch (e) { if (cur?.id === id) store.set({ thread: { t: null, metas: {}, loading: false, err: e?.message || "Couldn’t open it." } }, "reader"); return; }
-    if (cur?.id !== id) return;
+    catch (e) { if (current()) store.set({ thread: { t: null, metas: {}, loading: false, err: e?.message || "Couldn’t open it." } }, "reader"); return; }
+    if (!current()) return;
     store.set({ thread: { t, metas: {}, loading: false, err: null } }, "reader");
     loaded(t);
     if (t.unread) ctx.actions.act([id], "read", { undo: false }).catch?.(() => {});
@@ -93,16 +107,18 @@ export function view(el, ctx) {
     for (const mid of cur.expanded) meta(mid);
   }
   async function meta(mid) {
-    const id = cur?.id, have = store.get().thread.metas?.[mid];
+    const view = cur, have = store.get().thread.metas?.[mid];
+    const current = () => view && cur === view && ctx.canRead?.() !== false;
+    if (!current()) return null;
     if (have) return have;
     try {
       const m = await api.meta(mid);
-      if (cur?.id !== id) return null;
+      if (!current()) return null;
       const th = store.get().thread;
       store.set({ thread: { ...th, metas: { ...th.metas, [mid]: m } } }, "reader");
       return m;
     } catch (e) {
-      const c = cur?.id === id && cur.cards.get(mid);
+      const c = current() && cur.cards.get(mid);
       if (c) c.files.replaceChildren(ui.error({ body: e?.message || "Couldn’t load it.", acts: [{ label: "Try Again", act: "retry", run: () => meta(mid) }] }));
       return null;
     }
@@ -547,6 +563,7 @@ export function view(el, ctx) {
     cur = null;
   }
   function draw() {
+    if (ctx.canRead?.() === false) { shut(); el.replaceChildren(); return; }
     const id = store.get().threadId || null;
     if (!id || id !== cur?.id || !el.firstChild) open(id);
     paint();

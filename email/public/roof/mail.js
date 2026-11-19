@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.24.4";
-export const NEWS = "Mail cards use a clean, even finish in light and dark mode.";
+export const BUILD = "2.24.5";
+export const NEWS = "Mail protects private screens when access changes and keeps queued sends available to retry.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
@@ -63,22 +63,45 @@ const OFFLINE = ["Mail needs a connection", "Your mail is safe at Mail and will 
 export async function mount(root, fw) {
   const doc = root.ownerDocument, win = doc.defaultView || globalThis;
   const store = createStore();
-  let readAt = 0, alive = true, onScreen = false, seen = 0;
+  const owner = fw.session.user?.id;
+  let readAt = 0, alive = true, onScreen = false, seen = 0, accessAsk = 0, verifiedOwner = null;
+  const live = () => alive && !fw.signal?.aborted && fw.session.user?.id === owner;
+  const canRead = () => live() && store.get().access === "ok";
+  const canDraft = () => canRead() && !!owner && verifiedOwner === owner;
+  const canCompose = () => canRead() || live() && store.get().access === null && store.get().offline;
+  const sheets = new Set();
+  const openSheetIn = (sheet, spec) => {
+    let handle;
+    handle = sheet.open({ ...spec, onClose() { sheets.delete(handle); spec.onClose?.(); } });
+    if (!handle.closed) sheets.add(handle);
+    return handle;
+  };
+  const openSheet = spec => openSheetIn(fw.sheet, spec);
+  const lock = access => {
+    if (!live()) return;
+    accessAsk++;
+    verifiedOwner = null;
+    store.set({ access }, "401");
+    if (access === "signin") fw.session.lost();
+  };
   const api = createApi({
     base: MAIL,
-    onLost: (access) => { store.set({ access }, "401"); if (access === "signin") fw.session.lost(); },
-    onRefused: () => { try { fw.session.hubAgain?.(); } catch {} },
+    draftOwner: () => verifiedOwner,
+    onLost: lock,
+    onRefused: () => { if (live()) try { fw.session.hubAgain?.(); } catch {} },
   });
-  const ctx = { store, api, logic, actions: null, fw, layout: () => store.get().layout, icon, open: {}, outbox: null, touched: () => { readAt = Date.now(); } };
+  const sheetHost = Object.create(fw, { sheet: { value: { open: openSheet } } });
+  const ctx = { store, api, logic, actions: null, fw: sheetHost, canRead, canDraft, layout: () => store.get().layout, icon, open: {}, outbox: null, touched: () => { readAt = Date.now(); } };
   const failed = (e) => { fw.toast("That didn’t open. Try again."); throw e; };
   // A file may finish loading after Mail was left, even after a return. Only the
   // visible episode that requested it may open its sheet or start sign-in.
-  const here = (mine) => alive && !fw.signal?.aborted && onScreen && seen === mine;
-  const opener = (load, run) => (...args) => {
+  const here = (mine) => live() && onScreen && seen === mine;
+  const opener = (load, run, allowed = canRead) => (...args) => {
     const mine = seen;
-    if (!here(mine)) return Promise.resolve(null);
-    return load().then((m) => here(mine) ? run(m, ...args) : null, (e) => {
-      if (here(mine) && e?.name !== "AbortError") return failed(e);
+    const current = () => here(mine) && allowed();
+    if (!current()) return Promise.resolve(null);
+    return load().then((m) => current() ? run(m, ...args) : null, (e) => {
+      if (current() && e?.name !== "AbortError") return failed(e);
       return null;
     });
   };
@@ -86,12 +109,12 @@ export async function mount(root, fw) {
   const signinJs = () => fw.lazy((q) => import("./signin.js" + q));
   Object.assign(ctx.open, {
     contactCard: opener(() => fw.lazy((q) => import("./contact-card.js" + q)), (m, options) => options.current() ? m.openContactCard(options) : null),
-    compose: opener(() => fw.lazy((q) => import("./compose.js" + q)), (m, init, current = () => true) => current() ? m.openCompose(ctx, init || {}) : null),
-    later: (ids) => openLater(ctx, ids), views: () => openViews(ctx), rowMenu: (t) => openRowMenu(ctx, t), unsub: (t) => openUnsub(ctx, t),
+    compose: opener(() => fw.lazy((q) => import("./compose.js" + q)), (m, init, current = () => true) => current() ? m.openCompose(ctx, init || {}) : null, canCompose),
+    later: (ids) => canRead() && openLater(ctx, ids), views: () => canRead() && openViews(ctx), rowMenu: (t) => canRead() && openRowMenu(ctx, t), unsub: (t) => canRead() && openUnsub(ctx, t),
     settings: opener(settingsJs, (m, page) => m.openSettings(ctx, page ?? null)),
     viewer: opener(() => fw.lazy((q) => import("./viewer.js" + q)), (m, files, i, current = () => true) => current() ? m.openViewer(ctx, files, i) : null),
-    signin: opener(signinJs, (m, current = () => true) => current() ? m.signIn(ctx) : null),
-    confirm: (spec) => confirmSheet(ctx, spec),
+    signin: opener(signinJs, (m, current = () => true) => current() ? m.signIn(ctx) : null, live),
+    confirm: (spec) => canCompose() ? confirmSheet(ctx, spec) : Promise.resolve(false),
   });
   ctx.leave = (id, next) => {
     const s = store.get();
@@ -120,6 +143,12 @@ export async function mount(root, fw) {
   readerEl.hidden = true;
   const offs = [];
   const on = (t, ev, fn, o) => { t.addEventListener(ev, fn, o); offs.push(() => t.removeEventListener(ev, fn, o)); };
+  on(win, "storage", ({ key, oldValue, newValue }) => {
+    if (key !== STORAGE.owner) return;
+    const id = value => { try { return JSON.parse(value); } catch { return null; } };
+    const previous = id(oldValue), next = id(newValue);
+    if (next !== owner && (previous === owner || next)) lock("signin");
+  });
   const drawResume = () => {
     const s = store.get(), draft = ctx.outbox.unsent();
     resumeDraft.hidden = !alive || !onScreen || s.access !== "ok" || s.compose || !draft || !(draft.subject || draft.text || draft.to?.length || draft.cc?.length || draft.bcc?.length);
@@ -152,6 +181,21 @@ export async function mount(root, fw) {
   for (const ev of ["pointerdown", "keydown", "wheel", "scroll"]) on(readerEl, ev, () => ctx.touched(), { passive: true, capture: true });
 
   const list = listView(listEl, ctx), reader = readerView(readerEl, ctx);
+  let previousAccess = null;
+  offs.push(store.on("access", ({ access }) => {
+    const wasAllowed = previousAccess === "ok";
+    previousAccess = access;
+    if (!access || access === "ok") return;
+    seen++;
+    readAt = 0;
+    if (wasAllowed) fw.search?.clearPrivate?.();
+    for (const handle of [...sheets].reverse()) handle.now();
+    actions.clear?.();
+    list.clear?.();
+    reader.hide();
+    store.set({ me: null, counts: null, version: null, updatedAt: null, address: null, query: "",
+      list: { rows: [], more: false, loading: false, err: null }, thread: { t: null, metas: {}, loading: false, err: null } }, "access");
+  }));
   const bootState = { first: true, started: null };
   const hashCode = () => { try { return new URLSearchParams(String(win.location.hash || "").slice(1)).get("signin"); } catch (_) { return null; } };
   let route = null, cold = false;
@@ -202,43 +246,59 @@ export async function mount(root, fw) {
   }
   offs.push(...["access", "offline", "list", "threadId", "layout"].map((k) => store.on(k, drawState)));
 
+  async function checkAccess() {
+    if (!live()) return null;
+    const attempt = ++accessAsk;
+    const session = await api.session();
+    if (!live() || attempt !== accessAsk) return null;
+    const access = session?.user?.id && session.user.id !== owner ? "signin" : session?.access || "signin";
+    const previousOwner = verifiedOwner;
+    verifiedOwner = access === "ok" && session?.user?.id === owner ? owner : null;
+    store.set({ access }, "session");
+    if (previousOwner !== verifiedOwner) ctx.outbox.refresh();
+    // Mail may be the first app to notice a changed or expired account.
+    if (access === "signin") { try { fw.session.lost(); } catch {} }
+    return attempt;
+  }
+
   // ---- starting: who's asking, then me, the counts, the version and the list together
   async function start() {
+    if (!live()) return;
     try {
-      const sess = await api.session();
-      const access = sess?.access || "signin";
-      store.set({ access }, "session");
-      // (Mail's /api/session answers 200 { access: "signin" } when it has no session: InFlite asked whether it's gone)
-      if (access === "signin") { try { fw.session.lost(); } catch {} }
-      if (access !== "ok") return;
+      const attempt = await checkAccess();
+      if (!attempt || !canRead()) return;
       const [me, counts, v] = await Promise.all([api.me(), api.counts(), api.version().catch(() => null), actions.load()]);
-      store.set({ me, counts: logic.countsOf(counts), version: v?.v ?? null, offline: false }, "start");
+      if (attempt === accessAsk && canRead()) store.set({ me, counts: logic.countsOf(counts), version: v?.v ?? null, offline: false }, "start");
     } catch (e) {
+      if (!live() || store.get().access && !canRead()) return;
       if (!e.status) store.set({ offline: win.navigator?.onLine === false, list: { ...store.get().list, loading: false, err: win.navigator?.onLine === false ? null : e.message } }, "start");
       else if (e.status !== 401) store.set({ list: { ...store.get().list, loading: false, err: e.message } }, "start");
-    } finally { drawState(); }
+    } finally { if (live()) drawState(); }
   }
 
   // ---- the poll: only while shown and the page visible (S4-D14)
   let timer = 0, polling = false;
   async function poll(back = false) {
-    if (!onScreen || doc.visibilityState !== "visible" || polling || list.swiping?.()) return;
+    if (!live() || !onScreen || doc.visibilityState !== "visible" || polling || list.swiping?.()) return;
     const s = store.get();
     // (behind the gate: asked again as the page comes back, a check done in Mail's own tab meanwhile)
     if (s.access !== "ok") { if (s.access === null || s.offline || (back && s.access !== "notadmin")) return start(); return; }
+    if (!verifiedOwner) return start();
     polling = true;
     try {
       const { v } = await api.version();
+      if (!canRead()) return;
       if (store.get().offline) store.set({ offline: false });
       if (v && v === store.get().version && !store.get().list.err) { store.set({ updatedAt: Date.now() }); return; }
       const before = Number(store.get().counts?.people) || 0;
       await actions.counts();
-      if (store.get().query || (await actions.load({ quiet: true }))) store.set({ version: v ?? store.get().version });
+      if ((store.get().query || (await actions.load({ quiet: true }))) && canRead()) store.set({ version: v ?? store.get().version });
+      if (!canRead()) return;
       const after = Number(store.get().counts?.people) || 0;
       const n = store.get();
       if (after > before && (n.lens !== "people" || n.filter !== "all" || n.box)) fw.toast(`${after - before} New in People`);
     } catch (e) {
-      if (!e.status) store.set({ offline: true });
+      if (canRead() && !e.status) store.set({ offline: true });
     } finally { polling = false; }
   }
   const startPoll = () => { clearInterval(timer); timer = setInterval(poll, 30000); };
@@ -250,10 +310,11 @@ export async function mount(root, fw) {
   // ---- search (S4-D9): loaded conversations, the views, Mail Settings, and "Search Mail for …" (the one way a query
   // leaves this phone: by POST, to Mail)
   const VIEWS_RUN = [...SECTIONS.map(([id, l]) => [l, () => fw.nav.section(id)]), ["Drafts", () => go({ box: "drafts" })], ["Trash", () => go({ box: "trash" })]];
-  function go(patch) { store.set({ query: "", address: null, ...patch }, "go"); actions.load(); }
+  function go(patch) { if (canRead()) { store.set({ query: "", address: null, ...patch }, "go"); actions.load(); } }
   const unprovide = (fw.workspace?.discovery350?null:fw.search?.provide?.({
     id: "mail", group: "Mail", order: 30,
     search(q) {
+      if (!canRead()) return [];
       const s = q.trim().toLowerCase();
       if (!s) return [];
       const hits = store.get().list.rows.filter((t) => !t.draft && [t.subject, t.latest?.snippet, t.snippet, ...(t.people || []).flatMap((p) => [p.name, p.email])].some((x) => String(x || "").toLowerCase().includes(s))).slice(0, 5)
@@ -264,6 +325,7 @@ export async function mount(root, fw) {
     },
   })) || (() => {});
   function searchMail(q) {
+    if (!canRead()) return;
     q = String(q || "").trim().slice(0, 300);
     if (!q) return;
     if (store.get().layout === "phone" && route?.key === "thread") fw.nav.go(SECTION_PATH(store.get().lens));
@@ -272,14 +334,14 @@ export async function mount(root, fw) {
   }
   const SECTION_PATH = (id) => (id === "people" ? "/mail/" : `/mail/#${id}`);
   function openThread(id) {
-    if (!logic.idOk(id)) return;
+    if (!canRead() || !logic.idOk(id)) return;
     if (store.get().layout === "pad") store.set({ threadId: id }, "open");
     else fw.nav.go(fw.nav.href("thread", id));
   }
 
   // ---- keys (S4-D23): inert unless Mail is shown and nothing's being typed or a sheet is open
   on(doc, "keydown", (e) => {
-    if (!onScreen || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (!onScreen || !canRead() || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target.closest?.("input,textarea,select,[contenteditable]") || doc.activeElement?.closest?.("dialog")) return;
     const s = store.get(), k = e.key;
     const rowEl = listEl.contains(doc.activeElement) ? doc.activeElement.closest?.(".ml-row[data-thread]") : null;
@@ -292,7 +354,12 @@ export async function mount(root, fw) {
       next.focus();
       if (s.layout === "pad" && next.dataset.thread) store.set({ threadId: next.dataset.thread }, "key");
     };
-    const reply = (mode) => { if (!t) return; const id = t.latestId || t.latest?.id; if (id) api.meta(id).then((m) => ctx.open.compose(logic.replyDraft(m, mode, store.get().me)), (err) => fw.toast(err.message)); };
+    const reply = (mode) => {
+      const id = t?.latestId || t?.latest?.id, mine = seen;
+      if (id) api.meta(id).then((m) => {
+        if (here(mine) && canRead()) ctx.open.compose(logic.replyDraft(m, mode, store.get().me));
+      }, (err) => { if (here(mine) && canRead()) fw.toast(err.message); });
+    };
     const did = {
       c: () => ctx.open.compose({}), n: () => ctx.open.compose({}),
       "/": () => list.focusSearch?.(),
@@ -330,7 +397,12 @@ export async function mount(root, fw) {
   return {
     async settingsPanel(host,current,page) {
       const module = await settingsJs();
-      if (current()) return module.openSettings({...ctx,fw:host},page);
+      if (!current() || !live()) return;
+      if (!canRead()) await checkAccess();
+      if (!current() || !live()) return;
+      if (!canRead()) return host.nav.go("/mail/");
+      const sheet = { open: spec => openSheetIn(host.sheet, spec) };
+      return module.openSettings({ ...ctx, fw: { ...host, sheet } }, page);
     },
     workspace: workspaceReady,
     show(r) {

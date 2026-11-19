@@ -192,6 +192,7 @@ export function view(el, ctx) {
   }
 
   function draw() {
+    if (ctx.canRead?.() === false) return;
     const s = store.get();
     if (field.input.value !== typed && doc.activeElement !== field.input) field.input.value = typed = s.query;
     const due = !s.query && s.lens === "people" && !s.box && !s.address ? s.list.followups || [] : [];
@@ -200,10 +201,21 @@ export function view(el, ctx) {
     drawOutbox(s);
     drawRows(s);
   }
-  const offs = ["list", "query", "lens", "filter", "address", "box", "counts", "outbox", "layout", "threadId"].map((k) => store.on(k, () => draw()));
+  const offs = ["list", "query", "lens", "filter", "address", "box", "counts", "outbox", "layout", "threadId", "access"].map((k) => store.on(k, () => draw()));
+
+  function clear() {
+    built.clear();
+    alts = { q: null, found: null };
+    shownSig = "";
+    typed = field.input.value = "";
+    field.hidden = true;
+    searchOpener = null;
+    for (const part of [chips, box, reminders, rows, foot]) part.replaceChildren();
+  }
 
   return {
     draw,
+    clear,
     hide() {},
     focusSearch(button) { searchOpener = button || doc.activeElement; field.hidden = false; field.input.focus(); },
     destroy() {

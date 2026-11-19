@@ -285,9 +285,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.24.4";
+  const BUILD = "2.24.5";
   // (what's new in it, said once it's in)
-  const NEWS = "Mail cards use a clean, even finish in light and dark mode.";
+  const NEWS = "Mail protects private screens when access changes and keeps queued sends available to retry.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.
@@ -1541,7 +1541,7 @@ const IFL = (() => {
   // address from then on, so it couldn't be saved from there, and the hub's page that frames Mail hands it in from what
   // InFlite's Mail keeps on the phone (its words, never files). Heard only from the window holding the frame, at the hub's
   // address, once the hub has answered the hello; saved here as a draft (over the one it was, its files kept as Mail has
-  // them, each by its place), and the hub told, by the copy's time alone, so it lets its copy go. → a draft to save, or null
+  // them, each by its place). Acknowledgement carries the owner and copy time so the hub can clear that copy.
   function unsentDraft(d) {
     if (!d || typeof d !== "object") return null;
     const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : "");
@@ -1559,12 +1559,15 @@ const IFL = (() => {
   function fromHubUnsent(e) {
     if (!EMBED || !hubHeard || e.source !== window.parent || e.origin !== HUB) return false;
     const d = e.data;
-    if (!d || typeof d !== "object" || d.ifl !== "unsent" || d.v !== 1 || !Number.isFinite(d.at) || handedIn.has(d.at)) return false;
-    const draft = unsentDraft(d.draft), at = d.at;
-    if (!draft) return false;
-    handedIn.add(at);
-    api.saveDraft(draft).then(() => {
-      toHub({ ifl: "unsent", v: 1, at, saved: true });
+    if (!d || typeof d !== "object" || d.ifl !== "unsent" || d.v !== 2 || !Number.isFinite(d.at) || typeof d.owner !== "string" || !d.owner || d.owner.length > 128) return false;
+    const draft = unsentDraft(d.draft), { at, owner } = d, key = `${owner}:${at}`;
+    if (!draft || handedIn.has(key)) return false;
+    handedIn.add(key);
+    api.session().then((session) => {
+      if (session?.access !== "ok" || session.user?.id !== owner) throw new Error("Confirm it’s you to use Mail.");
+      return api.saveDraft({ ...draft, accountOwner: owner });
+    }).then(() => {
+      toHub({ ifl: "unsent", v: 2, owner, at, saved: true });
       try {
         toast("Draft Saved", { icon: "drafts" });
         if (S.me) {
@@ -1572,7 +1575,7 @@ const IFL = (() => {
           loadList({ quiet: true });
         }
       } catch {}
-    }, () => handedIn.delete(at));
+    }, () => handedIn.delete(key));
     return true;
   }
   if (EMBED) addEventListener("message", fromHubUnsent);
@@ -1582,6 +1585,21 @@ const IFL = (() => {
   let ASK_NOTIFY = IFL.wantsAllow() && !EMBED;
 
   const DEMO = !!window.INFLITE_DEMO || new URLSearchParams(location.search).has("demo");
+  const MAIL_OWNER = "mail:journal-owner";
+  let mailOwner = null, mailJournalOpen = false;
+  function currentMailOwner() {
+    if (!mailJournalOpen) return null;
+    try {
+      const last = localStorage.getItem(MAIL_OWNER);
+      if (last && last !== mailOwner) return null;
+    } catch {}
+    return mailOwner;
+  }
+  const canUseDrafts = () => DEMO || !!currentMailOwner();
+  const draftKey = (kind, owner) => `${kind}:v1:${owner}`;
+  addEventListener("storage", ({ key, newValue }) => {
+    if (key === MAIL_OWNER && mailJournalOpen && newValue !== mailOwner) onSignedOut("signin");
+  });
 
   class ApiError extends Error {
     constructor(status, message) {
@@ -1650,6 +1668,11 @@ const IFL = (() => {
     }
     const qs = (o) =>
       new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== "" && v !== false)).toString();
+    const writeDraft = (path, body, opts) => {
+      const accountOwner = body.accountOwner || currentMailOwner();
+      if (!accountOwner) return Promise.reject(new ApiError(401, "Confirm it’s you to use Mail."));
+      return req("POST", path, { ...body, accountOwner }, { ...opts, upload: true });
+    };
     return {
       session: () => req("GET", "/api/session"),
       handback: (code, verifier) => req("POST", "/api/auth/handback", { code, verifier }),
@@ -1672,10 +1695,10 @@ const IFL = (() => {
       message: (id) => req("GET", `/api/messages/${id}`),
       remove: (id) => req("DELETE", `/api/messages/${id}`),
       contacts: (q) => req("GET", `/api/contacts?${qs({ q })}`),
-      send: (payload, opts) => req("POST", "/api/send", payload, { ...opts, upload: true }),
+      send: (payload, opts) => writeDraft("/api/send", payload, opts),
       // (which of these, by the outbox's names for them, went after all: { sent })
       sent: (keys) => req("GET", `/api/sends?${qs({ keys: keys.join(",") })}`),
-      saveDraft: (draft) => req("POST", "/api/drafts", draft, { upload: true }),
+      saveDraft: (draft) => writeDraft("/api/drafts", draft),
       rawUrl: (id) => `/api/messages/${id}/raw`,
       settings: () => req("GET", "/api/settings"),
       saveSettings: (patch) => req("PATCH", "/api/settings", patch),
@@ -1946,8 +1969,10 @@ const IFL = (() => {
       document.body.append(toastEl);
     }
     clearTimeout(toastTimer);
+    const el = toastEl;
     toastEl.className = `toast glass strong${error ? " error" : ""}`;
     const run = () => {
+      if (toastNow?.hide !== hide) return;
       hide();
       action?.();
     };
@@ -1958,11 +1983,12 @@ const IFL = (() => {
     );
     if (!actionLabel) toastEl.style.paddingRight = "20px";
     else toastEl.style.paddingRight = "";
-    requestAnimationFrame(() => requestAnimationFrame(() => toastEl.classList.add("show")));
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (toastNow?.hide === hide) el.classList.add("show"); }));
     const hide = () => {
+      if (toastNow?.hide !== hide) return;
       clearTimeout(toastTimer);
-      toastEl.classList.remove("show");
-      if (toastNow?.hide === hide) toastNow = null;
+      el.classList.remove("show");
+      toastNow = null;
     };
     toastNow = { hide, undo: actionLabel === "Undo" ? run : null, ends: Date.now() + duration, pointer: false, focus: false };
     toastTimer = setTimeout(hide, duration);
@@ -2345,7 +2371,8 @@ const IFL = (() => {
     S.qrDrafts = null;
     try {
       localStorage.removeItem(RECENT_KEY);
-      localStorage.removeItem(QR_KEY);
+      const owner = currentMailOwner();
+      if (owner) localStorage.removeItem(draftKey(QR_KEY, owner));
     } catch {}
     try {
       await api.logout();
@@ -3606,7 +3633,9 @@ const IFL = (() => {
 
   async function refreshCounts() {
     try {
-      S.counts = await api.counts();
+      const counts = await api.counts();
+      if (!canUseDrafts()) return;
+      S.counts = counts;
       renderListChrome();
       updateBadge();
       // (the caught-up screen shows these figures too)
@@ -3815,13 +3844,16 @@ const IFL = (() => {
   const QR_KEY = "mail:replies";
   function qrDrafts() {
     if (S.qrDrafts) return S.qrDrafts;
+    const owner = currentMailOwner();
+    const key = owner && draftKey(QR_KEY, owner);
+    const current = () => DEMO || !!owner && owner === currentMailOwner();
     let kept = null;
-    try { kept = JSON.parse(localStorage.getItem(QR_KEY) || "null"); } catch {}
+    try { if (key) kept = JSON.parse(localStorage.getItem(key) || "null"); } catch {}
     if (!kept || typeof kept !== "object" || Array.isArray(kept)) kept = {};
     for (const [id, d] of Object.entries(kept)) if (typeof d?.text !== "string" || !d.text || !(Date.now() - d.at < 14 * 864e5)) delete kept[id];
-    const save = () => { try { localStorage.setItem(QR_KEY, JSON.stringify(kept)); } catch {} };
+    const save = () => { try { if (key && current()) localStorage.setItem(key, JSON.stringify(kept)); } catch {} };
     return (S.qrDrafts = {
-      get: (id) => kept[id]?.text,
+      get: (id) => current() ? kept[id]?.text : undefined,
       set: (id, text) => ((kept[id] = { text, at: Date.now() }), save()),
       delete: (id) => (delete kept[id], save()),
     });
@@ -4354,12 +4386,13 @@ pre{white-space:pre-wrap}
   // The sheet's fields take the focus within the tap that opens it, so the keyboard comes up on iPhone: a tap before it's
   // here holds the keyboard up meanwhile, in a field of its own that the sheet's own takes over from (holdKeyboard)
   function openCompose(init, current = () => true) {
-    if (!current()) return;
+    const ready = () => canUseDrafts() && current();
+    if (!ready()) return;
     if (PARTS.compose?.mod) return PARTS.compose.mod.openCompose(init);
     if (sheetState) return;
     const held = holdKeyboard();
     return part("compose")
-      .then((m) => current() && m.openCompose(init), partFailed)
+      .then((m) => ready() && m.openCompose(init), partFailed)
       .finally(() => held && (held.el.remove(), (keyHeld = null)));
   }
   const openDraft = (id) => fromPart("compose", "openDraft")(id);
@@ -4368,13 +4401,15 @@ pre{white-space:pre-wrap}
   // (a reply from the foot of a conversation: if what sends it can't be had, it's kept, as a message that didn't go is,
   // and offered again as Mail next opens)
   function queueSend(c, o) {
+    if (!canUseDrafts()) return;
     if (PARTS.compose?.mod) return PARTS.compose.mod.queueSend(c, o);
-    part("compose").then((m) => m.queueSend(c, o), (err) => (keepUnsent(c), partFailed(err)));
+    part("compose").then((m) => canUseDrafts() && m.queueSend(c, o), (err) => (keepUnsent(c), partFailed(err)));
   }
   // What the outbox kept from before, offered (parts/compose.js), only if it kept anything. → whether anything was said
   async function offerOutbox() {
-    if (!(await outbox.all()).length) return false;
-    return fromPart("compose", "offerOutbox", { quiet: true })();
+    if (!(await outbox.all()).length || !canUseDrafts()) return false;
+    const compose = await part("compose").catch(() => null);
+    return canUseDrafts() && compose?.offerOutbox();
   }
 
   // (a field holding the keyboard up for a part on its way, on a touch screen, and what had the focus before it: the
@@ -4464,13 +4499,34 @@ pre{white-space:pre-wrap}
   // till it's sent, saved as a draft or thrown away: so a draft that couldn't be saved, the app closed in the background,
   // or a sign-in that's run out, loses nothing. Offered again when Mail next opens
   const UNSENT = "mail:unsent";
-  const keepUnsent = (c) => { try { const { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId } = c; localStorage.setItem(UNSENT, JSON.stringify({ mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId, at: Date.now() })); return true; } catch { return false; } };
-  const forgetUnsent = () => { try { localStorage.removeItem(UNSENT); } catch {} };
+  let demoUnsent = null;
+  function readUnsent(owner) {
+    try { return DEMO ? demoUnsent : JSON.parse(localStorage.getItem(draftKey(UNSENT, owner)) || "null"); } catch { return null; }
+  }
+  function keepUnsent(c, owner = currentMailOwner(), { ifEmpty = false } = {}) {
+    if (!owner && !DEMO) return false;
+    if (ifEmpty && readUnsent(owner)) return false;
+    const { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId } = c;
+    const stamp = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const draft = { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId, stamp, at: Date.now() };
+    if (DEMO) { demoUnsent = draft; return stamp; }
+    try { localStorage.setItem(draftKey(UNSENT, owner), JSON.stringify(draft)); return stamp; } catch { return false; }
+  }
+  function forgetUnsent(stamp) {
+    const owner = currentMailOwner();
+    if (!stamp || (!owner && !DEMO) || readUnsent(owner)?.stamp !== stamp) return;
+    if (DEMO) { demoUnsent = null; return; }
+    try { localStorage.removeItem(draftKey(UNSENT, owner)); } catch {}
+  }
   function offerUnsent() {
-    let u = null;
-    try { u = JSON.parse(localStorage.getItem(UNSENT) || "null"); } catch {}
-    if (!u || Date.now() - u.at > 14 * 864e5) return forgetUnsent();
-    toast(u.subject ? `“${u.subject.slice(0, 40)}” wasn’t sent or saved` : "A message wasn’t sent or saved", { icon: "drafts", actionLabel: "Open", duration: 9000, action: () => { forgetUnsent(); openCompose(u); } });
+    const owner = currentMailOwner();
+    if (!owner && !DEMO) return;
+    const u = readUnsent(owner);
+    if (!u?.stamp) return;
+    if (!(Date.now() - u.at < 14 * 864e5)) return forgetUnsent(u.stamp);
+    toast(u.subject ? `“${u.subject.slice(0, 40)}” wasn’t sent or saved` : "A message wasn’t sent or saved", { icon: "drafts", actionLabel: "Open", duration: 9000, action: () => {
+      openCompose(u, () => owner === currentMailOwner() && readUnsent(owner)?.stamp === u.stamp);
+    } });
   }
 
   // The outbox: each message sent from here (waiting out its few seconds of Undo, on its way, or not sent), kept on this
@@ -4480,11 +4536,19 @@ pre{white-space:pre-wrap}
   // the demo, whose page shares this address's storage with the real Mail
   const outbox = (() => {
     let db = null;
+    const writes = new Map();
+    function write(owner, id, operation) {
+      const key = `${owner}:${id}`;
+      const task = (writes.get(key) || Promise.resolve()).then(operation);
+      writes.set(key, task);
+      return task.finally(() => { if (writes.get(key) === task) writes.delete(key); });
+    }
     const open = () =>
       (db ||= Promise.race([
         new Promise((ok, no) => {
-          const r = indexedDB.open("mail", 1);
-          r.onupgradeneeded = () => r.result.createObjectStore("outbox", { keyPath: "id" });
+          // A new database keeps older pages and ownerless entries outside this journal.
+          const r = indexedDB.open("mail-outbox", 1);
+          r.onupgradeneeded = () => r.result.createObjectStore("outbox", { keyPath: ["owner", "id"] }).createIndex("owner", "owner");
           r.onsuccess = () => ok(r.result);
           r.onerror = () => no(r.error);
         }),
@@ -4492,12 +4556,13 @@ pre{white-space:pre-wrap}
       ]).catch(() => null));
     // (one request, in a transaction of its own: its answer once it's written, or null if it couldn't be)
     const one = async (mode, ask) => {
-      const d = DEMO || typeof indexedDB === "undefined" ? null : await open();
+      if (DEMO || typeof indexedDB === "undefined") return null;
+      const d = await open();
       if (!d) return null;
       return new Promise((ok) => {
         try {
           const t = d.transaction("outbox", mode), r = ask(t.objectStore("outbox"));
-          t.oncomplete = () => ok(r.result ?? true);
+          t.oncomplete = () => ok(r?.result ?? null);
           t.onerror = t.onabort = () => ok(null);
         } catch {
           ok(null);
@@ -4505,19 +4570,44 @@ pre{white-space:pre-wrap}
       });
     };
     // (a job as it's kept: what's needed to send it again, or open it, its files as files)
-    const record = ({ id, at, edit, c }) => ({
+    const record = async (owner, { id, at, edit, c }) => ({
+      owner,
       id,
       at,
       edit: !!edit,
       c: {
         ...["mode", "from", "to", "cc", "bcc", "subject", "text", "quote", "inReplyTo", "references", "threadId", "draftId"].reduce((o, k) => ((o[k] = c[k] ?? null), o), {}),
-        attachments: (c.attachments || []).map(({ filename, type, size, file, url }) => ({ filename, type, size, file: file || null, url: url || null })),
+        // IndexedDB on WebKit can reject file-backed Blob objects from its picker.
+        attachments: await Promise.all((c.attachments || []).map(async ({ filename, type, size, file, url }) => ({
+          filename, type, size, bytes: file ? await file.arrayBuffer() : null, url: url || null,
+        }))),
       },
     });
     return {
-      keep: (job) => one("readwrite", (s) => s.put(record(job))),
-      drop: (id) => one("readwrite", (s) => s.delete(id)),
-      all: async () => (await one("readonly", (s) => s.getAll())) || [],
+      async keep(job) {
+        const owner = currentMailOwner();
+        if (!owner) return null;
+        // An accepted write can finish in its original owner's partition after a session change.
+        const snapshot = record(owner, job).catch(() => null);
+        return write(owner, job.id, async () => {
+          const kept = await snapshot;
+          return kept && one("readwrite", s => s.put(kept));
+        });
+      },
+      drop(id) {
+        const owner = currentMailOwner();
+        return owner && write(owner, id, () => one("readwrite", s => owner === currentMailOwner() ? s.delete([owner, id]) : null));
+      },
+      async all() {
+        const owner = currentMailOwner();
+        if (!owner) return [];
+        const records = await one("readonly", s => owner === currentMailOwner() ? s.index("owner").getAll(owner) : null);
+        if (!records || owner !== currentMailOwner()) return [];
+        for (const { c } of records) c.attachments = c.attachments.map(({ bytes, ...attachment }) => ({
+          ...attachment, file: bytes ? new Blob([bytes], { type: attachment.type }) : null,
+        }));
+        return records;
+      },
     };
   })();
 
@@ -4551,7 +4641,7 @@ pre{white-space:pre-wrap}
   // Don't lose a queued message if the app is closed or put away during the undo window: it goes at once (iOS often only
   // suspends a Home Screen app as it's put away, with no pagehide; it's in the outbox meanwhile either way)
   function sendNow() {
-    if (sheetState?.dirty()) keepUnsent(sheetState.c);
+    if (sheetState?.dirty()) sheetState.keepDraft();
     for (const job of pendingSends) {
       clearTimeout(job.timer);
       runSend(job, { keepalive: true });
@@ -4687,7 +4777,7 @@ pre{white-space:pre-wrap}
   const VERIFIER_KEY = "inflite:signin-verifier";
 
   function onSignedOut(access) {
-    if (!document.querySelector(".login")) showGate(access);
+    if (mailJournalOpen || !document.querySelector(".login")) showGate(access);
   }
 
   const b64url = (bytes) =>
@@ -4810,12 +4900,26 @@ pre{white-space:pre-wrap}
   // Signed out: nothing of the mailbox stays on screen or in memory (the app, any open sheet or menu, what was loaded)
   function forgetMail() {
     // (a message being written kept first: it's offered again once signed in)
-    if (sheetState?.dirty()) keepUnsent(sheetState.c);
+    if (mailJournalOpen && sheetState?.dirty()) sheetState.keepDraft(mailOwner);
+    mailJournalOpen = false;
     clearInterval(sheetState?.keepT);
+    for (const job of [...pendingSends, ...S.failedSends]) {
+      job.cancelled = job.gone = true;
+      clearTimeout(job.timer);
+      job.letGo?.();
+    }
+    pendingSends.clear();
+    PARTS.compose?.mod?.releaseDrafts?.();
+    S.failedSends = [];
+    S.qrDrafts = qrKeep = null;
+    S.listToken++;
+    S.detailToken++;
+    viewer?.close({ immediate: true });
     closeMenu(true);
-    document.querySelectorAll(".sheet, .sheet-scrim, .toast").forEach((el) => el.remove());
+    document.querySelectorAll(".sheet, .sheet-scrim, .toast, .viewer.closing").forEach((el) => el.remove());
     document.body.classList.remove("sheet-open", "dragging", "moving");
     sheetState = null;
+    clearTimeout(toastTimer);
     toastEl = toastNow = null;
     document.getElementById("app")?.remove();
     for (const k of Object.keys(els)) delete els[k];
@@ -4853,6 +4957,7 @@ pre{white-space:pre-wrap}
   async function enter() {
     const login = document.querySelector(".login");
     await boot();
+    if (!canUseDrafts()) return;
     // (what didn't go last time, from the outbox; else a message that was being written)
     // (not the one copy, though, while it's a message being written or waiting out its Undo: that's this one, not last time's)
     setTimeout(() => offerOutbox().then((said) => said || sheetState || pendingSends.size || offerUnsent()), 1200);
@@ -4929,7 +5034,7 @@ pre{white-space:pre-wrap}
       IFL, DEMO, STANDALONE, PUSH_OK, ApiError, api, S, els, ADDR_COLORS, RECENT_KEY,
       showMenu, closeMenu, confirmMenu, undoFor, toast, sigFor, addrColor, mine, focusedBefore,
       renderListChrome, loadList, refreshCounts, openThread, retryFailed, runSearch,
-      keepUnsent, forgetUnsent, outbox, pendingSends,
+      keepUnsent, forgetUnsent, outbox, pendingSends, canUseDrafts,
       get menuState() { return menuState; },
       set menuState(v) { menuState = v; },
       get sheetState() { return sheetState; },
@@ -4948,6 +5053,7 @@ pre{white-space:pre-wrap}
   // ---------------------------------------------------------------------------
 
   let pollTimer = null;
+  let polling = false, pollAfterResume = false;
 
   async function boot() {
     const last = store.get("lens", "people");
@@ -4957,6 +5063,7 @@ pre{white-space:pre-wrap}
     S.prefetch = { params, res: api.threads(params) };
     S.prefetch.res.catch(() => {});
     const [me, counts, v] = await Promise.all([api.me(), api.counts(), api.version().catch(() => null)]);
+    if (!canUseDrafts()) return;
     S.version = v?.v;
     S.build = v?.build || null;
     S.me = me;
@@ -4989,6 +5096,7 @@ pre{white-space:pre-wrap}
     setPositions();
     updateBadge();
     await loadList();
+    if (!canUseDrafts()) return;
     setupPush();
     // (opened at its settings, from the account page)
     if (location.hash === "#settings") {
@@ -5010,7 +5118,36 @@ pre{white-space:pre-wrap}
   }
 
   async function poll() {
-    if (document.hidden) return;
+    if (polling || document.hidden || !S.me || !canUseDrafts()) return;
+    const owner = currentMailOwner();
+    polling = true;
+    try {
+      if (!DEMO) {
+        let session;
+        try { session = await api.session(); } catch (err) {
+          if (owner === currentMailOwner() && !err.status) {
+            S.offline = true;
+            renderListChrome();
+          }
+          return;
+        }
+        if (owner !== currentMailOwner()) return;
+        if (session?.access !== "ok" || session.user?.id !== owner) {
+          onSignedOut(session?.access && session.access !== "ok" ? session.access : "signin");
+          return;
+        }
+      }
+      await refreshMailbox();
+    } finally {
+      polling = false;
+      if (pollAfterResume) {
+        pollAfterResume = false;
+        queueMicrotask(poll);
+      }
+    }
+  }
+
+  async function refreshMailbox() {
     renderListChrome();
     if (S.swiping || openSwipe || S.loading) return;
     // (nothing has changed since last time: nothing more to ask. The version's taken as seen only once the list it
@@ -5018,6 +5155,7 @@ pre{white-space:pre-wrap}
     let seen;
     try {
       const { v, build, app } = await api.version();
+      if (!canUseDrafts()) return;
       if (S.offline) ((S.offline = false), renderListChrome());
       // (the Mail deployed, handed to the updater every app shares: IFL.updates)
       if (app) IFL.offer(app);
@@ -5032,18 +5170,28 @@ pre{white-space:pre-wrap}
       // (no answer at all, rather than an error from Mail: offline)
       if (!err.status) ((S.offline = true), renderListChrome());
     }
+    if (!canUseDrafts()) return;
     const before = S.counts.people?.unread || 0;
     await refreshCounts();
-    if (S.query || (await loadList({ quiet: true }))) S.version = seen ?? S.version;
+    if (!canUseDrafts()) return;
+    const loaded = S.query || await loadList({ quiet: true });
+    if (!canUseDrafts()) return;
+    if (loaded) S.version = seen ?? S.version;
     await refreshThread();
+    if (!canUseDrafts()) return;
     const after = S.counts.people?.unread || 0;
     // (new conversations in People, while looking elsewhere)
     if (after > before && (S.lens !== "people" || S.filter !== "all")) toast(`${after - before} New in People`, { icon: "person" });
   }
 
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && S.me) poll();
-  });
+  function resumeMail() {
+    if (document.hidden || !S.me) return;
+    if (polling) pollAfterResume = true;
+    else poll();
+  }
+  document.addEventListener("visibilitychange", resumeMail);
+  window.addEventListener("focus", resumeMail);
+  window.addEventListener("pageshow", event => { if (event.persisted) resumeMail(); });
 
   window.addEventListener("resize", () => {
     if (els.list) updateLayout();
@@ -5064,6 +5212,14 @@ pre{white-space:pre-wrap}
       accountOrigin = /(^|\.)inflite\.ai$/.test(location.hostname) ? "https://inflite.ai/account" : s.accountOrigin || accountOrigin;
       if (s.user?.appearance) lookOf(s.user.appearance);
       if (s.access !== "ok") return showGate(s.access, { user: s.user, error });
+      if (!DEMO) {
+        const owner = s.user?.id;
+        if (typeof owner !== "string" || !owner) return showGate("offline", { error: "Mail is updating. Try again in a moment." });
+        if (mailOwner && mailOwner !== owner) return showGate("signin");
+        mailOwner = owner;
+        mailJournalOpen = true;
+        try { localStorage.setItem(MAIL_OWNER, owner); } catch {}
+      }
       await enter();
       if (ASK_NOTIFY) {
         ASK_NOTIFY = false;

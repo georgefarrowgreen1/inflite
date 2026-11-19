@@ -6,6 +6,7 @@
 // /weather/, /fitness/, /markets/: the hub, today/src/hub.js), and Mail in a frame at /mail/ (today/src/mailhost.js);
 // wrangler.toml sends those paths here before the assets.
 import { assetBuild } from "../../shared/asset-build.js";
+import { sameOriginPost } from "../../shared/browser-origin.js";
 import { ask, setCookies } from "./account.js";
 import { isHubPath, hub } from "./hub.js";
 import { mailPage } from "./mailhost.js";
@@ -19,6 +20,7 @@ import { workspacesAPI } from "./workspaces.js";
 import { contact } from "./contact.js";
 import { isExtraPath, extraApp } from "./extra-apps.js";
 import { isIdentityPath, identity } from "./identity.js";
+import { roofPage, usesLocalMailFixture } from "./roof.js";
 
 // Today's API, each route as the account has it: its path there, how long it's waited for, and whether the account's
 // Set-Cookie comes back with it (signing in, its renewal, signing out: never anywhere else)
@@ -88,6 +90,7 @@ const worker = {
       if (publicPage) return Response.redirect("https://inflite.ai/" + publicPage[1] + "/", 301);
     }
     if (url.pathname === "/_errors/404" && ["GET", "HEAD"].includes(request.method)) return renderNotFound(request, env);
+    if (usesLocalMailFixture(env) && ["/", "/index.html"].includes(url.pathname) && ["GET", "HEAD"].includes(request.method)) return roofPage(request, env);
     if (url.pathname === "/version" && request.method === "GET") return version(env, request);
     if (/^\/(calendar|notes|people)(?:\/|$)/.test(url.pathname)) return organisePage(request,env);
     if (isIdentityPath(url.pathname)) return identity(request, env);
@@ -137,8 +140,7 @@ async function statusBanner(request, env, url) {
 
 async function bugReport(request, env) {
   if (request.method !== "POST") return refuse(405, "Today doesn’t do that.");
-  const site = request.headers.get("Sec-Fetch-Site");
-  if (site && site !== "same-origin") return refuse(403, SAID.notToday);
+  if (!sameOriginPost(request)) return refuse(403, SAID.notToday);
   const body = await bodyUpTo(request, 3 * 12000);
   if (body === null || body.length > 12000) return refuse(413, "That’s too much to send.");
   const res = await ask(env, request, { method: "POST", path: "bugs", body, timeout: 8000 });
@@ -155,8 +157,7 @@ async function bugReport(request, env) {
 async function vitals(request, env, ctx) {
   const none = (status = 204) => new Response(null, { status, headers: { ...SAFE } });
   if (request.method !== "POST") return none(405);
-  const site = request.headers.get("Sec-Fetch-Site");
-  if (site && site !== "same-origin") return none(403);
+  if (!sameOriginPost(request)) return none(403);
   // (a few hundred bytes at most: more refused by what it says it is before it's read, and never read past)
   if (!(Number(request.headers.get("Content-Length") || 0) <= 600)) return none(413);
   let body = "";

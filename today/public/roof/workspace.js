@@ -36,7 +36,7 @@ export async function createWorkspace(F, options = {}) {
   const background = F.ui.el("div", { hidden: true, inert: true, "aria-hidden": "true" });
   options.dockRoot?.append(background);
   const organiseStores=new Map();
-  const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.32.2/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
+  const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.32.3/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
   let securityLoad=null;
   const security=()=>securityLoad||=(import('./security-module.js').then(m=>live()?m.createSecurityModule(F,{remembered:()=>system().then(s=>s?.devices()),calendars:()=>lifeTools().then(s=>s?.calendars())}):null).catch(e=>{securityLoad=null;throw e}));
   let lifeInstance=null,lifeLoad=null;
@@ -152,7 +152,8 @@ export async function createWorkspace(F, options = {}) {
     try {
       const snapshot = await entry.provider.snapshot();
       if (!live() || !appOn(app) || entry.signal.aborted || providers.get(app) !== entry || entry.epoch !== epoch) return;
-      const old=snapshots.get(app);if(old?.status==='ready'&&['locked','signin'].includes(snapshot?.status))F.search.invalidate?.();
+      const old = snapshots.get(app);
+      if (old?.status === 'ready' && ['locked', 'signin'].includes(snapshot?.status)) F.search.invalidate?.({ app });
       snapshots.set(app, snapshot || null);
     } catch (_) { if (live() && appOn(app) && !entry.signal.aborted && providers.get(app) === entry && entry.epoch === epoch) snapshots.set(app, { status: "error", actions: [], files: [] }); }
     if (live()) { recovery.update(app, snapshots.get(app)); files?.update?.(); files?.changed?.(app); paint(); }

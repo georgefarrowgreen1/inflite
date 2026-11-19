@@ -14,21 +14,23 @@ before(async () => {
 after(async () => browser?.close());
 const fixture = `import * as ui from '/roof/ui.js';import {createSheets} from '/roof/sheet.js';import {mount} from '/mail/roof/mail.js';
 const T=window.T={provider:null,headers:[],navigations:[],toasts:[],changes:0,active:true,owner:'owner-a',removed:0},controller=new AbortController();
+const listeners=new Map();T.emit=event=>{for(const fn of listeners.get(event)||[])fn()};
 const F={ui,signal:controller.signal,route:{kind:'tab',tab:'workspace'}};F.sheet=createSheets(F);
 const root=document.getElementById('mail'),slot=document.getElementById('slot');
-const fw=T.fw={ui,signal:controller.signal,theme:()=> 'light',on:()=>()=>{},visible:()=>!root.hidden,toast:s=>T.toasts.push(s),
+const fw=T.fw={ui,signal:controller.signal,theme:()=> 'light',on:(event,fn)=>{const subs=listeners.get(event)||new Set();listeners.set(event,subs);subs.add(fn);return()=>subs.delete(fn)},visible:()=>!root.hidden,toast:s=>T.toasts.push(s),
  session:{user:{id:T.owner},lost(){},hubAgain(){}},header:{set:s=>T.headers.push(s)},
- search:{provide:()=>()=>{}},lazy:fn=>T.holdLazy?new Promise(r=>T.lazyRelease=()=>r(fn(''))):fn(''),
+ search:{provide:p=>{T.search=p;return()=>{T.search=null}}},lazy:fn=>T.holdLazy?new Promise(r=>T.lazyRelease=()=>r(fn(''))):fn(''),
  sheet:{open:spec=>F.sheet.open({...spec,app:'mail'})},
  nav:{depth:()=>0,href:(key,id)=>key==='thread'?'/mail/#thread='+id:'/mail/',section:lens=>T.go(lens==='people'?'/mail/':'/mail/#'+lens),
  go:path=>T.go(path),back:()=>T.go('/mail/')},
  workspace:{enabled:true,active:()=>T.active,provide:p=>{T.provider=p;return()=>{T.removed++;T.provider=null}},changed:()=>T.changes++}};
 T.instance=await mount(root,fw);T.go=path=>{T.navigations.push(path);let hash=path.split('#')[1]||'',id=new URLSearchParams(hash).get('thread');T.route=id?{key:'thread',arg:id,section:'people'}:{key:hash||'people',section:hash||'people'};return T.instance.show(T.route)};
+T.openSettings=()=>T.instance.settingsPanel({...fw,sheet:{open:spec=>F.sheet.open({...spec,app:'settings'})}},()=>true);
 await T.go('/mail/');await T.instance.workspace();
 T.setPane=async pane=>{T.instance.hide();root.classList.toggle('ifl-in-pane',pane);(pane?slot:document.getElementById('full')).append(root);await T.instance.show(T.route);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))};
 T.abort=()=>{controller.abort();T.instance.unmount()};T.ready=true;
 `;
-async function open({ width = 1440, paneWidth = 500, access = 'ok' } = {}) {
+async function open({ width = 1440, paneWidth = 500, access = 'ok', owner = 'owner-a' } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 1000 }, reducedMotion: 'reduce', serviceWorkers: 'block' }), unknown = [];
   await ctx.route('**/*', r => {
     const u = new URL(r.request().url());
@@ -42,7 +44,7 @@ async function open({ width = 1440, paneWidth = 500, access = 'ok' } = {}) {
     if (!file.startsWith(base + '/') || !existsSync(file)) { unknown.push(p); return r.fulfill({ status: 404, body: '' }); }
     return r.fulfill({ contentType: ({ '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' })[extname(file)] || 'application/octet-stream', body: readFileSync(file) });
   });
-  const mail = await routeMail(ctx, { origin: ORIGIN, access });
+  const mail = await routeMail(ctx, { origin: ORIGIN, access, owner });
   const page = await ctx.newPage(), errors = []; page.setDefaultTimeout(10000); page.on('pageerror', e => errors.push(e.message));
   await page.goto(ORIGIN); await page.waitForFunction(() => window.T?.ready);
   const clean = async () => {
@@ -120,6 +122,57 @@ test('Mail actual gate and a delayed optional compose import respect account and
     await t.page.evaluate(() => { T.owner = 'owner-b'; T.fw.session.user.id = 'owner-b'; T.lazyRelease(); });
     assert.equal(await t.page.evaluate(async () => (await T.pending).ok), false);
     assert.equal(await t.page.locator('dialog[data-sheet="mail-compose"]').count(), 0);
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});
+
+test('Mail reauthentication removes private surfaces and cancels a pending composer', async () => {
+  const t = await open({ width: 390, paneWidth: 390 });
+  try {
+    await t.page.locator('.ml-row[data-thread="t-1"]').click();
+    await t.page.locator('.mr-subject').waitFor();
+    assert.ok(await t.page.evaluate(() => T.search.search('Liquid Glass').some(result => result.title === 'Liquid Glass explorations — round 2')));
+    await t.page.evaluate(() => { void T.openSettings(); });
+    await t.page.locator('dialog[data-app="settings"] [data-address="support@inflite.ai"]').waitFor();
+    await t.page.evaluate(() => T.headers.at(-1).acts.find(action => action.label === 'Conversation actions').run());
+    await t.page.locator('dialog[data-sheet="mail-rowmenu"]').waitFor();
+    await t.page.evaluate(() => {
+      T.holdLazy = true;
+      T.pending = T.provider.run('compose', null, { current: () => true });
+    });
+    await t.page.waitForFunction(() => !!T.lazyRelease);
+    t.mail.set({ access: 'reauth' });
+    await t.page.evaluate(() => T.emit('visible'));
+    await t.page.getByRole('button', { name: 'Confirm It’s You' }).waitFor();
+    await t.page.evaluate(() => { T.holdLazy = false; T.lazyRelease(); });
+    assert.equal(await t.page.evaluate(async () => (await T.pending).ok), false);
+    assert.equal(await t.page.locator('.ml-reader iframe, .mr-subject, .ml-row, dialog[data-sheet="mail-rowmenu"], dialog[data-sheet="mail-settings"]').count(), 0);
+    assert.deepEqual(await t.page.evaluate(() => T.search.search('Liquid Glass')), []);
+    await t.page.keyboard.press('c');
+    await t.page.evaluate(() => new Promise(requestAnimationFrame));
+    assert.equal(await t.page.locator('dialog[data-sheet="mail-compose"]').count(), 0);
+    t.mail.set({ access: 'ok' });
+    await t.page.evaluate(() => T.emit('visible'));
+    await t.page.locator('.mr-subject').waitFor();
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});
+
+test('Mail keeps native draft recovery pending until the mailbox confirms the same account', async () => {
+  const t = await open({ owner: null });
+  try {
+    await t.page.evaluate(() => {
+      localStorage.setItem('mail:unsent:v1', JSON.stringify({ v: 1, owner: 'owner-a', value: { text: 'Keep this for its owner', at: Date.now() } }));
+      T.emit('visible');
+    });
+    await t.page.locator('.ml-row').first().waitFor();
+    assert.equal(await t.page.locator('.ml-resume-draft').isHidden(), true);
+    assert.equal(t.mail.log.some(r => r.method === 'POST' && ['/api/send', '/api/drafts'].includes(r.path)), false);
+    t.mail.set({ owner: 'owner-a' });
+    await t.page.evaluate(() => T.emit('visible'));
+    await t.page.locator('.ml-resume-draft').waitFor();
+    await t.page.locator('.ml-resume-draft').getByRole('button', { name: 'Continue' }).click();
+    assert.equal(await t.page.locator('dialog[data-sheet="mail-compose"] textarea').inputValue(), 'Keep this for its owner');
     await t.clean();
   } finally { await t.ctx.close(); }
 });

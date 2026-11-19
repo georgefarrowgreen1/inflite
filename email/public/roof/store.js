@@ -10,7 +10,8 @@
 // (APP_SESSION_KEPT). All mail:* together ≤ CAP bytes (local.put refuses past it, as a QuotaExceededError).
 
 export const KEYS = ["access", "me", "counts", "version", "offline", "updatedAt", "lens", "filter", "address", "box", "query", "list", "threadId", "thread", "layout", "compose", "sending", "outbox"];
-export const STORAGE = { replies: "mail:replies", unsent: "mail:unsent", outbox: "mail:outbox", remoteImages: "mail:remote-images", lens: "mail:lens" };
+export const STORAGE = { replies: "mail:replies:v1", unsent: "mail:unsent:v1", outbox: "mail:outbox:v1", owner: "mail:owner", remoteImages: "mail:remote-images", lens: "mail:lens" };
+const LEGACY = new Set(["mail:replies", "mail:unsent", "mail:outbox"]);
 export const SESSION = { verifier: "mail:signin-verifier" };
 export const CAP = 262144;
 
@@ -71,7 +72,7 @@ export const local = {
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key?.startsWith("mail:") && key !== k) used += key.length + (localStorage.getItem(key) || "").length;
+        if (key?.startsWith("mail:") && key !== k && !LEGACY.has(key)) used += key.length + (localStorage.getItem(key) || "").length;
       }
     } catch {}
     if (used + k.length + text.length > CAP) throw Object.assign(new Error("over the cap"), { name: "QuotaExceededError" });
@@ -80,3 +81,29 @@ export const local = {
   },
   drop(k) { try { localStorage.removeItem(k); } catch {} },
 };
+
+// Drafts and replies may survive a reload, so an app's in-memory owner alone
+// is not enough to decide which browser records belong to that account.
+export function privateJournal(owner, current = () => true) {
+  const allowed = () => {
+    const last = local.get(STORAGE.owner);
+    return !!owner && current() && (!last || last === owner);
+  };
+  const owns = record => record?.v === 1 && record.owner === owner;
+  return {
+    available: allowed,
+    get(key, fallback = null) {
+      const record = allowed() && local.get(key);
+      return owns(record) ? record.value : fallback;
+    },
+    put(key, value) {
+      if (!allowed()) return false;
+      const record = local.get(key);
+      if (record && !owns(record)) return false;
+      return local.put(key, { v: 1, owner, value });
+    },
+    drop(key) {
+      if (allowed() && owns(local.get(key))) local.drop(key);
+    },
+  };
+}

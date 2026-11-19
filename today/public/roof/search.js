@@ -9,8 +9,8 @@
 //   shortcuts; no provider asked. Typed: every provider (80 ms debounce), each answer drawn as it comes (one slower than
 //   300 ms when it arrives; one that throws left out), ranked (rank below): a Top hit, then groups best first, three
 //   each with "Show all", the letters that matched in bold, "Nothing for “…”" through textContent. The query
-//   is sent to authorised app providers. It is never added to browser history or Recent; only an opened result with
-//   an address is kept, in Recent (RECENT, on this device, for this account; Today's sign-out clears it).
+//   is sent to authorised app providers. Opened links can enter Recent. Chat and Mail record results stay in the
+//   account's current frame and disappear when access ends.
 // collect(providers, q, update(groups, settled), { slow }) → Promise: the merging, ordered by order then id, each group
 //   at most 20 entries; update is called once the quick ones are in (or slow ms passed) and again as each late one arrives.
 // match(q, text) → { s, hits: [[from, to], …] } | null: how well text answers q (0…1): its start, a word's start, inside
@@ -22,7 +22,7 @@
 //   for “q”") in more, last; groups by their best, then order.
 // recents(F) → Entry[]; remember(F, entry); forget(): RECENT, the account's own (a list another account left is
 //   no one's), Mail's only for the admin.
-import { REGISTRY, ownPath } from "./router.js";
+import { REGISTRY, ownPath, parse } from "./router.js";
 
 const SLOW = 300, MAX = 20, RECENT = "ifl:recent", KEEP = 8, RECENT_SHOWN = 5;
 export function collect(providers, q, update, { slow = SLOW,signal,current } = {}) {
@@ -176,25 +176,60 @@ export function rank(groups, q, { recent = [] } = {}) {
 const me = (F) => F?.session?.view?.user?.id ?? null;
 const yoursOf = (F) => (a) => a !== "mail" || F?.session?.view?.apps?.mail === true;
 const store = () => { try { return globalThis.localStorage || null; } catch (_) { return null; } };
+let privateRecents = new WeakMap(), lastOpened = 0;
+function privateApp(entry) {
+  const route = parse(entry?.href, { roof: true });
+  if (route?.app === "chats" && ["open", "share"].includes(route.key)) return "chats";
+  if (route?.app === "mail" && route.key === "thread") return "mail";
+  return null;
+}
+function writeKept(owner, list) {
+  try {
+    if (list.length) store()?.setItem(RECENT, JSON.stringify({ u: owner, list }));
+    else store()?.removeItem(RECENT);
+  } catch (_) {}
+}
 function readKept(F) {
   try {
     const k = JSON.parse(store()?.getItem(RECENT) || "null");
-    return k && k.u === me(F) && Array.isArray(k.list) ? k.list : [];
+    if (!Array.isArray(k?.list)) return [];
+    const list = k.list.filter(entry => !privateApp(entry));
+    if (list.length !== k.list.length) writeKept(k.u, list);
+    const owner = me(F);
+    return owner && k.u === owner ? list : [];
   } catch (_) { return []; }
+}
+function readPrivate(F) {
+  const current = privateRecents.get(F);
+  return current?.owner === me(F) ? current.list : [];
 }
 export function recents(F) {
   const yours = yoursOf(F);
-  return readKept(F).filter((r) => r && typeof r.title === "string" && ownPath(r.href) && (yours("mail") || !/^\/mail(?=$|[/?#])/.test(r.href))).slice(0, KEEP);
+  return [...readKept(F), ...readPrivate(F)]
+    .filter(r => r && typeof r.title === "string" && ownPath(r.href) && (yours("mail") || !/^\/mail(?=$|[/?#])/.test(r.href)))
+    .sort((a, b) => (Number(b.openedAt) || 0) - (Number(a.openedAt) || 0))
+    .slice(0, KEEP).map(({ openedAt, ...entry }) => entry);
 }
 export function remember(F, e) {
-  if (!e || typeof e.title !== "string" || !ownPath(e.href)) return;
-  const r = { title: e.title.slice(0, 120), sub: typeof e.sub === "string" ? e.sub.slice(0, 120) : "", href: e.href };
+  const owner = me(F);
+  if (!owner || !e || typeof e.title !== "string" || !ownPath(e.href)) return;
+  const app = privateApp(e);
+  if (app && !yoursOf(F)(app)) return;
+  lastOpened = Math.max(Date.now(), lastOpened + 1);
+  const r = { title: e.title.slice(0, 120), sub: typeof e.sub === "string" ? e.sub.slice(0, 120) : "", href: e.href, openedAt: lastOpened };
   if (typeof e.icon === "string") r.icon = e.icon;
   if (e.avatar != null) r.avatar = String(e.avatar).slice(0, 60);
-  const list = [r, ...readKept(F).filter((x) => x?.href !== e.href)].slice(0, KEEP);
-  try { store()?.setItem(RECENT, JSON.stringify({ u: me(F), list })); } catch (_) {}
+  const kept = readKept(F);
+  const previous = app ? readPrivate(F) : kept;
+  const list = [r, ...previous.filter(x => x?.href !== e.href)].slice(0, KEEP);
+  if (app) privateRecents.set(F, { owner, list });
+  else writeKept(owner, list);
 }
-export function forget() { try { store()?.removeItem(RECENT); } catch (_) {} }
+export function forget(F) {
+  if (F) privateRecents.delete(F);
+  else privateRecents = new WeakMap();
+  writeKept(null, []);
+}
 
 // the apps, in the Apps tab's order: Weather, then the apps beside (Chats, Fitness, Markets, Mail), each by its hub page
 const APPS = () => ["weather", "chats", "fitness", "markets", "mail"].filter((a) => REGISTRY[a]);
@@ -202,10 +237,13 @@ const APPS = () => ["weather", "chats", "fitness", "markets", "mail"].filter((a)
 const SHORTCUTS = [["Rain radar", "weather", "/weather/#radar", "rain"], ["Add a friend", "chats", "/chats/#add", "addp"], ["Activities", "fitness", "/fitness/#activities", "ride"],
   ["Holdings", "markets", "/markets/#holdings", "trend"], ["Quiet Hours", null, "/#you=quiet", "moon"]];
 let n = 0;
-export function createSearch(F) {
+export function createSearch(F, { chatReady = () => true } = {}) {
   let renderer, searchProviders;
   const provs = new Set();
   let h = null, t = 0, gen = 0, discoveryView;
+  const canRemember = entry => privateApp(entry) !== "chats" || chatReady();
+  const visibleRecents = () => recents(F).filter(canRemember);
+  readKept(F); // Remove private rows created by older builds.
   function open(resume) {
     if (h) return h;
     if (typeof resume?.query !== "string") resume = null;
@@ -243,7 +281,7 @@ export function createSearch(F) {
     const option = (r, e, key) => {
       r.setAttribute("role", "option"); r.id = `${id}-${key}`; r.tabIndex = -1; r.dataset.result = identity(e);
       // (opened: kept in Recent, when it has an address to go back to)
-      if (e.href) r.addEventListener("click", () => remember(F, e));
+      if (e.href) r.addEventListener("click", () => { if (h && canRemember(e)) remember(F, e); });
       return r;
     };
     const rowOf = (e, key, hits) => {
@@ -266,9 +304,9 @@ export function createSearch(F) {
         const R = REGISTRY[a], ic = a === "chats" ? "chat" : a;
         return option(ui.el("a", { class: "ifl-sr-app", href: R.path, "aria-label": R.name }, ui.icon(null, { app: ic, size: 40 }), ui.el("span", { text: R.name })), { title: R.name, sub: "App", icon: ic, href: R.path }, `app-${a}`);
       });
-      const kept = recents(F).slice(0, RECENT_SHOWN);
+      const kept = visibleRecents().slice(0, RECENT_SHOWN);
       const wipe = ui.el("button", { class: "ifl-sr-more", type: "button", text: "Clear", "aria-label": "Clear Recent" });
-      wipe.addEventListener("click", () => { forget(); draw(); input.focus({ preventScroll: true }); });
+      wipe.addEventListener("click", () => { forget(F); draw(); input.focus({ preventScroll: true }); });
       const cuts = SHORTCUTS.filter(([, a]) => !a || (yours(a) && has(a))).map(([title, a, href, glyph], i) => {
         const c = ui.chip(title, { kind: "action", href });
         c.prepend(ui.icon(glyph));
@@ -288,7 +326,7 @@ export function createSearch(F) {
       if (!q) return home();
       if (!last) return;
       const selected = q === was && pinned ? opts[at]?.dataset.result : null;
-      renderer.showResults(last, { ui, input, group, rowOf, wide, draw }, list, say, q, view, recents(F));
+      renderer.showResults(last, { ui, input, group, rowOf, wide, draw }, list, say, q, view, visibleRecents());
       done(0);
       if (selected) { const i = opts.findIndex(o => o.dataset.result === selected); if (i >= 0) mark(i, false); }
       was = q;
@@ -344,7 +382,16 @@ export function createSearch(F) {
   }
   function close() { h?.close(); }
   return {
-    open, close, useDiscovery(factory) { discoveryView = factory; }, invalidate(){if(h){h.body.replaceChildren();h.now();}},
+    open, close, useDiscovery(factory) { discoveryView = factory; },
+    invalidate({ app, clearAll = false } = {}) {
+      if (clearAll) privateRecents.delete(F);
+      else if (app) {
+        const list = readPrivate(F).filter(entry => privateApp(entry) !== app);
+        if (list.length) privateRecents.set(F, { owner: me(F), list });
+        else privateRecents.delete(F);
+      }
+      if (h) { h.body.replaceChildren(); h.now(); }
+    },
     provide(p) {
       if (!p || typeof p.search !== "function") return () => {};
       provs.add(p);

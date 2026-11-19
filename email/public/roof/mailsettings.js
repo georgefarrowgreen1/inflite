@@ -36,14 +36,17 @@ export function openSettings(ctx, page = null) {
   const { fw, api } = ctx, ui = fw.ui, el = ui.el;
   let data = null, failed = null, h = null;
   const root = el("div", { class: "ms" });
-  const say = (e) => fw.toast(e?.message || "Couldn’t save that. Try again.");
+  const current = () => !h?.closed && ctx.canRead?.() !== false;
+  const say = (e) => { if (current()) fw.toast(e?.message || "Couldn’t save that. Try again."); };
   const note = (t) => el("p", { class: "ms-note", text: t });
   const group = (label, ...rows) => ui.list(rows.flat().filter(Boolean), { label });
-  const refreshMe = () => { try { ctx.store?.get?.().me && api.me().then((me) => ctx.store.set({ me }, "settings"), () => {}); } catch (_) {} };
+  const refreshMe = () => { try { current() && ctx.store?.get?.().me && api.me().then((me) => {
+    if (current()) ctx.store.set({ me }, "settings");
+  }, () => {}); } catch (_) {} };
 
   async function saveSettings(key, value) {
     const patch = patchOf("settings", key, value);
-    if (!patch) return;
+    if (!patch || !current()) return;
     const was = data;
     data = { ...data, ...patch };
     try { data = { ...data, ...(await api.saveSettings(patch)) }; refreshMe(); }
@@ -51,7 +54,7 @@ export function openSettings(ctx, page = null) {
   }
   async function saveAddress(email, key, value) {
     const patch = patchOf("address", key, value), i = data?.addresses.findIndex((a) => a.email === email);
-    if (!patch || i < 0) return;
+    if (!patch || !current() || i < 0) return;
     const was = data.addresses[i];
     data.addresses[i] = { ...was, ...patch };
     try { data.addresses[i] = { ...data.addresses[i], ...(await api.updateAddress(email, patch)) }; refreshMe(); }
@@ -59,7 +62,7 @@ export function openSettings(ctx, page = null) {
   }
   // (one of Spot in Your Mail's switches, with this phone's zone for the times Mail reads)
   async function saveSpot(key, on) {
-    if (!SPOT.some(([k]) => k === key)) return;
+    if (!current() || !SPOT.some(([k]) => k === key)) return;
     let tz = null;
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) {}
     const was = data.spot;
@@ -71,6 +74,7 @@ export function openSettings(ctx, page = null) {
 
   // ---- the first page
   function main() {
+    if (!current()) return;
     if (!data) {
       root.replaceChildren(failed
         ? ui.error({ title: "Couldn’t load Mail Settings", body: failed, acts: [{ label: "Try Again", act: "retry", primary: true, run: load }] })
@@ -153,10 +157,11 @@ export function openSettings(ctx, page = null) {
   }
 
   async function load() {
+    if (!current()) return;
     failed = null; data = null; main();
     try { data = await api.settings(); data.addresses ||= []; }
     catch (e) { failed = e?.message || "Try again in a moment."; }
-    if (h.closed) return;
+    if (!current()) return;
     main();
     if (data && page === "signature") signature();
     else if (data && page === "unknown") unknown();

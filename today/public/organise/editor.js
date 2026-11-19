@@ -27,6 +27,59 @@ export function renderPersonProfile(profile, F, {value, handle, chat, edit, save
   el('p', {class:'org-muted org-person-empty',text:'No contact details yet.'}));
 }
 
+export function openFriendProfile(F,{detail,id,current,store,go,findContact}){
+ const ui=F.ui,el=ui.el,chat={id};
+ const client=createSystemClient(F,{prefix:'/api/organise/'});
+ let rendered;
+ async function existingContact(active){
+  const local=findContact();
+  if(local)return local;
+  const {records}=await client.request('list',{method:'POST',body:{kind:'people',related:{app:'chats',id},limit:1},current:active});
+  return records.find(value=>value.links?.some(ref=>ref.app==='chats'&&ref.id===id))?.id;
+ }
+ return (friend,state,loaded)=>{
+  if(!current())return;
+  const key=friend?JSON.stringify([friend.name,friend.handle]):'missing:'+(loaded?'loaded':state);
+  if(key===rendered)return;
+  rendered=key;
+  if(!friend){
+   const waiting=!loaded&&(!state||state==='ready');
+   detail.replaceChildren(waiting?el('p',{role:'status',text:'Opening contact…'}):
+    ui.empty({title:state==='locked'?'Chats is locked':'Chat friend unavailable',
+     body:state==='locked'?'Unlock Chats to view this profile.':'Open Chats to check your friends.',
+     acts:[{label:'Open Chats',href:'/chats/#friends'}]}));
+   return;
+  }
+  const profile=el('section',{class:'org-profile'}),extra=el('details',{class:'org-extra org-people-extra'},el('summary',{text:'More actions'}));
+  const message=el('p',{class:'org-status',role:'status'}),active=()=>current()&&detail.contains(profile);
+  let selecting=false;
+  async function select(useExisting){
+   if(!active()||selecting)return;
+   selecting=true;profile.setAttribute('aria-busy','true');message.textContent='';
+   try{
+    const existing=await existingContact(active);
+    if(!active())return;
+    if(existing){go(existing,null,true);return}
+    if(useExisting){
+     const {chooseLink}=await import('./links.js');
+     if(!active())return;
+     const selected=await chooseLink(F,'chats',{contactsOnly:true});
+     if(selected&&active())go(selected.id,{chat},true);
+    }else{
+     if(!store.ready())throw Error('Private device storage is unavailable. Try again before adding details.');
+     const recordId=operationId();
+     go(recordId,{chat,initial:{id:recordId,kind:'people',title:friend.name,links:[],version:0}},true);
+    }
+   }catch(error){if(active())message.textContent=error.message}
+   finally{selecting=false;profile.removeAttribute('aria-busy')}
+  }
+  renderPersonProfile(profile,F,{value:{title:friend.name},handle:friend.handle,
+   edit:{label:'Add details',run:()=>select(false)},chat:()=>{if(active())F.nav.go(pathOf({app:'chats',id}))}});
+  extra.append(el('div',{class:'org-toolbar'},ui.btn('Link to existing contact',{icon:'link',run:()=>select(true)})));
+  detail.replaceChildren(profile,message,extra);
+ };
+}
+
 export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportValue,linkPicker,prepareInvitation,chat,friendFor}){
  const ui=F.ui,el=ui.el,life=F.signal;let dead=false,dirty=!!value.formDraft,formKept=!!value.formDraft,editEpoch=0,timer=0,version=value.version||0,writing=Promise.resolve(),links=structuredClone(value.links||[]),checklist=structuredClone(value.checklist||[]),labels=new Map((value.linkedLabels||[]).map(r=>[r.app+':'+r.id,r.unavailable?'Unavailable '+r.app:r.title||r.app])),lastSaved=JSON.stringify(value),mounted=true;
  if(chat&&!links.some(ref=>ref.app==='chats'&&ref.id===chat.id)){
@@ -63,7 +116,7 @@ export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportVa
  form.addEventListener('input',e=>{if(!e.target.closest('.org-checklist'))changed()});form.addEventListener('change',e=>{if(e.target===allDay)changed()});form.addEventListener('submit',e=>{e.preventDefault();safe(save)()});
  async function flush(){clearTimeout(timer);if(kind==='notes'&&dirty){writing=writing.catch(()=>{}).then(save);await writing.catch(e=>{if(live())message.textContent=e.message})}else{await writing.catch(()=>{});if(kind!=='notes'&&dirty)await keepForm()}}
  function close(){if(kind==='notes'){flush().then(()=>{if(!dirty)home()});return}if(!dirty)return home();const h=F.sheet.open({sheet:'organise-unsaved',title:'Keep editing?',body:el('p',{text:'This item has changes that have not been saved.'}),acts:[{label:'Keep editing',run:()=>h.now()},{label:'Keep draft & close',run:async()=>{h.setBusy(true);try{await flush();h.now();home()}catch(e){F.toast(e.message)}finally{h.setBusy(false)}}},{label:'Discard changes',destructive:true,run:async()=>{clearTimeout(timer);await store.dropForm(id);dirty=false;h.now();home()}}]})}
- const retry=button('Retry save',()=>store.retry(id)),review=button('Review account version',async()=>{let remote=null;try{remote=await store.remote(id)}catch(e){if(e.status!==404)throw e}if(!live())return;const h=F.sheet.open({sheet:'organise-conflict',title:'Review conflicting changes',body:el('div',{class:'org'},el('p',{text:'Your local work is kept. Choose which copy to continue with.'}),el('h3',{text:'On this device'}),el('pre',{class:'org-conflict',text:JSON.stringify(read(),null,2)}),el('h3',{text:'In your account'}),el('pre',{class:'org-conflict',text:remote?JSON.stringify(remote,null,2):'This item was deleted.'}),button('Save my work as a new copy',async()=>{await flush();const next=await store.copy(id);h.now();F.nav.go('/'+kind+'/#item='+next)}),button('Use account version',async()=>{await store.discard(id);h.now();dirty=false;home()}))});}),recovery=el('div',{class:'org-recovery',hidden:true},retry,review);
+ const retry=button('Retry save',()=>store.retry(id)),review=button('Review account version',async()=>{let remote=null;try{remote=await store.remote(id)}catch(e){if(e.status!==404)throw e}if(!live())return;const h=F.sheet.open({sheet:'organise-conflict',title:'Review conflicting changes',body:el('div',{class:'org'},el('p',{text:store.view(id)?.unpersisted?'Your edits are still open in this tab. Save a copy to keep them.':'Your local work is kept. Choose which copy to continue with.'}),el('h3',{text:'On this device'}),el('pre',{class:'org-conflict',text:JSON.stringify(read(),null,2)}),el('h3',{text:'In your account'}),el('pre',{class:'org-conflict',text:remote?JSON.stringify(remote,null,2):'This item was deleted.'}),button('Save my work as a new copy',async()=>{await flush();const next=await store.copy(id);dirty=false;h.now();F.nav.go('/'+kind+'/#item='+next)}),button('Use account version',async()=>{await store.discard(id);h.now();dirty=false;home()}))});}),recovery=el('div',{class:'org-recovery',hidden:true},retry,review);
  const remove=button('Delete',()=>{const h=F.sheet.open({sheet:'organise-delete',title:'Delete this '+(kind==='notes'?'note':kind==='people'?'person':'event')+'?',body:el('p',{text:'Linked files and items in other apps will stay in place.'}),acts:[{label:'Cancel',run:()=>h.now()},{label:'Delete',destructive:true,run:async()=>{try{await flush();const r=store.view(id);if(r?.pending)throw Error('Finish or review the pending save before deleting.');if(version){await store.save(id,read(),{version,deleted:true})}dirty=false;h.now();home()}catch(e){F.toast(e.message)}}}]});});remove.hidden=!version;
  const saveButton=button('Save',save,true),editButton=kind==='calendar'?button('Edit event',()=>setEditing(true)):null,tools=el('div',{class:'org-toolbar org-editor-tools'},saved,editButton,kind==='notes'?null:saveButton);
  const share=button('Use in another app',async()=>{await flush();if(live())await F.workspace?.life?.share({app:kind,id})});

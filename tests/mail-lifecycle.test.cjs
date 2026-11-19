@@ -11,7 +11,7 @@ const { chromium, webkit } = require('playwright');
 const mailDir = resolve(__dirname, '../email/public/roof');
 let browser, server, origin;
 const fixtures = {
-  'api.js': `export const MAIL = '/sample-mail'; export function createApi() { return { async session() { ++trial.sessions; return { access: 'notadmin' }; } }; }`,
+  'api.js': `export const MAIL = '/sample-mail'; export function createApi() { return { async session() { ++trial.sessions; return { access: 'ok' }; }, async me() { return {}; }, async counts() { return {}; }, async version() { return { v: '1' }; } }; }`,
   'actions.js': `export const createActions = () => ({ async load() {}, async counts() {} });`,
   'list.js': `export function view(el, ctx) { trial.ctx = ctx; return { draw() {}, hide() {}, destroy() {}, swiping() { return false; } }; }`,
   'reader.js': `export const view = () => ({ draw() {}, hide() {}, destroy() {} });`,
@@ -61,7 +61,7 @@ async function open({ show = true } = {}) {
         return promise.then(() => load(''));
       },
       toast: message => t.toasts.push(message),
-      session: { lost() {}, hubAgain() {} },
+      session: { user: { id: 'fixture-owner' }, lost() {}, hubAgain() {} },
       nav: { depth: () => 0, go() {}, section() {}, href: () => '/mail/' },
       header: { set(value) { t.header = value; } },
       ui: await import('/roof/ui.js'),

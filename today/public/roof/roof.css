@@ -160,6 +160,10 @@ dialog.ifl-sheet.dragging:not(.closing) { animation: none; transition: none; }
 .ifl-sheet .ifs-acts::before { content: ""; position: absolute; z-index: -1; inset: 0 0 calc(0px - var(--sheet-bottom-pad));
   background: var(--ifl-surface, var(--glass-strong)); pointer-events: none; }
 .ifl-sheet .ifs-acts .ifl-btn { flex: 1 1 auto; }
+/* Keep the sheet chrome in view when WebKit scrolls a focused field into view. */
+dialog.ifl-sheet.ifs-kb-body { overflow: hidden; }
+.ifl-sheet:where(.ifs-kb-body) > .ifs-body { overflow: hidden auto; overscroll-behavior: contain; overflow-anchor: none; }
+.ifl-sheet.ifs-kb-body > .ifs-acts { position: relative; bottom: auto; flex-shrink: 0; }
 .ifl-sheet[aria-busy="true"] .ifs-body { cursor: progress; }
 .ifs-page { display: grid; gap: 12px; }
 body.sheet-up { overflow: hidden; }

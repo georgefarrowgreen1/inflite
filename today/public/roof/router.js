@@ -2,9 +2,9 @@
 const fz = (o) => Object.freeze(o);
 const secs = (l) => fz(l.map((s) => fz(s)));
 export const REGISTRY = fz({
-  calendar: Object.freeze({app:"calendar", name: "Calendar", path: "/calendar/", entry: "/calendar/roof/releases/4.32.2/calendar.js", connector: "/calendar/roof/releases/4.32.2/connector.js", css: fz(["/organise/releases/4.32.2/organise.css"]), sections: secs([["week", "Week"], ["agenda", "Month"]]), aliases: fz({item:"week",new:"week",date:"week"}), stay:fz(["item","date"])}),
-  notes: Object.freeze({app:"notes", name: "Notes", path: "/notes/", entry: "/notes/roof/releases/4.32.2/notes.js", connector: "/notes/roof/releases/4.32.2/connector.js", css: fz(["/organise/releases/4.32.2/organise.css"]), sections: secs([["all", "All notes"]]), aliases: fz({item:"all",new:"all"}), stay:fz(["item"])}),
-  people: Object.freeze({app:"people", name: "People", path: "/people/", entry: "/people/roof/releases/4.32.2/people.js", connector: "/people/roof/releases/4.32.2/connector.js", css: fz(["/organise/releases/4.32.2/organise.css"]), sections: secs([["contacts", "Contacts"]]), aliases: fz({item:"contacts",new:"contacts",friend:"contacts"}), stay:fz(["item","friend"])}),
+  calendar: Object.freeze({app:"calendar", name: "Calendar", path: "/calendar/", entry: "/calendar/roof/releases/4.32.3/calendar.js", connector: "/calendar/roof/releases/4.32.3/connector.js", css: fz(["/organise/releases/4.32.3/organise.css"]), sections: secs([["week", "Week"], ["agenda", "Month"]]), aliases: fz({item:"week",new:"week",date:"week"}), stay:fz(["item","date"])}),
+  notes: Object.freeze({app:"notes", name: "Notes", path: "/notes/", entry: "/notes/roof/releases/4.32.3/notes.js", connector: "/notes/roof/releases/4.32.3/connector.js", css: fz(["/organise/releases/4.32.3/organise.css"]), sections: secs([["all", "All notes"]]), aliases: fz({item:"all",new:"all"}), stay:fz(["item"])}),
+  people: Object.freeze({app:"people", name: "People", path: "/people/", entry: "/people/roof/releases/4.32.3/people.js", connector: "/people/roof/releases/4.32.3/connector.js", css: fz(["/organise/releases/4.32.3/organise.css"]), sections: secs([["contacts", "Contacts"]]), aliases: fz({item:"contacts",new:"contacts",friend:"contacts"}), stay:fz(["item","friend"])}),
   weather: fz({
     app: "weather",
     name: "Weather",

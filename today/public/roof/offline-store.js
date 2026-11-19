@@ -3,6 +3,7 @@
 const PREFIX='ifl:offline:v1:', LIMIT=100*1024*1024;
 const req=r=>new Promise((yes,no)=>{r.onsuccess=()=>yes(r.result);r.onerror=()=>no(r.error)});
 const done=t=>new Promise((yes,no)=>{t.oncomplete=yes;t.onabort=t.onerror=()=>no(t.error||Error('Local storage did not finish.'))});
+const matches=(row,expected)=>expected===null?row===undefined:!!row&&row.journalStamp===expected.journalStamp;
 export async function openOfflineStore(owner,{signal}={}){
  if(!/^[\w-]{1,100}$/.test(owner)||!globalThis.indexedDB||!crypto.subtle)throw Error('This browser could not keep offline work. Leave this page open and try again.');
  const name=PREFIX+owner,opening=indexedDB.open(name,2);
@@ -20,8 +21,29 @@ export async function openOfflineStore(owner,{signal}={}){
   const decode=async row=>{const data=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:row.iv,additionalData:new TextEncoder().encode(owner)},key,row.data));check();const end=data.indexOf(10);if(end<0)throw Error('Offline work could not be read.');const v=JSON.parse(new TextDecoder().decode(data.subarray(0,end)));if(v.kind==='upload')v.file=new File([data.subarray(end+1)],v.name,{type:v.mime});return v};
   return {close,
    async list(kind){check();const s=db.transaction('work').objectStore('work'),rows=await req(kind?s.index('kind').getAll(kind):s.getAll());return Promise.all(rows.map(decode))},
-   async put(value){check();const encrypted=await encode(value);check();const t=db.transaction(['work','quota'],'readwrite'),settled=done(t),s=t.objectStore('work'),q=t.objectStore('quota'),rows=await req(q.getAll());if(rows.filter(r=>r.id!==value.id).reduce((n,r)=>n+r.bytes,0)+encrypted.data.byteLength>LIMIT||rows.filter(r=>r.id!==value.id).length>=100){t.abort();await settled.catch(()=>{});throw Error('Offline storage is full. Finish or cancel earlier work first.')}s.put({id:value.id,kind:value.kind,...encrypted});q.put({id:value.id,bytes:encrypted.data.byteLength});await settled;check();},
-   async remove(id){check();const t=db.transaction(['work','quota'],'readwrite'),settled=done(t);t.objectStore('work').delete(id);t.objectStore('quota').delete(id);await settled;check()}
+   async put(value,expected){
+    check();const encrypted=await encode(value);check();
+    const t=db.transaction(['work','quota'],'readwrite'),settled=done(t),store=t.objectStore('work'),quota=t.objectStore('quota');
+    if(expected!==undefined&&!matches(await req(store.get(value.id)),expected)){await settled;check();return false}
+    const rows=(await req(quota.getAll())).filter(row=>row.id!==value.id);
+    if(rows.reduce((n,row)=>n+row.bytes,0)+encrypted.data.byteLength>LIMIT||rows.length>=100){
+     t.abort();await settled.catch(()=>{});throw Error('Offline storage is full. Finish or cancel earlier work first.');
+    }
+    store.put({id:value.id,kind:value.kind,journalStamp:value.journalStamp,...encrypted});
+    quota.put({id:value.id,bytes:encrypted.data.byteLength});
+    await settled;check();return true;
+   },
+   async remove(id,expected){
+    check();
+    const t=db.transaction(['work','quota'],'readwrite'),settled=done(t),store=t.objectStore('work');
+    // An opaque stamp lets one tab acknowledge its own saved row even if
+    // another tab has since kept a newer edit under the same record ID.
+    if(expected===undefined||matches(await req(store.get(id)),expected)){
+     store.delete(id);
+     t.objectStore('quota').delete(id);
+    }
+    await settled;check();
+   }
   };
  }catch(error){close();throw error}
 }

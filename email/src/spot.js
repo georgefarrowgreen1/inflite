@@ -821,15 +821,15 @@ async function readOne(env, on, mail, { threadId, messageId, sender, date, zone,
   const at = { threadId, messageId, sender, mailDate: date, zone, now };
   if (on.trips)
     try { n += await keepBookings(env, await spotEmail({ html: mail.html, attachments: mail.attachments, sender, zone }), at); }
-    catch (err) { console.error("spot: couldn't read a message for bookings", messageId, err); }
+    catch { console.error("spot: couldn't read a message for bookings"); }
   if (!on.parcels && !on.bills) return n;
   const given = { html: mail.html, text: mail.text, subject: mail.subject, sender, fromName: mail.fromName, mailDate: date, zone };
   let parcels = [], bills = [];
-  try { if (on.parcels) parcels = parcelsOf(given); } catch (err) { console.error("spot: couldn't read a message for parcels", messageId, err); }
-  try { if (on.bills) bills = billsOf(given); } catch (err) { console.error("spot: couldn't read a message for bills", messageId, err); }
+  try { if (on.parcels) parcels = parcelsOf(given); } catch { console.error("spot: couldn't read a message for parcels"); }
+  try { if (on.bills) bills = billsOf(given); } catch { console.error("spot: couldn't read a message for bills"); }
   if (!(parcels.length || bills.length) || !dmarcPass(await mail.headers(), sender)) return n;
-  try { n += await keepParcels(env, parcels, at); } catch (err) { console.error("spot: couldn't keep a message's parcels", messageId, err); }
-  try { n += await keepBills(env, bills, at); } catch (err) { console.error("spot: couldn't keep a message's bills", messageId, err); }
+  try { n += await keepParcels(env, parcels, at); } catch { console.error("spot: couldn't keep a message's parcels"); }
+  try { n += await keepBills(env, bills, at); } catch { console.error("spot: couldn't keep a message's bills"); }
   return n;
 }
 
@@ -842,8 +842,8 @@ export async function spotStored(env, { email, threadId, messageId, sender, date
     const zone = await zoneOf(env);
     const mail = { html: email.html || "", text: email.text || "", subject: email.subject || "", fromName: email.from?.name || "", attachments: email.attachments || [], headers: async () => email.headers };
     return await readOne(env, on, mail, { threadId, messageId, sender, date, zone });
-  } catch (err) {
-    console.error("spot: couldn't read a message", messageId, err);
+  } catch {
+    console.error("spot: couldn't read a message");
     return 0;
   }
 }
@@ -893,8 +893,8 @@ export async function readBack(env, { budgetMs = 20000, batch = 8, now = Date.no
         const headers = async () => { const o = await env.MAIL.get(`raw/${m.id}.eml`).catch(() => null); return o ? headersOf(new Uint8Array(await o.arrayBuffer())) : []; };
         if (html || text || attachments.length)
           await readOne(env, on, { html, text, subject: m.subject || "", fromName: m.from_name || "", attachments, headers }, { threadId: m.thread_id, messageId: m.id, sender: m.from_email, date: m.date, zone, now });
-      } catch (err) {
-        console.error("spot: couldn't read back a message", m.id, err);
+      } catch {
+        console.error("spot: couldn't read back a message");
       }
     }
     if (results.length < batch) {
@@ -935,7 +935,7 @@ export async function setSpot(env, ctx, given, now = Date.now()) {
   if (off.length) ops.push(env.DB.prepare(`DELETE FROM spot_threads WHERE spot_id NOT IN (SELECT id FROM spots UNION ALL SELECT id FROM parcels UNION ALL SELECT id FROM bills)`));
   if (Object.keys(SWITCH).every((k) => (keys.includes(k) ? !given[k] : !was[k]))) ops.push(env.DB.prepare(`DELETE FROM meta WHERE k = 'spot_back'`));
   await env.DB.batch(ops);
-  if (turned.length && ctx) ctx.waitUntil(readBack(env).catch((err) => console.error("spot: read-back", err)));
+  if (turned.length && ctx) ctx.waitUntil(readBack(env).catch(() => console.error("spot: read-back")));
 }
 export async function spotState(env) {
   const s = await switches(env);
@@ -1023,7 +1023,7 @@ export async function aheadOf(env, now = Date.now()) {
       id: r.id, kind: r.kind, title: cut(r.title, 80), sub: cut(r.sub || "", 120), start: r.start_at, end: r.end_at ?? null, tz: okZone(r.tz) ? r.tz : null,
       place: placeOut(r), ref: r.ref ? cut(r.ref, 24) : null, trip: tripOf.get(r.id) || null, thread: r.thread_id || null, status: r.status,
     }))
-    .concat(await repeating(env, now).catch((err) => (console.error("card: repeating", err), [])))
+    .concat(await repeating(env, now).catch(() => (console.error("card: repeating"), [])))
     .sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : 1))
     .slice(0, 40);
   const shown = new Set(ahead.map((a) => a.id));
@@ -1046,7 +1046,7 @@ export async function aheadOf(env, now = Date.now()) {
 export async function spotCard(env, now = Date.now()) {
   const on = await switches(env);
   const out = {};
-  const part = (what, fn) => fn().catch((err) => (console.error(`card: ${what}`, err), null));
+  const part = (what, fn) => fn().catch(() => (console.error(`card: ${what}`), null));
   if (on.trips) Object.assign(out, await part("bookings", () => aheadOf(env, now)));
   if (on.parcels) { const p = await part("parcels", () => parcelsCard(env, now)); if (p) out.parcels = p; }
   if (on.bills) Object.assign(out, await part("bills", async () => billsCard(env, now, await zoneOf(env), Number(await meta(env, "bills_since")) || 0)));

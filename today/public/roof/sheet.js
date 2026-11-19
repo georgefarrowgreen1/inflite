@@ -24,23 +24,77 @@ export function createSheets(F, { beforeOpen } = {}) {
   const open = [];
   const focused = () => (document.activeElement?.shadowRoot || document).activeElement;
   let restoreFrame = 0, restoreAt = 0;
+  const touchInsets = new WeakMap();
+  function restoreTouchInsets(el) {
+    const original = touchInsets.get(el);
+    if (original) Object.assign(el.style, original);
+    touchInsets.delete(el);
+  }
   // (the keyboard up: an open sheet no taller than what's in sight, and lifted above it. iOS lays the keyboard over the
   // page, not the page above the keyboard, so a sheet fixed to the page's foot sat under it, its field out of sight: it's
   // taken up by how much of the page the keyboard covers, the page's height less what's in sight and where that starts)
   const v = globalThis.visualViewport;
+  let lateT = 0, fitFrame = 0, observedBody = null;
+  function revealField() {
+    const sheet = open.at(-1), field = focused();
+    if (!sheet?.el.classList.contains("ifs-kb-body") || !sheet.body?.contains(field)) return;
+    const { el, body } = sheet;
+    if (el.scrollTop) el.scrollTop = 0;
+    const bounds = body.getBoundingClientRect(), target = field.getBoundingClientRect();
+    if (target.height > bounds.height) return;
+    if (target.bottom > bounds.bottom) body.scrollTop += Math.ceil(target.bottom - bounds.bottom);
+    else if (target.top < bounds.top) body.scrollTop += Math.floor(target.top - bounds.top);
+  }
+  const bodyResize = globalThis.ResizeObserver ? new ResizeObserver(revealField) : null;
+  function observeBody(body) {
+    if (body === observedBody) return;
+    observedBody = body;
+    bodyResize?.disconnect();
+    if (body) bodyResize?.observe(body);
+  }
   const fit = () => {
     const height = v?.height || document.documentElement.clientHeight, top = v?.offsetTop || 0;
     const foot = Math.max(0, Math.round(document.documentElement.clientHeight - height - top));
     const s = globalThis.screen, portrait = matchMedia("(orientation: portrait)").matches;
     const tall = s ? (portrait ? Math.max(s.width, s.height) : Math.min(s.width, s.height)) : height;
-    const typing = focused()?.matches("input,textarea,[contenteditable]") && matchMedia("(any-pointer: coarse)").matches;
+    const field = focused();
+    const editing = field?.matches("input,textarea,[contenteditable]");
+    const typing = editing && matchMedia("(any-pointer: coarse)").matches;
     const up = Math.abs((v?.scale || 1) - 1) < 0.01 && (foot > 40 || (typing && tall - height > 260));
-    for (const { el } of open) { el.style.setProperty("--vvh", `${Math.round(height)}px`); el.style.setProperty("--vv-top", `${Math.round(top)}px`); el.style.setProperty("--sheet-foot", `${foot}px`); el.classList.toggle("ifs-kb", up); }
+    const sheet = open.at(-1);
+    if (sheet) {
+      const { el, body } = sheet;
+      el.style.setProperty("--vvh", `${Math.round(height)}px`);
+      el.style.setProperty("--vv-top", `${Math.round(top)}px`);
+      el.style.setProperty("--sheet-foot", `${foot}px`);
+      el.classList.toggle("ifs-kb", up);
+      const ownsField = editing && body?.contains(field);
+      const innerScroll = up && (ownsField || el.classList.contains("ifs-kb-body"));
+      el.classList.toggle("ifs-kb-body", innerScroll);
+      if (up && matchMedia("(hover: none)").matches) {
+        // WebKit can keep the old fixed-dialog inset through a viewport change.
+        if (!touchInsets.has(el)) {
+          const { top, bottom, maxHeight } = el.style;
+          touchInsets.set(el, { top, bottom, maxHeight });
+        }
+        const safeTop = "max(env(safe-area-inset-top, 0px), 12px)";
+        el.style.top = `calc(${Math.round(top)}px + ${safeTop} + 6px)`;
+        el.style.bottom = `${foot}px`;
+        el.style.maxHeight = `calc(${Math.round(height)}px - ${safeTop} - 6px)`;
+      } else restoreTouchInsets(el);
+      cancelAnimationFrame(fitFrame);
+      // Measure after WebKit has laid out the newly fitted dialog.
+      observeBody(innerScroll && ownsField ? body : null);
+      if (innerScroll && ownsField) fitFrame = requestAnimationFrame(revealField);
+    }
     // (and the tab bar out of sight while it's up: iOS's bar above the keyboard is see-through, and it showed through it)
     document.body.classList.toggle("kb-up", up && open.length > 0);
   };
-  let lateT = 0;
-  const later = () => { clearTimeout(lateT); fit(); lateT = setTimeout(fit, 400); };
+  const later = () => {
+    clearTimeout(lateT);
+    fit();
+    lateT = setTimeout(fit, 400);
+  };
   const sync = () => {
     const up = open.length > 0;
     document.body.classList.toggle("sheet-up", up);
@@ -49,7 +103,9 @@ export function createSheets(F, { beforeOpen } = {}) {
     // the keyboard, and doesn't always say so)
     if (v) for (const [t, e] of [[v, "resize"], [v, "scroll"], [document, "focusin"], [document, "focusout"], [document, "input"], [document, "visibilitychange"], [globalThis, "pageshow"], [globalThis, "resize"]]) t[up ? "addEventListener" : "removeEventListener"](e, later);
     clearTimeout(lateT);
+    cancelAnimationFrame(fitFrame);
     if (up && v) fit();
+    else observeBody(null);
   };
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -69,9 +125,10 @@ export function createSheets(F, { beforeOpen } = {}) {
       const current = !F?.signal?.aborted && F?.route === page.route && location.href === page.url;
       const position = current ? page : { x: scrollX, y: scrollY };
       clearTimeout(closeTimer); clearTimeout(pageTimer); drag?.abort(); sizeMotion?.cancel();
-      d.classList.remove("closing", "dragging", "ifs-touched");
+      d.classList.remove("closing", "dragging", "ifs-touched", "ifs-kb", "ifs-kb-body");
       body.classList.remove("ifl-enter-pop");
       d.style.removeProperty("--drag");
+      restoreTouchInsets(d);
       try { if (d.open) d.close(); } catch (_) {}
       open.splice(open.indexOf(h), 1);
       ac.abort();

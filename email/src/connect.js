@@ -28,7 +28,7 @@ export async function keyOk(request, env) {
 // money (spot.js spotCard). Each absent while its switch is off, so an account from before this ignores them and one
 // after this knows "off" from "nothing there". A failure there leaves the numbers as they are.
 export async function card(env) {
-  const [c, spots] = await Promise.all([counts(env), spotCard(env).catch((err) => (console.error("card: spots", err), null))]);
+  const [c, spots] = await Promise.all([counts(env), spotCard(env).catch(() => (console.error("card: spots"), null))]);
   const n = (v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
   const next = Number(c.nextLater?.at);
   return { people: n(c.people?.unread), updates: n(c.updates?.unread), later: { n: n(c.snoozed), next: Number.isFinite(next) && next > 0 ? next : null }, ...spots };

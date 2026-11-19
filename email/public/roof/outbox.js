@@ -5,7 +5,7 @@
 // that says "Already sent". Undo before then keeps the draft and opens it again in compose. "Did it go?" asks
 // /api/sends with the key, as app.js does. Offline: a message with files isn't taken ("Files need a connection. Try
 // Again"); one without is kept in mail:outbox (its words only, never file bytes) and sent, save then send with no second
-// undo window, on "online" or the next "visible". Every mail:* key together ≤ CAP (store.local.put refuses past it).
+// undo window, on "online" or the next "visible". Active Mail records share the cap enforced by the local store.
 // createOutbox(ctx) → {
 //   send(draft, files, onProgress) → Promise<{ ok: true, key, draftId, queued? } | { ok: false, error, offline? }>
 //       draft: compose's fields { from, to, cc, bcc, subject, text, quote, inReplyTo, references, draftId };
@@ -28,13 +28,14 @@
 // }
 // OutboxItem = { key, at, draft: { from, to, cc, bcc, subject, text, quote, draftId }, state: "waiting" | "sending" |
 //   "queued" | "failed" }; the store's outbox mirrors pending() (list.js shows each with its Undo or Try Again).
-import { STORAGE, CAP, local } from "./store.js";
+import { STORAGE, CAP, privateJournal } from "./store.js";
 
 export const UNDO_MS = 6000;
 export const FLUSH_MS = 2000;
 export const FULL = "Couldn’t keep this on your phone. Try Again when you’re online";
 export const NEEDS = "Files need a connection. Try Again";
 export { CAP };
+const LOCKED = "Confirm it’s you to use Mail.";
 
 const FIELDS = ["from", "to", "cc", "bcc", "subject", "text", "quote", "quoteOld", "inReplyTo", "references", "threadId", "draftId"];
 const fieldsOf = (c = {}) => ({ ...Object.fromEntries(FIELDS.map((k) => [k, c[k] ?? null])), ...(c.followUpAt && {followUpAt:c.followUpAt}) });
@@ -55,36 +56,41 @@ export function createOutbox(ctx) {
   let dead = false;
   const owner = fw.session?.user?.id;
   const retired = () => dead || fw.signal?.aborted || fw.session?.user?.id !== owner;
-  const canDrain = () => !retired() && (!store.get || store.get().access === "ok");
+  const journal = privateJournal(owner, () => !retired());
+  const canRecover = () => journal.available() && ctx.canDraft?.() !== false;
+  const canDrain = () => canRecover() && (!store.get || store.get().access === "ok");
+  const serialized = run => globalThis.navigator?.locks?.request ? navigator.locks.request(STORAGE.outbox, run) : run();
   const toast = (text, o) => { try { return fw.toast(text, o) || null; } catch { return null; } };
   const mirror = () => {
     if (retired()) return;
-    const list = [...items.values()].map(({ key, at, draft, state, handle }) => ({ key, at, draft, state, undoInToast: state === "waiting" && !!handle?.close }));
+    const list = canRecover() ? [...items.values()].map(({ key, at, draft, state, handle }) => ({ key, at, draft, state, undoInToast: state === "waiting" && !!handle?.close })) : [];
     store.set({ outbox: list, sending: list.filter((x) => x.state === "waiting" || x.state === "sending").length });
   };
   function storedQueue() {
-    const records = local.get(STORAGE.outbox, []);
+    const records = journal.get(STORAGE.outbox, []);
     return Array.isArray(records) ? records.filter(r => typeof r?.key === "string" && r.key && r.draft && typeof r.draft === "object") : [];
   }
-  for (const r of storedQueue()) items.set(r.key, { key: r.key, at: r.at || Date.now(), draft: fieldsOf(r.draft), state: "queued" });
-  let knownQueued = new Set(items.keys());
+  const recordOf = it => ({ key: it.key, at: it.at, draft: it.draft,
+    ...(it.saved && { saved: true }), ...(it.state === "failed" && { failed: true }) });
+  for (const r of storedQueue()) items.set(r.key, { key: r.key, at: r.at || Date.now(), draft: fieldsOf(r.draft),
+    stored: true, saved: r.saved === true && !!r.draft.draftId, state: r.failed && r.saved && r.draft.draftId ? "failed" : "queued" });
+  let knownQueued = new Map([...items].map(([key, it]) => [key, JSON.stringify(recordOf(it))]));
   const keepQueue = () => {
     if (retired()) return false;
-    const queued = new Map([...items].filter(([,it]) => it.state === "queued"));
-    const added = [...queued.keys()].filter(key => !knownQueued.has(key));
-    const removed = [...knownQueued].filter(key => !queued.has(key));
-    if (!added.length && !removed.length) return true;
+    const queued = new Map([...items].filter(([,it]) => it.stored).map(([key, it]) => [key, recordOf(it)]));
+    const next = new Map([...queued].map(([key, entry]) => [key, JSON.stringify(entry)]));
+    const changed = [...next.keys()].filter(key => next.get(key) !== knownQueued.get(key));
+    const removed = [...knownQueued.keys()].filter(key => !queued.has(key));
+    if (!changed.length && !removed.length) return true;
     // Other tabs may have queued or delivered messages since this outbox opened.
     const merged = new Map(storedQueue().map(item => [item.key, item]));
     for (const key of removed) merged.delete(key);
-    for (const key of added) {
-      const { at, draft } = queued.get(key);
-      merged.set(key, {key, at, draft});
-    }
+    for (const key of changed) merged.set(key, queued.get(key));
     try {
-      if (merged.size) local.put(STORAGE.outbox, [...merged.values()]);
-      else local.drop(STORAGE.outbox);
-      knownQueued = new Set(queued.keys());
+      if (merged.size) {
+        if (!journal.put(STORAGE.outbox, [...merged.values()])) return false;
+      } else journal.drop(STORAGE.outbox);
+      knownQueued = next;
       return true;
     } catch { return false; }
   };
@@ -103,29 +109,34 @@ export function createOutbox(ctx) {
   async function go(it, { keepalive = false } = {}) {
     if (retired() || it.state === "sending" || !items.has(it.key)) return;
     clearTimeout(it.timer);
-    it.state = "sending";
+    it.state = canDrain() ? "sending" : "failed";
     try { it.handle?.close?.(); } catch {}
     mirror();
+    if (it.state === "failed") { keepQueue(); return; }
     try {
       await api.sendDraft(it.draft.draftId, it.key, { keepalive });
       items.delete(it.key);
       mirror();
-      if (!retired()) { toast("Message Sent"); after(); }
+      if (canDrain()) { toast("Message Sent"); after(); }
     } catch (e) {
       // (Mail refused it, 4xx: it's still in Drafts, to change there; no answer: Try Again asks whether it went first)
-      const refused = e.status >= 400 && e.status < 500 && e.status !== 401;
+      const refused = e.status >= 400 && e.status < 500 && ![401, 408, 429].includes(e.status);
       if (refused) items.delete(it.key);
       else it.state = "failed";
       mirror();
-      if (!retired()) toast(refused ? "Couldn’t send. It’s in Drafts" : e.message || "Couldn’t send", refused ? undefined : { action: { label: "Try Again", run: () => retry(it.key) } });
+      if (canDrain()) toast(refused ? "Couldn’t send. It’s in Drafts" : e.message || "Couldn’t send", refused ? undefined : { action: { label: "Try Again", run: () => retry(it.key) } });
+    } finally {
+      keepQueue();
     }
   }
 
   async function send(draft = {}, files = [], onProgress) {
     const d = fieldsOf(draft);
+    const access = store.get?.().access;
+    if (!canRecover() || access && access !== "ok") return { ok: false, error: LOCKED };
     if (!online()) {
       if ((files || []).length) return { ok: false, offline: true, error: NEEDS };
-      const it = { key: keyOf(), at: Date.now(), draft: d, state: "queued" };
+      const it = { key: keyOf(), at: Date.now(), draft: d, state: "queued", stored: true };
       items.set(it.key, it);
       if (!keepQueue()) { items.delete(it.key); return { ok: false, offline: true, error: FULL }; }
       mirror();
@@ -134,8 +145,10 @@ export function createOutbox(ctx) {
     }
     let saved;
     try {
-      saved = await api.saveDraft(await payload(d, files), onProgress);
-      if (!saved?.id || retired()) throw new Error("Mail did not confirm the draft");
+      const body = await payload(d, files);
+      if (!canDrain()) throw new Error(LOCKED);
+      saved = await api.saveDraft(body, onProgress);
+      if (!saved?.id || !canDrain()) throw new Error("Mail did not confirm the draft");
     } catch (e) {
       return { ok: false, error: e.message || "Couldn’t send", offline: !e.status && !online() };
     }
@@ -154,6 +167,7 @@ export function createOutbox(ctx) {
   }
 
   function undo(key) {
+    if (!canDrain()) return false;
     const it = items.get(key);
     if (!it || it.state !== "waiting") { toast("Already sent"); return false; }
     clearTimeout(it.timer);
@@ -164,16 +178,35 @@ export function createOutbox(ctx) {
     return true;
   }
 
-  async function retry(key) {
+  function retry(key) {
     const it = items.get(key);
-    if (!it) return;
+    if (!it || !canDrain() || !online()) return;
     if (it.state === "queued") return drain();
-    try {
-      const { sent } = await api.sent([key]);
-      if ((sent || []).includes(key)) { items.delete(key); mirror(); toast("Message Sent"); after(); return; }
-    } catch {}
-    it.state = "waiting";
-    return go(it);
+    if (it.state !== "failed") return;
+    const resend = async () => {
+      if (!canDrain()) return;
+      let sent;
+      try { sent = (await api.sent([key]))?.sent; } catch {}
+      if (!Array.isArray(sent) || !canDrain() || items.get(key) !== it) return;
+      if (sent.includes(key)) { items.delete(key); keepQueue(); mirror(); toast("Message Sent"); after(); return; }
+      await go(it);
+    };
+    return it.retrying ||= (it.stored ? serialized(resend) : resend()).finally(() => { it.retrying = null; });
+  }
+
+  async function saveQueued(it, keepalive = false) {
+    if (it.saved) return;
+    // Reuse the queue key for a new draft, including if its first save response was lost.
+    it.saving ||= (async () => {
+      const body = await payload({ ...it.draft, draftId: it.draft.draftId || it.key });
+      if (!canDrain()) throw new Error(LOCKED);
+      const saved = await api.saveDraft(body, null, { keepalive });
+      if (!saved?.id || retired()) throw new Error("Mail did not confirm the draft");
+      it.draft = { ...it.draft, draftId: saved.id };
+      it.saved = true;
+      keepQueue();
+    })().finally(() => { it.saving = null; });
+    await it.saving;
   }
 
   // (sends made offline: saved, then sent, as the connection comes back; asked first whether any went already)
@@ -182,31 +215,34 @@ export function createOutbox(ctx) {
     if (draining || !canDrain() || !online()) return draining;
     const q = [...items.values()].filter((x) => x.state === "queued");
     if (!q.length) return null;
-    draining = (async () => {
-      let went = [];
-      try { went = (await api.sent(q.map((x) => x.key)))?.sent || []; } catch {}
+    draining = serialized(async () => {
+      if (!canDrain()) return;
+      let went;
+      try { went = (await api.sent(q.map((x) => x.key)))?.sent; } catch {}
+      if (!Array.isArray(went)) return;
       for (const it of q) {
         if (!canDrain()) break;
+        if (items.get(it.key) !== it || it.state !== "queued") continue;
         if (went.includes(it.key)) { items.delete(it.key); continue; }
         try {
-          const saved = await api.saveDraft(await payload(it.draft, []));
-          if (!saved?.id || retired()) break;
-          it.draft = { ...it.draft, draftId: saved.id };
-          it.state = "waiting";
+          await saveQueued(it);
+          if (!canDrain()) break;
           await go(it);
         } catch { it.state = "queued"; break; }
       }
       keepQueue();
       mirror();
-    })().finally(() => { draining = null; });
+    }).finally(() => { draining = null; });
     return draining;
   }
 
   function keepUnsent(fields) {
-    try { return local.put(STORAGE.unsent, { ...fieldsOf(fields), at: Date.now() }); } catch { return false; }
+    if (retired()) return false;
+    try { return journal.put(STORAGE.unsent, { ...fieldsOf(fields), at: Date.now() }); } catch { return false; }
   }
-  const unsent = () => { const u = local.get(STORAGE.unsent, null); return u && typeof u === "object" ? u : null; };
-  const dropUnsent = () => local.drop(STORAGE.unsent);
+  const keptUnsent = () => { const u = journal.get(STORAGE.unsent); return u && typeof u === "object" ? u : null; };
+  const unsent = () => canRecover() ? keptUnsent() : null;
+  const dropUnsent = () => journal.drop(STORAGE.unsent);
   let draftTimer=0, recovering=null;
   function track(fn, onSaved) {
     const state = { onSaved, id:null, sig:null, saving:null };
@@ -237,7 +273,9 @@ export function createOutbox(ctx) {
     if (state.sig === signature(draft.draftId)) return true;
     const kept = unsent();
     state.saving = (async () => {
-      const result = await api.saveDraft(await payload(draft, files), null, { keepalive });
+      const body = await payload(draft, files);
+      if (!canDrain()) return false;
+      const result = await api.saveDraft(body, null, { keepalive });
       if (!result?.id) return false;
       state.id = result.id;
       state.sig = signature(result.id);
@@ -263,7 +301,7 @@ export function createOutbox(ctx) {
         draft.draftId = null;
       }
     }
-    if (retired()) throw new Error("Mail was closed");
+    if (!canDrain()) throw new Error(LOCKED);
     const result = await api.saveDraft(await payload(draft, files), null, { keepalive });
     if (!result?.id) throw new Error("Mail did not confirm the draft");
     if (!retired() && JSON.stringify(unsent()) === JSON.stringify(kept)) dropUnsent();
@@ -271,12 +309,27 @@ export function createOutbox(ctx) {
 
   async function flush({ keepalive = false, draftsOnly = false } = {}) {
     if (retired()) return { lost: 0 };
+    if (!canDrain()) return { lost: draftsOnly ? 0 : Number(!!keptUnsent()) + [...items.values()].filter(it => it.state === "queued" && !it.saved).length };
     let lost = 0;
-    const jobs = [];
+    const jobs = [], queued = [];
     for (const it of draftsOnly?[]:[...items.values()]) {
       if (it.state === "waiting") jobs.push(go(it, { keepalive }));
-      else if (it.state === "queued") jobs.push(api.saveDraft(await payload(it.draft, []), null, { keepalive }).then(() => { items.delete(it.key); }, () => { lost++; }));
+      else if (it.state === "queued") queued.push(it);
     }
+    if (queued.length) jobs.push(serialized(async () => {
+      const records = new Map(storedQueue().map(record => [record.key, record]));
+      await Promise.all(queued.map(async it => {
+        if (items.get(it.key) !== it || it.state !== "queued") return;
+        if (!canDrain()) { lost++; return; }
+        const record = records.get(it.key);
+        try {
+          if (record && !(record.saved && record.draft.draftId)) await saveQueued(it, keepalive);
+          items.delete(it.key);
+        } catch { lost++; }
+      }));
+      keepQueue();
+      mirror();
+    }));
     for (const [fn, state] of tracked) {
       jobs.push(saveTracked(fn, state, keepalive, draftsOnly).then(ok => { if (!ok) lost++; }));
     }
@@ -297,7 +350,8 @@ export function createOutbox(ctx) {
   }
 
   const on = (t, ev, fn) => { t?.addEventListener?.(ev, fn); offs.push(() => t?.removeEventListener?.(ev, fn)); };
-  if (store.on) offs.push(store.on("access", () => drain()));
+  const refresh = () => { mirror(); return drain(); };
+  if (store.on) offs.push(store.on("access", refresh));
   on(globalThis, "online", () => drain());
   offs.push(fw.on?.("visible", () => drain()) || (() => {}));
   // (put away during the undo window: it goes at once, as app.js's sendNow)
@@ -306,8 +360,8 @@ export function createOutbox(ctx) {
   if (online()) queueMicrotask(() => drain());
 
   return {
-    send, retry, undo, keepUnsent, unsent, dropUnsent, track, flush,
-    pending: () => [...items.values()].map(({ key, at, draft, state }) => ({ key, at, draft, state })),
+    send, retry, undo, keepUnsent, unsent, dropUnsent, track, flush, refresh,
+    pending: () => canRecover() ? [...items.values()].map(({ key, at, draft, state }) => ({ key, at, draft, state })) : [],
     destroy() {
       dead = true;clearInterval(draftTimer);
       for (const it of items.values()) { clearTimeout(it.timer); it.handle?.close?.(); }

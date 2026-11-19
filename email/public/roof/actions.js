@@ -20,25 +20,30 @@ const SAY = { done: "Done", inbox: "Back in Inbox", trash: "Moved to Trash", res
 
 export function createActions(ctx) {
   const { store, api, logic, fw } = ctx;
-  let token = 0, edits = 0, acting = 0, again = false;
+  let token = 0, edits = 0, acting = 0, again = false, accessRevision = 0;
+  const authorized = () => ctx.canRead?.() !== false;
+  const current = revision => authorized() && revision === accessRevision;
   const toast = (text, o) => { try { return fw.toast(text, o) || null; } catch { return null; } };
   const setList = (patch) => store.set({ list: { ...store.get().list, ...patch } });
   const lastRows = new Map();
 
   async function counts() {
+    if (!authorized()) return;
+    const revision = accessRevision;
     try {
       const was = JSON.stringify(store.get().counts), c = logic.countsOf(await api.counts());
+      if (!current(revision)) return;
       store.set({ counts: c, offline: false });
       // (Today's Mail card shows these numbers: asked for again on its next show)
       if (was !== "null" && was !== JSON.stringify(c)) try { fw.changed?.(); } catch {}
-    } catch (e) { if (!e.status) store.set({ offline: navigator.onLine === false }); }
+    } catch (e) { if (current(revision) && !e.status) store.set({ offline: navigator.onLine === false }); }
   }
 
   // → true once what Mail answered is what's shown
   async function load({ more = false, quiet = false } = {}) {
     const s0 = store.get();
     if (more && (s0.list.loading || !s0.list.more)) return false;
-    if (s0.access && s0.access !== "ok") return false;
+    if (!authorized() || s0.access && s0.access !== "ok") return false;
     const my = ++token, e0 = edits;
     const ask = logic.askOf(s0), seen = JSON.stringify(ask);
     // (a view switched back to: the list it last had, shown at once while Mail's asked again, never an empty screen first;
@@ -50,7 +55,7 @@ export function createActions(ctx) {
       const res = ask.q
         ? await api.search({ q: ask.q, view: ask.view === "trash" ? "trash" : "all", category: null, address: ask.address, before })
         : await api.threads({ view: ask.view, category: ask.category, address: ask.address, before });
-      if (my !== token) return false;
+      if (my !== token || !authorized()) return false;
       // (something changed here while it was on its way: asked for again once Mail has it)
       if (quiet && !more && edits !== e0) {
         if (!acting) return load({ quiet });
@@ -71,7 +76,7 @@ export function createActions(ctx) {
       store.set({ list: { rows, followups:more ? s.list.followups : res.followups || [], more: s.box === "drafts" ? false : !!res.hasMore, loading: false, err: null }, updatedAt: Date.now(), offline: false });
       return true;
     } catch (e) {
-      if (my !== token) return false;
+      if (my !== token || !authorized()) return false;
       const off = !e.status && navigator.onLine === false;
       if (off) store.set({ offline: true });
       if (more || (quiet && store.get().list.rows.length)) { setList({ loading: false }); if (!quiet) toast(e.message); }
@@ -92,7 +97,8 @@ export function createActions(ctx) {
 
   async function act(ids, action, opts = {}) {
     ids = [].concat(ids).filter((x) => typeof x === "string" && x);
-    if (!ids.length) return { ok: false };
+    if (!ids.length || !authorized()) return { ok: false };
+    const revision = accessRevision;
     const { category, sender, until, undo = true, say } = opts;
     const extra = { ...(category && { category }), ...(sender && { sender: true }), ...(until && { until }) };
     const patch = action === "delete" ? null : logic.patchOf(action, extra);
@@ -131,6 +137,7 @@ export function createActions(ctx) {
       if (["inbox", "restore", "unsnooze", "done", "category"].includes(action) && !was.some((r) => ids.includes(r.id))) load({ quiet: true });
       return { ok: true };
     } catch (e) {
+      if (!current(revision)) return { ok: false, error: e };
       // put back: each row where it was
       const now = store.get(), keep = now.list.rows.filter((r) => !ids.includes(r.id));
       for (const r of was.filter((x) => ids.includes(x.id)).sort((a, b) => at.get(a.id) - at.get(b.id))) keep.splice(Math.min(at.get(r.id), keep.length), 0, r);
@@ -142,6 +149,7 @@ export function createActions(ctx) {
   const pick = (t, patch) => Object.fromEntries(Object.keys(patch || {}).map((k) => [k, t[k]]));
 
   async function markAllRead() {
+    if (!authorized()) return;
     const s = store.get();
     store.set({ list: { ...s.list, rows: s.list.rows.map((r) => (r.unread ? { ...r, unread: 0 } : r)).filter((r) => logic.askOf(s).view !== "unread" || !r.unread) } });
     const { view, category, address, q } = logic.askOf(s);
@@ -150,11 +158,19 @@ export function createActions(ctx) {
   }
 
   async function emptyTrash() {
+    if (!authorized()) return;
     const s = store.get();
     if (s.box === "trash") setList({ rows: [], more: false });
     try { await api.emptyTrash(); toast("Trash Emptied"); } catch (e) { toast(e.message); load({ quiet: true }); }
     counts();
   }
 
-  return { act, batch, load, counts, markAllRead, emptyTrash };
+  function clear() {
+    token++;
+    accessRevision++;
+    lastRows.clear();
+    again = false;
+  }
+
+  return { act, batch, load, counts, markAllRead, emptyTrash, clear };
 }
