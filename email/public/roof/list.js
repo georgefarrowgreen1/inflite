@@ -9,7 +9,7 @@
 //   A row's tap: on a phone, the reader as a history entry (fw.nav.go("/mail/#thread=<id>"), S4-D6); on an iPad, the
 //   pane (store threadId). A draft's tap opens it in compose.
 import { threadRow, swipes } from "./rows.js";
-import { MAIL, MAIL_PAGE } from "./api.js";
+import { MAIL_PAGE } from "./api.js";
 
 export function view(el, ctx) {
   const { store, fw, logic, actions } = ctx, ui = fw.ui;

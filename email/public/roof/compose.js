@@ -619,7 +619,7 @@ export function openCompose(ctx, init = {}) {
     // (saved first, the sheet up meanwhile with the upload's progress; closed once the outbox has it, S4-D18)
     sending = true;
     h.setBusy(true);
-    let r = null;
+    let r;
     try {
       const pendingSave = off?.pending?.();
       if (pendingSave) await pendingSave;

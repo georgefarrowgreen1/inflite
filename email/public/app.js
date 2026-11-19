@@ -199,7 +199,6 @@
   };
 
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const nextFrame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   // History can be unavailable in sandboxed frames; navigation still works without it.
   function hist(method, state) {
@@ -285,9 +284,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.24.5";
+  const BUILD = "2.24.6";
   // (what's new in it, said once it's in)
-  const NEWS = "Mail protects private screens when access changes and keeps queued sends available to retry.";
+  const NEWS = "Removed unused Mail code.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.
@@ -1781,17 +1780,6 @@ const IFL = (() => {
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
-
-  // One stream of conversations, narrowed by views (the chips) rather than kept in folders
-  const VIEWS = {
-    all: { chip: "All", title: "Inbox" },
-    unread: { chip: "Unread", title: "Unread" },
-    flagged: { chip: "Flagged", title: "Flagged" },
-    attachments: { chip: "Attachments", title: "Attachments" },
-    later: { chip: "Later", title: "Later" },
-    done: { chip: "Done", title: "Done" },
-    trash: { chip: "Trash", title: "Trash" },
-  };
 
   const S = {
     me: null,

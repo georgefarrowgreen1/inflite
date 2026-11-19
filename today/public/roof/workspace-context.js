@@ -1,7 +1,6 @@
 // Ephemeral, explicit workspace context, never a persisted location history.
 // Publishers act only after the user's share/place action. This client-side source
 // contract coordinates trusted apps; it is not a security permission boundary.
-export const WORKSPACE_CONTEXT_SOURCES = Object.freeze(["fitness", "weather"]);
 const sourceOf = (v) => typeof v === "string" && /^(?:fitness|weather)(?::[a-z][a-z0-9-]{0,39})?$/.test(v);
 const HOUR = 3600000;
 const empty = () => Object.freeze({ location: null, interval: null });

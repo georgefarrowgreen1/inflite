@@ -1,5 +1,5 @@
 // InFlite framework: frame and module api. Full public contract: docs/framework-contract.md.
-import { REGISTRY, parse, format, owns, ownPath } from "./router.js";
+import { REGISTRY, parse, format, ownPath } from "./router.js";
 import { createHeader } from "./header.js";
 import { createTabs } from "./tabs.js";
 import { createSheets } from "./sheet.js";

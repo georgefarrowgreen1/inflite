@@ -3,14 +3,14 @@ import {openOfflineStore} from '/roof/offline-store.js';
 // Encrypted, acknowledged per-record drafts. An uncertain request keeps its exact
 // operation until acknowledged; newer typing follows it at the returned version.
 export async function createStore(F,kind){
- const client=createSystemClient(F,{prefix:'/api/organise/'}),items=new Map(),pending=new Map(),forms=new Map(),acknowledged=new WeakMap(),listeners=new Set();let local=null,running=false,serial=Promise.resolve(),sequence=0,read=0;
+ const client=createSystemClient(F,{prefix:'/api/organise/'}),items=new Map(),pending=new Map(),forms=new Map(),acknowledged=new WeakMap(),listeners=new Set();let local=null,running=false,serial=Promise.resolve(),sequence=0;
  const live=client.live,emit=()=>{if(live())for(const fn of listeners)fn()},clone=v=>structuredClone(v);
  const newerDraft='A newer draft was kept in another tab. Keep this edit open or copy it before reopening the item.';
  try{local=await openOfflineStore(client.owner,{signal:F.signal});for(const v of await local.list('organise-'+kind))pending.set(v.id,{...v,state:v.state==='conflict'?'conflict':'queued'});for(const v of await local.list('organise-form-'+kind))forms.set(v.recordId,v)}catch(_){}
  if(!live()){local?.close();throw new DOMException('Released','AbortError')}
  const merge=r=>{if(r&&/^[a-f0-9]{32}$/.test(r.id)&&r.kind===kind&&Number.isSafeInteger(r.version)&&(items.get(r.id)?.version||0)<=r.version){items.set(r.id,{...items.get(r.id),...r});sequence++}};
  const view=id=>{const p=pending.get(id);return p?{...items.get(id),id,kind,...clone(p.value),version:p.version,deleted:p.deleted,pending:true,state:p.state,error:p.error,unpersisted:!!p.unpersisted,updatedAt:p.updatedAt}:items.get(id)};
- async function list({q='',cursor=null,range=null}={}){const seq=++read,start=sequence,r=await client.request('list',{method:'POST',body:{kind,q,cursor,...(range?{fromDate:range[0],toDate:range[1],from:new Date(range[0]+'T00:00:00').getTime(),to:new Date(range[1]+'T00:00:00').getTime()}: {})}});if(!live())return null;for(const v of r.records)merge(v);emit();return{...r,records:r.records.map(v=>view(v.id)),start}}
+ async function list({q='',cursor=null,range=null}={}){const start=sequence,r=await client.request('list',{method:'POST',body:{kind,q,cursor,...(range?{fromDate:range[0],toDate:range[1],from:new Date(range[0]+'T00:00:00').getTime(),to:new Date(range[1]+'T00:00:00').getTime()}: {})}});if(!live())return null;for(const v of r.records)merge(v);emit();return{...r,records:r.records.map(v=>view(v.id)),start}}
  async function get(id){if(forms.has(id)){const f=forms.get(id);return {id,kind,...clone(f.value),version:f.version,formDraft:true}}if(pending.has(id))return view(id);const r=await client.request('record',{query:{kind,id}});if(live())merge(r.record);return view(id)}
  async function persist(v,expected){
   if(!local)throw Error('Private device storage is unavailable. Keep this page open and try again.');

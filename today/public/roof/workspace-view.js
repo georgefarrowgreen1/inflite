@@ -35,6 +35,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   const uid = `ifl-workspace-${++serial}`, actions = new Map(), cleanups = [], panes = new Map();
   let launcherRefresh=null;
   let gone = false, model = {}, focusedApp = "", avatarKey = "", gesture = null, frame = 0, menuEpoch = 0, motion = null;
+  const hasSavedWorkspaces = callable(callbacks.onWorkspace);
   const windowsEnabled = callable(callbacks.onWindowChange);
   const listen = (node, type, fn, options) => { node.addEventListener(type, fn, options); cleanups.push(() => node.removeEventListener(type, fn, options)); };
   const action = (key, run) => { if (callable(run)) actions.set(key, run); else actions.delete(key); return key; };
@@ -64,7 +65,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   sideBrand.append(brand("ws-brand", "InFlite"));
   const todaySide = callable(callbacks.onToday) ? bindButton("Today", "calendar", "today", opener => invoke("onToday", opener), "ws-sidebar-button") : null;
   if (todaySide) todaySide.append(el("span", { text: "Today" }));
-  const savedNav = el("div", { class: "ws-saved-nav" }), savedRecords = new Map();
+  const savedNav = hasSavedWorkspaces ? el("div", { class: "ws-saved-nav" }) : null, savedRecords = new Map();
   const sideNav = el("nav", { class: "ws-workspace-nav", "aria-label": "InFlite" }, todaySide, savedNav);
   const create = callable(callbacks.onCreateWorkspace) ? bindButton("New workspace", "plus", "create-workspace", opener => invoke("onCreateWorkspace", opener), "ws-sidebar-button ws-create") : null;
   const files = callable(callbacks.onFiles) ? bindButton("Files", null, "files", opener => invoke("onFiles", opener), "ws-sidebar-button") : null;
@@ -73,27 +74,28 @@ export function createWorkspaceView(root, callbacks = {}) {
   const activityCount = el("span", { class: "ws-system-count", hidden: true, "aria-hidden": "true" });
   if (activity) activity.append(el("span", { text: "Activity" }), activityCount);
   const sync = callable(callbacks.onSync) ? bindButton("Workspace sync", "swap", "sync", () => invoke("onSync"), "ws-sidebar-button") : null;
-  const syncState = el("span", { class: "ws-sync-state", text: "This device", "aria-hidden": "true" });
+  const syncState = sync ? el("span", { class: "ws-sync-state", text: "This device", "aria-hidden": "true" }) : null;
   if (sync) sync.append(el("span", { text: "Sync" }), syncState);
   const settings = callable(callbacks.onSettings) ? bindButton("Settings", "settings", "settings", opener => invoke("onSettings", opener), "ws-sidebar-button") : null;
   if (settings) settings.append(el("span", { text: "Settings" }));
   const sideFoot = el("div", { class: "ws-sidebar-foot" }, files, activity, sync, settings);
   const sidebar = el("aside", { class: "ws-sidebar", "aria-label": "InFlite navigation" }, sideBrand,
-    el("p", { class: "ws-nav-label", text: callable(callbacks.onWorkspace) ? "Workspaces" : "Navigate" }), sideNav, create, sideFoot);
-  if (create) { create.hidden = !callable(callbacks.onCreateWorkspace); create.append(el("span", { text: "New workspace" })); }
+    el("p", { class: "ws-nav-label", text: hasSavedWorkspaces ? "Workspaces" : "Navigate" }), sideNav, create, sideFoot);
+  create?.append(el("span", { text: "New workspace" }));
   sideFoot.hidden = !files && !activity && !sync && !settings;
 
   const heading = el("h1", { class: "ws-title", id: `${uid}-title` }, el("span", { class: "ws-title-desktop" }), el("span", { class: "ws-title-mobile" }));
   const headingLine = el("p", { class: "ws-heading-line", hidden: true });
   const phoneBrand = el("img", { class: "ws-phone-mark", src: "/inflite.svg", alt: "", width: 36, height: 36 });
-  const back = bindButton("Back", "back", "back", opener => invoke("onPaneBack", model.mode === "app" ? model.activeApp : model.foregroundApp || "fitness", opener), "ws-icon-button ws-phone-only");
+  const back = callable(callbacks.onPaneBack) ? bindButton("Back", "back", "back", opener => invoke("onPaneBack", model.mode === "app" ? model.activeApp : model.foregroundApp || "fitness", opener), "ws-icon-button ws-phone-only") : null;
   if (back) back.hidden = true;
   const headingBox = el("div", { class: "ws-heading" }, phoneBrand, el("div", { class: "ws-heading-copy" }, heading, headingLine));
-  const homeMode = callable(callbacks.onToday) ? bindButton("Show Today", null, "today-mode", () => invoke("onToday"), "ws-mode-button") : null;
-  const workspaceMode = callable(callbacks.onWorkspaceMode) ? bindButton("Open Workspaces", null, "workspace-mode", () => invoke("onWorkspaceMode"), "ws-mode-button") : null;
-  if (homeMode) homeMode.append(el("span", { text: "Today" }));
-  if (workspaceMode) workspaceMode.append(el("span", { text: "Workspaces" }));
-  const modes = el("div", { class: "ws-mode-switch", role: "group", "aria-label": "InFlite view" }, homeMode, workspaceMode);
+  const canSwitchViews = callable(callbacks.onToday) && callable(callbacks.onWorkspaceMode);
+  const homeMode = canSwitchViews ? bindButton("Show Today", null, "today-mode", () => invoke("onToday"), "ws-mode-button") : null;
+  const workspaceMode = canSwitchViews ? bindButton("Open Workspaces", null, "workspace-mode", () => invoke("onWorkspaceMode"), "ws-mode-button") : null;
+  homeMode?.append(el("span", { text: "Today" }));
+  workspaceMode?.append(el("span", { text: "Workspaces" }));
+  const modes = canSwitchViews ? el("div", { class: "ws-mode-switch", role: "group", "aria-label": "InFlite view" }, homeMode, workspaceMode) : null;
   const search = callable(callbacks.onSearch) ? button("Search InFlite", "search", action("search", opener => invoke("onSearch", opener)), "ws-search") : null;
   if (search) {
     search.append(el("span", { text: "Search InFlite" }), el("kbd", { class: "ws-shortcut-key", text: /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || "") ? "⌘ K" : "Ctrl K" }));
@@ -116,15 +118,35 @@ export function createWorkspaceView(root, callbacks = {}) {
   const toolbar = el("header", { class: "ws-toolbar", role: "banner" }, back, headingBox, search, el("div", { class: "ws-header-actions" }, capture, appsHeader, layoutButton, switchButton, manage, notifications, account));
 
   const phoneChips = el("nav", { class: "ws-workspace-chips", "aria-label": "Workspaces" }), chipRecords = new Map();
-  const cardTitle = el("h3", { class: "ws-summary-title" }), cardLine = el("p", { class: "ws-summary-line" }), cardFacts = el("dl", { class: "ws-summary-facts" });
-  const summaryOpen = button("Open ride workspace", "chev", "open-workspace", "ws-summary-open");
-  const summarySymbols = el("div", { class: "ws-summary-symbols", "aria-hidden": "true" }, appSymbol("fitness"), icon("plus"), appSymbol("weather"));
-  const card = el("section", { class: "ws-workspace-card", "aria-labelledby": `${uid}-summary` },
-    el("div", { class: "ws-summary-head" }, el("div", { class: "ws-summary-copy" }, cardTitle, cardLine), summaryOpen), summarySymbols, cardFacts,
-    button("Open ride workspace", null, "open-workspace", "ws-primary ws-open-workspace"));
-  cardTitle.id = `${uid}-summary`; card.lastElementChild.textContent = "Open ride workspace";
+
+  function workspaceSummary() {
+    const cardTitle = el("h3", { class: "ws-summary-title", id: `${uid}-summary` });
+    const cardLine = el("p", { class: "ws-summary-line" }), cardFacts = el("dl", { class: "ws-summary-facts" });
+    const summaryOpen = button("Open ride workspace", "chev", "open-workspace", "ws-summary-open");
+    const open = button("Open ride workspace", null, "open-workspace", "ws-primary ws-open-workspace");
+    const symbols = el("div", { class: "ws-summary-symbols", "aria-hidden": "true" }, appSymbol("fitness"), icon("plus"), appSymbol("weather"));
+    const card = el("section", { class: "ws-workspace-card", "aria-labelledby": cardTitle.id, hidden: true },
+      el("div", { class: "ws-summary-head" }, el("div", { class: "ws-summary-copy" }, cardTitle, cardLine), summaryOpen), symbols, cardFacts, open);
+    function paint(ride) {
+      card.hidden = !ride;
+      action("open-workspace", ride ? opener => invoke("onWorkspace", ride.id, opener) : null);
+      if (!ride) return;
+      const label = `Open ${ride.name} workspace`;
+      summaryOpen.setAttribute("aria-label", label); summaryOpen.title = label;
+      words(open, label); open.setAttribute("aria-label", label);
+      const summary = model.summary || model.ride || {};
+      words(cardTitle, summary.title || `${ride.name} workspace`);
+      words(cardLine, summary.line || "Fitness and Weather, together.");
+      const facts = (Array.isArray(summary.facts) ? summary.facts : []).filter(f => f?.label && f.value != null);
+      const factKey = JSON.stringify(facts.map(f => [f.label, f.value]));
+      if (cardFacts.dataset.values !== factKey) { cardFacts.dataset.values = factKey; cardFacts.replaceChildren(...facts.map(f => el("div", {}, el("dt", { text: f.label }), el("dd", { text: f.value })))); }
+      cardFacts.hidden = !facts.length;
+    }
+    return { card, paint };
+  }
+  const summaryCard = hasSavedWorkspaces ? workspaceSummary() : null;
   const homeTitle = el("h2", { class: "ws-home-title", text: "Your day, together" });
-  const overview = el("section", { class: "ws-home-overview", "aria-label": "Your workspaces" }, homeTitle, phoneChips, card);
+  const overview = el("section", { class: "ws-home-overview", "aria-label": hasSavedWorkspaces ? "Your workspaces" : "Today" }, homeTitle, phoneChips, summaryCard?.card);
   const todaySlot = el("div", { class: "ws-today-slot", data: { workspaceSlot: "today" } });
   const recentRows = el("div", { class: "ws-resume-rows" }), recentRecords = new Map();
   const recentPanel = el("section", { class: "ws-home-panel", "aria-label": "Pick up where you left off", hidden: true }, el("h2", { text: "Pick up where you left off" }), recentRows);
@@ -185,7 +207,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   const closedWindows = el("div", { class: "ws-windows-empty", hidden: true }, el("h2", { text: "Your windows are minimised" }), el("p", { text: "Choose a window to pick up where you left off." }), button("Open windows", "grid", "window-switcher", "ws-secondary"));
   rideView.append(closedWindows);
   canvas.append(windowMenu, keyboardHint);
-  if (homeMode && workspaceMode) toolbar.insertBefore(modes, search || toolbar.lastElementChild);
+  if (modes) toolbar.insertBefore(modes, search || toolbar.lastElementChild);
   const offline = el("p", { class: "ws-offline", role: "status", hidden: true, text: "You’re offline. Open apps keep their current view. Sending and cloud files need a connection." });
   const main = el("div", { class: "ws-main" }, toolbar, offline, canvas);
   const dock = el("nav", { class: "ws-dock", "aria-label": "Apps" }), dockRecords = new Map();
@@ -530,7 +552,8 @@ export function createWorkspaceView(root, callbacks = {}) {
     const previousPage = `${model.mode}:${model.mode === "workspace" && model.activeId}`;
     model = { ...model, ...next };
     if (heldLayout) model.layout = heldLayout;
-    const mode = /^(workspace|app|files)$/.test(model.mode) ? model.mode : "today", spaces = (Array.isArray(model.workspaces) ? model.workspaces : []).filter(w => w?.id && w.name && callable(callbacks.onWorkspace));
+    const mode = /^(workspace|app|files)$/.test(model.mode) ? model.mode : "today";
+    const spaces = hasSavedWorkspaces && Array.isArray(model.workspaces) ? model.workspaces.filter(w => w?.id && w.name) : [];
     const current = spaces.find(w => w.id === model.activeId), ride = spaces.find(w => w.id === "ride") || spaces.find(w => {
       const apps = Array.isArray(w.panes) ? w.panes.map(p => p.app) : Array.isArray(w.apps) ? w.apps : [];
       return apps.includes("fitness") && apps.includes("weather");
@@ -554,12 +577,10 @@ export function createWorkspaceView(root, callbacks = {}) {
       words(node.querySelector("strong"), item.title); words(node.lastElementChild.lastElementChild, item.detail || item.status);
     });
     homeSide.hidden = recentPanel.hidden && activityPanel.hidden; homeBody.dataset.side = String(!homeSide.hidden);
-    modes.hidden = !homeMode || !workspaceMode;
     homeMode?.setAttribute("aria-pressed", String(mode === "today"));
     workspaceMode?.setAttribute("aria-pressed", String(mode === "workspace"));
     offline.hidden = model.connectionManaged || model.online !== false;
-    const syncLabel = ({ synced: "Synced", syncing: "Syncing…", conflict: "Review", waiting: "Waiting", offline: "Offline", error: "Needs attention" })[model.syncStatus?.state] || "This device";
-    words(syncState, syncLabel);
+    if (syncState) words(syncState, ({ synced: "Synced", syncing: "Syncing…", conflict: "Review", waiting: "Waiting", offline: "Offline", error: "Needs attention" })[model.syncStatus?.state] || "This device");
     const tasks = Math.max(0, Math.floor(Number(model.activityCount) || 0)); activityCount.hidden = !tasks; words(activityCount, tasks > 99 ? "99+" : tasks);
     if (mode === "today") canvas.removeAttribute("role"); else canvas.setAttribute("role", "main");
     words(heading.querySelector(".ws-title-desktop"), title);
@@ -568,7 +589,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     rideView.setAttribute("aria-label", `${current?.name || "Ride"} workspace`);
     foregroundTabs.setAttribute("aria-label", `${current?.name || "Ride"} workspace apps`);
     appView.setAttribute("aria-label", activeApp?.name || APP_NAMES[model.activeApp] || "App");
-    if (back) back.hidden = mode === "today" || mode === "files" || !callable(callbacks.onPaneBack);
+    if (back) back.hidden = mode === "today" || mode === "files";
     if (manage) manage.hidden = mode !== "workspace" || !current;
     todayView.hidden = mode !== "today"; rideView.hidden = mode !== "workspace"; appView.hidden = mode !== "app";
     filesView.hidden = mode !== "files"; filesView.inert = mode !== "files";
@@ -582,23 +603,12 @@ export function createWorkspaceView(root, callbacks = {}) {
       const b = button(w.name, (w.icon || (w.id === "ride" ? "ride" : "grid")), action(`workspace:${w.id}`, opener => invoke("onWorkspace", w.id, opener)), cls);
       b.append(el("span", { text: w.name })); return b;
     };
-    reconcile(savedNav, savedRecords, spaces, w => w.id, w => makeWorkspace(w, "ws-sidebar-button"), paintWorkspace);
-    const chips = [...(callable(callbacks.onToday) ? [{ id: "today", name: "Today", icon: "calendar" }] : []), ...spaces];
-    reconcile(phoneChips, chipRecords, chips, w => w.id, w => {
+    if (savedNav) reconcile(savedNav, savedRecords, spaces, w => w.id, w => makeWorkspace(w, "ws-sidebar-button"), paintWorkspace);
+    const chips = model.unifiedHome ? [] : [...(callable(callbacks.onToday) ? [{ id: "today", name: "Today", icon: "calendar" }] : []), ...spaces];
+    if (chips.length || chipRecords.size) reconcile(phoneChips, chipRecords, chips, w => w.id, w => {
       const b = makeWorkspace(w, "ws-workspace-chip"); if (w.id === "today") b.dataset.wsAction = "today"; return b;
     }, (b, w) => { words(b.lastElementChild, w.name); setCurrent(b, w.id === "today" ? mode === "today" && !model.settingsActive : mode === "workspace" && w.id === model.activeId); });
-    card.hidden = !ride;
-    action("open-workspace", ride ? opener => invoke("onWorkspace", ride.id, opener) : null);
-    const openLabel = ride ? `Open ${ride.name} workspace` : "Open workspace";
-    summaryOpen.setAttribute("aria-label", openLabel); summaryOpen.title = openLabel;
-    words(card.lastElementChild, openLabel); card.lastElementChild.setAttribute("aria-label", openLabel);
-    const summary = model.summary || model.ride || {};
-    words(cardTitle, summary.title || ride?.name && `${ride.name} workspace` || "Ride workspace");
-    words(cardLine, summary.line || "Fitness and Weather, together.");
-    const facts = (Array.isArray(summary.facts) ? summary.facts : []).filter(f => f?.label && f.value != null);
-    const factKey = JSON.stringify(facts.map(f => [f.label, f.value]));
-    if (cardFacts.dataset.values !== factKey) { cardFacts.dataset.values = factKey; cardFacts.replaceChildren(...facts.map(f => el("div", {}, el("dt", { text: f.label }), el("dd", { text: f.value })))); }
-    cardFacts.hidden = !facts.length;
+    summaryCard?.paint(ride);
     setCurrent(dockToday, mode === "today" && !model.settingsActive);
     const candidates=[...(callable(callbacks.onFiles)?[{id:"files",name:"Files",available:true,indicator:model.fileIndicator}]:[]),...(Array.isArray(model.apps)?model.apps:[])];
     const ids=initialFavourites(model.favourites,id=>candidates.some(a=>a.id===id&&a.available!==false));
@@ -650,7 +660,7 @@ export function createWorkspaceView(root, callbacks = {}) {
     const list = event.target.closest?.('.ws-pane-tabs, .ws-pane-sections, .ws-dock, .ws-workspace-nav'); if (!list) return;
     const buttons = [...list.querySelectorAll("button:not(:disabled)")].filter(b => b.getClientRects().length), at = buttons.indexOf(event.target.closest("button"));
     if (at < 0) return;
-    let next = at;
+    let next;
     if (event.key === "Home") next = 0; else if (event.key === "End") next = buttons.length - 1;
     else if (["ArrowRight", "ArrowDown"].includes(event.key)) next = (at + 1) % buttons.length;
     else if (["ArrowLeft", "ArrowUp"].includes(event.key)) next = (at + buttons.length - 1) % buttons.length;

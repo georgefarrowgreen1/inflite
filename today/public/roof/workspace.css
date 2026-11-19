@@ -320,7 +320,7 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 .ifl-workspace .ws-home-job-icon svg { display: block; width: 18px; height: 18px; }
 @media (max-width: 959px) {
   .ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview { display: block; }
-  .ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview:has(.ws-workspace-card[hidden]) { display: none; }
+  .ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview:not(:has(.ws-workspace-card:not([hidden]))) { display: none; }
   .ifl-workspace[data-unified=true][data-mode=today] .ws-home-title { display: none; }
   .ifl-workspace[data-unified=true][data-mode=today] .ws-home-body { display: block; }
   .ifl-workspace .ws-home-side { margin-top: 20px; }

@@ -433,7 +433,6 @@ function mailtoTo(mailto) {
     return null;
   }
 }
-const oneLine = (v, n) => String(v || "").replace(/[\r\n]+/g, " ").trim().slice(0, n);
 async function unsubscribe(env, threadId) {
   const info = await unsubInfo(env, threadId);
   if (!info) throw new HttpError(404, "This sender doesn't say how to unsubscribe.");

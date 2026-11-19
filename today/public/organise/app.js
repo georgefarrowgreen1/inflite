@@ -1,6 +1,6 @@
 import {createStore} from './store.js';
-import {createSystemClient,operationId} from '/roof/system-client.js';
-import {localDay,addDays,eventDay,overlaps,pathOf} from './model.js';
+import {operationId} from '/roof/system-client.js';
+import {localDay,addDays,eventDay,overlaps} from './model.js';
 const NAMES={calendar:'Calendar',notes:'Notes',people:'People'},SECTIONS={calendar:[['week','Week'],['agenda','Month']],notes:[['all','All notes']],people:[['contacts','Contacts']]};
 export async function mountApp(root,F,kind){
  const ui=F.ui,el=ui.el,store=await(F.workspace?.organiseStore?.(kind)||createStore(F,kind)),life=F.signal,live=()=>!life.aborted;let libraryY=null,libraryFocus=null,datesKey='',route=null,shown=false,loaded=false,reading=0,query='',cursor=null,ids=new Set(),editor=null,editorId=null,editorLoad=0,loading=false,error='',date=localDay(),section=SECTIONS[kind][0][0],searchTimer=0,external=[],noteFilter='all',noteView='list',feedRefreshedAt=0;
@@ -31,7 +31,6 @@ export async function mountApp(root,F,kind){
  function range(){const first=section==='week'?date:date.slice(0,8)+'01',start=addDays(first,-((new Date(first+'T12:00:00').getDay()+6)%7));return[start,addDays(start,section==='week'?7:42)]}
  const friendMatches=friend=>!query||[friend.name,friend.handle,'@'+friend.handle].some(value=>value.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
  const matches=v=>!query||ids.has(v.id)||v.chatFriend&&friendMatches(v.chatFriend)||[v.title,v.preview,v.text,v.description,v.details,v.email,v.organisation,...(v.checklist||[]).map(c=>c.text)].some(t=>t?.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
- const chatLink=(contact,id)=>contact.links?.some(ref=>ref.app==='chats'&&ref.id===id);
  function contactsWithChat(){
   const linked=new Map(),saved=new Map(store.snapshot().map(value=>[value.id,value]));
   for(const value of store.localForms())saved.set(value.id,value);

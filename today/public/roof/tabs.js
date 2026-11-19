@@ -89,9 +89,9 @@ export function createTabs(nav, F, { me: meOf } = {}) {
       if (a.dataset.tab !== c) a.removeAttribute("aria-current");
       else a.setAttribute("aria-current", c === "apps" && app ? "true" : "page");
       const n = counts[a.dataset.tab];
-      let b = a.querySelector(".ifl-tab-badge");
+      const b = a.querySelector(".ifl-tab-badge");
       if (!n) b?.remove();
-      else (b ||= a.appendChild(Object.assign(document.createElement("span"), { className: "ifl-tab-badge" }))).textContent = n > 99 ? "99+" : String(n);
+      else (b || a.appendChild(Object.assign(document.createElement("span"), { className: "ifl-tab-badge" }))).textContent = n > 99 ? "99+" : String(n);
     }
     place();
   }

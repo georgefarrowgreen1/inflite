@@ -219,8 +219,7 @@ export function bodyInner(html) {
   let out = "";
   walk(s, BODY_DROP, (t) => {
     if (t.text !== undefined) out += t.raw ? t.text.replace(/</g, "&lt;") : t.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    else if (TAG_DROP.has(t.name) || !TAG_OK.test(t.name)) return;
-    else out += t.end ? `</${t.name}>` : `<${t.name}${attrsOut(t.attrs)}>`;
+    else if (!TAG_DROP.has(t.name) && TAG_OK.test(t.name)) out += t.end ? `</${t.name}>` : `<${t.name}${attrsOut(t.attrs)}>`;
   });
   return out;
 }

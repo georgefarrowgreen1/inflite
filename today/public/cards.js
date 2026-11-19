@@ -482,7 +482,7 @@ function markets(c, ctx) {
   // (Markets' own words for the day, markets/app.js daySaid: one priced holding said by its own change, two or more by
   // the one that did most and the one that gave back; on a day a market's shut, only that your holdings are as they closed)
   const name = (x) => `<a class="mk-name" href="${href(x.href)}">${esc(x.name)}</a>`, one = owned - left.length === 1 ? c.top || c.low : null;
-  let words = "";
+  let words;
   if (traded && Math.abs(change) >= 0.01 && one && num(c.pct) != null) words = `${name(one)} is ${c.pct >= 0 ? "up" : "down"} ${fmt(Math.abs(c.pct))}% today.`;
   else if (traded && Math.abs(change) >= 0.01) {
     const out = [];

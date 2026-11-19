@@ -15,17 +15,17 @@ export function createActionsUI(F,{store,files,openSource,client}){
  const showError=(node,e)=>{node.textContent=errorText(e);node.hidden=false};
  async function attach(existing,current){
   const selected=new Map(existing.map(f=>[f.id,f])),status=el('p',{role:'status'}),list=el('div',{class:'s350-list'}),crumb=el('p',{class:'s350-muted'}),q=el('input',{type:'search',placeholder:'Search Drive','aria-label':'Search Drive',maxlength:160});
-  let folder=null,parent=null,cursor=null,gen=0,timer=0,busy=false,resolve;const result=new Promise(r=>resolve=r);
+  let folder=null,parent=null,cursor=null,gen=0,timer=0,resolve;const result=new Promise(r=>resolve=r);
   const done=button('Attach selected',()=>{if(current()&&!h.closed){resolve([...selected.values()]);h.now()}},true),up=button('Up a folder',()=>{folder=parent;cursor=null;read()});
   const more=button('Show more',()=>read(true));let h;
-  async function read(append=false){const mine=++gen;if(!current()||h.closed)return;busy=true;status.textContent='Loading files…';if(!append)list.replaceChildren();more.disabled=true;
+  async function read(append=false){const mine=++gen;if(!current()||h.closed)return;status.textContent='Loading files…';if(!append)list.replaceChildren();more.disabled=true;
    try{const answer=await files.browse({kind:'drive',folderId:folder,view:folder?'folder':q.value?'search':'folder'},{query:q.value.trim(),cursor:append?cursor:null,current:()=>current()&&!h.closed&&mine===gen});if(!current()||h.closed||mine!==gen)return;
     parent=answer.folder?.parentId||null;up.disabled=!folder;crumb.textContent=answer.folder?.name||'My Drive';cursor=answer.cursor;
     for(const item of answer.items||[]){if(item.trashedAt||item.status!=='ready')continue;
      if(item.kind==='folder')list.append(button(item.name,()=>{folder=item.id;cursor=null;q.value='';read()}));
      else{const check=el('input',{type:'checkbox',checked:selected.has(item.id),'aria-label':'Attach '+item.name});check.addEventListener('change',()=>{if(check.checked&&selected.size>=5){check.checked=false;status.textContent='Attach up to five files.';return}check.checked?selected.set(item.id,{id:item.id,version:item.version,name:item.name}):selected.delete(item.id);done.disabled=!selected.size});list.append(el('label',{class:'s350-choice'},check,el('span',{text:item.name})))}
     }status.textContent=answer.items?.length?'':'No files here.';done.disabled=!selected.size;more.hidden=!cursor;
-   }catch(e){if(current()&&!h.closed&&mine===gen)showError(status,e)}finally{busy=false;more.disabled=false}
+   }catch(e){if(current()&&!h.closed&&mine===gen)showError(status,e)}finally{more.disabled=false}
   }
   q.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>{cursor=null;read()},250)});
   h=F.sheet.open({sheet:'action-files',title:'Attach from Files',body:el('div',{class:'system350'},q,el('div',{class:'s350-toolbar'},up,crumb),status,list,more,done),onClose(){gen++;clearTimeout(timer);resolve(null)}});

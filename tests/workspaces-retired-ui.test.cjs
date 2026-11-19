@@ -13,7 +13,7 @@ for(const width of [320,1440])test(`saved workspaces stay retired and direct app
  const t=await m.exports.open({width,savedWorkspace:saved});try{
   await t.page.evaluate(()=>T.F.nav.go('/#workspace=ride',{kind:'section'}));
   await t.page.waitForFunction(()=>T.F.route.tab==='workspace'&&!T.F.route.arg);
-  assert.equal(await t.page.locator('.ws-ride:visible,.ws-mode-switch:visible,.ws-workspace-card:visible,.ws-layout-button:visible').count(),0);
+  assert.equal(await t.page.locator('.ws-ride:visible,.ws-mode-switch,.ws-saved-nav,.ws-workspace-card,.ws-layout-button:visible').count(),0);
   assert.equal(await t.page.getByRole('button',{name:/workspace|sync/i}).count(),0);
   assert.equal(await t.page.evaluate(()=>localStorage.getItem('ifl:workspace:v2:ann')),saved);
   await t.page.getByRole('button',{name:'All apps',exact:true}).click();

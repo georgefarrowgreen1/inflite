@@ -81,7 +81,7 @@ export function openFriendProfile(F,{detail,id,current,store,go,findContact}){
 }
 
 export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportValue,linkPicker,prepareInvitation,chat,friendFor}){
- const ui=F.ui,el=ui.el,life=F.signal;let dead=false,dirty=!!value.formDraft,formKept=!!value.formDraft,editEpoch=0,timer=0,version=value.version||0,writing=Promise.resolve(),links=structuredClone(value.links||[]),checklist=structuredClone(value.checklist||[]),labels=new Map((value.linkedLabels||[]).map(r=>[r.app+':'+r.id,r.unavailable?'Unavailable '+r.app:r.title||r.app])),lastSaved=JSON.stringify(value),mounted=true;
+ const ui=F.ui,el=ui.el,life=F.signal;let dead=false,dirty=!!value.formDraft,formKept=!!value.formDraft,editEpoch=0,timer=0,version=value.version||0,writing=Promise.resolve(),links=structuredClone(value.links||[]),checklist=structuredClone(value.checklist||[]),labels=new Map((value.linkedLabels||[]).map(r=>[r.app+':'+r.id,r.unavailable?'Unavailable '+r.app:r.title||r.app]));
  if(chat&&!links.some(ref=>ref.app==='chats'&&ref.id===chat.id)){
   if(links.length>=12)throw Error('Remove a linked item before linking this Chat friend.');
   links.push({app:'chats',id:chat.id});dirty=true;formKept=false;
@@ -110,7 +110,7 @@ export function createEditor({F,kind,id,value,store,detail,home,onSaved,exportVa
  function status(){if(!live())return;const r=store.view(id);if(r?.version)version=r.version;remove.hidden=!version;const p=r?.pending;saved.textContent=dirty?(kind==='notes'?'Saving on this device…':formKept?'Draft kept on this device':'Unsaved changes'):p?(r.state==='conflict'?'Needs review':r.state==='failed'?'Kept on this device · retry needed':navigator.onLine===false?'Kept on this device':'Saving…'):dirty?(kind==='notes'?'Saving…':'Unsaved changes'):version?'Saved to your account':'Not saved yet';
   recovery.hidden=!p||!['failed','conflict'].includes(r.state);retry.hidden=r?.state==='conflict';review.hidden=r?.state!=='conflict';if(p&&r.error)message.textContent=r.error;
  }
- async function save(){if(!live()||!dirty)return;clearTimeout(timer);if(!title.value.trim()||!form.checkValidity()){if(kind!=='notes')form.reportValidity();throw Error('Check the required fields before saving.')}const payload=read(),epoch=editEpoch;await store.save(id,payload,{version});if(kind!=='notes'){if(epoch===editEpoch)await store.dropForm(id);else await keepForm()}if(live()){dirty=epoch!==editEpoch;lastSaved=JSON.stringify(payload);message.textContent='';onSaved();status();if(kind!=='notes'&&!dirty)setEditing(false)}}
+ async function save(){if(!live()||!dirty)return;clearTimeout(timer);if(!title.value.trim()||!form.checkValidity()){if(kind!=='notes')form.reportValidity();throw Error('Check the required fields before saving.')}const payload=read(),epoch=editEpoch;await store.save(id,payload,{version});if(kind!=='notes'){if(epoch===editEpoch)await store.dropForm(id);else await keepForm()}if(live()){dirty=epoch!==editEpoch;message.textContent='';onSaved();status();if(kind!=='notes'&&!dirty)setEditing(false)}}
  async function keepForm(){const epoch=editEpoch,raw={...value,title:title.value,links:structuredClone(links),...(kind==='people'?{email:email.value,phone:phone.value,organisation:organisation.value,details:text.value}:{description:description.value,allDay:allDay.checked,startLocal:start.value,endLocal:end.value,firstDay:startDate.value,lastDay:endDate.value})};await store.keepForm(id,raw,version);if(live()&&epoch===editEpoch){formKept=true;status()}}
  function changed(){formKept=false;editEpoch++;dirty=true;message.textContent='';status();F.workspace?.changed();if(kind==='notes'){clearTimeout(timer);timer=setTimeout(()=>{writing=writing.catch(()=>{}).then(save);writing.catch(e=>{if(live())message.textContent=e.message})},250)}else{clearTimeout(timer);timer=setTimeout(()=>{writing=writing.catch(()=>{}).then(keepForm);writing.catch(e=>{if(live())message.textContent=e.message})},250)}}
  form.addEventListener('input',e=>{if(!e.target.closest('.org-checklist'))changed()});form.addEventListener('change',e=>{if(e.target===allDay)changed()});form.addEventListener('submit',e=>{e.preventDefault();safe(save)()});
@@ -172,5 +172,5 @@ status();queueMicrotask(()=>{if(live()&&F.workspace?.active()&&!form.hidden&&(!v
   if(kind!=='people'||!live()||profile.hidden)return;
   const ref=links.find(r=>r.app==='chats');
   if(profileHandle!==(ref&&friendFor?.(ref.id)?.handle))renderContact();
- },destroy(){dead=true;mounted=false;clearTimeout(timer);detail.replaceChildren()}};
+ },destroy(){dead=true;clearTimeout(timer);detail.replaceChildren()}};
 }

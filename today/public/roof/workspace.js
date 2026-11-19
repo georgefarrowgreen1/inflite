@@ -16,7 +16,6 @@ import { createWorkspaceRecoveryView } from "./workspace-recovery-view.js";
 import { createConnectionView } from "./connection.js";
 import { createHandoffs } from "./handoffs.js";
 
-export const WORKSPACE_VERSION = 2;
 const EMPTY_CONTEXT = Object.freeze({ location: null, interval: null });
 const retiredContextAction = (app, id) => app === "fitness" && id === "weather-for-ride" || app === "weather" && ["use-place", "window"].includes(id);
 const guarded = (fn, fallback) => { try { return fn(); } catch (_) { return fallback; } };
@@ -36,11 +35,11 @@ export async function createWorkspace(F, options = {}) {
   const background = F.ui.el("div", { hidden: true, inert: true, "aria-hidden": "true" });
   options.dockRoot?.append(background);
   const organiseStores=new Map();
-  const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.32.3/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
+  const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.32.4/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
   let securityLoad=null;
   const security=()=>securityLoad||=(import('./security-module.js').then(m=>live()?m.createSecurityModule(F,{remembered:()=>system().then(s=>s?.devices()),calendars:()=>lifeTools().then(s=>s?.calendars())}):null).catch(e=>{securityLoad=null;throw e}));
-  let lifeInstance=null,lifeLoad=null;
-  const lifeTools=()=>lifeLoad||=(Promise.all([import('./life410.js'),system()]).then(([m,s])=>live()?m.createLifeTools(F,{system:s,files,organiseStore,today,editToday:options.onEditToday}):null).then(v=>lifeInstance=v).catch(e=>{lifeLoad=null;throw e}));
+  let lifeLoad=null;
+  const lifeTools=()=>lifeLoad||=(Promise.all([import('./life410.js'),system()]).then(([m,s])=>live()?m.createLifeTools(F,{system:s,files,organiseStore,today,editToday:options.onEditToday}):null).catch(e=>{lifeLoad=null;throw e}));
   let files = null, commands = null, dialogs = null, recovery = null, recoveryView = null,systemInstance=null,systemLoad=null;
   const system=()=>systemLoad||=(import('./system350.js').then(m=>live()?m.createSystem350(F,{today,files,day:options.day,snapshots:()=>snapshots,activity:activity.source('reminders',{current:live,signal:F.signal}),openSource}):null).then(s=>{if(live())systemInstance=s;return s}).catch(error=>{systemLoad=null;throw error}));
   let dialogInstance = null, dialogLoad = null;
@@ -75,7 +74,7 @@ export async function createWorkspace(F, options = {}) {
     return origin ? { kind: "launch", launch: origin } : {};
   }
   const handoffs = createHandoffs(F, { available: appOn, deliver: async (app, token, lease) => {
-    const opened = await openApp(app, format({ app }), false, true, lease);
+    const opened = await openApp(app, format({ app }), { ...lease, wake: true });
     return opened && lease.current() ? runIntent(app, "handoff", token, lease) : { ok: false, cancelled: true };
   } });
   function capability(app, signal) {
@@ -118,7 +117,7 @@ export async function createWorkspace(F, options = {}) {
   }
   for (const app of WORKSPACE_APPS.filter((a) => a.pane)) acquire(app.id);
   const view = createWorkspaceView(root, {
-    onToday: opener => {const origin=captureLauncherOrigin(opener);F.nav.go("/",{resume:true,...(origin?{kind:'launch-return',launch:origin}:{})})}, onApp: (app,launch) => openApp(app,null,false,false,{launch}),
+    onToday: opener => {const origin=captureLauncherOrigin(opener);F.nav.go("/",{resume:true,...(origin?{kind:'launch-return',launch:origin}:{})})}, onApp: (app,launch) => openApp(app,null,{launch}),
     onFavourites:items=>{if(!live())return;const next=normaliseFavourites(items);if(!next)return;favourites=next;guarded(()=>localStorage.setItem(favouriteKey,JSON.stringify(next)));paint()},
     onAppMenu:openAppMenu,
     onRecent: app => { if (live() && appOn(app)) openApp(app); },
@@ -165,9 +164,9 @@ export async function createWorkspace(F, options = {}) {
       paintPending = false; if (!live()) return;
       const user = F.session.view?.user || {};
       systemInstance?.update();
-      view.update({ favourites,settingsActive: F.route?.tab === "you",mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : "today", activeApp: F.route?.app, workspaces: [],
+      view.update({ favourites,settingsActive: F.route?.tab === "you",mode: F.route?.kind === "app" ? "app" : shown && route?.tool === "files" ? "files" : "today", activeApp: F.route?.app,
         apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id),indicator:appOn(a.id)?launcherStatus(snapshots.get(a.id)):null })), fileIndicator:fileIndicator(), user: { name: user.name || "", photo: user.photoAt && /^[\w-]{8,64}$/.test(owner) ? `/api/avatar?id=${encodeURIComponent(owner)}&v=${encodeURIComponent(String(user.photoAt))}` : null }, notifications: options.notifications?.() || 0,
-        unifiedHome: true, connectionManaged: true, online: recovery.snapshot().online, activityCount: activityView.count(),
+        unifiedHome: true, connectionManaged: true, activityCount: activityView.count(),
         greeting: `${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}${F.session.view?.user?.name ? ", " + String(F.session.view.user.name).trim().split(/\s+/)[0] : ""}`,
         recentApps: [...recentApps.keys()].reverse().filter(appOn).map(app => ({ app })), recentActivity: activity.snapshot().slice(0, 3),
         subtitle: guarded(() => new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(new Date()), ""), title: "Today" });
@@ -188,9 +187,9 @@ export async function createWorkspace(F, options = {}) {
     const item=(label,glyph,run)=>body.append(ui.btn(label,{icon:glyph,run:()=>{if(!valid())return;return run()}}));
     const indicator=app==='files'?fileIndicator():launcherStatus(snapshots.get(app));
     if(indicator)body.append(ui.el('p',{class:'wsl-edit-status',text:indicator.label}));
-    item('Open '+name,'open',()=>{const launch=captureLauncherOrigin(opener);close();return app==='files'?openFiles(null,null,launch):openApp(app,null,false,false,{launch})});
+    item('Open '+name,'open',()=>{const launch=captureLauncherOrigin(opener);close();return app==='files'?openFiles(null,null,launch):openApp(app,null,{launch})});
     const defaults={calendar:['new','New event'],notes:['new','New note'],people:['new','Add person'],mail:['compose','New message'],chats:['new-chat','New chat']},shortcut=defaults[app];
-    if(shortcut)item(shortcut[1],'plus',async()=>{const launch=captureLauncherOrigin(opener);close();const route=await openApp(app,format({app}),false,false,{launch});if(route&&live()&&F.route===route)return runIntent(app,shortcut[0],null,{current:()=>live()&&F.route===route})});
+    if(shortcut)item(shortcut[1],'plus',async()=>{const launch=captureLauncherOrigin(opener);close();const route=await openApp(app,format({app}),{launch});if(route&&live()&&F.route===route)return runIntent(app,shortcut[0],null,{current:()=>live()&&F.route===route})});
     const pinned=favourites.includes(app),full=!pinned&&favourites.length===4;
     if(!full)item(pinned?'Remove from favourites':'Add to favourites',pinned?'minus':'plus',()=>{const next=toggleFavourite(favourites,app);if(!next.full){favourites=next.items;guarded(()=>localStorage.setItem(favouriteKey,JSON.stringify(favourites)));paint();if(menu===appsMenu)menu.pop();else close()}});
     if(app==='files'&&indicator)item('View activity','clock',()=>{close();activityView.open()});
@@ -228,7 +227,7 @@ export async function createWorkspace(F, options = {}) {
       } catch (error) { if (current()) F.toast(error.message); return false; }
     }
     const {sourcePath}=await import('./actions-ui.js');if(!live())return false;
-    const expected=await openApp(source.app,sourcePath(source),false,true,{current:live});if(!expected||!live())return false;
+    const expected=await openApp(source.app,sourcePath(source),{wake:true,current:live});if(!expected||!live())return false;
     if(source.item&&['mail','chats'].includes(source.app))return runIntent(source.app,'reveal-source',source.item,{current:()=>live()&&F.route===expected});return true;
   }
   async function loadFiles(app, query, callerCurrent = () => true) {
@@ -261,7 +260,7 @@ export async function createWorkspace(F, options = {}) {
     if (!valid() || !appOn(app)) return false;
     const handle = acquire(app);
     if (handle.busy()) return { ok: false, error: `Finish editing in ${REGISTRY[app].name} before refreshing it.` };
-    return !!await openApp(app, null, false, true, lease);
+    return !!await openApp(app, null, { ...lease, wake: true });
   }
   function nativeReady(app, expected, lease = {}) {
     const handle = handles.get(app);
@@ -275,10 +274,11 @@ export async function createWorkspace(F, options = {}) {
       offRoute = F.on("route", () => { if (F.route !== expected) stop(); }); check();
     });
   }
-  async function openApp(app, destination = null, expand = false, wake = false, lease = {}) {
+  async function openApp(app, destination = null, lease = {}) {
     const manifest = getWorkspaceApp(app); if (!live() || !manifest || !appOn(app)) return null;
     const path = destination || recentApps.get(app) || manifest.href;
-    F.nav.go(path, { ...launchOptions(lease.launch),...(wake ? { kind: "section" } : {}), resume: !destination && !wake });
+    const { launch, wake = false } = lease;
+    F.nav.go(path, { ...launchOptions(launch), ...(wake ? { kind: "section" } : {}), resume: !destination && !wake });
     const expected = F.route, handle = handles.get(app);
     if (expected?.kind !== "app" || expected.app !== app) return null;
     try { if (handle) {
@@ -306,7 +306,7 @@ export async function createWorkspace(F, options = {}) {
     if (!live() || signal?.aborted || !callerCurrent() || !appOn(app) || retiredContextAction(app, intent)) return false;
     let expectedRoute = F.route;
     if (!providers.has(app) || !handles.get(app)?.fw.workspace.active()) {
-      expectedRoute = await openApp(app, format({ app }), true, true, { current: callerCurrent, signal });
+      expectedRoute = await openApp(app, format({ app }), { wake: true, current: callerCurrent, signal });
       if (!expectedRoute || !callerCurrent()) return false;
     }
     if (!await nativeReady(app, expectedRoute, { current: callerCurrent, signal })) return false;
@@ -346,7 +346,7 @@ export async function createWorkspace(F, options = {}) {
   function loadExplorer() {
     if (!explorerLoad) explorerLoad = Promise.all([import("./files-explorer.js"), loadStyles("/roof/files-view.css")]).then(([m]) => {
       if (!live()) return null;
-      explorer = m.createFilesExplorer(view.slots.files, F, { service: files, onNavigate: next => navigateFiles(next), onChanged() {} });
+      explorer = m.createFilesExplorer(view.slots.files, F, { service: files, onNavigate: next => navigateFiles(next) });
       explorer.hide(); return explorer;
     }).catch(error => { explorerLoad = null; throw error; });
     return explorerLoad;
@@ -433,7 +433,7 @@ export async function createWorkspace(F, options = {}) {
   F.signal.addEventListener("abort", destroy, { once: true });
   const activate = async (r) => {
     if (r?.kind !== "app" || !handles.has(r.app) || !live()) return;
-    const handle = handles.get(r.app), instance = await loadApp(r.app, handle, { current: () => live() && F.route === r });
+    await loadApp(r.app, handles.get(r.app), { current: () => live() && F.route === r });
   };
   offs.push(F.on("apps", () => {
     for (const app of handles.keys()) {
@@ -449,7 +449,7 @@ export async function createWorkspace(F, options = {}) {
     authoriseTransfer:async(app,item,lease)=>{const m=await import('./security-client.js');if(!live())throw new DOMException('This account was released','AbortError');return m.approveFileTransfer(F,app,item,lease)},
     activity: fileActivity,share:source=>lifeTools().then(v=>live()&&v?.share(source)),remind:source=>system().then(s=>live()&&s?.capture(source)),
     sources: () => WORKSPACE_APPS.filter(a => ["fitness", "mail", "chats", "markets", "calendar", "notes", "people"].includes(a.id) && appOn(a.id)).map(a => ({ app: a.id, name: a.name, transient: a.id === "chats", status: snapshots.get(a.id)?.status || (snapshots.get(a.id)?.loading ? "loading" : providers.has(a.id) ? "ready" : "loading"), files: snapshots.get(a.id)?.files || [] })),
-    load: loadFiles, runIntent, openApp, openExplorer: openFiles,
+    load: loadFiles, runIntent, openExplorer: openFiles,
   });
   // A stable capability exists immediately; picker code/styles are fetched only
   // after an explicit Open/Save/drop action, outside the boot's critical graph.
@@ -503,8 +503,7 @@ export async function createWorkspace(F, options = {}) {
     ],
   });
   paint(); activate(F.route).catch(() => {});
-  return { show, hide, update: paint, destroy, openFiles,security:()=>security(),life:()=>lifeTools(),reminders:()=>system().then(s=>live()&&s?.openList()),remembered:()=>system().then(s=>live()&&s?.devices()), busy: () => live() && !!files?.busy(),
-    async flush(options) { return live() ? files?.flush(options) || { lost: 0 } : { lost: 0 }; },
+  return { show, hide, update: paint, destroy, openFiles,security:()=>security(),life:()=>lifeTools(),remembered:()=>system().then(s=>live()&&s?.devices()),
     notificationActions: note => notificationActions(note, { origin: location.origin, enabled: appOn, openApp, runIntent, current: live }),
     focus: () => { if (shown && route?.tool === "files") { const target = explorer?.focus(); if (target) return target; } const heading = root.querySelector("h1") || root; heading.tabIndex = -1; return heading; } };
 }

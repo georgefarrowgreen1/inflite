@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.24.5";
-export const NEWS = "Mail protects private screens when access changes and keeps queued sends available to retry.";
+export const BUILD = "2.24.6";
+export const NEWS = "Removed unused Mail code.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

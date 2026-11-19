@@ -808,7 +808,7 @@ export default (M) => {
   async function markAllRead() {
     if (!canUseDrafts() || (!S.threads.some((t) => t.unread) && !S.hasMore)) return;
     editing();
-    let again = false;
+    let again;
     try {
       for (const t of S.threads) if (t.unread) t.unread = 0;
       if (S.view === "unread") {

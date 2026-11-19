@@ -152,7 +152,7 @@ async function stillSignedIn() {
 }
 
 self.addEventListener("push", (e) => {
-  let d = {};
+  let d;
   try {
     d = e.data ? e.data.json() : {};
   } catch {

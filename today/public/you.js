@@ -736,10 +736,6 @@ function wire(root, ctx) {
   for (const b of root.querySelectorAll("[data-stop]")) b.addEventListener("click", () => stop(b, root, ctx));
 }
 
-function pressed(box, k, v) {
-  for (const b of box?.querySelectorAll(`[data-${k}]`) || []) b.setAttribute("aria-pressed", String(b.dataset[k] === v));
-}
-
 async function stop(b, root, ctx) {
   const id = b.dataset.stop;
   b.disabled = true;

@@ -435,15 +435,14 @@ const dawnAfter = (answer, now) => list(answer.timeline).filter((x) => x.phase =
 // until the next morning, or a day on without a timeline; a new answer replaces it sooner, once the ride's in)
 const dueOf = (r, answer, now) => r.late === true ? dawnAfter(answer, now) ?? r.at + 86400000 : num(r.until) ?? r.at;
 function comingHtml(rows, st, now) {
-  const tz = str(st.answer.tz) || undefined, ctx = { ...st.ctx, links: linksOf(st.ctx) };
+  const tz = str(st.answer.tz) || undefined;
   return `<h2 class="slabel">${LABELS.coming}</h2><div class="group glass">${rows.map((r) => {
     if (r.app === "mail") return mailRowHtml(r, st, now, tz);
     const app = APP[r.app === "markets" || r.app === "chat" || r.app === "weather" || r.app === "fitness" ? r.app : ""];
     const h = linkTo(r.href, st.ctx), other = dayKey(r.at, tz) !== dayKey(now, tz);
-    const send = "";
     const inner = `<span class="dc-tm">${esc(hm(r.at, tz))}${other ? `<small>${esc(wkShort(r.at, tz))}</small>` : ""}</span>${app ? `<img class="dc-ic" src="${app.icon}" alt="">` : `<span class="dc-ic"></span>`}<span class="tx"><b>${esc(r.title)}</b>${str(r.sub) ? `<small>${esc(r.sub)}</small>` : ""}</span>`;
-    return `<div class="dc-row" data-due="${dueOf(r, st.answer, now)}"${send ? " data-sends" : ""}>
-      ${h ? `<a class="row dc-main" href="${esc(h)}">${inner}</a>` : `<div class="row dc-main">${inner}</div>`}${send}
+    return `<div class="dc-row" data-due="${dueOf(r, st.answer, now)}">
+      ${h ? `<a class="row dc-main" href="${esc(h)}">${inner}</a>` : `<div class="row dc-main">${inner}</div>`}
     </div>`;
   }).join("")}</div>`;
 }
@@ -690,25 +689,6 @@ function wire(root) {
       return;
     }
     if (d === "sendto") { e.preventDefault(); sendTo(st, el.dataset.to); }
-  });
-  // (a long press on a Coming Up row that has a card: Send, as its button does)
-  let press = 0, pressed = false;
-  const stop = () => { clearTimeout(press); press = 0; };
-  root.addEventListener("pointerdown", (e) => {
-    const row = e.target?.closest?.(".dc-row[data-sends]");
-    pressed = false;
-    if (!row || e.target.closest(".dc-send")) return;
-    stop();
-    press = setTimeout(() => { pressed = true; row.querySelector(".dc-send")?.click(); }, 550);
-  });
-  for (const n of ["pointerup", "pointercancel", "pointerleave", "scroll"]) root.addEventListener(n, stop, { passive: true });
-  root.addEventListener("click", (e) => { if (pressed && e.target?.closest?.(".dc-main")) { e.preventDefault(); pressed = false; } }, true);
-  root.addEventListener("contextmenu", (e) => {
-    const row = e.target?.closest?.(".dc-row[data-sends]");
-    if (!row) return;
-    e.preventDefault();
-    if (!pressed) row.querySelector(".dc-send")?.click();
-    pressed = false;
   });
 }
 // Send to Leo, in one tap: the engine sends it at once where it can (it refuses without your tap), else Chat's sheet

@@ -11,7 +11,7 @@
 // Saves: ctx.api.saveSettings(patch) with only { signature }, { catchall } or { spot: { <one of SPOT>, tz } };
 //   ctx.api.updateAddress(email, patch) with only one of SAVES.address (never isDefault). Nothing else is written
 //   (roofmailviews.test).
-import { MAIL, MAIL_PAGE } from "./api.js";
+import { MAIL_PAGE } from "./api.js";
 import { STORAGE } from "./store.js";
 
 export const REMOTE = STORAGE.remoteImages;

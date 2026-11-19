@@ -14,7 +14,7 @@
 //   parcelOfRow(r) → a Coming Up row of a parcel's, checked, or null; parcelRowHtml(r, link) → its row; trackHtml(stage)
 //   openItem(item, h) → an owed row's or a parcel's sheet; openBills(money, h) → the Bills sheet (billsHtml(money): its
 //     inside); fillBars(root) → the bars' sizes set from their data-*
-import { esc, G } from "/cards.js";
+import { esc } from "/cards.js";
 import { GL, mailIcon, hideItem, isGone } from "/trip.js";
 
 const ID = /^[A-Za-z0-9_~-]{1,64}$/;

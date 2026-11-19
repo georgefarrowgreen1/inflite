@@ -12,7 +12,7 @@ const activeActions = item => (Array.isArray(item?.actions) ? item.actions : [])
 const folderLocation = item => item?.trashedAt ? null : item?.location ? filesLocation(item.location) : item?.kind === 'folder' && item.source?.kind === 'drive' && FOLDER.test(item.id || '') ? filesLocation({ kind: 'drive', folderId: item.id }) : null;
 const errorText = error => clean(error?.message || error?.error, 240) || 'That didn’t finish. Refresh to check before trying again.';
 
-export function createFilesExplorer(root, F, { service, onNavigate = () => false, onChanged = () => {} } = {}) {
+export function createFilesExplorer(root, F, { service, onNavigate = () => false } = {}) {
   if (!service || typeof service.browse !== 'function' || typeof service.run !== 'function') throw new TypeError('InFlite Files needs its account-owned service.');
   const multi = new Map(); let selecting = false;
   const ui = F.ui, owner = F.session?.view?.user?.id, signal = F.signal, popups = new Set(), operations = new Set();
@@ -225,7 +225,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
       if (!active() || handle.closed) return;
       pending = false; handle.setBusy(false);
       if (answer?.ok === false) { if (answer.error) { error.hidden = false; error.textContent = clean(answer.error, 240); } return; }
-      handle.now(); refresh({ reset: true }); onChanged();
+      handle.now(); refresh({ reset: true });
     };
     handle = sheet({ sheet: newFolder ? 'files-new-folder' : 'files-rename', title: newFolder ? 'New folder' : 'Rename', focus: name, body, acts: [{ label: newFolder ? 'Create folder' : 'Save name', primary: true, run: save }] });
     name.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); save(); } });
@@ -241,7 +241,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
       if (!active() || handle.closed) return; pending = false; handle.setBusy(false);
       if (answer?.ok === false) { error.hidden = false; error.textContent = clean(answer.error, 240) || 'That file couldn’t be deleted.'; return; }
       if (selection === item.key) { selection = null; releasePreview(); }
-      handle.now(); refresh({ reset: true }); onChanged();
+      handle.now(); refresh({ reset: true });
     } }] });
   }
   function move(item,action='move',batchItems=null) {
@@ -282,7 +282,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
       const answer=batchItems?await executeBatch(batchItems,action,input,()=>!handle.closed):await execute(item,action,{input,current:()=>!handle.closed});
       if (!active() || handle.closed) return; pending = false; handle.setBusy(false);
       if (answer?.ok === false&&!answer.results) { status.textContent = clean(answer.error, 240) || 'This file couldn’t be moved.'; return; }
-      handle.now();if(batchItems)reportBatch(answer,batchItems,action);multi.clear();selecting=false;selection = null; releasePreview(); refresh({ reset: true }); onChanged();
+      handle.now();if(batchItems)reportBatch(answer,batchItems,action);multi.clear();selecting=false;selection = null; releasePreview(); refresh({ reset: true });
     } }] });
     load(target);
   }

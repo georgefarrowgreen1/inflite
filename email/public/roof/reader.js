@@ -452,7 +452,7 @@ export function view(el, ctx) {
       const text = f.value.trim();
       if (!text || busy) return;
       busy = true; sync();
-      let r = null;
+      let r;
       try {
         const m = replyTo && await meta(replyTo.id);
         if (!m) r = { ok: false, error: "Couldn’t send that. Try again in a moment." };

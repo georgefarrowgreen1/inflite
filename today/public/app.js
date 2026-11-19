@@ -6,7 +6,7 @@
 // Worker passes your sign-in on to account.inflite.ai: today/src/index.js), worked out there by each app's own rules:
 // this page only draws it (day.js, cards.js, apps.js, you.js) and sends what you change. Signed out, it's InFlite's way
 // in (index.html's, there without a script too).
-import { CARD_KEYS, APP, esc, safe, hm, dateLong, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
+import { CARD_KEYS, APP, esc, safe, hm, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
 import { createFrame, createRequestCoordinator, isRequestCancelled } from "/roof/frame.js";
 import { REGISTRY, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
@@ -18,12 +18,12 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.14.3";
+const BUILD = "4.14.4";
 // (what's new in it, said once it's in)
-const NEWS = "Keeps offline edits safe across tabs and clears private Chat and Mail content when access changes.";
+const NEWS = "Removed unused code across InFlite and its apps.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.32.3/store.js","/os.webmanifest"];
+const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.32.4/store.js","/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -1929,8 +1929,6 @@ function signedIn(view, { offline = false } = {}) {
   if (S.hub && !offline) accountTasks.idle(() => { if (S.view) IFL.hub.chat(); });
   preloadSoon();
 }
-const idle = (fn) => accountTasks.idle(fn);
-
 // a cards answer: drawn once the account's said who's signed in, and kept for next time
 function gotCards(answer) {
   if (!answer || typeof answer !== "object" || !answer.cards) return;
@@ -1962,7 +1960,6 @@ const on = (tab) => F?.route?.kind === "tab" && (F.route.tab === tab || OS_MODE 
 // (a module said its data changed, fw.changed(): Today's cards asked for again as Today's next shown, RI3)
 let cardsStale = false;
 // (Today's header: the date above its title, and the day's line under it: the phase's, else where the weather is)
-const crumbOf = () => dateLong(Date.now(), S.answer?.tz || browserTz());
 function lineOf() {
   if (S.dayLine) return S.dayLine;
   const w = S.answer?.cards?.weather;
@@ -2077,11 +2074,11 @@ function unframe() {
 }
 import { createScreenTasks } from "/roof/screens.js";
 const screenTasks = createScreenTasks(() => ({ frame: F, signal: requests.signal, owner: S.view?.user?.id }));
-let apps = null, you = null;
+let you = null;
 function drawAppsNow() {
   const task = screenTasks.begin("apps");
   if (!task.active()) return;
-  import("/apps.js").then((m) => { apps = m; if (task.active()) m.drawApps($("#apps"), appsCtx(task)); }, () => {});
+  import("/apps.js").then((m) => { if (task.active()) m.drawApps($("#apps"), appsCtx(task)); }, () => {});
 }
 function drawYouNow(arg = F?.route?.arg ?? null) {
   const task = screenTasks.begin("you", arg);

@@ -381,14 +381,14 @@ dialog.ifl-sheet { animation-duration: var(--ifl-motion-sheet, 0.46s); animation
 dialog.ifl-sheet.closing { animation-duration: var(--ifl-motion-exit, 0.22s); animation-timing-function: var(--ease-in); }
 :is(a, button).tcard, .ifl-tile-main, .ifl-card.tappable, a.ifl-card,
 .ifs-btn, .ifl-icon-btn, .ifh-me, .ifh-act, .ifl-back, .ifl-tab,
-.apps-shortcut, .wx-warn, .ft-next, .trip-card, .dw-chip, .bk-act, .dc-send, .ifl-nt-all {
+.apps-shortcut, .wx-warn, .ft-next, .trip-card, .dw-chip, .bk-act, .ifl-nt-all {
   transition: transform var(--motion-release) var(--motion-spring), background-color var(--motion-fade) ease, opacity var(--motion-fade) ease;
 }
 :is(a, button).tcard:active, a.ifl-card:active, .ifl-card.tappable:active, .ifl-tile-main:active,
 .apps-shortcut:active, .wx-warn:active, .ft-next:active, .trip-card:active, .dw-chip:active, .bk-act:active {
   transform: scale(var(--ifl-press-card, 0.985)); transition-duration: var(--motion-press);
 }
-:is(.ifs-btn, .ifl-icon-btn, .ifh-me, .ifh-act, .ifl-back, .ifl-tab, .dc-send, .ifl-nt-all):active:not(:disabled) {
+:is(.ifs-btn, .ifl-icon-btn, .ifh-me, .ifh-act, .ifl-back, .ifl-tab, .ifl-nt-all):active:not(:disabled) {
   transform: scale(var(--ifl-press-icon, 0.94)); transition-duration: var(--motion-press);
 }
 :is(button, a).row, :is(button, a, label).ifl-row { transition: background-color var(--motion-fade) ease; }
@@ -413,7 +413,7 @@ html[data-motion-paused] :is(.aura, .pg-track .cb svg, .tcard.loading .sk i), ht
   html[data-vt]::view-transition-old(root) { animation-name: ifl-fade-out !important; }
   [class*="ifl-enter-"] { animation: 0.15s ease both ifl-fade-in !important; }
   :is(.tcard, .ifl-tile-main, .ifl-card, .ifs-btn, .ifl-icon-btn, .ifh-me, .ifh-act, .ifl-back, .ifl-tab,
-    .apps-shortcut, .wx-warn, .ft-next, .trip-card, .dw-chip, .bk-act, .dc-send, .ifl-nt-all):active { transform: none !important; }
+    .apps-shortcut, .wx-warn, .ft-next, .trip-card, .dw-chip, .bk-act, .ifl-nt-all):active { transform: none !important; }
   dialog.ifl-sheet.ifs-touched:not(.closing) { transition: none; }
   dialog.ifl-sheet.closing { animation-name: ifl-fade-out; }
 }

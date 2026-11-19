@@ -268,20 +268,21 @@ function fromRules({ text, subject, sender, mailDate, zone }) {
   }
   // (when: today's window, or the day it's due)
   let window = null, due = null, deliveredAt = null;
-  const w = windowIn(all);
-  let day = null;
-  for (const m of all.matchAll(/\b(?:arriving|arrives|arrive|expected|estimated delivery|delivery (?:date|day)|due|will be delivered|should arrive|get it|deliver (?:it|your parcel))\b[^.\n]{0,60}/gi))
-    if ((day = dayIn(m[0], mailDate, zone))) break;
-  day ||= stage === 2 ? wallDay(mailDate, zone) : null;
   if (stage === 3) {
-    day = null;
     const at = /\bdelivered\b[^.\n]{0,30}?\bat (\d{1,2})[:.](\d{2})\b/i.exec(all);
     const md = wallDay(mailDate, zone);
     deliveredAt = at && +at[1] < 24 && +at[2] < 60 ? zonedMs(md.y, md.mo, md.d, +at[1], +at[2], 0, zone) : mailDate;
     if (deliveredAt > mailDate + H) deliveredAt = mailDate;
-  } else if (day) {
-    due = zonedMs(day.y, day.mo, day.d, 0, 0, 0, zone);
-    if (w) window = { from: zonedMs(day.y, day.mo, day.d, Math.floor(w[0] / 60), w[0] % 60, 0, zone), to: zonedMs(day.y, day.mo, day.d, Math.floor(w[1] / 60), w[1] % 60, 0, zone) };
+  } else {
+    let day = null;
+    for (const m of all.matchAll(/\b(?:arriving|arrives|arrive|expected|estimated delivery|delivery (?:date|day)|due|will be delivered|should arrive|get it|deliver (?:it|your parcel))\b[^.\n]{0,60}/gi))
+      if ((day = dayIn(m[0], mailDate, zone))) break;
+    day ||= stage === 2 ? wallDay(mailDate, zone) : null;
+    if (day) {
+      due = zonedMs(day.y, day.mo, day.d, 0, 0, 0, zone);
+      const w = windowIn(all);
+      if (w) window = { from: zonedMs(day.y, day.mo, day.d, Math.floor(w[0] / 60), w[0] % 60, 0, zone), to: zonedMs(day.y, day.mo, day.d, Math.floor(w[1] / 60), w[1] % 60, 0, zone) };
+    }
   }
   const note = stage === 3 ? cut(cap1((NOTE.exec(all)?.[1] || "").trim()), 60) : failed ? "Missed delivery" : /\b(?:ready (?:to|for) (?:collect|collection)|available (?:to|for) collect)/i.test(all) ? "Ready to collect" : "";
   return [{

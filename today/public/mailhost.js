@@ -50,7 +50,7 @@
   function markOf(hash) {
     const code = codeFrom(hash);
     if (code) return `#signin=${code}`;
-    let p = null;
+    let p;
     try { p = new URLSearchParams(String(hash || "").replace(/^#/, "")); } catch (_) { return ""; }
     const thread = p.get("thread");
     if (thread && THREAD.test(thread)) return `#thread=${thread}`;
@@ -81,7 +81,7 @@
   const UNSENT = "mail:unsent:v1";
   const local = () => { try { return localStorage; } catch (_) { return null; } };
   function unsent() {
-    let record = null;
+    let record;
     try { record = JSON.parse(local()?.getItem(UNSENT) || "null"); } catch (_) { return null; }
     if (record?.v !== 1 || typeof record.owner !== "string" || !record.owner) return null;
     const u = record.value;
@@ -138,7 +138,7 @@
   // whatever the frame's showing now; where one can't be made, the frame's address set)
   function reframe(src) {
     if (!frame) return;
-    let fresh = null;
+    let fresh;
     try { fresh = typeof frame.cloneNode === "function" && typeof frame.replaceWith === "function" ? frame.cloneNode(false) : null; } catch (_) { fresh = null; }
     if (!fresh) { frame.src = src; return; }
     fresh.src = src;
