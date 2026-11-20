@@ -77,8 +77,17 @@ async function roundedInset(locator) {
 async function roundedWindow(locator) {
   const radii = await locator.evaluate(el => { const s = getComputedStyle(el); return ['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius'].map(k => parseFloat(s[k])); });
   assert.ok(radii.every(r => r >= 30), 'every sheet corner remains rounded');
-  const material = await locator.evaluate(el => { const s = getComputedStyle(el), canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; const c = canvas.getContext('2d'); c.fillStyle = s.backgroundColor; c.fillRect(0,0,1,1); return {alpha:c.getImageData(0,0,1,1).data[3], filter:s.backdropFilter || s.webkitBackdropFilter || 'none'}; });
-  assert.ok(material.alpha >= 180 && material.alpha <= 240, 'native and hosted Mail share a visibly translucent, readable window');
+  const material = await locator.evaluate(el => {
+    const style = getComputedStyle(el), sample = document.createElement('span');
+    sample.style.backgroundColor = 'var(--ifl-glass-window)'; el.append(sample);
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    const alpha = colour => { ctx.clearRect(0,0,1,1); ctx.fillStyle = colour; ctx.fillRect(0,0,1,1); return ctx.getImageData(0,0,1,1).data[3]; };
+    const expected = alpha(getComputedStyle(sample).backgroundColor); sample.remove();
+    return {alpha:alpha(style.backgroundColor), expected, filter:style.backdropFilter || style.webkitBackdropFilter || 'none'};
+  });
+  assert.equal(material.alpha, material.expected, 'compose uses the shared window tint');
+  assert.ok(material.alpha >= 163 && material.alpha <= 240, `compose window opacity stays between 64% and 94% (${material.alpha}/255)`);
   assert.match(material.filter, /blur\(/, 'the outer compose window samples its backdrop');
 }
 async function centredIcons(locator) {
