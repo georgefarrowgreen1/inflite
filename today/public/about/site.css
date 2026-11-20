@@ -43,7 +43,7 @@ h1, h2, h3 { font-family: var(--font-d); line-height: 1.05; letter-spacing: -.04
 h2 { font-size: clamp(2.35rem, 5.15vw, 5.4rem); font-weight: 660; }
 .about-header { position: relative; z-index: 2; }
 .about-nav {
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center;
   min-height: 5.25rem; gap: .65rem 1rem; padding-block: .65rem; border-bottom: 1px solid var(--line);
 }
 .about-nav a, .foot nav a { min-height: 44px; display: inline-flex; align-items: center; }
@@ -53,7 +53,7 @@ h2 { font-size: clamp(2.35rem, 5.15vw, 5.4rem); font-weight: 660; }
   border-radius: .6rem;
 }
 .brand img { flex: none; border-radius: 24%; }
-.about-nav nav { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 999px; border: 1px solid var(--line); }
+.about-nav nav { display: flex; align-items: center; justify-self: center; gap: 2px; padding: 2px; border-radius: 999px; border: 1px solid var(--line); }
 .about-nav nav a {
   justify-content: center; min-width: 44px; padding: 0 .9rem; border-radius: 999px;
   font-size: .875rem; font-weight: 650; text-decoration: none;
@@ -90,19 +90,22 @@ h2 { font-size: clamp(2.35rem, 5.15vw, 5.4rem); font-weight: 660; }
   .launch span { transition: transform .24s var(--site-ease); }
   .launch:hover span { transform: translateX(.22rem); }
 }
-@media (max-width: 550px) {
-  .about-nav { grid-template-columns: 1fr auto; min-height: auto; gap: .35rem .4rem; }
-  .about-nav .brand { grid-column: 1 / -1; min-height: 44px; }
-  .about-nav nav { justify-self: start; }
+@media (max-width: 34.375em) {
+  .about-nav { min-height: auto; gap: .35rem .4rem; }
   .about-nav nav a { padding-inline: .62rem; }
   .launch { padding-inline: .78rem; }
 }
-@media (min-width: 390px) and (max-width: 550px) {
-  .about-nav { grid-template-columns: minmax(0, 1fr) auto auto; min-height: 4.25rem; }
-  .about-nav .brand { grid-column: auto; font-size: 1.17rem; gap: .35rem; }
+@media (width < 24.375em) {
+  .about-nav { grid-template-columns: 1fr auto; }
+  .about-nav nav { grid-row: 2; grid-column: 1 / -1; }
+  .about-nav > .launch { grid-row: 1; grid-column: 2; }
+}
+@media (24.375em <= width <= 34.375em) {
+  .about-nav { min-height: 4.25rem; }
+  .about-nav .brand { font-size: 1.17rem; gap: .35rem; }
   .about-nav .brand img { width: 1.85rem; height: 1.85rem; }
   .about-nav nav a { padding-inline: .5rem; font-size: .8rem; }
-  .about-nav .launch { padding-inline: .63rem; gap: .38rem; font-size: .8rem; }
+  .about-nav .launch { max-width: 100%; padding-inline: .63rem; gap: .38rem; font-size: .8rem; }
 }
 @media (forced-colors: active) {
   .launch, .about-nav nav { border-color: ButtonText; }

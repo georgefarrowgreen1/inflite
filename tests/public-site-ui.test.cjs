@@ -213,7 +213,21 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.deepEqual(sent[1].fields, { name: 'Fixture Sender', email: 'sender@example.test', message: 'Please help with this fixture.', website: '' });
     assert.equal(await message.inputValue(), '');
     assert.ok(await page.getByRole('link', { name: 'hello@inflite.ai' }).isVisible());
-    await page.setViewportSize({ width: 1440, height: 960 });
+    for (const width of [320, 390, 428, 550, 1440]) {
+      await page.setViewportSize({ width, height: 960 });
+      const [brand, menu, launch] = await Promise.all([
+        header.getByRole('link', { name: 'InFlite', exact: true }).boundingBox(),
+        header.getByRole('navigation', { name: 'Main' }).boundingBox(),
+        header.getByRole('link', { name: 'Open InFlite', exact: true }).boundingBox(),
+      ]);
+      assert.ok(Math.abs(menu.x + menu.width / 2 - width / 2) < 1, 'Apps and Contact are centred at ' + width + 'px');
+      if (width === 320) {
+        assert.ok(menu.y >= Math.max(brand.y + brand.height, launch.y + launch.height));
+      } else {
+        assert.ok(Math.abs(menu.y + menu.height / 2 - launch.y - launch.height / 2) < 1);
+        assert.ok(brand.x + brand.width < menu.x && menu.x + menu.width < launch.x);
+      }
+    }
     await page.emulateMedia({ colorScheme: 'dark' });
     const heading = await page.getByRole('heading', { name: 'Get in touch.' }).boundingBox();
     const form = await page.locator('form').boundingBox();
