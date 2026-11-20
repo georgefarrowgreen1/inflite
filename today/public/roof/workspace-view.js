@@ -25,10 +25,22 @@ const asText = value => value == null ? "" : String(value);
 const words = (node, value) => { const text = asText(value); if (node.textContent !== text) node.textContent = text; };
 const callable = value => typeof value === "function";
 const appSymbol = (app, size = 32) => icon(null, { app: APP_ICONS[app] || app, size });
-function badge(button,state){
-  button.querySelector('.wsl-badge')?.remove();button.removeAttribute('aria-description');
-  if(!state)return;button.setAttribute('aria-description',state.label);
-  (button.querySelector('.ws-dock-symbol')||button).append(el('span',{class:'wsl-badge','aria-hidden':'true',data:{status:state.kind},text:state.text}));
+function badge(button, state) {
+  let mark = button.querySelector(".wsl-badge");
+  if (!state) {
+    if (mark) {
+      mark.remove();
+      button.removeAttribute("aria-description");
+    }
+    return;
+  }
+  if (!mark) {
+    mark = el("span", { class: "wsl-badge", "aria-hidden": "true" });
+    (button.querySelector(".ws-dock-symbol") || button).append(mark);
+  }
+  if (mark.dataset.status !== state.kind) mark.dataset.status = state.kind;
+  words(mark, state.text);
+  if (button.getAttribute("aria-description") !== state.label) button.setAttribute("aria-description", state.label);
 }
 
 export function createWorkspaceView(root, callbacks = {}) {
@@ -41,7 +53,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   const action = (key, run) => { if (callable(run)) actions.set(key, run); else actions.delete(key); return key; };
   const button = (label, glyph, key, cls = "ws-icon-button") => el("button", { type: "button", class: cls, "aria-label": label, title: label, data: { wsAction: key } }, glyph ? icon(glyph) : null);
   const bindButton = (label, glyph, key, run, cls) => callable(run) ? button(label, glyph, action(key, run), cls) : null;
-  const setCurrent = (node, selected) => { if (!node) return; if (selected) node.setAttribute("aria-current", "page"); else node.removeAttribute("aria-current"); };
+  const setCurrent = (node, selected) => { if (!node || node.hasAttribute("aria-current") === !!selected) return; if (selected) node.setAttribute("aria-current", "page"); else node.removeAttribute("aria-current"); };
   const paneApp = key => key === "app" ? model.activeApp : key;
   const paneApps = () => {
     const list = Array.isArray(model.paneApps) ? [...new Set(model.paneApps.filter(app => WINDOW_APPS.includes(app)))] : [];
@@ -623,8 +635,12 @@ export function createWorkspaceView(root, callbacks = {}) {
       return b;
     }, (b, a) => { const name = a.name || APP_NAMES[a.id] || a.id, inWorkspace = mode === "workspace" && paneApps().includes(a.id), minimized = inWorkspace && layoutOf().windows[a.id].minimized; b.disabled=a.available===false;badge(b,a.available===false?null:a.indicator);words(b.lastElementChild, name); b.setAttribute("aria-label", minimized ? `Restore ${name}` : name); b.title = minimized ? `Restore ${name}` : name; b.toggleAttribute("data-running", inWorkspace); b.toggleAttribute("data-minimized", minimized); setCurrent(b, mode === "files" && a.id === "files" || mode === "app" && a.id === model.activeApp || inWorkspace && !minimized && a.id === model.foregroundApp); });
     if(moved)animateOrder(dockApps,place);else place();dockApps.dataset.order=orderKey;
-    for(const old of dockApps.querySelectorAll('.ws-dock-add'))old.remove();
-    for(let i=pinned.length;i<4;i++){const add=button("Choose a favourite","plus","apps","ws-dock-button ws-dock-add");add.append(el("span",{class:"ws-dock-label",text:"Add"}));dockApps.append(add)}
+    while (dockApps.childElementCount > 4) dockApps.lastElementChild.remove();
+    while (dockApps.childElementCount < 4) {
+      const add = button("Choose a favourite", "plus", "apps", "ws-dock-button ws-dock-add");
+      add.append(el("span", { class: "ws-dock-label", text: "Add" }));
+      dockApps.append(add);
+    }
     setCurrent(launcher,mode!=="today"&&!pinned.some(a=>mode==="files"?a.id==="files":a.id===model.activeApp));
     selectDock();launcherRefresh?.();
     const user = model.user || {}, userKey = JSON.stringify([user.name || "", user.photo || ""]);
@@ -670,59 +686,172 @@ export function createWorkspaceView(root, callbacks = {}) {
   listen(root, "keydown", event => { if (!dockHost.contains(event.target)) navigateKeys(event); });
   listen(dockHost, "keydown", navigateKeys);
 
-  function appLauncher(getSheet) {
-    const favs=el('div',{class:'wsl-favourites',role:'group','aria-label':'Favourite order',hidden:true});
-    const body=el('div',{class:'ws-launcher'}),grid=el('div',{class:'wsl-apps',role:'group','aria-label':'Apps'}),status=el('p',{class:'wsl-edit-status',role:'status'});
-    let editing=false,query='';
-    const edit=el('button',{type:'button',class:'wsl-edit','aria-label':'Edit favourites',text:'Edit'});
-    const input=el('input',{type:'search',placeholder:'Search apps','aria-label':'Search apps',maxlength:40});
-    const search=el('label',{class:'wsl-search-field'},icon('search'),input);
-    const tools=el('div',{class:'wsl-tools'},search,edit);
-    const liveBody=()=>!gone&&body.isConnected;
-    const favourites=()=>normaliseFavourites(model.favourites)||[];
-    const appItems=()=>[{id:'files',name:'Files',available:callable(callbacks.onFiles)},...(model.apps||[])].sort((a,b)=>LAUNCHER_APPS.indexOf(a.id)-LAUNCHER_APPS.indexOf(b.id));
-    const state=id=>id==='files'?model.fileIndicator:(model.apps||[]).find(a=>a.id===id)?.indicator;
-    const refresh=()=>{for(const b of grid.querySelectorAll('[data-launcher-app]'))badge(b,editing?null:state(b.dataset.launcherApp))};
-    launcherRefresh=refresh;
-    const launchButton=(label,glyph,callback,cls,args=[])=>el('button',{type:'button',class:cls,'aria-label':label,on:{click(){if(!liveBody())return;getSheet()?.now();invoke(callback,...args)}}},glyph,el('span',{text:label}));
-    function paintGrid() {
-      grid.replaceChildren();favs.replaceChildren();favs.hidden=!editing;
-      if(editing)for(const [index,id]of favourites().entries()){
-        const name=id==='files'?'Files':APP_NAMES[id];
-        favs.append(el('button',{type:'button',class:'wsl-favourite',data:{launcherFavourite:id},'aria-label':`Move ${name}, position ${index+1} of ${favourites().length}`},appSymbol(id, 40),el('span',{text:name})));
-      }
-      const list=appItems().filter(a=>a?.id&&LAUNCHER_APPS.includes(a.id)&&a.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
-      for(const a of list){
-        const allowed=()=>appItems().some(item=>item.id===a.id&&item.available!==false),pinned=favourites().includes(a.id);
-        const b=el('button',{type:'button',class:'wsl-app','aria-label':editing?(pinned?'Unpin ':'Pin ')+a.name:a.name,data:{launcherApp:a.id},on:{click(){
-          if(!liveBody()||(!allowed()&&!(editing&&pinned)))return;
-          if(editing){const next=toggleFavourite(favourites(),a.id);if(next.full){status.textContent='Unpin an app to make room.';return}invoke('onFavourites',next.items);model.favourites=next.items;paintGrid();return}
-          if (b.hasAttribute('aria-current')) { getSheet()?.close(); return; }
-          const launch=captureLauncherOrigin(b);if(a.id==='files')invoke('onFiles',launch);else invoke('onApp',a.id,launch);
-        }}},appSymbol(a.id, 40),el('span',{text:a.name}));
-        b.disabled=!allowed()&&!(editing&&pinned);
-        if(editing){b.setAttribute('aria-pressed',String(pinned));if(pinned)b.append(el('span',{class:'wsl-pinned','aria-hidden':'true'},icon('check')))}else setCurrent(b,model.mode==='files'?a.id==='files':model.mode==='app'&&model.activeApp===a.id);
-        grid.append(b);
-      }
-      if(!list.length)grid.append(el('p',{class:'wsl-empty',text:'No apps found'}));
-      status.hidden=!editing;status.textContent=editing?`${favourites().length} of 4 favourites · Drag to reorder, or use arrow keys.`:'';
-      refresh();edit.textContent=editing?'Done':'Edit';edit.setAttribute('aria-label',editing?'Done editing favourites':'Edit favourites');
+  function appLauncher(sheet, startEditing) {
+    const library = el("div", { class: "ws-launcher" });
+    const grid = el("div", { class: "wsl-apps", role: "group", "aria-label": "Apps" });
+    const empty = el("p", { class: "wsl-empty", role: "status", text: "No apps found", hidden: true });
+    const favouritesRow = el("div", { class: "wsl-favourites", role: "group", "aria-label": "Favourite order" });
+    const status = el("p", { class: "wsl-edit-status", role: "status" });
+    const tiles = new Map(), slots = new Map();
+    let editing = false, query = "";
+    const live = () => !gone && sheet.el.open && !sheet.closed && !sheet.el.classList.contains("closing");
+    const usable = node => live() && sheet.el.contains(node) && !node.closest("[hidden]");
+    const favourites = () => normaliseFavourites(model.favourites) || [];
+    const appName = id => id === "files" ? "Files" : APP_NAMES[id];
+    function appItem(id) {
+      if (id === "files") return { id, name: "Files", available: callable(callbacks.onFiles), indicator: model.fileIndicator };
+      return model.apps?.find(app => app.id === id);
     }
-    edit.addEventListener('click',()=>{if(!liveBody())return;editing=!editing;paintGrid()});
-    input.addEventListener('input',()=>{query=input.value;paintGrid()});
-    input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!editing){event.preventDefault();grid.querySelector('button:not(:disabled)')?.click()}});
-    const security=callable(callbacks.onSecurity)?launchButton('Security',icon('lock'),'onSecurity','wsl-security'):null;
-    security?.append(icon('chev'));
-    const preferences = callable(callbacks.onSettings) ? launchButton('Settings',icon('settings'),'onSettings','wsl-settings') : null;
-    preferences?.append(icon('chev'));
-    const more=el('details',{class:'wsl-more'},el('summary',{},icon('more'),el('span',{text:'More'}),icon('down'))),controls=el('div',{class:'wsl-controls'});
-    for(const[label,glyph,callback]of[['Today','sun','onToday'],['Quick Capture','plus','onCapture'],['Search InFlite','search','onSearch'],['Activity','clock','onActivity'],['App status','info','onRecovery'],['Notifications','bell','onNotifications']])if(callable(callbacks[callback]))controls.append(launchButton(label,icon(glyph),callback,'wsl-control'));
-    more.append(controls);const utilities=el('div',{class:'wsl-utilities'},preferences,security);if(controls.childElementCount)utilities.append(more);body.append(tools,favs,status,grid,utilities);
-    const dispose=launcherInput(body,{current:liveBody,menu:(app,node)=>{if(!editing)return invoke('onAppMenu',app,node)},reorder:(id,target)=>{
-      if(!liveBody()||!editing)return;const next=moveFavourite(favourites(),id,target);invoke('onFavourites',next);model.favourites=next;animateOrder(favs,paintGrid);favs.querySelector('[data-launcher-favourite="'+id+'"]')?.focus({preventScroll:true});
-    }});
-    body.destroyLauncher=()=>{stopOrder(favs);dispose();if(launcherRefresh===refresh)launcherRefresh=null};
-    paintGrid();return body;
+
+    function filterApps(value) {
+      query = value.trim().toLocaleLowerCase();
+      let matches = 0;
+      for (const [id, tile] of tiles) {
+        const visible = appName(id).toLocaleLowerCase().includes(query);
+        tile.toggleAttribute("hidden", !visible);
+        if (visible) matches++;
+      }
+      grid.toggleAttribute("hidden", !matches);
+      empty.toggleAttribute("hidden", matches > 0);
+    }
+
+    function saveOrder(items) {
+      invoke("onFavourites", items);
+      model.favourites = items;
+      refresh();
+    }
+    function chooseApp(event) {
+      const tile = event.currentTarget, id = tile.dataset.launcherApp;
+      if (!usable(tile) || tile.disabled) return;
+      const order = favourites();
+      if (appItem(id)?.available === false && !(editing && order.includes(id))) return;
+      if (editing) {
+        const next = toggleFavourite(order, id);
+        if (next.full) invoke("onReplaceFavourite", id, sheet);
+        else saveOrder(next.items);
+      } else if (tile.hasAttribute("aria-current")) {
+        sheet.close();
+      } else {
+        const origin = captureLauncherOrigin(tile);
+        if (id === "files") invoke("onFiles", origin);
+        else invoke("onApp", id, origin);
+      }
+    }
+    function refresh() {
+      const order = favourites();
+      const apps = LAUNCHER_APPS.map(appItem).filter(Boolean);
+      reconcile(grid, tiles, apps, app => app.id, app =>
+        el("button", { type: "button", class: "wsl-app", data: { launcherApp: app.id }, on: { click: chooseApp } },
+          appSymbol(app.id, 40), el("span", { text: app.name })), (tile, app) => {
+        const pinned = order.includes(app.id);
+        const label = editing ? (pinned ? "Unpin " : "Pin ") + app.name : app.name;
+        if (tile.getAttribute("aria-label") !== label) tile.setAttribute("aria-label", label);
+        tile.toggleAttribute("disabled", app.available === false && !(editing && pinned));
+        setCurrent(tile, !editing && (model.mode === "files" ? app.id === "files" : model.mode === "app" && app.id === model.activeApp));
+        if (editing) {
+          if (tile.getAttribute("aria-pressed") !== String(pinned)) tile.setAttribute("aria-pressed", String(pinned));
+        } else tile.removeAttribute("aria-pressed");
+        const check = tile.querySelector(".wsl-pinned");
+        if (editing && pinned) {
+          if (!check) tile.append(el("span", { class: "wsl-pinned", "aria-hidden": "true" }, icon("check")));
+        } else check?.remove();
+        badge(tile, editing || app.available === false ? null : app.indicator);
+      });
+      filterApps(query);
+      if (!editing) return;
+      reconcile(favouritesRow, slots, order, id => id, id =>
+        el("button", { type: "button", class: "wsl-favourite", data: { launcherFavourite: id } },
+          appSymbol(id, 40), el("span", { text: appName(id) })), (slot, id) => {
+        slot.setAttribute("aria-label", `Move ${appName(id)}, position ${order.indexOf(id) + 1} of ${order.length}`);
+      });
+      words(status, `${order.length} of 4 favourites · Drag to reorder, or use arrow keys.`);
+    }
+
+    function control(label, glyph, run) {
+      return el("button", { type: "button", class: "wsl-control", on: { click(event) {
+        if (!usable(event.currentTarget)) return;
+        event.currentTarget.focus({ preventScroll: true });
+        run();
+      } } }, icon(glyph), el("span", { text: label }));
+    }
+    function destination(label, glyph, callback) {
+      if (!callable(callbacks[callback])) return null;
+      return control(label, glyph, () => { sheet.now(); invoke(callback); });
+    }
+    function openCataloguePage(mode) {
+      const edit = mode === "edit";
+      const page = el("div", { class: "ws-launcher" });
+      const input = el("input", { type: "search", placeholder: "Search apps", "aria-label": "Search apps", maxlength: 40, autocomplete: "off" });
+      const field = el("label", { class: "wsl-search-field" }, icon("search"), input);
+      sheet.push({
+        page: edit ? "edit-dock" : "search-apps", title: edit ? "Edit dock" : "Search apps",
+        body(host) {
+          editing = edit;
+          if (edit) page.append(favouritesRow, status);
+          page.append(grid, empty, field);
+          if (!edit && callable(callbacks.onSearch)) page.append(control("Search InFlite", "search", () => {
+            sheet.now();
+            invoke("onSearch", input.value.trim());
+          }));
+          host.append(page);
+          refresh();
+        },
+        acts: edit ? [{ label: "Done", run: () => sheet.pop() }] : null,
+        onLeave() {
+          editing = false;
+          query = "";
+          library.prepend(grid, empty);
+          if (live()) refresh();
+        }
+      });
+      input.addEventListener("input", () => { if (usable(input)) filterApps(input.value); });
+      input.addEventListener("keydown", event => {
+        if (event.isComposing || event.key !== "Enter" || editing || !usable(input)) return;
+        event.preventDefault();
+        grid.querySelector("button:not([hidden]):not(:disabled)")?.click();
+      });
+      if (!edit) input.focus({ preventScroll: true });
+    }
+
+    function openActions() {
+      const edit = control("Edit dock", "edit", () => {
+        sheet.pop();
+        openCataloguePage("edit");
+      });
+      sheet.push({ page: "launcher-tools", title: "Actions", body: el("div", { class: "ws-launcher wsl-controls" },
+        destination("Quick Capture", "plus", "onCapture"), edit,
+        destination("Notifications", "bell", "onNotifications"), destination("Activity", "clock", "onActivity"),
+        destination("Security", "lock", "onSecurity"), destination("App status", "info", "onRecovery")) });
+    }
+
+    const search = el("button", { type: "button", class: "ifs-btn wsl-search-toggle", "aria-label": "Search apps",
+      on: { click(event) {
+        if (!usable(library)) return;
+        event.currentTarget.focus({ preventScroll: true });
+        openCataloguePage("search");
+      } } }, icon("search"));
+    const head = sheet.el.querySelector(".ifs-head");
+    head.insertBefore(search, head.querySelector("[data-close]"));
+    library.append(grid, empty, el("div", { class: "wsl-utilities" },
+      destination("Settings", "settings", "onSettings"), control("Actions", "more", openActions)));
+    sheet.body.append(library);
+    const disposeInput = launcherInput(sheet.body, {
+      current: live,
+      menu: (app, node) => { if (!editing && usable(node)) return invoke("onAppMenu", app, node); },
+      reorder: (id, target) => {
+        if (!editing || !usable(favouritesRow)) return;
+        animateOrder(favouritesRow, () => saveOrder(moveFavourite(favourites(), id, target)));
+        slots.get(id)?.focus({ preventScroll: true });
+      }
+    });
+    launcherRefresh = refresh;
+    if (startEditing) openCataloguePage("edit");
+    else refresh();
+    return () => {
+      stopOrder(favouritesRow);
+      disposeInput();
+      if (launcherRefresh === refresh) launcherRefresh = null;
+    };
   }
 
   function destroy() {

@@ -2585,6 +2585,47 @@ test('system glass refracts the dock edge, keeps its centre clear and follows ap
   } finally { await ctx.close(); }
 });
 
+test('a full dock replaces one favourite from shortcuts or Edit dock and supports Undo', async () => {
+  const apps = {weather:true,fitness:true,markets:true,mail:true,chats:true,calendar:true,people:true,notes:true};
+  const {ctx,page,errors} = await open({initialPath:'/?os=1',waitForDay:false,hubApps:apps,viewApps:apps});
+  try {
+    const dock = page.locator('.ws-dock'), menu = page.locator('dialog[data-sheet=workspace-apps]');
+    const showApps = () => dock.getByRole('button',{name:'All apps',exact:true}).click();
+    const button = name => menu.getByRole('button',{name,exact:true});
+    const order = () => dock.locator('[data-launcher-app]').evaluateAll(nodes=>nodes.map(node=>node.dataset.launcherApp));
+    await dock.locator('[data-launcher-app]').first().waitFor();
+    const initial = await order();
+    assert.equal(initial.length,4);
+    const target = ['Weather','Fitness','Notes','People','Calendar'].find(name=>!initial.includes(name.toLowerCase()));
+    const next = [...initial];
+    next[1] = target.toLowerCase();
+    await showApps();
+    await button(target).click({button:'right'});
+    await button('Replace a favourite…').click();
+    const choices = menu.locator('.wsl-replacements button');
+    assert.equal(await choices.count(),4);
+    await button('Back').click();
+    assert.deepEqual(await order(),initial);
+    await button('Replace a favourite…').click();
+    await choices.nth(1).click();
+    await menu.waitFor({state:'detached'});
+    assert.deepEqual(await order(),next);
+    await page.getByRole('button',{name:'Undo',exact:true}).click();
+    assert.deepEqual(await order(),initial);
+
+    await showApps();
+    await button('Actions').click();
+    await button('Edit dock').click();
+    await button('Pin '+target).click();
+    await choices.nth(1).click();
+    await menu.waitFor({state:'detached'});
+    await page.reload();
+    await dock.locator('[data-launcher-app]').first().waitFor();
+    assert.deepEqual(await order(),next);
+    assert.deepEqual(errors,[]);
+  } finally { await ctx.close(); }
+});
+
 test('Bubbles drawer follows a short drag, rotates in place and releases the dock on dismissal', async () => {
   const {ctx,page,errors} = await open({initialPath:'/?os=1',scheme:'dark',motion:'no-preference'});
   try {

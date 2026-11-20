@@ -67,7 +67,24 @@ export async function createWorkspace(F, options = {}) {
   };
   const appOn = (app) => !!F.session.apps?.[app] && (app !== "mail" || F.session.view?.apps?.mail === true);
   const favouriteKey='ifl:launcher:v1:'+owner;
-  let favourites=initialFavourites(guarded(()=>JSON.parse(localStorage.getItem(favouriteKey))),id=>id==='files'||appOn(id));
+  const readFavourites = () => initialFavourites(guarded(() => JSON.parse(localStorage.getItem(favouriteKey))), id => id === "files" || appOn(id));
+  let favourites = readFavourites(), favouriteNotice = null;
+  function saveFavourites(items) {
+    const next = normaliseFavourites(items);
+    if (!live() || !next) return;
+    favouriteNotice?.close();
+    favourites = next;
+    guarded(() => localStorage.setItem(favouriteKey, JSON.stringify(next)));
+    paint();
+  }
+  function syncFavourites(event) {
+    if (!live() || (event.key !== favouriteKey && event.key !== null) || event.storageArea !== localStorage) return;
+    favouriteNotice?.close();
+    favourites = readFavourites();
+    paint();
+  }
+  globalThis.addEventListener("storage", syncFavourites);
+  offs.push(() => { globalThis.removeEventListener("storage", syncFavourites); favouriteNotice?.close(); });
   let appsMenu = null;
   function launchOptions(source) {
     const origin = source?.nodeType ? captureLauncherOrigin(source) : source;
@@ -118,11 +135,11 @@ export async function createWorkspace(F, options = {}) {
   for (const app of WORKSPACE_APPS.filter((a) => a.pane)) acquire(app.id);
   const view = createWorkspaceView(root, {
     onToday: opener => {const origin=captureLauncherOrigin(opener);F.nav.go("/",{resume:true,...(origin?{kind:'launch-return',launch:origin}:{})})}, onApp: (app,launch) => openApp(app,null,{launch}),
-    onFavourites:items=>{if(!live())return;const next=normaliseFavourites(items);if(!next)return;favourites=next;guarded(()=>localStorage.setItem(favouriteKey,JSON.stringify(next)));paint()},
+    onFavourites: saveFavourites, onReplaceFavourite: chooseReplacement,
     onAppMenu:openAppMenu,
     onRecent: app => { if (live() && appOn(app)) openApp(app); },
     onAppDrop: (app, token) => { if (live() && ["mail", "fitness"].includes(app) && /^[a-f0-9]{32}$/.test(token)) return runIntent(app, app === "mail" ? "compose-attach" : "import-drive", "drop:" + token); },
-    onSecurity:()=>security().then(s=>live()&&s?.open({app:F.route?.app||null})),onCapture:()=>lifeTools().then(v=>live()&&v?.capture()),onSearch: () => F.search.open(), onApps: opener => openApps(opener),
+    onSecurity:()=>security().then(s=>live()&&s?.open({app:F.route?.app||null})),onCapture:()=>lifeTools().then(v=>live()&&v?.capture()),onSearch: query => F.search.open(typeof query === "string" && query ? { query } : undefined), onApps: opener => openApps(opener),
     onNotifications: options.onNotifications, onAccount: options.onAccount, onSettings: options.onSettings,
     onFiles: launch => openFiles(null,null,launch),
     onActivity: () => activityView.open(), onRecovery: () => recoveryView.open(),
@@ -179,9 +196,42 @@ export async function createWorkspace(F, options = {}) {
     const known=active.every(r=>Number.isFinite(r.progress)),percent=known?Math.floor(active.reduce((n,r)=>n+Math.max(0,Math.min(1,r.progress)),0)/active.length*100):null;
     return {label:active.length+' upload'+(active.length===1?'':'s')+(percent===null?' waiting':' · '+percent+'%'),text:percent===null?'':percent+'%',kind:'upload'};
   }
+  function chooseReplacement(app, sheet) {
+    if (!live() || sheet.closed || favourites.length !== 4 || favourites.includes(app)) return;
+    const expected = F.route;
+    const appName = id => id === "files" ? "Files" : REGISTRY[id].name;
+    const name = appName(app);
+    const choices = F.ui.el("div", { class: "wsl-replacements" });
+    for (const id of favourites) {
+      const label = appName(id);
+      const choice = F.ui.el("button", { type: "button", class: "wsl-replacement", "aria-label": "Replace " + label },
+        F.ui.icon(null, { app: id === "chats" ? "chat" : id, size: 32 }), F.ui.el("span", { text: label }));
+      choice.addEventListener("click", () => {
+        if (!live() || F.route !== expected || sheet.closed || sheet.el.classList.contains("closing") ||
+            !sheet.el.contains(choice) || choice.closest("[hidden]")) return;
+        if (favourites.length !== 4 || !favourites.includes(id) || favourites.includes(app) || (app !== "files" && !appOn(app))) {
+          sheet.pop();
+          return;
+        }
+        const previous = favourites;
+        saveFavourites(previous.map(slot => slot === id ? app : slot));
+        const applied = favourites;
+        sheet.now();
+        favouriteNotice = F.toast(`${name} replaced ${label} in the dock.`, {
+          action: { label: "Undo", run() {
+            if (live() && favourites === applied) saveFavourites(previous);
+          } },
+          onClose() { favouriteNotice = null; }
+        });
+      });
+      choices.append(choice);
+    }
+    sheet.push({ title: "Replace a favourite", page: "replace-favourite", body: F.ui.el("div", { class: "ws-launcher" },
+      F.ui.el("p", { class: "wsl-prompt", text: `Choose the dock slot for ${name}.` }), choices) });
+  }
   function openAppMenu(app,opener){
     if(!live()||!['files',...WORKSPACE_APPS.map(a=>a.id)].includes(app)||app!=='files'&&!appOn(app))return;
-    const expected=F.route,valid=()=>live()&&body.isConnected&&!menu?.closed&&F.route===expected&&(app==='files'||appOn(app));
+    const expected=F.route,valid=()=>live()&&body.isConnected&&!body.closest('[hidden]')&&!menu?.closed&&!menu?.el.classList.contains('closing')&&F.route===expected&&(app==='files'||appOn(app));
     const ui=F.ui,name=app==='files'?'Files':REGISTRY[app].name,body=ui.el('div',{class:'wsl-context'});
     let menu;const close=()=>{if(menu===appsMenu)F.sheet.closeAll();else menu?.now()};
     const item=(label,glyph,run)=>body.append(ui.btn(label,{icon:glyph,run:()=>{if(!valid())return;return run()}}));
@@ -191,7 +241,15 @@ export async function createWorkspace(F, options = {}) {
     const defaults={calendar:['new','New event'],notes:['new','New note'],people:['new','Add person'],mail:['compose','New message'],chats:['new-chat','New chat']},shortcut=defaults[app];
     if(shortcut)item(shortcut[1],'plus',async()=>{const launch=captureLauncherOrigin(opener);close();const route=await openApp(app,format({app}),{launch});if(route&&live()&&F.route===route)return runIntent(app,shortcut[0],null,{current:()=>live()&&F.route===route})});
     const pinned=favourites.includes(app),full=!pinned&&favourites.length===4;
-    if(!full)item(pinned?'Remove from favourites':'Add to favourites',pinned?'minus':'plus',()=>{const next=toggleFavourite(favourites,app);if(!next.full){favourites=next.items;guarded(()=>localStorage.setItem(favouriteKey,JSON.stringify(favourites)));paint();if(menu===appsMenu)menu.pop();else close()}});
+    if (full) item("Replace a favourite…", "swap", () => chooseReplacement(app, menu));
+    else item(pinned ? "Remove from favourites" : "Add to favourites", pinned ? "minus" : "plus", () => {
+      if (favourites.includes(app) !== pinned) return;
+      const next = toggleFavourite(favourites, app);
+      if (next.full) return chooseReplacement(app, menu);
+      saveFavourites(next.items);
+      if (menu === appsMenu) menu.pop();
+      else close();
+    });
     if(app==='files'&&indicator)item('View activity','clock',()=>{close();activityView.open()});
     if(appsMenu&&!appsMenu.closed){menu=appsMenu;menu.push({page:'app-actions',title:name,body})}
     else menu=F.sheet.open({sheet:'launcher-actions',title:name,body});
@@ -381,21 +439,19 @@ export async function createWorkspace(F, options = {}) {
   }
   function openApps(opener) {
     if (!live() || (appsMenu && !appsMenu.closed)) return;
-    const body = view.launcher(() => menu);
+    let disposeLauncher;
     // Safari does not focus a button on tap. Give the sheet its actual return target.
     opener?.focus?.({ preventScroll: true });
-    const menu = F.sheet.open({ sheet: 'workspace-apps', title: 'Your apps', body, onClose: () => {
-      body.destroyLauncher?.();
+    const menu = F.sheet.open({ sheet: 'workspace-apps', title: 'Your apps', onClose: () => {
+      disposeLauncher?.();
       if (appsMenu === menu) {
         appsMenu = null;
         view.launcherOpen(false);
       }
     } });
     appsMenu = menu;
-    const edit = body.querySelector('.wsl-edit'), head = menu.el.querySelector('.ifs-head');
-    if (edit && head) head.insertBefore(edit, head.querySelector('[data-close]'));
+    disposeLauncher = view.launcher(menu, opener?.classList?.contains("ws-dock-add"));
     view.launcherOpen(true);
-    if (opener?.classList?.contains('ws-dock-add')) edit?.click();
   }
 
   async function show(nextRoute) {

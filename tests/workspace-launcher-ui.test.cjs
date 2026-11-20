@@ -21,7 +21,7 @@ for(const [width,height] of[[320,760],[390,760],[844,390],[1440,900]])test(`app 
  for(const button of await t.menu.locator('.ws-launcher button').all()){const b=await button.boundingBox();if(b&&await button.isVisible())assert.ok(b.height>=44,JSON.stringify({name:await button.getAttribute("aria-label"),box:b}));}
  for(const node of await grid.locator('img').all()){const b=await node.boundingBox();assert.deepEqual([b.width,b.height],[52,52]);}
  assert.equal(await t.menu.evaluate(n=>n.scrollWidth>n.clientWidth+1),false);assert.ok((await t.menu.boundingBox()).height<=height);
- assert.equal(await t.menu.locator('details').getAttribute('open'),null);await t.menu.getByRole('button',{name:'Settings',exact:true}).scrollIntoViewIfNeeded(); const footer=await t.menu.getByRole('button',{name:'Settings',exact:true}).boundingBox(), bounds=await t.menu.boundingBox();assert.ok(footer.y>=bounds.y&&footer.y+footer.height<=bounds.y+bounds.height+1);
+ assert.ok(await t.menu.getByRole('button',{name:'Actions',exact:true}).isVisible());await t.menu.getByRole('button',{name:'Settings',exact:true}).scrollIntoViewIfNeeded(); const footer=await t.menu.getByRole('button',{name:'Settings',exact:true}).boundingBox(), bounds=await t.menu.boundingBox();assert.ok(footer.y>=bounds.y&&footer.y+footer.height<=bounds.y+bounds.height+1);
  assert.equal(await t.menu.getByRole('button',{name:'Mail',exact:true}).isDisabled(),true);
  await t.menu.getByRole('button',{name:'Files',exact:true}).focus();assert.equal(await t.menu.getByRole('button',{name:'Files',exact:true}).evaluate(n=>n===document.activeElement),true);
  if(process.env.LAUNCHER_SCREENSHOTS&&process.env.WEB_UI_BROWSER!=='webkit'){mkdirSync(process.env.LAUNCHER_SCREENSHOTS,{recursive:true});await t.page.screenshot({path:resolve(process.env.LAUNCHER_SCREENSHOTS,`launcher-${width}.png`),caret:'initial'});}
@@ -31,6 +31,10 @@ test('launcher destinations use the existing singleton apps and stale controls l
  await t.menu.getByRole('button',{name:'Files',exact:true}).click();await t.page.getByRole('button',{name:'Select Private folder',exact:true}).waitFor();
  await t.page.getByRole('button',{name:'All apps',exact:true}).click();await t.menu.getByRole('button',{name:'Weather',exact:true}).click();await t.page.getByRole('textbox',{name:'weather draft',exact:true}).fill('Keep this draft');
  await t.page.getByRole('button',{name:'All apps',exact:true}).click();await t.menu.getByRole('button',{name:'Fitness',exact:true}).click();await t.page.getByRole('textbox',{name:'fitness draft',exact:true}).waitFor();await t.page.getByRole('button',{name:'All apps',exact:true}).click();await t.menu.getByRole('button',{name:'Weather',exact:true}).click();assert.equal(await t.page.getByRole('textbox',{name:'weather draft',exact:true}).inputValue(),'Keep this draft');
- await t.page.getByRole('button',{name:'All apps',exact:true}).click();await t.menu.locator('summary').click();await t.menu.getByRole('button',{name:'Search InFlite',exact:true}).click();await t.page.getByRole('combobox',{name:'Search everything',exact:true}).waitFor();await t.page.keyboard.press('Escape');
+ await t.page.getByRole('button',{name:'All apps',exact:true}).click();await t.menu.getByRole('button',{name:'Search apps',exact:true}).click();
+ const searchPage=t.page.getByRole('dialog',{name:'Search apps',exact:true});
+ await searchPage.getByRole('searchbox').fill('weather');
+ await searchPage.getByRole('button',{name:'Search InFlite',exact:true}).click();
+ assert.equal(await t.page.getByRole('combobox',{name:'Search everything',exact:true}).inputValue(),'weather');await t.page.keyboard.press('Escape');
  await t.page.getByRole('button',{name:'All apps',exact:true}).click();await t.menu.getByRole('button',{name:'Files',exact:true}).evaluate(n=>window.oldLauncherButton=n);await t.page.evaluate(()=>{T.F.destroy();oldLauncherButton.click()});assert.equal(await t.page.locator('.ws-launcher').count(),0);await t.clean();
 }finally{await t.ctx.close()}});
