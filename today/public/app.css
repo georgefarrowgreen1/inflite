@@ -1150,30 +1150,33 @@ html.ifl-colour-change::view-transition-new(inflite-dock) { animation: none; mix
   --ifl-press-scale: 0.97; --ifl-press-icon: 0.94; --ifl-press-card: 0.985;
   --ifl-motion-glide: cubic-bezier(0.32, 0.72, 0, 1);
   --ifl-motion-spring: cubic-bezier(0.22, 1, 0.36, 1);
-  /* Neutral translucent window material; readable static content and lightweight
-     inset layers avoid stacking opaque glass over opaque glass. */
+  /* The compositor filters the live backdrop. The neutral veil and the
+     stronger window fill keep foreground text readable on bright artwork. */
   --ifl-glass-strength: .7;
-  --ifl-glass-tint: light-dark(var(--ifl-surface), color-mix(in srgb, var(--ifl-surface) 70%, black));
-  --ifl-glass: color-mix(in srgb, var(--ifl-glass-tint) var(--ifl-glass-opacity, 79%), transparent);
-  --ifl-glass-window: color-mix(in srgb, var(--ifl-glass-tint) var(--ifl-glass-window-opacity, 83.2%), transparent);
-  --ifl-glass-inset: color-mix(in srgb, var(--ifl-surface-2) var(--ifl-glass-inset-opacity, 23.2%), transparent);
+  --ifl-glass-transmission: calc(var(--ifl-glass-strength) * (1.7 - .7 * var(--ifl-glass-strength)));
+  --ifl-glass-tint: var(--ifl-surface);
+  --ifl-glass: color-mix(in srgb, var(--ifl-glass-tint) calc(100% - 39% * var(--ifl-glass-transmission)), transparent);
+  --ifl-glass-window: color-mix(in srgb, var(--ifl-glass-tint) calc(100% - 36% * var(--ifl-glass-transmission)), transparent);
+  --ifl-glass-inset: color-mix(in srgb, var(--ifl-surface-2) calc(100% - 92% * var(--ifl-glass-strength)), transparent);
   --ifl-glass-text: var(--ifl-text);
   --ifl-glass-muted: color-mix(in srgb, var(--ifl-text) 92%, var(--ifl-muted));
   --ifl-glass-accent: color-mix(in srgb, var(--ifl-text) 65%, var(--ifl-accent-ink));
-  --ifl-glass-strong: color-mix(in srgb, var(--ifl-surface) var(--ifl-glass-strong-opacity, 97.9%), transparent);
-  --ifl-glass-control: color-mix(in srgb, var(--ifl-surface-2) var(--ifl-glass-control-opacity, 93%), transparent);
+  --ifl-glass-strong: color-mix(in srgb, var(--ifl-surface) calc(100% - 26% * var(--ifl-glass-strength)), transparent);
+  --ifl-glass-control: color-mix(in srgb, var(--ifl-surface-2) calc(100% - 32% * var(--ifl-glass-strength)), transparent);
   --ifl-glass-line: color-mix(in srgb, var(--ifl-text) 11%, transparent);
-  --ifl-glass-highlight: color-mix(in srgb, white var(--ifl-glass-rim-opacity, 43.4%), transparent);
+  --ifl-glass-highlight: color-mix(in srgb, white calc(36% * var(--ifl-glass-strength)), transparent);
   --ifl-glass-shadow: inset 0 1px 0 var(--ifl-glass-highlight), inset 0 0 0 .5px var(--ifl-glass-line), 0 calc(10px * var(--ifl-glass-strength)) calc(30px * var(--ifl-glass-strength)) calc(-22px * var(--ifl-glass-strength)) rgb(0 0 0 / .25);
-  --ifl-glass-blur: blur(var(--ifl-glass-radius, 22.4px)) saturate(var(--ifl-glass-saturation, 0%));
-  --ifl-glass-window-blur: var(--ifl-glass-blur);
+  --ifl-glass-brightness: 1.12;
+  --ifl-glass-tone: saturate(calc(1 + .35 * var(--ifl-glass-strength))) contrast(.82) brightness(var(--ifl-glass-brightness));
+  --ifl-glass-blur: blur(calc(14px * var(--ifl-glass-strength))) var(--ifl-glass-tone);
+  --ifl-glass-window-blur: blur(calc(22px * var(--ifl-glass-strength))) var(--ifl-glass-tone);
   --ifl-chrome-blur: var(--ifl-glass-blur);
   --ifl-chrome-solid: var(--ifl-surface);
   --r-card: var(--ifl-radius-card); --r-group: var(--ifl-radius-group); --r-sheet: var(--ifl-radius-sheet);
   --ease-glide: var(--ifl-motion-glide); --ease-spring: var(--ifl-motion-spring);
   --dur-press: var(--ifl-motion-press); --dur-release: var(--ifl-motion-release);
 }
-:root, [data-ifl-pointer] { --ifl-glass-shine: radial-gradient(180px circle at var(--ifl-pointer-x, 50%) var(--ifl-pointer-y, 0%), color-mix(in srgb, white var(--ifl-glass-light-opacity, 2.1%), transparent), transparent 72%); }
+:root, [data-ifl-pointer] { --ifl-glass-shine: radial-gradient(180px circle at var(--ifl-pointer-x, 50%) var(--ifl-pointer-y, 0%), color-mix(in srgb, white calc(3% * var(--ifl-glass-strength)), transparent), transparent 72%); }
 :root[data-glass="off"] { --ifl-glass: var(--ifl-surface); --ifl-glass-window: var(--ifl-surface); --ifl-glass-inset: var(--ifl-surface-2); --ifl-glass-strong: var(--ifl-surface); --ifl-glass-control: var(--ifl-surface-2); --ifl-glass-highlight: transparent; --ifl-glass-shadow: var(--ifl-shadow-control); --ifl-glass-blur: none; --ifl-glass-window-blur: none; --ifl-glass-shine: none; }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root { --ifl-glass: var(--ifl-surface); --ifl-glass-window: var(--ifl-surface); --ifl-glass-inset: var(--ifl-surface-2); --ifl-glass-strong: var(--ifl-surface); --ifl-glass-control: var(--ifl-surface-2); --ifl-glass-blur: none; --ifl-glass-window-blur: none; }
@@ -1189,6 +1192,7 @@ html.ifl-colour-change::view-transition-new(inflite-dock) { animation: none; mix
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    --ifl-glass-brightness: .77; --ifl-glass-tint: color-mix(in srgb, var(--ifl-surface) 25%, black);
     --ifl-page: #101210; --ifl-surface: #1b1b1b; --ifl-surface-2: #262626; --ifl-raised: #303030;
     --ifl-text: #f4f7f2; --ifl-muted: #bac2b9; --ifl-subtle: #a2aba1;
     --ifl-line: rgba(255, 255, 255, 0.08); --ifl-press: rgba(255, 255, 255, 0.07);
@@ -1199,6 +1203,7 @@ html.ifl-colour-change::view-transition-new(inflite-dock) { animation: none; mix
   }
 }
 :root[data-theme="dark"] {
+  --ifl-glass-brightness: .77; --ifl-glass-tint: color-mix(in srgb, var(--ifl-surface) 25%, black);
   --ifl-page: #101210; --ifl-surface: #1b1b1b; --ifl-surface-2: #262626; --ifl-raised: #303030;
   --ifl-text: #f4f7f2; --ifl-muted: #bac2b9; --ifl-subtle: #a2aba1;
   --ifl-line: rgba(255, 255, 255, 0.08); --ifl-press: rgba(255, 255, 255, 0.07);
@@ -1265,7 +1270,7 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
   --ifm-text: var(--ifl-glass-text); --ifm-text-2: var(--ifl-glass-muted); --ifm-text-3: var(--ifl-glass-muted);
   color: var(--ifl-glass-text); background: var(--ifl-glass-window); border: 1px solid var(--ifl-glass-line);
   box-shadow: var(--ifl-glass-shadow), 0 18px 54px -28px rgb(0 0 0 / .3);
-  -webkit-backdrop-filter: var(--ifl-glass-blur); backdrop-filter: var(--ifl-glass-blur);
+  -webkit-backdrop-filter: var(--ifl-glass-window-blur); backdrop-filter: var(--ifl-glass-window-blur);
 }
 .ifm-grp { background: var(--ifl-glass-inset); border: 1px solid var(--ifl-glass-line); }
 .ifh-acts, .ifl-back, .ifl-tabs, .ifs-btn {
@@ -1868,10 +1873,6 @@ html[data-midnight-lava]::view-transition-old(inflite-wallpaper) { display: none
 html[data-midnight-lava]::view-transition-new(inflite-wallpaper) { animation: none; mix-blend-mode: normal; }
 @media (prefers-reduced-transparency: no-preference) and (prefers-contrast: no-preference) {
   html[data-midnight-lava][data-glass=on] .ifl-hd.ifh { background-image: var(--midnight-header-shade); }
-  html[data-midnight-lava][data-glass=on] .ws-dock {
-    --ifl-glass-blur: blur(var(--ifl-glass-radius)) saturate(105%);
-    background-color: color-mix(in srgb, var(--ifl-surface) calc(100% - 55% * var(--ifl-glass-strength)), transparent);
-  }
 }
 
 dialog.ifl-sheet[data-sheet=settings-appearance] {
@@ -1954,14 +1955,14 @@ dialog[data-sheet=settings-appearance] .ifs-btn { min-width: 44px; min-height: 4
   height: clamp(108px, 17svh, 148px); overflow: hidden;
   border-radius: 18px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--ifl-line);
 }
-.settings-dock-preview canvas {
+.settings-dock-preview > canvas {
   --scene-width: max(100cqw, calc(100cqh * var(--scene-aspect, 1)));
   --scene-height: max(100cqh, calc(100cqw / var(--scene-aspect, 1)));
   position: absolute; display: none; width: var(--scene-width); height: var(--scene-height); max-width: none;
   left: clamp(calc(100cqw - var(--scene-width)), calc(43cqw - var(--scene-x, .5) * var(--scene-width)), 0px);
   top: clamp(calc(100cqh - var(--scene-height)), calc(40cqh - var(--scene-y, .5) * var(--scene-height)), 0px);
 }
-html[data-midnight-lava] .settings-dock-preview canvas { display: block; }
+html[data-midnight-lava] .settings-dock-preview > canvas { display: block; }
 .settings-preview-dock {
   position: relative; display: flex; align-items: center; gap: 7px; padding: 6px 9px; margin-bottom: 12px;
   border-radius: 16px; border: 1px solid var(--ifl-glass-line); background: var(--ifl-glass);
@@ -1976,40 +1977,16 @@ html[data-midnight-lava] .settings-dock-preview canvas { display: block; }
   .appearance-options { padding-left: 24px; border-left: 1px solid var(--ifl-line); }
   .settings-dock-preview { height: auto; }
 }
-@media (prefers-reduced-transparency: no-preference) and (prefers-contrast: no-preference) {
-  html[data-midnight-lava][data-glass=on] .settings-preview-dock {
-    --ifl-glass-blur: blur(var(--ifl-glass-radius)) saturate(105%);
-    background-color: color-mix(in srgb, var(--ifl-surface) calc(100% - 55% * var(--ifl-glass-strength)), transparent);
-  }
-}
-/* A single displacement field bends the backdrop after frosting. Its neutral
-   centre and the separate foreground layer keep labels and glyphs crisp. */
+/* The displacement acts on the scene before the tint and foreground are painted. */
 .ifl-optics { position: absolute; pointer-events: none; overflow: hidden; }
-html[data-refractor=backdrop][data-glass=on] :is(.ws-dock, .settings-preview-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts, .ifm-pop, dialog.ifl-sheet[open]) {
-  backdrop-filter: var(--ifl-glass-blur) var(--ifl-lens-filter, url("#ifl-system-lens"));
+html[data-refractor=backdrop][data-glass=on] :is(.ws-dock, .settings-preview-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts, .ifm-pop, dialog.ifl-sheet[open], .m-mail .mr-qr, .m-chats .ch-composer) {
+  backdrop-filter: var(--ifl-lens-filter, url("#ifl-system-lens")) var(--ifl-glass-blur);
 }
-
-/* WebKit's CSS canvas samples the same scene at a second magnification.
-   Only a narrow bevel transmits this sample. The centre uses the usual material. */
-html[data-refractor=wallpaper] .ifh:not(.ifh-conversation) .ifh-acts { position: relative; }
-html[data-refractor=wallpaper] :is(.ws-dock, .settings-preview-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .ifm-pop, dialog.ifl-sheet[open])::after {
-  content: ""; position: absolute; inset: 0; box-sizing: border-box; border-radius: inherit;
-  pointer-events: none; opacity: var(--ifl-glass-strength);
-  box-shadow: inset 0 1px 1px rgb(255 255 255 / .22), inset 0 -1px 1px rgb(0 0 0 / .12);
+html[data-refractor=backdrop][data-glass=on] :is(.ifm-pop, dialog.ifl-sheet[open]) {
+  backdrop-filter: var(--ifl-lens-filter, url("#ifl-system-lens-sheet")) var(--ifl-glass-window-blur);
 }
-html[data-refractor=wallpaper][data-midnight-lava] :is(.ws-dock, .settings-preview-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .ifm-pop, dialog.ifl-sheet[open])::after {
-  padding: max(1px, calc(var(--ifl-rim-width, 6px) * var(--ifl-glass-strength)));
-  background: -webkit-canvas(ifl-lava) var(--ifl-lens-position, 50% 50%) / var(--ifl-lens-size, cover) no-repeat;
-  opacity: calc(var(--ifl-rim-transmission, .72) * var(--ifl-glass-strength));
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-}
-
-.ifh-acts { --ifl-lens-filter: url("#ifl-system-lens-control"); --ifl-rim-width: 2px; --ifl-rim-transmission: .42; }
-:is(.ifm-pop, dialog.ifl-sheet:not([data-sheet=workspace-apps])) {
-  --ifl-lens-filter: url("#ifl-system-lens-sheet"); --ifl-rim-width: 3px; --ifl-rim-transmission: .48;
-}
-:is(.settings-preview-dock, .ws-dock, .ifl-tabs, dialog[data-sheet=workspace-apps]) {
-  --ifl-lens-filter: url("#ifl-system-lens"); --ifl-rim-width: 6px; --ifl-rim-transmission: .72;
-}
-.settings-preview-dock { --ifl-rim-width: 3px; }
+:is(.ifh-acts, .m-mail .mr-qr, .m-chats .ch-composer) { --ifl-lens-filter: url("#ifl-system-lens-control"); }
+:is(.ifm-pop, dialog.ifl-sheet:not([data-sheet=workspace-apps])) { --ifl-lens-filter: url("#ifl-system-lens-sheet"); }
+dialog.ifl-sheet[data-sheet=workspace-apps] { --ifl-lens-filter: url("#ifl-system-lens"); }
+.ifl-orb-lens { position: absolute; overflow: hidden; pointer-events: none; }
+.ifl-orb-lens > canvas { display: block; width: 100%; height: 100%; }

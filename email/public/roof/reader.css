@@ -78,8 +78,8 @@
 .m-mail .mr-qr {
   display: flex; align-items: flex-end; gap: 4px; min-width: 0; padding: 3px;
   border: 1px solid var(--ifl-glass-line, var(--line)); border-radius: 26px;
-  background: var(--ifl-glass-window, var(--solid)); box-shadow: var(--ifl-shadow-card);
-  -webkit-backdrop-filter: var(--ifl-glass-window-blur, none); backdrop-filter: var(--ifl-glass-window-blur, none);
+  color: var(--ifl-glass-text, var(--text)); background: var(--ifl-glass, var(--solid)); box-shadow: var(--ifl-glass-shadow);
+  -webkit-backdrop-filter: var(--ifl-glass-blur, none); backdrop-filter: var(--ifl-glass-blur, none);
   transition: border-color var(--ifl-motion-fast, .16s) ease, box-shadow var(--ifl-motion-fast, .16s) ease;
 }
 .m-mail .mr-qr:focus-within { border-color: var(--acc-ink); box-shadow: 0 0 0 1px var(--acc-ink); }
@@ -90,7 +90,7 @@
 }
 .m-mail .mr-qr-text:focus-visible { outline: none; box-shadow: none; }
 .m-mail .mr-qr-text:placeholder-shown { height: 44px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.m-mail .mr-qr-text::placeholder { color: var(--text-2); opacity: 1; }
+.m-mail .mr-qr-text::placeholder { color: var(--ifl-glass-muted, var(--text-2)); opacity: 1; }
 .m-mail :is(.mr-qr, .mr-bar) .ifl-icon-btn {
   flex: none; width: 44px; height: 44px; border-radius: 50%; color: var(--text); background: transparent; box-shadow: none;
 }

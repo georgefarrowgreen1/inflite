@@ -43,8 +43,8 @@ const workspace = document.getElementById("in");
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const still = matchMedia("(prefers-reduced-motion: reduce)");
 const contrast = matchMedia("(prefers-contrast: more), (forced-colors: active)");
-let bubbles, ctx, preview, refraction, wallpaperFrame;
-let suspended = false, light = false, lastSample = -Infinity;
+let bubbles, ctx, preview, previewSize, refraction, wallpaperFrame;
+let suspended = false, light = false;
 
 function prepareRefraction() {
   const prefs = window.InFliteAppearance?.snapshot();
@@ -57,7 +57,9 @@ function prepareRefraction() {
 
 function drawPreview(frameScene = false) {
   if (!preview?.isConnected || !ctx || !bubbles) return;
-  const scale = Math.min(1, 960 / Math.max(canvas.width,canvas.height));
+  const frame = preview.parentElement;
+  const fit = Math.max(frame.clientWidth / canvas.width, frame.clientHeight / canvas.height);
+  const scale = Math.min(1, fit * (window.devicePixelRatio || 1));
   const w = Math.max(1,Math.round(canvas.width*scale)), h = Math.max(1,Math.round(canvas.height*scale));
   if (frameScene || preview.width !== w || preview.height !== h) {
     preview.width = w; preview.height = h;
@@ -71,7 +73,12 @@ function drawPreview(frameScene = false) {
 export function previewWallpaper(target, signal) {
   if (preview !== target) {
     preview = target;
-    signal.addEventListener("abort", () => { if (preview === target) preview = null; }, {once:true});
+    previewSize ||= new ResizeObserver(() => drawPreview(true));
+    previewSize.disconnect();
+    previewSize.observe(target.parentElement);
+    signal.addEventListener("abort", () => {
+      if (preview === target) { previewSize.disconnect(); preview = null; }
+    }, {once:true});
   }
   drawPreview(true);
 }
@@ -90,14 +97,8 @@ function paint(dt, pointer, live) {
   if (dt || pointer) driftBubbles(bubbles,dt,aspect,pointer);
   sizeBubbleCanvas(canvas,width,height,live && respondingBubbles(bubbles));
   const moving = drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,live,light);
-  // The small glass bevel and Settings thumbnail sample the full-rate artwork.
-  // Avoid a synchronous WebKit pixel readback on every high-refresh frame.
-  const now = performance.now();
-  if (!dt || !moving || now-lastSample >= 1000/30) {
-    wallpaperFrame?.(canvas);
-    drawPreview();
-    lastSample = now;
-  }
+  drawPreview();
+  wallpaperFrame?.(canvas);
   return moving;
 }
 

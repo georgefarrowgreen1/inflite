@@ -493,3 +493,71 @@ test('Contact cards transfer chosen People fields and review incoming changes be
     await t.clean();
   } finally {await t.ctx.close();}
 });
+
+test('scrolling a coloured message under the mobile reply bar and dock changes the glass pixels', async () => {
+  const t = await open({ width:390 });
+  try {
+    await t.ctx.route('**/body/**', r => r.fulfill({contentType:'text/html', body:`<!doctype html>
+      <style>body{margin:0;color:white;font:24px system-ui}section{height:650px;background:#ec392b}section:nth-child(even){background:#187be2}p{margin:0;padding:48px 18px}</style>
+      ${Array.from({length:5},()=>'<section><p>Sample receipt</p><p>Order summary</p><p>Thank you for your order.</p></section>').join('')}
+      <script>const q=new URLSearchParams(location.hash.slice(1));parent.postMessage({ifl:'mailbody',v:1,id:q.get('m'),h:3250,designed:true},q.get('p'));</script>`}));
+    await t.page.addScriptTag({url:'/theme.js'});
+    for (const url of ['/roof/workspace.css','/roof/launcher.css']) await t.page.addStyleTag({url});
+    // Use the shell's real filter definition and a contrasting wallpaper beneath
+    // the real cross-origin Mail frame, as on the phone.
+    const optics = readFileSync(resolve(PUBLIC,'index.html'),'utf8').match(/<svg class="ifl-optics"[\s\S]*?<\/svg>/)[0];
+    await t.page.evaluate(async optics => {
+      await T.setPane(false);
+      document.body.insertAdjacentHTML('afterbegin', optics+'<div class="sky"><canvas></canvas></div>');
+      document.documentElement.dataset.midnightLava = 'opal';
+      const sky = document.querySelector('.sky > canvas');
+      sky.width = innerWidth; sky.height = innerHeight;
+      const ink = sky.getContext('2d');
+      ink.fillStyle='#35f93f'; ink.fillRect(0,0,sky.width,sky.height);
+      await import('/roof/refractor.js');
+      document.getElementById('slot').hidden = true;
+      document.documentElement.classList.add('ifl-os');
+      document.documentElement.dataset.app = 'mail';
+      const {createWorkspaceView} = await import('/roof/workspace-view.js');
+      const view = createWorkspaceView(document.createElement('main'));
+      view.update({mode:'app',activeApp:'mail',apps:['Weather','Markets','Fitness','Mail'].map(name=>({id:name.toLowerCase(),name,available:true})),workspaces:[]});
+      document.body.append(view.dock);
+    }, optics);
+    await t.page.locator('.ml-row[data-thread]').first().click();
+    await t.page.locator('.mr-msgs iframe.mail-body.designed').waitFor();
+    const {PNG} = require('playwright-core/lib/utilsBundle');
+    async function swatches(offset) {
+      await t.page.waitForFunction(offset => {
+        const frame = document.querySelector('.mr-msgs iframe'), dock = document.querySelector('.ws-dock');
+        const delta = frame.getBoundingClientRect().top + offset - dock.getBoundingClientRect().top;
+        if (Math.abs(delta) < 1) return true;
+        scrollBy({top:delta, behavior:'instant'});
+        return false;
+      }, offset);
+      const points = await t.page.evaluate(async () => {
+        await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+        const frame = document.querySelector('.mr-msgs iframe'), dock = document.querySelector('.ws-dock'), reply = document.querySelector('.mr-qr');
+        return [dock,reply].flatMap(n => [5, n.offsetHeight-3].map(inset => {
+          const box = n.getBoundingClientRect(), photo = frame.getBoundingClientRect();
+          const x = Math.round(box.x + box.width*.55), y = Math.round(box.y + inset);
+          if (x < photo.x || x > photo.right || y < photo.y || y > photo.bottom || y < 0 || y >= innerHeight) throw Error('Mail body must be visible behind '+n.className);
+          return {x,y};
+        }));
+      });
+      const png = PNG.sync.read(await t.page.screenshot({caret:'hide'}));
+      return points.map(({x,y})=>Array.from(png.data.subarray(4*(y*png.width+x),4*(y*png.width+x)+3)));
+    }
+    for (const appearance of ['dark','light']) {
+      await t.page.evaluate(appearance=>InFliteAppearance.accept({appearance,palette:'coast',glass:true,glassStrength:70}),appearance);
+      const red = await swatches(1760), blue = await swatches(2410);
+      for (let i=0;i<red.length;i++) {
+        assert.ok(red[i][0]-blue[i][0]>32 && blue[i][2]-red[i][2]>32,
+          appearance+' '+['dock','dock edge','reply','reply edge'][i]+' must transmit both hues '+JSON.stringify({red:red[i],blue:blue[i]}));
+      }
+      await t.page.evaluate(()=>InFliteAppearance.setGlass({glass:false}));
+      const first = await swatches(1760), second = await swatches(2410);
+      for(let i=0;i<first.length;i++) assert.ok(first[i].every((v,c)=>Math.abs(v-second[i][c])<=2),'glass off is opaque');
+    }
+    assert.equal(t.mail.sends.length,0);
+  } finally { await t.ctx.close(); }
+});

@@ -1,136 +1,49 @@
-// The shell owns one optical material. Foreground icons and text never enter the filter.
+// Apply the lens to the scene before the browser paints the glass and its controls.
 const root = document.documentElement;
-const eligible = ".ws-dock, .settings-preview-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts, .ifm-pop, dialog.ifl-sheet[open]";
 const solid = matchMedia("(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)");
-const hasCSSCanvas = typeof document.getCSSCanvasContext === "function";
-const namedCanvas = hasCSSCanvas && CSS.supports("background-image", "-webkit-canvas(ifl-lava)") && CSS.supports("mask-composite", "exclude");
-// WebKit accepts URL backdrop filters in CSS but does not composite their SVG output.
-const backdrop = !hasCSSCanvas && CSS.supports("backdrop-filter", "url(#ifl-system-lens)");
+const hasBackdrop = CSS.supports("backdrop-filter", "blur(1px)") || CSS.supports("-webkit-backdrop-filter", "blur(1px)");
+// WebKit accepts SVG in backdrop-filter syntax but only renders displacement as
+// a regular filter. Its native glass composites text, images and frames.
+const artLens = typeof document.getCSSCanvasContext === "function";
 const displacement = document.querySelector("#ifl-system-lens feDisplacementMap");
-// The dock and drawer share the same edge depth throughout their handoff.
-const lenses = {dock:{bend:26, scale:36}, sheet:{bend:10, scale:15}, control:{bend:4, scale:7}};
-if (backdrop && displacement) {
-  for (const [kind, lens] of Object.entries(lenses)) {
+const canDisplace = hasBackdrop && (artLens ? typeof Path2D !== "undefined" && !!Path2D.prototype.roundRect :
+  !!displacement && CSS.supports("backdrop-filter", "url(#ifl-system-lens)"));
+const lenses = [];
+if (!artLens && canDisplace) {
+  for (const [kind, scale] of [["dock",.085], ["sheet",.032], ["control",.055]]) {
     const filter = displacement.parentNode;
-    if (kind === "dock") lens.map = displacement;
-    else {
-      const copy = filter.cloneNode(true);
-      copy.id = "ifl-system-lens-" + kind;
-      filter.after(copy);
-      lens.map = copy.querySelector("feDisplacementMap");
-    }
+    const node = kind === "dock" ? filter : filter.cloneNode(true);
+    if (node !== filter) { node.id += "-" + kind; filter.after(node); }
+    lenses.push({map:node.querySelector("feDisplacementMap"), scale});
   }
 }
-const moving = new Set();
-let fullLayout = true;
-let strength = 0, source, glassCanvas, sample, pending = 0;
 
-// WebKit exposes its CSS canvas as a live image. All rims share the already rendered
-// wallpaper pixels, including in Still mode. Only their crop changes when a surface moves.
-function publish() {
-  if (!namedCanvas || !strength || !source || !root.hasAttribute("data-midnight-lava") || document.hidden) return;
-  const scale = Math.min(1, 480 / Math.max(source.width, source.height));
-  const w = Math.max(1, Math.round(source.width*scale)), h = Math.max(1, Math.round(source.height*scale));
-  if (!glassCanvas || glassCanvas.canvas.width !== w || glassCanvas.canvas.height !== h) {
-    glassCanvas = document.getCSSCanvasContext("2d", "ifl-lava", w, h);
-    sample ||= document.createElement("canvas").getContext("2d", {willReadFrequently:true});
-    sample.canvas.width = w;
-    sample.canvas.height = h;
-    schedule();
-  }
-  // WebKit propagates putImageData to every CSS canvas consumer, including open sheets.
-  sample.drawImage(source, 0, 0, w, h);
-  glassCanvas?.putImageData(sample.getImageData(0,0,w,h), 0, 0);
-}
+let artwork, loading, strength = 0;
 
 export function wallpaperFrame(canvas) {
-  if (!namedCanvas) return;
-  source = canvas;
-  publish();
-}
-
-function align() {
-  pending = 0;
-  if (!strength || document.hidden || !source || !root.hasAttribute("data-midnight-lava")) return;
-  const sky = source.getBoundingClientRect();
-  if (!sky.width || !sky.height) return;
-  const nodes = fullLayout ? document.querySelectorAll(eligible) : moving;
-  fullLayout = false;
-  const updates = [];
-  for (const node of nodes) {
-    if (!node.isConnected) continue;
-    const box = node.getBoundingClientRect();
-    if (!box.width || !box.height || box.right <= 0 || box.left >= innerWidth || box.bottom <= 0 || box.top >= innerHeight) continue;
-    const preview = node.matches(".settings-preview-dock");
-    const scene = preview ? node.previousElementSibling.getBoundingClientRect() : sky;
-    const lens = node.matches(".ifh-acts") ? lenses.control :
-      node.matches(".ifm-pop, dialog:not([data-sheet=workspace-apps])") ? lenses.sheet : lenses.dock;
-    // Work in screen pixels, then undo the current pop/drag transform for the CSS crop.
-    const sx = box.width / node.offsetWidth, sy = box.height / node.offsetHeight;
-    const bend = lens.bend * strength * (preview ? .5 : 1);
-    const zx = 1 + 2 * bend / box.width, zy = 1 + 2 * bend / box.height;
-    const x = ((scene.left - box.left) * zx - bend) / sx - node.clientLeft;
-    const y = ((scene.top - box.top) * zy - bend) / sy - node.clientTop;
-    updates.push([node, scene.width * zx / sx, scene.height * zy / sy, x, y]);
-  }
-  for (const [node, w, h, x, y] of updates) {
-    node.style.setProperty("--ifl-lens-size", w.toFixed(2) + "px " + h.toFixed(2) + "px");
-    node.style.setProperty("--ifl-lens-position", x.toFixed(2) + "px " + y.toFixed(2) + "px");
-  }
-  for (const node of moving) {
-    if (!node.isConnected || !node.getAnimations().some(a => a.playState === "running")) moving.delete(node);
-  }
-  if (moving.size) queueLayout();
-}
-
-function queueLayout() {
-  if (namedCanvas && strength && source && root.hasAttribute("data-midnight-lava") && !document.hidden && !pending)
-    pending = requestAnimationFrame(align);
-}
-
-function schedule() {
-  fullLayout = true;
-  queueLayout();
+  artwork?.wallpaperFrame(canvas);
 }
 
 function sync() {
   const prefs = window.InFliteAppearance?.snapshot();
-  strength = !solid.matches && prefs?.glass ? prefs.glassStrength / 100 : 0;
+  strength = canDisplace && !solid.matches && prefs?.glass ? prefs.glassStrength / 100 : 0;
   if (!strength) {
     delete root.dataset.refractor;
-    cancelAnimationFrame(pending);
-    pending = 0;
-    moving.clear();
-  } else if (namedCanvas) {
-    root.dataset.refractor = "wallpaper";
-    publish();
-    schedule();
-  } else if (backdrop && displacement) {
-    for (const lens of Object.values(lenses)) lens.map.setAttribute("scale", String(lens.scale * strength));
+    artwork?.setStrength(0);
+  } else if (!artLens) {
+    for (const {map, scale} of lenses) map.setAttribute("scale", String(scale * strength));
     root.dataset.refractor = "backdrop";
+  } else if (artwork) {
+    artwork.setStrength(strength);
+    root.dataset.refractor = "artwork";
+  } else if (!loading) {
+    loading = import("./orb-refraction.js").then(module => {
+      artwork = module;
+      sync();
+    }).catch(() => { loading = null; });
   }
 }
 
-if (namedCanvas) {
-  // Route changes and top-layer sheets can replace chrome while the wallpaper is still.
-  new MutationObserver(schedule).observe(document.body, {childList:true, subtree:true});
-  new MutationObserver(schedule).observe(root, {attributes:true, attributeFilter:["data-midnight-lava", "data-app"]});
-  for (const event of ["scroll", "animationend", "transitionend", "toggle"])
-    document.addEventListener(event, schedule, {capture:true, passive:true});
-  for (const type of ["animationstart", "transitionrun"]) {
-    document.addEventListener(type, event => {
-      if (!strength || !root.hasAttribute("data-midnight-lava") || !event.target.matches(eligible)) return;
-      moving.add(event.target);
-      queueLayout();
-    });
-  }
-  addEventListener("pointermove", event => {
-    if (event.buttons && document.querySelector("dialog.ifl-sheet[open]")) schedule();
-  }, {passive:true});
-  addEventListener("resize", schedule);
-  window.visualViewport?.addEventListener("resize", schedule);
-  window.visualViewport?.addEventListener("scroll", schedule);
-}
 addEventListener("inflite:appearance", sync);
 addEventListener("pageshow", sync);
 solid.addEventListener("change", sync);

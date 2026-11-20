@@ -1,18 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100" preserveAspectRatio="none">
-  <!-- Red and green are horizontal and vertical light offsets. Mid-grey is flat glass. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 200 100" preserveAspectRatio="none">
+  <!-- Red and green encode horizontal and vertical bending.
+       The bend eases to zero at both the silhouette and the flat centre. -->
   <defs>
-    <linearGradient id="x">
-      <stop stop-color="#808080"/><stop offset=".02" stop-color="#fb8080"/>
-      <stop offset=".085" stop-color="#808080"/><stop offset=".915" stop-color="#808080"/>
-      <stop offset=".98" stop-color="#058080"/><stop offset="1" stop-color="#808080"/>
+    <linearGradient id="horizontal">
+      <stop stop-color="#808080"/>
+      <stop offset=".006" stop-color="#958080"/><stop offset=".016" stop-color="#d78080"/>
+      <stop offset=".025" stop-color="#ed8080"/><stop offset=".037" stop-color="#d88080"/>
+      <stop offset=".061" stop-color="#998080"/><stop offset=".079" stop-color="#828080"/>
+      <stop offset=".09" stop-color="#808080"/><stop offset=".91" stop-color="#808080"/>
+      <stop offset=".921" stop-color="#7e8080"/><stop offset=".939" stop-color="#678080"/>
+      <stop offset=".963" stop-color="#288080"/><stop offset=".975" stop-color="#138080"/>
+      <stop offset=".984" stop-color="#298080"/><stop offset=".994" stop-color="#6b8080"/>
+      <stop offset="1" stop-color="#808080"/>
     </linearGradient>
-    <linearGradient id="y" x2="0" y2="1">
-      <stop stop-color="#808080"/><stop offset=".045" stop-color="#80fb80"/>
-      <stop offset=".17" stop-color="#808080" stop-opacity="0"/>
-      <stop offset=".83" stop-color="#808080" stop-opacity="0"/>
-      <stop offset=".955" stop-color="#800580"/><stop offset="1" stop-color="#808080"/>
+    <linearGradient id="vertical" x2="0" y2="1">
+      <stop stop-color="#808080"/>
+      <stop offset=".012" stop-color="#809580"/><stop offset=".032" stop-color="#80d780"/>
+      <stop offset=".05" stop-color="#80ed80"/><stop offset=".074" stop-color="#80d880"/>
+      <stop offset=".122" stop-color="#809980"/><stop offset=".158" stop-color="#808280"/>
+      <stop offset=".18" stop-color="#808080" stop-opacity="0"/><stop offset=".82" stop-color="#808080" stop-opacity="0"/>
+      <stop offset=".842" stop-color="#807e80"/><stop offset=".878" stop-color="#806780"/>
+      <stop offset=".926" stop-color="#802880"/><stop offset=".95" stop-color="#801380"/>
+      <stop offset=".968" stop-color="#802980"/><stop offset=".988" stop-color="#806b80"/>
+      <stop offset="1" stop-color="#808080"/>
     </linearGradient>
   </defs>
-  <rect width="200" height="100" fill="url(#x)"/>
-  <rect width="200" height="100" fill="url(#y)"/>
+  <rect width="200" height="100" fill="url(#horizontal)"/>
+  <rect width="200" height="100" fill="url(#vertical)"/>
 </svg>

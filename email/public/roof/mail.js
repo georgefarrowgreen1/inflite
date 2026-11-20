@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.24.8";
-export const NEWS = "More room to read, smoother swipe actions and a simpler reply bar.";
+export const BUILD = "2.24.9";
+export const NEWS = "The reply bar picks up colours as you scroll through a message.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

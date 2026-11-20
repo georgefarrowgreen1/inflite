@@ -162,11 +162,11 @@ test('shared sheets and controls keep rounded 44px targets, sans typography and 
  }
 });
 
-test('glass materials stay neutral across themes while controls and coloured content retain their colour',async()=>{
+test('neutral tint and full-colour backdrops preserve artwork and action colours in every theme',async()=>{
  const t=await open({motion:'reduce',width:1100});try{
   await t.page.evaluate(()=>{const swatch=document.createElement('span');swatch.id='colour-content';Object.assign(swatch.style,{display:'block',width:'40px',height:'40px',background:'rgb(240, 64, 32)'});T.card.append(swatch);T.sheet()});
   for(const palette of palettes)for(const appearance of ['light','dark'])for(const strength of [0,70,100]){
-   await theme(t.page,palette,appearance);await t.page.evaluate(strength=>InFliteAppearance.setGlass({glassStrength:strength}),strength);
+   await theme(t.page,palette,appearance);await t.page.evaluate(strength=>InFliteAppearance.setGlass({glassStrength:strength}),strength);await settle(t.page);
    const result=await t.page.evaluate(()=>{
     const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const ctx=canvas.getContext('2d'),probe=document.createElement('span');document.body.append(probe);
     const rgb=colour=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=colour;ctx.fillRect(0,0,1,1);return[...ctx.getImageData(0,0,1,1).data]};
@@ -177,7 +177,9 @@ test('glass materials stay neutral across themes while controls and coloured con
    });
    for(const[name,colour]of Object.entries(result.material))assert.ok(Math.max(...colour.slice(0,3))-Math.min(...colour.slice(0,3))<=2,`${palette}/${appearance}/${strength} ${name}: ${colour}`);
    assert.deepEqual(result.swatch,[240,64,32,255]);assert.ok(result.filters.every(f=>f==='none'),'content must not be desaturated');assert.ok(result.action.some(stop=>stop.every((v,i)=>v===result.expected[i])),'primary action retains the selected theme: '+JSON.stringify(result.action));
-   assert.match(result.backdrop,/saturate\(0(?:%|\))/, 'only the backdrop removes colour saturation');
+   const saturation = /saturate\(([\d.]+)(%?)\)/.exec(result.backdrop);
+   if (!strength) assert.equal(result.backdrop, 'none');
+   else assert.ok(saturation && Number(saturation[1]) >= (saturation[2] ? 100 : 1), 'floating glass preserves backdrop colour: '+result.backdrop);
   }
   assert.deepEqual(t.errors,[]);
  }finally{await t.ctx.close()}

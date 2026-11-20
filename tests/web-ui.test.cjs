@@ -461,8 +461,8 @@ for (const width of [390, 1440]) test(`Today account control uses the saved prof
   } finally { await fallback.ctx.close(); }
 });
 
-async function open({ width = 390, scheme = 'light', answer = day, signedIn = true, preferences, intercept, initialPath = '/', waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedCards, seedHub, blockBootstrap = false, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
-  const ctx = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: motion,
+async function open({ width = 390, deviceScaleFactor = 1, scheme = 'light', answer = day, signedIn = true, preferences, intercept, initialPath = '/', waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedCards, seedHub, blockBootstrap = false, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
+  const ctx = await browser.newContext({ viewport: { width, height: 844 }, deviceScaleFactor, colorScheme: scheme, reducedMotion: motion,
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
   if (noViewTransitions) await ctx.addInitScript(() => { delete Document.prototype.startViewTransition; });
   if (iphoneViewport) await ctx.addInitScript(() => {
@@ -1978,7 +1978,7 @@ for (const width of [320, 390, 1440]) test(`unified settings search and appearan
     const colours = page.getByRole('group', {name:'Orb colour', exact:true});
     assert.equal(await colours.isVisible(), false);
     await wallpaper.selectOption('still');
-    const canvas = page.locator('html[data-midnight-lava] .sky canvas');
+    const canvas = page.locator('html[data-midnight-lava] .sky > canvas');
     await canvas.waitFor();
     const original = await canvas.evaluate(c => c.toDataURL());
     const rendered = new Set([original]);
@@ -1987,18 +1987,18 @@ for (const width of [320, 390, 1440]) test(`unified settings search and appearan
       await colours.getByRole('radio', {name:colour,exact:true}).check();
       assert.equal(await page.locator('html').getAttribute('data-midnight-lava'), colour.toLowerCase());
       const pixels = await canvas.evaluate(c => c.toDataURL());
-      assert.equal(await page.locator('.settings-dock-preview canvas').evaluate(preview => {
+      assert.equal(await page.locator('.settings-dock-preview > canvas').evaluate(preview => {
         const expected = document.createElement('canvas');
         expected.width = preview.width;
         expected.height = preview.height;
-        expected.getContext('2d').drawImage(document.querySelector('.sky canvas'), 0, 0, expected.width, expected.height);
+        expected.getContext('2d').drawImage(document.querySelector('.sky > canvas'), 0, 0, expected.width, expected.height);
         return expected.toDataURL() === preview.toDataURL();
       }),true);
       if (colour === 'Opal') assert.equal(pixels, original, 'colour changes preserve the exact orb scene');
       else rendered.add(pixels);
     }
     assert.equal(rendered.size, 5, 'each colourway paints distinct pixels');
-    assert.ok(await page.locator('.settings-dock-preview canvas').evaluate(canvas => {
+    assert.ok(await page.locator('.settings-dock-preview > canvas').evaluate(canvas => {
       const frame = canvas.parentElement.getBoundingClientRect(), scene = canvas.getBoundingClientRect();
       const x = scene.left + scene.width * Number(canvas.style.getPropertyValue('--scene-x'));
       const y = scene.top + scene.height * Number(canvas.style.getPropertyValue('--scene-y'));
@@ -2409,13 +2409,13 @@ test('a tapped orb clears its old position and passes behind a foreground orb', 
 test('Midnight Bubbles carries the same visible scene through the app drawer, Calendar and a reload', async () => {
   const {ctx, page, errors} = await open({initialPath:'/?os=1', scheme:'dark', hubApps:{calendar:true}, viewApps:{calendar:true}});
   try {
-    await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
-    const image = () => page.locator('.sky canvas').evaluate(c => c.toDataURL());
+    await page.locator('html[data-midnight-lava] .sky > canvas').waitFor();
+    const image = () => page.locator('.sky > canvas').evaluate(c => c.toDataURL());
     await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaperColour('lagoon'));
     const first = await image();
-    await page.evaluate(() => { window.wallpaperNode = document.querySelector('.sky canvas'); });
+    await page.evaluate(() => { window.wallpaperNode = document.querySelector('.sky > canvas'); });
     async function checkVisibleScene() {
-      const sky = page.locator('.sky canvas');
+      const sky = page.locator('.sky > canvas');
       const visible = await wallpaperPixels(page);
       const expected = await sky.evaluate(c => {
         const copy = document.createElement('canvas');
@@ -2447,7 +2447,7 @@ test('Midnight Bubbles carries the same visible scene through the app drawer, Ca
     await page.waitForFunction(() => !document.documentElement.dataset.vt && !document.querySelector('.ifl-screen[class*="ifl-enter-"]'));
     await checkVisibleScene();
     await page.goto(origin + '/?os=1');
-    await page.locator('html[data-midnight-lava] .sky canvas').waitFor();
+    await page.locator('html[data-midnight-lava] .sky > canvas').waitFor();
     assert.equal(await page.locator('html').getAttribute('data-midnight-lava'), 'lagoon');
     assert.equal(await image(), first, 'same-tab navigation restores the colourway and exact still frame');
     await page.emulateMedia({colorScheme:'light'});
@@ -2456,11 +2456,11 @@ test('Midnight Bubbles carries the same visible scene through the app drawer, Ca
     assert.notEqual(lightFrame,first);
     assert.equal(await page.locator('html').getAttribute('data-midnight-lava'),'lagoon');
     await page.emulateMedia({colorScheme:'dark'});
-    await page.waitForFunction(before => document.querySelector('.sky canvas').toDataURL() === before,first);
+    await page.waitForFunction(before => document.querySelector('.sky > canvas').toDataURL() === before,first);
     await page.emulateMedia({colorScheme:'light'});
-    await page.waitForFunction(before => document.querySelector('.sky canvas').toDataURL() === before,lightFrame);
+    await page.waitForFunction(before => document.querySelector('.sky > canvas').toDataURL() === before,lightFrame);
     await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('lava'));
-    await page.waitForFunction(before => document.querySelector('.sky canvas').toDataURL() !== before, lightFrame);
+    await page.waitForFunction(before => document.querySelector('.sky > canvas').toDataURL() !== before, lightFrame);
     await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('plain'));
     assert.equal(await page.locator('html[data-midnight-lava]').count(),0);
     assert.deepEqual(errors, []);
@@ -2494,7 +2494,7 @@ test('app launch keeps exposed wallpaper pixels stationary throughout the transi
     await page.locator('.m-calendar:visible').waitFor();
 
     // With live drift enabled, returning home should animate only the feed.
-    const sky = await page.locator('.sky canvas').elementHandle();
+    const sky = await page.locator('.sky > canvas').elementHandle();
     await page.evaluate(async () => (await import('/roof/wallpaper.js')).setWallpaper('lava'));
     await page.locator('.ws-dock [data-ws-action=today]').evaluate(button => button.click());
     const returning = await page.waitForFunction(() => {
@@ -2505,15 +2505,15 @@ test('app launch keeps exposed wallpaper pixels stationary throughout the transi
       return animation;
     });
     assert.equal(await page.locator('#workspace').evaluate(n => n.getAnimations().length), 0);
-    assert.equal(await sky.evaluate(c => c === document.querySelector('.sky canvas')), true);
+    assert.equal(await sky.evaluate(c => c === document.querySelector('.sky > canvas')), true);
     await returning.evaluate(a => a.finish());
     const before = await sky.evaluate(c => c.toDataURL());
-    await page.waitForFunction(pixels => document.querySelector('.sky canvas').toDataURL() !== pixels, before);
+    await page.waitForFunction(pixels => document.querySelector('.sky > canvas').toDataURL() !== pixels, before);
   } finally { await ctx.close(); }
 });
 
-test('system glass refracts the dock edge, keeps its centre clear and follows appearance settings', async () => {
-  const {ctx, page, errors} = await open({initialPath:'/?os=1', scheme:'dark'});
+test('system glass bends a display-resolution scene at the rim and leaves the centre and foreground sharp', async () => {
+  const {ctx, page, errors} = await open({initialPath:'/?os=1', scheme:'dark', deviceScaleFactor:3});
   try {
     const dock = page.locator('.ws-dock:visible');
     await dock.waitFor();
@@ -2521,60 +2521,47 @@ test('system glass refracts the dock edge, keeps its centre clear and follows ap
       (await import('/roof/wallpaper.js')).setWallpaper('still');
       InFliteAppearance.setGlass({glass:true, glassStrength:100}, {preview:true});
     });
-    const mode = process.env.WEB_UI_BROWSER === 'webkit' ? 'wallpaper' : 'backdrop';
+    const mode = process.env.WEB_UI_BROWSER === 'webkit' ? 'artwork' : 'backdrop';
     await page.locator(`html[data-refractor="${mode}"]`).waitFor();
     const box = await dock.boundingBox();
-    // Uniform stripes make a displaced sample distinguishable from blur or a flat tint.
-    await dock.evaluate(n => {
-      n.style.setProperty('background','transparent','important');
-      n.style.setProperty('--ifl-glass-blur','blur(0px)','important');
-      for (const child of n.children) child.style.setProperty('visibility','hidden','important');
+    // Compare the same high-density artwork with and without displacement.
+    await dock.evaluate(node => {
+      node.style.setProperty('background','transparent','important');
+      node.style.setProperty('--ifl-glass-blur','blur(0px)','important');
+      for (const child of node.children) child.style.visibility = 'hidden';
     });
-    const row = await page.evaluate(async ({mode, box}) => {
-      const stripe = 'repeating-linear-gradient(90deg, #040404 0 8px, #fafafa 8px 16px)';
-      const bg = document.createElement('div');
-      Object.assign(bg.style,{position:'fixed', inset:'0', zIndex:'7', background:stripe, pointerEvents:'none'});
-      document.querySelector('.ws-dock').before(bg);
-      if (mode === 'wallpaper') {
-        const sky = document.querySelector('.sky canvas');
-        const raster = document.createElement('canvas');
-        raster.width = sky.width; raster.height = sky.height;
-        const c = raster.getContext('2d');
-        c.fillStyle = '#040404';
-        c.fillRect(0,0,raster.width,raster.height);
-        c.fillStyle = '#fafafa';
-        c.fillRect(0,0,Math.ceil((box.x + 22) * raster.width / sky.clientWidth),raster.height);
-        sky.getContext('2d').drawImage(raster,0,0);
-        (await import('/roof/refractor.js')).wallpaperFrame(sky);
-      }
-      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-      return Math.floor(box.y + box.height/2);
-    }, {mode, box});
+    const density = await page.evaluate(async () => {
+      document.querySelector('.ws-home-body').style.display = 'none';
+      const sky = document.querySelector('.sky > canvas'), scale = sky.width / sky.clientWidth;
+      const c = sky.getContext('2d');
+      c.save();
+      c.setTransform(scale,0,0,sky.height/sky.clientHeight,0,0);
+      c.fillStyle = '#181818'; c.fillRect(0,0,sky.clientWidth,sky.clientHeight);
+      c.fillStyle = '#eee';
+      for (let x=0; x<sky.clientWidth; x+=7) c.fillRect(x,0,2,sky.clientHeight);
+      c.restore();
+      (await import('/roof/refractor.js')).wallpaperFrame(sky);
+      return scale;
+    });
+    assert.ok(density > 2.9, 'the original orb artwork is painted at 3×');
+    if (mode === 'artwork') {
+      await page.waitForFunction(width => [...document.querySelectorAll('.sky .ifl-orb-lens')].some(layer =>
+        Math.abs(layer.getBoundingClientRect().width - width) < 1 && layer.firstElementChild.width >= Math.floor(width * 2.99)),box.width);
+    }
     const {PNG} = require('playwright-core/lib/utilsBundle');
     const shot = async () => {
       await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
       return PNG.sync.read(await page.screenshot());
     };
     const on = await shot();
-    // Flatten only the optics, preserving the same tint, bevel and layered controls.
-    await dock.evaluate((node, mode) => {
-      if (mode === 'backdrop') {
-        document.querySelector('#ifl-system-lens feDisplacementMap').setAttribute('scale','0');
-      } else {
-        const box = node.getBoundingClientRect(), sky = document.querySelector('.sky canvas').getBoundingClientRect();
-        // The live aligner can run between screenshots. Override the pseudo-element's
-        // crop directly so a late layout pass cannot restore the refracted measurement.
-        const styles = Array.from(document.styleSheets).find(sheet => sheet.href?.endsWith('/app.css'));
-        styles.insertRule(`.ws-dock::after { background-size: ${sky.width}px ${sky.height}px !important;
-          background-position: ${sky.left-box.left}px ${sky.top-box.top}px !important; }`, styles.cssRules.length);
-      }
-    }, mode);
-    const off = await shot();
+    if (mode === 'artwork') await page.locator('.sky .ifl-orb-lens').evaluateAll(layers => layers.forEach(n => n.style.display='none'));
+    else await page.locator('#ifl-system-lens feDisplacementMap').evaluate(n => n.setAttribute('scale','0'));
+    const off = await shot(), ratio = on.width / 390, row = Math.floor((box.y + box.height/2)*ratio);
     const diff = x => Math.abs(on.data[4*(row*on.width+x)] - off.data[4*(row*off.width+x)]);
     let bend = 0;
-    for(let i=2;i<Math.min(28,box.width/4);i++) bend += diff(Math.floor(box.x)+i);
-    assert.ok(bend > 40, 'bevel must visibly shift the striped backdrop: ' + bend);
-    assert.ok(diff(Math.floor(box.x+box.width/2)) < 5, 'centre samples the original backdrop');
+    for(let i=2; i<22*ratio; i++) bend += diff(Math.floor(box.x*ratio)+i);
+    assert.ok(bend > 200, 'the display-resolution rim bends the fine stripes: '+bend);
+    assert.ok(diff(Math.floor((box.x+box.width/2)*ratio)) < 5, 'centre samples the original backdrop');
     await page.evaluate(()=>InFliteAppearance.setGlass({glassStrength:0},{preview:true}));
     assert.equal(await page.locator('html').getAttribute('data-refractor'),null);
     await page.evaluate(()=>InFliteAppearance.cancelGlassPreview());
@@ -2638,23 +2625,26 @@ test('Bubbles drawer follows a short drag, rotates in place and releases the doc
     const x = head.x + 8, y = head.y + head.height/2;
     await page.mouse.move(x,y);
     await page.mouse.down();
-    const webkit = process.env.WEB_UI_BROWSER === 'webkit';
-    const cropY = () => drawer.evaluate(n=>parseFloat(n.style.getPropertyValue('--ifl-lens-position').split(' ')[1]));
-    const start = await cropY();
+    const before = await drawer.boundingBox();
     await page.mouse.move(x,y+24,{steps:6});
     await page.waitForFunction(()=>document.querySelector('dialog.dragging')?.style.getPropertyValue('--drag') === '24px');
-    if (webkit) await page.waitForFunction(start => {
-      const d = document.querySelector('dialog.dragging');
-      return parseFloat(d?.style.getPropertyValue('--ifl-lens-position').split(' ')[1]) < start-18;
-    },start);
+    const aligned = async () => {
+      if (process.env.WEB_UI_BROWSER === 'webkit') await page.waitForFunction(() => {
+        const box = document.querySelector('dialog[open]').getBoundingClientRect();
+        return [...document.querySelectorAll('.sky .ifl-orb-lens')].some(layer => {
+          const rect = layer.getBoundingClientRect();
+          return Math.abs(rect.x-box.x)<1 && Math.abs(rect.y-box.y)<1 && Math.abs(rect.width-box.width)<1 && Math.abs(rect.height-box.height)<1;
+        });
+      });
+    };
+    await aligned();
+    assert.ok((await drawer.boundingBox()).y > before.y+18);
     await page.mouse.up();
-    if (webkit) await page.waitForFunction(start => {
-      const d = document.querySelector('dialog[open]');
-      return Math.abs(parseFloat(d?.style.getPropertyValue('--ifl-lens-position').split(' ')[1])-start)<2;
-    },start);
+    await page.waitForFunction(top=>Math.abs(document.querySelector('dialog[open]').getBoundingClientRect().top-top)<1,before.y);
+    await aligned();
     await page.setViewportSize({width:820,height:390});
     await drawer.locator('.ifs-head h2').scrollIntoViewIfNeeded();
-    if (webkit) await page.waitForFunction(()=>parseFloat(document.querySelector('dialog[open]').style.getPropertyValue('--ifl-lens-size'))>820);
+    await aligned();
     const landscape = await drawer.locator('.ifs-head h2').boundingBox();
     await page.mouse.move(landscape.x+8,landscape.y+12);
     await page.mouse.down();
