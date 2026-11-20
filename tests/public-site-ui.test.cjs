@@ -244,7 +244,9 @@ test('public pages and contact form work without signing in, from phone to deskt
     await motion.locator('body.logo-entering').waitFor({ state: 'attached', timeout: 5000 });
     const entrance = motion.locator('.logo-entrance');
     const headerIcon = motion.locator('.about-nav .brand img');
+    const revealedSky = motion.locator('.about-sky canvas[data-painted]');
     await entrance.waitFor({ state: 'detached' });
+    await revealedSky.waitFor({ state: 'visible' });
     assert.equal(await headerIcon.evaluate(img => getComputedStyle(img).opacity), '1');
     await motion.reload({ waitUntil: 'commit' });
     await motion.locator('body.logo-entering').waitFor({ state: 'attached', timeout: 5000 });
@@ -253,6 +255,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.ok(await motion.getByRole('link', { name: 'Skip to content' }).evaluate(link => link === document.activeElement));
     assert.ok(await entrance.isHidden());
     assert.equal(await headerIcon.evaluate(img => getComputedStyle(img).opacity), '1');
+    await revealedSky.waitFor({ state: 'visible' });
     await motion.goto('about:blank');
     await motion.goto(site + '/about/#apps');
     assert.ok(await entrance.isHidden(), 'a deep link opens directly at the app picker');

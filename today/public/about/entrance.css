@@ -1,5 +1,5 @@
 .showcase-page > .logo-entrance {
-  --gather: 1.31s; --travel: .72s;
+  --gather: 1.17s; --travel: .68s; --level: .84s;
   position: fixed; inset: 0; z-index: 4;
   display: grid; place-items: center; overflow: hidden; pointer-events: none;
   animation: entrance-finish calc(var(--gather) + var(--travel)) step-end forwards;
@@ -12,107 +12,92 @@
     radial-gradient(ellipse 34vmin 29vmin at calc(50% + 13vmin) calc(50% - 6vmin), #f3968226, transparent),
     radial-gradient(ellipse 43vmin 31vmin at 50% calc(50% + 12vmin), #9992dc26, transparent),
     var(--paper);
-  animation: entrance-unveil 1.68s ease-in-out both;
+  animation: entrance-unveil .79s cubic-bezier(.37,0,.28,1) var(--level) both;
 }
 .entrance-flight {
   grid-area: 1 / 1; position: relative; z-index: 1;
-  width: min(38vmin, clamp(8.75rem, 24vmin, 13.25rem)); aspect-ratio: 1;
-  animation: entrance-lift var(--travel) cubic-bezier(.29,.53,.2,1) var(--gather) both;
+  width: min(35vmin, clamp(8.75rem, 24vmin, 14rem)); aspect-ratio: 1;
+  animation: entrance-bow var(--travel) ease-in-out var(--gather) both;
 }
 .entrance-mark {
-  width: 100%; height: 100%; position: relative;
-  animation: entrance-dock var(--travel) cubic-bezier(.5,.03,.19,1) var(--gather) both;
+  width: 100%; height: 100%; position: relative; transform-origin: 0 0;
+  animation: entrance-dock var(--travel) cubic-bezier(.43,0,.23,1) var(--gather) both;
 }
-.entrance-mark > svg, .entrance-tile img { display: block; width: 100%; height: 100%; }
-.entrance-mark > svg { overflow: visible; }
+.entrance-mark > svg, .entrance-tile {
+  display: block; width: 100%; height: 100%;
+  animation-duration: .23s; animation-delay: .90s; animation-fill-mode: both;
+}
+.entrance-mark > svg { overflow: visible; animation-name: entrance-retire; animation-timing-function: step-end; }
 .entrance-tile {
-  position: absolute; inset: 0; overflow: hidden; border-radius: 24%;
-  animation: entrance-tile .38s cubic-bezier(.2,.68,.22,1) .79s both;
+  position: absolute; inset: 0; border-radius: 24%;
+  animation-name: entrance-develop; animation-timing-function: ease-in-out;
 }
-.entrance-tile::after {
-  content: ""; position: absolute; inset: -20% -60%;
-  background: linear-gradient(115deg, transparent 38%, #fff2 47%, #fff4 50%, transparent 60%);
-  animation: entrance-glint .42s ease-in-out .92s both;
-}
-.entrance-core, .entrance-halo {
+.entrance-weave, .entrance-core, .entrance-halo, .entrance-ground {
   transform-box: view-box; transform-origin: center;
 }
-.entrance-core { animation: entrance-sun 1.02s ease-in-out both; }
-.entrance-halo { animation: entrance-bloom 1.23s ease-in-out both; }
-.entrance-ribbon { animation: entrance-fold .87s linear var(--delay) both; }
-.ribbon-blue { stroke: #61aaff; --delay: 0s; }
-.ribbon-coral { stroke: #ff926d; --delay: .045s; }
-.ribbon-teal { stroke: #50d9cb; --delay: .015s; }
-.ribbon-violet { stroke: #a08aff; --delay: .065s; }
+.entrance-ground { animation: entrance-ground .56s cubic-bezier(.38,0,.23,1) .51s both; }
+.entrance-weave { animation: entrance-level var(--level) cubic-bezier(.34,.12,.23,1) both; }
+.entrance-core { animation: entrance-sun .88s cubic-bezier(.35,.12,.26,1) both; }
+.entrance-halo { animation: entrance-bloom 1.14s ease-in-out both; }
+.entrance-ribbon { animation: entrance-fold var(--fold-time) cubic-bezier(.34,.12,.27,1) both; }
+.ribbon-blue { stroke: #61aaff; --fold-time: .90s; }
+.ribbon-coral { stroke: #ff926d; --fold-time: .95s; }
+.ribbon-teal { stroke: #50d9cb; --fold-time: .92s; }
+.ribbon-violet { stroke: #a08aff; --fold-time: .97s; }
 @media (prefers-color-scheme: light) {
   .ribbon-blue { stroke: #448cea; }
   .ribbon-coral { stroke: #ed7355; }
   .ribbon-teal { stroke: #24aeac; }
   .ribbon-violet { stroke: #896cdd; }
 }
-.entrance-spark {
-  transform-box: fill-box; transform-origin: center;
-  animation: entrance-spark .4s ease-out .62s both;
+.entrance-catchlight { animation: entrance-glint .46s cubic-bezier(.32,.1,.33,1) .54s both; }
+.entrance-seam {
+  stroke-dasharray: 27 73;
+  animation: entrance-seal .51s ease-in-out .61s both;
 }
-.entrance-seam { animation: entrance-seal .65s cubic-bezier(.25,.65,.22,1) .63s both; }
-.logo-entering .logo-entrance { --land-opacity: 1; }
+.logo-entering .logo-entrance { --land-opacity: 1; --drawing-at-rest: hidden; }
 .logo-entering .about-nav .brand > img { opacity: 0; }
-.logo-entering .intro-line .intro-phrase { animation-delay: .83s; }
-.logo-entering .intro-line:nth-child(2) .intro-phrase { animation-delay: .93s; }
-.logo-entering .intro-copy p, .logo-entering .intro-copy .explore { animation-delay: .99s; }
-.logo-entering .introduction .product-preview { animation-delay: .73s; }
+:root:not(:has(:target), :focus-within) .logo-entrance + main {
+  .intro-line .intro-phrase { animation-delay: .92s; }
+  .intro-line:nth-child(2) .intro-phrase { animation-delay: 1.01s; }
+  .intro-copy p, .intro-copy .explore { animation-delay: 1.08s; }
+  .introduction .product-preview { animation-delay: .82s; }
+}
 
 /* The last 148 units of the curve, with a 164-unit round stroke, are the logo's capsule. */
 @keyframes entrance-fold {
-  from {
-    stroke-dasharray: 1540 3000; stroke-dashoffset: 0; stroke-width: 128;
-    animation-timing-function: cubic-bezier(.31,.2,.66,.6);
-  }
-  42% {
-    stroke-dasharray: 1110 3000; stroke-dashoffset: -950; stroke-width: 145;
-    animation-timing-function: cubic-bezier(.25,.32,.69,.86);
-  }
-  78% {
-    stroke-dasharray: 295 3000; stroke-dashoffset: -2190; stroke-width: 157;
-    animation-timing-function: cubic-bezier(.18,.55,.31,1);
-  }
-  94% { stroke-dasharray: 148 3000; stroke-dashoffset: -2380; stroke-width: 169; }
+  from { stroke-dasharray: 1540 3000; stroke-dashoffset: 0; stroke-width: 128; }
   to { stroke-dasharray: 148 3000; stroke-dashoffset: -2380; stroke-width: 164; }
 }
-@keyframes entrance-sun {
-  from { transform: scale(.48); }
-  40% { transform: scale(1); }
-  65% { transform: scale(.78); }
-  84% { transform: scale(1.14); }
-  to { transform: scale(1); }
+@keyframes entrance-level {
+  from { transform: rotate(-19deg) scaleY(.82); }
+  to { transform: rotate(0deg) scaleY(1); }
 }
+@keyframes entrance-sun { from { transform: scale(.45); } to { transform: scale(1); } }
 @keyframes entrance-bloom {
-  from { opacity: .58; transform: scale(.7); }
-  47% { opacity: .45; transform: scale(.45); }
-  68% { opacity: .95; transform: scale(.97); }
-  to { opacity: 0; transform: scale(1.62); }
+  from { opacity: .43; transform: scale(.62); }
+  57% { opacity: .73; transform: scale(.94); }
+  to { opacity: 0; transform: scale(1.27); }
 }
-@keyframes entrance-spark {
-  from { opacity: 0; transform: scale(.12); }
-  43% { opacity: .95; transform: scale(1); }
-  to { opacity: 0; transform: scale(1.15, .2); }
-}
+@keyframes entrance-glint { from { transform: translateX(-154px); } to { transform: translateX(182px); } }
 @keyframes entrance-seal {
-  from { opacity: 0; stroke-dasharray: 0 50; stroke-dashoffset: 12; }
-  20% { opacity: .9; }
-  77% { opacity: .9; stroke-dasharray: 50 0; stroke-dashoffset: 0; }
-  to { opacity: 0; stroke-dasharray: 50 0; stroke-dashoffset: 0; }
+  from { opacity: 0; stroke-dashoffset: 26; }
+  43% { opacity: .82; }
+  to { opacity: 0; stroke-dashoffset: -41; }
 }
-@keyframes entrance-tile {
-  from { opacity: 0; clip-path: inset(40% round 50%); }
-  25% { opacity: 1; }
-  to { opacity: 1; clip-path: inset(0% round 24%); }
+@keyframes entrance-ground {
+  from { opacity: 0; transform: scale(.88); }
+  to { opacity: 1; transform: scale(1); }
 }
-@keyframes entrance-glint { from { transform: translateX(-75%); } to { transform: translateX(75%); } }
-@keyframes entrance-unveil { 0%, 58% { opacity: 1; } to { opacity: 0; } }
+@keyframes entrance-develop { from { opacity: 0; } to { opacity: 1; } }
+@keyframes entrance-retire { to { visibility: var(--drawing-at-rest, visible); } }
+@keyframes entrance-unveil { from { opacity: 1; } to { opacity: 0; } }
 @keyframes entrance-finish { to { visibility: hidden; } }
-@keyframes entrance-lift { from { transform: none; } to { transform: translateY(var(--land-y, 0px)); } }
+@keyframes entrance-bow {
+  from, to { transform: translateY(0); }
+  40% { transform: translateY(calc(var(--land-y, 0px) * .075)); }
+}
 @keyframes entrance-dock {
-  from { transform: none; opacity: 1; }
-  to { transform: translateX(var(--land-x, 0px)) scale(var(--land-scale, 1)); opacity: var(--land-opacity, 0); }
+  from { transform: translate(0, 0) scale(1); opacity: 1; }
+  to { transform: translate(var(--land-x, 0px), var(--land-y, 0px)) scale(var(--land-scale, 1)); opacity: var(--land-opacity, 0); }
 }

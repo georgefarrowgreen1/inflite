@@ -27,20 +27,30 @@ function playLogoEntrance() {
   requestAnimationFrame(() => {
     if (lifetime.signal.aborted) return;
     const mark = scene.querySelector(".entrance-mark");
-    const from = mark.getBoundingClientRect();
-    const to = logo.getBoundingClientRect();
-    const [landing] = mark.getAnimations();
-    if (!landing || !from.width || !to.width) {
+    const landing = mark.getAnimations().find(animation => animation.animationName === "entrance-dock");
+    if (!landing) {
       dismiss();
       return;
     }
     landing.finished.then(dismiss, dismiss);
-    // CSS starts on the first paint. A late script can let the mark finish fading in place.
-    if (landing.currentTime >= landing.effect.getTiming().delay) return;
-    scene.style.setProperty("--land-x", `${to.x + to.width / 2 - from.x - from.width / 2}px`);
-    scene.style.setProperty("--land-y", `${to.y + to.height / 2 - from.y - from.height / 2}px`);
-    scene.style.setProperty("--land-scale", String(to.width / from.width));
-    document.body.classList.add("logo-entering");
+    function aimAtHeader() {
+      // CSS starts on first paint. A late image or script lets the drawing fade in place.
+      if (landing.currentTime >= landing.effect.getTiming().delay) return;
+      const from = mark.getBoundingClientRect();
+      const to = logo.getBoundingClientRect();
+      if (!from.width || !to.width) return;
+      const dx = to.left - from.left;
+      const dy = to.top - from.top;
+      const distance = Math.hypot(dx + (to.width - from.width) / 2, dy + (to.height - from.height) / 2);
+      const travel = Math.round(Math.min(760, Math.max(510, 420 + .44 * distance)));
+      scene.style.setProperty("--land-x", `${dx}px`);
+      scene.style.setProperty("--land-y", `${dy}px`);
+      scene.style.setProperty("--land-scale", String(to.width / from.width));
+      scene.style.setProperty("--travel", `${travel}ms`);
+      document.body.classList.add("logo-entering");
+    }
+    if (logo.complete) aimAtHeader();
+    else logo.addEventListener("load", aimAtHeader, { once: true, signal: lifetime.signal });
   });
 }
 

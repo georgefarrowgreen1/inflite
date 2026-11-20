@@ -15,6 +15,12 @@ if (context) {
   const setMotion = bubbleMotion(canvas, paint);
   let suspended = false;
   let inView = true;
+  // The opening is opaque while the ribbons turn. A skipped opening cancels this animation.
+  let formingLogo = document.querySelector(".entrance-weave")?.getAnimations?.()[0];
+  if (formingLogo) {
+    const revealSky = () => { formingLogo = null; sync(); };
+    formingLogo.finished.then(revealSky, revealSky);
+  }
 
   function paint(dt, pointer, live) {
     const width = canvas.clientWidth, height = canvas.clientHeight;
@@ -36,7 +42,7 @@ if (context) {
   }
 
   function sync() {
-    const visible = inView && !document.hidden && !suspended && !solid.matches;
+    const visible = !formingLogo && inView && !document.hidden && !suspended && !solid.matches;
     setMotion(visible ? (reduce.matches ? "still" : "live") : "off");
   }
 

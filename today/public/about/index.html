@@ -62,7 +62,18 @@
               <stop offset=".49" stop-color="#fff" stop-opacity=".06"/>
               <stop offset=".66" stop-color="#fff" stop-opacity=".76"/>
               <stop offset=".77" stop-color="#fff" stop-opacity=".2"/>
-              <stop offset="1" stop-color="#1e254d" stop-opacity=".12"/>
+              <stop offset="1" stop-color="#182b4f" stop-opacity=".29"/>
+            </linearGradient>
+            <linearGradient id="entrance-face" gradientUnits="userSpaceOnUse" x1="-630" y1="-985" x2="0" y2="-270">
+              <stop stop-color="#fff" stop-opacity=".46"/><stop offset=".66" stop-color="#fff" stop-opacity=".2"/>
+              <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="entrance-glint">
+              <stop stop-color="#fff7d6" stop-opacity="0"/><stop offset=".62" stop-color="#fff7d6" stop-opacity=".78"/>
+              <stop offset="1" stop-color="#fff7d6" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="entrance-enamel" x2="0" y2="1">
+              <stop stop-color="#2e3a70"/><stop offset="1" stop-color="#141938"/>
             </linearGradient>
             <linearGradient id="entrance-rim" x2="1" y2="1">
               <stop stop-color="#79b9ff"/><stop offset=".34" stop-color="#d1b3ff"/>
@@ -80,33 +91,38 @@
               <path d="M-1400 -155 C-1170 -670 -865 -848 -591 -968 C-403 -1046 -274 -961 -192 -996
                 C82 -911 23 -562 14 -365 L11 -47 H320 V-1360 H-1550Z"/>
             </clipPath>
-            <g id="entrance-strand" fill="none" stroke-linecap="round">
-              <use href="#entrance-curve" x="-40" y="35" stroke-width="5" opacity=".45"/>
-              <g clip-path="url(#entrance-ribbon-shape)">
-                <use href="#entrance-curve"/>
-                <use href="#entrance-curve" stroke="url(#entrance-reflection)"/>
-                <use href="#entrance-curve" stroke="#fff" opacity=".28" clip-path="url(#entrance-ribbon-face)"/>
-              </g>
+            <g id="entrance-strand" fill="none" stroke-linecap="round" clip-path="url(#entrance-ribbon-shape)">
+              <use href="#entrance-curve"/>
+              <use href="#entrance-curve" stroke="url(#entrance-reflection)"/>
+              <use href="#entrance-curve" stroke="url(#entrance-face)" clip-path="url(#entrance-ribbon-face)"/>
             </g>
           </defs>
           <circle class="entrance-halo" cx="512" cy="512" r="595" fill="url(#entrance-gold-light)"/>
-          <g transform="translate(512 512)">
-            <use class="entrance-ribbon ribbon-blue" href="#entrance-strand" transform="rotate(-45)"/>
-            <use class="entrance-ribbon ribbon-coral" href="#entrance-strand" transform="rotate(45)"/>
-            <use class="entrance-ribbon ribbon-teal" href="#entrance-strand" transform="rotate(135)"/>
-            <use class="entrance-ribbon ribbon-violet" href="#entrance-strand" transform="rotate(225)"/>
+          <g class="entrance-ground">
+            <rect width="1024" height="1024" rx="246" fill="url(#entrance-enamel)"/>
+            <circle cx="512" cy="512" r="420" fill="url(#entrance-gold-light)" opacity=".24"/>
+            <rect class="entrance-seam" x="4" y="4" width="1016" height="1016" rx="242" pathLength="100"
+              fill="none" stroke="url(#entrance-rim)" stroke-width="7" stroke-linecap="round"/>
+          </g>
+          <g class="entrance-weave">
+            <g transform="translate(512 512)">
+              <use class="entrance-ribbon ribbon-blue" href="#entrance-strand" transform="rotate(-45)"/>
+              <use class="entrance-ribbon ribbon-coral" href="#entrance-strand" transform="rotate(45)"/>
+              <use class="entrance-ribbon ribbon-teal" href="#entrance-strand" transform="rotate(135)"/>
+              <use class="entrance-ribbon ribbon-violet" href="#entrance-strand" transform="rotate(225)"/>
+            </g>
           </g>
           <g class="entrance-core">
             <circle cx="512" cy="512" r="103" fill="#ffca40"/>
             <use href="#entrance-art" clip-path="url(#slice-gold)"/>
+            <g clip-path="url(#slice-gold)">
+              <g transform="rotate(24 512 512)">
+                <rect class="entrance-catchlight" x="454" y="395" width="92" height="234" fill="url(#entrance-glint)"/>
+              </g>
+            </g>
           </g>
-          <g transform="translate(493 486) rotate(-16)">
-            <path class="entrance-spark" fill="#fff5c8" d="M-267 0 Q-16 -5 0 -82 Q11 -5 267 0 Q13 5 0 82 Q-9 6 -267 0Z"/>
-          </g>
-          <rect class="entrance-seam" x="-5" y="-5" width="1034" height="1034" rx="251" pathLength="100"
-            fill="none" stroke="url(#entrance-rim)" stroke-width="8" stroke-linecap="round"/>
         </svg>
-        <div class="entrance-tile"><img src="/inflite.svg" width="128" height="128" alt=""></div>
+        <img class="entrance-tile" src="/inflite.svg" width="128" height="128" alt="">
       </div>
     </div>
   </div>
