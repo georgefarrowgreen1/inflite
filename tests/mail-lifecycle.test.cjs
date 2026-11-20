@@ -15,7 +15,6 @@ const fixtures = {
   'actions.js': `export const createActions = () => ({ async load() {}, async counts() {} });`,
   'list.js': `export function view(el, ctx) { trial.ctx = ctx; return { draw() {}, hide() {}, destroy() {}, swiping() { return false; } }; }`,
   'reader.js': `export const view = () => ({ draw() {}, hide() {}, destroy() {} });`,
-  'menus.js': `export const openViews = () => {}, openLater = () => {}, openRowMenu = () => {}, openUnsub = () => {}, confirm = () => {};`,
   'outbox.js': `export const createOutbox = () => ({ unsent: () => JSON.parse(localStorage.getItem('mail:unsent') || 'null'), flush(options) { trial.flushes.push(options || {}); return Promise.resolve({ lost: false }); }, destroy() { ++trial.outboxDestroyed; } });`,
   'compose.js': `export function openCompose(ctx, init) { trial.opened.push(['compose', init]); return 'compose'; }`,
   'mailsettings.js': `export function openSettings(ctx, page) { trial.opened.push(['settings', page]); return 'settings'; }`,
