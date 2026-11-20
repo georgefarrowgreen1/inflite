@@ -107,6 +107,13 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.equal(await tab('Mail').getAttribute('aria-selected'), 'true');
     await page.keyboard.press('Home');
     assert.equal(await tab('Today').getAttribute('aria-selected'), 'true');
+    const story = page.getByRole('region', { name: 'Take the scenic route.' });
+    assert.equal(await story.getByRole('link', { name: 'Explore cycling routes' }).getAttribute('href'), '/fitness/#routes');
+    const landscape = story.locator('.story-landscape');
+    await landscape.scrollIntoViewIfNeeded();
+    await landscape.evaluate(image => image.decode());
+    assert.ok(await landscape.evaluate(image => image.currentSrc.endsWith('/about/gravel-lane-small.webp')));
+    assert.equal(await landscape.evaluate(image => image.getAnimations().length), 0, 'reduced motion keeps the landscape still');
     assert.equal(await page.locator('body').evaluate(body => getComputedStyle(body).getPropertyValue('-webkit-user-select') || getComputedStyle(body).userSelect), 'none');
     assert.equal(await page.locator('form').count(), 0);
     assert.equal(await page.locator('.wallpaper-controls, .privacy-feature').count(), 0);

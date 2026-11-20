@@ -6,30 +6,66 @@ if (dock) {
   const scenes = tabs.map(tab => document.getElementById(tab.getAttribute("aria-controls")));
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   let active = 0;
-  let entrance;
+  let handoff;
+
+  function clearHandoff() {
+    if (!handoff) return;
+    const { previous, next, exit, entry } = handoff;
+    handoff = null;
+    delete previous.dataset.previewExiting;
+    delete next.dataset.previewEntering;
+    exit.cancel();
+    entry.cancel();
+  }
+
+  function animateHandoff(previous, next, direction, from) {
+    previous.dataset.previewExiting = "";
+    next.dataset.previewEntering = "";
+    const exit = previous.animate([
+      from,
+      { opacity: 0, transform: `translateX(${-direction * 15}px) scale(.975)` }
+    ], { duration: 245, easing: "cubic-bezier(.4,0,.3,1)", fill: "forwards" });
+    const entry = next.animate([
+      { opacity: .12, transform: `translateX(${direction * 18}px) scale(.985)` },
+      { opacity: 1, transform: "translateX(0) scale(1)" }
+    ], { duration: 470, easing: "cubic-bezier(.19,.78,.23,1)" });
+    const pair = handoff = { previous, next, exit, entry };
+    exit.onfinish = () => {
+      if (handoff === pair) delete previous.dataset.previewExiting;
+    };
+    entry.onfinish = () => {
+      if (handoff === pair) clearHandoff();
+    };
+  }
+
+  function show(scene, visible) {
+    scene.hidden = !visible;
+    scene.inert = !visible;
+    scene.tabIndex = visible ? 0 : -1;
+    if (visible) scene.removeAttribute("aria-hidden");
+    else scene.setAttribute("aria-hidden", "true");
+  }
 
   function select(index, focus = false) {
     const tab = tabs[index];
     if (index !== active) {
-      const forward = index > active;
-      entrance?.cancel();
-      scenes[active].hidden = true;
+      const direction = index > active ? 1 : -1;
+      const previous = scenes[active], next = scenes[index];
+      const animate = !reduced.matches && typeof next.animate === "function";
+      // Capture the panel as it is if another press interrupts its entrance.
+      const style = animate && handoff ? getComputedStyle(previous) : null;
+      const from = style ? { transform: style.transform, opacity: style.opacity } : { transform: "none", opacity: 1 };
+      clearHandoff();
+      if (previous.contains(document.activeElement)) tab.focus({ preventScroll: true });
+      show(previous, false);
       tabs[active].setAttribute("aria-selected", "false");
       tabs[active].tabIndex = -1;
-
-      const scene = scenes[index];
-      scene.hidden = false;
+      show(next, true);
       tab.setAttribute("aria-selected", "true");
       tab.tabIndex = 0;
       active = index;
-      preview.dataset.previewApp = scene.id.slice("preview-".length);
-
-      if (!reduced.matches) {
-        entrance = scene.animate([
-          { opacity: .43, transform: `translate3d(${forward ? 12 : -12}px, 3px, 0)` },
-          { opacity: 1, transform: "translate3d(0, 0, 0)" }
-        ], { duration: 375, easing: "cubic-bezier(.2,.75,.23,1)" });
-      }
+      preview.dataset.previewApp = next.id.slice("preview-".length);
+      if (animate) animateHandoff(previous, next, direction, from);
     }
     if (focus) tab.focus({ preventScroll: true });
   }
@@ -39,7 +75,7 @@ if (dock) {
     scene.setAttribute("role", "tabpanel");
     scene.setAttribute("aria-labelledby", tab.id);
     scene.removeAttribute("aria-label");
-    scene.tabIndex = 0;
+    show(scene, index === active);
     tab.addEventListener("click", () => select(index));
   });
 
@@ -59,7 +95,8 @@ if (dock) {
   });
 
   reduced.addEventListener("change", () => {
-    if (reduced.matches) entrance?.cancel();
+    if (reduced.matches) clearHandoff();
   });
+  preview.dataset.previewReady = "";
   dock.hidden = false;
 }

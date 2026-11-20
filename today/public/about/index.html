@@ -25,7 +25,7 @@
   <link rel="modulepreload" href="/roof/bubbles.js?about">
   <script type="module" src="/about/bubbles.js"></script>
 </head>
-<body class="about-page">
+<body class="about-page showcase-page">
   <div class="about-sky" aria-hidden="true"><canvas></canvas></div>
   <a class="skip" href="#main">Skip to content</a>
   <header class="about-header">
@@ -42,119 +42,149 @@
   <main id="main">
     <section class="about-frame introduction" aria-labelledby="intro-title">
       <div class="intro-copy">
-        <h1 id="intro-title">Make room<br><span>for your day.</span></h1>
+        <h1 id="intro-title">
+          <span class="intro-line"><span class="intro-phrase">Make room</span></span>
+          <span class="intro-line"><em class="intro-phrase">for your day.</em></span>
+        </h1>
         <p class="intro-description">See what’s ahead in Today, then move between your plans, conversations and favourite apps.</p>
         <a class="explore" href="#apps"><span aria-hidden="true">↓</span> Explore the apps</a>
       </div>
-      <div class="product-preview" data-preview-app="today" role="group" aria-label="InFlite product preview">
-        <div class="preview-topline">
-          <span class="preview-window-brand"><img src="/inflite.svg" width="24" height="24" alt="">InFlite</span>
-          <span class="preview-caption">Preview <span aria-hidden="true">·</span> Sample data</span>
+      <div class="hero-product">
+        <div class="product-preview" data-preview-app="today" role="group" aria-label="InFlite product preview">
+          <div class="preview-topline">
+            <span class="preview-window-brand"><img src="/inflite.svg" width="24" height="24" alt="">InFlite</span>
+            <span class="preview-caption">Preview <span aria-hidden="true">·</span> Sample data</span>
+          </div>
+          <div class="preview-deck">
+            <section class="preview-scene" id="preview-today" aria-label="Today">
+              <header class="preview-heading">
+                <p class="preview-kicker">Today <span aria-hidden="true">·</span> Tuesday, 17 November</p>
+                <h2>Good morning.</h2>
+              </header>
+              <div class="preview-feature preview-weather-card">
+                <div class="preview-feature-copy">
+                  <p class="preview-feature-label">Norwich <span aria-hidden="true">·</span> Now</p>
+                  <p class="preview-feature-value">14° <span>Bright intervals</span></p>
+                  <p class="preview-detail">Dry through 14:00</p>
+                </div>
+                <img class="preview-feature-icon" src="/apps/weather.svg" width="60" height="60" alt="">
+              </div>
+              <div class="preview-items">
+                <div class="preview-item">
+                  <img src="/apps/calendar.svg" width="28" height="28" alt="">
+                  <div><span>11:00</span><strong>Design review</strong></div>
+                </div>
+                <div class="preview-item">
+                  <img src="/apps/mail.svg" width="28" height="28" alt="">
+                  <div><span>Mail</span><strong>2 unread</strong></div>
+                </div>
+              </div>
+            </section>
+            <section class="preview-scene" id="preview-weather" aria-label="Weather" hidden>
+              <header class="preview-heading">
+                <p class="preview-kicker">Weather <span aria-hidden="true">·</span> Tuesday, 17 November</p>
+                <h2>Norwich</h2>
+              </header>
+              <div class="preview-feature preview-weather-card">
+                <div class="preview-feature-copy">
+                  <p class="preview-feature-label">Current conditions</p>
+                  <p class="preview-feature-value">14° <span>Bright intervals</span></p>
+                  <p class="preview-detail">High 16° <span aria-hidden="true">·</span> Low 9°</p>
+                </div>
+                <img class="preview-feature-icon" src="/apps/weather.svg" width="60" height="60" alt="">
+              </div>
+              <dl class="preview-items preview-numbers" aria-label="Hourly forecast">
+                <div class="preview-item"><dt>Now</dt><dd>14°</dd></div>
+                <div class="preview-item"><dt>12:00</dt><dd>15°</dd></div>
+                <div class="preview-item"><dt>14:00</dt><dd>16°</dd></div>
+              </dl>
+            </section>
+            <section class="preview-scene" id="preview-fitness" aria-label="Fitness" hidden>
+              <header class="preview-heading">
+                <p class="preview-kicker">Fitness <span aria-hidden="true">·</span> Cycling</p>
+                <h2>Ride overview</h2>
+              </header>
+              <div class="preview-feature preview-ride-card">
+                <div class="preview-feature-copy">
+                  <p class="preview-feature-label">Morning ride</p>
+                  <p class="preview-feature-value">28.4 <span>km</span></p>
+                  <p class="preview-detail">Distance</p>
+                </div>
+                <img class="preview-feature-icon" src="/apps/fitness.svg" width="60" height="60" alt="">
+              </div>
+              <dl class="preview-items preview-numbers" aria-label="Ride statistics">
+                <div class="preview-item"><dt>Moving time</dt><dd>1h 18m</dd></div>
+                <div class="preview-item"><dt>Climbing</dt><dd>245 m</dd></div>
+              </dl>
+            </section>
+            <section class="preview-scene" id="preview-mail" aria-label="Mail" hidden>
+              <header class="preview-heading">
+                <p class="preview-kicker">Mail <span aria-hidden="true">·</span> 2 unread</p>
+                <h2>People</h2>
+              </header>
+              <div class="preview-feature preview-inbox">
+                <div class="preview-mail-row">
+                  <span class="preview-avatar" aria-hidden="true">A</span>
+                  <div><span>Alex</span><strong>Weekend ride</strong></div>
+                  <span class="preview-mail-time">09:42</span>
+                </div>
+                <div class="preview-mail-row">
+                  <span class="preview-avatar preview-avatar-cool" aria-hidden="true">S</span>
+                  <div><span>Sam</span><strong>Design review</strong></div>
+                  <span class="preview-mail-time">08:56</span>
+                </div>
+              </div>
+              <div class="preview-items">
+                <div class="preview-item">
+                  <img src="/apps/mail.svg" width="28" height="28" alt="">
+                  <div><span>Later</span><strong>1 follow-up</strong></div>
+                </div>
+                <div class="preview-item">
+                  <img src="/apps/people.svg" width="28" height="28" alt="">
+                  <div><span>People</span><strong>2 senders</strong></div>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div class="preview-dock" role="tablist" aria-label="Preview apps" hidden>
+            <button class="preview-tab" id="preview-tab-today" type="button" role="tab" aria-selected="true" aria-controls="preview-today">
+              <img src="/inflite.svg" width="30" height="30" alt="">Today
+            </button>
+            <button class="preview-tab" id="preview-tab-weather" type="button" role="tab" aria-selected="false" aria-controls="preview-weather" tabindex="-1">
+              <img src="/apps/weather.svg" width="30" height="30" alt="">Weather
+            </button>
+            <button class="preview-tab" id="preview-tab-fitness" type="button" role="tab" aria-selected="false" aria-controls="preview-fitness" tabindex="-1">
+              <img src="/apps/fitness.svg" width="30" height="30" alt="">Fitness
+            </button>
+            <button class="preview-tab" id="preview-tab-mail" type="button" role="tab" aria-selected="false" aria-controls="preview-mail" tabindex="-1">
+              <img src="/apps/mail.svg" width="30" height="30" alt="">Mail
+            </button>
+          </div>
         </div>
-        <div class="preview-deck">
-          <section class="preview-scene" id="preview-today" aria-label="Today">
-            <header class="preview-heading">
-              <p class="preview-kicker">Today <span aria-hidden="true">·</span> Tuesday, 17 November</p>
-              <h2>Good morning.</h2>
-            </header>
-            <div class="preview-feature preview-weather-card">
-              <div class="preview-feature-copy">
-                <p class="preview-feature-label">Norwich <span aria-hidden="true">·</span> Now</p>
-                <p class="preview-feature-value">14° <span>Bright intervals</span></p>
-                <p class="preview-detail">Dry through 14:00</p>
-              </div>
-              <img class="preview-feature-icon" src="/apps/weather.svg" width="60" height="60" alt="">
-            </div>
-            <div class="preview-items">
-              <div class="preview-item">
-                <img src="/apps/calendar.svg" width="28" height="28" alt="">
-                <div><span>11:00</span><strong>Design review</strong></div>
-              </div>
-              <div class="preview-item">
-                <img src="/apps/mail.svg" width="28" height="28" alt="">
-                <div><span>Mail</span><strong>2 unread</strong></div>
-              </div>
-            </div>
-          </section>
-          <section class="preview-scene" id="preview-weather" aria-label="Weather" hidden>
-            <header class="preview-heading">
-              <p class="preview-kicker">Weather <span aria-hidden="true">·</span> Tuesday, 17 November</p>
-              <h2>Norwich</h2>
-            </header>
-            <div class="preview-feature preview-weather-card">
-              <div class="preview-feature-copy">
-                <p class="preview-feature-label">Current conditions</p>
-                <p class="preview-feature-value">14° <span>Bright intervals</span></p>
-                <p class="preview-detail">High 16° <span aria-hidden="true">·</span> Low 9°</p>
-              </div>
-              <img class="preview-feature-icon" src="/apps/weather.svg" width="60" height="60" alt="">
-            </div>
-            <dl class="preview-items preview-numbers" aria-label="Hourly forecast">
-              <div class="preview-item"><dt>Now</dt><dd>14°</dd></div>
-              <div class="preview-item"><dt>12:00</dt><dd>15°</dd></div>
-              <div class="preview-item"><dt>14:00</dt><dd>16°</dd></div>
-            </dl>
-          </section>
-          <section class="preview-scene" id="preview-fitness" aria-label="Fitness" hidden>
-            <header class="preview-heading">
-              <p class="preview-kicker">Fitness <span aria-hidden="true">·</span> Cycling</p>
-              <h2>Ride overview</h2>
-            </header>
-            <div class="preview-feature preview-ride-card">
-              <div class="preview-feature-copy">
-                <p class="preview-feature-label">Morning ride</p>
-                <p class="preview-feature-value">28.4 <span>km</span></p>
-                <p class="preview-detail">Distance</p>
-              </div>
-              <img class="preview-feature-icon" src="/apps/fitness.svg" width="60" height="60" alt="">
-            </div>
-            <dl class="preview-items preview-numbers" aria-label="Ride statistics">
-              <div class="preview-item"><dt>Moving time</dt><dd>1h 18m</dd></div>
-              <div class="preview-item"><dt>Climbing</dt><dd>245 m</dd></div>
-            </dl>
-          </section>
-          <section class="preview-scene" id="preview-mail" aria-label="Mail" hidden>
-            <header class="preview-heading">
-              <p class="preview-kicker">Mail <span aria-hidden="true">·</span> 2 unread</p>
-              <h2>People</h2>
-            </header>
-            <div class="preview-feature preview-inbox">
-              <div class="preview-mail-row">
-                <span class="preview-avatar" aria-hidden="true">A</span>
-                <div><span>Alex</span><strong>Weekend ride</strong></div>
-                <span class="preview-mail-time">09:42</span>
-              </div>
-              <div class="preview-mail-row">
-                <span class="preview-avatar preview-avatar-cool" aria-hidden="true">S</span>
-                <div><span>Sam</span><strong>Design review</strong></div>
-                <span class="preview-mail-time">08:56</span>
-              </div>
-            </div>
-            <div class="preview-items">
-              <div class="preview-item">
-                <img src="/apps/mail.svg" width="28" height="28" alt="">
-                <div><span>Later</span><strong>1 follow-up</strong></div>
-              </div>
-              <div class="preview-item">
-                <img src="/apps/people.svg" width="28" height="28" alt="">
-                <div><span>People</span><strong>2 senders</strong></div>
-              </div>
-            </div>
-          </section>
+      </div>
+    </section>
+
+    <section class="day-story" aria-labelledby="story-title">
+      <div class="about-frame story-layout">
+        <div class="story-copy" data-reveal>
+          <h2 id="story-title">Take the <em>scenic route.</em></h2>
+          <p>Find a clear window in Weather, then plan a road, gravel or mountain bike loop in Fitness.</p>
+          <a class="story-link" href="/fitness/#routes">Explore cycling routes <span aria-hidden="true">→</span></a>
         </div>
-        <div class="preview-dock" role="tablist" aria-label="Preview apps" hidden>
-          <button class="preview-tab" id="preview-tab-today" type="button" role="tab" aria-selected="true" aria-controls="preview-today">
-            <img src="/inflite.svg" width="30" height="30" alt="">Today
-          </button>
-          <button class="preview-tab" id="preview-tab-weather" type="button" role="tab" aria-selected="false" aria-controls="preview-weather" tabindex="-1">
-            <img src="/apps/weather.svg" width="30" height="30" alt="">Weather
-          </button>
-          <button class="preview-tab" id="preview-tab-fitness" type="button" role="tab" aria-selected="false" aria-controls="preview-fitness" tabindex="-1">
-            <img src="/apps/fitness.svg" width="30" height="30" alt="">Fitness
-          </button>
-          <button class="preview-tab" id="preview-tab-mail" type="button" role="tab" aria-selected="false" aria-controls="preview-mail" tabindex="-1">
-            <img src="/apps/mail.svg" width="30" height="30" alt="">Mail
-          </button>
+        <div class="story-media" data-reveal="story">
+          <img class="story-landscape" src="/about/gravel-lane.webp" srcset="/about/gravel-lane-small.webp 680w, /about/gravel-lane.webp 1200w"
+            sizes="(max-width: 690px) calc(100vw - 32px), 55vw" width="1200" height="751" alt="" loading="lazy" decoding="async">
+          <div class="story-cards" role="group" aria-label="Example ride planning">
+            <div class="story-card">
+              <img src="/apps/weather.svg" width="36" height="36" alt="" loading="lazy">
+              <div><span>Weather</span><strong>Dry until 14:00</strong></div>
+            </div>
+            <span class="story-connection" aria-hidden="true"><span></span></span>
+            <div class="story-card">
+              <img src="/apps/fitness.svg" width="36" height="36" alt="" loading="lazy">
+              <div><span>Fitness</span><strong>40 km gravel loop</strong></div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
