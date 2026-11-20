@@ -1,6 +1,10 @@
 export function connectContactForm(form, lifetime) {
   const statusLine = form.querySelector('[role="status"]');
   const submit = form.querySelector('button[type="submit"]');
+  const report = (state, message) => {
+    statusLine.dataset.state = state;
+    statusLine.textContent = message;
+  };
   let attempt;
   form.hidden = false;
   form.addEventListener('submit', async event => {
@@ -12,7 +16,7 @@ export function connectContactForm(form, lifetime) {
     const doc = form.ownerDocument;
     const restoreFocus = doc.activeElement === submit;
     submit.disabled = true;
-    statusLine.textContent = 'Sending your message…';
+    report('sending', 'Sending your message…');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
@@ -27,16 +31,16 @@ export function connectContactForm(form, lifetime) {
         attempt = undefined;
         const unchanged = Object.entries(fields).every(([name, value]) => form.elements.namedItem(name).value === value);
         if (unchanged) form.reset();
-        statusLine.textContent = 'Message received. Thank you for getting in touch.';
+        report('success', 'Message received. Thank you for getting in touch.');
       } else if (res.status === 429) {
-        statusLine.textContent = 'Too many messages in a short time. Please try again later.';
+        report('error', 'Too many messages in a short time. Please try again later.');
       } else if (res.status === 400 || res.status === 413) {
-        statusLine.textContent = 'Check your name, email and message, then try again.';
+        report('error', 'Check your name, email and message, then try again.');
       } else {
         throw new Error('Unconfirmed delivery');
       }
     } catch {
-      if (!lifetime?.aborted) statusLine.textContent = 'Delivery couldn’t be confirmed. Your message is still here. You can also email hello@inflite.ai.';
+      if (!lifetime?.aborted) report('error', 'Delivery couldn’t be confirmed. Your message is still here. You can also email hello@inflite.ai.');
     } finally {
       clearTimeout(timeout);
       submit.disabled = false;

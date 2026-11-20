@@ -37,18 +37,24 @@
   <main id="main">
     <section class="about-frame contact-layout" id="contact" aria-labelledby="contact-title">
       <div class="contact-intro">
-        <h1 id="contact-title">Get in <span>touch.</span></h1>
-        <p>Have a question about InFlite? Your message goes to the team’s support inbox. We’ll use your email to reply.</p>
-        <p>For privacy requests, email <a href="mailto:privacy@inflite.ai">privacy@inflite.ai</a>.</p>
+        <h1 id="contact-title"><span>Get in</span> <span class="contact-accent">touch.</span></h1>
+        <p class="contact-description">Questions, feedback or a little help? Send a note to the InFlite team. We’ll use your email to reply.</p>
+        <p class="contact-privacy">
+          <strong>Privacy requests</strong>
+          <a href="mailto:privacy@inflite.ai">privacy@inflite.ai</a>
+        </p>
       </div>
       <div class="contact-panel">
-        <form id="contact-form" action="/api/contact" method="post" hidden>
-          <label>Your name<input name="name" autocomplete="name" required maxlength="100"></label>
-          <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
-          <label>Message<textarea name="message" rows="4" required maxlength="4000"></textarea></label>
+        <h2 id="contact-form-title">Write to us</h2>
+        <form id="contact-form" action="/api/contact" method="post" aria-labelledby="contact-form-title" hidden>
+          <div class="contact-fields">
+            <label>Your name<input name="name" autocomplete="name" required maxlength="100"></label>
+            <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+          </div>
+          <label>Message<textarea name="message" rows="5" required maxlength="4000"></textarea></label>
           <label class="trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
           <div class="actions">
-            <button type="submit">Send message <span aria-hidden="true">→</span></button>
+            <button type="submit">Send message <span class="contact-send-icon" aria-hidden="true">→</span></button>
             <a href="/privacy/">Privacy notice</a>
           </div>
           <p id="contact-status" role="status" aria-live="polite"></p>

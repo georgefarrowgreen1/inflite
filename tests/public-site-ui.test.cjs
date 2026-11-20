@@ -94,7 +94,19 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.waitForFunction(before => document.querySelector('.about-sky canvas').toDataURL() !== before, stillFrame);
     await page.emulateMedia({colorScheme:'light'});
     await page.waitForFunction(before => document.querySelector('.about-sky canvas').toDataURL() === before, stillFrame);
-    assert.equal(await page.locator('canvas').count(), 1, 'the orbs are the only animated artwork');
+    assert.equal(await page.locator('canvas').count(), 1, 'the product preview reuses ordinary HTML and the existing orb canvas');
+    const preview = page.getByRole('group', { name: 'InFlite product preview' });
+    const tab = name => preview.getByRole('tab', { name, exact: true });
+    assert.equal(await tab('Today').getAttribute('aria-selected'), 'true');
+    await tab('Weather').click();
+    assert.ok(await preview.getByRole('tabpanel', { name: 'Weather' }).getByText('Norwich', { exact: true }).isVisible());
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await tab('Fitness').getAttribute('aria-selected'), 'true');
+    assert.ok(await preview.getByRole('tabpanel', { name: 'Fitness' }).isVisible());
+    await page.keyboard.press('End');
+    assert.equal(await tab('Mail').getAttribute('aria-selected'), 'true');
+    await page.keyboard.press('Home');
+    assert.equal(await tab('Today').getAttribute('aria-selected'), 'true');
     assert.equal(await page.locator('body').evaluate(body => getComputedStyle(body).getPropertyValue('-webkit-user-select') || getComputedStyle(body).userSelect), 'none');
     assert.equal(await page.locator('form').count(), 0);
     assert.equal(await page.locator('.wallpaper-controls, .privacy-feature').count(), 0);
@@ -102,6 +114,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.equal(new URL(page.url()).hash, '#apps');
     assert.equal(await image(), stillFrame, 'a reduced-motion scene stays still while scrolling');
     await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForFunction(before => document.querySelector('.about-sky canvas').toDataURL() !== before, stillFrame);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const frozen = await image();
