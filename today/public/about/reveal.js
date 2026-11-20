@@ -34,35 +34,3 @@ function syncReveals() {
 }
 reduced.addEventListener("change", syncReveals);
 syncReveals();
-
-// Update one small highlight layer for the card under the pointer.
-const tiles = document.querySelector(".app-list");
-const fineMotion = matchMedia("(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)");
-let litCard, lightFrame = 0, lightX, lightY;
-
-function clearLight() {
-  cancelAnimationFrame(lightFrame);
-  lightFrame = 0;
-  litCard?.removeAttribute("data-light");
-  litCard = null;
-}
-
-tiles?.addEventListener("pointermove", event => {
-  if (!fineMotion.matches || event.pointerType === "touch") return;
-  const card = event.target.closest(".app-link");
-  if (card !== litCard) clearLight();
-  if (!card) return;
-  litCard = card;
-  lightX = event.clientX;
-  lightY = event.clientY;
-  if (lightFrame) return;
-  lightFrame = requestAnimationFrame(() => {
-    lightFrame = 0;
-    const { left, top } = litCard.getBoundingClientRect();
-    litCard.style.setProperty("--glow-x", `calc(${lightX - left}px - 7.5rem)`);
-    litCard.style.setProperty("--glow-y", `calc(${lightY - top}px - 7.5rem)`);
-    litCard.dataset.light = "";
-  });
-}, { passive: true });
-tiles?.addEventListener("pointerleave", clearLight, { passive: true });
-fineMotion.addEventListener("change", clearLight);

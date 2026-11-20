@@ -119,6 +119,28 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.equal(await page.locator('.wallpaper-controls, .privacy-feature').count(), 0);
     await page.getByRole('link', { name: 'Explore the apps' }).click();
     assert.equal(new URL(page.url()).hash, '#apps');
+    const catalogue = page.getByRole('tablist', { name: 'Explore InFlite apps' });
+    const app = name => catalogue.getByRole('tab', { name, exact: true });
+    const details = name => page.getByRole('region', { name: 'Meet the apps.' }).getByRole('tabpanel', { name });
+    assert.equal(await catalogue.getByRole('tab').count(), 10);
+    assert.equal(await app('Today').getAttribute('aria-selected'), 'true');
+    assert.ok(await details('Today').isVisible());
+    for (const tab of await catalogue.getByRole('tab').all()) {
+      const box = await tab.boundingBox();
+      assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= 320);
+      assert.ok(await tab.evaluate(button => button.scrollWidth <= button.clientWidth + 1));
+    }
+    await app('Today').focus();
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await app('Today').getAttribute('tabindex'), '-1');
+    assert.equal(await app('Files').getAttribute('aria-selected'), 'true');
+    assert.ok(await app('Files').evaluate(button => document.activeElement === button));
+    assert.equal(await details('Files').getByRole('link', { name: 'Open Files' }).getAttribute('href'), '/#files');
+    assert.equal(await page.locator('#app-spotlight p').count(), 1);
+    assert.equal(await details('Files').evaluate(panel => panel.getAnimations().length), 0);
+    await app('Weather').click();
+    assert.equal(await details('Weather').getByRole('link', { name: 'Open Weather' }).getAttribute('href'), '/weather/');
+    assert.equal(new URL(page.url()).hash, '#apps', 'app selection stays on the catalogue');
     assert.equal(await image(), stillFrame, 'a reduced-motion scene stays still while scrolling');
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -202,6 +224,16 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.getByRole('navigation', { name: 'Legal' }).getByRole('link', { name: 'Privacy' }).click();
     assert.equal(new URL(page.url()).pathname, '/privacy/');
     await assertCompanyBrand(page.getByRole('contentinfo'));
+
+    const fallback = await browser.newPage({ javaScriptEnabled: false, viewport: { width: 320, height: 720 } });
+    await fallback.goto(site + '/about/#apps');
+    const fallbackLinks = fallback.locator('.app-list a');
+    assert.equal(await fallbackLinks.count(), 10);
+    const calendar = fallbackLinks.filter({ hasText: 'Calendar' });
+    assert.ok(await calendar.isVisible());
+    assert.equal(await calendar.getAttribute('href'), '/calendar/');
+    await fallback.close();
+
     assert.deepEqual(errors, []);
     assert.deepEqual(unexpected, []);
     assert.ok(accessed.has('/roof/bubbles.js'));

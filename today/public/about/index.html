@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="/about/showcase.css">
   <script defer src="/about/legacy-contact.js"></script>
   <script defer src="/about/showcase.js"></script>
+  <script defer src="/about/catalogue.js"></script>
   <script defer src="/about/reveal.js"></script>
   <link rel="modulepreload" href="/roof/bubbles.js?about">
   <script type="module" src="/about/bubbles.js"></script>
@@ -193,86 +194,81 @@
       <div class="about-frame">
         <div class="ecosystem-heading" data-reveal>
           <h2 id="apps-title">Meet the apps.</h2>
-          <p>From a quick forecast to a weekend route, find the app for what you want to do next.</p>
         </div>
-        <ul class="app-list" role="list">
-          <li class="featured-app" data-reveal>
-            <a class="app-link" data-family="organise" href="/" aria-label="Open Today">
-              <img src="/inflite.svg" width="52" height="52" alt="" loading="lazy" decoding="async">
-              <div><h3>Today</h3><p>See your forecast, plans and what needs your attention in one view.</p></div>
-              <span class="app-open" aria-hidden="true"><span>→</span></span>
-            </a>
-          </li>
-          <li data-reveal>
-            <a class="app-link" data-family="connect" href="/mail/" aria-label="Open Mail">
-              <img src="/apps/mail.svg" width="52" height="52" alt="" loading="lazy" decoding="async">
-              <div><h3>Mail</h3><p>Read, write and follow up on email. Find recipients through your contacts.</p></div>
-              <span class="app-open" aria-hidden="true"><span>→</span></span>
-            </a>
-          </li>
-          <li data-reveal>
-            <a class="app-link" data-family="organise" href="/calendar/" aria-label="Open Calendar">
-              <img src="/apps/calendar.svg" width="52" height="52" alt="" loading="lazy" decoding="async">
-              <div><h3>Calendar</h3><p>Keep appointments and reminders together and see where they fit in your day.</p></div>
-              <span class="app-open" aria-hidden="true"><span>→</span></span>
-            </a>
-          </li>
-          <li data-reveal>
-            <a class="app-link" data-family="organise" href="/notes/" aria-label="Open Notes">
-              <img src="/apps/notes.svg" width="52" height="52" alt="" loading="lazy" decoding="async">
-              <div><h3>Notes</h3><p>Capture an idea, write a longer note or work through a checklist.</p></div>
-              <span class="app-open" aria-hidden="true"><span>→</span></span>
-            </a>
-          </li>
-          <li data-reveal>
-            <a class="app-link" data-family="connect" href="/people/" aria-label="Open People">
-              <img src="/apps/people.svg" width="52" height="52" alt="" loading="lazy" decoding="async">
-              <div><h3>People</h3><p>See your Chat friends and keep private contact details and follow-ups in one place.</p></div>
-              <span class="app-open" aria-hidden="true"><span>→</span></span>
-            </a>
-          </li>
-          <li data-reveal>
-            <a class="app-link" data-family="organise" href="/#files" aria-label="Open Files">
-              <img src="/apps/files.svg" width="52" height="52" alt="" loading="lazy" decoding="async">
-              <div><h3>Files</h3><p>Keep documents and photos in your Drive and find them when you need them.</p></div>
-              <span class="app-open" aria-hidden="true"><span>→</span></span>
-            </a>
-          </li>
-          <li data-reveal>
-            <a class="app-link" data-family="connect" href="/chats/" aria-label="Open Chats">
-              <img src="/apps/chat.svg" width="52" height="52" alt="" loading="lazy" decoding="async">
-              <div><h3>Chats</h3><p>Send a message to a friend and follow the pigeon carrying your words.</p></div>
-              <span class="app-open" aria-hidden="true"><span>→</span></span>
-            </a>
-          </li>
-          <li data-reveal>
-            <a class="app-link" data-family="outdoors" href="/weather/" aria-label="Open Weather">
-              <img src="/apps/weather.svg" width="52" height="52" alt="" loading="lazy" decoding="async">
-              <div><h3>Weather</h3><p>Check the forecast, rainfall and weather alerts for the places you care about.</p></div>
-              <span class="app-open" aria-hidden="true"><span>→</span></span>
-            </a>
-          </li>
-          <li data-reveal>
-            <a class="app-link" data-family="outdoors" href="/fitness/" aria-label="Open Fitness">
-              <img src="/apps/fitness.svg" width="52" height="52" alt="" loading="lazy" decoding="async">
-              <div><h3>Fitness</h3><p>Plan a ride, see your training progress and revisit your activities.</p></div>
-              <span class="app-open" aria-hidden="true"><span>→</span></span>
-            </a>
-          </li>
-          <li data-reveal>
-            <a class="app-link" data-family="markets" href="/markets/" aria-label="Open Markets">
-              <img src="/apps/markets.svg" width="52" height="52" alt="" loading="lazy" decoding="async">
-              <div><h3>Markets</h3><p>Compare charts, follow prices and keep a watchlist of the markets you care about.</p></div>
-              <span class="app-open" aria-hidden="true"><span>→</span></span>
-            </a>
-          </li>
-        </ul>
+        <div class="app-catalogue" data-reveal>
+          <ul class="app-list" role="list">
+            <li>
+              <a class="app-link" data-family="organise" href="/">
+                <img src="/inflite.svg" width="50" height="50" alt="" loading="lazy" decoding="async">
+                <div><h3>Today</h3><p>Your forecast, plans and priorities at a glance.</p></div>
+              </a>
+            </li>
+            <li>
+              <a class="app-link" data-family="connect" href="/mail/">
+                <img src="/apps/mail.svg" width="50" height="50" alt="" loading="lazy" decoding="async">
+                <div><h3>Mail</h3><p>Read, write and follow up on email.</p></div>
+              </a>
+            </li>
+            <li>
+              <a class="app-link" data-family="organise" href="/calendar/">
+                <img src="/apps/calendar.svg" width="50" height="50" alt="" loading="lazy" decoding="async">
+                <div><h3>Calendar</h3><p>See what’s coming up and make time for it.</p></div>
+              </a>
+            </li>
+            <li>
+              <a class="app-link" data-family="organise" href="/notes/">
+                <img src="/apps/notes.svg" width="50" height="50" alt="" loading="lazy" decoding="async">
+                <div><h3>Notes</h3><p>Capture a thought or work through a checklist.</p></div>
+              </a>
+            </li>
+            <li>
+              <a class="app-link" data-family="organise" href="/people/">
+                <img src="/apps/people.svg" width="50" height="50" alt="" loading="lazy" decoding="async">
+                <div><h3>People</h3><p>Keep Chat friends, contacts and follow-ups together.</p></div>
+              </a>
+            </li>
+            <li>
+              <a class="app-link" data-family="connect" href="/#files">
+                <img src="/apps/files.svg" width="50" height="50" alt="" loading="lazy" decoding="async">
+                <div><h3>Files</h3><p>Find the documents and photos saved in your Drive.</p></div>
+              </a>
+            </li>
+            <li>
+              <a class="app-link" data-family="connect" href="/chats/">
+                <img src="/apps/chat.svg" width="50" height="50" alt="" loading="lazy" decoding="async">
+                <div><h3>Chats</h3><p>Send a message and follow the pigeon carrying it.</p></div>
+              </a>
+            </li>
+            <li>
+              <a class="app-link" data-family="connect" href="/weather/">
+                <img src="/apps/weather.svg" width="50" height="50" alt="" loading="lazy" decoding="async">
+                <div><h3>Weather</h3><p>See forecasts, rainfall and alerts for your places.</p></div>
+              </a>
+            </li>
+            <li>
+              <a class="app-link" data-family="outdoors" href="/fitness/">
+                <img src="/apps/fitness.svg" width="50" height="50" alt="" loading="lazy" decoding="async">
+                <div><h3>Fitness</h3><p>Plan rides and see how your training is going.</p></div>
+              </a>
+            </li>
+            <li>
+              <a class="app-link" data-family="markets" href="/markets/">
+                <img src="/apps/markets.svg" width="50" height="50" alt="" loading="lazy" decoding="async">
+                <div><h3>Markets</h3><p>Track prices, charts and the markets you follow.</p></div>
+              </a>
+            </li>
+          </ul>
+          <article class="app-spotlight" id="app-spotlight" hidden>
+            <img src="/inflite.svg" width="76" height="76" alt="">
+            <div class="app-spotlight-copy"><h3></h3><p></p></div>
+            <a class="launch" href="/">Open Today <span aria-hidden="true">→</span></a>
+          </article>
+        </div>
       </div>
     </section>
     <section class="closing" aria-labelledby="closing-title">
       <div class="about-frame closing-panel" data-reveal>
         <h2 id="closing-title">Your day <span>starts here.</span></h2>
-        <p>Open Today to see what’s ahead and take it from there.</p>
         <a class="launch" href="/">Open InFlite <span aria-hidden="true">→</span></a>
       </div>
     </section>

@@ -46,9 +46,6 @@ function readingContent(parent, nodes) {
 function catalogue(body, source, ui) {
   const { el } = ui;
   const section = source.querySelector("#apps");
-  const intro = el("div", { class: "settings-document-lead" });
-  readingContent(intro, section.querySelectorAll(".ecosystem-heading p"));
-  body.append(intro);
   const list = el("ul", { class: "settings-document-apps", role: "list" });
   for (const app of section.querySelectorAll(".app-list > li")) {
     const src = app.querySelector("img")?.getAttribute("src");
