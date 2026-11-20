@@ -1,6 +1,6 @@
 import {minerals} from "./bubble-colours.js";
 export {bubbleColours, minerals, defaultBubbleColour} from "./bubble-colours.js";
-import {outlineSegments, stepSurface, rippleSurface, settleSurface, surfaceIsMoving, paintSurface} from "./bubble-surface.js";
+import {outlineSegments, stepSurface, rippleSurface, settleSurface, surfaceIsMoving, paintSurface, rimColourAt} from "./bubble-surface.js";
 
 // Positions are fractions of the viewport. Sizes and speeds are fractions of its short edge.
 const sizes = [.30, .165, .082, .037];
@@ -172,7 +172,7 @@ export function driftBubbles(bubbles, dt, aspect, pointer = null) {
   applyFlick(bubbles,pointer,width,height);
   dt = Math.min(.16,Math.max(0,dt));
   for (let i = 0; i < bubbles.length; i++) {
-    stepSurface(bubbles[i],dt,hit?.index === i ? hit : null,pointer);
+    stepSurface(bubbles[i],dt,hit?.index === i ? hit : null,pointer,sizes[i]);
   }
   // Bound contact integration when an idle frame or a busy main thread precedes
   // a flick. Input impulses and the membrane are sampled just once per frame.
@@ -304,12 +304,58 @@ function applyGrain(ctx,index,radius) {
 }
 
 const rim = new Float32Array(segments);
-function paintBubble(ctx, bubble, x, y, radius, ink, index, live, detail) {
+
+function fade(value) {
+  const t = clamp(value);
+  return t*t*(3-2*t);
+}
+
+function facingReflections(bodies, ink) {
+  for (let i=0; i<bodies.length; i++) for (let j=i+1; j<bodies.length; j++) {
+    const a = bodies[i], b = bodies[j];
+    const dx = b.x-a.x, dy = b.y-a.y, distance = Math.hypot(dx,dy);
+    const small = Math.min(a.radius,b.radius), reach = .45*small;
+    if (!distance || distance > 1.25*(a.radius+b.radius)+reach) continue;
+    const angle = Math.atan2(dy,dx), opposite = angle+Math.PI;
+    const rimA = profile(a.b,angle), rimB = profile(b.b,opposite);
+    const gap = distance-a.radius*rimA-b.radius*rimB;
+    if (gap >= reach || gap <= -small) continue;
+    // Fade in at proximity and out again if one silhouette hides the other.
+    const visible = fade((gap+small)/(.70*small));
+    const tint = visible*fade(1-gap/reach);
+    const shade = visible*fade(1-gap/(.18*small));
+    a.reflections.push({index:j,angle,rim:rimA,tint,shade,colour:rimColourAt(b.b,j,opposite,ink),
+      span:Math.sqrt(b.radius/(a.radius+b.radius))});
+    b.reflections.push({index:i,angle:opposite,rim:rimB,tint,shade,colour:rimColourAt(a.b,i,angle,ink),
+      span:Math.sqrt(a.radius/(a.radius+b.radius))});
+  }
+}
+
+function reflectNeighbours(ctx, reflections, ink) {
+  const alpha = ctx.globalAlpha;
+  for (const {angle,rim,tint,shade,span,colour} of reflections) {
+    const x = rim*Math.cos(angle), y = rim*Math.sin(angle);
+    const rgb = [colour&255,(colour>>8)&255,(colour>>16)&255].join(",");
+    ctx.globalAlpha = alpha*tint*.24;
+    wash(ctx,.88*x,.88*y,.11+.17*span,.19+.43*span,angle,
+      [[0,`rgb(${rgb})`],[.43,`rgba(${rgb},.66)`],[1,`rgba(${rgb},0)`]]);
+    if (shade > 0) {
+      ctx.globalAlpha = alpha*shade*.14;
+      wash(ctx,x,y,.07+.08*span,.13+.32*span,angle,
+        [[0,ink.base],[.4,ink.base+"b0"],[1,ink.base+"00"]]);
+    }
+  }
+  ctx.globalAlpha = alpha;
+}
+
+function paintBubble(ctx, body, ink, index, live, detail) {
+  const {b:bubble,x,y,radius,reflections} = body;
   ctx.save();
   ctx.translate(x,y);
   ctx.scale(radius,radius);
   ctx.clip(outline(bubble,rim));
   paintSurface(ctx,bubble,radius,rim,ink,index,live,detail);
+  if (reflections.length) reflectNeighbours(ctx,reflections,ink);
   applyGrain(ctx,index,radius);
   ctx.restore();
 }
@@ -376,11 +422,12 @@ export function drawBubbles(ctx, bubbles, colour, shade = 0, live = true, light 
     const bounds = {left:Math.max(0,Math.floor(x-extent)), top:Math.max(0,Math.floor(y-extent)),
       right:Math.min(width,Math.ceil(x+extent)), bottom:Math.min(height,Math.ceil(y+extent))};
     const previous = scene.previous[index];
-    return {b,x,y,radius,bounds,active:live && (surfaceIsMoving(b) || gliding(b)),
+    return {b,x,y,radius,bounds,reflections:[],active:live && (surfaceIsMoving(b) || gliding(b)),
       area:previous ? cover(bounds,previous.bounds) : bounds};
   });
   const moving = bodies.some(p => p.active);
   const start = moving ? performance.now() : 0;
+  facingReflections(bodies,ink);
   const full = !moving || bodies.length !== scene.previous.length || bodies.some((p,i) => scene.previous[i]?.b !== p.b) ||
     Math.abs(main.phase-scene.phase) >= main.tempo/20;
   const areas = [];
@@ -393,12 +440,15 @@ export function drawBubbles(ctx, bubbles, colour, shade = 0, live = true, light 
       const p = bodies[i];
       if (p.active || scene.previous[i].active) areas.push(p.area);
     }
-    // Include the full old and new bounds of any crossing body before the
-    // redraw. This preserves painter order without full-screen backing layers.
+    // A nearby orb changes the facing rim even before their bounds cross.
+    // Include the former neighbour too so the tint clears on separation.
+    const affected = r => areas.includes(bodies[r.index].area);
     for (let count = -1; count !== areas.length;) {
       count = areas.length;
-      for (const p of bodies) {
-        if (!areas.includes(p.area) && areas.some(a => intersects(a,p.area))) areas.push(p.area);
+      for (let i=0; i<bodies.length; i++) {
+        const p = bodies[i];
+        if (!areas.includes(p.area) && (areas.some(a => intersects(a,p.area)) ||
+            p.reflections.some(affected) || scene.previous[i].reflections.some(affected))) areas.push(p.area);
       }
     }
     ctx.save();
@@ -413,8 +463,8 @@ export function drawBubbles(ctx, bubbles, colour, shade = 0, live = true, light 
   for (let i=bodies.length-1; i>=0; i--) {
     const p = bodies[i];
     if (!full && !areas.includes(p.area)) continue;
-    paintBubble(ctx,p.b,p.x,p.y,p.radius,ink,i,live,p.active ? scene.detail : 6);
-    scene.previous[i] = {b:p.b,bounds:p.bounds,active:p.active};
+    paintBubble(ctx,p,ink,i,live,p.active ? scene.detail : 6);
+    scene.previous[i] = {b:p.b,bounds:p.bounds,active:p.active,reflections:p.reflections};
   }
   scene.previous.length = bodies.length;
   if (shade) {

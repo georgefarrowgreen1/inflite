@@ -2478,6 +2478,98 @@ test('a live orb keeps its display-resolution glass during a press and rolls in 
   } finally { await ctx.close(); }
 });
 
+test('shared studio light stays in place while an orb turns its pigment', async () => {
+  const {ctx,page}=await open();
+  try {
+    const result=await page.evaluate(async () => {
+      const {paintSurface,outlineSegments}=await import('/roof/bubble-surface.js');
+      const {minerals}=await import('/roof/bubble-colours.js');
+      const rim=new Float32Array(outlineSegments).fill(1), size=160, radius=75;
+      const plain={...minerals.opal,body:'#484848',shade:'#484848',rim:Array(8).fill('#484848'),pearl:'#ffffff'};
+      function frame(ink,phase,angle,index) {
+        const canvas=document.createElement('canvas');
+        canvas.width=canvas.height=size;
+        const raster=canvas.getContext('2d',{willReadFrequently:true});
+        raster.setTransform(radius,0,0,radius,size/2,size/2);
+        paintSurface(raster,{phase,angle,tempo:.05},radius,rim,ink,index,false);
+        return raster.getImageData(0,0,size,size).data;
+      }
+      const neutral=frame(plain,.1,0,0), turned=frame(plain,2.2,Math.PI/2,2);
+      const opal=frame(minerals.opal,.72,0,0), rotated=frame(minerals.opal,.72,Math.PI/2,0);
+      let lightChanged=0, pigmentChanged=0, min=255,max=0;
+      for (let y=0;y<size;y++) for (let x=0;x<size;x++) {
+        if (Math.hypot(x+.5-size/2,y+.5-size/2)>radius*.93) continue;
+        const i=4*(y*size+x);
+        min=Math.min(min,neutral[i]); max=Math.max(max,neutral[i]);
+        if (neutral[i]!==turned[i]) lightChanged++;
+        if ([0,1,2].some(c=>Math.abs(opal[i+c]-rotated[i+c])>12)) pigmentChanged++;
+      }
+      return {lightChanged,pigmentChanged,lightRange:max-min};
+    });
+    assert.ok(result.lightRange>35,'the neutral material should actually reflect a studio highlight');
+    assert.equal(result.lightChanged,0,'a circular neutral surface shares its highlights across bodies and poses');
+    assert.ok(result.pigmentChanged>150,JSON.stringify(result));
+  } finally {await ctx.close();}
+});
+
+test('neighbour colours reach the facing rim and clear when the orbs drift apart', async () => {
+  const {ctx,page}=await open();
+  try {
+    const results=await page.evaluate(async () => {
+      const {drawBubbles}=await import('/roof/bubbles.js');
+      const {rimColourAt}=await import('/roof/bubble-surface.js');
+      const {minerals}=await import('/roof/bubble-colours.js');
+      const width=400,height=220,x0=.34,farX=.93;
+      function raster() {
+        const c=document.createElement('canvas'); c.width=width; c.height=height;
+        return c.getContext('2d',{willReadFrequently:true});
+      }
+      return [false,true].map(light=>{
+        const scene=[x0,farX].map((x,i)=>({x,y:.5,phase:.72+i*.85,angle:.1,tempo:.05,
+          vx:i===1 ? .12 : 0,vy:0,dx:0,dy:0}));
+        const live=raster(),damage=[];
+        const frame=(target,bodies,dirty) => {
+          drawBubbles(target,bodies,'opal',light ? .53 : 0,true,light,dirty);
+          return target.getImageData(0,0,width,height).data;
+        };
+        const baseline=frame(live,scene,damage);
+        let facing=0,opposite=0,maxMismatch=0,partial=false,colourShift=0;
+        for (const gap of [144,108,144,(farX-x0)*width]) {
+          scene[1].x=x0+gap/width;
+          const livePixels=frame(live,scene,damage);
+          partial ||= damage.length>0;
+          const fresh=frame(raster(),scene.map(b=>({...b})));
+          for(let i=0;i<fresh.length;i++) maxMismatch=Math.max(maxMismatch,Math.abs(fresh[i]-livePixels[i]));
+          if (gap!==108) continue;
+          // Turn only the donor. Project the reflected colour change onto its
+          // actual outgoing pigment shift, removing any change in brightness.
+          const turned=scene.map(b=>({...b}));
+          turned[1].angle+=Math.PI;
+          const a=rimColourAt(scene[1],1,Math.PI,minerals.opal);
+          const b=rimColourAt(turned[1],1,Math.PI,minerals.opal);
+          const channels=[0,8,16].map(shift=>((b>>>shift)&255)-((a>>>shift)&255));
+          const mean=channels.reduce((sum,value)=>sum+value)/3;
+          const shifted=frame(raster(),turned);
+          const radius=.30*height;
+          for (let y=0;y<height;y++) for (let x=0;x<width;x++) {
+            const dx=(x+.5-x0*width)/radius,dy=(y+.5-height/2)/radius;
+            if (Math.abs(dx)<.48 || Math.hypot(dx,dy)>.98) continue;
+            const i=4*(y*width+x);
+            if (dx>0) for (let c=0;c<3;c++) colourShift+=(shifted[i+c]-livePixels[i+c])*(channels[c]-mean);
+            if (![0,1,2].some(c=>Math.abs(livePixels[i+c]-baseline[i+c])>2)) continue;
+            if (dx>0) facing++; else opposite++;
+          }
+        }
+        return {light,facing,opposite,colourShift,maxMismatch,partial};
+      });
+    });
+    for (const row of results) {
+      assert.ok(row.facing>row.opposite+15 && row.colourShift>0,JSON.stringify(row));
+      assert.ok(row.partial && row.maxMismatch<=2,JSON.stringify(row));
+    }
+  } finally {await ctx.close();}
+});
+
 test('an orb collision sends a visible ripple from each facing edge', async () => {
   const {ctx,page} = await open();
   try {

@@ -7,16 +7,29 @@ const count = stride * stride;
 export const outlineSegments = 40;
 const spacing = 2 * edge / cells;
 const tick = 1 / 120;
-// Preserve the material's relaxation times as the solver takes half-size steps.
 const follow = 1-Math.sqrt(.68), trail = 1-Math.sqrt(.979);
-const loadPressure = 1-Math.sqrt(.73), releasePressure = 1-Math.sqrt(.82);
-const rimDamping = Math.sqrt(.88), damping = Math.sqrt(.977);
-const courant = (.97 * tick / spacing) ** 2;
 const tau = Math.PI * 2;
 const waves = new WeakMap();
 const lights = new WeakMap();
 const tiles = new WeakMap();
 const clamp = value => Math.max(0, Math.min(1, value));
+const materials = new Map();
+
+// In radius coordinates a wave crosses a smaller surface sooner. Scale the
+// forces and decay together at the same 120 Hz tick. Even the fastest material
+// has a squared Courant number below .08 (the 2D stability limit is .5).
+function materialFor(radius) {
+  let material = materials.get(radius);
+  if (!material) {
+    const rate = Math.max(.78,Math.min(1.65,Math.sqrt(.165/radius)));
+    const step = rate*tick;
+    material = {rate,step,step2:step*step,courant:(.97*step/spacing)**2,
+      damping:.977**(.5*rate),rimDamping:.88**(.5*rate),
+      load:1-.73**(.5*rate),release:1-.82**(.5*rate)};
+    materials.set(radius,material);
+  }
+  return material;
+}
 
 // Geometry shared by all four orbs. The angular coordinate samples the very
 // same spline radii used for the silhouette, including contact deformation.
@@ -53,31 +66,32 @@ export function rippleSurface(bubble, x, y, impulse, radius = .24) {
   surfaceFor(bubble,x,y).impulses.push({x,y,impulse,radius});
 }
 
-function applyImpulse(next, {x,y,impulse,radius}) {
+function applyImpulse(next, {x,y,impulse,radius}, rate) {
   const left = Math.max(1,Math.ceil((x-radius+edge)/spacing)), right = Math.min(cells-1,Math.floor((x+radius+edge)/spacing));
   const top = Math.max(1,Math.ceil((y-radius+edge)/spacing)), bottom = Math.min(cells-1,Math.floor((y+radius+edge)/spacing));
   for (let row=top; row<=bottom; row++) for (let col=left; col<=right; col++) {
     const i = row*stride+col, dx = mesh[i].x-x, dy = mesh[i].y-y;
     const footprint = 1-(dx*dx+dy*dy)/(radius*radius);
-    if (footprint > 0) next[i] -= impulse*footprint**3;
+    if (footprint > 0) next[i] -= impulse*rate*footprint**3;
   }
 }
 
-function surfaceAtRest({h,last}) {
+function surfaceAtRest({h,last}, materialStep) {
   // Bound both kinetic and elastic energy. A passing wave can be perfectly
   // flat at a point while moving fastest, or motionless at full deformation.
   for (let row=1; row<cells; row++) for (let i=row*stride+1; i<row*stride+cells; i++) {
-    const z = h[i], speed = (z-last[i])/tick;
+    const z = h[i], speed = (z-last[i])/materialStep;
     const sx = (z-h[i-1])/spacing, sy = (z-h[i-stride])/spacing;
     if (4*z*z + speed*speed + sx*sx + sy*sy > .009**2) return false;
   }
   return true;
 }
 
-export function stepSurface(bubble, dt, hit, input) {
+export function stepSurface(bubble, dt, hit, input, radius = .165) {
   const contact = hit && hit.distance <= 1.04 && input;
   const wave = contact ? surfaceFor(bubble,hit.x,hit.y) : waves.get(bubble);
   if (!wave) return false;
+  const material = materialFor(radius);
 
   const target = contact && !input.release ? (input.down ? 1 : .52)*hit.amount : 0;
   if (contact) { wave.tx = hit.x; wave.ty = hit.y; }
@@ -96,7 +110,7 @@ export function stepSurface(bubble, dt, hit, input) {
     const trailLengthSq = trailX*trailX+trailY*trailY;
     const alongScale = 1/Math.max(.001,trailLengthSq);
     const taper = .54*Math.min(1,trailLengthSq*22);
-    wave.pressure += (target-wave.pressure)*(target > wave.pressure ? loadPressure : releasePressure);
+    wave.pressure += (target-wave.pressure)*(target > wave.pressure ? material.load : material.release);
     const {h, last, next} = wave;
     const left = Math.min(wave.x,wave.tailX)-.37, right = Math.max(wave.x,wave.tailX)+.37;
     const top = Math.min(wave.y,wave.tailY)-.37, bottom = Math.max(wave.y,wave.tailY)+.37;
@@ -106,7 +120,7 @@ export function stepSurface(bubble, dt, hit, input) {
       for (let x = 1, i = y*stride+1; x < cells; x++, i++) {
         const m = mesh[i], value = h[i];
         const laplace = h[i-1]+h[i+1]+h[i-stride]+h[i+stride]-4*value;
-        const absorption = m.r > 1.03 ? rimDamping : damping;
+        const absorption = m.r > 1.03 ? material.rimDamping : material.damping;
         let force = -4*value;
         if (wave.pressure > .0001 && m.x >= left && m.x <= right && m.y >= top && m.y <= bottom) {
           const dx = m.x-wave.x, dy = m.y-wave.y;
@@ -115,18 +129,18 @@ export function stepSurface(bubble, dt, hit, input) {
           const brush = 1 - (bx*bx+by*by)/.13;
           if (brush > 0) force -= brush*brush*(1-taper*along)*wave.pressure*(37 + 105*value);
         }
-        next[i] = value + (value-last[i])*absorption + courant*laplace + tick*tick*force;
+        next[i] = value + (value-last[i])*absorption + material.courant*laplace + material.step2*force;
       }
     }
     if (wave.impulses.length) {
-      for (const impulse of wave.impulses) applyImpulse(next,impulse);
+      for (const impulse of wave.impulses) applyImpulse(next,impulse,material.rate);
       wave.impulses.length = 0;
     }
     wave.last = h; wave.h = next; wave.next = last;
     wave.checkIn -= tick;
   }
   if (!target && !wave.impulses.length && wave.pressure < .001 && wave.checkIn <= 0) {
-    if (surfaceAtRest(wave)) {
+    if (surfaceAtRest(wave,material.step)) {
       waves.delete(bubble);
       return false;
     }
@@ -155,21 +169,47 @@ const pack = (r,g,b) => Math.round(r) | (Math.round(g)<<8) | (Math.round(b)<<16)
 // The enamel carries its own colour. Reflected light can fold all the way
 // around a dent while the blush and gold underneath move only a little.
 function reflect(coat, shade, pearl, weights, recess = 0) {
-  const gloss = Math.round((weights >>> 9)*(1-.43*recess)), shadow = weights & 511;
-  const dark = shadow + Math.round((256-gloss-shadow)*recess), base = 256-gloss-dark;
+  let gloss = weights >>> 9, dark = weights & 511;
+  if (recess) {
+    gloss = Math.round(gloss*(1-.43*recess));
+    dark += Math.round((256-gloss-dark)*recess);
+  }
+  const base = 256-gloss-dark;
   const rb = (coat & 0xff00ff)*base + (shade & 0xff00ff)*dark + (pearl & 0xff00ff)*gloss;
   const g = (coat & 0xff00)*base + (shade & 0xff00)*dark + (pearl & 0xff00)*gloss;
   return 0xff000000 | (((rb+0x800080)>>>8)&0xff00ff) | (((g+0x8000)>>>8)&0xff00);
 }
 
-// A small studio-light map. Broad softboxes in the reflected view create the
-// bright lip and shaded side of an indentation without painting a ring on top.
+// Reflection directions are in screen space. Every body and palette shares
+// these lights; only the surface normal under a moving dent changes the ray.
+let lightsInRoom;
+function roomLighting() {
+  if (lightsInRoom) return lightsInRoom;
+  const weights = new Uint32Array(mapSize*mapSize);
+  for (let y = 0; y < mapSize; y++) for (let x = 0; x < mapSize; x++) {
+    let nx = 2*x/(mapSize-1)-1, ny = 2*y/(mapSize-1)-1;
+    const radius = Math.hypot(nx,ny);
+    if (radius > 1) { nx /= radius; ny /= radius; }
+    const nz = Math.sqrt(Math.max(0,1-nx*nx-ny*ny));
+    const rx = 2*nx*nz, ry = 2*ny*nz, rz = 2*nz*nz-1;
+    const shadow = .96*Math.exp(-2.5*(rx-.59)**2-3.3*(ry+.14-.35*rx)**2-1.7*(rz-.50)**2);
+    const key = 1.06*Math.exp(-4.4*(rx+.62)**2-3.0*(ry+.35-.16*rx)**2-1.7*(rz-.49)**2);
+    const fill = .93*Math.exp(-4.5*(ry-.58+.34*rx)**2-1.4*(rx+.21)**2-1.2*(rz-.48)**2);
+    const strip = .96*Math.exp(-23*(rx-.24+.58*ry)**2-2.6*(ry+.68)**2-2*(rz+.12)**2);
+    const grazing = .30*(1-nz)**5*(.45+.55*clamp(-nx*.85+ny*.52));
+    const highlight = clamp(1-(1-key)*(1-fill)*(1-strip)*(1-grazing));
+    const gloss = Math.round(256*highlight), dark = Math.round((256-gloss)*shadow);
+    weights[y*mapSize+x] = (gloss<<9) | dark;
+  }
+  return lightsInRoom = weights;
+}
+
 function studioLight(ink) {
   if (lights.has(ink)) return lights.get(ink);
   const body = rgb(ink.body), shade = rgb(ink.shade), pearl = rgb(ink.pearl);
   const rim = ink.rim.map(rgb), size = mapSize*mapSize;
-  const palette = {colour:new Uint32Array(size), coat:new Uint32Array(size), shade:new Uint32Array(size),
-    weights:new Uint32Array(size), pearl:pack(...pearl)};
+  const palette = {coat:new Uint32Array(size), shade:new Uint32Array(size),
+    weights:roomLighting(), pearl:pack(...pearl)};
   const coat = [0,0,0], undertone = [0,0,0];
   for (let y = 0; y < mapSize; y++) for (let x = 0; x < mapSize; x++) {
     let nx = 2*x/(mapSize-1)-1, ny = 2*y/(mapSize-1)-1;
@@ -178,20 +218,8 @@ function studioLight(ink) {
     const a = Math.floor(t), frac = t-a;
     const f = frac*frac*(3-2*frac);
     const left = rim[a%rim.length], right = rim[(a+1)%rim.length];
-    if (radius > 1) { nx /= radius; ny /= radius; }
-    const nz = Math.sqrt(Math.max(0,1-nx*nx-ny*ny));
-    const rx = 2*nx*nz, ry = 2*ny*nz, rz = 2*nz*nz-1;
-    const band = clamp((radius-.31)/.69);
-    const film = band*band*(3-2*band);
-    const shadow = .96*Math.exp(-2.5*(rx-.59)**2-3.3*(ry+.14-.35*rx)**2-1.7*(rz-.50)**2);
-    const key = 1.06*Math.exp(-4.4*(rx+.62)**2-3.0*(ry+.35-.16*rx)**2-1.7*(rz-.49)**2);
-    const fill = .93*Math.exp(-4.5*(ry-.58+.34*rx)**2-1.4*(rx+.21)**2-1.2*(rz-.48)**2);
-    const strip = .96*Math.exp(-23*(rx-.24+.58*ry)**2-2.6*(ry+.68)**2-2*(rz+.12)**2);
-    const grazing = .30*(1-nz)**5*(.45+.55*clamp(-nx*.85+ny*.52));
-    const highlight = clamp(1-(1-key)*(1-fill)*(1-strip)*(1-grazing));
-    const gloss = Math.round(256*highlight), dark = Math.round((256-gloss)*shadow);
     const i = y*mapSize+x;
-    palette.weights[i] = (gloss<<9) | dark;
+    const band = clamp((radius-.31)/.69), film = band*band*(3-2*band);
     for (let k = 0; k < 3; k++) {
       const tint = mix(left[k],right[k],f);
       coat[k] = mix(body[k],tint,film*.98);
@@ -199,10 +227,17 @@ function studioLight(ink) {
     }
     palette.coat[i] = pack(coat[0],coat[1],coat[2]);
     palette.shade[i] = pack(undertone[0],undertone[1],undertone[2]);
-    palette.colour[i] = reflect(palette.coat[i],palette.shade[i],palette.pearl,palette.weights[i]);
   }
   lights.set(ink,palette);
   return palette;
+}
+
+// Sample in the body's local coordinates. A positive turn carries a swatch clockwise.
+const pigmentAngle = (b,index) => b.angle + index*1.37 + .19*Math.sin(b.phase);
+export function rimColourAt(bubble,index,angle,ink) {
+  const local = angle-pigmentAngle(bubble,index), span = (mapSize-1)*.5;
+  const x = Math.round(span*(1+Math.cos(local))), y = Math.round(span*(1+Math.sin(local)));
+  return studioLight(ink).coat[y*mapSize+x];
 }
 
 // The smooth optical field is independent of output resolution. Interpolate
@@ -224,25 +259,28 @@ function surfaceTile(bubble, radius, detail) {
 export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6) {
   const wave = waves.get(bubble)?.display;
   const tile = surfaceTile(bubble,radius,detail);
-  // A brush can run at display cadence. Undisturbed bodies have very slow
-  // optical motion and can reuse their lighting between ambient frames.
+  const tiltX = -.19*(bubble.vx || 0), tiltY = -.19*(bubble.vy || 0);
+  // Slow marbling can reuse a tile across ambient frames. Stagger its refresh
+  // across bodies; physical tilt, rotation, strain and waves update independently.
+  const colourTick = Math.floor(bubble.phase*10/bubble.tempo + index*.25);
   if (live && !wave && !tile.wasTouched && ink === tile.ink &&
-    Math.abs(bubble.phase-tile.phase) < bubble.tempo/24 && Math.abs(bubble.angle-tile.angle) < .004 &&
+    colourTick === tile.colourTick && Math.abs(bubble.angle-tile.angle) < .004 &&
+    Math.abs(tiltX-tile.tiltX)+Math.abs(tiltY-tile.tiltY) < .002 &&
     Math.abs((bubble.strainX || 0)-tile.strainX)+Math.abs((bubble.strainY || 0)-tile.strainY) < .004) {
     ctx.drawImage(tile.canvas,-edge,-edge,2*edge,2*edge);
     return;
   }
-  tile.ink = ink; tile.phase = bubble.phase; tile.angle = bubble.angle; tile.wasTouched = !!wave;
+  tile.ink = ink; tile.colourTick = colourTick; tile.angle = bubble.angle; tile.wasTouched = !!wave;
+  tile.tiltX = tiltX; tile.tiltY = tiltY;
   tile.strainX = bubble.strainX || 0; tile.strainY = bubble.strainY || 0;
   const {u,v,pigmentU,pigmentV,recess} = tile, palette = studioLight(ink);
   const span = (mapSize-1)*.5;
   // Allow the interpolation cell on either side of the antialiased silhouette.
   const visibleRadius = Math.max(...rim)+2*spacing;
   const light = bubble.phase*9 + index*.89;
-  const tiltX = .37*Math.sin(light)+.15*Math.sin(bubble.phase*4+1.2);
-  const tiltY = .33*Math.cos(light*.8+index);
-  const roll = .48*Math.sin(bubble.phase*3.25+index*1.37)+.20*bubble.angle+.33*Math.sin(index*2.03);
-  const cos = Math.cos(roll), sin = Math.sin(roll);
+  const roll = pigmentAngle(bubble,index), cos = Math.cos(roll), sin = Math.sin(roll);
+  const driftX = .37*Math.sin(light)+.15*Math.sin(bubble.phase*4+1.2);
+  const driftY = .33*Math.cos(light*.8+index);
   const bend = .23*Math.sin(light*.75);
   const arch = bubble.phase*6 + index, cross = bubble.phase*8 - bubble.angle;
   const archX = .15*Math.cos(arch), archY = .15*Math.sin(arch);
@@ -255,8 +293,12 @@ export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6) {
     const nz = front[lat];
     const driftA = p.archCos*archX-p.archSin*archY;
     const driftB = p.crossSin*crossX+p.crossCos*crossY;
-    let nx = p.ux*side[lat]+nz*(tiltX+bend*p.y+driftA+.42*driftB);
-    let ny = p.uy*side[lat]+nz*(tiltY-bend*p.x+.59*driftA-driftB);
+    const baseX = p.ux*side[lat], baseY = p.uy*side[lat];
+    let px = baseX+nz*(driftX+bend*p.y+driftA+.42*driftB);
+    let py = baseY+nz*(driftY-bend*p.x+.59*driftA-driftB);
+    let nx = baseX+nz*(tiltX+.6*(tile.strainX*p.x+tile.strainY*p.y));
+    let ny = baseY+nz*(tiltY+.6*(tile.strainY*p.x-tile.strainX*p.y));
+    let rayZ = nz;
     if (wave) {
       let sx = 0, sy = 0;
       if (i > stride && i < count-stride-1) {
@@ -266,17 +308,22 @@ export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6) {
         sx = ((wave[i+1]-wave[i-1])*.5 + (wave[above+1]+wave[below+1]-wave[above-1]-wave[below-1])*.25)*slope;
         sy = ((wave[below]-wave[above])*.5 + (wave[below-1]+wave[below+1]-wave[above-1]-wave[above+1])*.25)*slope;
       }
-      const px = nx-.18*sx, py = ny-.18*sy;
-      const baseInv = 1/Math.sqrt(px*px+py*py+nz*nz);
-      pigmentU[i] = span*(1+(cos*px-sin*py)*baseInv);
-      pigmentV[i] = span*(1+(sin*px+cos*py)*baseInv);
+      px -= .18*sx; py -= .18*sy;
       // The well transmits a little more of the local colour below the reflected softbox.
       recess[i] = Math.min(.68,Math.max(0,-wave[i])*(2.65+1.2*clamp(.45+sx-sy)));
-      nx -= sx; ny -= sy;
+      // The radial tangent tilts out of the screen at the silhouette. Carry
+      // that slope into Z so a ripple at the facing lip can turn the softbox.
+      const radial = sx*p.ux + sy*p.uy;
+      nx -= sx - (1-nz)*radial*p.ux;
+      ny -= sy - (1-nz)*radial*p.uy;
+      rayZ += side[lat]*radial;
     }
-    const inv = 1/Math.sqrt(nx*nx+ny*ny+nz*nz);
-    u[i] = span*(1+(cos*nx-sin*ny)*inv);
-    v[i] = span*(1+(sin*nx+cos*ny)*inv);
+    const baseInv = 1/Math.sqrt(px*px+py*py+nz*nz);
+    pigmentU[i] = span*(1+(cos*px+sin*py)*baseInv);
+    pigmentV[i] = span*(1+(cos*py-sin*px)*baseInv);
+    const inv = 1/Math.max(.00001,Math.sqrt(nx*nx+ny*ny+rayZ*rayZ));
+    u[i] = span*(1+nx*inv);
+    v[i] = span*(1+ny*inv);
   }
   const n = tile.samples, w = tile.canvas.width;
   for (let cy = 0; cy < cells; cy++) {
@@ -291,23 +338,17 @@ export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6) {
         const du = (u[i+1]+rightU*offset-tx)/n, dv = (v[i+1]+rightV*offset-ty)/n;
         tx += du*.5; ty += dv*.5;
         let pixel = (cy*n+row)*w+cx*n;
-        if (wave) {
-          const f = offset/n;
-          let px = mix(pigmentU[i],pigmentU[below],f), py = mix(pigmentV[i],pigmentV[below],f);
-          const dx = (mix(pigmentU[i+1],pigmentU[below+1],f)-px)/n;
-          const dy = (mix(pigmentV[i+1],pigmentV[below+1],f)-py)/n;
-          let depth = mix(recess[i],recess[below],f);
-          const depthStep = (mix(recess[i+1],recess[below+1],f)-depth)/n;
-          px += dx*.5; py += dy*.5; depth += depthStep*.5;
-          for (let col=0; col<n; col++,tx+=du,ty+=dv,px+=dx,py+=dy,depth+=depthStep) {
-            const pigment = ((py+.5)|0)*mapSize+((px+.5)|0);
-            const ray = ((ty+.5)|0)*mapSize+((tx+.5)|0);
-            tile.pixels[pixel++] = reflect(palette.coat[pigment],palette.shade[pigment],palette.pearl,palette.weights[ray],depth);
-          }
-        } else {
-          for (let col=0; col<n; col++,tx+=du,ty+=dv) {
-            tile.pixels[pixel++] = palette.colour[((ty+.5)|0)*mapSize+((tx+.5)|0)];
-          }
+        const f = offset/n;
+        let px = mix(pigmentU[i],pigmentU[below],f), py = mix(pigmentV[i],pigmentV[below],f);
+        const dx = (mix(pigmentU[i+1],pigmentU[below+1],f)-px)/n;
+        const dy = (mix(pigmentV[i+1],pigmentV[below+1],f)-py)/n;
+        let depth = wave ? mix(recess[i],recess[below],f) : 0;
+        const depthStep = wave ? (mix(recess[i+1],recess[below+1],f)-depth)/n : 0;
+        px += dx*.5; py += dy*.5; depth += depthStep*.5;
+        for (let col=0; col<n; col++,tx+=du,ty+=dv,px+=dx,py+=dy,depth+=depthStep) {
+          const pigment = ((py+.5)|0)*mapSize+((px+.5)|0);
+          const ray = ((ty+.5)|0)*mapSize+((tx+.5)|0);
+          tile.pixels[pixel++] = reflect(palette.coat[pigment],palette.shade[pigment],palette.pearl,palette.weights[ray],depth);
         }
       }
     }
