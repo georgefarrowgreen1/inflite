@@ -8,6 +8,7 @@
 }
 .about-page :is(input, textarea) { -webkit-user-select: text; user-select: text; }
 .about-page :is(main, section)[id] { scroll-margin-block-start: 1.25rem; }
+.logo-entrance { display: none; }
 
 .about-sky {
   position: fixed; z-index: -1; inset: 0; height: 100lvh;
@@ -215,7 +216,7 @@
   to { opacity: 1; transform: translateX(1.02rem); }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .showcase-page .about-nav { animation: intro-rise .62s var(--site-ease) both; }
+  .showcase-page .about-nav > :is(nav, .launch) { animation: intro-rise .62s var(--site-ease) both; }
   .introduction .product-preview { animation: preview-arrival 1.18s var(--site-ease) .11s backwards; }
   .hero-product::before, .hero-product::after { animation: orbit-arrival 1.45s var(--site-ease) .12s backwards; }
   .hero-product::after { animation-delay: .25s; }

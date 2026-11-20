@@ -77,6 +77,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     page.on('pageerror', e => errors.push(e.message));
     await context.addCookies([{ name: 'fixture', value: 'signed-in', url: site }]);
     await page.goto(site + '/about/');
+    assert.ok(await page.locator('.logo-entrance').isHidden(), 'reduced motion opens straight to the page');
     const sky = page.locator('.about-sky canvas[data-painted]');
     await sky.waitFor();
     const header = page.getByRole('banner');
@@ -87,7 +88,10 @@ test('public pages and contact form work without signing in, from phone to deskt
       const box = await link.boundingBox();
       assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= 320, name + ' fits with a 44px touch target');
     }
-    const image = () => sky.evaluate(canvas => canvas.toDataURL());
+    // Sample after media-query listeners have run and their frame has been painted.
+    const image = () => sky.evaluate(canvas => new Promise(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve(canvas.toDataURL())));
+    }));
     await page.emulateMedia({colorScheme:'light'});
     const stillFrame = await image();
     await page.emulateMedia({colorScheme:'dark'});
@@ -233,6 +237,26 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.ok(await calendar.isVisible());
     assert.equal(await calendar.getAttribute('href'), '/calendar/');
     await fallback.close();
+
+    const motion = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: 'no-preference' });
+    await motion.bringToFront();
+    await motion.goto(site + '/about/', { waitUntil: 'commit' });
+    await motion.locator('body.logo-entering').waitFor({ state: 'attached', timeout: 5000 });
+    const entrance = motion.locator('.logo-entrance');
+    const headerIcon = motion.locator('.about-nav .brand img');
+    await entrance.waitFor({ state: 'detached' });
+    assert.equal(await headerIcon.evaluate(img => getComputedStyle(img).opacity), '1');
+    await motion.reload({ waitUntil: 'commit' });
+    await motion.locator('body.logo-entering').waitFor({ state: 'attached', timeout: 5000 });
+    // The first keystroke both dismisses the entrance and performs its regular action.
+    await motion.keyboard.press('Tab');
+    assert.ok(await motion.getByRole('link', { name: 'Skip to content' }).evaluate(link => link === document.activeElement));
+    assert.ok(await entrance.isHidden());
+    assert.equal(await headerIcon.evaluate(img => getComputedStyle(img).opacity), '1');
+    await motion.goto('about:blank');
+    await motion.goto(site + '/about/#apps');
+    assert.ok(await entrance.isHidden(), 'a deep link opens directly at the app picker');
+    await motion.close();
 
     assert.deepEqual(errors, []);
     assert.deepEqual(unexpected, []);

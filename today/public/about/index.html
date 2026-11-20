@@ -16,9 +16,12 @@
   <link rel="icon" href="/icon.svg">
   <meta name="theme-color" content="#f8f4f0" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#110e16" media="(prefers-color-scheme: dark)">
+  <link rel="preload" href="/inflite.svg" as="image" type="image/svg+xml" fetchpriority="high">
   <link rel="stylesheet" href="/about/site.css">
   <link rel="stylesheet" href="/about/about.css">
   <link rel="stylesheet" href="/about/showcase.css">
+  <link rel="stylesheet" href="/about/entrance.css" media="screen and (scripting: enabled) and (prefers-reduced-motion: no-preference) and (forced-colors: none)">
+  <script defer src="/about/entrance.js"></script>
   <script defer src="/about/legacy-contact.js"></script>
   <script defer src="/about/showcase.js"></script>
   <script defer src="/about/catalogue.js"></script>
@@ -31,7 +34,7 @@
   <a class="skip" href="#main">Skip to content</a>
   <header class="about-header">
     <div class="about-frame about-nav">
-      <a class="brand" href="/about/"><img src="/inflite.svg" alt="" width="36" height="36">InFlite</a>
+      <a class="brand" href="/about/"><img src="/inflite.svg" alt="" width="36" height="36" fetchpriority="high">InFlite</a>
       <nav aria-label="Main">
         <a href="/about/#apps">Apps</a>
         <a href="/contact/" id="contact">Contact</a>
@@ -39,6 +42,35 @@
       <a class="launch" href="/">Open InFlite <span aria-hidden="true">→</span></a>
     </div>
   </header>
+
+  <div class="logo-entrance" aria-hidden="true" inert>
+    <div class="entrance-flight">
+      <div class="entrance-mark">
+        <svg viewBox="0 0 1024 1024" width="128" height="128" focusable="false">
+          <defs>
+            <image id="entrance-art" href="/inflite.svg" width="1024" height="1024"/>
+            <rect id="entrance-petal" x="430" y="140" width="164" height="268" rx="82"/>
+            <clipPath id="slice-blue"><use href="#entrance-petal" transform="rotate(-45 512 512)"/></clipPath>
+            <clipPath id="slice-coral"><use href="#entrance-petal" transform="rotate(45 512 512)"/></clipPath>
+            <clipPath id="slice-teal"><use href="#entrance-petal" transform="rotate(135 512 512)"/></clipPath>
+            <clipPath id="slice-violet"><use href="#entrance-petal" transform="rotate(225 512 512)"/></clipPath>
+            <clipPath id="slice-gold"><circle cx="512" cy="512" r="104"/></clipPath>
+          </defs>
+          <g class="entrance-petals">
+            <use class="petal-blue" href="#entrance-art" clip-path="url(#slice-blue)"/>
+            <use class="petal-coral" href="#entrance-art" clip-path="url(#slice-coral)"/>
+            <use class="petal-teal" href="#entrance-art" clip-path="url(#slice-teal)"/>
+            <use class="petal-violet" href="#entrance-art" clip-path="url(#slice-violet)"/>
+          </g>
+          <g class="entrance-core">
+            <circle cx="512" cy="512" r="103" fill="#ffca40"/>
+            <use href="#entrance-art" clip-path="url(#slice-gold)"/>
+          </g>
+        </svg>
+        <div class="entrance-tile"><img src="/inflite.svg" width="128" height="128" alt=""></div>
+      </div>
+    </div>
+  </div>
 
   <main id="main">
     <section class="about-frame introduction" aria-labelledby="intro-title">
