@@ -248,64 +248,120 @@ function surfaceTile(bubble, radius, detail) {
   if (tile?.samples === samples) return tile;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = cells*samples;
-  const ctx = canvas.getContext("2d",{alpha:false});
+  // The CPU writes this tile; keeping its pixels local avoids GPU readback
+  // when the next small rectangle is uploaded while the display is drawing.
+  const ctx = canvas.getContext("2d",{alpha:false,willReadFrequently:true});
   const image = ctx.createImageData(canvas.width,canvas.height);
   tile = {canvas,ctx,image,samples,pixels:new Uint32Array(image.data.buffer),
-    u:new Float32Array(count),v:new Float32Array(count), pigmentU:new Float32Array(count),pigmentV:new Float32Array(count), recess:new Float32Array(count)};
+    u:new Float32Array(count),v:new Float32Array(count), pigmentU:new Float32Array(count),pigmentV:new Float32Array(count),
+    recess:new Float32Array(count),changed:new Uint8Array(count),
+    basePX:new Float64Array(count),basePY:new Float64Array(count),baseNX:new Float64Array(count),baseNY:new Float64Array(count),
+    latitude:new Uint16Array(count), dented:new Uint8Array(outlineSegments), spokes:new Uint8Array(outlineSegments)};
   tiles.set(bubble,tile);
   return tile;
 }
 
-export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6,rimSlope = null) {
+export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6,rimSlope = null,rimOffset = null) {
   const wave = waves.get(bubble)?.display;
   const tile = surfaceTile(bubble,radius,detail);
   const tiltX = -.19*(bubble.vx || 0), tiltY = -.19*(bubble.vy || 0);
   // Slow marbling can reuse a tile across ambient frames. Stagger its refresh
   // across bodies; physical tilt, rotation, strain and waves update independently.
   const colourTick = Math.floor(bubble.phase*10/bubble.tempo + index*.25);
-  if (live && !wave && !rimSlope && !tile.wasTouched && ink === tile.ink &&
-    colourTick === tile.colourTick && Math.abs(bubble.angle-tile.angle) < .004 &&
+  const sameBase = live && ink === tile.ink &&
+    colourTick === tile.colourTick && index===tile.index && Math.abs(bubble.angle-tile.angle) < .004 &&
     Math.abs(tiltX-tile.tiltX)+Math.abs(tiltY-tile.tiltY) < .002 &&
-    Math.abs((bubble.strainX || 0)-tile.strainX)+Math.abs((bubble.strainY || 0)-tile.strainY) < .004) {
+    Math.abs((bubble.strainX || 0)-tile.strainX)+Math.abs((bubble.strainY || 0)-tile.strainY) < .004;
+  const contactChanged = !!rimSlope || tile.hadSlope;
+  if (sameBase && !wave && !tile.wasTouched && !contactChanged) {
     ctx.drawImage(tile.canvas,-edge,-edge,2*edge,2*edge);
     return;
   }
-  tile.ink = ink; tile.colourTick = colourTick; tile.angle = bubble.angle; tile.wasTouched = !!wave || !!rimSlope;
-  tile.tiltX = tiltX; tile.tiltY = tiltY;
-  tile.strainX = bubble.strainX || 0; tile.strainY = bubble.strainY || 0;
-  const {u,v,pigmentU,pigmentV,recess} = tile, palette = studioLight(ink);
+  const newPalette = ink !== tile.ink;
+  const oldRadius = tile.visibleRadius ?? 0;
+  tile.hadSlope = !!rimSlope;
+  tile.wasTouched = !!wave;
+  const {u,v,pigmentU,pigmentV,recess,changed} = tile, palette = studioLight(ink);
   const span = (mapSize-1)*.5;
   // Allow the interpolation cell on either side of the antialiased silhouette.
-  const visibleRadius = Math.max(...rim)+2*spacing;
-  const light = bubble.phase*9 + index*.89;
-  const roll = pigmentAngle(bubble,index), cos = Math.cos(roll), sin = Math.sin(roll);
-  const driftX = .37*Math.sin(light)+.15*Math.sin(bubble.phase*4+1.2);
-  const driftY = .33*Math.cos(light*.8+index);
-  const bend = .23*Math.sin(light*.75);
-  const arch = bubble.phase*6 + index, cross = bubble.phase*8 - bubble.angle;
-  const archX = .15*Math.cos(arch), archY = .15*Math.sin(arch);
-  const crossX = .12*Math.cos(cross), crossY = .12*Math.sin(cross);
-  for (let i = 0; i < count; i++) {
-    const p = mesh[i];
-    if (p.r > visibleRadius+2*spacing) continue;
-    const skin = mix(rim[p.a],rim[p.b],p.fraction);
-    const lat = Math.min(latitudeScale,Math.round(p.r/skin*latitudeScale));
-    const nz = front[lat];
-    const driftA = p.archCos*archX-p.archSin*archY;
-    const driftB = p.crossSin*crossX+p.crossCos*crossY;
-    const baseX = p.ux*side[lat], baseY = p.uy*side[lat];
-    let px = baseX+nz*(driftX+bend*p.y+driftA+.42*driftB);
-    let py = baseY+nz*(driftY-bend*p.x+.59*driftA-driftB);
-    let nx = baseX+nz*(tiltX+.6*(tile.strainX*p.x+tile.strainY*p.y));
-    let ny = baseY+nz*(tiltY+.6*(tile.strainY*p.x-tile.strainX*p.y));
-    if (rimSlope) {
-      // The normal on a dimpled polar outline tilts toward the shallower
-      // shoulder. Let that change in orientation fade into the interior.
-      const slope = mix(rimSlope[p.a],rimSlope[p.b],p.fraction)/skin;
-      const lean = slope*side[lat]*(lat/latitudeScale)**2;
-      nx += lean*p.uy; ny -= lean*p.ux;
+  if (contactChanged) {
+    for (let i=0;i<outlineSegments;i++) {
+      const active = !!(rimSlope?.[i] || rimOffset?.[3*i]);
+      tile.spokes[i] = active || tile.dented[i];
+      tile.dented[i] = active;
     }
-    let rayZ = nz;
+  }
+  if (!sameBase || contactChanged) {
+    if (!sameBase) {
+      tile.ink = ink; tile.index=index; tile.colourTick = colourTick; tile.angle = bubble.angle;
+      tile.phase = bubble.phase;
+      tile.tiltX = tiltX; tile.tiltY = tiltY;
+      tile.strainX = bubble.strainX || 0; tile.strainY = bubble.strainY || 0;
+    }
+    tile.visibleRadius = Math.max(...rim)+2*spacing;
+    const light = tile.phase*9 + index*.89;
+    const roll = pigmentAngle(tile,index);
+    tile.cos = Math.cos(roll); tile.sin = Math.sin(roll);
+    const driftX = .37*Math.sin(light)+.15*Math.sin(tile.phase*4+1.2);
+    const driftY = .33*Math.cos(light*.8+index);
+    const bend = .23*Math.sin(light*.75);
+    const arch = tile.phase*6 + index, cross = tile.phase*8 - tile.angle;
+    const archX = .15*Math.cos(arch), archY = .15*Math.sin(arch);
+    const crossX = .12*Math.cos(cross), crossY = .12*Math.sin(cross);
+    for (let i = 0; i < count; i++) {
+      const p = mesh[i];
+      if (p.r > tile.visibleRadius+2*spacing || (sameBase && !tile.spokes[p.a] && !tile.spokes[p.b])) continue;
+      const skin = mix(rim[p.a],rim[p.b],p.fraction);
+      const lat = Math.min(latitudeScale,Math.round(p.r/skin*latitudeScale));
+      const nz = front[lat];
+      const driftA = p.archCos*archX-p.archSin*archY;
+      const driftB = p.crossSin*crossX+p.crossCos*crossY;
+      const baseX = p.ux*side[lat], baseY = p.uy*side[lat];
+      const px = baseX+nz*(driftX+bend*p.y+driftA+.42*driftB);
+      const py = baseY+nz*(driftY-bend*p.x+.59*driftA-driftB);
+      let nx = baseX+nz*(tile.tiltX+.6*(tile.strainX*p.x+tile.strainY*p.y));
+      let ny = baseY+nz*(tile.tiltY+.6*(tile.strainY*p.x-tile.strainX*p.y));
+      if (rimSlope) {
+        // The normal on a dimpled polar outline tilts toward the shallower
+        // shoulder. Let that change in orientation fade into the interior.
+        const slope = mix(rimSlope[p.a],rimSlope[p.b],p.fraction)/skin;
+        const lean = slope*side[lat]*(lat/latitudeScale)**2;
+        nx += lean*p.uy; ny -= lean*p.ux;
+      }
+      tile.latitude[i] = lat;
+      tile.basePX[i] = px; tile.basePY[i] = py;
+      tile.baseNX[i] = nx; tile.baseNY[i] = ny;
+    }
+  }
+
+  // The wave advances at display cadence. Reuse the slow pigment and shape
+  // fields between updates; unchanged optical cells retain their exact pixels.
+  const {cos,sin,visibleRadius} = tile;
+  let waveArea;
+  if (wave || tile.waveHeight) {
+    tile.waveHeight ||= new Float32Array(count);
+    if (sameBase) {
+      waveArea = tile.waveArea ||= new Uint8Array(count);
+      waveArea.fill(0);
+      for (let row=1;row<cells;row++) for (let col=1,i=row*stride+1;col<cells;col++,i++) {
+        if (tile.waveHeight[i]===(wave?.[i] || 0)) continue;
+        // A single membrane node contributes to the nine surrounding normals.
+        waveArea[i-1]=waveArea[i]=waveArea[i+1]=1;
+        waveArea[i-stride-1]=waveArea[i-stride]=waveArea[i-stride+1]=1;
+        waveArea[i+stride-1]=waveArea[i+stride]=waveArea[i+stride+1]=1;
+      }
+    }
+    if (wave) tile.waveHeight.set(wave);
+    else { tile.waveHeight=null; tile.waveArea=null; }
+  }
+  changed.fill(0);
+  for (let i=0; i<count; i++) {
+    const p=mesh[i];
+    if (p.r > visibleRadius+2*spacing || (sameBase && !waveArea?.[i] &&
+      !(contactChanged && (tile.spokes[p.a] || tile.spokes[p.b])))) continue;
+    const lat=tile.latitude[i], nz=front[lat];
+    let px=tile.basePX[i], py=tile.basePY[i], nx=tile.baseNX[i], ny=tile.baseNY[i];
+    let rayZ=nz, depth=0;
     if (wave) {
       let sx = 0, sy = 0;
       if (i > stride && i < count-stride-1) {
@@ -317,7 +373,7 @@ export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6,rim
       }
       px -= .18*sx; py -= .18*sy;
       // The well transmits a little more of the local colour below the reflected softbox.
-      recess[i] = Math.min(.68,Math.max(0,-wave[i])*(2.65+1.2*clamp(.45+sx-sy)));
+      depth = Math.min(.68,Math.max(0,-wave[i])*(2.65+1.2*clamp(.45+sx-sy)));
       // The radial tangent tilts out of the screen at the silhouette. Carry
       // that slope into Z so a ripple at the facing lip can turn the softbox.
       const radial = sx*p.ux + sy*p.uy;
@@ -326,17 +382,33 @@ export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6,rim
       rayZ += side[lat]*radial;
     }
     const baseInv = 1/Math.sqrt(px*px+py*py+nz*nz);
-    pigmentU[i] = span*(1+(cos*px+sin*py)*baseInv);
-    pigmentV[i] = span*(1+(cos*py-sin*px)*baseInv);
+    const colourX = Math.fround(span*(1+(cos*px+sin*py)*baseInv));
+    const colourY = Math.fround(span*(1+(cos*py-sin*px)*baseInv));
     const inv = 1/Math.max(.00001,Math.sqrt(nx*nx+ny*ny+rayZ*rayZ));
-    u[i] = span*(1+nx*inv);
-    v[i] = span*(1+ny*inv);
+    const lightX = Math.fround(span*(1+nx*inv)), lightY = Math.fround(span*(1+ny*inv));
+    depth = Math.fround(depth);
+    if (newPalette || u[i]!==lightX || v[i]!==lightY || pigmentU[i]!==colourX || pigmentV[i]!==colourY || recess[i]!==depth) {
+      changed[i]=1;
+      u[i]=lightX; v[i]=lightY; pigmentU[i]=colourX; pigmentV[i]=colourY; recess[i]=depth;
+    }
   }
+  shadeChangedCells(tile,palette,!!wave,oldRadius);
+  ctx.drawImage(tile.canvas,-edge,-edge,2*edge,2*edge);
+}
+
+function shadeChangedCells(tile,palette,wave,oldRadius) {
+  const {u,v,pigmentU,pigmentV,recess,changed,visibleRadius,pixels}=tile;
+  const {coat,shade,pearl,weights}=palette;
   const n = tile.samples, w = tile.canvas.width;
+  let left=cells, right=-1, top=cells, bottom=-1;
   for (let cy = 0; cy < cells; cy++) {
     for (let cx = 0; cx < cells; cx++) {
       const i = cy*stride+cx, below = i+stride;
-      if (mesh[i].r > visibleRadius) continue;
+      if (mesh[i].r > visibleRadius || (mesh[i].r <= oldRadius && !(changed[i] || changed[i+1] || changed[below] || changed[below+1]))) continue;
+      if (cx<left) left=cx;
+      if (cx>right) right=cx;
+      if (cy<top) top=cy;
+      bottom=cy;
       const leftU = (u[below]-u[i])/n, leftV = (v[below]-v[i])/n;
       const rightU = (u[below+1]-u[i+1])/n, rightV = (v[below+1]-v[i+1])/n;
       for (let row = 0; row < n; row++) {
@@ -355,11 +427,10 @@ export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6,rim
         for (let col=0; col<n; col++,tx+=du,ty+=dv,px+=dx,py+=dy,depth+=depthStep) {
           const pigment = ((py+.5)|0)*mapSize+((px+.5)|0);
           const ray = ((ty+.5)|0)*mapSize+((tx+.5)|0);
-          tile.pixels[pixel++] = reflect(palette.coat[pigment],palette.shade[pigment],palette.pearl,palette.weights[ray],depth);
+          pixels[pixel++] = reflect(coat[pigment],shade[pigment],pearl,weights[ray],depth);
         }
       }
     }
   }
-  tile.ctx.putImageData(tile.image,0,0);
-  ctx.drawImage(tile.canvas,-edge,-edge,2*edge,2*edge);
+  if (right>=left) tile.ctx.putImageData(tile.image,0,0,left*n,top*n,(right-left+1)*n,(bottom-top+1)*n);
 }

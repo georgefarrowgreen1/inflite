@@ -22,7 +22,7 @@ if (context) {
     formingLogo.finished.then(revealSky, revealSky);
   }
 
-  function paint(dt, pointer, live) {
+  function paint(dt, pointer, live, frameMs) {
     const width = canvas.clientWidth, height = canvas.clientHeight;
     if (!width || !height) return;
     const aspect = width/height;
@@ -36,7 +36,7 @@ if (context) {
     }
     if (dt || pointer) driftBubbles(bubbles,dt,aspect,pointer);
     sizeBubbleCanvas(canvas,width,height);
-    const moving = drawBubbles(context,bubbles,defaultBubbleColour,0,live,light.matches);
+    const moving = drawBubbles(context,bubbles,defaultBubbleColour,0,live,light.matches,undefined,frameMs);
     if (!canvas.hasAttribute("data-painted")) canvas.dataset.painted = "";
     return moving;
   }

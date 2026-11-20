@@ -99,14 +99,15 @@ function loadRenderer() {
   }).catch(() => { loading = null; });
 }
 
-function paint(dt, pointer, live) {
+function paint(dt, pointer, live, frameMs) {
   const width = canvas.clientWidth, height = canvas.clientHeight;
   if (!width || !height) return;
   const aspect = width/height;
   bubbles ||= readScene() || engine.newBubbleScene(aspect);
   if (dt || pointer) engine.driftBubbles(bubbles,dt,aspect,pointer);
   engine.sizeBubbleCanvas(canvas,width,height);
-  const moving = engine.drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,live,light,damage);
+  const moving = engine.drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,live,light,damage,frameMs);
+  if (moving === null) return false;
   drawPreview();
   wallpaperFrame?.(canvas,damage);
   return moving;
@@ -143,13 +144,6 @@ function sync() {
 if (canvas) {
   addEventListener("inflite:appearance", prepareRefraction);
   for (const media of [dark, still, contrast]) media.addEventListener("change", sync);
-  function watchDensity() {
-    matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener("change", () => {
-      watchDensity();
-      sync();
-    }, {once:true});
-  }
-  watchDensity();
   new MutationObserver(sync).observe(root, {attributes:true, attributeFilter:["data-theme"]});
   const screens = new MutationObserver(sync);
   for (const view of [workspace, signedOut]) {

@@ -19,12 +19,16 @@ test('a passive small orb imparts a weighted recoil to a stationary large orb', 
     const speed=.0065, scene=approaching(index,speed), large=scene[0], small=scene[index];
     const start=large.x, momentum=small.vx*radii[index];
     driftBubbles(scene,1/120,3);
-    assert.ok(large.vx<0 && small.vx>0, 'the large orb recoils and the small orb rebounds');
+    assert.ok(large.vx<0 && small.vx<large.vx, 'weight transfers gradually during initial compression');
+    for (let i=1;i<24;i++) {
+      assert.ok(Math.abs(large.vx*radii[0]+small.vx*radii[index]-momentum)<1e-10);
+      driftBubbles(scene,1/120,3);
+    }
+    assert.ok(large.vx<0 && small.vx>0, 'after release the large orb recoils and the small orb rebounds');
     assert.ok(Math.abs(large.vx)<small.vx+speed, 'the heavier body changes velocity less');
-    assert.ok(Math.abs(large.vx*radii[0]+small.vx*radii[index]-momentum)<1e-10);
     const sharedSpeed=Math.abs(momentum)/(radii[0]+radii[index]);
     assert.ok(Math.abs(large.vx)>sharedSpeed && Math.abs(large.vx)<2*sharedSpeed);
-    for (let i=0;i<60;i++) driftBubbles(scene,1/60,3);
+    for (let i=0;i<48;i++) driftBubbles(scene,1/60,3);
     assert.ok((start-large.x)*3>sharedSpeed, 'recoil carries through the next second');
     assert.ok((small.x-large.x)*3>radii[index]+radii[0], 'the two orbs separate on their own');
   }
@@ -38,10 +42,45 @@ test('a glancing impact preserves tangential motion and does not add kinetic ene
     driftBubbles(scene,1/120,3);
     assert.equal(large.vy,0);
     assert.equal(small.vy,.003);
-    assert.ok(large.vx<0 && small.vx>0);
-    const energy=radii[0]*large.vx**2+radii[2]*(small.vx**2+small.vy**2);
-    assert.ok(energy<=initialEnergy);
+    assert.ok(large.vx<0 && small.vx<large.vx);
+    for (let i=0;i<30;i++) {
+      const energy=radii[0]*(large.vx**2+large.vy**2)+radii[2]*(small.vx**2+small.vy**2);
+      assert.ok(energy<=initialEnergy);
+      driftBubbles(scene,1/120,3);
+    }
+    assert.ok(small.vx>large.vx);
   }
+});
+
+test('soft contact loads before rebound and faster impacts retain more relative speed', async () => {
+  const {driftBubbles}=await import('../today/public/roof/bubbles.js');
+  function strike(speed,intervals) {
+    const scene=approaching(2,speed), heavy=scene[0], light=scene[2], initial=(light.x-heavy.x)*3;
+    let time=0, frame=0, release, maxCompression=0, rebound=0, loading;
+    while (time<.22) {
+      const dt=Math.min(intervals[frame++%intervals.length],.22-time);
+      const previous=heavy.x;
+      driftBubbles(scene,dt,3);
+      time+=dt;
+      if (dt>1/480) assert.ok(heavy.x<previous,'the heavy centre advances even between 120 Hz ticks');
+      const relative=(light.vx-heavy.vx)/speed;
+      if (time<=.034) loading=relative;
+      if (relative>=0 && !release) release=time;
+      rebound=Math.max(rebound,relative);
+      maxCompression=Math.max(maxCompression,initial-(light.x-heavy.x)*3);
+    }
+    assert.ok(loading<-.25 && loading>-.90, 'both bodies are still loading after the first few frames');
+    assert.ok(release>.04 && release<.10);
+    assert.ok(maxCompression>speed*.015 && maxCompression<speed*.07);
+    return rebound;
+  }
+  const slow=strike(.0065,[1/120]), firm=strike(.12,[1/120]);
+  assert.ok(slow>.4 && firm>slow+.07 && firm<.86);
+  for (const intervals of [[1/30],[1/60],[1/144],[1/240],[.004,.012,.007,.018]]) {
+    assert.ok(Math.abs(strike(.0065,intervals)-slow)<.012);
+    assert.ok(Math.abs(strike(.12,intervals)-firm)<.02);
+  }
+  assert.ok(strike(.35,[1/60])<.9,'a fast flick still dissipates collision energy');
 });
 
 test('a closing pair excites both facing surfaces once and can meet again', async () => {

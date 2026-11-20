@@ -1,7 +1,8 @@
 // Observe gestures through the page. Controls, text entry and native scrolling keep ownership.
 export function bubbleMotion(canvas, paint) {
   const controls = 'a, button, input, select, textarea, label, summary, form, dialog, iframe, [contenteditable], [role=button], [role=tab], [role=slider], [role=menuitem], [role=switch], [role=link]';
-  let mode = "off", timer, frame = 0, previous;
+  let mode = "off", frame = null, previous, lastRefresh, densityQuery, densityTimer, density;
+  let frameMs = 1000/60, candidateMs = 0, matching = 0;
   let press, point, lift, sequence = 0;
 
   function eligible(event) {
@@ -98,18 +99,52 @@ export function bubbleMotion(canvas, paint) {
   }
 
   function queue() {
-    if (mode === "live" && !frame) frame = requestAnimationFrame(render);
+    if (mode === "live" && frame === null) frame = requestAnimationFrame(render);
+  }
+
+  function measureRefresh(interval) {
+    if (interval < 1 || interval > 100) return;
+    if (Math.abs(interval-frameMs) < .12*frameMs) {
+      frameMs += (interval-frameMs)*.12;
+      matching = 0;
+      return;
+    }
+    if (!matching || Math.abs(interval-candidateMs) > .12*candidateMs) {
+      candidateMs = interval;
+      matching = 1;
+      return;
+    }
+    candidateMs += (interval-candidateMs)*.25;
+    // A faster panel should get its budget promptly. A single missed refresh
+    // must not make expensive work look affordable on the next frame.
+    if (++matching >= (candidateMs < frameMs ? 2 : 30)) {
+      frameMs = candidateMs;
+      matching = 0;
+    }
   }
 
   function render(now) {
-    frame = 0;
-    clearTimeout(timer);
-    const dt = previous === undefined ? 0 : Math.min(.35,Math.max(0,(now-previous)/1000));
+    frame = null;
+    if (mode !== "live") return;
+    if (lastRefresh !== undefined) measureRefresh(now-lastRefresh);
+    lastRefresh = now;
+    const dt = Math.min(.16,Math.max(0,(now-previous)/1000));
     previous = now;
-    const live = mode === "live";
-    const responding = paint(dt,live ? sample(now) : null,live);
-    if (live && responding) queue();
-    else if (live) timer = setTimeout(queue,45);
+    paint(dt,sample(now),true,frameMs);
+    queue();
+  }
+
+  function watchDensity() {
+    densityQuery?.removeEventListener("change", densityChanged);
+    density = window.devicePixelRatio;
+    densityQuery = window.matchMedia?.(`(resolution: ${density}dppx)`);
+    densityQuery?.addEventListener("change", densityChanged, {once:true});
+  }
+
+  function densityChanged() {
+    if (mode !== "still" || window.devicePixelRatio === density) return;
+    paint(0,null,false,frameMs);
+    watchDensity();
   }
 
   window.addEventListener("pointerdown", event => {
@@ -155,21 +190,29 @@ export function bubbleMotion(canvas, paint) {
   window.addEventListener("blur", clearInput);
 
   return function setMode(next) {
-    clearTimeout(timer);
-    cancelAnimationFrame(frame);
-    frame = 0;
-    previous = undefined;
-    if (next !== mode || next !== "live") clearInput();
+    if (mode === next) {
+      // The pending live refresh already sees the new palette or geometry.
+      if (mode === "still") paint(0,null,false,frameMs);
+      return;
+    }
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
+    if (densityTimer !== undefined) clearInterval(densityTimer);
+    densityTimer = undefined;
+    densityQuery?.removeEventListener("change", densityChanged);
+    densityQuery = null;
+    clearInput();
+    lastRefresh = undefined;
+    matching = 0;
     mode = next;
     if (mode === "off") return;
-    render(performance.now());
+    previous = performance.now();
+    paint(0,null,mode === "live",frameMs);
     if (mode === "still") {
-      let density = devicePixelRatio;
-      timer = setInterval(() => {
-        if (density === devicePixelRatio) return;
-        density = devicePixelRatio;
-        paint(0,null,false);
-      },1000);
-    }
+      watchDensity();
+      // Chromium can update DPR on an idle page without dispatching any resize
+      // or media-query event. This check runs no physics or paint unless DPR changes.
+      densityTimer = setInterval(densityChanged,1000);
+    } else queue();
   };
 }

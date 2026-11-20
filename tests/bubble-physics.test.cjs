@@ -94,25 +94,79 @@ test('the release samples the last brush velocity and leaves vertical touch scro
   control('off');
 });
 
-test('active feedback paints every refresh at 60, 120, 144 and 240 Hz', async () => {
+test('ambient drift and active feedback share each display refresh and use its measured budget', async () => {
   const {bubbleMotion} = await import('../today/public/roof/bubble-motion.js');
   const vm = require('node:vm');
   for (const hz of [60,120,144,240]) {
-    let pending, frames = 0;
+    let pending, frames = 0, seconds = 0, budget = 0;
     const scheduler = vm.runInNewContext('('+bubbleMotion.toString()+')', {
       window: new EventTarget(), performance:{now:()=>0},
-      requestAnimationFrame(callback) { pending = callback; return 1; },
+      requestAnimationFrame(callback) { assert.equal(pending,null); pending = callback; return 0; },
       cancelAnimationFrame() { pending = null; }, clearTimeout,
     });
-    const setMode = scheduler({},() => { frames++; return true; });
+    pending = null;
+    const setMode = scheduler({},(dt,input,live,frameMs) => {
+      frames++; seconds += dt; budget = frameMs;
+      return frames > hz/2;
+    });
     setMode('live');
     for (let i=1; i<=hz; i++) {
+      if (i === 4) setMode('live'); // Size and theme notifications share the pending refresh.
       const callback = pending;
       pending = null;
       callback(1000*i/hz);
     }
     assert.equal(frames,hz+1);
+    assert.ok(Math.abs(seconds-1)<.000001);
+    assert.ok(Math.abs(budget-1000/hz)<.001);
+    const missed = pending; pending = null;
+    missed(1000+2*1000/hz);
+    assert.ok(Math.abs(budget-1000/hz)<.001,'one missed refresh does not double the next frame budget');
     setMode('off');
     assert.equal(pending,null);
   }
+});
+
+test('a still wallpaper repaints on density changes and hidden time does not advance restored motion', async () => {
+  const {bubbleMotion} = await import('../today/public/roof/bubble-motion.js');
+  const window = new EventTarget(), queries = [], paints = [];
+  window.devicePixelRatio = 2;
+  window.matchMedia = media => {
+    const query = new EventTarget();
+    queries.push({query,media});
+    return query;
+  };
+  let now = 0, pending = null, densityCheck;
+  const scheduler = require('node:vm').runInNewContext('('+bubbleMotion.toString()+')', {
+    window, performance:{now:()=>now},
+    requestAnimationFrame(callback){assert.equal(pending,null);pending=callback;return 7;},
+    cancelAnimationFrame(){pending=null;},
+    setInterval(callback,delay){assert.equal(delay,1000);densityCheck=callback;return 7;},
+    clearInterval(){densityCheck=null;}
+  });
+  const setMode = scheduler({},(dt,input,live)=>{paints.push([dt,live,window.devicePixelRatio]);});
+  setMode('still');
+  assert.equal(pending,null);
+  assert.equal(queries[0].media,'(resolution: 2dppx)');
+  window.devicePixelRatio = 3;
+  queries[0].query.dispatchEvent(new Event('change'));
+  assert.equal(queries[1].media,'(resolution: 3dppx)');
+  assert.deepEqual(paints,[[0,false,2],[0,false,3]]);
+  densityCheck();
+  assert.equal(paints.length,2,'a stationary display performs no animation or paint');
+  window.devicePixelRatio = 1;
+  densityCheck();
+  assert.deepEqual(paints.at(-1),[0,false,1],'a silent DPR change still resizes the artwork');
+  setMode('off');
+  assert.equal(densityCheck,null);
+  queries[2].query.dispatchEvent(new Event('change'));
+  assert.equal(paints.length,3);
+  assert.equal(pending,null);
+  now = 30000;
+  setMode('live');
+  const resume = pending; pending = null; now += 10;
+  resume(now);
+  assert.deepEqual(paints.slice(-2),[[0,true,1],[.01,true,1]]);
+  setMode('still');
+  assert.equal(pending,null);
 });
