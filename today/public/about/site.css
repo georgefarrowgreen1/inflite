@@ -74,6 +74,7 @@ h2 { font-size: clamp(2.35rem, 5.15vw, 5.4rem); font-weight: 660; }
 .brand-with-company { flex: none; font-size: 1.35rem; }
 .brand-with-company > img { width: 2.45rem; height: 2.45rem; }
 .brand-name { display: grid; gap: .2rem; }
+.brand-inline .brand-name { display: flex; align-items: center; gap: .35em; white-space: nowrap; }
 .brand-company {
   display: flex; align-items: center; gap: .24rem; color: var(--muted);
   font-size: .75rem; font-weight: 530; letter-spacing: 0; line-height: 1.2;
@@ -82,6 +83,9 @@ h2 { font-size: clamp(2.35rem, 5.15vw, 5.4rem); font-weight: 660; }
 @media (prefers-color-scheme: light) { .brand-company img { filter: none; } }
 .foot nav { display: flex; flex-wrap: wrap; gap: 0 clamp(.75rem, 2vw, 1.5rem); }
 .foot nav a { font-size: .875rem; font-weight: 640; text-decoration: none; }
+.showcase-page .foot { font-size: 1.0625rem; }
+.showcase-page .foot :is(.brand-inline, .brand-company, nav a) { font-size: inherit; }
+.brand-inline .brand-company img { width: auto; height: 1em; }
 .foot nav a:hover { text-decoration: underline; }
 .actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; }
 .trap { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }

@@ -2082,6 +2082,26 @@ for (const width of [320, 1440]) test(`About documents and Contact stay in Setti
     await page.evaluate(() => { window.aboutSettingsDocument = document; });
     const about = page.locator('#you [data-group=about]');
     const body = page.locator('.settings-document');
+    await about.getByRole('link',{name:'Terms of use'}).waitFor();
+    assert.equal(await about.getByRole('heading',{name:'About InFlite',exact:true}).count(),1);
+    const footer = about.locator('footer');
+    await footer.evaluate(el => el.scrollIntoView({behavior:'instant',block:'center'}));
+    await page.waitForFunction(() => {
+      const el = document.querySelector('#you [data-group=about] footer');
+      if (!el) return false;
+      const terms = el.previousElementSibling.querySelector('a:last-child').getBoundingClientRect();
+      const brand = el.querySelector('strong').getBoundingClientRect();
+      const gfg = el.querySelector('[aria-label="gfg"]').getBoundingClientRect();
+      return el.getBoundingClientRect().top >= terms.bottom && brand.right <= gfg.left &&
+        Math.max(brand.top,gfg.top) < Math.min(brand.bottom,gfg.bottom) && el.scrollWidth <= el.clientWidth;
+    });
+    const typeSizes = await about.locator('h2, .row .tx b, .row .val, footer, footer strong')
+      .evaluateAll(elements => elements.map(el => getComputedStyle(el).fontSize));
+    assert.equal(new Set(typeSizes).size,1);
+    const lastRows = about.locator('.group > .row:nth-last-child(-n+5)');
+    assert.deepEqual(await lastRows.allTextContents(), [
+      'About the apps', 'Contact InFlite', 'Privacy notice', 'Cookies and device storage', 'Terms of use'
+    ]);
     async function enter(title,key) {
       await about.getByRole('link',{name:title,exact:true}).click();
       await body.getByRole('heading',{name:title,exact:true}).waitFor();

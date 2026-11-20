@@ -242,7 +242,11 @@ function paint(root, ctx) {
   }).join("");
   const aboutLinks = ABOUT_PAGES.map(([id, title]) =>
     `<a class="row go" href="/#settings=about-${id}">${tx(title, "")}<span class="chev">${G.chev}</span></a>`).join("");
-  FOLDERS.versions = sec("youVersions", "About InFlite", aboutLinks + ver);
+  FOLDERS.versions = sec("youVersions", "", ver + aboutLinks) + `
+    <footer class="settings-company">
+      <img src="/inflite.svg" width="30" height="30" alt="">
+      <strong>InFlite</strong> a <span class="settings-company-logo" role="img" aria-label="gfg"></span> company
+    </footer>`;
   const link = (action, title, description, lead = "") => go(`data-setting="${action}"`, title, description, "", lead);
   const options = ctx.frame?.session?.apps || {};
   const appSettings = [

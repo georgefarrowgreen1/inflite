@@ -160,6 +160,17 @@ test('public pages and contact form work without signing in, from phone to deskt
       assert.equal(new URL(page.url()).pathname, pagePath);
       assert.equal(await page.locator('main h1').count(), 1);
       await assertCompanyBrand(page.getByRole('contentinfo'));
+      if (pagePath === '/about/') {
+        const sizes = await page.locator('footer .brand-name, footer .brand-company, footer nav a')
+          .evaluateAll(elements => elements.map(el => getComputedStyle(el).fontSize));
+        assert.equal(new Set(sizes).size, 1);
+        assert.ok(await page.locator('footer .brand-name').evaluate(el => {
+          const name = document.createRange();
+          name.selectNodeContents(el.firstChild);
+          const brand = name.getBoundingClientRect(), company = el.lastElementChild.getBoundingClientRect();
+          return company.left >= brand.right && company.top < brand.bottom && company.bottom > brand.top;
+        }));
+      }
       const problems = await page.evaluate(() => {
         const errors = [];
         if (document.documentElement.scrollWidth > innerWidth) errors.push('horizontal overflow');

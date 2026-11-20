@@ -559,6 +559,21 @@ label.row:active { background: var(--press); }
 .settings-back { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; min-height: 44px; color: var(--tint-text); font-weight: 600; }
 .settings-back span { font-size: 1.4em; }
 .settings-empty { padding: 20px 6px; color: var(--text-2); }
+.settings-detail[data-group="about"] { --about-text-size: 1.0625rem; }
+.settings-content [data-group="about"] > h2,
+[data-group="about"] .row .tx b,
+[data-group="about"] .row .val { font-size: var(--about-text-size); }
+.settings-company {
+  display: flex; align-items: center; justify-content: center; gap: .35em;
+  padding-bottom: 1rem; color: var(--text-2); font-size: var(--about-text-size, 1.0625rem); white-space: nowrap;
+}
+.settings-company img { border-radius: 24%; }
+.settings-company strong { font: 700 1em/1 var(--font-d); letter-spacing: -.045em; color: var(--text); }
+.settings-company-logo {
+  height: 1em; aspect-ratio: 80 / 54; background: currentColor;
+  mask: url("/about/gfg.svg") center / contain no-repeat;
+}
+#you[data-filtering] .settings-company { display: none; }
 .settings-detail .row[aria-busy=true] { opacity: .65; }
 #you[data-filtering] nav, #you[data-filtering] .settings-back { display: none; }
 @media (max-width: 899px) {
