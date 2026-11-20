@@ -1,7 +1,6 @@
 // The wallpaper belongs to the document. App routes only replace content above it.
-import {bubbleMotion} from "./bubble-motion.js";
-import {minerals, defaultBubbleColour, newBubbleScene, validBubbleScene, driftBubbles, drawBubbles, sizeBubbleCanvas} from "./bubbles.js";
-export {bubbleColours} from "./bubbles.js";
+import {minerals, defaultBubbleColour} from "./bubble-colours.js";
+export {bubbleColours} from "./bubble-colours.js";
 
 const preferenceKey = "inflite:dark-wallpaper";
 const colourKey = "inflite:lava-colour"; // Retain people's saved colourways.
@@ -32,7 +31,7 @@ export function setWallpaper(value) {
 function readScene() {
   try {
     const saved = JSON.parse(sessionStorage.getItem(sceneKey));
-    if (validBubbleScene(saved)) return saved;
+    if (engine?.validBubbleScene(saved)) return saved;
   } catch {}
   return null;
 }
@@ -40,11 +39,13 @@ function readScene() {
 const root = document.documentElement;
 const canvas = document.querySelector(".sky > canvas");
 const workspace = document.getElementById("in");
+const signedOut = document.getElementById("out");
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const still = matchMedia("(prefers-reduced-motion: reduce)");
 const contrast = matchMedia("(prefers-contrast: more), (forced-colors: active)");
 let bubbles, ctx, preview, previewSize, refraction, wallpaperFrame;
 let suspended = false, light = false;
+let engine, motion, loading, setMotion;
 
 function prepareRefraction() {
   const prefs = window.InFliteAppearance?.snapshot();
@@ -88,16 +89,24 @@ function checkpoint() {
 }
 
 const damage = [];
-const setMotion = canvas && bubbleMotion(canvas, paint);
+function loadRenderer() {
+  if (loading) return;
+  loading = Promise.all([import("./bubbles.js"), import("./bubble-motion.js")]).then(([art, input]) => {
+    engine = art;
+    motion = input.bubbleMotion;
+    // Preferences, visibility and the selected shell screen can change during either import.
+    sync();
+  }).catch(() => { loading = null; });
+}
 
 function paint(dt, pointer, live) {
   const width = canvas.clientWidth, height = canvas.clientHeight;
   if (!width || !height) return;
   const aspect = width/height;
-  bubbles ||= readScene() || newBubbleScene(aspect);
-  if (dt || pointer) driftBubbles(bubbles,dt,aspect,pointer);
-  sizeBubbleCanvas(canvas,width,height);
-  const moving = drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,live,light,damage);
+  bubbles ||= readScene() || engine.newBubbleScene(aspect);
+  if (dt || pointer) engine.driftBubbles(bubbles,dt,aspect,pointer);
+  engine.sizeBubbleCanvas(canvas,width,height);
+  const moving = engine.drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,live,light,damage);
   drawPreview();
   wallpaperFrame?.(canvas,damage);
   return moving;
@@ -106,7 +115,17 @@ function paint(dt, pointer, live) {
 function sync() {
   light = root.dataset.theme ? root.dataset.theme === "light" : !dark.matches;
   const enabled = canvas && wallpaperPreference() !== "plain" && !contrast.matches;
-  if (enabled) ctx ||= canvas.getContext("2d", {alpha:false});
+  // The opening screen paints its own opaque artwork while the session resolves.
+  const revealed = !workspace || !workspace.hidden || signedOut?.hidden === false;
+  const visible = enabled && revealed && !document.hidden && !suspended &&
+    canvas.parentElement.clientWidth > 0 && canvas.parentElement.clientHeight > 0;
+  if (visible) {
+    if (!engine) loadRenderer();
+    else {
+      ctx ||= canvas.getContext("2d", {alpha:false});
+      if (ctx) setMotion ||= motion(canvas,paint);
+    }
+  }
   if (enabled && ctx) {
     const colour = wallpaperColour();
     root.dataset.midnightLava = colour;
@@ -116,7 +135,6 @@ function sync() {
     delete root.dataset.midnightLava;
     root.style.removeProperty("--orb-ground");
   }
-  const visible = enabled && ctx && !document.hidden && !suspended;
   const live = !still.matches && wallpaperPreference() === "bubbles";
   setMotion?.(visible ? (live ? "live" : "still") : "off");
   prepareRefraction();
@@ -133,7 +151,10 @@ if (canvas) {
   }
   watchDensity();
   new MutationObserver(sync).observe(root, {attributes:true, attributeFilter:["data-theme"]});
-  if (workspace) new MutationObserver(sync).observe(workspace, {attributes:true, attributeFilter:["hidden"]});
+  const screens = new MutationObserver(sync);
+  for (const view of [workspace, signedOut]) {
+    if (view) screens.observe(view, {attributes:true, attributeFilter:["hidden"]});
+  }
   new ResizeObserver(sync).observe(canvas.parentElement);
   addEventListener("storage", event => {
     if (event.storageArea !== localStorage || (event.key && event.key !== preferenceKey && event.key !== colourKey)) return;

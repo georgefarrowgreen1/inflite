@@ -20,10 +20,11 @@ async function assertCompanyBrand(region) {
   assert.ok(await logo.isVisible());
 }
 
-test('installed shell leaves online public page navigations to the site', () => {
+test('installed shell keeps its orb modules offline and leaves public pages on their own release', async () => {
   const events = new Map();
   const self = { location: new URL('/sw.js', origin), addEventListener: (name, handler) => events.set(name, handler) };
-  vm.runInNewContext(fs.readFileSync(path.join(assets, 'sw.js'), 'utf8'), { self, URL });
+  const caches = { open:async () => ({ match:async key => key }) };
+  vm.runInNewContext(fs.readFileSync(path.join(assets, 'sw.js'), 'utf8'), { self, URL, caches });
   for (const page of pages) {
     for (const pathname of [page, page.slice(0, -1), page + 'index.html']) {
       events.get('fetch')({ request: { method: 'GET', mode: 'navigate', url: origin + pathname }, respondWith() {
@@ -31,12 +32,14 @@ test('installed shell leaves online public page navigations to the site', () => 
       } });
     }
   }
-  let intercepted = false;
-  events.get('fetch')({
-    request: { url: origin + '/roof/bubble-surface.js', method:'GET', referrer:origin + '/roof/bubbles.js?about' },
-    respondWith() { intercepted = true; },
-  });
-  assert.equal(intercepted, false, 'public optics follow the renderer even while an older shell is installed');
+  for (const filename of ['bubble-surface.js', 'bubble-colours.js']) {
+    const asset = '/roof/' + filename;
+    const request = { url:origin + asset, method:'GET', referrer:origin + '/roof/bubbles.js?about' };
+    events.get('fetch')({ request, respondWith() { assert.fail('Public renderer dependency intercepted: ' + asset); } });
+    let cached;
+    events.get('fetch')({ request:{...request, referrer:origin + '/roof/bubbles.js'}, respondWith(result) { cached = result; } });
+    assert.equal(await cached, asset, 'the shell serves its installed copy of ' + filename);
+  }
 });
 
 test('public pages and contact form work without signing in, from phone to desktop', async () => {

@@ -461,7 +461,7 @@ for (const width of [390, 1440]) test(`Today account control uses the saved prof
   } finally { await fallback.ctx.close(); }
 });
 
-async function open({ width = 390, deviceScaleFactor = 1, scheme = 'light', answer = day, signedIn = true, preferences, intercept, initialPath = '/', waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedCards, seedHub, blockBootstrap = false, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
+async function open({ width = 390, deviceScaleFactor = 1, scheme = 'light', answer = day, signedIn = true, preferences, intercept, beforeNavigate, initialPath = '/', waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedCards, seedHub, blockBootstrap = false, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, deviceScaleFactor, colorScheme: scheme, reducedMotion: motion,
     locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
   if (noViewTransitions) await ctx.addInitScript(() => { delete Document.prototype.startViewTransition; });
@@ -525,6 +525,7 @@ async function open({ width = 390, deviceScaleFactor = 1, scheme = 'light', answ
     document.addEventListener('securitypolicyviolation', e => window.__csp.push(`${e.violatedDirective}: ${e.blockedURI}`));
   });
   await page.clock.setFixedTime(new Date(answer.at));
+  if (beforeNavigate) await beforeNavigate(page);
   // WebKit can include startup fetches in its load event. Tests that hold the
   // session response must observe the page before that event to release it.
   await page.goto(origin + initialPath, { waitUntil: waitForReady ? 'load' : 'commit' });
@@ -1942,6 +1943,54 @@ for (const width of [320, 390, 1440]) test(`Ride overview requires an available 
     assert.equal(guard.messages.length,1);
     assert.deepEqual(errors,[]);
   } finally {await ctx.close();}
+});
+
+for (const start of ['plain','high contrast']) test(`orb rendering loads on demand after a ${start} startup`, async () => {
+  const requests=[];
+  const renderer=/\/roof\/(bubbles|bubble-surface)\.js(?:\?|$)/;
+  const {ctx,page,errors}=await open({initialPath:'/#settings',waitForDay:false,beforeNavigate:async page => {
+    if (start==='plain') await page.addInitScript(() => localStorage.setItem('inflite:dark-wallpaper','plain'));
+    else await page.emulateMedia({contrast:'more'});
+    page.on('request',r => {if (renderer.test(r.url())) requests.push(new URL(r.url()).pathname);});
+  }});
+  let unblock;
+  try {
+    await page.route('**/account/api/account/appearance',r => r.fulfill({json:{
+      signedIn:true,id:fixture('session').user.id,appearance:'auto',palette:'inflite',glass:true,glassStrength:55
+    }}));
+    await page.getByRole('searchbox',{name:'Search settings'}).fill('orbs');
+    await page.getByRole('button',{name:/Appearance Theme/}).click({timeout:5000});
+    const picker=page.getByRole('combobox',{name:'Wallpaper on this device'});
+    await picker.waitFor();
+    assert.deepEqual(requests,[],'opening the shell and its appearance controls does not download the renderer');
+    if (start==='plain') {
+      const gate=new Promise(resolve => {unblock=resolve;});
+      await page.route('**/roof/bubbles.js*',async route => {await gate; await route.continue();});
+      const firstLoad=page.waitForRequest('**/roof/bubbles.js*',{timeout:5000});
+      await picker.selectOption('still');
+      await firstLoad;
+      await picker.selectOption('plain');
+      unblock();
+      // Wait for module evaluation as well as network completion.
+      await page.evaluate(async () => {await import('/roof/bubbles.js'); await new Promise(requestAnimationFrame);});
+      assert.equal(await page.locator('html[data-midnight-lava]').count(),0,'a late import respects the newer Plain selection');
+      await picker.selectOption('still');
+    } else {
+      await page.emulateMedia({contrast:'no-preference'});
+    }
+    await page.waitForFunction(() => {
+      const canvas=document.querySelector('html[data-midnight-lava] .sky > canvas');
+      const preview=document.querySelector('.settings-dock-preview > canvas');
+      if (!canvas || !preview?.style.getPropertyValue('--scene-x')) return false;
+      const copy=document.createElement('canvas');
+      copy.width=preview.width; copy.height=preview.height;
+      const context=copy.getContext('2d');
+      context.drawImage(canvas,0,0,copy.width,copy.height);
+      return context.getImageData(0,0,1,1).data[3]===255 && copy.toDataURL()===preview.toDataURL();
+    },null,{timeout:5000});
+    assert.ok(requests.includes('/roof/bubbles.js'));
+    assert.deepEqual(errors,[]);
+  } finally {unblock?.(); await ctx.close();}
 });
 
 for (const width of [320, 390, 1440]) test(`unified settings search and appearance at ${width}px`, async () => {
