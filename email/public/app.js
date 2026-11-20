@@ -284,9 +284,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.24.7";
+  const BUILD = "2.24.8";
   // (what's new in it, said once it's in)
-  const NEWS = "Improved Mail security and unsubscribe handling.";
+  const NEWS = "More room to read, smoother swipe actions and a simpler reply bar.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.
@@ -2017,7 +2017,7 @@ const IFL = (() => {
     body.classList.toggle("phone", phone);
     body.classList.toggle("pad", !phone);
     body.style.setProperty("--list-left", "0px");
-    if (!phone) body.style.setProperty("--list-w", `${Math.round(Math.min(440, Math.max(340, w * 0.36)))}px`);
+    if (!phone) body.style.setProperty("--list-w", `${Math.round(Math.min(370, Math.max(232, w * 0.30)))}px`);
     setPositions();
     renderNavButtons();
     if (was && was !== S.layout) markSelectedRow();
@@ -2960,18 +2960,17 @@ const IFL = (() => {
       )
     );
     const lead = leadAction(t);
-    // (seen only when swiped; VoiceOver and the keyboard have the same from the row's menu, rowItems, so they aren't read
-    // out ahead of each conversation)
+    // The context menu also exposes the swipe actions when the row is closed.
     const actions = h(
       "div.swipe-actions",
-      { "aria-hidden": "true" },
-      h("div.side.left", h(`button.${lead.cls}.lead`, { "data-act": lead.act, tabindex: "-1" }, icon(lead.ic), lead.label)),
+      h("div.side.left", { inert: true }, h(`button.${lead.cls}.lead`, { "data-act": lead.act, tabindex: "-1" }, icon(lead.ic), lead.label)),
       h(
         "div.side.right",
+        { inert: true },
         h("button.a-more", { "data-act": "more", tabindex: "-1" }, icon("more"), "More"),
-        h("button.a-read", { "data-act": t.unread ? "read" : "unread", tabindex: "-1" }, icon(t.unread ? "envelopeOpen" : "envelopeBadge"), t.unread ? "Read" : "Unread"),
-        h("button.a-flag", { "data-act": t.starred ? "unflag" : "flag", tabindex: "-1" }, icon(t.starred ? "flag" : "flagFill"), t.starred ? "Unflag" : "Flag"),
-        t.trashed ? null : h("button.a-later.lead", { "data-act": "later", tabindex: "-1" }, icon("clock"), "Later")
+        t.trashed
+          ? h("button.a-flag.lead", { "data-act": t.starred ? "unflag" : "flag", tabindex: "-1" }, icon(t.starred ? "flag" : "flagFill"), t.starred ? "Unflag" : "Flag")
+          : h("button.a-later.lead", { "data-act": "later", tabindex: "-1" }, icon("clock"), "Later")
       )
     );
     const wrap = h("div.row-wrap", { role: "listitem", "data-id": t.id, "data-key": `t:${t.id}`, "data-sig": threadSig(t) }, actions, row);
@@ -3054,25 +3053,22 @@ const IFL = (() => {
   // ---------------------------------------------------------------------------
 
   const LEFT_W = 88;
-  // (the four on the right, 72pt each; narrower on a narrow phone, so that all the way, well past them, is still within
-  // a finger's reach across the row: on a 320pt phone, 54pt each, and all the way from 256pt)
-  const rightW = (width) => Math.min(4 * 72, Math.round(width * 0.8) - 40);
+  const rightW = (width) => Math.min(160, width - 52);
   let openSwipe = null;
 
   function setRowOffset(wrap, x, { animate = false, full = null } = {}) {
     const row = wrap.querySelector(".row");
     const left = wrap.querySelector(".swipe-actions .left");
     const right = wrap.querySelector(".swipe-actions .right");
-    const t = animate ? "transform .42s var(--ease)" : "none";
-    const wt = animate ? "width .42s var(--ease)" : "none";
-    row.style.transition = t;
-    left.style.transition = wt;
-    right.style.transition = wt;
+    const duration = animate ? "var(--ifl-motion-layout, .28s)" : "0s";
+    wrap.style.setProperty("--swipe-duration", duration);
     row.style.transform = x ? `translateX(${x}px)` : "";
     left.style.width = `${Math.max(0, x)}px`;
     right.style.width = `${Math.max(0, -x)}px`;
     left.classList.toggle("full", full === "left");
     right.classList.toggle("full", full === "right");
+    left.inert = !animate || x <= 0 || full === "left";
+    right.inert = !animate || x >= 0 || full === "right";
     wrap.dataset.offset = x;
   }
 
@@ -3088,7 +3084,7 @@ const IFL = (() => {
 
     container.addEventListener("pointerdown", (e) => {
       const row = e.target.closest(".row");
-      if (!row || row.dataset.draft || e.button > 0 || e.target.closest(".swipe-actions")) return;
+      if (!row || row.dataset.draft || e.isPrimary === false || e.button > 0 || e.target.closest(".swipe-actions")) return;
       const wrap = row.parentElement;
       if (openSwipe && openSwipe !== wrap) {
         closeOpenSwipe();
@@ -3138,7 +3134,7 @@ const IFL = (() => {
       });
     });
 
-    const finish = (e) => {
+    const finish = (e, cancelled = false) => {
       if (!g || (e && e.pointerId !== g.id)) return;
       const st = g;
       g = null;
@@ -3151,6 +3147,11 @@ const IFL = (() => {
       setTimeout(() => delete st.row.dataset.swiped, 80);
       const id = st.wrap.dataset.id;
       const width = st.wrap.offsetWidth;
+      if (cancelled) {
+        setRowOffset(st.wrap, 0, { animate: true });
+        openSwipe = null;
+        return;
+      }
       const t = S.threads.find((x) => x.id === id);
       if (st.full === "left" && t) {
         setRowOffset(st.wrap, width, { animate: true, full: "left" });
@@ -3175,10 +3176,8 @@ const IFL = (() => {
       openSwipe = target ? st.wrap : null;
     };
     container.addEventListener("pointerup", finish);
-    container.addEventListener("pointercancel", (e) => {
-      if (g && g.dir === "h") finish(e);
-      else g = null;
-    });
+    container.addEventListener("pointercancel", e => finish(e, true));
+    container.addEventListener("lostpointercapture", e => finish(e, true));
 
     container.addEventListener("click", (e) => {
       const btn = e.target.closest(".swipe-actions button");
@@ -3612,6 +3611,7 @@ const IFL = (() => {
   function renderDetailChrome() {
     if (!els.detailNav) return;
     const t = S.thread;
+    const lead = t && leadAction(t);
     const i = t ? S.threads.findIndex((x) => x.id === t.id) : -1;
     // (a button in the bar with the focus, More after its Flag say, drawn again for the same conversation: kept on it)
     const a = document.activeElement, keep = t && els.detailNav.dataset.thread === t.id && els.detailNav.contains(a) ? a.getAttribute("aria-label") : null;
@@ -3639,7 +3639,8 @@ const IFL = (() => {
             h("button", { "aria-label": "Next Conversation", disabled: i < 0 || i >= S.threads.length - 1, onclick: () => stepThread(1) }, icon("chevronDown"))
           )
         : null,
-      t ? gbtn("more", "More", (e) => detailMenu(e.currentTarget)) : null
+      t && S.layout !== "phone" ? gbtn(lead.ic, lead.label, () => act(t.id, lead.act), { disabled: !!t.loading }) : null,
+      t ? gbtn("more", "Conversation actions", (e) => detailMenu(e.currentTarget), { "aria-haspopup": "menu" }) : null
     );
     els.detailNav.dataset.thread = t?.id || "";
     if (keep && document.activeElement === document.body) els.detailNav.querySelector(`button[aria-label="${CSS.escape(keep)}"]`)?.focus({ preventScroll: true, focusVisible: ring });
@@ -3661,7 +3662,7 @@ const IFL = (() => {
     if (last && (!field.value || !field.dataset.replyMessage)) {
       field.dataset.replyMessage = last.id;
       const recipient = last?.folder === "sent" ? last.to?.[0] : last?.from;
-      const who = recipient ? (displayName(recipient) || "").split(/\s+/)[0] : "";
+      const who = recipient ? displayName(recipient) : "";
       const via = last?.mailbox && last.mailbox !== S.me?.defaultFrom && mine(last.mailbox) ? ` from ${last.mailbox.split("@")[0]}@` : "";
       const label = (who ? "Reply to " + who : "Reply") + via;
       field.placeholder = label + "…";
@@ -3735,7 +3736,7 @@ const IFL = (() => {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.preventDefault(), go());
     });
     let expanding = false;
-    const expand = h("button.qr-more", { type: "button", "aria-label": "Expand reply", title: "Expand reply", onpointerdown: e => e.preventDefault(), disabled: !!t.loading, onclick: async () => {
+    async function expand() {
       if (expanding) return;
       expanding = true;
       const words = field.value;
@@ -3752,21 +3753,20 @@ const IFL = (() => {
           }, current);
         }, field.dataset.replyMessage);
       } finally { expanding = false; }
-    } }, icon("expand"));
+    }
     return h(
       "div.qr.glass",
-      h("button.qr-more", { type: "button", "aria-label": "Reply All, Forward and more", disabled: !!t.loading, onclick: (e) => replyMenu(e.currentTarget) }, icon("reply")),
+      h("button.qr-more", { type: "button", "aria-label": "Reply options", "aria-haspopup": "menu", title: "Reply options", disabled: !!t.loading, onclick: (e) => replyMenu(e.currentTarget, expand) }, icon("reply")),
       field,
-      expand,
       send
     );
   }
 
-  function replyMenu(anchor) {
+  function replyMenu(anchor, expand) {
     const t = S.thread;
     if (!t) return;
     showMenu(anchor, [
-      { label: "Reply", icon: "reply", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "reply"))) },
+      { label: "Expand reply", icon: "expand", action: expand },
       { label: "Reply All", icon: "replyAll", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "replyAll"))) },
       { label: "Forward", icon: "forward", action: () => withReplyTarget(t.id, (m) => openCompose(replyDraft(m, "forward"))) },
     ]);
@@ -3775,10 +3775,10 @@ const IFL = (() => {
   function detailMenu(anchor) {
     const t = S.thread;
     if (!t) return;
-    const newest = t.messages?.find((m) => m.folder !== "sent");
+    const newest = t.messages?.[0];
     const lead = leadAction(t);
     showMenu(anchor, [
-      { label: lead.label, icon: lead.ic, action: () => act(t.id, lead.act) },
+      S.layout === "phone" && { label: lead.label, icon: lead.ic, action: () => act(t.id, lead.act) },
       !t.trashed && { label: "Later", icon: "clock", action: () => laterMenu(anchor,t) },
       !t.trashed && { label: "Move to Trash", icon: "trash", destructive:true, action: () => act(t.id,"trash") },
       "-",

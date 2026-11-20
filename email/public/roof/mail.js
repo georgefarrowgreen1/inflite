@@ -38,13 +38,13 @@ import { createActions } from "./actions.js";
 import { view as listView } from "./list.js";
 import { view as readerView } from "./reader.js";
 // (menus.js's confirm under another name: a bare confirm( reads as the page's, which §5.1 forbids)
-import { openViews, openLater, openRowMenu, openUnsub, confirm as confirmSheet } from "./menus.js";
+import { openViews, openLater, openRowMenu, openReaderMenu, openUnsub, confirm as confirmSheet } from "./menus.js";
 import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.24.7";
-export const NEWS = "Improved Mail security and unsubscribe handling.";
+export const BUILD = "2.24.8";
+export const NEWS = "More room to read, smoother swipe actions and a simpler reply bar.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
@@ -110,7 +110,9 @@ export async function mount(root, fw) {
   Object.assign(ctx.open, {
     contactCard: opener(() => fw.lazy((q) => import("./contact-card.js" + q)), (m, options) => options.current() ? m.openContactCard(options) : null),
     compose: opener(() => fw.lazy((q) => import("./compose.js" + q)), (m, init, current = () => true) => current() ? m.openCompose(ctx, init || {}) : null, canCompose),
-    later: (ids) => canRead() && openLater(ctx, ids), views: () => canRead() && openViews(ctx), rowMenu: (t) => canRead() && openRowMenu(ctx, t), unsub: (t) => canRead() && openUnsub(ctx, t),
+    later: (ids) => canRead() && openLater(ctx, ids), views: () => canRead() && openViews(ctx),
+    rowMenu: (t) => canRead() && openRowMenu(ctx, t), readerMenu: (t, leadInBar) => canRead() && openReaderMenu(ctx, t, leadInBar),
+    unsub: (t) => canRead() && openUnsub(ctx, t),
     settings: opener(settingsJs, (m, page) => m.openSettings(ctx, page ?? null)),
     viewer: opener(() => fw.lazy((q) => import("./viewer.js" + q)), (m, files, i, current = () => true) => current() ? m.openViewer(ctx, files, i) : null),
     signin: opener(signinJs, (m, current = () => true) => current() ? m.signIn(ctx) : null, live),
@@ -213,12 +215,12 @@ export async function mount(root, fw) {
     const n = Number(s.counts?.people) || 0;
     const badges = { people: n ? { n, say: `${n} unread` } : 0 };
     if (!lensOnly && s.layout === "phone" && s.threadId && route?.key === "thread") {
-      const t = s.thread?.t || s.list.rows.find((r) => r.id === s.threadId);
+      const t = s.thread?.t?.id === s.threadId ? s.thread.t : s.list.rows.find((r) => r.id === s.threadId);
       const mailbox = logic.viewTitle(s);
       return {
         title: mailbox, compactTitle: mailbox, pick: null, line: "", sections: false, badges,
         back: cold ? { label: "Back to Mail" } : null,
-        acts: [{ icon: "more", label: "Conversation actions", run: () => t && ctx.open.rowMenu(t) }],
+        acts: [{ icon: "more", label: "Conversation actions", run: () => t && ctx.open.readerMenu(t) }],
       };
     }
     const title = s.box || s.query || s.address || s.filter !== "all" ? logic.viewTitle(s) : "Mail";

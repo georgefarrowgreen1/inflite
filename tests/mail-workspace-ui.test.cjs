@@ -332,6 +332,81 @@ test('A pending message has one visible Undo, including after another notificati
   } finally { await t.ctx.close(); }
 });
 
+test('Mail reveals a rounded swipe action and cancels a drag without filing the conversation', async () => {
+  const t = await open({ width: 390 });
+  try {
+    await t.page.evaluate(() => T.go('/mail/#done'));
+    const row = t.page.locator('.ml-row[data-thread]').first();
+    const wrap = row.locator('..');
+    await row.waitFor();
+    const before = t.mail.log.filter(r => r.path === '/api/threads/batch').length;
+    const b = await row.boundingBox(), y = b.y + b.height / 2, x = b.x + b.width / 2;
+    await t.page.mouse.move(x, y);
+    await t.page.mouse.down();
+    await t.page.mouse.move(x - 75, y, { steps: 8 });
+    await t.page.mouse.up();
+    const later = wrap.getByRole('button', { name: 'Later', exact: true });
+    await later.waitFor();
+    assert.equal(await wrap.getAttribute('data-swipe'), 'right');
+    assert.ok(await later.evaluate(el => el.offsetHeight >= 44 && parseFloat(getComputedStyle(el).borderRadius) >= 16));
+    assert.equal(t.mail.log.filter(r => r.path === '/api/threads/batch').length, before);
+    await later.click();
+    const picker = t.page.locator('dialog[data-sheet="mail-later"]');
+    await picker.waitFor();
+    await picker.locator('[data-close]').click();
+    assert.equal(await wrap.getAttribute('data-swipe'), null);
+
+    await t.page.mouse.move(b.x + 30, y);
+    await t.page.mouse.down();
+    await t.page.mouse.move(b.x + b.width - 12, y, { steps: 12 });
+    await t.page.waitForFunction(() => document.querySelector('.ml-wrap[data-armed]'));
+    await row.dispatchEvent('pointercancel', { pointerId: 1, pointerType: 'mouse', bubbles: true });
+    await t.page.mouse.up();
+    assert.equal(await wrap.getAttribute('data-swipe'), null);
+    assert.equal(t.mail.log.filter(r => r.path === '/api/threads/batch').length, before);
+    assert.equal(await t.page.locator('.mr-subject').count(), 0);
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});
+
+test('Mail gives the desktop message body its own scroll area and keeps the reply outside it', async () => {
+  const t = await open({ width: 1150 });
+  try {
+    await t.ctx.route('**/body/**', r => r.fulfill({ contentType: 'text/html', body: `<!doctype html><main style="height:1350px">Sample receipt</main>
+      <p>End of sample receipt</p><script>
+      const args = new URLSearchParams(location.hash.slice(1));
+      parent.postMessage({ifl:"mailbody",v:1,id:args.get("m"),h:1440,designed:true},args.get("p"));
+      </script>` }));
+    await t.page.evaluate(() => T.setPane(false));
+    await t.page.locator('.ml-row[data-thread]').first().click();
+    const frame = t.page.locator('.mr-msgs iframe.mail-body.designed');
+    await frame.waitFor();
+    await t.page.locator('.mr-qr').waitFor();
+    const layout = await frame.evaluate(async el => {
+      const scroll = el.closest('.mr-content'), foot = scroll.nextElementSibling;
+      scroll.scrollTop = scroll.scrollHeight;
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return {
+        forward: scroll.scrollTop,
+        end: el.getBoundingClientRect().bottom,
+        foot: foot.getBoundingClientRect().top,
+        replyHeight: foot.offsetHeight,
+        bodyWidth: el.offsetWidth,
+        listWidth: el.closest('.m-mail').querySelector('.ml-list').offsetWidth,
+      };
+    });
+    assert.ok(layout.forward > 100 && layout.end <= layout.foot, `the end of the email clears the reply bar (${JSON.stringify(layout)})`);
+    assert.ok(layout.replyHeight <= 56 && layout.bodyWidth > layout.listWidth * 1.7);
+    assert.doesNotMatch(await t.page.locator('.mr-head').textContent(), /null/);
+    assert.ok(await t.page.locator('.mr-heading').getByRole('button', { name: 'Conversation actions' }).isVisible());
+    await t.page.locator('.mr-heading').getByRole('button', { name: 'Conversation actions' }).click();
+    const actions = t.page.locator('dialog[data-sheet="mail-rowmenu"]');
+    assert.ok(await actions.getByRole('link', { name: 'Open Original' }).isVisible());
+    assert.equal(await actions.getByRole('button', { name: 'Forward' }).count(), 0);
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});
+
 test('Mail opens the newest message and hands a selected quick reply to a saved compose draft', async () => {
   const t = await open({width:390,paneWidth:390});
   try {
@@ -355,7 +430,8 @@ test('Mail opens the newest message and hands a selected quick reply to a saved 
     const input = t.page.getByRole('textbox',{name:'Reply to Leo'});
     await input.fill(words);
     await input.evaluate(el => el.setSelectionRange(7,12,'backward'));
-    await t.page.getByRole('button',{name:'Expand reply'}).click();
+    await t.page.getByRole('button',{name:'Reply options',exact:true}).click();
+    await t.page.getByRole('dialog',{name:'Reply options',exact:true}).getByRole('button',{name:'Expand reply',exact:true}).click();
     const sheet = t.page.getByRole('dialog',{name:'Reply',exact:true});
     const body = sheet.getByRole('textbox',{name:'Message',exact:true});
     assert.equal(await body.inputValue(), words);
@@ -396,7 +472,8 @@ test('Contact cards transfer chosen People fields and review incoming changes be
     await card.getByRole('button',{name:'Done'}).click();
     assert.deepEqual(saves[0].fields,{phone:'07700 900321'});
     assert.equal(saves[0].version,3);
-    await t.page.getByRole('button',{name:'Expand reply'}).click();
+    await t.page.getByRole('button',{name:'Reply options',exact:true}).click();
+    await t.page.getByRole('dialog',{name:'Reply options',exact:true}).getByRole('button',{name:'Expand reply',exact:true}).click();
     await t.page.getByRole('button',{name:'Add Files',exact:true}).click();
     await card.getByRole('button',{name:'Share contact'}).click();
     await card.getByLabel('Contact from People').selectOption({label:'Sam Taylor · sam@example.com'});

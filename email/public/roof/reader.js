@@ -1,15 +1,15 @@
 // Mail's reader under the roof (One roof stage 4, s4/spec §4.1, §2.1, S4-D6, D17, §3.1, §3.2; app.js:4631–4960, 5234):
 // the head; message cards from api.meta (never /api/messages/<id>: the page never receives a body, §3.1); a body frame
 // per expanded message (bodyframe.js; the newest one made on the row's tap from latestId, in parallel with the thread
-// fetch); files (S4-D17: api.picture for logic.PICTURES only, api.fileUrl in a new tab for the rest); quick reply; the
-// foot (Reply · Reply All · Forward · ⋯); on an iPad the toolbar (Done, Later, ⋯) and the sticky pane.
+// fetch); files (S4-D17: api.picture for logic.PICTURES only, api.fileUrl in a new tab for the rest); inline reply and
+// its reply options; conversation actions alongside the subject in a split or workspace pane.
 // Frozen: view(el, ctx) → { draw(), hide(), destroy() } (list.js's signature): el is the section.ml-reader mail.js made;
 //   it draws store.threadId / store.thread; hide() destroys its frames' handles and revokes picture URLs.
 //   Added (MR): readAt() → when a body frame last said it was touched (0 if never): mail.js's busy() (S4-D13).
 // What it does with the store: on a new threadId it asks api.thread(id) unless store.thread already holds that thread
 //   or is loading it, then api.meta for the newest and the few unread (≤ 5), each kept in store.thread.metas; opening an
 //   unread conversation marks it read (ctx.actions.act([id], "read", { undo: false })).
-// Hooks it keeps (§10.2): .m-mail iframe.mail-body (bodyframe.js makes them); .m-mail [data-act=done|later|reply|send].
+// Hooks: .m-mail iframe.mail-body (bodyframe.js makes them), [data-act=reply|send] and the filing toolbar.
 // Mail on Your Day's strip, above the messages, as Mail's own page has it (parts/spot.js): each booking, parcel or bill
 //   Mail spotted in the conversation (thread.spots), with Remove / Put It Back and Wrong (api.spot), at .mr-spot.
 // Nothing from a message's body is here: cards are Meta (summary fields) drawn with textContent; pictures are blob: URLs
@@ -59,7 +59,11 @@ export function view(el, ctx) {
 
   const me = () => store.get().me || {};
   const pad = () => store.get().layout === "pad";
-  const pill = (label, act, icon, run) => { const b = ui.btn(label, { small: true, act, run }); b.prepend(ctx.icon(icon)); return b; };
+  const control = (name, options) => {
+    const button = ui.iconBtn(name, options);
+    button.replaceChildren(ctx.icon(name));
+    return button;
+  };
 
   // ---- a conversation opened: its frame for the newest at once, its messages, then the newest few's Meta
   function open(id) {
@@ -77,9 +81,9 @@ export function view(el, ctx) {
     cur.older = E("div", { class: "mr-older" });
     cur.history = E("section", { class: "mr-history", hidden: true }, cur.historyLabel, cur.older);
     cur.change = E("div", { class:"mr-change", role:"group", "aria-label":"Calendar change" });
-    cur.foot = E("footer", { class: "mr-foot" });
-    cur.bar = E("div", { class: "mr-bar", role: "toolbar", "aria-label": "Conversation" });
-    el.replaceChildren(cur.bar, cur.head, cur.msgs, cur.change, cur.spots, cur.history, cur.foot);
+    cur.foot = E("footer", { class: "mr-foot", hidden: true, "aria-label": "Quick reply" });
+    const content = E("div", { class: "mr-content" }, cur.msgs, cur.change, cur.spots, cur.history);
+    el.replaceChildren(cur.head, content, cur.foot);
     // (the newest message's frame, made on the tap from the row's latestId, while the thread is still on its way)
     if (row?.latestId) {
       cur.expanded.add(row.latestId);
@@ -331,11 +335,31 @@ export function view(el, ctx) {
     cur.spots.replaceChildren(...list.map((s) => spotCard(s, t)));
   }
 
-  // ---- the head, the bar and the foot
+  // ---- subject and filing actions, with the writing controls at the foot
   function paintHead(t) {
+    const mailbox = !pad() && !el.closest(".ifl-in-pane") ? logic.viewTitle(store.get()) : null;
+    const status = t.trashed ? "In Trash" : t.done ? "Done" : "";
+    const showStatus = status && mailbox !== (t.trashed ? "Trash" : "Done");
+    if (cur.headFor === t && cur.showStatus === showStatus) return;
+    cur.headFor = t;
+    cur.showStatus = showStatus;
+    const lead = logic.leadAction(t);
+    const leadButton = control(lead.act === "done" ? "done" : "inbox", {
+      label: lead.label, act: lead.act, run: () => ctx.actions.act([t.id], lead.act),
+    });
+    const later = !t.trashed && control("later", {
+      label: "Later", act: "later", run: () => ctx.open.later([t.id]),
+    });
+    const more = control("more", {
+      label: "Conversation actions", act: "more", run: () => ctx.open.readerMenu(t, true),
+    });
+    more.setAttribute("aria-haspopup", "dialog");
     cur.head.replaceChildren(...[
-      E("h2", { class: "mr-subject", text: t.subject || "(No Subject)" }),
-      t.trashed || t.done ? E("p", { class: "mr-meta", text: t.trashed ? "In Trash" : "Done" }) : null,
+      E("div", { class: "mr-heading" },
+        E("div", { class: "mr-title" },
+          E("h2", { class: "mr-subject", text: t.subject || "(No Subject)" }),
+          showStatus ? E("p", { class: "mr-meta", text: status }) : null),
+        E("div", { class: "mr-bar", role: "group", "aria-label": "File conversation" }, leadButton, later, more)),
       t.reminder ? E("div",{class:"mr-later"}, E("span",{text:"Follow up if unanswered · "+logic.fmtWhen(t.reminder.due)}),
         ui.btn("Clear",{small:true,run:async()=>{
           try { await api.batch({ids:[t.id],action:"cancel-followup",messageId:t.reminder.message_id}); if(cur?.id===t.id) await load(t.id); ctx.actions.load({quiet:true}); }
@@ -345,67 +369,66 @@ export function view(el, ctx) {
         ui.btn("Bring Back Now", { small: true, act: "unsnooze", run: () => ctx.actions.act([t.id], "unsnooze") })) : null,
     ].filter(Boolean));
   }
-  function acts(t) {
-    const lead = t.trashed ? ["Restore", "restore"] : t.done ? ["Inbox", "inbox"] : ["Done", "done"];
-    return [pill(lead[0], lead[1], lead[1] === "done" ? "done" : "inbox", () => ctx.actions.act([t.id], lead[1])),
-      t.trashed ? null : pill("Later", "later", "later", () => ctx.open.later([t.id])),
-      ui.iconBtn("more", { label: "More", act: "more", run: () => ctx.open.rowMenu(t) })].filter(Boolean);
-  }
   function paintFoot(t) {
-    cur.bar.hidden = !pad();
-    if (pad()) cur.bar.replaceChildren(...acts(t));
-    for (const b of cur.bar.querySelectorAll("[data-act=more]")) b.replaceChildren(ctx.icon("more"));
-    if (!cur.qr) cur.qr = quick(t);
-    const newest = t.messages?.find((m) => m.folder !== "sent") || t.messages?.[0];
+    const newest = replyMessage(t);
+    if (!newest) { cur.foot.hidden = true; return; }
+    if (!cur.updateReplyTarget) cur.foot.append(quick(t));
+    cur.foot.hidden = false;
     cur.updateReplyTarget(newest);
-    const extras = cur.extras || (cur.extras = E("details", { class: "mr-options" }));
-    if (!extras.firstChild) {
-      const summary = E("summary", { "aria-label": "More conversation actions" }, ctx.icon("more"));
-      extras.append(summary);
-      cur.menu = E("div", {class:"mr-menu"});
-      extras.append(cur.menu);
-      cur.foot.append(cur.qr, extras);
-    }
-    cur.menu.replaceChildren(E("div", { class: "mr-replies" }, pill("Reply All", "reply-all", "reply-all", () => write(t, "replyAll")),
-      pill("Forward", "forward", "forward", () => write(t, "forward")),
-      newest ? E("a", { class: "ifl-btn small", href: api.rawUrl(newest.id), target: "_blank", rel: "noopener", data: { act: "original" }, text: "Open Original" }) : null));
-    if (!pad()) cur.menu.append(E("div", {class:"mr-acts"}, ...acts(t)));
-    for (const b of cur.foot.querySelectorAll("[data-act=more]")) b.replaceChildren(ctx.icon("more"));
   }
   // (replies go to the newest message someone else sent, or the newest if it's all yours)
+  const replyMessage = t => t.messages?.find(m => m.folder !== "sent") || t.messages?.[0];
   async function target(t) {
-    const m = t.messages?.find((x) => x.folder !== "sent") || t.messages?.[0];
+    const m = replyMessage(t);
     return m ? store.get().thread.metas?.[m.id] || (await meta(m.id)) : null;
-  }
-  async function write(t, mode) {
-    const m = await target(t);
-    if (m) ctx.open.compose(logic.replyDraft(m, mode, me()));
-    else fw.toast("Couldn’t open that message. Try again in a moment.");
   }
   // a reply typed at the foot: to whoever wrote last, sent through the outbox as compose sends (app.js:4796–4846)
   function quick(t) {
     let replyTo;
     const f = E("textarea", { class: "mr-qr-text", rows: "1", enterkeyhint: "enter" });
     f.value = replies.get(t.id);
-    const send = ui.iconBtn("send", { label: "Send", act: "send", run: () => go() });
-    send.replaceChildren(ctx.icon("send-up"));
-    const expand = ui.iconBtn("expand", { label: "Expand reply", act: "reply", run: () => promote() });
-    expand.replaceChildren(ctx.icon("expand"));
+    const send = control("send-up", { label: "Send", act: "send", run: () => go() });
+    const options = control("reply", { label: "Reply options", act: "reply", run: () => menu() });
+    options.setAttribute("aria-haspopup", "dialog");
     // (busy from the tap until the outbox answers, so a second tap can't send it twice)
     let busy = false;
-    const sync = () => { send.disabled = busy || !f.value.trim(); expand.disabled = busy; f.readOnly = busy; };
+    const fluid = globalThis.CSS?.supports?.("field-sizing: content");
+    const sync = () => {
+      send.disabled = busy || !replyTo || !f.value.trim();
+      options.disabled = busy || !replyTo;
+      f.readOnly = busy;
+      if (!fluid && f.isConnected) {
+        f.style.removeProperty("--mail-draft-height");
+        f.style.setProperty("--mail-draft-height", f.scrollHeight + "px");
+      }
+    };
     const view = cur;
     view.updateReplyTarget = message => {
       if (!message || (replyTo && (busy || f.value))) return;
       replyTo = message;
       const recipient = message.folder === "sent" ? message.to?.[0] : message.from;
-      const first = recipient && logic.displayName(recipient)?.split(/\s+/)[0];
-      const label = first ? `Reply to ${first}` : "Reply";
+      const name = recipient && logic.displayName(recipient);
+      const label = name ? `Reply to ${name}` : "Reply";
       f.placeholder = label + "…";
       f.setAttribute("aria-label", label);
+      sync();
     };
-    expand.addEventListener("pointerdown", event => event.preventDefault());
     const current = () => cur === view && !fw.signal?.aborted && fw.session.user.id === owner && store.get().access === "ok";
+    function menu() {
+      const entry = (title, icon, act, action) => ui.row({ title, lead: ctx.icon(icon), act, run: () => { sheet.close(); action(); } });
+      const sheet = fw.sheet.open({ sheet: "mail-reply", title: "Reply options", body: ui.list([
+        entry("Expand reply", "expand", "reply", promote),
+        entry("Reply All", "reply-all", "reply-all", () => write("replyAll")),
+        entry("Forward", "forward", "forward", () => write("forward")),
+      ]) });
+    }
+    async function write(mode) {
+      const message = mode === "forward" ? store.get().thread?.t?.messages?.[0] : replyTo;
+      const m = message && await meta(message.id);
+      if (!current()) return;
+      if (!m) return fw.toast("Couldn’t open that message. Try again in a moment.");
+      await ctx.open.compose(logic.replyDraft(m, mode, me()), current).catch(() => {});
+    }
     async function promote() {
       if (busy) return;
       const words = f.value;
@@ -431,8 +454,8 @@ export function view(el, ctx) {
     const fit = () => {
       const inset = viewport && f === el.ownerDocument?.activeElement
         ? Math.max(0, globalThis.innerHeight - viewport.height - viewport.offsetTop) : 0;
-      if (inset > 100) view.foot.style.setProperty("--mail-keyboard-bottom", (Math.ceil(inset) + 6) + "px");
-      else view.foot.style.removeProperty("--mail-keyboard-bottom");
+      if (inset > 100) el.style.setProperty("--mail-keyboard-bottom", (Math.ceil(inset) + 6) + "px");
+      else el.style.removeProperty("--mail-keyboard-bottom");
       view.foot.toggleAttribute("data-keyboard", inset > 100);
     };
     if (viewport) {
@@ -443,6 +466,7 @@ export function view(el, ctx) {
       view.releaseViewport = () => {
         viewport.removeEventListener("resize", fit);
         viewport.removeEventListener("scroll", fit);
+        el.style.removeProperty("--mail-keyboard-bottom");
       };
     }
     f.addEventListener("input", () => { replies.set(t.id, f.value); sync(); });
@@ -474,7 +498,7 @@ export function view(el, ctx) {
       }
       sync();
     }
-    return E("div", { class: "mr-qr" }, f, expand, send);
+    return E("div", { class: "mr-qr" }, options, f, send);
   }
 
   function paintChange(t) {
@@ -524,7 +548,6 @@ export function view(el, ctx) {
   function paint() {
     if (!cur) return;
     const s = store.get(), th = s.thread || {}, t = th.t?.id === cur.id ? th.t : null;
-    el.classList.toggle("mr-pad", pad());
     if (s.offline && !t) {
       cur.msgs.replaceChildren(ui.empty({ title: "Mail needs a connection", body: "Your mail is safe at Mail and will be here when you’re back online." }));
       return;

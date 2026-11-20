@@ -63,6 +63,7 @@ export function view(el, ctx) {
   const click = (e) => {
     const row = e.target.closest?.(".ml-row");
     if (!row || row.dataset.swiped) return;
+    if (offSwipe.close(row)) return;
     if (row.dataset.draft) return ctx.open.compose({ draftId: row.dataset.draft });
     open(row.dataset.thread);
   };
@@ -147,6 +148,7 @@ export function view(el, ctx) {
     const sig = JSON.stringify([logic.startOfDay(Date.now()), s.layout, s.threadId, s.lens, s.query, filter, L.followups?.length, list.length ? 0 : L.loading, L.err, list.length && list.map((t) => [t.id, t.date, t.unread, t.starred, t.snoozeUntil, t.done, t.trashed, t.count, t.subject, t.category, t.matchedFiles])]);
     if (sig === shownSig) return;
     shownSig = sig;
+    offSwipe.reset();
     const kept = rows.contains(doc.activeElement) ? doc.activeElement.closest(".ml-row")?.dataset : null;
     if (!list.length) {
       rows.removeAttribute("role");
@@ -204,6 +206,7 @@ export function view(el, ctx) {
   const offs = ["list", "query", "lens", "filter", "address", "box", "counts", "outbox", "layout", "threadId", "access"].map((k) => store.on(k, () => draw()));
 
   function clear() {
+    offSwipe.reset();
     built.clear();
     alts = { q: null, found: null };
     shownSig = "";
@@ -216,7 +219,7 @@ export function view(el, ctx) {
   return {
     draw,
     clear,
-    hide() {},
+    hide: offSwipe.reset,
     focusSearch(button) { searchOpener = button || doc.activeElement; field.hidden = false; field.input.focus(); },
     destroy() {
       built.clear();

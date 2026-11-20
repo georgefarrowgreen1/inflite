@@ -1447,15 +1447,15 @@ html.embed .pane.list .subtitle {
 /* ---------- Message list ---------- */
 
 .rows {
-  position: relative;
-  border-radius: var(--ifl-radius-card, 26px);
-  background: var(--glass);
-  box-shadow: var(--ifl-shadow-card, 0 5px 18px -12px rgba(20, 28, 14, .16));
+  display: grid;
+  gap: 6px;
+  margin-inline: 10px;
 }
 
 .row-wrap {
   position: relative;
   overflow: hidden;
+  border-radius: 20px;
   transition: height var(--ifl-motion-layout, .28s) var(--ease), opacity var(--ifl-motion-fast, .16s) ease;
 }
 
@@ -1468,12 +1468,16 @@ html.embed .pane.list .subtitle {
   z-index: 1;
   width: 100%;
   display: grid;
-  grid-template-columns: 22px 42px 1fr;
+  grid-template-columns: 18px 42px minmax(0, 1fr);
   column-gap: 0;
-  padding: 10px 16px 10px 4px;
+  padding: 9px 10px 9px 4px;
   text-align: left;
-  background: transparent;
+  border-radius: inherit;
+  background: var(--ifl-surface, var(--glass));
+  box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--sep));
   touch-action: pan-y pinch-zoom;
+  transition: transform var(--swipe-duration, 0s) var(--ease), background-color var(--ifl-motion-fast, .16s) ease;
+  cursor: pointer;
 }
 
 /* (a layer of its own only while being swiped: one per row costs an iPhone a lot of memory) */
@@ -1481,27 +1485,9 @@ html.embed .pane.list .subtitle {
   will-change: transform;
 }
 
-.row::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  left: 82px;
-  border-bottom: 0.5px solid var(--sep);
-}
-
-.row-wrap:last-child .row::after {
-  display: none;
-}
-
 .row.selected {
   background: color-mix(in srgb, var(--tint) 20%, var(--glass));
   color: var(--label);
-  border-radius: var(--ifl-radius-row, 16px);
-}
-
-.row.selected::after {
-  display: none;
 }
 
 .row.selected .meta,
@@ -1512,6 +1498,9 @@ html.embed .pane.list .subtitle {
 
 .row:not(.selected):active {
   background: var(--bg-fill);
+}
+@media (hover: hover) {
+  .row-wrap:not(.swiping) .row:not(.selected):hover { background: var(--bg-fill); }
 }
 
 .row .dot {
@@ -1679,17 +1668,19 @@ html.embed .pane.list .subtitle {
   display: flex;
   justify-content: space-between;
   z-index: 0;
+  pointer-events: none;
+  background: var(--ifl-surface-2, var(--bg-fill));
 }
 
 .swipe-actions .side {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 4px;
   height: 100%;
-}
-
-.swipe-actions .side {
   width: 0;
   overflow: hidden;
+  padding-inline: 4px;
+  transition: width var(--swipe-duration, 0s) var(--ease);
 }
 
 .swipe-actions button {
@@ -1700,46 +1691,21 @@ html.embed .pane.list .subtitle {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  min-height: 48px;
+  padding-block: 4px;
+  border-radius: 16px;
   overflow: hidden;
   white-space: nowrap;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 500;
-  transition: flex 0.3s var(--ease);
+  background: var(--ifl-surface, var(--glass));
+  box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--sep));
+  color: var(--label);
+  font-size: 12px;
+  font-weight: 650;
+  transition: flex var(--ifl-motion-layout, .28s) var(--ease), background-color var(--ifl-motion-fast, .16s) ease;
 }
-
-.swipe-actions .a-done {
-  background: linear-gradient(160deg, #4fdc8e, #1fa75a);
-}
-
-.swipe-actions .a-inbox {
-  background: linear-gradient(160deg, #5aa9ff, #2a6ae6);
-}
-
-.swipe-actions .a-later {
-  background: linear-gradient(160deg, #b18cff, #7a52e8);
-}
-
-.swipe-actions .a-read {
-  background: var(--tint);
-  color: var(--ifl-on-accent, #10150d);
-}
-
-.swipe-actions .a-flag {
-  background: var(--orange);
-}
-
-.swipe-actions .a-more {
-  background: #8e8e93;
-}
-
-.swipe-actions .a-archive {
-  background: var(--purple);
-}
-
-.swipe-actions .a-trash {
-  background: var(--red);
-}
+.swipe-actions .side:not([inert]) button { pointer-events: auto; }
+.swipe-actions .lead { color: var(--tint-text); }
+.swipe-actions .side.full .lead { background: var(--tint); color: var(--ifl-on-accent, #10150d); }
 
 .swipe-actions .side.full button:not(.lead) {
   flex: 0 0 0;
@@ -2026,7 +1992,7 @@ html.embed .pane.list .subtitle {
 /* ---------- Reader: a conversation, its messages as glass cards, newest first ---------- */
 
 .conv-head {
-  padding: 4px 20px 14px;
+  padding: 2px 12px 8px;
 }
 
 /* the conversation's subject, in its bar beside the way back */
@@ -2073,8 +2039,8 @@ html.embed .pane.list .subtitle {
 
 .msgs {
   display: grid;
-  gap: 10px;
-  padding: 0 12px 24px;
+  gap: 8px;
+  padding: 0 12px;
 }
 
 .mcard {
@@ -2153,7 +2119,7 @@ html.embed .pane.list .subtitle {
 }
 
 .mcard .mail-frame-wrap:not(.plain) {
-  margin: 2px 10px 12px;
+  margin: 2px 0 0;
 }
 
 .mcard .quote-row {
@@ -2723,21 +2689,9 @@ body.pad .pane.detail {
   z-index: 1;
 }
 
-body.pad .pane.list .row {
-  margin: 0 8px;
-  width: calc(100% - 16px);
-  border-radius: var(--ifl-radius-row, 16px);
-  padding-left: 0;
-}
-
-body.pad .pane.list .row::after {
-  left: 74px;
-  right: 8px;
-}
-
 body.pad .pane.detail .conv-head,
 body.pad .pane.detail .msgs {
-  max-width: 860px;
+  max-width: var(--mail-reading-width);
   margin-left: auto;
   margin-right: auto;
 }
@@ -4771,76 +4725,36 @@ a.pbtn {
   vertical-align: 1px;
 }
 
-/* the foot: actions as pills, and the reply */
+/* The message scroll and reply bar share the pane height. */
+.pane.detail { --mail-reading-width: 1024px; }
 .pane.detail .toolbar {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-  transition: bottom 0.3s var(--spring);
+  position: relative;
+  flex: none;
+  justify-content: center;
+  padding: 6px calc(12px + var(--sar)) max(8px, var(--sab)) calc(12px + var(--sal));
 }
+.pane.detail .toolbar:empty, .pane.detail .toolbar::before { display: none; }
 
 .pane.detail .scroll {
-  padding-bottom: calc(var(--sab) + 150px);
+  min-height: 0;
+  padding-bottom: max(10px, var(--sab));
 }
 
-/* a reply being typed with the keyboard up: the bar just above it, where you can see what you type, as search is (iOS
-   lays the keyboard over the page's foot rather than shortening it: app.js --kb), and the conversation able to scroll
-   clear of it */
+/* iOS may pan the visual viewport instead of resizing the layout viewport. */
 html.kb-up .pane.detail .toolbar:focus-within {
-  bottom: var(--kb, 0px);
-  padding-bottom: 10px;
-}
-html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
-  padding-bottom: calc(var(--kb, 0px) + 150px);
-}
-
-.d-acts {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-}
-
-.d-pill {
-  height: 44px;
-  padding: 0 16px 0 13px;
-  border-radius: 22px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 15px;
-  font-weight: 600;
-  transition: transform var(--ifl-motion-release, .42s) var(--spring);
-}
-
-.d-pill:active {
-  transform: scale(0.94);
-}
-
-.d-pill svg {
-  width: 18px;
-  height: 18px;
-  stroke-width: 2.2;
-}
-
-.d-pill.icon-only {
-  width: 44px;
-  padding: 0;
-  justify-content: center;
-}
-
-.d-pill.done-pill {
-  color: var(--ifl-on-accent, #10150d);
-  background: var(--ifl-accent-gradient, linear-gradient(110deg, #24c872, #b8eb2b));
-  box-shadow: var(--ifl-shadow-control, 0 2px 8px -5px rgba(20, 28, 14, .16));
+  margin-bottom: var(--kb, 0px);
+  padding-bottom: 6px;
 }
 
 .qr {
+  width: 100%;
+  max-width: calc(var(--mail-reading-width) - 24px);
   min-height: 52px;
-  padding: 6px;
+  padding: 4px;
   border-radius: 26px;
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: 4px;
 }
 
 .qr:focus-within { box-shadow: inset 0 0 0 2px var(--tint); }
@@ -4856,8 +4770,11 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
 }
 
 .qr-more {
-  color: var(--label-2);
+  color: var(--label);
+  transition: background-color var(--ifl-motion-fast, .16s) ease, transform var(--ifl-motion-release, .42s) var(--spring);
 }
+@media (hover: hover) { .qr-more:not(:disabled):hover { background: var(--press); } }
+@media (prefers-reduced-motion: no-preference) { :is(.qr-more, .qr-send):not(:disabled):active { transform: scale(.94); } }
 
 .qr-more svg,
 .qr-send svg {
@@ -4873,14 +4790,17 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
 }
 
 .qr-send:disabled {
-  opacity: 0.35;
+  background: var(--ifl-glass-control, var(--bg-fill));
+  color: var(--label-3);
+  box-shadow: none;
+  opacity: .7;
 }
 
 .qr-field {
   flex: 1;
   min-width: 0;
   min-height: 44px;
-  max-height: 120px;
+  max-height: min(120px, 27dvh);
   padding: 10px 4px;
   border: 0;
   border-radius: var(--ifl-radius-row, 16px);
@@ -4894,6 +4814,12 @@ html.kb-up .pane.detail:has(.toolbar:focus-within) .scroll {
 
 .qr-field::placeholder {
   color: var(--label-3);
+}
+.qr-field:placeholder-shown {
+  height: 44px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- The viewer: pictures, PDFs and videos, full screen ---------- */
@@ -6552,7 +6478,7 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 /* Mail-specific optical surfaces; shared chrome is generated above. */
 .navbar::before { background: var(--ifl-glass, var(--glass)); -webkit-backdrop-filter: var(--ifl-glass-blur, none); backdrop-filter: var(--ifl-glass-blur, none); border-bottom: 1px solid var(--ifl-glass-line, var(--sep)); }
 .sheet { background: var(--ifl-glass-window, var(--sheet)); -webkit-backdrop-filter: var(--ifl-glass-window-blur, none); backdrop-filter: var(--ifl-glass-window-blur, none); box-shadow: var(--ifl-glass-shadow, var(--lift)); border: 1px solid var(--ifl-glass-line, var(--sep)); }
-.rows,.mcard,.thread-card,.set-group { background-color: var(--ifl-surface, var(--glass)); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--sep)), var(--ifl-shadow-card); }
+.mcard,.thread-card,.set-group { background-color: var(--ifl-surface, var(--glass)); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--sep)), var(--ifl-shadow-card); }
 .mcard { border-radius: var(--ifl-radius-card, 26px); }
 .thread-card { border-radius: var(--ifl-radius-group, 22px); }
 .sheet-body .field,.sheet .c-subject,.sheet .compose-text,.qr,.search,.set-seg { background: var(--ifl-glass-control, var(--bg-fill)); border-color: var(--ifl-glass-line, var(--sep)); }

@@ -6,6 +6,7 @@
 //   openLater(ctx, ids)     "mail-later": logic.laterChoices() and Pick a Time; Back to Inbox Now for one put off already
 //   openRowMenu(ctx, t)     "mail-rowmenu": Reply, Forward, Done, Later, Flag, Mark as Unread, Move to People/Updates,
 //                           Always Show …, Unsubscribe, Trash (Delete Forever in the Trash)
+//   openReaderMenu(ctx, t, leadInBar) keeps conversation actions in the header and adds a link to the original message.
 //   openUnsub(ctx, t)       "mail-unsub": asked first, with how often you open them
 //   confirm(ctx, spec) → Promise<boolean>   "mail-confirm": spec = { title, text, yes, no, danger }
 export const SHEETS = { views: "mail-views", later: "mail-later", rowMenu: "mail-rowmenu", unsub: "mail-unsub", confirm: "mail-confirm" };
@@ -62,6 +63,14 @@ export function openLater(ctx, ids) {
 }
 
 export function openRowMenu(ctx, t) {
+  return conversationMenu(ctx, t);
+}
+
+export function openReaderMenu(ctx, t, leadInBar = false) {
+  return conversationMenu(ctx, t, { reader: true, leadInBar });
+}
+
+function conversationMenu(ctx, t, { reader = false, leadInBar = false } = {}) {
   const { fw, logic, actions, api, store } = ctx, ui = fw.ui;
   let h = null;
   const run = (f) => () => { h?.close(); f(); };
@@ -78,17 +87,25 @@ export function openRowMenu(ctx, t) {
   };
   const other = t.category === "updates" ? "people" : "updates", where = other === "people" ? "People" : "Updates";
   const sender = t.from && !t.people?.every((p) => p.me) ? logic.displayName(t.from) : null;
+  const laterInBar = leadInBar && store.get().layout === "pad";
+  const originalId = reader && (t.messages?.[0]?.id || t.latestId || t.latest?.id);
+  const original = originalId ? ui.row({ lead: { icon: "download" }, title: "Open Original", act: "original", href: api.rawUrl(originalId) }) : null;
+  if (original) {
+    original.target = "_blank";
+    original.rel = "noopener";
+  }
   const rows = [
+    !leadInBar && ui.row({ lead: ctx.icon(lead.act === "done" ? "done" : "inbox"), title: lead.label, act: lead.act, run: run(() => actions.act([t.id], lead.act)) }),
+    !t.trashed && !laterInBar && ui.row({ lead: { icon: "clock" }, title: "Later…", act: "later", run: () => { h?.close(); ctx.open.later([t.id]); } }),
     ...(fw.workspace?.actions?.capture&&store.get().access==='ok'?[ui.row({lead:{icon:'clock'},title:'Remind me',run:run(()=>fw.workspace.actions.capture({id:t.id,...(t.latestId||t.latest?.id?{item:t.latestId||t.latest.id}:{})}))})]:[]),
-    ui.row({ lead: { icon: "send" }, title: "Reply", act: "reply", run: reply("reply") }),
-    ui.row({ lead: { icon: "share" }, title: "Forward", act: "forward", run: reply("forward") }),
-    ui.row({ title: lead.act === "done" ? "Done" : lead.label, act: lead.act, run: run(() => actions.act([t.id], lead.act)) }),
-    !t.trashed && ui.row({ lead: { icon: "clock" }, title: "Later…", act: "later", run: () => { h?.close(); ctx.open.later([t.id]); } }),
+    !reader && ui.row({ lead: { icon: "send" }, title: "Reply", act: "reply", run: reply("reply") }),
+    !reader && ui.row({ lead: { icon: "share" }, title: "Forward", act: "forward", run: reply("forward") }),
     ui.row({ title: t.starred ? "Unflag" : "Flag", act: "flag", run: run(() => actions.act([t.id], t.starred ? "unflag" : "flag")) }),
     ui.row({ title: t.unread ? "Mark as Read" : "Mark as Unread", act: "unread", run: run(() => actions.act([t.id], t.unread ? "read" : "unread")) }),
     ui.row({ title: `Move to ${where}`, act: "move", run: run(() => actions.act([t.id], "category", { category: other })) }),
     sender && ui.row({ title: `Always Show ${sender} in ${where}`, run: run(() => actions.act([t.id], "category", { category: other, sender: true })) }),
     t.canUnsub && !t.trashed && ui.row({ title: "Unsubscribe…", act: "unsub", run: () => { h?.close(); ctx.open.unsub(t); } }),
+    original,
     t.trashed
       ? ui.row({ title: "Delete Forever", act: "delete", run: async () => { h?.close(); if (await ctx.open.confirm({ title: "Delete Forever?", text: "This conversation will be deleted. This can’t be undone.", yes: "Delete Forever", danger: true })) actions.act([t.id], "delete", { undo: false }); } })
       : ui.row({ title: "Move to Trash", act: "trash", run: run(() => actions.act([t.id], "trash")) }),
