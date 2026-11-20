@@ -1,5 +1,5 @@
 // About and Contact share the public orb renderer.
-import {defaultBubbleColour, newBubbleScene, driftBubbles, respondingBubbles, drawBubbles, sizeBubbleCanvas} from "/roof/bubbles.js?about";
+import {defaultBubbleColour, newBubbleScene, driftBubbles, drawBubbles, sizeBubbleCanvas} from "/roof/bubbles.js?about";
 import {bubbleMotion} from "/roof/bubble-motion.js?about";
 
 const canvas = document.querySelector(".about-sky canvas");
@@ -35,7 +35,7 @@ if (context) {
       bubbles = newBubbleScene(aspect, opening);
     }
     if (dt || pointer) driftBubbles(bubbles,dt,aspect,pointer);
-    sizeBubbleCanvas(canvas,width,height,live && respondingBubbles(bubbles));
+    sizeBubbleCanvas(canvas,width,height);
     const moving = drawBubbles(context,bubbles,defaultBubbleColour,0,live,light.matches);
     if (!canvas.hasAttribute("data-painted")) canvas.dataset.painted = "";
     return moving;

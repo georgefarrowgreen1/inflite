@@ -2379,28 +2379,119 @@ test('an orb bends locally under a press and its light travels outward after a t
   } finally { await ctx.close(); }
 });
 
-test('a tapped orb clears its old position and passes behind a foreground orb', async () => {
+test('a live orb keeps its display-resolution glass during a press and rolls in the direction of a flick', async () => {
+  const scene = [[.50,.45],[.72,.79],[.15,.17],[.88,.10]].map(([x,y]) => ({
+    x,y,vx:0,vy:0,dx:0,dy:0,turn:60,phase:.72,angle:0,tempo:.05
+  }));
+  const sceneKey = 'inflite:bubbles:v1';
+  const {ctx,page,errors} = await open({initialPath:'/?os=1',scheme:'dark',deviceScaleFactor:3,seedHub:{[sceneKey]:JSON.stringify(scene)}});
+  try {
+    const sky = page.locator('.sky > canvas'), dock = page.locator('.ws-dock:visible');
+    await dock.waitFor();
+    await page.evaluate(() => {
+      document.querySelector('.ws-home-body').style.visibility = 'hidden';
+      InFliteAppearance.setGlass({glass:true,glassStrength:100},{preview:true});
+    });
+    const box = await sky.boundingBox(), x = box.x + box.width*.5, y = box.y + box.height*.45 - box.width*.13;
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await page.mouse.move(x-40,y);
+    await page.mouse.down();
+    await sky.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.ok(await sky.evaluate(c => c.width/c.clientWidth > 2.99 && c.height/c.clientHeight > 2.99),
+      'pressing one orb keeps the wallpaper at its resting 3× resolution');
+    if (process.env.WEB_UI_BROWSER === 'webkit') {
+      const {width} = await dock.boundingBox();
+      await page.waitForFunction(w => [...document.querySelectorAll('.sky .ifl-orb-lens canvas')].some(c =>
+        Math.abs(c.getBoundingClientRect().width-w)<1 && c.width >= Math.floor(w*2.99)),width);
+    }
+    await page.mouse.up();
+    // Replay the same captured 60 ms touch in both engines. Software rendering
+    // on a busy runner can separate two Playwright mouse calls by a full second.
+    await page.evaluate(({x,y}) => {
+      const target=document.elementFromPoint(x,y), start=performance.now()-65;
+      const samples=[['touchstart',-40,0],['touchmove',-18,20],['touchmove',6,40],['touchend',34,60]];
+      for (const [type,offset,dt] of samples) {
+        const finger={identifier:7,clientX:x+offset,clientY:y};
+        const event=new Event(type,{bubbles:true,cancelable:true});
+        Object.defineProperties(event,{
+          timeStamp:{value:start+dt},touches:{value:type==='touchend'?[]:[finger]},changedTouches:{value:[finger]}
+        });
+        target.dispatchEvent(event);
+      }
+    },{x,y});
+    await sky.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const orb = await page.evaluate(key => {
+      dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true}));
+      return JSON.parse(sessionStorage.getItem(key))[0];
+    },sceneKey);
+    assert.ok(orb.x > .50 && orb.vx > .01 && Math.abs(orb.angle) > .001, JSON.stringify(orb));
+    assert.deepEqual(errors,[]);
+  } finally { await ctx.close(); }
+});
+
+test('an orb collision sends a visible ripple from each facing edge', async () => {
+  const {ctx,page} = await open();
+  try {
+    const counts = await page.evaluate(async () => {
+      const {drawBubbles,driftBubbles} = await import('/roof/bubbles.js');
+      const bodies = [.32,.77].map((x,i) => ({x,y:.5,vx:i ? 0 : .12,vy:0,dx:0,dy:0,
+        phase:1.5,angle:0,tempo:.05,turn:60}));
+      for (let i=0;i<12;i++) driftBubbles(bodies,1/60,1);
+      const size=240;
+      function pixels(scene) {
+        const canvas=document.createElement('canvas');
+        canvas.width=canvas.height=size;
+        const context=canvas.getContext('2d',{willReadFrequently:true});
+        drawBubbles(context,scene,'opal',0,true);
+        return context.getImageData(0,0,size,size).data;
+      }
+      const rippling=pixels(bodies), samePose=pixels(bodies.map(b => ({...b})));
+      return bodies.map((b,i) => {
+        const radius=(i ? .165 : .30)*size, counts={near:0,far:0};
+        for (let y=0;y<size;y++) for (let x=0;x<size;x++) {
+          const dx=(x+.5-b.x*size)/radius * (i ? -1 : 1);
+          if (Math.abs(dx)<.50 || Math.abs(dx)>.95 || Math.abs(y+.5-b.y*size)>radius*.31) continue;
+          const pixel=4*(y*size+x);
+          if ([0,1,2].some(c => Math.abs(rippling[pixel+c]-samePose[pixel+c])>8)) counts[dx>0?'near':'far']++;
+        }
+        return counts;
+      });
+    });
+    for (const {near,far} of counts) assert.ok(near > far+8, JSON.stringify(counts));
+  } finally { await ctx.close(); }
+});
+
+test('one or two rippling orbs clear their old positions as they pass behind a foreground orb', async () => {
   const {ctx,page} = await open();
   try {
     const difference = await page.evaluate(async () => {
       const {drawBubbles} = await import('/roof/bubbles.js');
       const {stepSurface} = await import('/roof/bubble-surface.js');
-      const bodies = [.54,.28,.84].map(x => ({x,y:.5,phase:.5,angle:0,tempo:.05}));
       const raster = () => {
         const c = document.createElement('canvas');
         c.width = 360; c.height = 240;
         return c.getContext('2d', {willReadFrequently:true});
       };
-      const display = raster(), reference = raster();
-      stepSurface(bodies[1],1/60,{x:0,y:0,distance:0,amount:1},{tap:true,release:true});
-      const draw = target => drawBubbles(target,bodies,'opal',.53,true,true);
-      draw(display);
-      bodies[1].x = .49;
-      draw(display);
-      draw(reference);
-      const pixels = target => target.getImageData(0,0,360,240).data;
-      const actual = pixels(display), expected = pixels(reference);
-      return actual.some((v,i) => Math.abs(v-expected[i])>2);
+      for (const moving of [1,2]) for (const light of [false,true]) {
+        const bodies = [.54,.28,.84].map(x => ({x,y:.5,phase:.5,angle:0,tempo:.05}));
+        const display = raster();
+        for (const b of bodies.slice(1,1+moving)) {
+          stepSurface(b,1/60,{x:0,y:0,distance:0,amount:1},{tap:true,release:true});
+        }
+        const draw = target => drawBubbles(target,bodies,'opal',.53,true,light);
+        draw(display);
+        for (const [x1,x2] of [[.49,.60],[.76,.25]]) {
+          bodies[1].x = x1;
+          if (moving===2) bodies[2].x = x2;
+          draw(display);
+          const expected = raster();
+          draw(expected);
+          const pixels = target => target.getImageData(0,0,360,240).data;
+          const actual = pixels(display), fresh = pixels(expected);
+          if (actual.some((v,i) => Math.abs(v-fresh[i])>2)) return {moving,light,x1,x2};
+        }
+      }
+      return false;
     });
     assert.equal(difference,false);
   } finally { await ctx.close(); }

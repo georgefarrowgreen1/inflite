@@ -31,7 +31,7 @@ function paint(crop) {
   const {art, canvas, ctx, x, y, width, height, cssWidth, cssHeight} = crop;
   const sw = width * art.width, sh = height * art.height;
   const w = Math.max(1, Math.round(sw)), h = Math.max(1, Math.round(sh));
-  // Match the actual orb backing store, including changes in density during a gesture.
+  // Match the backing store of the artwork, including display-density changes.
   if (canvas.width !== w || canvas.height !== h || !crop.bands) {
     canvas.width = w; canvas.height = h;
     ctx.setTransform(w/cssWidth, 0, 0, h/cssHeight, 0, 0);
@@ -47,10 +47,15 @@ function paint(crop) {
   }
 }
 
-export function wallpaperFrame(canvas) {
+export function wallpaperFrame(canvas, damage) {
   if (!strength || document.hidden) return;
   if (source !== canvas) { source = canvas; schedule(); }
-  for (const crop of crops.values()) paint(crop);
+  for (const crop of crops.values()) {
+    // Preview art is a scaled copy of the complete scene, so its normalized
+    // crop coordinates can use the same damage rectangles as the wallpaper.
+    if (!damage?.length || damage.some(a => a.left < crop.x+crop.width && a.right > crop.x &&
+      a.top < crop.y+crop.height && a.bottom > crop.y)) paint(crop);
+  }
 }
 
 function removeCrops() {

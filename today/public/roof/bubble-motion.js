@@ -2,7 +2,7 @@
 export function bubbleMotion(canvas, paint) {
   const controls = 'a, button, input, select, textarea, label, summary, form, dialog, iframe, [contenteditable], [role=button], [role=tab], [role=slider], [role=menuitem], [role=switch], [role=link]';
   let mode = "off", timer, frame = 0, previous;
-  let press, point, lift;
+  let press, point, lift, sequence = 0;
 
   function eligible(event) {
     return mode === "live" && !event.composedPath().some(node => node.matches?.(controls));
@@ -10,16 +10,34 @@ export function bubbleMotion(canvas, paint) {
 
   function clearInput() { press = point = lift = null; }
 
+  // Use capture time even if rendering delayed delivery of the final moves.
+  // Older touch implementations occasionally report time since the Unix epoch.
+  function eventTime(event) {
+    const now = performance.now(), t = event.timeStamp;
+    return Number.isFinite(t) && t > 0 && t <= now+1 ? t : now;
+  }
+
   function aim(x,y,down) {
     point = {x,y,down,since:point?.down === down ? point.since : performance.now()};
   }
 
   function begin(event,id,x,y,touch) {
     if (!eligible(event)) { clearInput(); return; }
-    press = {id,x,y,time:performance.now(),touch,moved:false};
+    const time = eventTime(event);
+    press = {id,x,y,time,touch,moved:false,stroke:++sequence,samples:[{x,y,time}]};
     lift = null;
     aim(x,y,true);
     queue();
+  }
+
+  function track(x,y,time) {
+    const samples = press.samples;
+    // Keep one sample on either side of the velocity window. A pause before
+    // lifting should release the dent without throwing the orb.
+    while (samples.length > 1 && samples[1].time <= time-90) samples.shift();
+    const last = samples[samples.length-1];
+    if (time <= last.time) { last.x = x; last.y = y; }
+    else samples.push({x,y,time});
   }
 
   function move(event,id,x,y) {
@@ -28,6 +46,7 @@ export function bubbleMotion(canvas, paint) {
     const dx = Math.abs(x-press.x), dy = Math.abs(y-press.y);
     if (!press.moved && press.touch && dy > 8 && dy > dx) { clearInput(); return; }
     if (Math.hypot(dx,dy) > 9) press.moved = true;
+    track(x,y,eventTime(event));
     aim(x,y,true);
     queue();
   }
@@ -35,8 +54,20 @@ export function bubbleMotion(canvas, paint) {
   function end(event,id,x,y) {
     if (press?.id !== id) return;
     if (!eligible(event)) { clearInput(); return; }
-    const tap = !press.moved && Math.hypot(x-press.x,y-press.y) < 10 && performance.now()-press.time < 550;
-    lift = {x,y,release:true,tap};
+    const time = eventTime(event);
+    const dx = x-press.x, dy = y-press.y;
+    if (!press.moved && press.touch && Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { clearInput(); return; }
+    const moved = press.moved || Math.hypot(dx,dy) >= 10;
+    const tap = !moved && time-press.time < 550;
+    track(x,y,time);
+    const [first,second] = press.samples;
+    const start = Math.max(first.time,time-90);
+    const mix = second ? (start-first.time)/(second.time-first.time) : 0;
+    const seconds = (time-start)/1000;
+    const moving = moved && second && seconds >= .008;
+    const speedX = moving ? (x-first.x-(second.x-first.x)*mix)/seconds : 0;
+    const speedY = moving ? (y-first.y-(second.y-first.y)*mix)/seconds : 0;
+    lift = {x,y,release:true,tap,stroke:press.stroke,originX:press.x,originY:press.y,speedX,speedY};
     if (press.touch) point = null;
     else aim(x,y,false);
     press = null;
@@ -50,8 +81,20 @@ export function bubbleMotion(canvas, paint) {
     const box = canvas.getBoundingClientRect();
     if (!box.width || !box.height) return null;
     const strength = p.release ? 1 : .25+.75 * -Math.expm1(-Math.max(0,now-p.since)/85);
-    return {x:(p.x-box.left)/box.width, y:(p.y-box.top)/box.height,
+    const input = {x:(p.x-box.left)/box.width, y:(p.y-box.top)/box.height,
       down:!!p.down, release:!!p.release, tap:!!p.tap, strength};
+    const stroke = p.release ? p : press;
+    if (stroke) {
+      input.stroke = stroke.stroke;
+      input.originX = ((p.release ? p.originX : stroke.x)-box.left)/box.width;
+      input.originY = ((p.release ? p.originY : stroke.y)-box.top)/box.height;
+    }
+    if (p.speedX || p.speedY) {
+      const short = Math.min(box.width,box.height);
+      input.flickX = p.speedX/short;
+      input.flickY = p.speedY/short;
+    }
+    return input;
   }
 
   function queue() {

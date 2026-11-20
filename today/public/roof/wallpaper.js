@@ -1,6 +1,6 @@
 // The wallpaper belongs to the document. App routes only replace content above it.
 import {bubbleMotion} from "./bubble-motion.js";
-import {minerals, defaultBubbleColour, newBubbleScene, validBubbleScene, driftBubbles, respondingBubbles, drawBubbles, sizeBubbleCanvas} from "./bubbles.js";
+import {minerals, defaultBubbleColour, newBubbleScene, validBubbleScene, driftBubbles, drawBubbles, sizeBubbleCanvas} from "./bubbles.js";
 export {bubbleColours} from "./bubbles.js";
 
 const preferenceKey = "inflite:dark-wallpaper";
@@ -87,6 +87,7 @@ function checkpoint() {
   if (bubbles) try { sessionStorage.setItem(sceneKey, JSON.stringify(bubbles)); } catch {}
 }
 
+const damage = [];
 const setMotion = canvas && bubbleMotion(canvas, paint);
 
 function paint(dt, pointer, live) {
@@ -95,10 +96,10 @@ function paint(dt, pointer, live) {
   const aspect = width/height;
   bubbles ||= readScene() || newBubbleScene(aspect);
   if (dt || pointer) driftBubbles(bubbles,dt,aspect,pointer);
-  sizeBubbleCanvas(canvas,width,height,live && respondingBubbles(bubbles));
-  const moving = drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,live,light);
+  sizeBubbleCanvas(canvas,width,height);
+  const moving = drawBubbles(ctx,bubbles,wallpaperColour(),workspace && !workspace.hidden ? .53 : 0,live,light,damage);
   drawPreview();
-  wallpaperFrame?.(canvas);
+  wallpaperFrame?.(canvas,damage);
   return moving;
 }
 

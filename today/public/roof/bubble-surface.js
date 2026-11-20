@@ -37,21 +37,52 @@ export function settleSurface(bubble) {
   waves.delete(bubble);
 }
 
-export function stepSurface(bubble, dt, hit, input) {
-  const contact = hit && hit.distance <= 1.04 && input;
+function surfaceFor(bubble, x, y) {
   let wave = waves.get(bubble);
-  if (!contact && !wave) return false;
   if (!wave) {
     wave = {h:new Float32Array(count), last:new Float32Array(count), next:new Float32Array(count), display:new Float32Array(count),
-      tx:hit.x, ty:hit.y, x:hit.x, y:hit.y, tailX:hit.x, tailY:hit.y, pressure:0, age:0, remainder:0};
+      tx:x, ty:y, x, y, tailX:x, tailY:y, pressure:0, remainder:0, checkIn:0, impulses:[]};
     waves.set(bubble,wave);
   }
+  return wave;
+}
+
+// Queue each point of impact once. Two neighbours can touch opposite sides
+// between solver ticks without moving the fingertip or replacing its pressure.
+export function rippleSurface(bubble, x, y, impulse, radius = .24) {
+  surfaceFor(bubble,x,y).impulses.push({x,y,impulse,radius});
+}
+
+function applyImpulse(next, {x,y,impulse,radius}) {
+  const left = Math.max(1,Math.ceil((x-radius+edge)/spacing)), right = Math.min(cells-1,Math.floor((x+radius+edge)/spacing));
+  const top = Math.max(1,Math.ceil((y-radius+edge)/spacing)), bottom = Math.min(cells-1,Math.floor((y+radius+edge)/spacing));
+  for (let row=top; row<=bottom; row++) for (let col=left; col<=right; col++) {
+    const i = row*stride+col, dx = mesh[i].x-x, dy = mesh[i].y-y;
+    const footprint = 1-(dx*dx+dy*dy)/(radius*radius);
+    if (footprint > 0) next[i] -= impulse*footprint**3;
+  }
+}
+
+function surfaceAtRest({h,last}) {
+  // Bound both kinetic and elastic energy. A passing wave can be perfectly
+  // flat at a point while moving fastest, or motionless at full deformation.
+  for (let row=1; row<cells; row++) for (let i=row*stride+1; i<row*stride+cells; i++) {
+    const z = h[i], speed = (z-last[i])/tick;
+    const sx = (z-h[i-1])/spacing, sy = (z-h[i-stride])/spacing;
+    if (4*z*z + speed*speed + sx*sx + sy*sy > .009**2) return false;
+  }
+  return true;
+}
+
+export function stepSurface(bubble, dt, hit, input) {
+  const contact = hit && hit.distance <= 1.04 && input;
+  const wave = contact ? surfaceFor(bubble,hit.x,hit.y) : waves.get(bubble);
+  if (!wave) return false;
 
   const target = contact && !input.release ? (input.down ? 1 : .52)*hit.amount : 0;
   if (contact) { wave.tx = hit.x; wave.ty = hit.y; }
-  wave.age = target || (contact && input.tap) ? 0 : wave.age + dt;
   // A quick lift can land between two display frames. Seed its velocity once.
-  if (contact && input.tap) wave.tap = {x:hit.x,y:hit.y};
+  if (contact && input.tap) rippleSurface(bubble,hit.x,hit.y,.017,Math.sqrt(.095));
   wave.remainder += Math.min(.16,dt);
   while (wave.remainder >= tick) {
     wave.remainder -= tick;
@@ -87,23 +118,23 @@ export function stepSurface(bubble, dt, hit, input) {
         next[i] = value + (value-last[i])*absorption + courant*laplace + tick*tick*force;
       }
     }
-    if (wave.tap) {
-      for (let i=0; i<count; i++) {
-        const dx = mesh[i].x-wave.tap.x, dy = mesh[i].y-wave.tap.y;
-        const footprint = 1-(dx*dx+dy*dy)/.095;
-        if (footprint > 0) next[i] -= .017*footprint**3;
-      }
-      wave.tap = null;
+    if (wave.impulses.length) {
+      for (const impulse of wave.impulses) applyImpulse(next,impulse);
+      wave.impulses.length = 0;
     }
     wave.last = h; wave.h = next; wave.next = last;
+    wave.checkIn -= tick;
   }
-  if (wave.age < 4.8) {
-    const fraction = wave.remainder/tick;
-    for (let i=0; i<count; i++) wave.display[i] = wave.last[i]+fraction*(wave.h[i]-wave.last[i]);
-    return true;
+  if (!target && !wave.impulses.length && wave.pressure < .001 && wave.checkIn <= 0) {
+    if (surfaceAtRest(wave)) {
+      waves.delete(bubble);
+      return false;
+    }
+    wave.checkIn = .1;
   }
-  waves.delete(bubble);
-  return false;
+  const fraction = wave.remainder/tick;
+  for (let i=0; i<count; i++) wave.display[i] = wave.last[i]+fraction*(wave.h[i]-wave.last[i]);
+  return true;
 }
 
 const rgb = hex => [1,3,5].map(i => parseInt(hex.slice(i,i+2),16));
@@ -176,9 +207,9 @@ function studioLight(ink) {
 
 // The smooth optical field is independent of output resolution. Interpolate
 // normals first, then sample colour. A curved softbox stays curved at a dimple.
-function surfaceTile(bubble, radius, responding) {
+function surfaceTile(bubble, radius, detail) {
   let tile = tiles.get(bubble);
-  const samples = Math.max(1,Math.min(responding ? 4 : 6,Math.ceil(radius*2.64/cells)));
+  const samples = Math.max(1,Math.min(detail,Math.ceil(radius*2.64/cells)));
   if (tile?.samples === samples) return tile;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = cells*samples;
@@ -190,18 +221,18 @@ function surfaceTile(bubble, radius, responding) {
   return tile;
 }
 
-export function paintSurface(ctx,bubble,radius,rim,ink,index,live) {
+export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6) {
   const wave = waves.get(bubble)?.display;
-  const tile = surfaceTile(bubble,radius,!!wave);
+  const tile = surfaceTile(bubble,radius,detail);
   // A brush can run at display cadence. Undisturbed bodies have very slow
   // optical motion and can reuse their lighting between ambient frames.
   if (live && !wave && !tile.wasTouched && ink === tile.ink &&
-    Math.abs(bubble.phase-tile.phase) < bubble.tempo/24 &&
+    Math.abs(bubble.phase-tile.phase) < bubble.tempo/24 && Math.abs(bubble.angle-tile.angle) < .004 &&
     Math.abs((bubble.strainX || 0)-tile.strainX)+Math.abs((bubble.strainY || 0)-tile.strainY) < .004) {
     ctx.drawImage(tile.canvas,-edge,-edge,2*edge,2*edge);
     return;
   }
-  tile.ink = ink; tile.phase = bubble.phase; tile.wasTouched = !!wave;
+  tile.ink = ink; tile.phase = bubble.phase; tile.angle = bubble.angle; tile.wasTouched = !!wave;
   tile.strainX = bubble.strainX || 0; tile.strainY = bubble.strainY || 0;
   const {u,v,pigmentU,pigmentV,recess} = tile, palette = studioLight(ink);
   const span = (mapSize-1)*.5;

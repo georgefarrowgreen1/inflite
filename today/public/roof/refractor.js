@@ -20,8 +20,8 @@ if (!artLens && canDisplace) {
 
 let artwork, loading, strength = 0;
 
-export function wallpaperFrame(canvas) {
-  artwork?.wallpaperFrame(canvas);
+export function wallpaperFrame(canvas, damage) {
+  artwork?.wallpaperFrame(canvas, damage);
 }
 
 function sync() {
