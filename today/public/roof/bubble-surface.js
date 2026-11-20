@@ -256,21 +256,21 @@ function surfaceTile(bubble, radius, detail) {
   return tile;
 }
 
-export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6) {
+export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6,rimSlope = null) {
   const wave = waves.get(bubble)?.display;
   const tile = surfaceTile(bubble,radius,detail);
   const tiltX = -.19*(bubble.vx || 0), tiltY = -.19*(bubble.vy || 0);
   // Slow marbling can reuse a tile across ambient frames. Stagger its refresh
   // across bodies; physical tilt, rotation, strain and waves update independently.
   const colourTick = Math.floor(bubble.phase*10/bubble.tempo + index*.25);
-  if (live && !wave && !tile.wasTouched && ink === tile.ink &&
+  if (live && !wave && !rimSlope && !tile.wasTouched && ink === tile.ink &&
     colourTick === tile.colourTick && Math.abs(bubble.angle-tile.angle) < .004 &&
     Math.abs(tiltX-tile.tiltX)+Math.abs(tiltY-tile.tiltY) < .002 &&
     Math.abs((bubble.strainX || 0)-tile.strainX)+Math.abs((bubble.strainY || 0)-tile.strainY) < .004) {
     ctx.drawImage(tile.canvas,-edge,-edge,2*edge,2*edge);
     return;
   }
-  tile.ink = ink; tile.colourTick = colourTick; tile.angle = bubble.angle; tile.wasTouched = !!wave;
+  tile.ink = ink; tile.colourTick = colourTick; tile.angle = bubble.angle; tile.wasTouched = !!wave || !!rimSlope;
   tile.tiltX = tiltX; tile.tiltY = tiltY;
   tile.strainX = bubble.strainX || 0; tile.strainY = bubble.strainY || 0;
   const {u,v,pigmentU,pigmentV,recess} = tile, palette = studioLight(ink);
@@ -298,6 +298,13 @@ export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6) {
     let py = baseY+nz*(driftY-bend*p.x+.59*driftA-driftB);
     let nx = baseX+nz*(tiltX+.6*(tile.strainX*p.x+tile.strainY*p.y));
     let ny = baseY+nz*(tiltY+.6*(tile.strainY*p.x-tile.strainX*p.y));
+    if (rimSlope) {
+      // The normal on a dimpled polar outline tilts toward the shallower
+      // shoulder. Let that change in orientation fade into the interior.
+      const slope = mix(rimSlope[p.a],rimSlope[p.b],p.fraction)/skin;
+      const lean = slope*side[lat]*(lat/latitudeScale)**2;
+      nx += lean*p.uy; ny -= lean*p.ux;
+    }
     let rayZ = nz;
     if (wave) {
       let sx = 0, sy = 0;

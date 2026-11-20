@@ -2,6 +2,47 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const body = x => ({x,y:.5,vx:0,vy:0,dx:0,dy:0,phase:0,angle:0,tempo:.05,turn:60});
+const radii = [.30,.165,.082,.037];
+
+function approaching(index,speed,tangent=0) {
+  const scene=[.32,.70,.83,.93].map(body);
+  const small=scene[index];
+  small.x=scene[0].x+(radii[0]+radii[index]-.000001)/3;
+  small.vx=-speed; small.dx=Math.max(-.007,-speed);
+  small.vy=small.dy=tangent;
+  return scene;
+}
+
+test('a passive small orb imparts a weighted recoil to a stationary large orb', async () => {
+  const {driftBubbles}=await import('../today/public/roof/bubbles.js');
+  for (const index of [1,2,3]) {
+    const speed=.0065, scene=approaching(index,speed), large=scene[0], small=scene[index];
+    const start=large.x, momentum=small.vx*radii[index];
+    driftBubbles(scene,1/120,3);
+    assert.ok(large.vx<0 && small.vx>0, 'the large orb recoils and the small orb rebounds');
+    assert.ok(Math.abs(large.vx)<small.vx+speed, 'the heavier body changes velocity less');
+    assert.ok(Math.abs(large.vx*radii[0]+small.vx*radii[index]-momentum)<1e-10);
+    const sharedSpeed=Math.abs(momentum)/(radii[0]+radii[index]);
+    assert.ok(Math.abs(large.vx)>sharedSpeed && Math.abs(large.vx)<2*sharedSpeed);
+    for (let i=0;i<60;i++) driftBubbles(scene,1/60,3);
+    assert.ok((start-large.x)*3>sharedSpeed, 'recoil carries through the next second');
+    assert.ok((small.x-large.x)*3>radii[index]+radii[0], 'the two orbs separate on their own');
+  }
+});
+
+test('a glancing impact preserves tangential motion and does not add kinetic energy', async () => {
+  const {driftBubbles}=await import('../today/public/roof/bubbles.js');
+  for (const speed of [.00001,.0065,.12]) {
+    const scene=approaching(2,speed,.003), large=scene[0], small=scene[2];
+    const initialEnergy=radii[2]*(speed**2+small.vy**2);
+    driftBubbles(scene,1/120,3);
+    assert.equal(large.vy,0);
+    assert.equal(small.vy,.003);
+    assert.ok(large.vx<0 && small.vx>0);
+    const energy=radii[0]*large.vx**2+radii[2]*(small.vx**2+small.vy**2);
+    assert.ok(energy<=initialEnergy);
+  }
+});
 
 test('a closing pair excites both facing surfaces once and can meet again', async () => {
   const {driftBubbles} = await import('../today/public/roof/bubbles.js');

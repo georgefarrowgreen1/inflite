@@ -2478,6 +2478,132 @@ test('a live orb keeps its display-resolution glass during a press and rolls in 
   } finally { await ctx.close(); }
 });
 
+test('a drifting light orb dents the heavy outline at contact and the rim recovers', async t => {
+  const {ctx,page}=await open({width:390,scheme:'dark'});
+  try {
+    const runs=await page.evaluate(async () => {
+      const {drawBubbles,driftBubbles}=await import('/roof/bubbles.js');
+      const width=390,height=844,aspect=width/height;
+      const canvas=document.createElement('canvas'); canvas.width=104; canvas.height=225;
+      const raster=canvas.getContext('2d'), probe=document.createElement('canvas').getContext('2d');
+      let silhouette, capture;
+      const clip=raster.clip.bind(raster);
+      raster.clip=(...args) => {
+        if(args[0] instanceof Path2D) {
+          silhouette=args[0];
+          if(capture) {
+            const matrix=new DOMMatrix().scale(width/canvas.width).multiply(raster.getTransform());
+            const shape=new Path2D();
+            shape.addPath(silhouette,matrix);
+            capture.push({shape,x:matrix.e,y:matrix.f,r:Math.hypot(matrix.a,matrix.b)});
+          }
+        }
+        clip(...args);
+      };
+      function path(body) {
+        drawBubbles(raster,[body],'opal');
+        const scaled=new Path2D();
+        scaled.addPath(silhouette,new DOMMatrix().scale(256));
+        return scaled;
+      }
+      function radius(shape,angle) {
+        const x=Math.cos(angle), y=Math.sin(angle);
+        let low=.4,high=1.4;
+        for(let i=0;i<15;i++) {
+          const r=(low+high)/2;
+          if(probe.isPointInPath(shape,256*r*x,256*r*y)) low=r;
+          else high=r;
+        }
+        return (low+high)/2;
+      }
+      function dent(orb,angle) {
+        const actual=path(orb);
+        // Keep the body's pose and breathing phase to isolate the collision
+        // from its normal silhouette. Optical shading cannot change this clip.
+        const rest=path({x:orb.x,y:orb.y,angle:orb.angle,phase:orb.phase,tempo:orb.tempo,vx:0,vy:0,dx:0,dy:0});
+        const face=radius(rest,angle)-radius(actual,angle);
+        const back=radius(rest,angle+Math.PI)-radius(actual,angle+Math.PI);
+        return face-back;
+      }
+      function body(x,y,vx=0,vy=0) {
+        return {x,y,vx,vy,dx:vx,dy:vy,phase:0,angle:0,tempo:.04,turn:60};
+      }
+      function pair(scene,lightRadius) {
+        capture=[];
+        drawBubbles(raster,scene,'opal');
+        const byRadius=r=>capture.find(p=>Math.abs(p.r-width*r)<.01);
+        const pair=[byRadius(.30),byRadius(lightRadius)];
+        capture=null;
+        return pair;
+      }
+      function gap([a,b]) {
+        const dx=b.x-a.x,dy=b.y-a.y,distance=Math.hypot(dx,dy),nx=dx/distance,ny=dy/distance;
+        let nearest=Infinity,centre=0;
+        // Scan the two facing splines, including the shoulders of the dent.
+        // A negative separation means the rendered bodies overlap.
+        const edgeLimit=Math.floor(b.r*.72*2)/2;
+        for(let offset=-edgeLimit;offset<=edgeLimit;offset+=.5) {
+          const x=a.x-ny*offset,y=a.y+nx*offset;
+          function edge(shape,fromA) {
+            let low=0,high=distance;
+            for(let i=0;i<14;i++) {
+              const mid=(low+high)/2;
+              if(probe.isPointInPath(shape,x+nx*mid,y+ny*mid)===fromA) low=mid;
+              else high=mid;
+            }
+            return (low+high)/2;
+          }
+          const separation=edge(b.shape,false)-edge(a.shape,true);
+          nearest=Math.min(nearest,separation);
+          if(offset===0) centre=separation;
+        }
+        return {nearest,centre};
+      }
+      return [[.082,0],[.082,.003],[.037,.003]].map(([radius,sideways])=>{
+        // The small orb drifts into the right shoulder of the large orb at
+        // ordinary wallpaper speed. Mail and its dock can cover the other two.
+        const heavy=body(.42,.51), light=body(heavy.x+.30+radius+.006,.51,-.006,sideways);
+        const scene=[heavy,body(.74,.13),body(.25,.86)];
+        scene.splice(radius===.082 ? 2 : 3,0,light);
+        const start=pair(scene,radius),startGap=gap(start).nearest;
+        let maxDent=0,angleAtPeak=0,recoil=0,lightResponse=0,peak,impactFrame,peakFrame,release;
+        for(let i=0;i<240;i++) {
+          driftBubbles(scene,1/60,aspect);
+          const dx=light.x-heavy.x, dy=(light.y-heavy.y)/aspect;
+          const angle=Math.atan2(dy,dx), nx=Math.cos(angle), ny=Math.sin(angle);
+          recoil=Math.max(recoil,-heavy.vx*nx-heavy.vy*ny);
+          if(impactFrame===undefined && recoil>.0001) impactFrame=i;
+          lightResponse=Math.max(lightResponse,(light.vx+.006)*nx+(light.vy-sideways)*ny);
+          if(i%4===0) {
+            const depth=dent(heavy,angle);
+            if(depth>maxDent) {maxDent=depth;angleAtPeak=angle;peak=pair(scene,radius);peakFrame=i;}
+          }
+          if(i===impactFrame+8) release=pair(scene,radius);
+        }
+        const end=pair(scene,radius);
+        const travelPx=start[0].x-end[0].x, lateral=light.vy;
+        light.x=.80; light.y=.74; light.vx=light.vy=light.dx=light.dy=0;
+        for(let i=0;i<300;i++) driftBubbles(scene,1/60,aspect);
+        const recovered=Math.abs(dent(heavy,angleAtPeak));
+        // Report the local loss of radius in CSS pixels on the reference phone.
+        return {dentPx:maxDent*width*.30,restPx:recovered*width*.30,travelPx,recoil,lightResponse,lateral,sideways,radius,
+          startGap,peakGap:gap(peak),releaseGap:gap(release),peakMs:Math.round((peakFrame-impactFrame)*1000/60)};
+      });
+    });
+    for(const run of runs) t.diagnostic(`${run.sideways?'Glancing':'Head-on'} impact at radius ${run.radius}: ${run.dentPx.toFixed(2)} px dent, ${run.startGap.toFixed(2)} px starting gap, ${run.peakGap.centre.toFixed(2)} px centreline at peak (${run.peakMs} ms, ${run.peakGap.nearest.toFixed(2)} px at shoulders), ${run.releaseGap.centre.toFixed(2)} px centreline at 133 ms, ${run.travelPx.toFixed(2)} px recoil, ${run.restPx.toFixed(2)} px residual.`);
+    for(const run of runs) {
+      assert.ok(run.startGap>1, 'the small orb starts visibly separated: '+JSON.stringify(run));
+      assert.ok(run.dentPx>1, 'the heavy silhouette develops a visible, one-sided dent: '+JSON.stringify(run));
+      assert.ok(run.peakGap.nearest<=1, 'the two rendered outlines touch during compression: '+JSON.stringify(run));
+      assert.ok(Math.abs(run.peakGap.centre)<=1, 'the lighter orb sits against the centre of the dent: '+JSON.stringify(run));
+      assert.ok(run.restPx<.3, 'the heavy rim recovers after separation: '+JSON.stringify(run));
+      assert.ok(run.travelPx>.6, 'the heavy orb shifts away from the impact: '+JSON.stringify(run));
+      assert.ok(run.recoil>0 && run.lightResponse>run.recoil*2, 'the smaller orb yields more than the heavier one: '+JSON.stringify(run));
+      if(run.sideways) assert.ok(run.lateral>run.sideways*.25,'a glancing impact preserves travel along the rim');
+    }
+  } finally {await ctx.close();}
+});
+
 test('shared studio light stays in place while an orb turns its pigment', async () => {
   const {ctx,page}=await open();
   try {
@@ -2575,29 +2701,41 @@ test('an orb collision sends a visible ripple from each facing edge', async () =
   try {
     const counts = await page.evaluate(async () => {
       const {drawBubbles,driftBubbles} = await import('/roof/bubbles.js');
+      const {settleSurface} = await import('/roof/bubble-surface.js');
       const bodies = [.32,.77].map((x,i) => ({x,y:.5,vx:i ? 0 : .12,vy:0,dx:0,dy:0,
         phase:1.5,angle:0,tempo:.05,turn:60}));
       for (let i=0;i<12;i++) driftBubbles(bodies,1/60,1);
       const size=240;
-      function pixels(scene) {
+      function pixels(centres) {
         const canvas=document.createElement('canvas');
         canvas.width=canvas.height=size;
         const context=canvas.getContext('2d',{willReadFrequently:true});
-        drawBubbles(context,scene,'opal',0,true);
+        if(centres) {
+          const clip=context.clip.bind(context);
+          context.clip=(...args)=>{
+            if(args[0] instanceof Path2D) centres.unshift(context.getTransform());
+            clip(...args);
+          };
+        }
+        drawBubbles(context,bodies,'opal',0,true);
         return context.getImageData(0,0,size,size).data;
       }
-      const rippling=pixels(bodies), samePose=pixels(bodies.map(b => ({...b})));
-      return bodies.map((b,i) => {
+      const centres=[], rippling=pixels(centres);
+      // Remove only surface waves, preserving the contact geometry and light.
+      bodies.forEach(settleSurface);
+      const samePose=pixels();
+      return centres.map((centre,i) => {
         const radius=(i ? .165 : .30)*size, counts={near:0,far:0};
         for (let y=0;y<size;y++) for (let x=0;x<size;x++) {
-          const dx=(x+.5-b.x*size)/radius * (i ? -1 : 1);
-          if (Math.abs(dx)<.50 || Math.abs(dx)>.95 || Math.abs(y+.5-b.y*size)>radius*.31) continue;
+          const dx=(x+.5-centre.e)/radius * (i ? -1 : 1);
+          if (Math.abs(dx)<.50 || Math.abs(dx)>.95 || Math.abs(y+.5-centre.f)>radius*.31) continue;
           const pixel=4*(y*size+x);
           if ([0,1,2].some(c => Math.abs(rippling[pixel+c]-samePose[pixel+c])>8)) counts[dx>0?'near':'far']++;
         }
         return counts;
       });
     });
+    assert.equal(counts.length,2);
     for (const {near,far} of counts) assert.ok(near > far+8, JSON.stringify(counts));
   } finally { await ctx.close(); }
 });
