@@ -98,6 +98,30 @@ test('hub and Mail return their safe failure when an upstream binding never send
   assert.ok(signals.every(s => s.aborted));
 });
 
+test('Fitness loops can finish after 30 seconds and a stalled planner still releases the hub', async t => {
+  const { hub } = await import('../today/src/hub.js');
+  t.mock.timers.enable({apis:['setTimeout']});
+  const calls = [], env = {...baseEnv(), APPS:{fetch(req) {
+    return new Promise(resolve => calls.push({signal:req.signal, resolve}));
+  }}};
+  const search = () => hub(request('/api/fitness/routes/generate', {method:'POST', body:'{}'}), env, {});
+  const first = search();
+  await turn();
+  t.mock.timers.tick(75000);
+  assert.equal(calls[0].signal.aborted, false, 'the planner can use its full search window');
+  calls[0].resolve(Response.json({routes:['loop']}));
+  assert.deepEqual(await (await first).json(), {routes:['loop']});
+
+  const stalled = search();
+  await turn();
+  t.mock.timers.tick(85001);
+  const failure = await stalled;
+  assert.equal(failure.status, 504);
+  assert.match((await failure.json()).error, /took too long/);
+  assert.equal(calls[1].signal.aborted, true);
+  assert.equal(calls.length, 2);
+});
+
 test('hub keeps ranges streamed with the same headers and passes cancellation through APPS', async () => {
   const { hub } = await import('../today/src/hub.js');
   const caller = new AbortController();

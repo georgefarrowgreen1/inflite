@@ -186,11 +186,15 @@ export async function forward(env, request, { app, path, api = false }) {
     body = await bodyUpTo(request, CAPS[app], { raw: true });
     if (body === null) return refuse(413, SAID.big);
   }
+  // Fitness searches for up to 75 seconds. Leave time for the result to cross the hub
+  // before the Routes client reaches its 90-second deadline.
+  const planningLoop = api && app === "FITNESS" && method === "POST" && url.pathname === "/api/fitness/routes/generate";
   let res;
   try {
     // (written out, never resolved against the app's address: a path that starts // is still a path there)
-    res = await fetchUpstream((u, init) => appFetch(env, u, init), `${new URL(via).origin}${path}`, { method, headers: h, body, redirect: "manual" }, { signal: request.signal, timeout: 30000 });
+    res = await fetchUpstream((u, init) => appFetch(env, u, init), `${new URL(via).origin}${path}`, { method, headers: h, body, redirect: "manual" }, { signal: request.signal, timeout: planningLoop ? 85000 : 30000 });
   } catch (e) {
+    if (planningLoop && e?.name === "TimeoutError") return refuse(504, "Route planning took too long. Try finding new loops again.");
     console.error("hub", app, "upstream failed");
     return refuse(502, SAID.down);
   }
