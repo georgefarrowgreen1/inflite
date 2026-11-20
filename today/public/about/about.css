@@ -39,7 +39,7 @@
 }
 .intro-line { display: block; clip-path: inset(-.06em -.12em -.19em); padding-bottom: .07em; }
 .intro-phrase { display: block; }
-.intro-line em, .story-copy em, .closing h2 span {
+.intro-line em, .story-copy em {
   display: inline-block; color: var(--accent); font-family: Georgia, serif;
   font-style: italic; font-weight: 400; letter-spacing: -.08em;
 }
@@ -186,25 +186,6 @@
 .app-spotlight-copy p { max-width: 30ch; color: var(--muted); line-height: 1.5; margin-top: .35rem; min-height: 3em; }
 .app-spotlight .launch { grid-column: 2; justify-self: start; }
 
-.closing { background: var(--paper); padding-bottom: clamp(2.8rem, 6vw, 6rem); }
-.closing-panel {
-  position: relative; isolation: isolate; overflow: hidden; display: grid; justify-items: start; gap: 1rem;
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding: clamp(1.6rem, 4vw, 3.35rem); border: 1px solid var(--line); border-radius: clamp(1.4rem, 4vw, 3rem);
-  background: radial-gradient(ellipse at 92% 105%, rgb(var(--light) / .33), transparent 70%), var(--panel);
-}
-.closing-panel > * { z-index: 1; }
-.closing-panel::before {
-  content: ""; pointer-events: none; position: absolute; z-index: -1;
-  inset: 20% -16% -95% auto; width: min(72%, 34rem); aspect-ratio: 1;
-  border-radius: 50%; opacity: .55;
-  background: radial-gradient(circle at 30% 34%, #f3d3df7d, transparent 45%),
-    radial-gradient(circle at 70% 32%, #efbd84a1, transparent 58%),
-    radial-gradient(circle at 40% 65%, #7999babb, #76619177 62%, transparent 72%);
-}
-.closing-panel h2 { grid-column: 1; }
-.closing-panel .launch { grid-column: 2; grid-row: 1; align-self: center; }
-
 @keyframes intro-rise {
   from { opacity: .45; transform: translateY(1.05rem); }
   to { opacity: 1; transform: translateY(0); }
@@ -263,12 +244,10 @@
       animation-range: entry 10% exit 65%;
     }
   }
-  .closing-panel[data-entered]::before { animation: orbit-arrival 1.6s var(--site-ease) backwards; }
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
   .about-sky { display: none; }
-  .app-spotlight, .closing-panel { background: var(--panel); }
-  .closing-panel::before { display: none; }
+  .app-spotlight { background: var(--panel); }
   .story-card { background: #19161f; }
 }
 @media (max-width: 920px) {
@@ -289,8 +268,6 @@
   .story-card img { width: 1.75rem; height: 1.75rem; }
   .about-sky::after { background: linear-gradient(150deg, rgb(var(--sky) / .9) 12%, rgb(var(--sky) / .68) 38%, rgb(var(--sky) / .16) 74%); }
   .app-list { grid-template-columns: 1fr; }
-  .closing-panel { grid-template-columns: 1fr; }
-  .closing-panel .launch { grid-column: auto; grid-row: auto; justify-self: start; margin-top: .3rem; }
 }
 @media (max-width: 800px) {
   .app-catalogue[data-ready] { grid-template-columns: 1fr; }
