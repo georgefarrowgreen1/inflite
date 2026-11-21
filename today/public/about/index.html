@@ -20,10 +20,12 @@
   <link rel="stylesheet" href="/about/site.css">
   <link rel="stylesheet" href="/about/about.css">
   <link rel="stylesheet" href="/about/showcase.css">
+  <link rel="stylesheet" href="/about/weather.css">
   <link rel="stylesheet" href="/about/entrance.css" media="screen and (scripting: enabled) and (prefers-reduced-motion: no-preference) and (forced-colors: none)">
   <script defer src="/about/entrance.js"></script>
   <script defer src="/about/legacy-contact.js"></script>
   <script defer src="/about/showcase.js"></script>
+  <script type="module" src="/about/weather.js"></script>
   <script defer src="/about/catalogue.js"></script>
   <script defer src="/about/reveal.js"></script>
   <link rel="modulepreload" href="/roof/bubbles.js?about">
@@ -141,23 +143,25 @@
         <div class="product-preview" data-preview-app="today" role="group" aria-label="InFlite product preview">
           <div class="preview-topline">
             <span class="preview-window-brand"><img src="/inflite.svg" width="24" height="24" alt="">InFlite</span>
-            <span class="preview-caption">Preview <span aria-hidden="true">·</span> Sample data</span>
+            <span class="preview-caption">Preview <span aria-hidden="true">·</span>
+              <a class="preview-weather-source" href="https://open-meteo.com/">Open-Meteo</a><span class="preview-sample-caption">Sample data</span>
+            </span>
           </div>
           <div class="preview-deck">
             <section class="preview-scene" id="preview-today" aria-label="Today">
               <header class="preview-heading">
-                <p class="preview-kicker">Today <span aria-hidden="true">·</span> Tuesday, 17 November</p>
-                <h2>Good morning.</h2>
+                <p class="preview-kicker">Today<span data-london-date></span></p>
+                <h2 data-london-greeting>Your day at a glance.</h2>
               </header>
               <div class="preview-feature preview-weather-card">
                 <div class="preview-feature-copy">
-                  <p class="preview-feature-label">Norwich <span aria-hidden="true">·</span> Now</p>
-                  <p class="preview-feature-value">14° <span>Bright intervals</span></p>
-                  <p class="preview-detail">Dry through 14:00</p>
+                  <p class="preview-feature-label">London, UK</p>
+                  <p class="preview-weather-reading"><strong data-weather-temperature hidden></strong> <span data-weather-condition>Weather unavailable</span></p>
+                  <p class="preview-detail" data-weather-range hidden></p>
                 </div>
                 <img class="preview-feature-icon" src="/apps/weather.svg" width="60" height="60" alt="">
               </div>
-              <div class="preview-items">
+              <div class="preview-items" role="group" aria-label="Sample agenda and mail">
                 <div class="preview-item">
                   <img src="/apps/calendar.svg" width="28" height="28" alt="">
                   <div><span>11:00</span><strong>Design review</strong></div>
@@ -170,21 +174,21 @@
             </section>
             <section class="preview-scene" id="preview-weather" aria-label="Weather" hidden>
               <header class="preview-heading">
-                <p class="preview-kicker">Weather <span aria-hidden="true">·</span> Tuesday, 17 November</p>
-                <h2>Norwich</h2>
+                <p class="preview-kicker">Weather<span data-london-date></span></p>
+                <h2>London, UK</h2>
               </header>
               <div class="preview-feature preview-weather-card">
                 <div class="preview-feature-copy">
                   <p class="preview-feature-label">Current conditions</p>
-                  <p class="preview-feature-value">14° <span>Bright intervals</span></p>
-                  <p class="preview-detail">High 16° <span aria-hidden="true">·</span> Low 9°</p>
+                  <p class="preview-weather-reading"><strong data-weather-temperature hidden></strong> <span data-weather-condition>Weather unavailable</span></p>
+                  <p class="preview-detail" data-weather-range hidden></p>
                 </div>
                 <img class="preview-feature-icon" src="/apps/weather.svg" width="60" height="60" alt="">
               </div>
-              <dl class="preview-items preview-numbers" aria-label="Hourly forecast">
-                <div class="preview-item"><dt>Now</dt><dd>14°</dd></div>
-                <div class="preview-item"><dt>12:00</dt><dd>15°</dd></div>
-                <div class="preview-item"><dt>14:00</dt><dd>16°</dd></div>
+              <dl class="preview-items preview-numbers" aria-label="Hourly forecast" data-weather-hours hidden>
+                <div class="preview-item"><dt>Now</dt><dd></dd></div>
+                <div class="preview-item" hidden><dt></dt><dd></dd></div>
+                <div class="preview-item" hidden><dt></dt><dd></dd></div>
               </dl>
             </section>
             <section class="preview-scene" id="preview-fitness" aria-label="Fitness" hidden>
@@ -249,6 +253,16 @@
             </button>
           </div>
         </div>
+        <template id="preview-weather-sky">
+          <div class="preview-weather-sky" aria-hidden="true">
+            <span class="preview-weather-light"></span>
+            <span class="preview-weather-cloud preview-weather-cloud-back"></span>
+            <span class="preview-weather-cloud preview-weather-cloud-front"></span>
+            <span class="preview-weather-rain"></span>
+            <span class="preview-weather-snow"></span>
+            <span class="preview-weather-wind"><i></i><i></i><i></i></span>
+          </div>
+        </template>
       </div>
     </section>
 
@@ -265,7 +279,7 @@
           <div class="story-cards" role="group" aria-label="Example ride planning">
             <div class="story-card">
               <img src="/apps/weather.svg" width="36" height="36" alt="" loading="lazy">
-              <div><span>Weather</span><strong>Dry until 14:00</strong></div>
+              <div><span>London weather</span><strong data-story-weather>Weather unavailable</strong></div>
             </div>
             <span class="story-connection" aria-hidden="true"><span></span></span>
             <div class="story-card">

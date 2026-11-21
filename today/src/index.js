@@ -18,6 +18,7 @@ import {securityAPI} from './security.js';
 import { systemAPI } from "./system.js";
 import { workspacesAPI } from "./workspaces.js";
 import { contact } from "./contact.js";
+import { londonWeather } from "./london-weather.js";
 import { isExtraPath, extraApp } from "./extra-apps.js";
 import { isIdentityPath, identity } from "./identity.js";
 import { roofPage, usesLocalMailFixture } from "./roof.js";
@@ -101,6 +102,11 @@ const worker = {
       if (hubbed) return await hub(request, env, ctx);
       if (mail) return await mailPage(request, env);
       if (url.pathname === "/api/contact") return await contact(request, env);
+      if (url.pathname === "/api/about/weather") {
+        if (request.method !== "GET") return refuse(405, "Use GET to read London weather.");
+        const forecast = await londonWeather();
+        return forecast ? json(forecast) : refuse(503, "London weather is unavailable.");
+      }
       if (isFilesAPI(url.pathname)) return await filesAPI(request, env);
       if (url.pathname.startsWith("/api/security/")) return await securityAPI(request,env);
       if (url.pathname.startsWith("/api/organise/")) return await organiseAPI(request,env);

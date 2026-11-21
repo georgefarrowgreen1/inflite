@@ -45,8 +45,17 @@ test('installed shell keeps its orb modules offline and leaves public pages on t
 test('public pages and contact form work without signing in, from phone to desktop', async () => {
   const unexpected = [], sent = [], errors = [], accessed = new Set();
   let receipt = 503, pending, browser;
+  const forecast = { temperature: 8.7, code: 63, day: true, windy: true, high: 11, low: 5,
+    upcoming: [{ time: 1795255200, temperature: 10 }, { time: 1795258800, temperature: 11 }] };
+  let london = forecast;
+  const weatherRequests = [];
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/api/about/weather' && req.method === 'GET') {
+      weatherRequests.push(req.headers.cookie);
+      res.writeHead(london ? 200 : 503, { 'Content-Type': 'application/json' }).end(JSON.stringify(london));
+      return;
+    }
     if (url.pathname === '/api/contact' && req.method === 'POST') {
       const body = [];
       for await (const chunk of req) body.push(chunk);
@@ -104,9 +113,33 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.equal(await page.locator('canvas').count(), 1, 'the product preview reuses ordinary HTML and the existing orb canvas');
     const preview = page.getByRole('group', { name: 'InFlite product preview' });
     const tab = name => preview.getByRole('tab', { name, exact: true });
+    const today = preview.getByRole('tabpanel', { name: 'Today' });
+    await today.getByText('Rain · Windy', { exact: true }).waitFor();
+    assert.ok(await today.getByText('London, UK', { exact: true }).isVisible());
+    assert.ok(await today.getByText('9°', { exact: true }).isVisible());
+    assert.deepEqual(weatherRequests, [undefined], 'the shared London preview fetch uses no session cookie');
     assert.equal(await tab('Today').getAttribute('aria-selected'), 'true');
     await tab('Weather').click();
-    assert.ok(await preview.getByRole('tabpanel', { name: 'Weather' }).getByText('Norwich', { exact: true }).isVisible());
+    const weather = preview.getByRole('tabpanel', { name: 'Weather' });
+    assert.ok(await weather.getByRole('heading', { name: 'London, UK' }).isVisible());
+    assert.ok(await weather.getByText('High 11° · Low 5°').isVisible());
+    assert.deepEqual(await weather.locator('dt').allTextContents(), ['Now', '10:00', '11:00']);
+    assert.deepEqual(await weather.locator('dd').allTextContents(), ['9°', '10°', '11°']);
+    const effect = weather.locator('.preview-weather-sky');
+    await weather.scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => document.querySelector('.product-preview').hasAttribute('data-weather-in-view'));
+    assert.ok(await effect.locator('.preview-weather-rain').isVisible());
+    assert.ok(await effect.locator('.preview-weather-wind').isVisible());
+    assert.equal(await effect.locator('.preview-weather-rain').evaluate(el => getComputedStyle(el, '::before').animationName), 'none');
+    london = null;
+    await page.evaluate(() => dispatchEvent(new Event('online')));
+    await weather.getByText('Weather unavailable', { exact: true }).waitFor();
+    assert.ok(await weather.locator('[data-weather-hours]').isHidden());
+    assert.ok(await effect.isHidden());
+    london = forecast;
+    await page.evaluate(() => dispatchEvent(new Event('online')));
+    await weather.getByText('Rain · Windy', { exact: true }).waitFor();
+    await tab('Weather').focus();
     await page.keyboard.press('ArrowRight');
     assert.equal(await tab('Fitness').getAttribute('aria-selected'), 'true');
     assert.ok(await preview.getByRole('tabpanel', { name: 'Fitness' }).isVisible());
@@ -287,6 +320,23 @@ test('public pages and contact form work without signing in, from phone to deskt
     await motion.goto('about:blank');
     await motion.goto(site + '/about/#apps');
     assert.ok(await entrance.isHidden(), 'a deep link opens directly at the app picker');
+    await motion.getByRole('tab', { name: 'Weather', exact: true }).first().click();
+    const weatherScene = motion.locator('#preview-weather');
+    const weatherArt = weatherScene.locator('.preview-weather-sky');
+    await weatherScene.scrollIntoViewIfNeeded();
+    await motion.waitForFunction(() => document.querySelector('.product-preview').hasAttribute('data-weather-in-view'));
+    await weatherArt.locator('.preview-weather-rain').waitFor();
+    for (const [code, kind, layer, animation] of [
+      [63, 'rain', 'rain', 'london-rain'], [73, 'snow', 'snow', 'london-snow'],
+      [0, 'clear', 'light', 'london-light'], [3, 'cloud', 'cloud-front', 'london-cloud'],
+    ]) {
+      london = { ...forecast, code };
+      await motion.evaluate(() => dispatchEvent(new Event('online')));
+      await weatherScene.locator(`[data-sky="${kind}"]`).waitFor();
+      assert.equal(await weatherArt.locator('.preview-weather-' + layer).evaluate((el, pseudo) =>
+        getComputedStyle(el, pseudo).animationName, kind === 'rain' || kind === 'snow' ? '::before' : null), animation);
+    }
+    assert.equal(await weatherArt.locator('.preview-weather-wind i').first().evaluate(el => getComputedStyle(el).animationName), 'london-wind');
     await motion.close();
 
     assert.deepEqual(errors, []);

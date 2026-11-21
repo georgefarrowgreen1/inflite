@@ -1,0 +1,169 @@
+.product-preview .preview-weather-source {
+  text-underline-offset: .18em;
+}
+
+.product-preview :is(.preview-sample-caption, .preview-weather-source, .preview-weather-sky),
+.product-preview [data-weather-hours] [hidden],
+.product-preview :is([data-weather-hours], .preview-weather-card .preview-feature-icon)[hidden] {
+  display: none;
+}
+
+.product-preview:is([data-preview-app="today"], [data-preview-app="weather"]) .preview-weather-source,
+.product-preview:is([data-preview-app="fitness"], [data-preview-app="mail"]) .preview-sample-caption {
+  display: inline;
+}
+
+.product-preview .preview-weather-reading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .15rem .53rem;
+  margin-block: .22rem;
+  color: #fff;
+  font-size: clamp(.78rem, 1.1vw, .98rem);
+  font-weight: 560;
+  line-height: 1.25;
+}
+
+.product-preview .preview-weather-reading strong {
+  font-size: clamp(1.9rem, 4.15vw, 3.15rem);
+  line-height: .98;
+  font-weight: 650;
+  letter-spacing: -.055em;
+}
+
+.product-preview .preview-weather-card:has([data-sky]) {
+  background: radial-gradient(ellipse at 96% 16%, var(--weather-horizon, #476b9f), transparent 68%), #212e4e;
+}
+
+.product-preview .preview-weather-card:has([data-sky])::after { content: none; }
+.product-preview .preview-weather-card:has([data-sky]) .preview-feature-copy { max-width: 66%; }
+.product-preview .preview-weather-card:has([data-sky="clear"], [data-sky="partly"]) { --weather-horizon: #537dad; }
+.product-preview .preview-weather-card:has([data-sky="snow"]) { --weather-horizon: #527693; }
+.product-preview .preview-weather-card:has([data-sky][data-night]) { --weather-horizon: #354c7d; }
+
+.product-preview .preview-weather-sky[data-sky] {
+  display: block;
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 52%;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: linear-gradient(to right, transparent 3%, #000 44%);
+}
+
+.preview-weather-sky > span { position: absolute; display: none; }
+
+.preview-weather-sky:is([data-sky="clear"], [data-sky="partly"]) .preview-weather-light {
+  display: block;
+  top: 14%;
+  right: 17%;
+  width: clamp(2.65rem, 6.2vw, 4.65rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 33%, #fff9d4, #ffe39c 40%, #ffbc65 83%);
+  box-shadow: 0 0 1.55rem #ffcf7e8c, 0 0 3.5rem #ffc4765c;
+}
+
+.preview-weather-sky[data-night] .preview-weather-light {
+  background: transparent;
+  box-shadow: inset -.72rem -.27rem #f5eedc;
+  filter: drop-shadow(0 0 .65rem #c4d4ff91);
+  rotate: -15deg;
+}
+
+.preview-weather-sky[data-sky]:not([data-sky="clear"]) .preview-weather-cloud {
+  display: block;
+  width: clamp(5rem, 14vw, 10.5rem);
+  height: 53%;
+  right: 5%;
+  top: 20%;
+  background:
+    radial-gradient(ellipse 25% 49% at 37% 56%, #e7edf7 65%, transparent 100%),
+    radial-gradient(ellipse 27% 44% at 56% 51%, #d9e4f4 64%, transparent 100%),
+    radial-gradient(ellipse 26% 33% at 77% 69%, #bdcfe8 63%, transparent 100%),
+    radial-gradient(ellipse 48% 28% at 51% 76%, #a5bbdb, #c5d5ec 71%, transparent 100%);
+}
+
+.preview-weather-sky[data-sky] .preview-weather-cloud-back {
+  top: 9%;
+  right: -10%;
+  opacity: .42;
+}
+
+.preview-weather-sky[data-sky="partly"] .preview-weather-cloud-front { top: 29%; }
+.preview-weather-sky[data-sky="rain"] .preview-weather-cloud-front { filter: brightness(.83); }
+
+.preview-weather-sky[data-sky="rain"] .preview-weather-rain,
+.preview-weather-sky[data-sky="snow"] .preview-weather-snow {
+  display: block;
+  inset: 48% 0 -18% 12%;
+  mask-image: linear-gradient(transparent, #000 32%, #000 60%, transparent);
+}
+
+.preview-weather-rain::before,
+.preview-weather-snow::before {
+  content: "";
+  position: absolute;
+  inset: -2.25rem -1rem 0;
+  opacity: .85;
+}
+
+.preview-weather-rain::before {
+  background:
+    radial-gradient(ellipse 1px 6px at 9px 10px, #deefff 58%, transparent) 0 0 / 19px 24px,
+    radial-gradient(ellipse 1px 5px at 4px 16px, #8fcaff 75%, transparent) 7px 8px / 27px 24px;
+  transform: skewX(-20deg);
+}
+
+.preview-weather-snow::before {
+  background:
+    radial-gradient(circle at 4px 7px, #fff 1.25px, transparent 1.8px) 0 0 / 31px 24px,
+    radial-gradient(circle at 12px 15px, #d6e9fb 1.8px, transparent 2.4px) 5px 2px / 39px 24px;
+}
+
+.preview-weather-sky[data-windy] .preview-weather-wind {
+  display: grid;
+  justify-items: end;
+  gap: .35rem;
+  right: 7%;
+  top: 61%;
+  width: 76%;
+  rotate: -6deg;
+}
+
+.preview-weather-wind i {
+  width: 82%;
+  height: .43rem;
+  border: .1rem solid #d7e9ffb5;
+  border-width: .1rem .1rem 0 0;
+  border-radius: 0 100% 0 0;
+  mask-image: linear-gradient(to right, transparent, #000 69%);
+}
+
+.preview-weather-wind i:nth-child(2) { width: 66%; margin-right: 17%; }
+.preview-weather-wind i:nth-child(3) { width: 51%; }
+
+@keyframes london-light { 50% { transform: scale(1.12); opacity: .83; } }
+@keyframes london-cloud { 50% { transform: translateX(-9%) translateY(3%); } }
+@keyframes london-rain { to { transform: skewX(-20deg) translateY(24px); } }
+@keyframes london-snow { 50% { transform: translate(5px, 12px); } to { transform: translateY(24px); } }
+@keyframes london-wind {
+  0% { transform: translateX(-18%); opacity: 0; }
+  44% { opacity: 1; }
+  100% { transform: translateX(12%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  [data-weather-in-view] .preview-scene:not([hidden]) .preview-weather-light { animation: london-light 4.5s ease-in-out; }
+  [data-weather-in-view] .preview-scene:not([hidden]) .preview-weather-cloud { animation: london-cloud 4.8s ease-in-out; }
+  [data-weather-in-view] .preview-scene:not([hidden]) .preview-weather-rain::before { animation: london-rain .48s linear 10; }
+  [data-weather-in-view] .preview-scene:not([hidden]) .preview-weather-snow::before { animation: london-snow 2.4s ease-in-out 2; }
+  [data-weather-in-view] .preview-scene:not([hidden]) .preview-weather-wind i { animation: london-wind 1.6s ease-in-out 3; }
+}
+
+@media (forced-colors: active) {
+  .product-preview .preview-weather-sky[data-sky] { display: none; }
+  .product-preview .preview-weather-card:has([data-sky]) .preview-feature-copy { max-width: 100%; }
+}
