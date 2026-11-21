@@ -139,6 +139,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.keyboard.press('Enter');
     const credits = page.getByRole('dialog', { name: 'Weather data', exact: true });
     await credits.waitFor();
+    assert.equal(await credits.evaluate(sheet => getComputedStyle(sheet).animationName), 'none');
     const creditBrand = credits.getByRole('link', { name: 'InFlite, a GFG company', exact: true });
     await creditBrand.getByAltText('GFG', { exact: true }).evaluate(img => img.decode());
     assert.ok(await creditBrand.evaluate(element => {
@@ -386,6 +387,18 @@ test('public pages and contact form work without signing in, from phone to deskt
         getComputedStyle(el, pseudo).animationName, kind === 'rain' || kind === 'snow' ? '::before' : null), animation);
     }
     assert.equal(await weatherArt.locator('.preview-weather-wind i').first().evaluate(el => getComputedStyle(el).animationName), 'london-wind');
+    for (const [width, entry] of [[390, 'ifl-sheet-in'], [1000, 'ifl-sheet-pop']]) {
+      await motion.setViewportSize({ width, height: 844 });
+      await motion.getByRole('link', { name: 'Weather data', exact: true }).click();
+      const sheet = motion.getByRole('dialog', { name: 'Weather data', exact: true });
+      assert.deepEqual(await sheet.evaluate(element => {
+        const style = getComputedStyle(element);
+        return [style.animationName, style.animationDuration, style.animationTimingFunction,
+          getComputedStyle(element, '::backdrop').animationName];
+      }), [entry, '0.46s', 'cubic-bezier(0.32, 0.72, 0, 1)', 'ifl-fade-in']);
+      await motion.keyboard.press('Escape');
+      await sheet.waitFor({ state: 'hidden' });
+    }
     await motion.close();
 
     assert.deepEqual(errors, []);
