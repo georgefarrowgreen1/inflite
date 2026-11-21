@@ -2044,6 +2044,30 @@ for (const start of ['plain','high contrast']) test(`orb rendering loads on dema
   } finally {unblock?.(); await ctx.close();}
 });
 
+test('old Connected Apps links land on app preferences and still offer calendar connections', async () => {
+  const { page, ctx, errors } = await open({ initialPath: '/?os=1#you=apps', waitForDay: false,
+    intercept(route, { url }) {
+      if (url.pathname === '/api/organise/calendars') return route.fulfill({ json: { calendars: [] } }).then(() => true);
+      return false;
+    } });
+  try {
+    const apps = page.getByRole('region', { name: 'Apps & connections', exact: true });
+    const calendars = apps.getByRole('button', { name: /Connected calendars/ });
+    await calendars.waitFor({ timeout: 5000 });
+    assert.equal(await page.locator('#sh-youfolder[open]').count(), 0);
+    assert.equal(await apps.getByRole('button', { name: /Connected apps/ }).count(), 0);
+    assert.equal(await apps.getByRole('button', { name: /Fitness Training zones/ }).isVisible(), true);
+
+    await page.evaluate(() => { location.hash = 'settings=sharing'; });
+    await page.waitForFunction(() => document.documentElement.dataset.route === '/#settings=sharing', null, { timeout: 5000 });
+    assert.equal(await page.locator('#sh-youfolder[open]').count(), 0);
+    await calendars.click();
+    const connections = page.getByRole('dialog', { name: 'Connected calendars', exact: true });
+    await connections.getByRole('button', { name: 'Add calendar', exact: true }).waitFor({ timeout: 5000 });
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
 for (const width of [320, 390, 1440]) test(`unified settings search and appearance at ${width}px`, async () => {
   const {page, ctx, errors} = await open({width,initialPath:'/#settings',waitForDay:false});
   try {

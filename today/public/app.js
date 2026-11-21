@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.52.20";
+const BUILD = "4.52.21";
 // (what's new in it, said once it's in)
-const NEWS = "Quick Capture now sits directly above the keyboard on mobile.";
+const NEWS = "Settings now goes straight to app preferences and calendar connections.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.32.4/store.js","/os.webmanifest"];
@@ -2101,8 +2101,6 @@ function drawYouNow(arg = F?.route?.arg ?? null) {
     if (arg) m.goTo?.($("#you"), c, arg, drawn);
   }, () => {});
 }
-// (The framework's connectors, loaded as You needs them)
-const connectors = () => import("/roof/connectors.js");
 const appsCtx = (task) => ({ current: task.current, answer: S.answer, view: S.view, href: (app, section) => IFL.hub.href(app, section), ui: task.frame.ui, frame: task.frame });
 const youCtx = (task) => {
   const hostAction = run => settingsHost && (async (...args) => {
@@ -2161,14 +2159,14 @@ const youCtx = (task) => {
       task.frame.refresh();
       return S.view.user;
     },
-    view: S.view, hub: S.hub, roof: S.roof, chats: !!chatsHere, ...scopedAPI(), current: task.current, active: task.active, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
+    view: S.view, hub: S.hub, ...scopedAPI(), current: task.current, active: task.active, missing, toast, get morning() { return S.morning; }, endpoint: () => S.endpoint, device: () => S.device,
     kept: () => { try { return localStorage.getItem("today:push"); } catch { return null; } }, photo: (u) => photoHtml(u),
     sub: currentSub, turnOn: () => turnOn(), turnOff: () => turnOff(), fanOut, everyKept, syncPush, offHere: () => offHere(), toMorning, openAccount, signOut, canPush, pushWhy,
     openSheet: (id) => task.active() && openSheet(id), closeSheet: () => task.active() && closeSheet(), BUILD,
     security: hostAction(async (host, options) => { const security = await host.security(); if (task.active()) return security?.open(options); }),
     life: hostAction(async (host, action) => { const life = await host.life(); if (task.active()) return life?.[action]?.(); }),
     remembered: hostAction(host => host.remembered()),
-    frame: task.frame, connectors, connector: (app) => connectors().then((m) => task.active() && m.openConnector(task.frame, app)), go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
+    frame: task.frame, go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
     icon: (app) => { try { return IFL.iconUrl(app) || ""; } catch { return ""; } },
   };
 };
@@ -2197,7 +2195,7 @@ function checkSession(fresh = false) {
 const SETTINGS = [
   ["Notifications", "notify", "Each app’s, and Today’s morning"], ["Weather Notifications", "notify-weather", "Rain and warnings for the places you choose"],
   ["Quiet Hours", "quiet", "Every app, but warnings"], ["Rules", "rules", "What Today does for you"], ["This Device", "phone", "Notifications here"],
-  ["Connected Apps", "sharing", "What each app shares with InFlite"], ["Account", "account", "Password, Passkeys and Devices"], ["Sign Out", "signout", "Of InFlite, on this device"],
+  ["Account", "account", "Password, Passkeys and Devices"], ["Sign Out", "signout", "Of InFlite, on this device"],
   // (Mail's, for the site's admin alone: s4/spec §2.4)
   ["Appearance", "appearance", "Colour palette, dark mode and Liquid Glass intensity"],
   ["Units", "units", "Weather temperature, rainfall, wind, pressure and clock"],

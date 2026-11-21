@@ -331,7 +331,7 @@ export async function createSecurityModule(F, options = {}) {
       if (app) content.append(btn('View all app access', () => { app = null; paint(); }));
       content.append(card('Connections',
         options.calendars && setting('Connected calendars', 'calendar', options.calendars),
-        setting('Fitness providers and app sharing', 'link', '/#you=apps')));
+        setting('Fitness settings', 'link', '/fitness/#settings')));
       content.append(note('Revoking access applies to future use. Copies already shared stay with the recipient.'));
     }
 

@@ -3,10 +3,8 @@
 // /api/notify); this phone (its one subscription: Today's morning, and, from a tap of its own, every app's: POST
 // /api/device { sub, fan: true }); other devices still getting notifications, each with Stop There (GET/DELETE
 // /api/devices); quiet hours; Chat's own settings; each app's version; and Sign Out. And, under InFlite's one roof
-// (One roof §4.3): Connected Apps (#youApps: each app and what it really shares with InFlite, its connector's sheet a
-// tap away) and the Weather Notifications sheet (#sh-wxnotify: rain and warnings for each place, the morning briefing,
-// email; over the same /api/notify, PATCH { weather: … }), opened from Weather's row here, /#you=notify-weather, Weather's
-// connector and Weather Settings.
+// (One roof §4.3), the Weather Notifications sheet (#sh-wxnotify: rain and warnings for each place, the morning briefing,
+// email; over the same /api/notify, PATCH { weather: … }), opened from Weather's row here, /#you=notify-weather and Weather Settings.
 // An account side from before (a route answering 404 or 501): Rules, Notifications by App, Quiet Hours and Other Devices
 // left out, and This Phone as Today's morning alone. Where the hub can't serve the apps yet (degraded): no Get Every
 // App's Notifications Here and no Other Devices, which only the hub has.
@@ -17,7 +15,7 @@
 //   account has every app's come to each device with notifications, syncPush({ force }) → this device handed to the
 //   account as it wants it (app.js), offHere() → whether This Phone was turned off on this device, toMorning(),
 //   openAccount(open), signOut(), chatSettings(), canPush(), pushWhy(), openSheet(id), closeSheet(), BUILD,
-//   frame (F), connectors() → the framework's connectors.js, connector(app) → its sheet for that app, icon(app) → its icon's address,
+//   frame (F), icon(app) → its icon's address,
 //   go(path) → a screen of the framework's, href(app, section) → an app's address from here (IFL.hub.href)
 //   current() → account/frame still owned, active() → this visit to You is still shown (including its route argument)
 //   forgetYou() → nothing: what You last asked forgotten (signed out, or another account)
@@ -67,30 +65,11 @@ const current = (ctx) => ctx.current?.() !== false && ctx.active?.() !== false;
 
 // what You shows, as last asked (each null until asked; false where this account side hasn't it; sub: this phone's
 // subscription, as the browser has it)
-const Y = { rules: null, notify: null, devices: null, sub: null, shares: null, sharesRoof: null };
+const Y = { rules: null, notify: null, devices: null, sub: null };
 let drawing = null;
 const accountSection = section => /^(?:settings-)?account(?:-(profile|security|data|confirm|units|appearance|notify-inflight))?$/.exec(section || "");
 export function releaseAccount() { document.getElementById("you")?.querySelector("inflite-settings-account")?.remove(); }
-export function forgetYou() { releaseAccount(); Y.rules = Y.notify = Y.devices = Y.sub = Y.shares = null; Y.synced = Y.notHere = Y.everyLost = false; drawing = null; }
-// (Connected Apps: each app, and the words of InFlite's connector contract its descriptor fills, and only those)
-const CONNECTED = [["weather", "Weather"], ["chats", "Chats"], ["fitness", "Fitness"], ["markets", "Markets"], ["mail", "Mail"]];
-const WORDS = [["cards", "Cards"], ["search", "Search"], ["notifications", "Notifications"], ["actions", "Actions"], ["screens", "Screens"]];
-// (kept for the roof as it was when they were worked out: Weather's words aren't the same with it off)
-const roofOf = (ctx) => `${!!(ctx.hub && ctx.roof)}${!!ctx.chats}`;
-async function sharesOf(ctx) {
-  const roof = roofOf(ctx);
-  if ((Y.shares && Y.sharesRoof === roof) || typeof ctx.connectors !== "function") return;
-  const m = await ctx.connectors().catch(() => null);
-  if (!m || !current(ctx)) return;
-  const out = {};
-  for (const [app] of CONNECTED) {
-    const c = await Promise.resolve(m.connectorOf(app, ctx.frame)).catch(() => null);
-    if (!current(ctx)) return;
-    const s = c?.shares && typeof c.shares === "object" ? c.shares : null;
-    out[app] = s ? WORDS.filter(([k]) => typeof s[k] === "string" && s[k]).map(([, w]) => w).join(" · ") : "";
-  }
-  Y.shares = out; Y.sharesRoof = roof;
-}
+export function forgetYou() { releaseAccount(); Y.rules = Y.notify = Y.devices = Y.sub = null; Y.synced = Y.notHere = Y.everyLost = false; drawing = null; }
 
 // This Phone's switch: the account's word (the view's push.on: notifications wanted, said on any device), unless it was
 // turned off on this device. Where this device can't have them (not allowed here yet, or the account hasn't it and it
@@ -121,7 +100,7 @@ export async function drawYou(root, ctx) {
   if (!current(ctx)) return;
   Y.sub = sub;
   const dev = sub && ctx.device?.() ? `?device=${encodeURIComponent(ctx.device())}` : "";
-  const run = (drawing = Promise.all([ask("/api/rules"), ask("/api/notify"), ctx.hub ? ask(`/api/devices${dev}`) : Promise.resolve(false), sharesOf(ctx).catch(() => {})]));
+  const run = (drawing = Promise.all([ask("/api/rules"), ask("/api/notify"), ctx.hub ? ask(`/api/devices${dev}`) : Promise.resolve(false)]));
   const [rules, notify, devices] = await run;
   if (drawing !== run || !current(ctx)) return;
   Y.rules = rules; Y.notify = notify; Y.devices = devices && typeof devices === "object" ? { ...devices, asked: !!dev } : devices;
@@ -222,15 +201,6 @@ function paint(root, ctx) {
       pick(`data-rulepick="${esc(r.rule)}"`, r.name, r.line || "", LEVELS, r.level, `${r.name}: Do, Suggest or Quiet`, ` data-rule="${esc(r.rule)}"`)).join("");
     FOLDERS.rules = sec("youRules", "What Today Does for You", body, "Do: it acts and tells you. Suggest: it asks first. Quiet: it leaves it. Undo one and it drops a level; ten kept and it climbs.");
   } else FOLDERS.rules = "";
-  // Connected Apps
-  {
-    const body = CONNECTED.filter(([app]) => app !== "mail" || admin).map(([app, name]) => {
-      const src = typeof ctx.icon === "function" ? ctx.icon(app === "chats" ? "chat" : app) : "";
-      const words = Y.shares && Y.sharesRoof === roofOf(ctx) ? Y.shares[app] : null;
-      return `<button class="row go conn" type="button" data-app="${app}" aria-label="${esc(`${name}’s connector${words ? `: ${words}` : ""}`)}"><span class="ic app">${src ? `<img src="${esc(src)}" alt="" width="28" height="28">` : ""}</span><span class="tx"><b>${esc(name)}</b><small>${esc(words ?? "")}</small></span><span class="chev">${G.chev}</span></button>`;
-    }).join("");
-    FOLDERS.apps = sec("youApps", "Connected Apps", body, "Each app keeps its own server and data. This is all it shares with InFlite.");
-  }
   // Other devices
   const list = Array.isArray(Y.devices?.devices) ? Y.devices.devices : [];
   if (ctx.hub && Y.devices && list.length) sections.youDevices = sec("youDevices", "Other Devices", list.map(deviceRow).join(""));
@@ -280,10 +250,9 @@ function paint(root, ctx) {
         ctx.life ? link("customise","Customise Today","Sections and card order") : ""].join("")) + FOLDERS.rules],
     ["notifications", "Notifications", "Quiet hours, morning briefing and alerts", "bell",
       (sections.youNotify || "") + (sections.youApps2 || "") + sec("youEmail", "", link("emails","Email preferences","Account and app email notifications"))],
-    ["apps", "Apps & connections", "App preferences, sharing and calendars", "apps",
-      sec("youPreferences","App preferences",appSettings + shortcuts) + sec("youConnections","Connections",
-        (ctx.life ? link("calendars","Connected calendars","Subscriptions and imports") : "") +
-        link("sharing","Connected apps","What each app shares with InFlite"))],
+    ["apps", "Apps & connections", "App preferences and calendars", "apps",
+      sec("youPreferences","App preferences",appSettings + shortcuts) + (ctx.life ? sec("youConnections","Connections",
+        link("calendars","Connected calendars","Subscriptions and imports")) : "")],
     ["devices", "Devices", "Saved devices and notification delivery", "devices",
       (ctx.remembered ? sec("youRemembered","",link("remembered","Remembered devices","Continuation and encrypted drafts")) : "") +
       (sections.youDevices || sec("youDeviceInfo","",row("devices","Other notification devices",Y.devices === null ? "Checking your devices…" : "None listed")))],
@@ -383,7 +352,6 @@ function paint(root, ctx) {
   });
   for (const b of root.querySelectorAll('[data-setting]')) b.addEventListener('click', () => {
     const key = b.dataset.setting;
-    if (key === 'sharing') return openFolder('apps',root,ctx);
     if (key === 'security' && ctx.security) return ctx.security();
     if (key === 'remembered') return ctx.remembered();
     if (key === 'calendars' || key === 'customise') return ctx.life(key);
@@ -422,7 +390,7 @@ function deviceRow(d) {
   return `<div class="row dev" data-dev="${esc(d.id)}"><span class="tx"><b>${esc(d.label || "Another device")}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span><button class="pill small" type="button" data-stop="${esc(d.id)}" aria-label="${esc(`Stop There: ${d.label || "another device"}`)}">Stop There</button></div>`;
 }
 
-const FOLDERS = { rules: "", apps: "", versions: "" };
+const FOLDERS = { rules: "", versions: "" };
 function categoryFor(section) {
   const key = (section || "").replace(/^settings-/, "");
   if (aboutPage(section)) return "about";
@@ -434,7 +402,7 @@ function categoryFor(section) {
   if (key === "signout" || key === "module") return "account";
   return null;
 }
-const FOLDER_TITLE = { rules: "What Today Does for You", apps: "Connected Apps", versions: "About InFlite" };
+const FOLDER_TITLE = { rules: "What Today Does for You", versions: "About InFlite" };
 function fillFolder(sheet, root, ctx) {
   const k = sheet.dataset.folder, body = sheet.querySelector("#yfBody");
   sheet.querySelector("#sh-youfolder-t").textContent = FOLDER_TITLE[k] || "";
@@ -708,8 +676,6 @@ function wire(root, ctx) {
   $("#youWx")?.addEventListener("click", () => openWxNotify(root, ctx));
   // (Mail's, for the site's admin: its own sheet, mailnotify.js)
   $("#youMail")?.addEventListener("click", () => openMailNotifyFrom(ctx));
-  // (Connected Apps: each app's connector, as a sheet of the framework's)
-  for (const b of root.querySelectorAll("#youApps [data-app]")) b.addEventListener("click", () => ctx.connector?.(b.dataset.app));
   // (quiet hours: on or off, from and to, for every app)
   const quiet = (q) => {
     const now = { on: false, from: 22, to: 7, ...(Y.notify?.quiet || {}), ...q };
@@ -802,7 +768,6 @@ export async function goTo(root, ctx, id, drawn) {
   if (["weather","fitness","chats","markets","mail"].includes(key)) return ctx.editApp(key);
   if (key === "appearance") return appearance(ctx);
   if (key === "units") return ctx.frame.session.apps.weather ? ctx.editApp("weather",null,"units") : ctx.openAccount("units");
-  if (id === "apps" || key === "sharing") return openFolder("apps",root,ctx);
   if (key === "about" || key === "versions") liveVersions(root,ctx);
   if (["quiet","phone","notify","signout"].includes(key)) {
     await drawn;
