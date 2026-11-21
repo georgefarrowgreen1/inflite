@@ -1,3 +1,5 @@
+import { londonForecast, londonConditions } from "./weather-data.js";
+
 const london = { timeZone: "Europe/London" };
 const date = new Intl.DateTimeFormat("en-GB", { ...london, weekday: "long", day: "numeric", month: "long" });
 const clock = new Intl.DateTimeFormat("en-GB", { ...london, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -81,19 +83,28 @@ function renderWeather(weather, status = "Weather unavailable") {
 const refreshEvery = 10 * 60 * 1000;
 let requestedAt = 0;
 let inFlight = false;
+async function readForecast() {
+  const request = { credentials: "omit", referrerPolicy: "no-referrer" };
+  try {
+    const response = await fetch("/api/about/weather", { ...request, signal: AbortSignal.timeout(6000) });
+    if (response.ok) {
+      const weather = await response.json();
+      if (Number.isFinite(weather?.temperature) && Array.isArray(weather.upcoming)) return weather;
+    }
+  } catch {}
+  // The Weather app already uses Open-Meteo directly. Use the same fixed
+  // London query if the edge endpoint cannot connect to it.
+  const response = await fetch(londonForecast, { ...request, signal: AbortSignal.timeout(5000) });
+  return response.ok ? londonConditions(await response.json()) : null;
+}
+
 async function refreshWeather() {
   if (document.hidden || inFlight || Date.now() - requestedAt < refreshEvery) return;
   inFlight = true;
   requestedAt = Date.now();
   showLondonTime();
   try {
-    const response = await fetch("/api/about/weather", {
-      credentials: "omit", signal: AbortSignal.timeout(7000),
-    });
-    if (!response.ok) throw new Error("Weather request failed");
-    const weather = await response.json();
-    if (!Number.isFinite(weather?.temperature) || !Array.isArray(weather.upcoming)) throw new Error("Invalid forecast");
-    renderWeather(weather);
+    renderWeather(await readForecast());
   } catch {
     renderWeather(null);
   } finally {

@@ -104,7 +104,7 @@ const worker = {
       if (url.pathname === "/api/contact") return await contact(request, env);
       if (url.pathname === "/api/about/weather") {
         if (request.method !== "GET") return refuse(405, "Use GET to read London weather.");
-        const forecast = await londonWeather();
+        const forecast = await londonWeather(request, ctx);
         return forecast ? json(forecast) : refuse(503, "London weather is unavailable.");
       }
       if (isFilesAPI(url.pathname)) return await filesAPI(request, env);

@@ -48,6 +48,8 @@ test('public pages and contact form work without signing in, from phone to deskt
   const forecast = { temperature: 8.7, code: 63, day: true, windy: true, high: 11, low: 5,
     upcoming: [{ time: 1795255200, temperature: 10 }, { time: 1795258800, temperature: 11 }] };
   let london = forecast;
+  let providerOnline = false;
+  let providerRequests = 0;
   const weatherRequests = [];
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -82,8 +84,20 @@ test('public pages and contact form work without signing in, from phone to deskt
       executablePath, args: ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'],
     });
     const context = await browser.newContext({ viewport: { width: 320, height: 720 }, reducedMotion: 'reduce', serviceWorkers: 'block' });
+    const provider = 'https://api.open-meteo.com/v1/forecast?';
     context.on('request', request => {
-      if (new URL(request.url()).origin !== site) unexpected.push(request.url());
+      if (new URL(request.url()).origin !== site && !request.url().startsWith(provider)) unexpected.push(request.url());
+    });
+    await context.route(url => url.href.startsWith(provider), route => {
+      providerRequests++;
+      const query = new URL(route.request().url()).searchParams;
+      assert.equal(query.get('latitude'), '51.5072');
+      assert.equal(query.get('longitude'), '-0.1276');
+      assert.equal(route.request().headers().referer, undefined);
+      if (!providerOnline) return route.fulfill({ status: 503 });
+      const now = Math.floor(Date.now() / 1000);
+      return route.fulfill({ json: { current: { time: now, temperature_2m: 7, weather_code: 73, is_day: 1 },
+        hourly: { time: [now + 3600, now + 7200], temperature_2m: [7, 6] } } });
     });
     const page = await context.newPage();
     page.on('pageerror', e => errors.push(e.message));
@@ -118,6 +132,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.ok(await today.getByText('London, UK', { exact: true }).isVisible());
     assert.ok(await today.getByText('9°', { exact: true }).isVisible());
     assert.deepEqual(weatherRequests, [undefined], 'the shared London preview fetch uses no session cookie');
+    assert.equal(providerRequests, 0, 'the same-origin endpoint is tried first');
     assert.equal(await tab('Today').getAttribute('aria-selected'), 'true');
     await tab('Weather').click();
     const weather = preview.getByRole('tabpanel', { name: 'Weather' });
@@ -136,6 +151,10 @@ test('public pages and contact form work without signing in, from phone to deskt
     await weather.getByText('Weather unavailable', { exact: true }).waitFor();
     assert.ok(await weather.locator('[data-weather-hours]').isHidden());
     assert.ok(await effect.isHidden());
+    providerOnline = true;
+    await page.evaluate(() => dispatchEvent(new Event('online')));
+    await weather.getByText('Snow', { exact: true }).waitFor();
+    assert.equal(providerRequests, 2, 'if the edge is unavailable, the fixed forecast can load directly');
     london = forecast;
     await page.evaluate(() => dispatchEvent(new Event('online')));
     await weather.getByText('Rain · Windy', { exact: true }).waitFor();
