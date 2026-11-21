@@ -171,11 +171,22 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.deepEqual(await weather.locator('dt').allTextContents(), ['Now', '10:00', '11:00']);
     assert.deepEqual(await weather.locator('dd').allTextContents(), ['9°', '10°', '11°']);
     const effect = weather.locator('.preview-weather-sky');
+    const cloudSymbol = await effect.locator('.preview-weather-cloud-front').getAttribute('href');
+    assert.equal(await page.locator('.weather-illustrations ' + cloudSymbol).count(), 1);
     await weather.scrollIntoViewIfNeeded();
     await page.waitForFunction(() => document.querySelector('.product-preview').hasAttribute('data-weather-in-view'));
     assert.ok(await effect.locator('.preview-weather-rain').isVisible());
     assert.ok(await effect.locator('.preview-weather-wind').isVisible());
     assert.equal(await effect.locator('.preview-weather-rain > path').first().evaluate(el => getComputedStyle(el).animationName), 'none');
+    await effect.evaluate(svg => svg.closest('.preview-weather-card').scrollIntoView({ block: 'center' }));
+    const box = await effect.boundingBox();
+    const { PNG } = require('playwright-core/lib/utilsBundle');
+    const screenshot = PNG.sync.read(await page.screenshot());
+    // Sample inside the cloud body. WebKit can draw a referenced path without its gradient fill.
+    const x = Math.round(box.x + box.width * .47);
+    const y = Math.round(box.y + box.height * .56);
+    const [r, g, b] = screenshot.data.subarray(4 * (y * screenshot.width + x), 4 * (y * screenshot.width + x) + 3);
+    assert.ok(r > 135 && g > 156 && b > 190, `cloud body has a visible fill (${r}, ${g}, ${b})`);
     london = null;
     await page.evaluate(() => dispatchEvent(new Event('online')));
     await weather.getByText('Weather unavailable', { exact: true }).waitFor();
@@ -410,7 +421,6 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.deepEqual(errors, []);
     assert.deepEqual(unexpected, []);
     assert.ok(accessed.has('/roof/bubbles.js'));
-    assert.ok(accessed.has('/about/weather-art.svg'));
     assert.ok(!Array.from(accessed).some(pathname => /wing/.test(pathname)));
   } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
 });

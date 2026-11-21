@@ -178,6 +178,8 @@ html:has(.weather-credits[open]) { overflow: hidden; }
 .product-preview .preview-weather-card:has([data-sky="snow"]) { --weather-horizon: #527693; }
 .product-preview .preview-weather-card:has([data-sky][data-night]) { --weather-horizon: #354c7d; }
 
+.weather-illustrations { position: absolute; pointer-events: none; }
+
 .product-preview .preview-weather-sky[data-sky] {
   display: block;
   position: absolute;
@@ -210,7 +212,7 @@ html:has(.weather-credits[open]) { overflow: hidden; }
 }
 
 .preview-weather-cloud-back { opacity: .64; }
-.preview-weather-sky[data-sky="partly"] .preview-weather-cloud-back { display: none; }
+.preview-weather-sky[data-sky="partly"] .preview-weather-cloud.preview-weather-cloud-back { display: none; }
 .preview-weather-sky[data-sky="rain"] .preview-weather-cloud-front { opacity: .87; }
 .preview-weather-rain { opacity: .86; }
 .preview-weather-snow { opacity: .94; transform: translateY(4px); }

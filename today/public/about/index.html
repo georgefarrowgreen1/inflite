@@ -129,6 +129,65 @@
     </div>
   </div>
 
+  <svg class="weather-illustrations" xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="weather-art-cloud-fill" x1=".26" y1="0" x2=".8" y2="1">
+        <stop stop-color="#fcfdff"/>
+        <stop offset=".5" stop-color="#e0e9fd"/>
+        <stop offset="1" stop-color="#abc0e5"/>
+      </linearGradient>
+      <linearGradient id="weather-art-cloud-rim" x1="0" y1="0" x2=".4" y2="1">
+        <stop stop-color="#fff" stop-opacity=".8"/>
+        <stop offset="1" stop-color="#92aedc" stop-opacity=".28"/>
+      </linearGradient>
+      <radialGradient id="weather-art-cloud-light" cx=".32" cy=".08" r=".94">
+        <stop stop-color="#fff" stop-opacity=".83"/>
+        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="weather-art-cloud-distant" x1=".22" y1="0" x2=".76" y2="1">
+        <stop stop-color="#c7daf8"/>
+        <stop offset="1" stop-color="#7795c5"/>
+      </linearGradient>
+      <radialGradient id="weather-art-sun-halo">
+        <stop offset=".46" stop-color="#ffbf65" stop-opacity=".35"/>
+        <stop offset="1" stop-color="#ffbf65" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="weather-art-sun-fill" cx=".33" cy=".28" r=".8">
+        <stop stop-color="#fff5b9"/>
+        <stop offset=".55" stop-color="#ffd67c"/>
+        <stop offset="1" stop-color="#ffae59"/>
+      </radialGradient>
+      <linearGradient id="weather-art-moon-fill" x1=".22" y1="0" x2=".78" y2="1">
+        <stop stop-color="#fff9e3"/>
+        <stop offset="1" stop-color="#b9d4ff"/>
+      </linearGradient>
+    </defs>
+    <symbol id="weather-art-cloud-back" viewBox="0 0 118 68">
+      <path fill="url(#weather-art-cloud-distant)" d="M25 60a19 19 0 0 1-1-38 26 26 0 0 1 49 2 17 17 0 0 1 25 10 13 13 0 0 1-1 26Z"/>
+    </symbol>
+    <symbol id="weather-art-cloud-front" viewBox="0 0 132 82">
+      <path fill="url(#weather-art-cloud-fill)" stroke="url(#weather-art-cloud-rim)" d="M28 73a22 22 0 0 1-2-44 30 30 0 0 1 56-7 22 22 0 0 1 30 17 17 17 0 0 1 0 34Z"/>
+      <path fill="url(#weather-art-cloud-light)" d="M31 46a27 27 0 0 1 48-25c-9-5-18 1-20 6-12-5-24 2-28 19Z"/>
+      <path fill="none" stroke="#fff" stroke-opacity=".38" stroke-linecap="round" d="M11 49a17 17 0 0 1 14-15m12-9a24 24 0 0 1 34-8"/>
+    </symbol>
+    <symbol id="weather-art-sun" viewBox="0 0 88 88">
+      <circle cx="44" cy="44" r="44" fill="url(#weather-art-sun-halo)"/>
+      <path fill="none" stroke="#ffe19a" stroke-width="1.7" stroke-linecap="round"
+        d="M44 9v6m0 58v6M9 44h6m58 0h6M19 19l4.5 4.5m41 41 4.5 4.5m0-50-4.5 4.5m-41 41L19 69"/>
+      <circle cx="44" cy="44" r="22.5" fill="url(#weather-art-sun-fill)" stroke="#ffeab0"/>
+      <path d="M29 39a16 16 0 0 1 13-11" fill="none" stroke="#fffbe1" stroke-width="1.3" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="weather-art-moon" viewBox="0 0 88 88">
+      <path fill="url(#weather-art-moon-fill)" stroke="#eef4ff" stroke-width=".8"
+        d="M46 12a24 24 0 1 0 24 36A23 23 0 0 1 46 12Z"/>
+      <path fill="#d7e7ff" d="M64 11l1.2 4.8 4.8 1.2-4.8 1.2L64 23l-1.2-4.8L58 17l4.8-1.2zM79 31l.8 2.2 2.2.8-2.2.8L79 37l-.8-2.2L76 34l2.2-.8z"/>
+      <circle cx="19" cy="20" r="1.2" fill="#a5bee6"/>
+    </symbol>
+    <symbol id="weather-art-flake" viewBox="0 0 14 14">
+      <path fill="none" stroke="#edf6ff" stroke-width="1.15" stroke-linecap="round" d="M7 1.5v11m-4.8-8.3 9.6 5.6m0-5.6-9.6 5.6"/>
+    </symbol>
+  </svg>
+
   <main id="main">
     <section class="about-frame introduction" aria-labelledby="intro-title">
       <div class="intro-copy">
@@ -256,8 +315,8 @@
         <template id="preview-weather-sky">
           <svg class="preview-weather-sky" viewBox="0 0 200 136" aria-hidden="true" focusable="false">
             <g class="preview-weather-light">
-              <use class="preview-weather-sun" href="/about/weather-art.svg#sun" x="82" y="10" width="96" height="96"/>
-              <use class="preview-weather-moon" href="/about/weather-art.svg#moon" x="82" y="12" width="96" height="96"/>
+              <use class="preview-weather-sun" href="#weather-art-sun" x="82" y="10" width="96" height="96"/>
+              <use class="preview-weather-moon" href="#weather-art-moon" x="82" y="12" width="96" height="96"/>
             </g>
             <g class="preview-weather-rain" fill="none" stroke-linecap="round">
               <path stroke="#a9ddff" stroke-width="2" d="m68 92-5 11m25 3-3 7m29-19-5 11m25 5-3 6"/>
@@ -265,12 +324,12 @@
               <path stroke="#83bcf1" stroke-width="1.4" d="m57 105-3 6m45-2-3 7m55-6-3 6"/>
             </g>
             <g class="preview-weather-snow">
-              <g><use href="/about/weather-art.svg#flake" x="60" y="91" width="11" height="11"/><circle cx="105" cy="110" r="1.7" fill="#def0ff"/></g>
-              <g><use href="/about/weather-art.svg#flake" x="87" y="105" width="13" height="13"/><use href="/about/weather-art.svg#flake" x="132" y="96" width="9" height="9"/></g>
-              <g><use href="/about/weather-art.svg#flake" x="116" y="93" width="11" height="11"/><circle cx="149" cy="112" r="1.5" fill="#def0ff"/></g>
+              <g><use href="#weather-art-flake" x="60" y="91" width="11" height="11"/><circle cx="105" cy="110" r="1.7" fill="#def0ff"/></g>
+              <g><use href="#weather-art-flake" x="87" y="105" width="13" height="13"/><use href="#weather-art-flake" x="132" y="96" width="9" height="9"/></g>
+              <g><use href="#weather-art-flake" x="116" y="93" width="11" height="11"/><circle cx="149" cy="112" r="1.5" fill="#def0ff"/></g>
             </g>
-            <use class="preview-weather-cloud preview-weather-cloud-back" href="/about/weather-art.svg#cloud-back" x="91" y="18" width="98" height="57"/>
-            <use class="preview-weather-cloud preview-weather-cloud-front" href="/about/weather-art.svg#cloud-front" x="37" y="32" width="125" height="78"/>
+            <use class="preview-weather-cloud preview-weather-cloud-back" href="#weather-art-cloud-back" x="91" y="18" width="98" height="57"/>
+            <use class="preview-weather-cloud preview-weather-cloud-front" href="#weather-art-cloud-front" x="37" y="32" width="125" height="78"/>
             <g class="preview-weather-wind" fill="none" stroke="#d2ecff" stroke-width="1.45" stroke-linecap="round">
               <path d="M111 91c14-4 38-2 55-7 8-2 9-9 3-10-3-.5-5 1-5 3"/>
               <path d="M96 99c14-4 32-3 48-5 15-2 22-3 29-7"/>
