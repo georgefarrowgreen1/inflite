@@ -171,22 +171,21 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.deepEqual(await weather.locator('dt').allTextContents(), ['Now', '10:00', '11:00']);
     assert.deepEqual(await weather.locator('dd').allTextContents(), ['9°', '10°', '11°']);
     const effect = weather.locator('.preview-weather-sky');
-    const cloudSymbol = await effect.locator('.preview-weather-cloud-front').getAttribute('href');
-    assert.equal(await page.locator('.weather-illustrations ' + cloudSymbol).count(), 1);
+    assert.equal(await effect.locator('.wi-cloud path').getAttribute('fill'), '#EEF3F9');
     await weather.scrollIntoViewIfNeeded();
     await page.waitForFunction(() => document.querySelector('.product-preview').hasAttribute('data-weather-in-view'));
-    assert.ok(await effect.locator('.preview-weather-rain').isVisible());
+    assert.ok(await effect.locator('.wi-drops').isVisible());
     assert.ok(await effect.locator('.preview-weather-wind').isVisible());
-    assert.equal(await effect.locator('.preview-weather-rain > path').first().evaluate(el => getComputedStyle(el).animationName), 'none');
+    assert.equal(await effect.locator('.wi-drops > line').first().evaluate(el => getComputedStyle(el).animationName), 'none');
     await effect.evaluate(svg => svg.closest('.preview-weather-card').scrollIntoView({ block: 'center' }));
     const box = await effect.boundingBox();
     const { PNG } = require('playwright-core/lib/utilsBundle');
     const screenshot = PNG.sync.read(await page.screenshot());
-    // Sample inside the cloud body. WebKit can draw a referenced path without its gradient fill.
-    const x = Math.round(box.x + box.width * .47);
-    const y = Math.round(box.y + box.height * .56);
+    // Sample the center of the flat cloud in its reduced-motion pose.
+    const x = Math.round(box.x + box.width * .5);
+    const y = Math.round(box.y + box.height * .43);
     const [r, g, b] = screenshot.data.subarray(4 * (y * screenshot.width + x), 4 * (y * screenshot.width + x) + 3);
-    assert.ok(r > 135 && g > 156 && b > 190, `cloud body has a visible fill (${r}, ${g}, ${b})`);
+    assert.deepEqual([r, g, b], [238, 243, 249], 'the preview paints the app’s solid cloud color');
     london = null;
     await page.evaluate(() => dispatchEvent(new Event('online')));
     await weather.getByText('Weather unavailable', { exact: true }).waitFor();
@@ -386,24 +385,25 @@ test('public pages and contact form work without signing in, from phone to deskt
     const weatherArt = weatherScene.locator('.preview-weather-sky');
     await weatherScene.scrollIntoViewIfNeeded();
     await motion.waitForFunction(() => document.querySelector('.product-preview').hasAttribute('data-weather-in-view'));
-    await weatherArt.locator('.preview-weather-rain').waitFor();
+    await weatherArt.locator('.wi-drops').waitFor();
     for (const [code, kind, layer, animation] of [
-      [63, 'rain', 'rain > path', 'london-rain'], [73, 'snow', 'snow > g', 'london-snow'],
-      [0, 'clear', 'light', 'london-light'], [3, 'cloud', 'cloud-front', 'london-cloud'],
+      [63, 'rain', '.wi-drops > line', 'london-rain'], [73, 'snow', '.wi-flakes > g', 'london-snow'],
+      [0, 'sun', '.wi-sun', 'london-light'], [45, 'fog', '.wi-fog > line', 'london-wind'],
+      [95, 'storm', '.wi-bolt', 'london-storm'], [3, 'cloud', '.wi-cloud:last-child', 'london-cloud'],
     ]) {
       london = { ...forecast, code };
       await motion.evaluate(() => dispatchEvent(new Event('online')));
       await weatherScene.locator(`[data-sky="${kind}"]`).waitFor();
-      assert.equal(await weatherArt.locator('.preview-weather-' + layer).first().evaluate(el =>
+      assert.equal(await weatherArt.locator(layer).first().evaluate(el =>
         getComputedStyle(el).animationName), animation);
     }
-    assert.equal(await weatherArt.locator('.preview-weather-cloud-back').evaluate(el => getComputedStyle(el).animationName), 'london-cloud-back');
+    assert.equal(await weatherArt.locator('.wi-cloud:first-child').evaluate(el => getComputedStyle(el).animationName), 'london-cloud-back');
     assert.equal(await weatherArt.locator('.preview-weather-wind > path').first().evaluate(el => getComputedStyle(el).animationName), 'london-wind');
     london = { ...forecast, code: 0, day: false };
     await motion.evaluate(() => dispatchEvent(new Event('online')));
     await weatherScene.getByText('Clear skies · Windy', { exact: true }).waitFor();
-    assert.ok(await weatherArt.locator('.preview-weather-moon').isVisible());
-    assert.ok(await weatherArt.locator('.preview-weather-sun').isHidden());
+    assert.ok(await weatherArt.locator('.wi-moon').isVisible());
+    assert.ok(await weatherArt.locator('.wi-sun').isHidden());
     for (const [width, entry] of [[390, 'ifl-sheet-in'], [1000, 'ifl-sheet-pop']]) {
       await motion.setViewportSize({ width, height: 844 });
       await motion.getByRole('link', { name: 'Weather data', exact: true }).click();

@@ -1,3 +1,4 @@
+import { weatherIcon, glyph } from "../wxicons.js";
 import { londonForecast, londonConditions } from "./weather-data.js";
 
 const london = { timeZone: "Europe/London" };
@@ -8,26 +9,29 @@ const degrees = value => Math.round(value) + "°";
 // Open-Meteo's WMO weather codes. Wind is a separate layer so it can also
 // be shown during rain, snow or sunshine.
 const conditions = new Map([
-  [0, ["clear", "Sunny", "Clear skies"]],
-  [1, ["partly", "Mostly sunny", "Mostly clear"]],
-  [2, ["partly", "Partly cloudy"]],
+  [0, ["sun", "Sunny", "moon", "Clear skies"]],
+  [1, ["mostly-sun", "Mostly sunny", "mostly-moon", "Mostly clear"]],
+  [2, ["partly-sun", "Partly cloudy", "partly-moon"]],
   [3, ["cloud", "Overcast"]],
-  [45, ["cloud", "Fog"]], [48, ["cloud", "Freezing fog"]],
-  [51, ["rain", "Light drizzle"]], [53, ["rain", "Drizzle"]], [55, ["rain", "Heavy drizzle"]],
-  [56, ["rain", "Freezing drizzle"]], [57, ["rain", "Freezing drizzle"]],
-  [61, ["rain", "Light rain"]], [63, ["rain", "Rain"]], [65, ["rain", "Heavy rain"]],
-  [66, ["rain", "Freezing rain"]], [67, ["rain", "Freezing rain"]],
+  [45, ["fog", "Fog"]], [48, ["fog", "Freezing fog"]],
+  [51, ["drizzle", "Light drizzle"]], [53, ["drizzle", "Drizzle"]], [55, ["drizzle", "Heavy drizzle"]],
+  [56, ["sleet", "Freezing drizzle"]], [57, ["sleet", "Freezing drizzle"]],
+  [61, ["rain", "Light rain"]], [63, ["rain", "Rain"]], [65, ["heavy-rain", "Heavy rain"]],
+  [66, ["sleet", "Freezing rain"]], [67, ["sleet", "Freezing rain"]],
   [71, ["snow", "Light snow"]], [73, ["snow", "Snow"]], [75, ["snow", "Heavy snow"]],
   [77, ["snow", "Snow grains"]],
-  [80, ["rain", "Light showers"]], [81, ["rain", "Rain showers"]], [82, ["rain", "Heavy showers"]],
+  [80, ["showers-sun", "Light showers", "showers-moon"]], [81, ["showers-sun", "Rain showers", "showers-moon"]],
+  [82, ["showers-sun", "Heavy showers", "showers-moon"]],
   [85, ["snow", "Snow showers"]], [86, ["snow", "Heavy snow showers"]],
-  [95, ["rain", "Thunderstorms"]], [96, ["rain", "Thunderstorms with hail"]], [99, ["rain", "Thunderstorms with hail"]],
+  [95, ["storm", "Thunderstorms"]], [96, ["storm", "Thunderstorms with hail"]], [99, ["storm", "Thunderstorms with hail"]],
 ]);
 
 const preview = document.querySelector(".product-preview");
-const template = document.querySelector("#preview-weather-sky");
+const windArtwork = glyph("wind", 26, "preview-weather-wind");
 const cards = Array.from(preview.querySelectorAll(".preview-weather-card"), card => {
-  const sky = template.content.firstElementChild.cloneNode(true);
+  const sky = document.createElement("span");
+  sky.className = "preview-weather-sky";
+  sky.setAttribute("aria-hidden", "true");
   card.append(sky);
   return {
     sky,
@@ -50,7 +54,8 @@ function showLondonTime() {
 
 function renderWeather(weather, status = "Weather unavailable") {
   const condition = weather && conditions.get(weather.code);
-  const [sky, dayLabel, nightLabel] = condition || [];
+  const [dayIcon, dayLabel, nightIcon, nightLabel] = condition || [];
+  const icon = weather?.day === false ? nightIcon || dayIcon : dayIcon;
   const description = condition ? (weather.day ? dayLabel : nightLabel || dayLabel) : weather ? "Current weather" : status;
   const label = description + (weather?.windy ? " · Windy" : "");
   const temperature = weather ? degrees(weather.temperature) : "";
@@ -63,8 +68,12 @@ function renderWeather(weather, status = "Weather unavailable") {
     card.range.textContent = range;
     card.range.hidden = !hasRange;
     card.icon.hidden = !!condition;
-    if (condition) card.sky.dataset.sky = sky;
-    else delete card.sky.dataset.sky;
+    if (icon && card.sky.dataset.sky !== icon) {
+      card.sky.innerHTML = weatherIcon(icon, 112) + windArtwork;
+      card.sky.dataset.sky = icon;
+    } else if (!icon) {
+      delete card.sky.dataset.sky;
+    }
     card.sky.toggleAttribute("data-night", weather?.day === false);
     card.sky.toggleAttribute("data-windy", !!weather?.windy);
   }
