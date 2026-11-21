@@ -254,14 +254,29 @@
           </div>
         </div>
         <template id="preview-weather-sky">
-          <div class="preview-weather-sky" aria-hidden="true">
-            <span class="preview-weather-light"></span>
-            <span class="preview-weather-cloud preview-weather-cloud-back"></span>
-            <span class="preview-weather-cloud preview-weather-cloud-front"></span>
-            <span class="preview-weather-rain"></span>
-            <span class="preview-weather-snow"></span>
-            <span class="preview-weather-wind"><i></i><i></i><i></i></span>
-          </div>
+          <svg class="preview-weather-sky" viewBox="0 0 200 136" aria-hidden="true" focusable="false">
+            <g class="preview-weather-light">
+              <use class="preview-weather-sun" href="/about/weather-art.svg#sun" x="82" y="10" width="96" height="96"/>
+              <use class="preview-weather-moon" href="/about/weather-art.svg#moon" x="82" y="12" width="96" height="96"/>
+            </g>
+            <g class="preview-weather-rain" fill="none" stroke-linecap="round">
+              <path stroke="#a9ddff" stroke-width="2" d="m68 92-5 11m25 3-3 7m29-19-5 11m25 5-3 6"/>
+              <path stroke="#e1f4ff" stroke-width="1.45" d="m79 103-4 9m25-20-4 8m26 4-4 8m26-18-4 9"/>
+              <path stroke="#83bcf1" stroke-width="1.4" d="m57 105-3 6m45-2-3 7m55-6-3 6"/>
+            </g>
+            <g class="preview-weather-snow">
+              <g><use href="/about/weather-art.svg#flake" x="60" y="91" width="11" height="11"/><circle cx="105" cy="110" r="1.7" fill="#def0ff"/></g>
+              <g><use href="/about/weather-art.svg#flake" x="87" y="105" width="13" height="13"/><use href="/about/weather-art.svg#flake" x="132" y="96" width="9" height="9"/></g>
+              <g><use href="/about/weather-art.svg#flake" x="116" y="93" width="11" height="11"/><circle cx="149" cy="112" r="1.5" fill="#def0ff"/></g>
+            </g>
+            <use class="preview-weather-cloud preview-weather-cloud-back" href="/about/weather-art.svg#cloud-back" x="91" y="18" width="98" height="57"/>
+            <use class="preview-weather-cloud preview-weather-cloud-front" href="/about/weather-art.svg#cloud-front" x="37" y="32" width="125" height="78"/>
+            <g class="preview-weather-wind" fill="none" stroke="#d2ecff" stroke-width="1.45" stroke-linecap="round">
+              <path d="M111 91c14-4 38-2 55-7 8-2 9-9 3-10-3-.5-5 1-5 3"/>
+              <path d="M96 99c14-4 32-3 48-5 15-2 22-3 29-7"/>
+              <path d="M112 108c16-3 35-2 47-6 8-2 10 2 7 4-2 1.5-4 1-5 0"/>
+            </g>
+          </svg>
         </template>
       </div>
     </section>

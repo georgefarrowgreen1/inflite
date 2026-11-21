@@ -175,7 +175,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.waitForFunction(() => document.querySelector('.product-preview').hasAttribute('data-weather-in-view'));
     assert.ok(await effect.locator('.preview-weather-rain').isVisible());
     assert.ok(await effect.locator('.preview-weather-wind').isVisible());
-    assert.equal(await effect.locator('.preview-weather-rain').evaluate(el => getComputedStyle(el, '::before').animationName), 'none');
+    assert.equal(await effect.locator('.preview-weather-rain > path').first().evaluate(el => getComputedStyle(el).animationName), 'none');
     london = null;
     await page.evaluate(() => dispatchEvent(new Event('online')));
     await weather.getByText('Weather unavailable', { exact: true }).waitFor();
@@ -377,16 +377,22 @@ test('public pages and contact form work without signing in, from phone to deskt
     await motion.waitForFunction(() => document.querySelector('.product-preview').hasAttribute('data-weather-in-view'));
     await weatherArt.locator('.preview-weather-rain').waitFor();
     for (const [code, kind, layer, animation] of [
-      [63, 'rain', 'rain', 'london-rain'], [73, 'snow', 'snow', 'london-snow'],
+      [63, 'rain', 'rain > path', 'london-rain'], [73, 'snow', 'snow > g', 'london-snow'],
       [0, 'clear', 'light', 'london-light'], [3, 'cloud', 'cloud-front', 'london-cloud'],
     ]) {
       london = { ...forecast, code };
       await motion.evaluate(() => dispatchEvent(new Event('online')));
       await weatherScene.locator(`[data-sky="${kind}"]`).waitFor();
-      assert.equal(await weatherArt.locator('.preview-weather-' + layer).evaluate((el, pseudo) =>
-        getComputedStyle(el, pseudo).animationName, kind === 'rain' || kind === 'snow' ? '::before' : null), animation);
+      assert.equal(await weatherArt.locator('.preview-weather-' + layer).first().evaluate(el =>
+        getComputedStyle(el).animationName), animation);
     }
-    assert.equal(await weatherArt.locator('.preview-weather-wind i').first().evaluate(el => getComputedStyle(el).animationName), 'london-wind');
+    assert.equal(await weatherArt.locator('.preview-weather-cloud-back').evaluate(el => getComputedStyle(el).animationName), 'london-cloud-back');
+    assert.equal(await weatherArt.locator('.preview-weather-wind > path').first().evaluate(el => getComputedStyle(el).animationName), 'london-wind');
+    london = { ...forecast, code: 0, day: false };
+    await motion.evaluate(() => dispatchEvent(new Event('online')));
+    await weatherScene.getByText('Clear skies · Windy', { exact: true }).waitFor();
+    assert.ok(await weatherArt.locator('.preview-weather-moon').isVisible());
+    assert.ok(await weatherArt.locator('.preview-weather-sun').isHidden());
     for (const [width, entry] of [[390, 'ifl-sheet-in'], [1000, 'ifl-sheet-pop']]) {
       await motion.setViewportSize({ width, height: 844 });
       await motion.getByRole('link', { name: 'Weather data', exact: true }).click();
@@ -404,6 +410,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.deepEqual(errors, []);
     assert.deepEqual(unexpected, []);
     assert.ok(accessed.has('/roof/bubbles.js'));
+    assert.ok(accessed.has('/about/weather-art.svg'));
     assert.ok(!Array.from(accessed).some(pathname => /wing/.test(pathname)));
   } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
 });
