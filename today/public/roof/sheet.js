@@ -78,7 +78,8 @@ export function createSheets(F, { beforeOpen } = {}) {
           touchInsets.set(el, { top, bottom, maxHeight });
         }
         const safeTop = "max(env(safe-area-inset-top, 0px), 12px)";
-        el.style.top = `calc(${Math.round(top)}px + ${safeTop} + 6px)`;
+        // Let Quick Capture's content height grow upward from the keyboard.
+        el.style.top = el.dataset.sheet === "quick-capture" ? "auto" : `calc(${Math.round(top)}px + ${safeTop} + 6px)`;
         el.style.bottom = `${foot}px`;
         el.style.maxHeight = `calc(${Math.round(height)}px - ${safeTop} - 6px)`;
       } else restoreTouchInsets(el);

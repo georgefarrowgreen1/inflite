@@ -1638,6 +1638,57 @@ test('sheet-close restoration belongs to its current route, frame and sheet gene
   } finally { await ctx.close(); }
 });
 
+test('Quick Capture stays against the mobile keyboard as the viewport changes', async () => {
+  const { ctx, page, errors } = await open({ initialPath: '/?os=1', iphoneViewport: true });
+  try {
+    await page.getByRole('button', { name: 'Quick Capture', exact: true }).tap();
+    const capture = page.getByRole('dialog', { name: 'Quick Capture', exact: true });
+    const field = capture.getByRole('textbox', { name: 'Capture text' });
+    await field.waitFor({ timeout: 5000 });
+    assert.equal(await field.evaluate(node => node === document.activeElement), true);
+
+    const placement = () => capture.evaluate(async dialog => {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const { top, bottom } = dialog.getBoundingClientRect();
+      const viewport = visualViewport;
+      const save = dialog.querySelector('.life-capture > button').getBoundingClientRect();
+      return { top, bottom, visibleTop: viewport.offsetTop, visibleBottom: viewport.offsetTop + viewport.height,
+        saveBottom: save.bottom, keyboard: dialog.classList.contains('ifs-kb') };
+    });
+    const moveKeyboard = async (height, offset = 0, event = 'resize') => {
+      await page.evaluate(([height, offset, event]) => __viewport(height, offset, event), [height, offset, event]);
+      await page.waitForFunction(() => {
+        const dialog = document.querySelector('dialog[data-sheet="quick-capture"]');
+        const { height, offsetTop } = visualViewport;
+        return Math.abs(dialog.getBoundingClientRect().bottom - height - offsetTop) <= 1;
+      }, null, { timeout: 1500 });
+      return placement();
+    };
+    for (const [height, offset, event] of [[500, 0, 'resize'], [450, 36, 'scroll']]) {
+      const geometry = await moveKeyboard(height, offset, event);
+      const { top, bottom, visibleTop, saveBottom, keyboard } = geometry;
+      assert.equal(keyboard, true);
+      assert.ok(top >= visibleTop, JSON.stringify(geometry));
+      assert.ok(saveBottom <= bottom, 'Save is above the keyboard');
+    }
+    await page.setViewportSize({ width: 390, height: 480 });
+    assert.equal((await moveKeyboard(480)).keyboard, true, 'the keyboard can resize the layout as well');
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const compact = await moveKeyboard(270);
+    assert.ok(compact.top > 0 && Math.abs(compact.bottom - compact.visibleBottom) <= 1, JSON.stringify(compact));
+    await capture.getByRole('button', { name: 'Save note' }).scrollIntoViewIfNeeded();
+    const scrolled = await placement();
+    assert.ok(scrolled.saveBottom <= scrolled.visibleBottom, 'Save remains reachable on a short viewport');
+    const restored = await moveKeyboard(844);
+    assert.equal(restored.keyboard, false);
+    assert.ok(Math.abs(restored.bottom - restored.visibleBottom) <= 1);
+    await capture.getByRole('button', { name: 'Close', exact: true }).tap();
+    await capture.waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
 test('iPhone sheets fit Home Screen corrections, keyboards and resume while preserving scroll and focus', async () => {
   const { ctx, page, errors } = await open({ iphoneViewport: true });
   try {
