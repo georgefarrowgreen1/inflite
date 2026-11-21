@@ -586,12 +586,13 @@ export function drawBubbles(ctx, bubbles, colour, shade = 0, live = true, light 
     for (let i=0; i<bodies.length; i++) {
       const p = bodies[i];
       const previous=scene.previous[i];
-      // Unengaged bodies may accumulate at most a quarter of a backing pixel
-      // between paints. The contacted bodies and their neighbours update now.
-      // Across the three breathing harmonics the radial change is bounded
-      // by .20 radii per radian of phase. Include it with centre travel.
-      const movement = Math.abs(previous.x-p.x)+Math.abs(previous.y-p.y)+.20*p.radius*Math.abs(previous.phase-p.b.phase);
-      if (p.active || previous.active || movement>=.25 || previous.colourTick!==p.colourTick || previous.angle!==p.b.angle ||
+      // Batch quiet-scene paint. During a collision, redraw a distant orb for
+      // its own marbling tick or a quarter pixel of motion; the three slow
+      // breathing harmonics move the rim by at most .20 radii/radian.
+      const phase = Math.abs(previous.phase-p.b.phase);
+      const movement = Math.abs(previous.x-p.x)+Math.abs(previous.y-p.y)+(moving ? .20*p.radius*phase : 0);
+      const materialChanged = moving ? previous.colourTick!==p.colourTick : phase>=p.b.tempo*ambientSeconds;
+      if (p.active || previous.active || movement>=.25 || materialChanged || previous.angle!==p.b.angle ||
         previous.strainX!==p.b.strainX || previous.strainY!==p.b.strainY) areas.push(p.area);
     }
     if (!areas.length) return null;
