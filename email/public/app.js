@@ -284,9 +284,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.24.9";
+  const BUILD = "2.24.10";
   // (what's new in it, said once it's in)
-  const NEWS = "The reply bar picks up colours as you scroll through a message.";
+  const NEWS = "Empty Mail tabs now use the same centered layout.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.

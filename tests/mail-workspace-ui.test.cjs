@@ -30,7 +30,7 @@ await T.go('/mail/');await T.instance.workspace();
 T.setPane=async pane=>{T.instance.hide();root.classList.toggle('ifl-in-pane',pane);(pane?slot:document.getElementById('full')).append(root);await T.instance.show(T.route);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))};
 T.abort=()=>{controller.abort();T.instance.unmount()};T.ready=true;
 `;
-async function open({ width = 1440, paneWidth = 500, access = 'ok', owner = 'owner-a' } = {}) {
+async function open({ width = 1440, paneWidth = 500, access = 'ok', owner = 'owner-a', emptyMailbox = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 1000 }, reducedMotion: 'reduce', serviceWorkers: 'block' }), unknown = [];
   await ctx.route('**/*', r => {
     const u = new URL(r.request().url());
@@ -45,6 +45,7 @@ async function open({ width = 1440, paneWidth = 500, access = 'ok', owner = 'own
     return r.fulfill({ contentType: ({ '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' })[extname(file)] || 'application/octet-stream', body: readFileSync(file) });
   });
   const mail = await routeMail(ctx, { origin: ORIGIN, access, owner });
+  if (emptyMailbox) mail.msgs.length = 0;
   const page = await ctx.newPage(), errors = []; page.setDefaultTimeout(10000); page.on('pageerror', e => errors.push(e.message));
   await page.goto(ORIGIN); await page.waitForFunction(() => window.T?.ready);
   const clean = async () => {
@@ -54,6 +55,34 @@ async function open({ width = 1440, paneWidth = 500, access = 'ok', owner = 'own
   };
   return { ctx, page, mail, clean };
 }
+
+test('Mail empty tabs match the position and style of the Updates message', async () => {
+  const t = await open({ width: 390, emptyMailbox: true });
+  try {
+    const { page } = t;
+    await page.evaluate(() => T.setPane(false));
+    const list = page.locator('.ml-list');
+    let reference;
+    for (const [view, title] of [['updates', 'No updates waiting'], ['people', 'All caught up'], ['later', 'Nothing in Later'], ['done', 'Nothing done yet']]) {
+      await page.evaluate(path => T.go(path), view === 'people' ? '/mail/' : `/mail/#${view}`);
+      const message = list.getByText(title, { exact: true });
+      await message.waitFor();
+      const layout = await message.evaluate(node => {
+        const rect = node.getBoundingClientRect(), list = node.closest('.ml-list').getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return { y: rect.top - list.top, center: rect.left + rect.width / 2 - list.left,
+          font: style.font, color: style.color };
+      });
+      reference ??= layout;
+      assert.ok(Math.abs(layout.center - reference.center) < 1, `${view} centers its message`);
+      assert.equal(layout.y, reference.y, `${view} puts its message at the same height`);
+      assert.equal(layout.font, reference.font);
+      assert.equal(layout.color, reference.color);
+      assert.equal(await list.locator('.ml-rows :is(svg, p)').count(), 0);
+    }
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});
 
 test('Mail narrow panes follow their own width and preserve native reply draft nodes and focus through resize and full-app moves', async () => {
   const t = await open(); try {

@@ -83,7 +83,7 @@ export function view(el, ctx) {
     if (s.box === "drafts") return ["No drafts", null];
     if (s.filter !== "all" && (s.lens === "people" || s.lens === "updates")) return [`Nothing ${s.filter === "unread" ? "unread" : s.filter === "flagged" ? "flagged" : "with attachments"} here`, null];
     if (s.address) return [`Nothing waiting for ${s.address}`, null];
-    return { updates: ["No updates waiting", null], later: ["Nothing put off", null], done: ["Nothing done yet", null] }[s.lens] || ["Nothing here", null];
+    return { updates: ["No updates waiting", null], later: ["Nothing in Later", null], done: ["Nothing done yet", null] }[s.lens] || ["Nothing here", null];
   };
   function caughtUp(s) {
     const c = s.counts || {}, n = c.nextLater, ups = [...new Set((c.updatesFrom || []).map((p) => logic.displayName(p).trim()).filter(Boolean))].slice(0, 3);
@@ -158,7 +158,6 @@ export function view(el, ctx) {
       else if (s.query) rows.replaceChildren(noResults(s));
       else if (L.followups?.length && s.lens === "people" && s.filter === "all" && !s.address && !s.box) rows.replaceChildren();
       else if (s.lens === "people" && s.filter === "all" && !s.address && !s.box) rows.replaceChildren(caughtUp(s));
-      else if (s.lens === "later" && !s.box && !s.address) rows.replaceChildren(ui.el("div", { class: "ml-later-empty" }, ctx.icon("later"), ui.empty({ title: "Nothing in Later", body: "Messages you snooze stay here until they’re due." })));
       else { const [t, b] = words(s); rows.replaceChildren(ui.empty({ title: t, body: b })); }
     } else {
       rows.setAttribute("role", "list");
