@@ -2516,19 +2516,20 @@ test('a drifting light orb dents the heavy outline at contact and the rim recove
         }
         return (low+high)/2;
       }
-      function dent(orb,angle,measureWidth=false) {
+      function dent(orb,angle,measureWidth=false,shoulderAngle=0) {
         const actual=path(orb);
         // Keep the body's pose and breathing phase to isolate the collision
         // from its normal silhouette. Optical shading cannot change this clip.
         const rest=path({...orb});
         const inward=offset=>radius(rest,angle+offset)-radius(actual,angle+offset);
-        const depth=inward(0)-inward(Math.PI);
+        const far=inward(Math.PI),depth=inward(0)-far;
         let breadth=0;
         if(measureWidth && depth>.001) {
           // Angular width of the half-depth contour, independent of peak height.
           for(let i=-24;i<=24;i++) if(inward(i*.025)>=depth*.5) breadth+=.025;
         }
-        return {depth,breadth};
+        const shoulder=shoulderAngle ? -(inward(-shoulderAngle)+inward(shoulderAngle))/2 : 0;
+        return {depth,breadth,far,shoulder};
       }
       function body(x,y,vx=0,vy=0) {
         return {x,y,vx,vy,dx:vx,dy:vy,phase:0,angle:0,tempo:.04,turn:60};
@@ -2572,6 +2573,8 @@ test('a drifting light orb dents the heavy outline at contact and the rim recove
         scene.splice(radius===.082 ? 2 : 3,0,light);
         const start=pair(scene,radius),startGap=gap(start).nearest;
         let maxDent=0,angleAtPeak=0,recoil=0,lightResponse=0,peak,impactFrame,peakFrame,release;
+        let centreError=0,farEdgeError=0,unexpectedStep=0;
+        const lastOffsets=[0,0],paintedHeight=canvas.height*width/canvas.width;
         const samples=[];
         for(let i=0;i<240;i++) {
           driftBubbles(scene,1/60,aspect);
@@ -2581,12 +2584,30 @@ test('a drifting light orb dents the heavy outline at contact and the rim recove
           if(impactFrame===undefined && recoil>.0001) impactFrame=i;
           lightResponse=Math.max(lightResponse,(light.vx+.006)*nx+(light.vy-sideways)*ny);
           const loading=impactFrame!==undefined && i-impactFrame<48;
+          let painted;
           if(i%4===0 || loading) {
-            const impression=dent(heavy,angle,loading && i-impactFrame<12);
-            if(impression.depth>maxDent) {maxDent=impression.depth;angleAtPeak=angle;peak=pair(scene,radius);peakFrame=i;}
-            if(loading) samples.push({heavy:impression.depth,breadth:impression.breadth,light:dent(light,angle+Math.PI).depth});
+            const impression=dent(heavy,angle,loading && i-impactFrame<12,loading ? .55 : 0);
+            if(loading) {
+              const donor=dent(light,angle+Math.PI,false,.8);
+              // The small facing cap follows the common seam. Track both free
+              // shoulders to compare relaxation outside the touching surfaces.
+              samples.push({heavy:impression.depth,breadth:impression.breadth,
+                heavyShoulder:impression.shoulder,lightShoulder:donor.shoulder});
+              painted=pair(scene,radius);
+              // Follow both objects separately. Opposite whole-body lunges can
+              // cancel in the pair's centre of mass even as both far edges jump.
+              for (const [j,b,far] of [[0,heavy,impression.far],[1,light,donor.far]]) {
+                const p=painted[j],toward=j===0?1:-1;
+                const offset=toward*((p.x-b.x*width)*nx+(p.y-b.y*paintedHeight)*ny);
+                centreError=Math.max(centreError,Math.abs(offset));
+                farEdgeError=Math.max(farEdgeError,Math.abs(offset+far*p.r));
+                unexpectedStep=Math.max(unexpectedStep,Math.abs(offset-lastOffsets[j]));
+                lastOffsets[j]=offset;
+              }
+            }
+            if(impression.depth>maxDent) {maxDent=impression.depth;angleAtPeak=angle;peak=painted || pair(scene,radius);peakFrame=i;}
           }
-          if(i===impactFrame+8) release=pair(scene,radius);
+          if(i===impactFrame+8) release=painted || pair(scene,radius);
         }
         const end=pair(scene,radius),endGap=gap(end).nearest;
         const travelPx=start[0].x-end[0].x, lateral=light.vy;
@@ -2601,14 +2622,16 @@ test('a drifting light orb dents the heavy outline at contact and the rim recove
         const rising=samples.find(s=>s.heavy>=maxDent*.25),loaded=samples.find(s=>s.heavy===maxDent);
         // Report the local loss of radius in CSS pixels on the reference phone.
         return {dentPx:maxDent*width*.30,restPx:recovered*width*.30,travelPx,recoil,lightResponse,lateral,sideways,radius,
-          startGap,endGap,peakGap:gap(peak),releaseGap:gap(release),peakMs:Math.round((peakFrame-impactFrame)*1000/60),
-          risingBreadth:rising?.breadth,loadedBreadth:loaded?.breadth,heavyHalf:halfRecovery('heavy'),lightHalf:halfRecovery('light')};
+          centreError,farEdgeError,unexpectedStep,startGap,endGap,peakGap:gap(peak),releaseGap:gap(release),peakMs:Math.round((peakFrame-impactFrame)*1000/60),
+          risingBreadth:rising?.breadth,loadedBreadth:loaded?.breadth,heavyHalf:halfRecovery('heavyShoulder'),lightHalf:halfRecovery('lightShoulder')};
       });
     });
     for(const run of runs) t.diagnostic(`${run.sideways?'Glancing':'Head-on'} impact at radius ${run.radius}: ${run.dentPx.toFixed(2)} px dent, ${run.startGap.toFixed(2)} px starting gap, ${run.peakGap.centre.toFixed(2)} px centreline at peak (${run.peakMs} ms, ${run.peakGap.nearest.toFixed(2)} px at shoulders), ${run.releaseGap.centre.toFixed(2)} px centreline at 133 ms, ${run.travelPx.toFixed(2)} px recoil, ${run.restPx.toFixed(2)} px residual.`);
     for(const run of runs) {
       assert.ok(run.startGap>1, 'the small orb starts visibly separated: '+JSON.stringify(run));
       assert.ok(run.dentPx>1, 'the heavy silhouette develops a visible, one-sided dent: '+JSON.stringify(run));
+      assert.ok(run.centreError<1 && run.unexpectedStep<.5, 'compression keeps each painted centre on its physical trajectory: '+JSON.stringify(run));
+      assert.ok(run.farEdgeError<1, 'the quiet side follows the body through the bump: '+JSON.stringify(run));
       assert.ok(run.peakGap.nearest<=1, 'the two rendered outlines touch during compression: '+JSON.stringify(run));
       assert.ok(Math.abs(run.peakGap.centre)<=1, 'the lighter orb sits against the centre of the dent: '+JSON.stringify(run));
       assert.ok(run.loadedBreadth>run.risingBreadth, 'the contact spreads across the rim as it loads: '+JSON.stringify(run));
@@ -2705,6 +2728,35 @@ test('shared studio light stays in place while an orb turns its pigment', async 
     assert.ok(result.lightRange>35,'the neutral material should actually reflect a studio highlight');
     assert.equal(result.lightChanged,0,'a circular neutral surface shares its highlights across bodies and poses');
     assert.ok(result.pigmentChanged>150,JSON.stringify(result));
+  } finally {await ctx.close();}
+});
+
+test('orb impacts keep unchanged wallpaper and distant glass outside the dirty region', async () => {
+  const {ctx,page}=await open({deviceScaleFactor:3});
+  try {
+    const result=await page.evaluate(async () => {
+      const {drawBubbles,sizeBubbleCanvas}=await import('/roof/bubbles.js');
+      const {stepSurface}=await import('/roof/bubble-surface.js');
+      const canvas=document.createElement('canvas');
+      sizeBubbleCanvas(canvas,390,844);
+      const raster=canvas.getContext('2d'), damage=[];
+      const orb={x:.5,y:.35,phase:.72,angle:.1,tempo:.05};
+      const paint=()=>drawBubbles(raster,[orb],'opal',.53,true,false,damage);
+      paint();
+      const local=[];
+      for (let i=0;i<3;i++) {
+        // A missed refresh advances the surface by 67 ms. Its tiny recoil
+        // has moved the broad sky by less than one physical pixel in total.
+        orb.x+=.2/canvas.width; orb.phase+=orb.tempo/15;
+        stepSurface(orb,1/15,{distance:.5,x:.5,y:0,amount:1},{down:true});
+        const moving=paint();
+        local.push(moving && damage.length===1 && damage[0].bottom<.7);
+      }
+      orb.x+=1/canvas.width; orb.phase+=orb.tempo/15;
+      const moved=paint();
+      return {width:canvas.width,local,refreshed:moved && damage.length===0};
+    });
+    assert.deepEqual(result,{width:1170,local:[true,true,true],refreshed:true});
   } finally {await ctx.close();}
 });
 

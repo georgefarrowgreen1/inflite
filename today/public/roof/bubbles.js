@@ -1,6 +1,6 @@
 import {minerals} from "./bubble-colours.js";
 export {bubbleColours, minerals, defaultBubbleColour} from "./bubble-colours.js";
-import {outlineSegments, stepSurface, rippleSurface, settleSurface, surfaceIsMoving, paintSurface, rimColourAt} from "./bubble-surface.js";
+import {outlineSegments, stepSurface, rippleSurface, settleSurface, surfaceIsMoving, materialTick, paintSurface, rimColourAt} from "./bubble-surface.js";
 
 // Positions are fractions of the viewport. Sizes and speeds are fractions of its short edge.
 const sizes = [.30, .165, .082, .037];
@@ -65,16 +65,19 @@ function dentContact(b, neighbour, angle, load, radiusRatio, compression, phaseL
   let patches = dents.get(b);
   let patch = patches?.find(p => p.neighbour === neighbour);
   if (load > 0) {
-    const span = Math.sqrt(radiusRatio/(1+radiusRatio));
+    const share = radiusRatio/(1+radiusRatio);
     if (!patch) {
       if (!patches) { patches = []; dents.set(b,patches); }
-      patch = {neighbour,angle,span:.27+.32*span,depth:0};
+      patch = {neighbour,angle,span:.27+.32*Math.sqrt(share),depth:0,seat:0};
       patches.push(patch);
     }
-    patch.peak = (.046+.12*span)*load/(.37+.63*load);
+    // Elastic strain scales with incoming speed and the pair's reduced
+    // radius. A tiny drifting orb can only indent a small region of its host.
+    const speedFraction = load*load;
+    patch.peak = share*.24*speedFraction/(.14+.86*speedFraction);
   }
   if (patch) {
-    patch.pressure = Math.max(Math.min(.12,.48*compression),patch.peak*phaseLoad);
+    patch.pressure = Math.max(Math.min(.12,.48*compression),patch.peak*fade(phaseLoad));
     patch.targetAngle = angle;
   }
 }
@@ -101,7 +104,7 @@ function advanceDents(b,dt,radius) {
     // The contact radius of two curved skins grows with the square root of
     // indentation. The same breadth drives the contour and its optical normal.
     p.width = p.span*(.63+1.9*Math.sqrt(p.depth));
-    if (!touching && p.depth<.00035) patches.splice(i,1);
+    if (!touching && p.depth<.00020 && p.seat<.00020) patches.splice(i,1);
     else if (Math.abs(p.depth-p.pressure)>.00035 || Math.abs(turn)>.002) patches.moving = true;
     p.targetAngle = undefined;
     p.pressure = 0;
@@ -113,50 +116,44 @@ function patchOffset(p,angle) {
   const x = angleGap(angle,p.angle)/p.width, x2 = x*x;
   if (x2 >= 2.3**2) return 0;
   // Matching integrals return the displaced rim to two smooth shoulders.
-  const lip = 1-x2/(2.3**2), centre = Math.max(0,1-x2);
-  return p.depth*(lip**3-2.3*centre**3)/1.3;
+  const lip = 1-x2/(2.3**2), core = Math.max(0,1-x2)**3;
+  return p.depth*(lip**3-2.3*core)/1.3+p.seat*core;
 }
 
-function dentOffset(patches,angle) {
+function dentOffset(patches,angle,base) {
   let offset = 0;
   for (const p of patches) offset += patchOffset(p,angle);
-  return Math.max(-.22,Math.min(.055,offset));
+  return Math.max(-.22,Math.min(1.29-base,offset));
 }
 
 function profile(b,angle) {
-  const patches = dents.get(b);
-  return baseProfile(b,angle) + (patches ? dentOffset(patches,angle) : 0);
+  const patches = dents.get(b), base = baseProfile(b,angle);
+  return base + (patches ? dentOffset(patches,angle,base) : 0);
 }
 
-// Compression lets the two skins travel together while their centres of mass
-// rebound. Share the lost facing radius inversely by mass, around the same
-// barycentre as the impulse. The offsets disappear with the recovering skin.
-function contactOffsets(bubbles,width,height) {
-  let shifts;
-  for (let i=0; i<bubbles.length; i++) {
-    const a = bubbles[i], patches = dents.get(a);
+// Seat the smaller orb's facing cap against the indentation. The rest of
+// both skins and their pigment stay attached to the physical centres.
+function seatContacts(bubbles,width,height) {
+  for (let j=1; j<bubbles.length; j++) {
+    const b = bubbles[j], patches = dents.get(b);
     if (!patches) continue;
-    for (const patch of patches) {
-      const j = patch.neighbour, b = bubbles[j];
-      if (!b) continue;
+    for (const p of patches) {
+      const i = p.neighbour, a = bubbles[i];
+      if (i>=j || !a) continue;
+      const other = dents.get(a)?.find(q => q.neighbour===j);
+      p.seat = 0;
+      if (!other) continue;
       const x = (b.x-a.x)*width, y = (b.y-a.y)*height, distance = Math.hypot(x,y);
       if (distance < .00001) continue;
-      const other = dents.get(b)?.find(p => p.neighbour===i);
-      if (other && j<i) continue;
       const angle = Math.atan2(y,x), opposite = angle+Math.PI;
-      const depth = -sizes[i]*patchOffset(patch,angle)-(other ? sizes[j]*patchOffset(other,opposite) : 0);
+      const depth = -sizes[i]*patchOffset(other,angle)-sizes[j]*patchOffset(p,opposite);
       if (depth <= 0) continue;
       const gap = distance-sizes[i]*baseProfile(a,angle)-sizes[j]*baseProfile(b,opposite);
-      // The physical centres already travel inward during the loading phase.
-      const travel = Math.max(0,depth+Math.min(0,gap))*(1-fade(gap/(.45*Math.min(sizes[i],sizes[j]))))/distance;
-      if (!travel) continue;
-      shifts ??= bubbles.map(() => ({x:0,y:0}));
-      const share = sizes[j]/(sizes[i]+sizes[j]);
-      shifts[i].x += x*travel*share; shifts[i].y += y*travel*share;
-      shifts[j].x -= x*travel*(1-share); shifts[j].y -= y*travel*(1-share);
+      // Existing geometric compression already supplies part of this reach.
+      // The remaining local support fades as the physical gap opens.
+      p.seat = Math.max(0,depth+Math.min(0,gap))/sizes[j]*(1-fade(gap/(.12*sizes[j])));
     }
   }
-  return shifts;
 }
 
 function squeeze(b, nx, ny, amount) {
@@ -191,10 +188,13 @@ function contact(a, b, i, j, width, height, dt) {
   // Coincident centres can occur after a resize or restoring an earlier scene.
   const angle = distance > .00001 ? Math.atan2(y,x) : a.angle + j;
   const nx = Math.cos(angle), ny = Math.sin(angle);
+  const relative = (b.vx-a.vx)*nx + (b.vy-a.vy)*ny;
   const rimA = baseProfile(a,angle), rimB = baseProfile(b,angle+Math.PI);
   const overlap = sizes[i]*rimA + sizes[j]*rimB - distance;
   if (overlap <= 0) {
-    if (overlap < -.012*radii) neighbours?.delete(b);
+    // A real outward gap ends this collision, even when a nearby third orb
+    // turns the pair back together before they clear the shape tolerance.
+    if (relative > 0 || overlap < -.012*radii) neighbours?.delete(b);
     else {
       const pair = neighbours?.get(b);
       if (pair) pair.depth = -1;
@@ -202,7 +202,6 @@ function contact(a, b, i, j, width, height, dt) {
     return;
   }
   if (!dt) return;
-  const relative = (b.vx-a.vx)*nx + (b.vy-a.vy)*ny;
   const closing = Math.max(0,-relative);
   let pair = neighbours?.get(b);
   const impact = closing > 0 && !pair;
@@ -213,12 +212,14 @@ function contact(a, b, i, j, width, height, dt) {
   let load = 0;
   if (impact) {
     if (!neighbours) { neighbours = new WeakMap(); touching.set(a,neighbours); }
-    const intensity = closing/(closing+.045), bounce = .47+.31*intensity;
+    const intensity = closing/(closing+.045);
     const duration = (.10+.21*Math.sqrt(sizes[i]*shareA))/(1+.24*intensity);
-    const loss = -Math.log(bounce)/duration, frequency = Math.PI/duration;
-    const stiffness = frequency*frequency + loss*loss;
-    const peak = closing/Math.sqrt(stiffness)*Math.exp(-loss*Math.atan2(frequency,loss)/frequency);
-    pair = {depth:0,peak,stiffness,drag:2*loss,drive:Math.min(1,drift/closing)};
+    // Hunt–Crossley contact: damping grows with indentation. A slow meeting
+    // loses more of its approach energy than a firm, elastic knock.
+    const frequency = Math.PI/duration, loss = 1.22-.86*intensity;
+    const strain = Math.sqrt(2*(loss-Math.log1p(loss)));
+    pair = {depth:0,peak:closing*strain/(loss*frequency),stiffness:frequency**2,
+      drag:frequency*strain,drive:Math.min(1,drift/closing)};
     neighbours.set(b,pair);
     load = Math.sqrt(closing/(closing+.055));
     const wave = .014*load**1.5;
@@ -230,7 +231,9 @@ function contact(a, b, i, j, width, height, dt) {
     // Implicit midpoint integration of the relative compression spring.
     // Both force and displacement use midpoint velocity. Clamp tension to
     // zero so the skin cannot pull the bodies back together during release.
-    const half = dt/2, drag = pair.drag+pair.stiffness*half;
+    const half = dt/2;
+    const midLoad = pair.peak ? clamp((pair.depth-relative*half)/pair.peak) : 0;
+    const drag = pair.drag*midLoad+pair.stiffness*half;
     push = Math.max(0,(pair.stiffness*pair.depth-drag*relative)*dt/(1+drag*half));
     pair.depth -= (relative+push/2)*dt;
     compression = pair.peak ? clamp(pair.depth/pair.peak) : 0;
@@ -258,11 +261,9 @@ function contact(a, b, i, j, width, height, dt) {
 function pickBubble(bubbles, pointer, width, height) {
   if (!pointer) return null;
   let nearest = null;
-  const shifts = contactOffsets(bubbles,width,height);
   for (let i = 0; i < bubbles.length; i++) {
     const b = bubbles[i];
-    const x = (pointer.x-b.x)*width-(shifts?.[i].x || 0);
-    const y = (pointer.y-b.y)*height-(shifts?.[i].y || 0);
+    const x = (pointer.x-b.x)*width, y = (pointer.y-b.y)*height;
     const angle = Math.atan2(y,x);
     const distance = Math.hypot(x,y) / (sizes[i]*profile(b,angle));
     if (distance > 1.35 || (nearest && distance >= nearest.distance)) continue;
@@ -304,13 +305,18 @@ export function driftBubbles(bubbles, dt, aspect, pointer = null) {
   const hit = pickBubble(bubbles,pointer,width,height);
   applyFlick(bubbles,pointer,width,height);
   dt = Math.min(.16,Math.max(0,dt));
-  for (let i = 0; i < bubbles.length; i++) {
-    stepSurface(bubbles[i],dt,hit?.index === i ? hit : null,pointer,sizes[i]);
+  // Keep contact and membrane forces on the same clock after a missed
+  // refresh. Interpolate the visible surface once, at the end of the frame.
+  const steps = Math.max(1,Math.ceil(dt*120-.000001)), step = dt/steps;
+  const continued = steps>1 && pointer?.tap ? {...pointer,tap:false} : pointer;
+  for (let n=0; n<steps; n++) {
+    const input = n===0 ? pointer : continued;
+    advanceBodies(bubbles,step,width,height,hit,input,n===0);
+    for (let i=0; i<bubbles.length; i++) {
+      stepSurface(bubbles[i],step,hit?.index===i ? hit : null,input,sizes[i],n===steps-1);
+    }
   }
-  // Bound contact integration when an idle frame or a busy main thread precedes
-  // a flick. Input impulses and the membrane are sampled just once per frame.
-  const steps = Math.max(1,Math.ceil(dt*120-.000001));
-  for (let n=0; n<steps; n++) advanceBodies(bubbles,dt/steps,width,height,hit,pointer,n===0);
+  seatContacts(bubbles,width,height);
   return hit;
 }
 
@@ -386,8 +392,8 @@ function outline(b, rim, patches) {
   const count = patches ? contactSegments : segments;
   const {angle,cos,sin,x,y} = rings.get(count);
   for (let i = 0; i < count; i++) {
-    const a = angle[i], offset = patches ? dentOffset(patches,a) : 0;
-    const r = baseProfile(b,a)+offset;
+    const a = angle[i], base = baseProfile(b,a), offset = patches ? dentOffset(patches,a,base) : 0;
+    const r = base+offset;
     if (patches) {
       rimOffset[i] = offset;
       if (i%3 === 0) rim[i/3] = r;
@@ -550,27 +556,27 @@ export function drawBubbles(ctx, bubbles, colour, shade = 0, live = true, light 
     scene = {width,height,ground,shade,previous:[]};
     scenes.set(ctx,scene);
   }
-  const shifts = live && contactOffsets(bubbles,width/short,height/short);
   const bodies = bubbles.map((b,index) => {
     if (!live) { settleSurface(b); dents.delete(b); }
     const radius = short*sizes[index], extent = Math.ceil(radius*1.3)+2;
-    const x = b.x*width+(shifts?.[index]?.x || 0)*short;
-    const y = b.y*height+(shifts?.[index]?.y || 0)*short;
+    const x = b.x*width, y = b.y*height;
     const bounds = {left:Math.max(0,Math.floor(x-extent)), top:Math.max(0,Math.floor(y-extent)),
       right:Math.min(width,Math.ceil(x+extent)), bottom:Math.min(height,Math.ceil(y+extent))};
     const previous = scene.previous[index];
-    return {b,x,y,radius,bounds,reflections:[],active:live && (surfaceIsMoving(b) || gliding(b) || !!dents.get(b)?.moving),
+    return {b,x,y,radius,bounds,colourTick:materialTick(b,index),reflections:[],active:live && (surfaceIsMoving(b) || gliding(b) || !!dents.get(b)?.moving),
       area:previous ? cover(bounds,previous.bounds) : bounds};
   });
   const moving = bodies.some(p => p.active);
   facingReflections(bodies,ink);
-  // Keep the broad atmospheric wash at roughly 20 Hz. Positions, ripples,
-  // contact contours and glass still follow each display refresh at full detail.
+  // A ripple does not move the broad atmospheric wash. Refresh it only if
+  // the centre has travelled a backing pixel, at most about twenty times/s.
+  // The outline and all local material still follow each display refresh.
   const ambientSeconds = Math.max(1,Math.round(50/frameMs))*frameMs/1000;
   // Remove the last interaction clip in one full pass. Backends can round the
   // atmospheric gradient differently inside its clipped antialiasing bounds.
   const full = !live || (!moving && scene.previous.some(p=>p.active)) || bodies.length !== scene.previous.length || bodies.some((p,i) => scene.previous[i]?.b !== p.b) ||
-    ((moving || main.x!==scene.glow.x || main.y!==scene.glow.y) && Math.abs(main.phase-scene.phase)>=main.tempo*ambientSeconds);
+    (Math.abs(main.x-scene.glow.x)*width+Math.abs(main.y-scene.glow.y)*height>=1 &&
+      Math.abs(main.phase-scene.phase)>=main.tempo*ambientSeconds);
   const areas = [];
   if (damage) damage.length = 0; // Empty denotes a full paint.
   if (full) {
@@ -582,8 +588,10 @@ export function drawBubbles(ctx, bubbles, colour, shade = 0, live = true, light 
       const previous=scene.previous[i];
       // Unengaged bodies may accumulate at most a quarter of a backing pixel
       // between paints. The contacted bodies and their neighbours update now.
-      if (p.active || previous.active || Math.abs(previous.x-p.x)+Math.abs(previous.y-p.y)>=.25 ||
-        Math.abs(previous.phase-p.b.phase)>=p.b.tempo*ambientSeconds || previous.angle!==p.b.angle ||
+      // Across the three breathing harmonics the radial change is bounded
+      // by .20 radii per radian of phase. Include it with centre travel.
+      const movement = Math.abs(previous.x-p.x)+Math.abs(previous.y-p.y)+.20*p.radius*Math.abs(previous.phase-p.b.phase);
+      if (p.active || previous.active || movement>=.25 || previous.colourTick!==p.colourTick || previous.angle!==p.b.angle ||
         previous.strainX!==p.b.strainX || previous.strainY!==p.b.strainY) areas.push(p.area);
     }
     if (!areas.length) return null;
@@ -611,7 +619,7 @@ export function drawBubbles(ctx, bubbles, colour, shade = 0, live = true, light 
     const p = bodies[i];
     if (!full && !areas.includes(p.area)) continue;
     paintBubble(ctx,p,ink,i,live);
-    scene.previous[i] = {b:p.b,bounds:p.bounds,active:p.active,reflections:p.reflections,x:p.x,y:p.y,phase:p.b.phase,angle:p.b.angle,
+    scene.previous[i] = {b:p.b,bounds:p.bounds,active:p.active,reflections:p.reflections,x:p.x,y:p.y,phase:p.b.phase,colourTick:p.colourTick,angle:p.b.angle,
       strainX:p.b.strainX,strainY:p.b.strainY};
   }
   scene.previous.length = bodies.length;

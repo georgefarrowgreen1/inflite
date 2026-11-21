@@ -83,6 +83,48 @@ test('soft contact loads before rebound and faster impacts retain more relative 
   assert.ok(strike(.35,[1/60])<.9,'a fast flick still dissipates collision energy');
 });
 
+test('collision force starts and ends smoothly at the skin and stays passive with two neighbours', async () => {
+  const {driftBubbles}=await import('../today/public/roof/bubbles.js');
+  const firstImpulse=[];
+  for (const hz of [120,240,480]) {
+    const speed=.0065, scene=approaching(2,speed), [heavy,,light]=scene;
+    const impulses=[];
+    for (let i=0;i<hz/4;i++) {
+      const incoming=light.vx-heavy.vx;
+      driftBubbles(scene,1/hz,3);
+      const impulse=(light.vx-heavy.vx-incoming)/speed;
+      if (impulse>1e-7) impulses.push(impulse);
+    }
+    firstImpulse.push(impulses[0]);
+    assert.ok(impulses.at(-1)<.05*Math.max(...impulses),'force tapers to zero at release');
+  }
+  // Starting at zero force gives a quadratic first impulse as the time step
+  // shrinks. A dashpot already pressing at first touch would only halve it.
+  for (let i=1;i<firstImpulse.length;i++) {
+    const ratio=firstImpulse[i]/firstImpulse[i-1];
+    assert.ok(ratio>.22 && ratio<.29);
+  }
+
+  const scene=[.5,.5-(.465-.000001)/3,.5+(.382-.000001)/3,.93].map(body);
+  const [heavy,left,right]=scene;
+  left.vx=left.dx=.003;
+  right.vx=right.dx=-left.vx*radii[1]/radii[2];
+  const energy=()=>scene.reduce((sum,b,i)=>sum+radii[i]*b.vx**2,0);
+  const initialEnergy=energy();
+  let leftRebounds=0, rightRebounds=0;
+  for (let frame=0;frame<120;frame++) {
+    const leftApproach=left.vx-heavy.vx, rightApproach=heavy.vx-right.vx;
+    driftBubbles(scene,1/240,3);
+    if (leftApproach*(left.vx-heavy.vx)<0) leftRebounds++;
+    if (rightApproach*(heavy.vx-right.vx)<0) rightRebounds++;
+    assert.ok(Math.abs(scene.reduce((sum,b,i)=>sum+radii[i]*b.vx,0))<1e-12);
+    assert.ok(energy()<=initialEnergy);
+  }
+  assert.equal(leftRebounds,1);
+  assert.equal(rightRebounds,1);
+  assert.ok(left.vx<heavy.vx && heavy.vx<right.vx);
+});
+
 test('a closing pair excites both facing surfaces once and can meet again', async () => {
   const {driftBubbles} = await import('../today/public/roof/bubbles.js');
   const {surfaceIsMoving,settleSurface} = await import('../today/public/roof/bubble-surface.js');
@@ -102,6 +144,18 @@ test('a closing pair excites both facing surfaces once and can meet again', asyn
   small.x=large.x+.15;
   meet();
   assert.deepEqual(scene.map(surfaceIsMoving),[true,true,false]);
+
+  // A nearby partner can redirect an orb before its first partner has gone
+  // even a pixel away. This is a fresh collision after a real physical gap.
+  const close=approaching(2,.0065), [host,,guest]=close;
+  for (const b of close) b.tempo=0;
+  for (let i=0;i<84;i++) driftBubbles(close,1/240,3);
+  const gap=(guest.x-host.x)*3-radii[0]-radii[2];
+  assert.ok(gap>0 && gap<1/390);
+  close.forEach(settleSurface);
+  guest.vx=guest.dx=host.vx-.005;
+  for (let i=0;i<90 && !surfaceIsMoving(guest);i++) driftBubbles(close,1/240,3);
+  assert.ok(surfaceIsMoving(host) && surfaceIsMoving(guest));
 });
 
 test('a shallow ripple settles earlier than a deep one across refresh rates', async () => {
@@ -168,5 +222,37 @@ test('a tap travels the same fraction of a small orb sooner and settles sooner',
   for (const hz of [30,60,240]) {
     assert.ok(Math.abs(measure(3,hz).arrival-fast.arrival)<1/30+.001);
     assert.ok(Math.abs(measure(0,hz).arrival-slow.arrival)<1/30+.001);
+  }
+});
+
+test('a collision inside a delayed display frame advances the same ripple as individual physics ticks', async t => {
+  const {driftBubbles,minerals} = await import('../today/public/roof/bubbles.js');
+  const {paintSurface,outlineSegments} = await import('../today/public/roof/bubble-surface.js');
+  let pixels;
+  const context = {
+    createImageData: (width,height) => ({width,data:new Uint8ClampedArray(width*height*4)}),
+    putImageData: image => { pixels=Buffer.from(image.data); }
+  };
+  globalThis.document = {createElement: () => ({getContext: () => context})};
+  t.after(() => { delete globalThis.document; });
+  const rim=new Float32Array(outlineSegments).fill(1);
+  const paint=orb=>{
+    paintSurface({drawImage(){}},orb,90,rim,minerals.opal,0,false);
+    return pixels;
+  };
+  for (const ticks of [4,6,12]) {
+    const delayed=approaching(2,.04), regular=delayed.map(b=>({...b}));
+    for (let i=0;i<ticks;i++) driftBubbles(regular,1/120,3);
+    driftBubbles(delayed,ticks/120,3);
+    for (const index of [0,2]) {
+      // The same collision centres and membrane state must reach the same
+      // optical sample on both the light body and the heavy one.
+      const expected=paint(regular[index]), actual=paint(delayed[index]);
+      let differing=0;
+      for (let j=0;j<actual.length;j+=4) {
+        if (actual[j]!==expected[j] || actual[j+1]!==expected[j+1] || actual[j+2]!==expected[j+2]) differing++;
+      }
+      assert.equal(differing,0,`${ticks} ticks, orb ${index}, ${differing} differing material samples`);
+    }
   }
 });

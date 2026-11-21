@@ -87,7 +87,7 @@ function surfaceAtRest({h,last}, materialStep) {
   return true;
 }
 
-export function stepSurface(bubble, dt, hit, input, radius = .165) {
+export function stepSurface(bubble, dt, hit, input, radius = .165, present = true) {
   const contact = hit && hit.distance <= 1.04 && input;
   const wave = contact ? surfaceFor(bubble,hit.x,hit.y) : waves.get(bubble);
   if (!wave) return false;
@@ -146,8 +146,10 @@ export function stepSurface(bubble, dt, hit, input, radius = .165) {
     }
     wave.checkIn = .1;
   }
-  const fraction = wave.remainder/tick;
-  for (let i=0; i<count; i++) wave.display[i] = wave.last[i]+fraction*(wave.h[i]-wave.last[i]);
+  if (present) {
+    const fraction = wave.remainder/tick;
+    for (let i=0; i<count; i++) wave.display[i] = wave.last[i]+fraction*(wave.h[i]-wave.last[i]);
+  }
   return true;
 }
 
@@ -261,13 +263,17 @@ function surfaceTile(bubble, radius, detail) {
   return tile;
 }
 
+// Stagger the slow marbling field across bodies. Geometry and waves keep
+// their own display-rate clocks.
+export const materialTick = (bubble,index) => Math.floor(bubble.phase*10/bubble.tempo + index*.25);
+
 export function paintSurface(ctx,bubble,radius,rim,ink,index,live,detail = 6,rimSlope = null,rimOffset = null) {
   const wave = waves.get(bubble)?.display;
   const tile = surfaceTile(bubble,radius,detail);
   const tiltX = -.19*(bubble.vx || 0), tiltY = -.19*(bubble.vy || 0);
   // Slow marbling can reuse a tile across ambient frames. Stagger its refresh
   // across bodies; physical tilt, rotation, strain and waves update independently.
-  const colourTick = Math.floor(bubble.phase*10/bubble.tempo + index*.25);
+  const colourTick = materialTick(bubble,index);
   const sameBase = live && ink === tile.ink &&
     colourTick === tile.colourTick && index===tile.index && Math.abs(bubble.angle-tile.angle) < .004 &&
     Math.abs(tiltX-tile.tiltX)+Math.abs(tiltY-tile.tiltY) < .002 &&
