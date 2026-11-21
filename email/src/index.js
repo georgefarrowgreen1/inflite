@@ -997,14 +997,16 @@ async function send(env, ctx, body, view) {
       result = await env.EMAIL.send(message);
     } catch (err) {
       const code = err?.code;
-      console.error("mail send failed", ["E_SENDER_NOT_VERIFIED", "E_RATE_LIMIT_EXCEEDED"].includes(code) ? code : "provider");
+      console.error("mail send failed", ["E_SENDER_NOT_VERIFIED", "E_RATE_LIMIT_EXCEEDED", "E_RECIPIENT_SUPPRESSED"].includes(code) ? code : "provider");
       if (key) await env.DB.prepare(`DELETE FROM sends WHERE key = ?1 AND at = ?2 AND id IS NULL`).bind(key, claimedAt).run().catch(() => {});
       const hint =
         code === "E_SENDER_NOT_VERIFIED"
           ? `${env.DOMAIN} isn't verified for Email Sending yet.`
           : code === "E_RATE_LIMIT_EXCEEDED"
             ? "Sending limit reached. Try again later."
-            : "Couldn't send the message.";
+            : code === "E_RECIPIENT_SUPPRESSED"
+              ? "A sender or recipient address is on the delivery suppression list. Check the addresses before trying again."
+              : "Couldn't send the message.";
       throw new HttpError(502, hint);
     }
 

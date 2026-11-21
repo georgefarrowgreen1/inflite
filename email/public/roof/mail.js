@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.24.10";
-export const NEWS = "Empty Mail tabs now use the same centered layout.";
+export const BUILD = "2.24.11";
+export const NEWS = "Mail now tells you when an address is blocked by the sending provider.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
