@@ -144,7 +144,7 @@
           <div class="preview-topline">
             <span class="preview-window-brand"><img src="/inflite.svg" width="24" height="24" alt="">InFlite</span>
             <span class="preview-caption">Preview <span aria-hidden="true">·</span>
-              <a class="preview-weather-source" href="https://open-meteo.com/">Open-Meteo</a><span class="preview-sample-caption">Sample data</span>
+              <a class="preview-weather-source" href="https://open-meteo.com/">Weather data</a><span class="preview-sample-caption">Sample data</span>
             </span>
           </div>
           <div class="preview-deck">
@@ -368,6 +368,33 @@
       </div>
     </section>
   </main>
+
+  <dialog class="weather-credits" id="weather-credits" aria-labelledby="weather-credits-title">
+    <header class="weather-credits-head">
+      <h2 id="weather-credits-title" tabindex="-1" autofocus>Weather data</h2>
+      <button type="button" aria-label="Close">×</button>
+    </header>
+    <div class="weather-credits-body">
+      <a class="brand brand-with-company brand-inline" href="/" aria-label="InFlite, a GFG company">
+        <img src="/inflite.svg" alt="" width="40" height="40">
+        <span class="brand-name">InFlite<span class="brand-company">a <img src="/about/gfg.svg" alt="GFG" width="26" height="18"> company</span></span>
+      </a>
+      <ul class="weather-credits-sources" role="list">
+        <li><a href="https://open-meteo.com/" target="_blank" rel="noopener"><strong>Open-Meteo</strong><small>London preview, forecasts &amp; waves · CC BY 4.0</small></a></li>
+        <li><a href="https://www.metoffice.gov.uk/" target="_blank" rel="noopener"><strong>Met Office</strong><small>UK forecasts &amp; ensembles · CC BY-SA 4.0</small></a></li>
+        <li><a href="https://climate.copernicus.eu/" target="_blank" rel="noopener"><strong>ERA5 · Copernicus Climate</strong><small>Climate history · via Open-Meteo</small></a></li>
+        <li><a href="https://atmosphere.copernicus.eu/" target="_blank" rel="noopener"><strong>CAMS · Copernicus Atmosphere</strong><small>Air quality &amp; pollen · via Open-Meteo</small></a></li>
+        <li><a href="https://marine.copernicus.eu/" target="_blank" rel="noopener"><strong>Copernicus Marine</strong><small>Sea temperature &amp; tides · via Open-Meteo</small></a></li>
+        <li><a href="https://meteoalarm.org/" target="_blank" rel="noopener"><strong>MeteoAlarm · EUMETNET</strong><small>European weather warnings · CC BY 4.0</small></a></li>
+        <li><a href="https://www.weather.gov/" target="_blank" rel="noopener"><strong>National Weather Service</strong><small>US weather warnings</small></a></li>
+        <li><a href="https://environment.data.gov.uk/flood-monitoring/doc/reference" target="_blank" rel="noopener"><strong>Environment Agency</strong><small>England flood warnings · Open Government Licence</small></a></li>
+        <li><a href="https://aviationweather.gov/" target="_blank" rel="noopener"><strong>Aviation Weather Center</strong><small>Airport weather reports</small></a></li>
+      </ul>
+      <p class="weather-credits-note">The London preview uses Open-Meteo data under the
+        <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0 licence</a>.
+        InFlite rounds temperatures and summarises conditions.</p>
+    </div>
+  </dialog>
 
   <footer class="about-footer">
     <div class="about-frame foot">

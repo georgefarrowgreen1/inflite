@@ -99,4 +99,21 @@ if (dock) {
   });
   preview.dataset.previewReady = "";
   dock.hidden = false;
+
+  const source = preview.querySelector(".preview-weather-source");
+  const credits = document.querySelector("#weather-credits");
+  if (source && typeof credits?.showModal === "function") {
+    source.setAttribute("aria-haspopup", "dialog");
+    source.setAttribute("aria-controls", credits.id);
+    const scroll = credits.querySelector(".weather-credits-body");
+    source.addEventListener("click", event => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      if (credits.open) return;
+      credits.showModal();
+      scroll.scrollTop = 0;
+    });
+    credits.querySelector(".weather-credits-head button").addEventListener("click", () => credits.close());
+    credits.addEventListener("close", () => source.focus({ preventScroll: true }));
+  }
 }

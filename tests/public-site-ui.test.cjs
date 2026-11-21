@@ -134,7 +134,36 @@ test('public pages and contact form work without signing in, from phone to deskt
     assert.deepEqual(weatherRequests, [undefined], 'the shared London preview fetch uses no session cookie');
     assert.equal(providerRequests, 0, 'the same-origin endpoint is tried first');
     assert.equal(await tab('Today').getAttribute('aria-selected'), 'true');
+    const weatherData = preview.getByRole('link', { name: 'Weather data', exact: true });
+    await weatherData.focus();
+    await page.keyboard.press('Enter');
+    const credits = page.getByRole('dialog', { name: 'Weather data', exact: true });
+    await credits.waitFor();
+    const creditBrand = credits.getByRole('link', { name: 'InFlite, a GFG company', exact: true });
+    await creditBrand.getByAltText('GFG', { exact: true }).evaluate(img => img.decode());
+    assert.ok(await creditBrand.evaluate(element => {
+      const company = element.querySelector('.brand-company');
+      const brand = element.getBoundingClientRect();
+      const sheet = element.closest('dialog').getBoundingClientRect();
+      return getComputedStyle(company).fontSize === getComputedStyle(element).fontSize &&
+        company.getBoundingClientRect().right <= brand.right &&
+        Math.abs((brand.left + brand.right - sheet.left - sheet.right) / 2) < 2;
+    }), 'the company and product names share a centred line at the same size');
+    assert.equal(await credits.evaluate(sheet => getComputedStyle(sheet).backgroundColor), 'rgb(255, 255, 255)');
+    assert.equal(await credits.getByRole('listitem').count(), 9);
+    assert.equal(await credits.getByRole('link', { name: /^Open-Meteo London preview/ }).getAttribute('href'), 'https://open-meteo.com/');
+    const creditsBody = credits.locator('.weather-credits-body');
+    await creditsBody.evaluate(node => { node.scrollTop = node.scrollHeight; });
+    assert.ok(await creditsBody.evaluate(node => node.scrollTop > 0));
+    await page.keyboard.press('Escape');
+    await credits.waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => document.activeElement?.matches('.preview-weather-source'));
     await tab('Weather').click();
+    await weatherData.click();
+    await credits.waitFor();
+    assert.equal(await creditsBody.evaluate(node => node.scrollTop), 0, 'weather sources reopen from the top');
+    await credits.getByRole('button', { name: 'Close', exact: true }).click();
+    await credits.waitFor({ state: 'hidden' });
     const weather = preview.getByRole('tabpanel', { name: 'Weather' });
     assert.ok(await weather.getByRole('heading', { name: 'London, UK' }).isVisible());
     assert.ok(await weather.getByText('High 11° · Low 5°').isVisible());
@@ -162,6 +191,7 @@ test('public pages and contact form work without signing in, from phone to deskt
     await page.keyboard.press('ArrowRight');
     assert.equal(await tab('Fitness').getAttribute('aria-selected'), 'true');
     assert.ok(await preview.getByRole('tabpanel', { name: 'Fitness' }).isVisible());
+    assert.ok(await weatherData.isHidden());
     await page.keyboard.press('End');
     assert.equal(await tab('Mail').getAttribute('aria-selected'), 'true');
     await page.keyboard.press('Home');
