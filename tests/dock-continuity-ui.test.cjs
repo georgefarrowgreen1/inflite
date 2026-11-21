@@ -57,6 +57,35 @@ test('keyboard and native full-screen chrome policy still control the permanent 
  }finally{await t.ctx.close()}
 });
 
+test('Today opens global search from the header icon and Apps from the dock', async () => {
+ const t = await m.exports.open({width: 390});
+ try {
+  const { page } = t;
+  await page.evaluate(() => T.F.nav.go('/'));
+  const header = page.locator('#workspace').getByRole('banner');
+  const search = header.getByRole('button', { name: 'Search InFlite', exact: true });
+  for (const width of [390, 1440]) {
+   await page.setViewportSize({ width, height: 844 });
+   await search.waitFor();
+   assert.equal(await header.getByText('Search InFlite', { exact: true }).count(), 0);
+   const icon = await search.boundingBox();
+   assert.ok(icon.width >= 44 && icon.width <= 64 && icon.height >= 44);
+   await search.click();
+   const input = page.getByRole('combobox', { name: 'Search everything', exact: true });
+   await input.waitFor();
+   assert.equal(await input.evaluate(node => node === document.activeElement), true);
+   await page.keyboard.press('Escape');
+   await input.waitFor({ state: 'hidden' });
+   await page.waitForFunction(() => document.activeElement?.matches('[data-ws-action="search"]'));
+  }
+  await page.locator('.ws-dock').getByRole('button', { name: 'All apps', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Your apps', exact: true }).waitFor();
+  await t.clean();
+ } finally {
+  await t.ctx.close();
+ }
+});
+
 for(const width of [390,1440])test(`dock resumes routes, scroll and the same draft nodes at ${width}px`,async()=>{
  const t=await m.exports.open({width}),{page}=t;try{
   await page.evaluate(()=>T.F.nav.go('/weather/#radar',{kind:'section'}));

@@ -53,11 +53,6 @@ html.ifl-os.os-workspace #workspace.ifl-screen { width: 100%; max-width: none; m
 .ifl-workspace .ws-title { margin: 0; font-size: 23px; font-weight: 750; line-height: 1.2; letter-spacing: -.55px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ifl-workspace .ws-title-mobile, .ifl-workspace .ws-phone-mark, .ifl-workspace .ws-phone-only { display: none; }
 .ifl-workspace .ws-heading-line { margin: 5px 0 0; color: var(--ws-muted); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
-.ifl-workspace .ws-search { display: flex; align-items: center; gap: 10px; flex: 1 1 360px; max-width: 440px; min-width: 180px; min-height: 46px; padding: 10px 16px; border: 1px solid var(--ws-line); border-radius: 999px; background: var(--ws-well); color: var(--ws-muted); text-align: left; }
-.ifl-workspace .ws-search > span:not(.ifl-glyph) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ifl-workspace .ws-search > .ifl-glyph { display: grid; place-items: center; width: 22px; height: 22px; }
-.ifl-workspace .ws-search svg { display: block; width: 20px; height: 20px; }
-.ifl-workspace .ws-shortcut-key { flex: none; padding: 3px 6px; border-radius: 6px; font: 12px/1.2 var(--font, system-ui); color: var(--ws-text); background: color-mix(in srgb, var(--ws-text) 5%, transparent); }
 .ifl-workspace .ws-header-actions { display: flex; align-items: center; flex: none; gap: 10px; }
 .ifl-workspace .ws-icon-button { position: relative; display: grid; place-items: center; flex: none; width: 44px; min-width: 44px; height: 44px; padding: 0; border: 1px solid var(--ws-line); border-radius: 999px; background: var(--ws-surface); color: var(--ws-text); }
 .ifl-workspace .ws-icon-button > .ifl-glyph { display: grid; place-items: center; width: 22px; height: 22px; }
@@ -132,7 +127,7 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 .ifl-workspace .ws-dock-launcher { position: relative; }
 .ifl-workspace .ws-dock-launcher::before { content: ""; position: absolute; left: -4px; top: 8px; bottom: 8px; width: 1px; background: var(--ws-line); }
 .ifl-workspace .ws-dock-launcher svg { display: block; width: 24px; height: 24px; }
-.ifl-workspace :is(.ws-icon-button, .ws-sidebar-button, .ws-search, .ws-workspace-chip, .ws-pane-tab, .ws-section-button, .ws-dock-button, .ws-primary, .ws-secondary, .ws-resource-share) { cursor: pointer; transition: transform var(--ifl-motion-release, .42s) var(--ifl-motion-spring, ease), background-color var(--ifl-motion-fast, .16s) ease; }
+.ifl-workspace :is(.ws-icon-button, .ws-sidebar-button, .ws-workspace-chip, .ws-pane-tab, .ws-section-button, .ws-dock-button, .ws-primary, .ws-secondary, .ws-resource-share) { cursor: pointer; transition: transform var(--ifl-motion-release, .42s) var(--ifl-motion-spring, ease), background-color var(--ifl-motion-fast, .16s) ease; }
 .ifl-workspace :is(.ws-icon-button, .ws-dock-button):active { transform: scale(var(--ifl-press-icon, .94)); transition-duration: var(--ifl-motion-press, .09s); }
 .ifl-workspace :is(.ws-primary, .ws-secondary, .ws-resource-share, .ws-workspace-chip):active { transform: scale(var(--ifl-press-scale, .97)); transition-duration: var(--ifl-motion-press, .09s); }
 @media (hover: hover) {
@@ -144,7 +139,6 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace { --ws-sidebar: 184px; }
   .ifl-workspace .ws-toolbar { gap: 12px; padding: 18px; }
   .ifl-workspace .ws-title { font-size: 20px; }
-  .ifl-workspace .ws-search { min-width: 160px; }
   .ifl-workspace .ws-canvas { padding-left: 18px; padding-right: 18px; }
   .ifl-workspace .ws-pane-header { gap: 8px; padding-left: 12px; padding-right: 12px; }
 }
@@ -165,8 +159,6 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace .ws-title-mobile { display: block; }
   .ifl-workspace .ws-heading-line { display: none; }
   .ifl-workspace .ws-header-actions { gap: 8px; }
-  .ifl-workspace .ws-search { order: 5; flex: 1 0 100%; max-width: none; min-width: 0; min-height: 44px; padding: 10px 16px; }
-  .ifl-workspace .ws-shortcut-key { display: none; }
   .ifl-workspace .ws-toolbar > .ws-icon-button { margin-right: -4px; }
   .ifl-workspace:is([data-mode="workspace"], [data-mode="app"], [data-mode="files"]) .ws-phone-mark { display: none; }
   .ifl-workspace .ws-canvas { gap: 14px; padding: 0 max(20px, env(safe-area-inset-right, 0px)) calc(100px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px)); overflow: visible; }
@@ -216,12 +208,12 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .ifl-workspace .ifl-workspace-pane { transition: none !important; }
   .ifl-workspace .ws-busy-mark { animation: none; }
-  .ifl-workspace :is(.ws-icon-button, .ws-sidebar-button, .ws-search, .ws-workspace-chip, .ws-pane-tab, .ws-section-button, .ws-dock-button, .ws-primary, .ws-secondary, .ws-resource-share) { transition: none; }
+  .ifl-workspace :is(.ws-icon-button, .ws-sidebar-button, .ws-workspace-chip, .ws-pane-tab, .ws-section-button, .ws-dock-button, .ws-primary, .ws-secondary, .ws-resource-share) { transition: none; }
   .ifl-workspace :is(button, a):active { transform: none; }
 }
 @media (forced-colors: active) {
   .ifl-workspace { --ws-line: CanvasText; --ws-surface: Canvas; --ws-page: Canvas; --ws-well: Canvas; --ws-text: CanvasText; --ws-muted: CanvasText; --ws-accent: Highlight; --ws-wash: Canvas; }
-  .ifl-workspace :is(.ws-shell, .ifl-workspace-pane, .ws-workspace-card, .ws-dock, .ws-search, .ws-resource, .ws-icon-button, .ws-workspace-chip, .ws-pane-tab) { border: 1px solid CanvasText; box-shadow: none; }
+  .ifl-workspace :is(.ws-shell, .ifl-workspace-pane, .ws-workspace-card, .ws-dock, .ws-resource, .ws-icon-button, .ws-workspace-chip, .ws-pane-tab) { border: 1px solid CanvasText; box-shadow: none; }
   .ifl-workspace :is(button, a):focus-visible, .ifl-workspace :is([aria-current], [aria-selected="true"]) { outline: 2px solid Highlight; outline-offset: -2px; }
   .ifl-workspace .ws-primary { background: Highlight; color: HighlightText; }
   .ifl-workspace .ws-busy-mark { border-color: CanvasText; border-top-color: Highlight; }
@@ -296,7 +288,7 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home-title, .ifl-workspace[data-unified=true][data-mode=today] .ws-workspace-chips { display: none; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-workspace-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-workspace-card > :not(:last-child) { display: none; }
-@media (max-width: 1190px) and (min-width: 960px) { .ifl-workspace .ws-toolbar { flex-wrap: wrap; } .ifl-workspace .ws-search { min-width: 190px; } }
+@media (max-width: 1190px) and (min-width: 960px) { .ifl-workspace .ws-toolbar { flex-wrap: wrap; } }
 .ifl-workspace .ws-home-body { display: contents; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home { display: block; }
 .ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview { display: flex; margin-bottom: 14px; align-items: center; justify-content: space-between; gap: 20px; }
@@ -340,8 +332,6 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace[data-mode=workspace] .ws-main { height: 100dvh; }
   .ifl-workspace[data-mode=workspace] .ws-toolbar { flex-wrap: nowrap; gap: 8px; min-height: 56px; padding-block: 4px; }
   .ifl-workspace[data-mode=workspace] .ws-heading { min-width: 0; }
-  .ifl-workspace[data-mode=workspace] .ws-search { order: 0; flex: 0 0 44px; width: 44px; padding: 10px; }
-  .ifl-workspace[data-mode=workspace] .ws-search > span:not(.ifl-glyph) { display: none; }
   .ifl-workspace[data-mode=workspace] .ws-pane-tabs { display: none; }
   .ifl-workspace[data-mode=workspace] .ws-pane-header { min-height: 52px; padding-block: 4px; }
   .ifl-workspace[data-mode=workspace] .ws-pane-sections { padding-block: 4px; }

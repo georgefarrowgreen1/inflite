@@ -108,12 +108,14 @@ export function createWorkspaceView(root, callbacks = {}) {
   homeMode?.append(el("span", { text: "Today" }));
   workspaceMode?.append(el("span", { text: "Workspaces" }));
   const modes = canSwitchViews ? el("div", { class: "ws-mode-switch", role: "group", "aria-label": "InFlite view" }, homeMode, workspaceMode) : null;
-  const search = callable(callbacks.onSearch) ? button("Search InFlite", "search", action("search", opener => invoke("onSearch", opener)), "ws-search") : null;
+  const search = callable(callbacks.onSearch) ? bindButton("Search InFlite", "search", "search", opener => {
+    opener.focus({ preventScroll: true });
+    invoke("onSearch", opener);
+  }) : null;
   if (search) {
-    search.append(el("span", { text: "Search InFlite" }), el("kbd", { class: "ws-shortcut-key", text: /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || "") ? "⌘ K" : "Ctrl K" }));
+    search.setAttribute("aria-haspopup", "dialog");
     search.setAttribute("aria-keyshortcuts", "Control+K Meta+K");
   }
-  const appsHeader = callable(callbacks.onApps) ? bindButton("Open apps", "grid", "apps", opener => invoke("onApps", opener), "ws-icon-button ws-phone-only") : null;
   const manage = callable(callbacks.onManageWorkspace) ? bindButton("Workspace options", "more", "manage-workspace", opener => invoke("onManageWorkspace", model.activeId, opener), "ws-icon-button") : null;
   if (manage) manage.hidden = true;
   const layoutButton = windowsEnabled ? button("Float windows", null, action("window-layout", () => changeMode(model.layout?.mode === "float" ? "tile" : "float")), "ws-icon-button ws-layout-button ws-desktop-only") : null;
@@ -127,7 +129,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   const account = callable(callbacks.onAccount) ? button("Your account", null, action("account", opener => invoke("onAccount", opener)), "ws-icon-button ws-account") : null;
   account?.append(icon("person"));
   const capture=callable(callbacks.onCapture)?bindButton("Quick Capture","plus","capture",()=>invoke("onCapture"),"ws-icon-button ws-capture"):null;
-  const toolbar = el("header", { class: "ws-toolbar", role: "banner" }, back, headingBox, search, el("div", { class: "ws-header-actions" }, capture, appsHeader, layoutButton, switchButton, manage, notifications, account));
+  const toolbar = el("header", { class: "ws-toolbar", role: "banner" }, back, headingBox, modes, el("div", { class: "ws-header-actions" }, capture, search, layoutButton, switchButton, manage, notifications, account));
 
   const phoneChips = el("nav", { class: "ws-workspace-chips", "aria-label": "Workspaces" }), chipRecords = new Map();
 
@@ -219,14 +221,13 @@ export function createWorkspaceView(root, callbacks = {}) {
   const closedWindows = el("div", { class: "ws-windows-empty", hidden: true }, el("h2", { text: "Your windows are minimised" }), el("p", { text: "Choose a window to pick up where you left off." }), button("Open windows", "grid", "window-switcher", "ws-secondary"));
   rideView.append(closedWindows);
   canvas.append(windowMenu, keyboardHint);
-  if (modes) toolbar.insertBefore(modes, search || toolbar.lastElementChild);
   const offline = el("p", { class: "ws-offline", role: "status", hidden: true, text: "You’re offline. Open apps keep their current view. Sending and cloud files need a connection." });
   const main = el("div", { class: "ws-main" }, toolbar, offline, canvas);
   const dock = el("nav", { class: "ws-dock", "aria-label": "Apps" }), dockRecords = new Map();
   const dockToday = callable(callbacks.onToday) ? button("Today", null, "today", "ws-dock-button") : null;
   dockToday?.append(el("span", { class: "ws-dock-symbol ws-dock-today" }, icon("sun")), el("span", { class: "ws-dock-label", text: "Today" }));
   const dockApps = el("div", { class: "ws-dock-apps" });
-  const launcher = callable(callbacks.onApps) ? button("All apps", "grid", "apps", "ws-dock-button ws-dock-launcher") : null;
+  const launcher = callable(callbacks.onApps) ? bindButton("All apps", "grid", "apps", opener => invoke("onApps", opener), "ws-dock-button ws-dock-launcher") : null;
   launcher?.append(el("span",{class:"ws-dock-label",text:"Apps"}));
   const dockSelection=el("span",{class:"ws-dock-selection","aria-hidden":"true"});
   dock.append(dockSelection,...[dockToday, dockApps, launcher].filter(Boolean));
@@ -316,7 +317,6 @@ export function createWorkspaceView(root, callbacks = {}) {
       layoutButton.title = layoutButton.getAttribute("aria-label"); layoutButton.setAttribute("aria-pressed", String(layout.mode === "float"));
     }
     if (switchButton) switchButton.hidden = model.mode !== "workspace";
-    if (appsHeader) appsHeader.hidden = model.mode === "workspace" && windowsEnabled;
   }
   function focusWindow(app) {
     if (!windowsEnabled || !paneApps().includes(app)) return;
