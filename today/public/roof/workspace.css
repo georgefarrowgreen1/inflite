@@ -1,5 +1,4 @@
 /* Lazy OS presentation only. Every rule stays inside the workspace root. */
-html.ifl-os #tabs { display: none; }
 html.ifl-os .today-in { padding-left: 0; }
 html.ifl-os { --tabs-h: 96px; }
 html.ifl-os:not(.os-workspace) .today-in .view { padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)); }

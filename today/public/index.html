@@ -122,11 +122,7 @@
   </div>
 </main>
 
-<!-- Signed in: InFlite, one app, on its framework (/roof/: One roof). Today, Apps and You are screens of this one page
-     (#today, #apps, #you), and so is Weather (/weather/, made in #views on first open), under one header (#hd) and one tab
-     bar Today · Chats · Apps · You (#tabs; Chats is a page of its own, /chats/). The frame (/roof/frame.js) draws the
-     header and the tab bar into their hosts; the day, the tiles and You are drawn by app.js (with day.js, apps.js and
-     you.js) from the account's answers -->
+<!-- The frame owns the header and screens. The signed-in shell mounts its dock beside them. -->
 <div class="today-in" id="in" hidden>
   <div id="hd"></div>
   <div id="views">
@@ -139,7 +135,6 @@
     <main id="apps" class="view ifl-screen" aria-label="Apps" hidden></main>
     <main id="you" class="view ifl-screen" aria-label="Settings" hidden></main>
   </div>
-  <nav class="ifl-tabs" id="tabs" aria-label="InFlite"></nav>
 </div>
 
 <!-- The page's own sheets, InFlite's sheet (One roof §3.8: the frame opens each with F.sheet.openEl) -->

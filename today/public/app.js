@@ -1,6 +1,6 @@
 // InFlite, at inflite.ai: one app. Today (your day from all your apps, phase by phase), Apps (each app, opened in this
 // window) and You (rules, notifications, this phone, your sign-in) are screens of this one page, on InFlite's framework
-// (/roof/, One roof: one header, one tab bar Today · Chats · Apps · You, one sheet, one toast, one search), and so is
+// (/roof/, One roof: one header, one app dock, one sheet, one toast, one search), and so is
 // Weather, a module the framework loads in the page at /weather/ (Chats and the other apps are pages beside it, served
 // by this site's Worker). And one morning notification instead of one from each app. Everything shown comes from your InFlite account (this site's
 // Worker passes your sign-in on to account.inflite.ai: today/src/index.js), worked out there by each app's own rules:
@@ -8,7 +8,7 @@
 // in (index.html's, there without a script too).
 import { CARD_KEYS, APP, esc, safe, hm, G, cardHTML, placeholder, applyVars, tick } from "/cards.js";
 import { createFrame, createRequestCoordinator, isRequestCancelled } from "/roof/frame.js";
-import { REGISTRY, parse, format } from "/roof/router.js";
+import { REGISTRY, TABS, parse, format } from "/roof/router.js";
 import { toast as roofToast } from "/roof/toast.js";
 import { match } from "/roof/search.js";
 import { createTaskScope } from "/roof/tasks.js";
@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.52.11";
+const BUILD = "4.52.12";
 // (what's new in it, said once it's in)
-const NEWS = "The About previews use live London weather, with animations that follow the conditions.";
+const NEWS = "InFlite now opens with one app dock, including on a slow connection.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.32.4/store.js","/os.webmanifest"];
@@ -1952,7 +1952,7 @@ function gotCards(answer) {
 }
 
 // ---------------------------------------------------------------- the screens: Today, Apps and You, on the framework
-// The frame (/roof/frame.js, One roof §3.2) is made once signed in: it owns the header (#hd), the tab bar (#tabs), the
+// The frame (/roof/frame.js, One roof §3.2) is made once signed in: it owns the header (#hd), the
 // screens in #views and the page's history (/, /#apps, /#you, /#you=<section>, and Weather at /weather/…), and draws
 // each of Today, Apps and You from its spec here: its header (crumb, title, line, acts) and what to do as it's shown.
 // Apps and You are drawn as they're first shown (apps.js and you.js, loaded then). Signed out, it's let go of (F.destroy)
@@ -2020,8 +2020,19 @@ function frame() {
     onShow(r) { workspaceRoute = r; if (workspace) workspace.show(r).catch((e) => console.error(e)); else installWorkspace(); },
     onHide() { workspaceRoute = null; workspace?.hide(); }, focus: () => workspace?.focus() || workspaceRoot } : undefined;
   if (OS_MODE && location.pathname === "/" && /^#workspace(?:=[\w-]{1,40})?$/.test(location.hash)) history.replaceState(history.state, "", `/${location.search}`);
+  // Standalone framework previews still exercise the tab renderer.
+  let tabs = null;
+  if (!OS_MODE) {
+    tabs = $("#tabs");
+    if (!tabs) {
+      tabs = document.createElement("nav");
+      tabs.id = "tabs";
+      tabs.setAttribute("aria-label", "InFlite");
+      $("#in").append(tabs);
+    }
+  }
   F = createFrame({
-    settings: (app, options) => ownerFrame.nav.go("/#settings=" + app, options), root: $("#in"), header: $("#hd"), views: $("#views"), tabs: $("#tabs"),
+    settings: (app, options) => ownerFrame.nav.go("/#settings=" + app, options), root: $("#in"), header: $("#hd"), views: $("#views"), tabs,
     session: () => ({ view: S.view, hub: S.hub, roof: S.roof, apps: S.apps, links: S.links || DEFAULT_LINKS }),
     lost: () => signedOutNow(true), checkSession, hubAgain: () => hubAgain(30e3), save, changed: () => { cardsStale = true; },
     // (a thenable, read when the frame first asks for a service: so a worker let go of after the frame's made (the hub's
@@ -2970,7 +2981,21 @@ function chatFromToday(e) {
   }).catch(() => toast("Chats couldn’t connect. Try again.")).finally(() => { chatNavigation = null; });
 }
 function wire() {
-  document.addEventListener("click", chatFromToday, true);
+  if (!OS_MODE) document.addEventListener("click", chatFromToday, true);
+  else document.addEventListener("keydown", event => {
+    if (!F || !S.hub || F.tabs.isAway || F.busy() || event.defaultPrevented || event.isComposing ||
+        event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || document.querySelector("dialog[open]") ||
+        event.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
+    if (event.key === "/") {
+      event.preventDefault();
+      F.search.open();
+      return;
+    }
+    const screen = ["today", "chats", "apps", "you"][Number(event.key) - 1];
+    if (!screen) return;
+    event.preventDefault();
+    F.nav.go(TABS[screen][1], { kind: "tab", resume: true });
+  });
   $("#sessionRetry").addEventListener("click", (e) => { e.preventDefault(); hubAsked = askHub(); load({ fresh: true }); });
   // (Sign in: Today's own trip, on every device)
   // (and back to where you were: an app in this window, or a part of this page)

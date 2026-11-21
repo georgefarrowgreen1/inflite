@@ -18,7 +18,14 @@ import { el } from "./ui.js";
 const TAB_SCREENS = ["today", "apps", "you"];
 export function createTabs(nav, F, { me: meOf } = {}) {
   const IFL = globalThis.IFL;
-  if (!nav || !IFL?.hub) return { el: nav || null, set() {}, refresh() {}, destroy() {}, away() {}, badge() {} };
+  if (!nav || !IFL?.hub) {
+    let away = false;
+    return {
+      el: nav || null, set() {}, refresh() {}, destroy() {}, badge() {},
+      get isAway() { return away; },
+      away(value) { away = !!value; },
+    };
+  }
   let current = null, built = null;
   const counts = {}, chats = () => !!F?.session?.apps?.chats;
   const pill = document.createElement("span");
@@ -149,5 +156,5 @@ export function createTabs(nav, F, { me: meOf } = {}) {
   build();
   const away = (v) => { nav.inert = nav.classList.toggle("away", !!v); };
   const badge = (t, n) => { if (!t) return; n = Math.max(0, Math.floor(Number(n)) || 0); if (counts[t] === n) return; counts[t] = n; set(current); };
-  return { el: nav, set, away, badge, refresh: () => { build(); set(current); }, destroy() { nav.removeEventListener("click", click); removeEventListener("resize", place); removeEventListener("keydown", key); } };
+  return { el: nav, set, away, badge, get isAway() { return nav.inert; }, refresh: () => { build(); set(current); }, destroy() { nav.removeEventListener("click", click); removeEventListener("resize", place); removeEventListener("keydown", key); } };
 }

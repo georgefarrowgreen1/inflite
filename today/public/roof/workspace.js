@@ -155,7 +155,7 @@ export async function createWorkspace(F, options = {}) {
     html.toggleAttribute("data-os-dock-away", !!value);
   };
   F.tabs.away = dockAway;
-  dockAway(!!document.getElementById("tabs")?.classList.contains("away"));
+  dockAway(F.tabs.isAway);
   const restoreToday = () => { if (anchor.parentNode && today.parentNode !== anchor.parentNode) anchor.parentNode.insertBefore(today, anchor.nextSibling); };
   function queueProvider(app) {
     if (pending.has(app)) return;
