@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { atlas } from "../today/src/atlas.js";
-const env={OPENAI_API_KEY:"test",ATLAS_MODEL:"test"};
+const db={prepare(sql){return {bind(){return {first:async()=>({requests:1}),all:async()=>({results:[]}),run:async()=>({success:true})}}}}};
+const env={OPENAI_API_KEY:"test",ATLAS_MODEL:"test",ATLAS_DB:db};
 const admin={signedIn:true,user:{id:"owner"},apps:{mail:true}};
 const standard={signedIn:true,user:{id:"other"},apps:{mail:false}};
 const request=(path="/atlas",cookie=true,post=false)=>new Request("https://inflite.ai"+path,{method:post?"POST":"GET",headers:{...(cookie?{Cookie:"account=abcdefghijklmnopqrstuvwxyz"}:{}),...(post?{Origin:"https://inflite.ai","X-Inflite":"1","Content-Type":"application/json"}:{})},...(post?{body:JSON.stringify({mode:"research",prompt:"hello"})}:{})});
@@ -13,3 +14,7 @@ test("account outage denied",async()=>assert.equal((await atlas(request(),env,{a
 test("admin dashboard is private",async()=>{const res=await atlas(request(),env,{account:async()=>Response.json(admin)});assert.equal(res.status,200);assert.match(res.headers.get("Cache-Control"),/no-store/);assert.match(await res.text(),/Atlas/);});
 test("admin can call AI",async()=>{const res=await atlas(request("/atlas/api/chat",true,true),env,{account:async()=>Response.json(admin),send:async(url,init)=>{assert.equal(url,"https://api.openai.com/v1/responses");assert.equal(JSON.parse(init.body).store,false);return Response.json({output:[{type:"message",content:[{type:"output_text",text:"hello"}]}]});}});assert.equal(res.status,200);assert.equal((await res.json()).answer,"hello");});
 test("cross origin write denied",async()=>{const req=new Request("https://inflite.ai/atlas/api/chat",{method:"POST",headers:{Cookie:"account=abcdefghijklmnopqrstuvwxyz",Origin:"https://evil.example","X-Inflite":"1"}});assert.equal((await atlas(req,env,{account:async()=>Response.json(admin)})).status,403);});
+
+test("missing database blocks AI",async()=>{let called=false;const res=await atlas(request("/atlas/api/chat",true,true),{...env,ATLAS_DB:null},{account:async()=>Response.json(admin),send:async()=>{called=true}});assert.equal(res.status,503);assert.equal(called,false);});
+test("quota exhaustion blocks AI",async()=>{let called=false;const res=await atlas(request("/atlas/api/chat",true,true),{...env,ATLAS_DB:{prepare(){return {bind(){return {first:async()=>null}}}}}},{account:async()=>Response.json(admin),send:async()=>{called=true}});assert.equal(res.status,429);assert.equal(called,false);});
+test("standard user cannot read history",async()=>{const res=await atlas(request("/atlas/api/history"),env,{account:async()=>Response.json(standard)});assert.equal(res.status,403);});
