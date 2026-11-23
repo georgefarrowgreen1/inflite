@@ -22,7 +22,7 @@ export async function atlas(request,env,{account=ask,send=fetch}={}){
    if(!["POST","DELETE"].includes(request.method))return json({error:"Method not allowed"},405);
    if(request.headers.get("Origin")!==url.origin||request.headers.get("X-Inflite")!=="1"||(request.headers.has("Sec-Fetch-Site")&&request.headers.get("Sec-Fetch-Site")!=="same-origin"))return json({error:"Invalid origin"},403);
    // Credential changes require an authoritative fresh-auth check, not a browser assertion.
-   if(!env.ATLAS_VERIFY_KEY)return json({error:"Credential setup requires fresh-auth service configuration"},503);
+   if(!env.ATLAS_ENCRYPTION_KEY)return json({error:"Credential encryption is not configured"},503);
    const fresh=await account(env,request,{path:"atlas/fresh",timeout:8000});
    if(!fresh?.ok)return json({error:"Confirm your identity in InFlite first"},403);
    const proof=JSON.parse(await bodyUpTo(fresh,4096));if(proof?.fresh!==true||String(proof.owner)!==owner)return json({error:"Confirm your identity in InFlite first"},403);
