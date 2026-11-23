@@ -63,3 +63,30 @@ test("Atlas page uses shared wallpaper assets and nonce protected inline code",a
  assert.match(res.headers.get("Content-Security-Policy"),/frame-ancestors 'none'/);
  assert.ok(!res.headers.get("Content-Security-Policy").includes("'unsafe-inline'"));
 });
+
+
+test("Atlas D1 provisioning fills only the selected existing binding and refuses conflicts",async()=>{
+ const {bindAtlasDatabase}=await import("../tools/atlas-bind.mjs");
+ const {readFileSync}=await import("node:fs");
+ const config=readFileSync(new URL("../wrangler.toml",import.meta.url),"utf8");
+ // Use a fixture with the same binding structure, independent of real deployment IDs.
+ const fixture=config.replace(/^\s*database_id\s*=.*$/gm,"");
+ const stage="12345678-1234-1234-1234-123456789abc",prod="abcdefab-1234-1234-1234-123456789abc";
+ const next=bindAtlasDatabase(fixture,"next",stage);
+ assert.ok(next.includes('database_name = "inflite-atlas-next"\ndatabase_id = "'+stage+'"'));
+ assert.ok(!next.includes('database_name = "inflite-atlas-production"\ndatabase_id'));
+ assert.equal(bindAtlasDatabase(next,"next",stage),next);
+ assert.throws(()=>bindAtlasDatabase(next,"next",prod),/differs/);
+ const both=bindAtlasDatabase(next,"production",prod);
+ assert.ok(both.includes('database_name = "inflite-atlas-production"\ndatabase_id = "'+prod+'"'));
+ assert.ok(both.includes('database_name = "inflite-atlas-next"\ndatabase_id = "'+stage+'"'));
+ assert.throws(()=>bindAtlasDatabase(fixture,"next","bad"),/Invalid D1 UUID/);
+ assert.throws(()=>bindAtlasDatabase(fixture.replace('database_name = "inflite-atlas-next"','database_name = "wrong"'),"next",stage),/Unexpected database_name/);
+ assert.throws(()=>bindAtlasDatabase(fixture+'\n[[env.next.d1_databases]]\nbinding = "ATLAS_DB"\n',"next",stage),/exactly one/);
+ assert.throws(()=>bindAtlasDatabase(fixture.replace("[[env.next.d1_databases]]","[[env.dev.d1_databases]]"),"next",stage),/exactly one/);
+});
+test("server-authorized Atlas opts out of shared theme session timeout before loading theme",async()=>{
+ const res=await atlas(request(),env,{account:async()=>Response.json(admin)}),html=await res.text();
+ const nonce=/script-src 'self' 'nonce-([^']+)'/.exec(res.headers.get("Content-Security-Policy"))[1];
+ assert.ok(html.includes('<script nonce="'+nonce+'">globalThis.__iflSessionStarted=true;</script><script src="/theme.js"></script><script nonce="'+nonce+'">document.documentElement.classList.remove("boot");</script>'));
+});
