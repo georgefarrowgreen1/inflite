@@ -1,3 +1,4 @@
+import { atlas } from "./atlas.js";
 // InFlite Today, at inflite.ai: its page and files come from today/public (the assets); only /api/* and /version run
 // this Worker. It keeps nothing of its own: every /api/* request is checked here, then passed on with the account's
 // cookie to account.inflite.ai/api/account/today/* (the georgefarrowgreen repo's functions/_todayapp.js), and its answer
@@ -86,6 +87,7 @@ const refuse = (status, error) => json({ error }, status);
 const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/atlas" || url.pathname.startsWith("/atlas/")) return atlas(request, env);
     if (url.origin === "https://os.inflite.ai" && ["GET", "HEAD"].includes(request.method)) {
       const publicPage = /^\/(about|contact)(?:\/(?:index\.html)?)?$/.exec(url.pathname);
       if (publicPage) return Response.redirect("https://inflite.ai/" + publicPage[1] + "/", 301);
