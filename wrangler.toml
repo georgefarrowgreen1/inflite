@@ -100,3 +100,14 @@ binding = "CF_VERSION_METADATA"
 
 [env.next.observability]
 enabled = true
+
+# Atlas D1: distinct named resources; verify automatic provisioning in Workers Builds before production.
+[[d1_databases]]
+binding = "ATLAS_DB"
+database_name = "inflite-atlas-production"
+migrations_dir = "atlas/migrations"
+
+[[env.next.d1_databases]]
+binding = "ATLAS_DB"
+database_name = "inflite-atlas-next"
+migrations_dir = "atlas/migrations"
