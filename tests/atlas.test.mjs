@@ -30,3 +30,36 @@ test("admin stop persists flag and disables tasks atomically",async()=>{let stat
 
 test("standard users cannot configure provider",async()=>{assert.equal((await atlas(request("/atlas/api/provider",true,true),env,{account:async()=>Response.json(standard)})).status,403);});
 test("provider setup requires encryption configuration",async()=>{assert.equal((await atlas(request("/atlas/api/provider",true,true),env,{account:async()=>Response.json(admin)})).status,503);});
+
+test("provider changes require a matching fresh administrator proof before any storage or OpenAI call",async()=>{
+ const key=btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+ for(const method of ["POST","DELETE"])for(const proof of [null,{fresh:false,owner:"owner"},{fresh:true,owner:"other"},{fresh:"true",owner:"owner"}]){
+  let touches=0;const req=new Request("https://inflite.ai/atlas/api/provider",{method,headers:{Cookie:"account=abcdefghijklmnopqrstuvwxyz",Origin:"https://inflite.ai","X-Inflite":"1"},body:JSON.stringify({key:"sk-"+"a".repeat(40),model:"test"})});
+  const res=await atlas(req,{ATLAS_ENCRYPTION_KEY:key,ATLAS_DB:{prepare(){touches++;throw Error("must not touch storage")}}},{account:async(_e,_r,{path})=>path==="today/me"?Response.json(admin):proof?Response.json(proof):null,send:async()=>{touches++;throw Error("must not call OpenAI")}});
+  assert.equal(res.status,403);assert.equal(touches,0);
+ }
+});
+test("saved provider is encrypted, used for AI, and never returned by the status endpoint",async()=>{
+ const secret="sk-"+"a".repeat(40),model="test-model";let row;
+ const db={prepare(sql){return {bind(...a){return {
+  first:async()=>sql.includes("atlas_credentials")?row:({requests:1}),
+  all:async()=>({results:[]}),
+  run:async()=>{if(sql.startsWith("INSERT INTO atlas_credentials"))row={iv:a[1],ciphertext:a[2],model:a[3]};if(sql.startsWith("DELETE FROM atlas_credentials"))row=null;return {success:true}}
+ }}}}};
+ const e={ATLAS_DB:db,ATLAS_ENCRYPTION_KEY:btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))};
+ const account=async(_e,_r,{path})=>Response.json(path==="today/me"?admin:{fresh:true,owner:"owner"});
+ const providerRequest=(method,body)=>new Request("https://inflite.ai/atlas/api/provider",{method,headers:{Cookie:"account=abcdefghijklmnopqrstuvwxyz",Origin:"https://inflite.ai","X-Inflite":"1"},...(body?{body:JSON.stringify(body)}:{})});
+ const send=async(url,init)=>{assert.equal(init.headers.Authorization,"Bearer "+secret);if(url.endsWith("/models/"+model))return Response.json({id:model});assert.equal(url,"https://api.openai.com/v1/responses");assert.equal(JSON.parse(init.body).model,model);return Response.json({output:[{type:"message",content:[{type:"output_text",text:"hello"}]}]});};
+ let res=await atlas(providerRequest("POST",{key:secret,model}),e,{account,send});assert.equal(res.status,200);assert.ok(!JSON.stringify(row).includes(secret));assert.ok(!(await res.text()).includes(secret));
+ res=await atlas(providerRequest("GET"),e,{account,send});assert.deepEqual(await res.json(),{connected:true,model,setupAvailable:true});
+ res=await atlas(request("/atlas/api/chat",true,true),e,{account,send});assert.equal(res.status,200);assert.equal((await res.json()).answer,"hello");
+ res=await atlas(providerRequest("DELETE"),e,{account,send});assert.equal(res.status,200);assert.equal(row,null);
+});
+test("Atlas page uses shared wallpaper assets and nonce protected inline code",async()=>{
+ const res=await atlas(request(),env,{account:async()=>Response.json(admin)}),html=await res.text();
+ assert.match(html,/<script type="module" src="\/roof\/wallpaper\.js">/);
+ assert.match(html,/<div class="sky" aria-hidden="true"><canvas>/);
+ assert.match(res.headers.get("Content-Security-Policy"),/script-src 'self' 'nonce-[^']+'/);
+ assert.match(res.headers.get("Content-Security-Policy"),/frame-ancestors 'none'/);
+ assert.ok(!res.headers.get("Content-Security-Policy").includes("'unsafe-inline'"));
+});
