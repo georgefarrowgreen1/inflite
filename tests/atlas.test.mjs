@@ -90,3 +90,46 @@ test("server-authorized Atlas opts out of shared theme session timeout before lo
  const nonce=/script-src 'self' 'nonce-([^']+)'/.exec(res.headers.get("Content-Security-Policy"))[1];
  assert.ok(html.includes('<script nonce="'+nonce+'">globalThis.__iflSessionStarted=true;</script><script src="/theme.js"></script><script nonce="'+nonce+'">document.documentElement.classList.remove("boot");</script>'));
 });
+
+test("task activation uses the bound account Worker and fails closed when administrator verification fails",async t=>{
+ t.mock.method(globalThis,"fetch",async()=>assert.fail("Account verification must use the APPS binding"));
+ const cases=[
+  {name:"approved",proof:{allowed:true},expected:200},
+  {name:"not an administrator",proof:{allowed:false},expected:403},
+  {name:"non-boolean approval",proof:{allowed:"true"},expected:403},
+  {name:"upstream denial",proof:{allowed:true},status:403,expected:403},
+  {name:"invalid response",invalid:true,expected:503},
+  {name:"account unavailable",unavailable:true,expected:503},
+ ];
+ for(const c of cases){
+  let verifications=0;const queries=[],batches=[];
+  const e={ATLAS_AUTONOMY:"1",ATLAS_VERIFY_KEY:"verifier-secret",ATLAS_DB:{
+   prepare(sql){queries.push(sql);return {bind(...args){return {sql,args,first:async()=>({id:"task-1"})}}};},
+   batch:async statements=>{batches.push(statements);},
+  },APPS:{fetch:async req=>{
+   verifications++;
+   assert.equal(req.url,"https://account.inflite.ai/api/atlas-admin");
+   assert.equal(req.method,"POST");
+   assert.equal(req.redirect,"error");
+   assert.equal(req.headers.get("Authorization"),"Bearer verifier-secret");
+   assert.equal(req.headers.get("Content-Type"),"application/json");
+   assert.equal(req.headers.get("Cookie"),null);
+   assert.deepEqual(await req.json(),{owner:"owner"});
+   if(c.unavailable)throw Error("account unavailable");
+   return c.invalid?new Response("invalid JSON"):Response.json(c.proof,{status:c.status||200});
+  }}};
+  const req=new Request("https://inflite.ai/atlas/api/tasks",{method:"PATCH",headers:{Cookie:"account=abcdefghijklmnopqrstuvwxyz",Origin:"https://inflite.ai","X-Inflite":"1"},body:JSON.stringify({id:"task-1",confirm:true,owner:"forged-owner"})});
+  const res=await atlas(req,e,{account:async()=>Response.json(admin)});
+  assert.equal(res.status,c.expected,c.name);
+  assert.equal(verifications,1,c.name);
+  if(c.expected===200){
+   assert.deepEqual(await res.json(),{enabled:true});
+   assert.equal(batches.length,1);
+   assert.deepEqual(batches[0][0].args,["owner"]);
+   assert.deepEqual(batches[0][1].args.slice(1),["owner","task-1"]);
+  }else{
+   assert.deepEqual(queries,[],c.name+" must not touch task storage");
+   assert.deepEqual(batches,[],c.name+" must not activate a task");
+  }
+ }
+});

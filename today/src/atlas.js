@@ -1,6 +1,7 @@
 import {saveCredential,loadCredential} from "./atlas-credentials.js";
 import { evolution } from "./atlas-evolution.js";
 import { ask, accountCookie } from "./account.js";
+import { appFetch } from "./apps.js";
 import { bodyUpTo } from "./body.js";
 const headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","Cross-Origin-Resource-Policy":"same-origin","Referrer-Policy":"no-referrer"};
 const json=(data,status=200)=>Response.json(data,{status,headers:{...headers,"Content-Security-Policy":"default-src 'none'; frame-ancestors 'none'"}});
@@ -53,7 +54,7 @@ export async function atlas(request,env,{account=ask,send=fetch}={}){
    if(request.method==="PATCH"){
     if(env.ATLAS_AUTONOMY!=="1"||!env.ATLAS_VERIFY_KEY)return json({error:"Autonomy is disabled by deployment configuration"},503);
     if(typeof task?.id!=="string"||task.id.length>64||task.confirm!==true)return json({error:"Explicit approval required"},400);
-    const check=await fetch("https://account.inflite.ai/api/atlas-admin",{method:"POST",headers:{Authorization:"Bearer "+env.ATLAS_VERIFY_KEY,"Content-Type":"application/json"},body:JSON.stringify({owner}),redirect:"error",signal:AbortSignal.timeout(8000)});
+    const check=await appFetch(env,"https://account.inflite.ai/api/atlas-admin",{method:"POST",headers:{Authorization:"Bearer "+env.ATLAS_VERIFY_KEY,"Content-Type":"application/json"},body:JSON.stringify({owner}),redirect:"error",signal:AbortSignal.timeout(8000)});
     if(!check.ok||(await check.json()).allowed!==true)return json({error:"Administrator verification failed"},403);
     const existing=await env.ATLAS_DB.prepare("SELECT id FROM atlas_tasks WHERE owner=? AND id=?").bind(owner,task.id).first();
     if(!existing)return json({error:"Task not found"},404);

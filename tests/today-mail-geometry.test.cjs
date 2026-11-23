@@ -258,18 +258,28 @@ test('Standalone Mail expands a quick reply with its cursor, recipient and draft
   const {ctx,page,errors} = await open({native:true,width:390,theme:'light'});
   try {
     await page.locator('.sheet.open').getByRole('button',{name:'Close',exact:true}).click();
+    await page.locator('.sheet').waitFor({state:'detached'});
     const row = page.locator('.row[data-id]').first();
     assert.equal(await row.locator('..').evaluate(el => getComputedStyle(el).backgroundImage), 'none');
     await row.click();
     const field = page.locator('.qr-field');
     await field.waitFor();
     const bar = page.locator('.pane.detail .qr');
+    // Visibility does not mean the phone pane has finished sliding into view.
+    // Its parents can also still be restoring the scale used behind compose.
+    await bar.evaluate(async el => {
+      const animations = [];
+      for (let node = el; node; node = node.parentElement) {
+        animations.push(...node.getAnimations().filter(a => Number.isFinite(a.effect?.getComputedTiming().endTime)));
+      }
+      await Promise.allSettled(animations.map(a => a.finished));
+    });
     assert.equal(await bar.getByRole('button').count(), 2);
     const reading = page.locator('.pane.detail .scroll');
     const scroll = await reading.boundingBox();
     const reply = await bar.boundingBox();
     assert.ok(scroll.y + scroll.height <= reply.y && reply.height <= 56);
-    assert.ok(reply.width >= 360 && reply.x >= 0 && reply.x + reply.width <= 390);
+    assert.ok(reply.width >= 360 && reply.x >= 0 && reply.x + reply.width <= 390, `Quick reply must fit the phone viewport: ${JSON.stringify(reply)}`);
     await field.fill('Thursday works for me.');
     await field.focus();
     await page.evaluate(() => __geometryViewport(410));
