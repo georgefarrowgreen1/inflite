@@ -1,3 +1,4 @@
+import { evolution } from "./atlas-evolution.js";
 import { ask, accountCookie } from "./account.js";
 import { bodyUpTo } from "./body.js";
 const headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","Cross-Origin-Resource-Policy":"same-origin","Referrer-Policy":"no-referrer"};
@@ -13,6 +14,7 @@ export async function atlas(request,env,{account=ask,send=fetch}={}){
  return new Response(page(nonce),{headers:{...headers,"Content-Type":"text/html; charset=utf-8","Content-Security-Policy":"default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'nonce-"+nonce+"'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"}});
  }
  const owner=String(view.user.id);
+ if(url.pathname==="/atlas/api/evolution")return evolution(request,env,owner,json);
  if(url.pathname==="/atlas/api/stop"){
   if(request.method!=="POST")return json({error:"Method not allowed"},405);
   if(request.headers.get("Origin")!==url.origin||request.headers.get("X-Inflite")!=="1"||(request.headers.has("Sec-Fetch-Site")&&request.headers.get("Sec-Fetch-Site")!=="same-origin"))return json({error:"Invalid origin"},403);
