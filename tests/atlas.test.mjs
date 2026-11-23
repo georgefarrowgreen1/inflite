@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { atlas } from "../today/src/atlas.js";
-const db={prepare(sql){return {bind(){return {first:async()=>({requests:1}),all:async()=>({results:[]}),run:async()=>({success:true})}}}}};
+const db={prepare(sql){return {bind(){return {first:async()=>sql.includes("atlas_credentials")?null:({requests:1}),all:async()=>({results:[]}),run:async()=>({success:true})}}}}};
 const env={OPENAI_API_KEY:"test",ATLAS_MODEL:"test",ATLAS_DB:db};
 const admin={signedIn:true,user:{id:"owner"},apps:{mail:true}};
 const standard={signedIn:true,user:{id:"other"},apps:{mail:false}};
@@ -27,3 +27,6 @@ test("task cancellation is owner scoped",async()=>{let args,sql;const req=new Re
 
 test("standard user cannot stop tasks",async()=>{const req=new Request("https://inflite.ai/atlas/api/stop",{method:"POST",headers:{Cookie:"account=abcdefghijklmnopqrstuvwxyz",Origin:"https://inflite.ai","X-Inflite":"1"}});assert.equal((await atlas(req,env,{account:async()=>Response.json(standard)})).status,403);});
 test("admin stop persists flag and disables tasks atomically",async()=>{let statements;const req=new Request("https://inflite.ai/atlas/api/stop",{method:"POST",headers:{Cookie:"account=abcdefghijklmnopqrstuvwxyz",Origin:"https://inflite.ai","X-Inflite":"1"}});const db={prepare(sql){return {bind(...args){return {sql,args}}}},batch:async s=>{statements=s;}};const res=await atlas(req,{...env,ATLAS_DB:db},{account:async()=>Response.json(admin)});assert.equal(res.status,200);assert.equal(statements.length,2);assert.match(statements[0].sql,/stopped=1/);assert.match(statements[1].sql,/enabled=0/);assert.deepEqual(statements.map(s=>s.args),[["owner"],["owner"]]);});
+
+test("standard users cannot configure provider",async()=>{assert.equal((await atlas(request("/atlas/api/provider",true,true),env,{account:async()=>Response.json(standard)})).status,403);});
+test("provider setup requires encryption configuration",async()=>{assert.equal((await atlas(request("/atlas/api/provider",true,true),env,{account:async()=>Response.json(admin)})).status,503);});
