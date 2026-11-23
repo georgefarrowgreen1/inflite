@@ -13,6 +13,21 @@ export async function atlas(request,env,{account=ask,send=fetch}={}){
  return new Response(page(nonce),{headers:{...headers,"Content-Type":"text/html; charset=utf-8","Content-Security-Policy":"default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'nonce-"+nonce+"'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"}});
  }
  const owner=String(view.user.id);
+ if(url.pathname==="/atlas/api/tasks"){
+  if(!env.ATLAS_DB)return json({error:"Task storage is not configured"},503);
+  try{
+   if(request.method==="GET"){const {results}=await env.ATLAS_DB.prepare("SELECT id,prompt,interval_minutes,enabled,created_at FROM atlas_tasks WHERE owner=? ORDER BY created_at DESC LIMIT 50").bind(owner).all();return json({tasks:results,autonomous:false});}
+   if(request.method!=="POST")return json({error:"Method not allowed"},405);
+   if(request.headers.get("Origin")!==url.origin||request.headers.get("X-Inflite")!=="1"||(request.headers.has("Sec-Fetch-Site")&&request.headers.get("Sec-Fetch-Site")!=="same-origin"))return json({error:"Invalid origin"},403);
+   const raw=await bodyUpTo(request,16384);if(raw===null)return json({error:"Too large"},413);
+   let task;try{task=JSON.parse(raw)}catch{return json({error:"Invalid request"},400);}
+   if(typeof task?.prompt!=="string"||!task.prompt.trim()||task.prompt.length>4000||!Number.isInteger(task.interval_minutes)||task.interval_minutes<60||task.interval_minutes>10080)return json({error:"Invalid task"},400);
+   const id=crypto.randomUUID();
+   const saved=await env.ATLAS_DB.prepare("INSERT INTO atlas_tasks(id,owner,prompt,interval_minutes,enabled,created_at) SELECT ?,?,?,?,0,? WHERE (SELECT COUNT(*) FROM atlas_tasks WHERE owner=?)<50 RETURNING id").bind(id,owner,task.prompt,task.interval_minutes,Date.now(),owner).first();
+   if(!saved)return json({error:"Task limit reached"},429);
+   return json({id,enabled:false},201);
+  }catch{return json({error:"Task storage unavailable"},503);}
+ }
  if(url.pathname==="/atlas/api/history" && request.method==="GET"){
   if(!env.ATLAS_DB)return json({error:"Memory is not configured"},503);
   try{const {results}=await env.ATLAS_DB.prepare("SELECT id,mode,prompt,answer,created_at FROM atlas_messages WHERE owner=? ORDER BY id DESC LIMIT 30").bind(owner).all();return json({messages:results});}catch{return json({error:"Memory unavailable"},503);}
