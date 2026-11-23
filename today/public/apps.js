@@ -2,7 +2,6 @@
 // lines come from Today's answer; app destinations and Mail lenses retain the hub's
 // existing switches and standalone fallbacks. Chats has its own navigation tab.
 const APPS = [
-  { app: "atlas", name: "Atlas", what: "Private AI assistant", only: (view) => view?.signedIn === true && view?.apps?.mail === true, links: [] },
   {native:true,app:"calendar",name:"Calendar",what:"Events and linked plans",links:[["Agenda","agenda","calendar"],["Week","week","calendar"]]},
   {native:true,app:"notes",name:"Notes",what:"Notes and checklists",links:[["All notes","all","file"]]},
   {native:true,app:"people",name:"People",what:"Your private contacts",links:[["Contacts","contacts","people"]]},
@@ -49,7 +48,7 @@ const renders = new WeakMap();
 export function drawApps(root, ctx = {}) {
   if (!root || !ctx.ui || ctx.current?.() === false) return;
   const { ui } = ctx, { el } = ui, owner = ctx.view?.user?.id;
-  const href = (app, section) => app === "atlas" ? "/atlas" : ctx.href?.(app, section) || `/${app}/${section ? "#" + section : ""}`;
+  const href = (app, section) => ctx.href?.(app, section) || `/${app}/${section ? "#" + section : ""}`;
   const shown = APPS.filter((a) => (!a.native || switchedOn(ctx,a.app)) && (!a.only || a.only(ctx.view)));
   const choices = shown.flatMap((a) => a.app === "mail" && !switchedOn(ctx, "mail") ? [] : a.links.map(([label, section, icon]) =>
     ({ id: `${a.app}:${section}`, app: a.app, name: a.name, label, section, icon })));
@@ -73,7 +72,7 @@ export function drawApps(root, ctx = {}) {
   const current = () => renders.get(root) === state && root.isConnected && ctx.current?.() !== false;
   state.current = current;
   const rows = shown.map((a) => {
-    const row = ui.row({ lead: { app: a.app === "atlas" ? "inflite" : a.app }, title: a.name, sub: lineOf(a, ctx.answer), href: href(a.app), trail: "chevron" });
+    const row = ui.row({ lead: { app: a.app }, title: a.name, sub: lineOf(a, ctx.answer), href: href(a.app), trail: "chevron" });
     row.dataset.appRow = a.app;
     return [a, row];
   });
