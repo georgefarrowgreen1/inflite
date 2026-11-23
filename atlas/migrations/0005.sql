@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS atlas_credentials (owner TEXT PRIMARY KEY, iv TEXT NOT NULL, ciphertext TEXT NOT NULL, model TEXT NOT NULL, updated_at INTEGER NOT NULL);

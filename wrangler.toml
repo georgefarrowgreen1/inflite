@@ -22,9 +22,13 @@ binding = "ASSETS"
 not_found_handling = "404-page"
 # (and InFlite's hub, Today First: Chats, Weather, Fitness and Markets at /chats/, /weather/, /fitness/ and /markets/,
 # and Mail framed at /mail/; today/src/hub.js and mailhost.js)
-run_worker_first = ["/", "/index.html", "/about", "/about/", "/about/index.html", "/contact", "/contact/", "/contact/index.html", "/_errors/404", "/api/*", "/version", "/chats", "/chats/*", "/weather", "/weather/*", "/fitness", "/fitness/*", "/markets", "/markets/*", "/mail", "/mail/*", "/calendar", "/calendar/*", "/notes", "/notes/*", "/people", "/people/*", "/auth", "/auth/*", "/account", "/account/*", "/settings/account", "/settings/account/*", "/status", "/status/*"]
+run_worker_first = ["/atlas", "/atlas/*", "/", "/index.html", "/about", "/about/", "/about/index.html", "/contact", "/contact/", "/contact/index.html", "/_errors/404", "/api/*", "/version", "/chats", "/chats/*", "/weather", "/weather/*", "/fitness", "/fitness/*", "/markets", "/markets/*", "/mail", "/mail/*", "/calendar", "/calendar/*", "/notes", "/notes/*", "/people", "/people/*", "/auth", "/auth/*", "/account", "/account/*", "/settings/account", "/settings/account/*", "/status", "/status/*"]
+
+[triggers]
+crons = ["*/15 * * * *"]
 
 [vars]
+ATLAS_AUTONOMY = "0"
 ACCOUNT_ORIGIN = "https://account.inflite.ai"
 # After each host's own same-origin write checks, use the established Today identity at the account service.
 TODAY_AS = "https://inflite.ai"
@@ -69,7 +73,11 @@ workers_dev = false
 preview_urls = false
 routes = [{ pattern = "next.inflite.ai", custom_domain = true }]
 
+[env.next.triggers]
+crons = ["*/15 * * * *"]
+
 [env.next.vars]
+ATLAS_AUTONOMY = "0"
 ACCOUNT_ORIGIN = "https://account.inflite.ai"
 CHAT_ORIGIN = "https://chat.inflite.ai"
 WEATHER_ORIGIN = "https://weather.inflite.ai"
@@ -92,3 +100,14 @@ binding = "CF_VERSION_METADATA"
 
 [env.next.observability]
 enabled = true
+
+# Atlas D1: distinct named resources; verify automatic provisioning in Workers Builds before production.
+[[d1_databases]]
+binding = "ATLAS_DB"
+database_name = "inflite-atlas-production"
+migrations_dir = "atlas/migrations"
+
+[[env.next.d1_databases]]
+binding = "ATLAS_DB"
+database_name = "inflite-atlas-next"
+migrations_dir = "atlas/migrations"

@@ -1,0 +1,11 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {atlas} from "../today/src/atlas.js";
+const admin={signedIn:true,user:{id:"owner"},apps:{mail:true}};
+const standard={signedIn:true,user:{id:"other"},apps:{mail:false}};
+const req=(method="GET",body,origin="https://inflite.ai")=>new Request("https://inflite.ai/atlas/api/evolution",{method,headers:{Cookie:"account=abcdefghijklmnopqrstuvwxyz",Origin:origin,"X-Inflite":"1"},...(body?{body:JSON.stringify(body)}:{})});
+const proposal={title:"Improve retrieval",hypothesis:"Better retrieval",metric:"Recall",baseline:"Current recall"};
+test("standard user cannot access Evolution",async()=>{assert.equal((await atlas(req(),{}, {account:async()=>Response.json(standard)})).status,403);});
+test("proposal owner is server assigned and no approval can be forged",async()=>{let args;const db={prepare(){return {bind(...a){args=a;return {first:async()=>({id:"x"})}}}}};const r=await atlas(req("POST",{...proposal,owner:"other",status:"approved"}),{ATLAS_DB:db},{account:async()=>Response.json(admin)});assert.equal(r.status,201);assert.equal((await r.json()).status,"proposed");assert.equal(args[1],"owner");});
+test("cross origin proposal denied",async()=>{assert.equal((await atlas(req("POST",proposal,"https://evil.example"),{ATLAS_DB:{}},{account:async()=>Response.json(admin)})).status,403);});
+test("Evolution cannot deploy or execute",async()=>{const db={prepare(){return {bind(){return {all:async()=>({results:[]})}}}}};const r=await atlas(req(),{ATLAS_DB:db},{account:async()=>Response.json(admin)});assert.deepEqual(await r.json(),{proposals:[],execution:false,deployment:false});});

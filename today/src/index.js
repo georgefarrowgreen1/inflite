@@ -1,3 +1,5 @@
+import { runAtlasScheduled } from "./atlas-scheduler.js";
+import { atlas } from "./atlas.js";
 // InFlite Today, at inflite.ai: its page and files come from today/public (the assets); only /api/* and /version run
 // this Worker. It keeps nothing of its own: every /api/* request is checked here, then passed on with the account's
 // cookie to account.inflite.ai/api/account/today/* (the georgefarrowgreen repo's functions/_todayapp.js), and its answer
@@ -8,6 +10,7 @@
 import { assetBuild } from "../../shared/asset-build.js";
 import { sameOriginPost } from "../../shared/browser-origin.js";
 import { ask, setCookies } from "./account.js";
+import { appFetch } from "./apps.js";
 import { isHubPath, hub } from "./hub.js";
 import { mailPage } from "./mailhost.js";
 import { bodyUpTo } from "./body.js";
@@ -86,6 +89,7 @@ const refuse = (status, error) => json({ error }, status);
 const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/atlas" || url.pathname.startsWith("/atlas/")) return atlas(request, env);
     if (url.origin === "https://os.inflite.ai" && ["GET", "HEAD"].includes(request.method)) {
       const publicPage = /^\/(about|contact)(?:\/(?:index\.html)?)?$/.exec(url.pathname);
       if (publicPage) return Response.redirect("https://inflite.ai/" + publicPage[1] + "/", 301);
@@ -261,6 +265,16 @@ async function version(env, request) {
 }
 
 export default {
+  async scheduled(controller, env, ctx) {
+    if (!env.ATLAS_VERIFY_KEY || env.ATLAS_AUTONOMY !== "1") return;
+    const verifyAdmin = async owner => {
+      try {
+        const r = await appFetch(env, "https://account.inflite.ai/api/atlas-admin", {method:"POST",headers:{Authorization:"Bearer "+env.ATLAS_VERIFY_KEY,"Content-Type":"application/json"},body:JSON.stringify({owner}),redirect:"error",signal:AbortSignal.timeout(8000)});
+        return r.ok && (await r.json()).allowed === true;
+      } catch { return false; }
+    };
+    ctx.waitUntil(runAtlasScheduled(env,{verifyAdmin}));
+  },
   async fetch(request, env, ctx) {
     return withLocalNotFound(request, env, await worker.fetch(request, env, ctx));
   },

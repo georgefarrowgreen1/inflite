@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS atlas_controls (owner TEXT PRIMARY KEY, stopped INTEGER NOT NULL DEFAULT 1 CHECK(stopped IN (0,1)));
