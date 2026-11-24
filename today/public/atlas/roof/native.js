@@ -1,3 +1,5 @@
+import { field } from "../../roof/ui.js";
+
 // Atlas keeps its form nodes and drafts while InFlite owns sheet focus,
 // dismissal, routing and the account lifetime.
 export function nativeSheets(fw) {
@@ -61,7 +63,7 @@ export async function confirmAction(fw, message) {
   if (!fw) return window.confirm(message);
   return new Promise(resolve => {
     let result = false;
-    const body = document.createElement("p"); body.textContent = message;
+    const body = document.createElement("p"); body.className = "ifl-sub"; body.textContent = message;
     const handle = fw.sheet.open({ sheet: "atlas-confirm", title: "Confirm action", body,
       acts: [{ label: "Cancel", run: () => handle.close() }, { label: "Continue", primary: true, run: () => { result = true; handle.close(); } }],
       onClose: () => resolve(result),
@@ -74,10 +76,10 @@ export async function promptValue(fw, title, initial = "") {
   if (!fw) return window.prompt(title, initial);
   return new Promise(resolve => {
     let result = null;
-    const label = document.createElement("label"), field = document.createElement("input");
-    label.textContent = title; field.value = initial; field.maxLength = 160; label.append(field);
-    const handle = fw.sheet.open({ sheet: "atlas-name", title, body: label, focus: field,
-      acts: [{ label: "Cancel", run: () => handle.close() }, { label: "Save", primary: true, run: () => { result = field.value; handle.close(); } }],
+    const body = field({ label: title, value: initial });
+    body.input.maxLength = 160;
+    const handle = fw.sheet.open({ sheet: "atlas-name", title, body, focus: body.input,
+      acts: [{ label: "Cancel", run: () => handle.close() }, { label: "Save", primary: true, run: () => { result = body.input.value; handle.close(); } }],
       onClose: () => resolve(result),
     });
     if (handle.closed) resolve(null);

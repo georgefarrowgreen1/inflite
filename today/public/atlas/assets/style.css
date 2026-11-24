@@ -8,6 +8,18 @@
   --atlas-accent:var(--ifl-accent-ink,#97e84e);
   --atlas-danger:#ff8b85;
   --atlas-shadow: var(--ifl-shadow-card, 0 20px 70px #0004);
+  --atlas-panel: var(--atlas-surface);
+  --atlas-inset: var(--ifl-glass-inset, var(--atlas-field));
+  --atlas-control: var(--ifl-glass-control, var(--atlas-field));
+  --atlas-border: var(--ifl-glass-line, var(--atlas-line));
+  --atlas-highlight: var(--ifl-glass-highlight, transparent);
+  --atlas-panel-shadow: inset 0 1px 0 var(--atlas-highlight), var(--atlas-shadow);
+  --atlas-inset-shadow: inset 0 1px 0 var(--atlas-highlight);
+  --atlas-glass-shadow: var(--ifl-glass-shadow, var(--atlas-inset-shadow));
+  --atlas-card-radius: var(--ifl-radius-card, 26px);
+  --atlas-group-radius: var(--ifl-radius-group, 22px);
+  --atlas-row-radius: var(--ifl-radius-row, 16px);
+  --atlas-pill-radius: var(--ifl-radius-pill, 999px);
   --atlas-column: 820px;
   color: var(--atlas-text);
   font: 15px/1.5 var(--font, system-ui, sans-serif);
@@ -58,11 +70,12 @@
 .atlas-app input,
 .atlas-app textarea {
   border: 1px solid var(--atlas-line);
-  border-radius: 12px;
-  background: var(--atlas-field);
+  border-radius: var(--atlas-row-radius);
+  background: var(--atlas-control);
 }
 .atlas-app button {
-  min-height: 42px;
+  min-height: 44px;
+  border-radius: var(--atlas-pill-radius);
   padding: 9px 14px;
   cursor: pointer;
   font-weight: 550;
@@ -265,13 +278,9 @@ html[data-midnight-lava] .atlas-app .atlas-sky canvas {
   width: 100%;
 }
 .atlas-app .atlas-sidebar {
-  border-right: 1px solid var(--atlas-line);
   padding: 20px 14px 12px max(14px, env(safe-area-inset-left));
   display: flex;
   min-height: 0;
-  background: var(--ifl-glass-window, var(--atlas-surface));
-  -webkit-backdrop-filter: var(--ifl-glass-window-blur);
-  backdrop-filter: var(--ifl-glass-window-blur);
 }
 .atlas-app .conversation-navigation {
   display: flex;
@@ -415,42 +424,82 @@ html[data-midnight-lava] .atlas-app .atlas-sky canvas {
   flex-shrink: 0;
 }
 .atlas-app .action-menu summary {
+  display: grid;
+  place-items: center;
   list-style: none;
   cursor: pointer;
-  padding: 10px 12px;
-  border-radius: 12px;
-  min-width: 44px;
-  text-align: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--atlas-border);
+  border-radius: var(--atlas-pill-radius);
 }
 .atlas-app .action-menu summary::-webkit-details-marker {
   display: none;
 }
 .atlas-app .action-menu > div {
   position: absolute;
-  right: 0;
-  top: 100%;
+  inset-inline-end: 0;
+  inset-block-start: calc(100% + 6px);
   display: grid;
-  background: var(--atlas-surface);
-  border: 1px solid var(--atlas-line);
-  border-radius: 14px;
+  gap: 2px;
+  background: var(--atlas-panel);
+  border: 1px solid var(--atlas-border);
+  border-radius: var(--atlas-group-radius);
   padding: 7px;
-  min-width: 230px;
-  box-shadow: var(--atlas-shadow);
+  width: min(250px, calc(100vw - 32px));
+  max-height: 60vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  box-shadow: var(--atlas-panel-shadow);
   z-index: 12;
 }
 .atlas-app .action-menu button {
   background: transparent;
   border: 0;
+  border-radius: var(--atlas-row-radius);
   text-align: left;
-  font-size: 13px;
+  font-size: 14px;
+}
+.atlas-app .action-menu button:hover { background: var(--atlas-control); }
+.atlas-app .action-menu button:focus-visible { outline-offset: -2px; }
+.atlas-app .conversation-feed {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
 }
 .atlas-app .messages {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 22px max(0px, calc((100% - var(--atlas-column))/2)) 24px;
 }
+.atlas-app .messages:focus { outline: none; }
+.atlas-app .messages:focus-visible { outline: 2px solid var(--atlas-accent); outline-offset: -2px; border-radius: 12px; }
+.atlas-app .jump-to-latest {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 7px 12px;
+  border-radius: var(--r-pill, 999px);
+  background: var(--atlas-surface);
+  box-shadow: 0 3px 18px #0003;
+  color: var(--atlas-text);
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.atlas-app .jump-to-latest .atlas-glyph { width: 16px; height: 16px; transform: rotate(180deg); }
+.atlas-app .message-content.streaming-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .atlas-app .older-history {
   flex-shrink: 0;
   max-width: var(--atlas-column);
@@ -469,43 +518,46 @@ html[data-midnight-lava] .atlas-app .atlas-sky canvas {
   margin: auto;
   padding: 15px 0 40px;
 }
+.atlas-app .welcome-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--atlas-accent) 8%, var(--atlas-surface));
+  border: 1px solid color-mix(in srgb, var(--atlas-accent) 15%, var(--atlas-line));
+}
+.atlas-app .welcome-mark img { display: block; width: 36px; height: 36px; }
 .atlas-app .welcome h2 {
   font-family: var(--font-d, system-ui, sans-serif);
   font-size: clamp(24px, 3.4vw, 36px);
   letter-spacing: -1.1px;
   font-weight: 720;
   line-height: 1.2;
-  margin-bottom: 10px;
-}
-.atlas-app .welcome > p {
-  font-size: 15px;
-  max-width: 470px;
-  color: var(--atlas-muted);
-  line-height: 1.6;
+  margin-bottom: 4px;
 }
 .atlas-app .starter-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-top: 30px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 20px;
 }
 .atlas-app .starter-grid button {
   text-align: left;
-  min-height: 98px;
-  padding: 15px;
+  min-height: 52px;
+  padding: 10px 12px;
   background: var(--atlas-surface);
-  border-radius: var(--r-card);
+  border-radius: 13px;
   font-size: 14px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 8px;
 }
-.atlas-app .starter-grid .atlas-glyph {
-  align-self: flex-end;
-  font-size: 17px;
-  color: var(--atlas-muted);
-}
+.atlas-app .starter-grid button:hover { border-color: color-mix(in srgb, var(--atlas-accent) 38%, var(--atlas-line)); }
+.atlas-app .starter-grid .atlas-glyph:first-child { color: var(--atlas-accent); }
+.atlas-app .starter-grid .atlas-glyph:last-child { width: 16px; height: 16px; color: var(--atlas-muted); }
 .atlas-app .message {
   margin-bottom: 28px;
   min-width: 0;
@@ -722,6 +774,8 @@ html[data-midnight-lava] .atlas-app .atlas-sky canvas {
   width: 100%;
   flex-shrink: 0;
 }
+.atlas-app .conversation-status:empty { display: none; }
+.atlas-app .thread-retry { padding: 8px; }
 .atlas-app .composer {
   width: 100%;
   max-width: var(--atlas-column);
@@ -1372,15 +1426,9 @@ html[data-midnight-lava] .atlas-app .atlas-sky canvas {
   }
   .atlas-app .starter-grid button {
     min-height: 48px;
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
   }
   .atlas-app .welcome {
     max-width: 480px;
-  }
-  .atlas-app .starter-grid .atlas-glyph {
-    align-self: auto;
   }
 }
 @media (max-width: 720px) {
@@ -1438,9 +1486,6 @@ html[data-midnight-lava] .atlas-app .atlas-sky canvas {
   }
   .atlas-app .welcome h2 {
     font-size: 28px;
-  }
-  .atlas-app .welcome > p {
-    font-size: 15px;
   }
   .atlas-app .starter-grid {
     gap: 7px;
@@ -1883,7 +1928,7 @@ html[data-midnight-lava] .atlas-app .atlas-sky canvas {
 .atlas-app .composer .composer-context[data-intent=ask] { grid-template-columns: minmax(0, 1fr); }
 
 /* Native InFlite mount: the roof owns the screen, header, wallpaper and sheets. */
-.atlas-app.atlas-native {
+.atlas-app.atlas-native:not(.atlas-native-content) {
   height: 100%; min-height: 0; flex: 1; width: 100%; max-width: none;
   background: transparent; isolation: auto; padding: 0; margin: 0;
 }
@@ -1912,4 +1957,301 @@ dialog.ifl-sheet.atlas-native-sheet .conversation-navigation { padding: 0; }
   .atlas-app.atlas-native .messages { padding-top: 10px; }
   .atlas-app.atlas-native .welcome { padding-top: 20px; }
   .atlas-app.atlas-native .message-actions { gap: 6px; }
+}
+
+/* Atlas uses the same cards, grouped rows and inset controls as the other InFlite apps. */
+.atlas-app.atlas-native .conversation-main { background: transparent; }
+.atlas-app.atlas-native-content,
+.atlas-app .atlas-dialog > .ifs-body,
+.atlas-app.ifl-in-pane {
+  --atlas-panel: var(--atlas-inset);
+  --atlas-panel-shadow: var(--atlas-inset-shadow);
+}
+.atlas-app.atlas-native .sidebar-tools,
+.atlas-native-sheet .sidebar-tools { display: none; }
+.atlas-app .atlas-destination {
+  display: flex;
+  flex: 1;
+  grid-column: 1 / -1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+.atlas-app .atlas-destination-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px max(16px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.atlas-app .atlas-destination-column { max-width: var(--atlas-column); margin-inline: auto; }
+.atlas-app .atlas-destination-title {
+  margin-bottom: 16px;
+  font: 700 clamp(23px, 3vw, 30px)/1.2 var(--font-d, system-ui, sans-serif);
+  letter-spacing: -.025em;
+}
+.atlas-app .atlas-page-content { display: grid; min-width: 0; gap: 10px; }
+.atlas-app .atlas-page-content > .field-feedback:empty,
+.atlas-app .atlas-record-group:empty { display: none; }
+.atlas-app .conversation-toolbar { border-bottom: 0; }
+.atlas-app .welcome { min-height: 0; padding: clamp(14px, 4vh, 36px) 0 20px; }
+.atlas-app .welcome-mark { background: var(--atlas-panel); border-color: var(--atlas-border); box-shadow: var(--atlas-panel-shadow); }
+.atlas-app .welcome h2 { letter-spacing: -.035em; }
+.atlas-app .ifl-list {
+  background: var(--atlas-panel);
+  border: 1px solid var(--atlas-border);
+  border-radius: var(--atlas-group-radius);
+  box-shadow: var(--atlas-panel-shadow);
+}
+.atlas-app .starter-grid { display: block; width: min(100%, 36rem); margin-top: 16px; }
+.atlas-app .ifl-row:is(.atlas-disclosure, [data-starter], .mode-choice) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  min-height: 54px;
+  border: 0;
+  border-radius: var(--atlas-row-radius);
+  background: transparent;
+  color: var(--atlas-text);
+  text-align: left;
+}
+.atlas-app .ifl-row:is(.atlas-disclosure, [data-starter], .mode-choice):hover,
+.atlas-app .ifl-row:is([aria-current=true], [aria-pressed=true]) { background: var(--atlas-control); box-shadow: var(--atlas-inset-shadow); }
+.atlas-app .ifl-row:focus-visible { outline-offset: -3px; }
+.atlas-app .atlas-disclosure::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: none;
+  margin-inline: auto 3px;
+  border: solid var(--atlas-muted);
+  border-width: 1.5px 1.5px 0 0;
+  transform: rotate(45deg);
+}
+.atlas-app .ifl-tx { display: grid; flex: 1; min-width: 0; gap: 2px; }
+.atlas-app .ifl-tx b { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.atlas-app .ifl-tx small { font-size: 13px; color: var(--atlas-muted); }
+.atlas-app .conversation-list { gap: 0; flex: 0 1 auto; margin: 0; padding: 0; }
+.atlas-app .conversation-list .thread-name { white-space: normal; overflow-wrap: anywhere; }
+.atlas-app .conversation-list .thread-date { margin: 0; }
+.atlas-app .conversation-list .empty-small { padding: 12px 16px; }
+.atlas-app .atlas-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  background: var(--atlas-control);
+  border-radius: var(--atlas-pill-radius);
+  color: var(--atlas-muted);
+}
+.atlas-app .atlas-search input.sidebar-search { border: 0; min-height: 44px !important; padding: 0; font-size: 16px !important; color: var(--atlas-text); }
+.atlas-app .atlas-search .icon-button { flex: 0 0 44px; margin-right: -8px; }
+.atlas-app .conversation-list .atlas-empty { padding: 18px 12px; }
+.atlas-app .conversation-list .atlas-empty b { font-size: 15px; }
+.atlas-app .mode-choice .mode-check { visibility: hidden; color: var(--atlas-accent); }
+.atlas-app .mode-choice[aria-pressed=true] .mode-check { visibility: visible; }
+
+.atlas-app .composer {
+  padding: 8px 12px;
+  border: 1px solid var(--atlas-border);
+  border-radius: var(--atlas-card-radius);
+  background: var(--atlas-panel);
+}
+.atlas-app .composer #prompt { border-radius: var(--atlas-row-radius); padding-inline: 8px; }
+.atlas-app .composer-actions button,
+.atlas-app .composer .composer-options,
+.atlas-app .composer .intent-switch,
+.atlas-app .intent-switch button,
+.atlas-app .coding-actions :is(button, a),
+.atlas-app .workspace-context-chip,
+.atlas-app .message-status,
+.atlas-app .coding-run .message-status,
+.atlas-app .message-actions button,
+.atlas-app .action-menu summary { border-radius: var(--atlas-pill-radius); }
+.atlas-app .composer-actions button,
+.atlas-app .composer .composer-options { min-height: 44px; }
+.atlas-app .composer .composer-options { background: var(--atlas-control); padding-inline: 12px; }
+.atlas-app .composer-context-field { border-radius: var(--atlas-row-radius); background: var(--atlas-control); }
+.atlas-app .message.user .message-content { border-radius: var(--atlas-group-radius); background: var(--atlas-panel); box-shadow: var(--atlas-inset-shadow); }
+.atlas-app .message.assistant .message-content { line-height: 1.65; }
+.atlas-app :is(.thread-summary, .notice-card, .record-card, .metric, .brief-card, .environment-card, .coding-run, .settings-section, :where(#schedule-form, #environment-form), .context-list) {
+  background: var(--atlas-panel);
+  border: 1px solid var(--atlas-border);
+  border-radius: var(--atlas-card-radius);
+  box-shadow: var(--atlas-panel-shadow);
+}
+.atlas-app :is(.source-list, .context-choice, .coding-check, .patch-file, .message-content pre) {
+  border-radius: var(--atlas-row-radius);
+}
+.atlas-app .dialog-content { padding-bottom: 8px; }
+.atlas-app .settings-section,
+.atlas-app #schedule-form { padding: 16px; }
+.atlas-app .settings-section + .settings-section { margin-top: 12px; padding-top: 16px; }
+.atlas-app .dialog-content > h3,
+.atlas-app .settings-section h3 { font-size: 17px; }
+.atlas-app .dialog-content > .muted,
+.atlas-app .settings-section > p { font-size: 14px; }
+.atlas-app .context-list { gap: 0; border-radius: var(--atlas-group-radius); }
+.atlas-app .context-choice { border-width: 0; min-height: 52px; align-items: center; padding: 12px 16px; font-size: 14px; }
+.atlas-app .context-choice + .context-choice { border-top: 1px solid var(--atlas-border); border-radius: 0; }
+.atlas-app .context-choice:has(input:checked) { background: var(--atlas-control); }
+.atlas-app .context-choice small { font-size: 12px; }
+.atlas-app #context-search { min-width: 0; flex: 1 1 160px; }
+.atlas-app #environments-feedback:not(:empty) button { margin-left: 8px; }
+.atlas-app .form-grid :is(input, select, textarea):not([type=checkbox]) {
+  border-color: var(--atlas-border);
+  border-radius: var(--atlas-row-radius);
+  background: var(--atlas-control);
+}
+.atlas-app .atlas-empty { display: grid; gap: 8px; justify-items: center; padding: 28px 16px; text-align: center; }
+.atlas-app .atlas-empty b { font-size: 17px; }
+.atlas-app .atlas-empty p { max-width: 38ch; color: var(--atlas-muted); font-size: 14px; }
+.atlas-app .atlas-empty button { margin-top: 4px; }
+
+.atlas-app .inbox-filter-segments { display: none; }
+.atlas-app .atlas-page-content .inbox-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 44px; }
+.atlas-app .atlas-page-content #inbox-filter { display: none; }
+.atlas-app .inbox-toolbar #refresh-inbox { width: 44px; min-width: 44px; background: var(--atlas-control); border-color: var(--atlas-border); }
+.atlas-app .atlas-page-content .inbox-filter-segments,
+.atlas-app .task-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--atlas-border);
+  border-radius: var(--atlas-pill-radius);
+  background: var(--atlas-control);
+}
+.atlas-app .inbox-filter-segments button,
+.atlas-app .task-tabs button {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: var(--atlas-pill-radius);
+  background: transparent;
+  color: var(--atlas-muted);
+  font-size: clamp(11px, 3.15vw, 14px);
+  line-height: 1.2;
+}
+.atlas-app .inbox-filter-segments button[aria-pressed=true],
+.atlas-app .task-tabs button[aria-selected=true] { background: var(--ifl-raised, var(--atlas-panel)); color: var(--atlas-text); box-shadow: var(--atlas-inset-shadow), 0 0 0 1px var(--atlas-border); }
+.atlas-app .task-tabs button[aria-selected=true]::after { content: none; }
+.atlas-app .task-tabs { margin-inline: 12px; }
+.atlas-app .atlas-record-group { display: block; }
+.atlas-app .atlas-record-group .inbox-task { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.atlas-app .atlas-record-group .inbox-task + .inbox-task { border-top: 1px solid var(--atlas-border); }
+.atlas-app .atlas-record-group .inbox-task .button-row button { min-height: 44px; }
+.atlas-app :is(.record-card, .environment-card, .coding-run) .button-row { flex-wrap: wrap; }
+
+.atlas-app .environments-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.atlas-app .environment-directory,
+.atlas-app .environment-detail { padding: 0; border: 0; }
+.atlas-app .environment-list { max-height: none; overflow: visible; }
+.atlas-app .environment-empty { min-height: 0; align-items: center; text-align: center; padding: 26px 16px; }
+.atlas-app #environment-form,
+.atlas-app .brief-card { padding: clamp(14px, 3vw, 24px); }
+.atlas-app .environment-card-actions { flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; }
+.atlas-app .environment-card-actions button { padding: 6px 12px; min-height: 44px; background: var(--atlas-control); }
+.atlas-app .section-toolbar button { min-height: 44px; padding-inline: 14px; }
+.atlas-app .brief-back { margin-bottom: 12px; }
+.atlas-app .brief-card > h2 { margin: 0 0 12px; font: 700 22px/1.25 var(--font-d, system-ui, sans-serif); overflow-wrap: anywhere; }
+.atlas-app .brief-card .button-row { margin-top: 14px; flex-wrap: wrap; }
+
+@media (min-width: 901px) {
+  .atlas-app:not(.ifl-in-pane) .environments-layout:has(#environment-form:not([hidden])):has(#environment-directory:not([hidden])) {
+    grid-template-columns: minmax(230px, 2fr) minmax(0, 3fr);
+  }
+}
+@media (max-width: 720px) {
+  .atlas-app.atlas-native .conversation-main { padding-inline: 16px; }
+  .atlas-app .conversation-toolbar { padding-inline: 0; }
+  .atlas-app .conversation-main .composer { padding-inline: 9px; }
+  .atlas-app .inbox-task-heading h3 { flex-basis: 10rem; }
+  .atlas-app .atlas-page-content .environments-layout:has(#environment-form:not([hidden])) .environment-directory { display: none; }
+}
+.atlas-app.ifl-in-pane .atlas-layout { display: flex; }
+.atlas-app.ifl-in-pane #sidebar-slot { display: none; }
+.ifl-in-pane.atlas-native .conversation-main { flex: 1; }
+.atlas-app.ifl-in-pane .environments-layout:has(#environment-form:not([hidden])) .environment-directory { display: none; }
+
+/* The composer and floating menu sample the scene. Their controls are inset so
+   that a single sample supplies both the surface and everything inside it. */
+.atlas-app :is(.atlas-glass--control, .atlas-glass--window) {
+  --atlas-control: var(--atlas-inset);
+  --atlas-glass-fill: var(--ifl-glass, var(--atlas-surface));
+  --atlas-glass-blur: var(--ifl-glass-blur, none);
+  --atlas-glass-lens: url("#ifl-system-lens-control");
+  background: var(--atlas-surface);
+  box-shadow: var(--atlas-panel-shadow);
+}
+.atlas-app .atlas-glass--window {
+  --atlas-glass-fill: var(--ifl-glass-window, var(--atlas-surface));
+  --atlas-glass-blur: var(--ifl-glass-window-blur, none);
+  --atlas-glass-lens: url("#ifl-system-lens-sheet");
+}
+.atlas-app .action-menu:not([open]) > .atlas-glass--window { display: none; }
+.atlas-app.ifl-in-pane :is(.atlas-glass--control, .atlas-glass--window) { background: var(--atlas-inset); }
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  html[data-glass=on] .atlas-app:not(.ifl-in-pane) :is(.atlas-glass--control, .action-menu[open] > .atlas-glass--window) {
+    --atlas-text: var(--ifl-glass-text, var(--ifl-text));
+    --atlas-muted: var(--ifl-glass-muted, var(--ifl-muted));
+    color: var(--atlas-text);
+    background: var(--ifl-glass-shine, none) var(--atlas-glass-fill);
+    box-shadow: var(--atlas-glass-shadow), var(--atlas-shadow);
+    -webkit-backdrop-filter: var(--atlas-glass-blur);
+    backdrop-filter: var(--atlas-glass-blur);
+  }
+  html[data-refractor=backdrop][data-glass=on] .atlas-app:not(.ifl-in-pane) :is(.atlas-glass--control, .action-menu[open] > .atlas-glass--window) {
+    backdrop-filter: var(--atlas-glass-lens) var(--atlas-glass-blur);
+  }
+}
+
+.atlas-app :is(.source-list a, .context-chip, .code-block, .patch-file, .coding-check, .message-status, .notice-inline) {
+  border-color: var(--atlas-border);
+  background-color: var(--atlas-control);
+}
+.atlas-app :is(.atlas-search, .composer-context-field, .intent-switch, .action-menu summary) {
+  background-color: var(--atlas-control);
+  box-shadow: var(--atlas-inset-shadow);
+}
+.atlas-app :is(.task-tabs, .inbox-filter-segments, .composer-options, :where(#refresh-inbox), .jump-to-latest) {
+  box-shadow: var(--atlas-inset-shadow);
+}
+.atlas-app .atlas-search:focus-within { background: var(--atlas-field); box-shadow: inset 0 0 0 2px var(--atlas-accent); }
+.atlas-app :is(.task-tabs, .inbox-filter-segments) button:focus-visible { outline-offset: -3px; }
+.atlas-app .context-chip { border-radius: var(--atlas-pill-radius); }
+.atlas-app .source-list a { border-radius: var(--atlas-pill-radius); }
+.atlas-app .dialog-sticky-actions { background: var(--ifl-glass-strong, var(--atlas-surface)); }
+.atlas-app .thread-summary { padding: 8px 14px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .atlas-app .quiet-button:hover:not(:disabled) { background-color: var(--atlas-control); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-glass=on] .atlas-app :is(.composer-options, .quiet-button, .atlas-disclosure, .mode-choice) {
+    transition: transform var(--ifl-motion-release) var(--ifl-motion-spring), background-color var(--ifl-motion-fast, .16s) ease;
+  }
+  @media (hover: none) and (pointer: coarse) {
+    html[data-glass=on] .atlas-app :is(.composer-options, .quiet-button, .atlas-disclosure, .mode-choice):active:not(:disabled) {
+      transform: scale(calc(1 - .025 * var(--ifl-glass-strength, .7)));
+      transition-duration: var(--ifl-motion-press, .06s);
+    }
+  }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  .atlas-app { --atlas-highlight: transparent; }
+  html[data-glass=on] .atlas-app:not(.ifl-in-pane) :is(.atlas-glass--control, .action-menu[open] > .atlas-glass--window) {
+    background: var(--atlas-surface);
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+@media (forced-colors: active) {
+  .atlas-app :is(.ifl-row[aria-current=true], .mode-choice[aria-pressed=true], .task-tabs button[aria-selected=true], .inbox-filter-segments button[aria-pressed=true], .intent-switch button[aria-pressed=true]) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }

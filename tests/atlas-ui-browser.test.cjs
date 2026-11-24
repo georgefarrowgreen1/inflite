@@ -33,9 +33,52 @@ function defaultFixture() {
     environments: [], environmentsReady: true, tasks: [], briefs: [], patches: [], coding: { ready: true, storageReady: true, message: '' }, codingRuns: [], codingFiles: {}, codingDiffs: {}, requests: [], overrides: new Map(), next: 1, older: null
   };
 }
+function nativeAtlasPage(withWallpaper) {
+  const optics = withWallpaper ? readFileSync(join(PUBLIC, 'index.html'), 'utf8').match(/<svg class="ifl-optics"[\s\S]*?<\/svg>/)?.[0] : '';
+  if (withWallpaper) assert.ok(optics, 'the shell supplies the refractor SVG');
+  return atlasPage('fixture').split('<body')[0] + `<body>
+    <style nonce="fixture">
+      body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+      #fixture-nav { margin: 12px 16px; flex: none; }
+      #fixture-nav .ifl-sec[aria-current="page"] { background: var(--ifl-raised); color: var(--ifl-text); }
+      #fixture-atlas { overflow: hidden; }
+    </style>
+    ${optics}${withWallpaper ? '<div class="sky" aria-hidden="true"><canvas></canvas></div>' : ''}
+    <div id="in" hidden></div>
+    <nav id="fixture-nav" class="ifl-segs" aria-label="Atlas sections"></nav>
+    <div id="fixture-atlas"></div>
+    <script type="module" nonce="fixture">
+      import { mount, SECTIONS } from '/atlas/roof/module.js';
+      import { createSheets } from '/roof/sheet.js';
+      const root = document.querySelector('#fixture-atlas');
+      const tabs = document.querySelector('#fixture-nav');
+      const fw = { signal: new AbortController().signal, visible: () => true, fill() {}, header: { set() {} },
+        nav: { section: key => show(key), href: (key, arg) => '#' + key + (arg ? '=' + encodeURIComponent(arg) : ''),
+          go: path => show(...path.slice(1).split('=').map(decodeURIComponent)) } };
+      fw.sheet = createSheets(fw);
+      const atlas = mount(root, fw);
+      async function show(key, arg) {
+        fw.sheet.closeAll();
+        for (const tab of tabs.children) tab.setAttribute('aria-current', tab.dataset.key === key ? 'page' : 'false');
+        fw.route = { key, arg };
+        await atlas.show(fw.route);
+      }
+      for (const [key, title] of SECTIONS) {
+        const tab = document.createElement('button');
+        tab.className = 'ifl-sec';
+        tab.dataset.key = key;
+        tab.textContent = title;
+        tab.addEventListener('click', () => show(key));
+        tabs.append(tab);
+      }
+      await show('conversations', new URL(location.href).searchParams.get('conversation'));
+      document.querySelector('#in').hidden = false;
+      root.dataset.atlasReady = 'true';
+    </script></body></html>`;
+}
 async function open(options = {}) {
   const fixture = Object.assign(defaultFixture(), options.fixture || {}), errors = [], security = [];
-  const context = await browser.newContext({ viewport: { width: options.width || 1280, height: options.height || 900 }, colorScheme: options.theme || 'dark', reducedMotion: 'reduce', serviceWorkers: 'block', hasTouch: !!options.mobile, isMobile: !!options.mobile });
+  const context = await browser.newContext({ viewport: { width: options.width || 1280, height: options.height || 900 }, deviceScaleFactor: options.deviceScaleFactor, colorScheme: options.theme || 'dark', reducedMotion: 'reduce', serviceWorkers: 'block', hasTouch: !!options.mobile, isMobile: !!options.mobile });
   await context.addInitScript(() => {
     window.__atlasStream = { owner: 'owner-a', controller: null, request: null, requests: [], cancelled: 0 };
     const actualFetch = window.fetch.bind(window);
@@ -52,11 +95,12 @@ async function open(options = {}) {
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== ORIGIN) return route.abort();
-    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: atlasPage('fixture') });
+    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: options.native ? nativeAtlasPage(options.wallpaper) : atlasPage('fixture') });
     if (url.pathname === '/account/api/account/appearance') return route.fulfill({ json: { signedIn: true, id: fixture.owner, palette: 'inflite', appearance: options.theme || 'dark', glass: options.glass ?? true } });
     if (!url.pathname.startsWith('/atlas/api/')) {
-      if (!['/theme.js', '/app.css'].includes(url.pathname) && !url.pathname.startsWith('/roof/') && !url.pathname.startsWith('/atlas/assets/') && !url.pathname.startsWith('/atlas/roof/')) return route.fulfill({ status: 404, body: '' });
-      try { return route.fulfill({ contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(resolve(PUBLIC, '.' + url.pathname)) }); } catch { return route.fulfill({ status: 404, body: '' }); }
+      if (!['/theme.js', '/app.css', '/atlas.svg'].includes(url.pathname) && !url.pathname.startsWith('/roof/') && !url.pathname.startsWith('/atlas/assets/') && !url.pathname.startsWith('/atlas/roof/')) return route.fulfill({ status: 404, body: '' });
+      const type = url.pathname.endsWith('.css') ? 'text/css' : url.pathname.endsWith('.svg') ? 'image/svg+xml' : 'text/javascript';
+      try { return route.fulfill({ contentType: type, body: readFileSync(resolve(PUBLIC, '.' + url.pathname)) }); } catch { return route.fulfill({ status: 404, body: '' }); }
     }
     const path = url.pathname.slice('/atlas/api/'.length), method = request.method(), owner = fixture.owner;
     let body; try { body = request.postDataJSON(); } catch {}
@@ -64,6 +108,7 @@ async function open(options = {}) {
     const reply = (data, status = 200, capturedOwner = owner) => route.fulfill({ status, headers: { 'X-Atlas-Owner': capturedOwner, 'Cache-Control': 'no-store' }, json: data });
     if (fixture.overrides.has(method + ' ' + path)) return fixture.overrides.get(method + ' ' + path)({ route, reply, body, url, owner });
     if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 7 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, coding: fixture.coding, environments: { ready: fixture.environmentsReady, storageReady: fixture.environmentsReady }, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' } });
+    if (path === 'session') return reply({ owner, available: true, signedIn: true });
     if (path === 'setup') { fixture.environmentsReady = true; fixture.ready = true; fixture.coding = { ready: true, storageReady: true, message: '' }; return reply({ ready: true, schemaVersion: 7 }); }
     if (path === 'settings') { if (method === 'PATCH') Object.assign(fixture.settings, body); return reply(fixture.settings); }
     if (path === 'models') return reply({ models: fixture.models, selected: fixture.model });
@@ -147,7 +192,8 @@ async function open(options = {}) {
   });
   const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
   await page.goto(ORIGIN + '/atlas' + (options.conversation ? '?conversation=' + encodeURIComponent(options.conversation) : ''));
-  await page.waitForFunction(() => !document.body.classList.contains('session-check'));
+  if (options.native) await page.locator('[data-atlas-ready="true"]').waitFor();
+  else await page.waitForFunction(() => !document.body.classList.contains('session-check'));
   await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, options.theme || 'dark');
   return { page, context, fixture, errors, security, async close() { security.push(...await page.evaluate(() => window.__atlasPolicyErrors || [])); await context.close(); }, async screenshot(name) { if (!process.env.ATLAS_UI_SCREENSHOTS) return; mkdirSync(process.env.ATLAS_UI_SCREENSHOTS, { recursive: true }); await page.screenshot({ path: join(process.env.ATLAS_UI_SCREENSHOTS, name + '.png'), fullPage: true }); } };
 }
@@ -156,6 +202,206 @@ async function openPanel(t, name) { await t.page.locator('#open-workspace').clic
 async function chooseMode(t, mode) { await t.page.locator('#composer-options').click(); await t.page.locator('#mode').selectOption(mode); await t.page.getByRole('button', { name: 'Close task options', exact: true }).click(); }
 async function eventually(check) { let last; for (let i = 0; i < 60; i++) { try { check(); return; } catch (error) { last = error; await new Promise(resolve => setTimeout(resolve, 20)); } } throw last; }
 async function emit(page, event, data) { await page.evaluate(({ event, data }) => window.__atlasEmit(event, data), { event, data }); }
+
+function backdrop(locator) {
+  return locator.evaluate(node => {
+    const style = getComputedStyle(node);
+    return style.backdropFilter || style.webkitBackdropFilter || 'none';
+  });
+}
+
+function material(locator) {
+  return locator.evaluate(node => {
+    const style = getComputedStyle(node);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d');
+    context.fillStyle = style.backgroundColor;
+    context.fillRect(0, 0, 1, 1);
+    return { radius: parseFloat(style.borderTopLeftRadius), shadow: style.boxShadow, alpha: context.getImageData(0, 0, 1, 1).data[3] };
+  });
+}
+
+async function expectLens(page, locator, profile) {
+  if (process.env.WEB_UI_BROWSER !== 'webkit') {
+    const filter = await backdrop(locator);
+    assert.ok(filter.includes('#ifl-system-lens-' + profile), filter);
+    assert.ok(filter.includes('blur('), filter);
+    return;
+  }
+  assert.match(await backdrop(locator), /blur\(/);
+  const surface = await locator.elementHandle();
+  await page.waitForFunction(node => {
+    const bounds = node.getBoundingClientRect(), wallpaper = document.querySelector('.sky > canvas');
+    const density = wallpaper.width / wallpaper.clientWidth;
+    return density >= 1.99 && [...document.querySelectorAll('.sky > .ifl-orb-lens')].some(layer => {
+      const lens = layer.getBoundingClientRect();
+      return Math.abs(lens.x - bounds.x) < 1 && Math.abs(lens.y - bounds.y) < 1 &&
+        Math.abs(lens.width - bounds.width) < 1 && Math.abs(lens.height - bounds.height) < 1 &&
+        layer.firstElementChild.width >= Math.floor(bounds.width * density);
+    });
+  }, surface);
+}
+
+test('native Atlas Liquid Glass uses the shared refractor and removes optics when Glass is Off', async () => {
+  const t = await open({ native: true, wallpaper: true, width: 390, mobile: true, deviceScaleFactor: 2, conversation: 'alpha' });
+  try {
+    const { page } = t;
+    const mode = process.env.WEB_UI_BROWSER === 'webkit' ? 'artwork' : 'backdrop';
+    await page.locator(`html[data-refractor="${mode}"]`).waitFor({ state: 'attached' });
+    const composer = page.locator('#composer');
+    const actions = page.locator('#conversation-menu summary');
+    const lensLayers = page.locator('.sky > .ifl-orb-lens');
+    const expectTranslucency = async surface => {
+      const { alpha } = await material(surface);
+      assert.ok(alpha > 0 && alpha < 255, `expected a visible translucent tint, got alpha ${alpha}`);
+    };
+    await expectLens(page, composer, 'control');
+    await expectTranslucency(composer);
+
+    await actions.click();
+    const menu = page.locator('#conversation-menu[open] > div');
+    await expectLens(page, menu, 'sheet');
+    await expectTranslucency(menu);
+    await page.evaluate(() => InFliteAppearance.setGlass({ glass: false }, { preview: true }));
+    assert.equal(await page.locator('html').getAttribute('data-refractor'), null);
+    assert.equal(await backdrop(composer), 'none');
+    assert.equal(await backdrop(menu), 'none');
+    assert.equal((await material(composer)).alpha, 255);
+    assert.equal((await material(menu)).alpha, 255);
+    assert.equal(await lensLayers.count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Rename', exact: true }).isVisible(), true);
+
+    await page.evaluate(() => InFliteAppearance.cancelGlassPreview());
+    await expectLens(page, menu, 'sheet');
+    await actions.click();
+    await menu.waitFor({ state: 'hidden' });
+    if (mode === 'artwork') await page.waitForFunction(() => document.querySelectorAll('.sky > .ifl-orb-lens').length === 1);
+
+    await page.locator('#composer-options').click();
+    const options = page.getByRole('dialog', { name: 'Task options', exact: true });
+    await options.waitFor();
+    await expectLens(page, options, 'sheet');
+    await page.emulateMedia({ contrast: 'more' });
+    await page.waitForFunction(() => !document.documentElement.hasAttribute('data-refractor'));
+    assert.equal(await backdrop(options), 'none');
+    assert.equal(await lensLayers.count(), 0);
+    await options.getByRole('button', { name: 'Close task options' }).click();
+    await options.waitFor({ state: 'hidden' });
+
+    await page.emulateMedia({ contrast: 'no-preference' });
+    await page.locator(`html[data-refractor="${mode}"]`).waitFor({ state: 'attached' });
+    const mount = page.locator('#fixture-atlas');
+    await mount.evaluate(root => {
+      const pane = document.createElement('div');
+      root.before(pane);
+      pane.append(root);
+      root.classList.add('ifl-in-pane');
+    });
+    assert.equal(await backdrop(composer), 'none');
+    await lensLayers.first().waitFor({ state: 'detached' });
+    await mount.evaluate(root => {
+      root.classList.remove('ifl-in-pane');
+      root.parentElement.replaceWith(root);
+    });
+    await expectLens(page, composer, 'control');
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+  assert.deepEqual(t.security, []);
+});
+
+test('native Atlas sections keep their shared matte material and painted edges without nested blur', async () => {
+  const run = codingRun({ status: 'completed', reviewReady: true });
+  const fixture = developerFixture({ codingRuns: [run], environments: [cloudEnvironment()], briefs: [{ id: 'research-notes', title: 'Research notes', answer: 'A saved research answer.', sources: [source], created_at: now }] });
+  const t = await open({ native: true, theme: 'light', fixture });
+  try {
+    const { page } = t;
+    const tabs = page.getByRole('navigation', { name: 'Atlas sections' });
+    const pageCard = async locator => {
+      await locator.waitFor();
+      const on = await material(locator);
+      assert.ok(on.radius >= 20, JSON.stringify(on));
+      assert.notEqual(on.shadow, 'none');
+      assert.equal(on.alpha, 255);
+      assert.equal(await backdrop(locator), 'none');
+      await page.evaluate(() => InFliteAppearance.setGlass({ glass: false }, { preview: true }));
+      const off = await material(locator);
+      assert.equal(off.radius, on.radius);
+      assert.equal(off.alpha, 255);
+      assert.notEqual(off.shadow, on.shadow);
+      await page.evaluate(() => InFliteAppearance.cancelGlassPreview());
+    };
+
+    await pageCard(page.locator('.starter-grid'));
+    await tabs.getByRole('button', { name: 'Tasks', exact: true }).click();
+    const taskList = page.locator('#inbox-list').filter({ hasText: run.prompt });
+    await pageCard(taskList);
+    await tabs.getByRole('button', { name: 'Environments', exact: true }).click();
+    await pageCard(page.locator('.environment-card'));
+    await tabs.getByRole('button', { name: 'Briefs', exact: true }).click();
+    await page.getByRole('button', { name: /Research notes/ }).click();
+    await pageCard(page.locator('.brief-card'));
+    await tabs.getByRole('button', { name: 'Settings', exact: true }).click();
+    const settings = page.locator('dialog[open] .settings-section').first();
+    await settings.waitFor();
+    assert.match(await backdrop(page.locator('dialog[open]')), /blur\(/);
+    assert.equal(await backdrop(settings), 'none');
+    assert.ok((await material(settings)).radius >= 20);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+  assert.deepEqual(t.security, []);
+});
+
+for (const [width, theme] of [[320, 'dark'], [1440, 'light']]) test('native Atlas uses inline sections and shared sheets at ' + width + 'px', async () => {
+  const run = codingRun({ status: 'completed', reviewReady: true });
+  const fixture = developerFixture({ codingRuns: [run], environments: [cloudEnvironment()], briefs: [{ id: 'research-notes', title: 'Research notes', answer: 'A saved research answer.', sources: [source], created_at: now }] });
+  const t = await open({ native: true, width, theme, mobile: width < 721, fixture });
+  try {
+    const tabs = t.page.getByRole('navigation', { name: 'Atlas sections' });
+    const destination = t.page.locator('#atlas-destination');
+    await t.page.getByRole('heading', { name: 'What shall we work on?' }).waitFor();
+    await t.page.locator('#prompt').fill('Keep this draft');
+    await t.screenshot('atlas-native-conversation-' + width);
+    await tabs.getByRole('button', { name: 'Tasks', exact: true }).click();
+    await destination.getByRole('heading', { name: run.prompt }).waitFor();
+    assert.equal(await t.page.locator('dialog[open]').count(), 0);
+    assert.equal(await t.page.locator('#conversation-main').isVisible(), false);
+    await t.screenshot('atlas-native-tasks-' + width);
+    await destination.getByRole('button', { name: 'In progress' }).click();
+    await destination.getByText('No tasks match this status').waitFor();
+    await destination.getByRole('button', { name: 'Review', exact: true }).click();
+    await destination.getByRole('button', { name: 'Review changes' }).click();
+    const review = t.page.getByRole('dialog', { name: 'Review changes' });
+    await review.getByText('0 changed files').waitFor();
+    await review.getByRole('button', { name: 'Back to tasks' }).click();
+    await review.waitFor({ state: 'hidden' });
+    assert.equal(await destination.getByRole('button', { name: 'Review', exact: true }).getAttribute('aria-pressed'), 'true');
+    await tabs.getByRole('button', { name: 'Environments' }).click();
+    await destination.getByRole('button', { name: 'Edit Atlas development' }).click();
+    assert.equal(await destination.getByText('No environments yet').isVisible(), false);
+    await destination.locator('#environment-name').fill('Keep this environment draft');
+    await t.screenshot('atlas-native-environments-' + width);
+    await tabs.getByRole('button', { name: 'Briefs' }).click();
+    await destination.getByRole('button', { name: /Research notes/ }).click();
+    await destination.getByText('A saved research answer.').waitFor();
+    await t.screenshot('atlas-native-brief-' + width);
+    await destination.getByRole('button', { name: 'All briefs' }).click();
+    await destination.getByRole('button', { name: /Research notes/ }).waitFor();
+    await tabs.getByRole('button', { name: 'Environments' }).click();
+    assert.equal(await destination.locator('#environment-name').inputValue(), 'Keep this environment draft');
+    const overflow = await destination.evaluate(el => el.scrollWidth > el.clientWidth || el.firstElementChild.scrollWidth > el.firstElementChild.clientWidth);
+    assert.equal(overflow, false);
+    await tabs.getByRole('button', { name: 'Conversations' }).click();
+    assert.equal(await t.page.locator('#prompt').inputValue(), 'Keep this draft');
+    await t.page.locator('#composer-options').click();
+    const options = t.page.getByRole('dialog', { name: 'Task options' });
+    await options.getByRole('button', { name: /^Personal/ }).click();
+    assert.match(await t.page.locator('#workspace-label').textContent(), /Personal/);
+    await options.getByRole('button', { name: 'Close task options' }).click();
+    await options.waitFor({ state: 'hidden' });
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
 
 for (const width of [320, 390, 1440]) for (const theme of ['light', 'dark']) test('mobile-first layout fits ' + width + 'px in ' + theme + ' appearance', async () => {
   const t = await open({ width, theme, height: 844, mobile: width < 721 });
@@ -195,6 +441,94 @@ for (const [width, theme] of [[320, 'light'], [1280, 'dark']]) test('strict CSP 
 
 test('setup runs only when storage requires it, then removes the upgrade action', async () => {
   const t = await open({ fixture: { ready: false } }); try { assert.equal(await t.page.locator('#upgrade-storage').isVisible(), true); await t.page.locator('#upgrade-storage').click(); await t.page.locator('#setup-banner').waitFor({ state: 'hidden' }); assert.equal(t.fixture.requests.filter(r => r.path === 'setup').length, 1); assert.deepEqual(t.errors, []); } finally { await t.close(); }
+});
+
+test('Atlas opens a conversation while the secondary workspace requests are pending', async () => {
+  let releaseRepositories;
+  const gate = new Promise(resolve => { releaseRepositories = resolve; });
+  const overrides = new Map([['GET repositories', async ({ reply }) => {
+    await gate; return reply({ repositories: [{ full_name: 'fixture/atlas' }] });
+  }]]);
+  const t = await open({ fixture: { overrides } });
+  try {
+    await eventually(() => assert.ok(t.fixture.requests.some(call => call.path === 'repositories')));
+    await openThread(t, 'Alpha research');
+    await t.page.locator('#prompt').fill('Work while repositories load');
+    assert.equal(await t.page.locator('#send').isEnabled(), true);
+  } finally { releaseRepositories(); await t.close(); }
+});
+
+test('a superseded conversation cannot replace a newer selection or its in-progress draft', async () => {
+  const t = await open();
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  try {
+    await openThread(t, 'Alpha research');
+    t.fixture.overrides.set('GET conversations/beta', async ({ reply }) => {
+      await gate;
+      return reply({ conversation: t.fixture.conversations.find(c => c.id === 'beta'), messages: t.fixture.messages.beta });
+    });
+    await t.page.locator('#conversation-list').getByRole('button', { name: /Beta planning/ }).click();
+    await t.page.getByText('Loading conversation…', { exact: true }).waitFor();
+    await t.page.locator('#prompt').fill('A draft edited during navigation');
+    assert.equal(await t.page.locator('#send').isDisabled(), true);
+    await openThread(t, 'Alpha research');
+    release();
+    await t.page.waitForFunction(() => document.getElementById('messages').getAttribute('aria-busy') !== 'true');
+    assert.equal(await t.page.locator('#prompt').inputValue(), 'A draft edited during navigation');
+    assert.match(await t.page.locator('#messages').textContent(), /Evidence here/);
+    assert.equal(await t.page.locator('#send').isEnabled(), true);
+    assert.deepEqual(t.errors, []);
+  } finally { release(); await t.close(); }
+});
+
+test('conversation search includes repositories and mode while archive navigation ignores stale results', async () => {
+  const t = await open({ fixture: developerFixture() });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const task = t.fixture.conversations[0];
+  try {
+    await t.page.locator('#conversation-search').fill('developer fixture/atlas');
+    await t.page.locator('#conversation-list').getByRole('button', { name: /Repository task/ }).waitFor();
+    t.fixture.overrides.set('GET conversations', async ({ reply, url }) => {
+      if (url.searchParams.get('archived') === '1') {
+        await gate;
+        return reply({ conversations: [{ ...task, id: 'archived', title: 'Stale archive', archived: true }] });
+      }
+      return reply({ conversations: [task] });
+    });
+    await t.page.locator('#show-archived').check();
+    await t.page.getByText('Loading conversations…', { exact: true }).waitFor();
+    await t.page.locator('#show-archived').uncheck();
+    release();
+    await t.page.locator('#conversation-list').getByRole('button', { name: /Repository task/ }).waitFor();
+    assert.doesNotMatch(await t.page.locator('#conversation-list').textContent(), /Stale archive/);
+  } finally { release(); await t.close(); }
+});
+
+test('live replies keep their text node, respect reading position and format once completed', async () => {
+  const t = await open({ width: 390, height: 720, mobile: true });
+  try {
+    await openThread(t, 'Alpha research');
+    await t.page.locator('#prompt').fill('A long response');
+    await t.page.locator('#send').click();
+    await t.page.waitForFunction(() => !!window.__atlasStream.request);
+    await emit(t.page, 'delta', { text: 'A long response line.\n'.repeat(80) });
+    await t.page.waitForFunction(() => document.querySelector('.streaming-text')?.textContent.length > 1000);
+    await t.page.locator('.streaming-text').evaluate(el => { window.__firstStreamNode = el.firstChild; });
+    await t.page.locator('#messages').evaluate(el => { el.scrollTop = 0; });
+    await t.page.getByRole('button', { name: 'Jump to latest' }).waitFor();
+    await emit(t.page, 'delta', { text: 'Another update.' });
+    await t.page.waitForFunction(() => document.querySelector('.streaming-text')?.textContent.endsWith('Another update.'));
+    assert.equal(await t.page.locator('.streaming-text').evaluate(el => el.firstChild === window.__firstStreamNode), true);
+    assert.equal(await t.page.locator('#messages').evaluate(el => el.scrollTop), 0);
+    await t.page.getByRole('button', { name: 'Jump to latest' }).click();
+    assert.ok(await t.page.locator('#messages').evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop < 3));
+    await emit(t.page, 'done', { message: { answer: '**Formatted** answer.', status: 'completed', sources: [] } });
+    await t.page.getByText('Formatted', { exact: true }).waitFor();
+    assert.equal(await t.page.locator('.streaming-text').count(), 0);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
 });
 
 test('stream identity stays with the outgoing conversation after switching threads', async () => {
@@ -490,8 +824,9 @@ test('account switching clears coding progress and drops a late task response', 
   const t = await open({ fixture: developerFixture({ codingRuns: [codingRun()] }) }); let release; try {
     await openThread(t, 'Repository task'); await t.page.locator('.coding-run').waitFor();
     const delayed = new Promise(resolve => { release = resolve; }); let held = false;
-    t.fixture.overrides.set('GET coding/runs', async ({ reply, owner }) => { held = true; await delayed; try { return await reply({ runs: [codingRun({ summary: 'LATE OWNER A CODING CONTENT' })] }, 200, owner); } catch {} });
-    await t.page.getByRole('button', { name: 'Stop task', exact: true }).waitFor(); await t.page.evaluate(() => window.dispatchEvent(new Event('focus'))); await eventually(() => assert.equal(held, true));
+    t.fixture.overrides.set('GET coding/runs/coding-1', async ({ reply, owner }) => { held = true; await delayed; try { return await reply({ run: codingRun({ summary: 'LATE OWNER A CODING CONTENT' }) }, 200, owner); } catch {} });
+    await t.page.waitForRequest(request => new URL(request.url()).pathname === '/atlas/api/coding/runs/coding-1', { timeout: 10000 });
+    await eventually(() => assert.equal(held, true));
     t.fixture.owner = 'owner-b'; t.fixture.settings = { memoryEnabled: false, memory: '', dailyRequestLimit: 20, timezone: 'UTC' }; t.fixture.conversations = []; t.fixture.messages = {}; t.fixture.codingRuns = [];
     // A second owned request observes the account switch while the coding snapshot is delayed.
     await t.page.locator('#open-workspace').click(); await t.page.locator('.workspace-tools [data-open="usage"]').click(); await t.page.waitForFunction(() => !document.body.classList.contains('session-check') && document.getElementById('conversation-title').textContent === 'New conversation'); release();
@@ -767,6 +1102,27 @@ test('task tabs preserve keyboard focus during progress and expose real command 
     await t.page.waitForFunction(() => document.querySelector('#task-coding-1-changes .task-file pre').textContent.includes('+ after'));
     assert.equal(t.fixture.requests.filter(r => /\/publish$/.test(r.path)).length, 0);
     assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('refreshing one task keeps a different task’s open diff and avoids fetching it again', async () => {
+  const saved = codingRun({ id: 'coding-saved', createdAt: now - 60000, status: 'completed', stage: 'completed',
+    reviewReady: true, summary: 'Earlier result.' });
+  const active = codingRun();
+  const t = await open({ fixture: developerFixture({ codingRuns: [saved, active],
+    codingFiles: { 'coding-saved': [{ path: 'src/app.js', operation: 'modify' }] } }) });
+  try {
+    await openThread(t, 'Repository task');
+    const card = t.page.locator('[data-run-id="coding-saved"]');
+    await card.locator('.task-switch').click();
+    await card.getByRole('tab', { name: 'Changes' }).click();
+    await card.locator('.task-file summary').click();
+    await t.page.waitForFunction(() => document.querySelector('[data-run-id="coding-saved"] .task-file pre')?.textContent.includes('+ after'));
+    await card.locator('.task-file').evaluate(el => { window.__atlasSavedDiff = el; });
+    active.summary = 'The active task progressed.'; active.updatedAt++;
+    await t.page.getByText(active.summary, { exact: true }).waitFor({ timeout: 10000 });
+    assert.equal(await card.locator('.task-file').evaluate(el => el.open && el === window.__atlasSavedDiff), true);
+    assert.equal(t.fixture.requests.filter(call => call.path === 'coding/runs/coding-saved/diff').length, 1);
   } finally { await t.close(); }
 });
 

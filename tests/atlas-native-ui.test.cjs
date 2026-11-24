@@ -69,7 +69,7 @@ function parse(html, target) {
 async function fixture(overrides = {}) {
   const previous = new Map(), doc = new EventTarget(); doc.visibilityState = 'visible'; doc.createElement = tag => new Element(tag, doc); doc.createComment = () => new Element('#comment', doc); doc.createTextNode = text => Object.assign(new Element('#text', doc), { textContent: text }); doc.body = doc.createElement('body'); doc.documentElement = doc.createElement('html'); doc.activeElement = doc.body;
   const root = doc.createElement('main'), sibling = doc.createElement('div'); sibling.id = 'other-app'; doc.body.append(root, sibling); doc.querySelectorAll = selector => doc.body.querySelectorAll(selector);
-  const calls = [], sheets = [], toasts = [], controller = new AbortController(); let provider, instance, handoff = null;
+  const calls = [], sheets = [], toasts = [], controller = new AbortController(); let provider, instance, header, handoff = null;
   const location = new URL('https://inflite.ai/atlas/#conversations');
   const window = new EventTarget(); window.visualViewport = null;
   const globals = { document: doc, window, location, history: { replaceState() {} }, matchMedia: () => Object.assign(new EventTarget(), { matches: false }), requestAnimationFrame: fn => setTimeout(fn, 0), cancelAnimationFrame: clearTimeout };
@@ -84,6 +84,7 @@ async function fixture(overrides = {}) {
     if (path === 'settings') { if (method === 'PATCH') Object.assign(data.settings, body); return reply(data.settings); }
     if (path === 'repositories') return reply({ repositories: [] });
     if (path === 'environments') return reply({ environments: [], ready: true });
+    if (path.startsWith('coding/inbox?')) return reply({ runs: [] });
     if (path.startsWith('conversations?')) return reply({ conversations: data.conversations });
     if (path === 'conversations' && method === 'POST') { const conversation = { id: 'conversation-new', ...body }; data.conversations.push(conversation); return reply({ conversation }); }
     if (path.endsWith('/workspace-context')) { if (method === 'POST') data.context = [{ kind: 'mail', app: 'mail', threadId: body.source.threadId, messageId: 'message-a', title: 'Selected email', selection: 'thread' }]; if (method === 'DELETE') data.context = []; return reply({ context: data.context }); }
@@ -99,14 +100,14 @@ async function fixture(overrides = {}) {
     const handle = { el, body, closed: false, close() { this.now(); }, now() { if (this.closed) return; this.closed = true; spec.onClose?.(); el.remove(); }, setBusy() {} };
     sheets.push({ spec, handle }); return handle;
   }
-  const fw = { signal: controller.signal, visible: () => true, fill() {}, header: { set() {} }, toast: text => { toasts.push(text); return { close() {} }; }, sheet: { open: openSheet },
+  const fw = { signal: controller.signal, visible: () => true, fill() {}, header: { set(spec) { header = spec; } }, toast: text => { toasts.push(text); return { close() {} }; }, sheet: { open: openSheet },
     confirmIdentity: async options => { calls.push({ confirmation: options }); return true; },
     nav: { href: (key, arg) => '/atlas/#' + key + (arg ? '=' + arg : ''), go: path => { calls.push({ navigation: path }); }, section: key => calls.push({ section: key }) },
     workspace: { provide: value => { provider = value; return () => { provider = null; }; }, changed() {}, active: () => true, handoffs: { take() { const result = handoff; handoff = null; return result; }, send: async (...args) => { calls.push({ handoff: args }); return { ok: true }; } } },
   };
   const workspace = fw.workspace; if (overrides.deferWorkspace) delete fw.workspace;
   instance = mount(root, fw); await instance.ready;
-  return { root, sibling, document: doc, window, instance, fw, workspace, calls, data, sheets, toasts, controller, get provider() { return provider; }, setHandoff(value) { handoff = value; }, $(id) { return doc.body.querySelector('#' + id); }, close() { instance.unmount(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(global, key, descriptor); else delete global[key]; } } };
+  return { root, sibling, document: doc, window, instance, fw, workspace, calls, data, sheets, toasts, controller, get header() { return header; }, get provider() { return provider; }, setHandoff(value) { handoff = value; }, $(id) { return doc.body.querySelector('#' + id); }, close() { instance.unmount(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(global, key, descriptor); else delete global[key]; } } };
 }
 async function until(check) { for (let i = 0; i < 50; i++) { if (check()) return; await new Promise(resolve => setTimeout(resolve, 1)); } assert.ok(check()); }
 
@@ -141,6 +142,30 @@ test('native sheets restore their original live form nodes without losing unsave
     await t.instance.show({ key: 'settings' });
     assert.equal(t.$('memory-text'), field); assert.equal(field.value, 'Unsaved preference');
     assert.equal(t.sheets.at(-1).handle.el.getAttribute('aria-labelledby'), 'settings-title');
+  } finally { t.close(); }
+});
+
+test('shared header search brings conversation history into view from Tasks', async () => {
+  const t = await fixture();
+  try {
+    await t.instance.show({ key: 'tasks' });
+    assert.equal(t.$('atlas-destination').hidden, false);
+    const search = t.header.acts.find(action => action.icon === 'search');
+    assert.equal(search.scope, 'app');
+    search.run();
+    const history = t.sheets.at(-1).handle;
+    const field = t.$('conversation-search');
+    assert.equal(history.el.contains(field), true);
+    assert.equal(t.document.activeElement, field);
+    history.now();
+    assert.equal(t.$('sidebar-slot').contains(field), true);
+    assert.equal(t.$('atlas-destination').hidden, false);
+    t.root.classList.add('ifl-in-pane');
+    await t.instance.show({ key: 'conversations' });
+    assert.equal(t.$('navigation-slot').contains(field), true);
+    t.root.classList.remove('ifl-in-pane');
+    await t.instance.show({ key: 'conversations' });
+    assert.equal(t.$('sidebar-slot').contains(field), true);
   } finally { t.close(); }
 });
 

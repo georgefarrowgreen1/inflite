@@ -1,7 +1,11 @@
 // WebKit's native backdrop composites page content. Refract only the wallpaper
 // inside its own paint layer so intervening content naturally covers the bevel.
 const root = document.documentElement;
-const eligible = ".ws-dock, .settings-preview-dock, .ifl-tabs, .ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .ifm-pop, dialog.ifl-sheet[open], .m-mail .mr-qr, .m-chats .ch-composer";
+// Workspace panes already provide their own material to the controls inside them.
+const atlas = ".atlas-app:not(.ifl-in-pane)";
+const controlSurfaces = `.ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .m-mail .mr-qr, .m-chats .ch-composer, ${atlas} .atlas-glass--control`;
+const windowSurfaces = `.ifm-pop, dialog.ifl-sheet[open]:not([data-sheet=workspace-apps]), ${atlas} .action-menu[open] > .atlas-glass--window`;
+const eligible = `.ws-dock, .settings-preview-dock, .ifl-tabs, dialog.ifl-sheet[open][data-sheet=workspace-apps], ${controlSurfaces}, ${windowSurfaces}`;
 const profiles = {dock:{depth:7, bend:12}, sheet:{depth:5, bend:7}, control:{depth:3.5, bend:4}};
 let source, strength = 0, pending = 0;
 const crops = new Map();
@@ -86,8 +90,8 @@ function align() {
     const round = Math.min(box.width, box.height)/2;
     const radii = [style.borderTopLeftRadius,style.borderTopRightRadius,style.borderBottomRightRadius,style.borderBottomLeftRadius]
       .map(radius => radius.endsWith("%") ? Math.min(1,parseFloat(radius)/50)*round : Math.min(round,parseFloat(radius) || 0));
-    const profile = node.matches(".ifh-acts, .mr-qr, .ch-composer") ? profiles.control :
-      node.matches(".ifm-pop, dialog:not([data-sheet=workspace-apps])") ? profiles.sheet : profiles.dock;
+    const profile = node.matches(controlSurfaces) ? profiles.control :
+      node.matches(windowSurfaces) ? profiles.sheet : profiles.dock;
     boxes.push({node, host, art, box, scene, origin, radius:style.borderRadius, radii, profile});
   }
   for (const {node, host, art, box, scene, origin, radius, radii, profile} of boxes) {
