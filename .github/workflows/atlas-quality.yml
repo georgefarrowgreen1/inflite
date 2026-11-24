@@ -1,0 +1,61 @@
+name: Atlas checks
+on:
+  pull_request:
+    paths: [today/src/atlas*, today/public/atlas/**, atlas/**, tests/atlas*, tools/atlas*, package.json, package-lock.json, wrangler.toml, .github/workflows/atlas-quality.yml]
+  push:
+    branches: [claude/inflite]
+    paths: [today/src/atlas*, today/public/atlas/**, atlas/**, tests/atlas*, tools/atlas*, package.json, package-lock.json, wrangler.toml, .github/workflows/atlas-quality.yml]
+permissions:
+  contents: read
+jobs:
+  atlas:
+    runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
+      options: --init --ipc=host
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Worker, D1, provider and quality evaluator tests
+        run: npm run test:atlas
+      - name: Verify pinned browser runtime
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const playwright = require('playwright');
+          assert.equal(require('playwright/package.json').version, '1.62.1');
+          for (const browser of [playwright.chromium, playwright.webkit]) {
+            fs.accessSync(browser.executablePath(), fs.constants.X_OK);
+          }
+          const bundled = playwright.chromium.executablePath();
+          const legacy = '/usr/bin/chromium';
+          if (!fs.existsSync(legacy)) fs.symlinkSync(bundled, legacy);
+          assert.equal(fs.realpathSync(legacy), fs.realpathSync(bundled));
+          NODE
+      - name: Chromium mobile and desktop workflows
+        run: npm run test:atlas:browser
+        env:
+          ATLAS_UI_SCREENSHOTS: test-results/atlas/chromium
+      - name: WebKit mobile and desktop workflows
+        run: npm run test:atlas:browser
+        env:
+          WEB_UI_BROWSER: webkit
+          ATLAS_UI_SCREENSHOTS: test-results/atlas/webkit
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: atlas-browser-previews
+          path: test-results/atlas
+          if-no-files-found: ignore
+          retention-days: 14

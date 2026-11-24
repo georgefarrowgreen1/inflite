@@ -10,6 +10,12 @@ permissions:
 jobs:
   browser:
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
+      options: --init --ipc=host
+    defaults:
+      run:
+        shell: bash
     # The full six-palette, light/dark, three-intensity material matrix runs here.
     # Includes provisioning Chromium and WebKit and the full palette and viewport matrix.
     timeout-minutes: 45
@@ -29,7 +35,21 @@ jobs:
       - run: npm run release:apps -- --check
       - run: npm run test:requests
       - run: npm run test:api
-      - run: npx playwright install --with-deps chromium webkit
+      - name: Verify pinned browser runtime
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const playwright = require('playwright');
+          assert.equal(require('playwright/package.json').version, '1.62.1');
+          for (const browser of [playwright.chromium, playwright.webkit]) {
+            fs.accessSync(browser.executablePath(), fs.constants.X_OK);
+          }
+          const bundled = playwright.chromium.executablePath();
+          const legacy = '/usr/bin/chromium';
+          if (!fs.existsSync(legacy)) fs.symlinkSync(bundled, legacy);
+          assert.equal(fs.realpathSync(legacy), fs.realpathSync(bundled));
+          NODE
       - run: npm run test:framework
       - name: Private data and window continuity
         run: node --test --test-concurrency=1 tests/mail-private-cache-ui.test.cjs tests/mail-body-security-ui.test.cjs tests/workspace-security-ui.test.cjs tests/workspace-windows-ui.test.cjs

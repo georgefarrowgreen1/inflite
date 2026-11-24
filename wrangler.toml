@@ -25,7 +25,7 @@ not_found_handling = "404-page"
 run_worker_first = ["/atlas", "/atlas/*", "/", "/index.html", "/about", "/about/", "/about/index.html", "/contact", "/contact/", "/contact/index.html", "/_errors/404", "/api/*", "/version", "/chats", "/chats/*", "/weather", "/weather/*", "/fitness", "/fitness/*", "/markets", "/markets/*", "/mail", "/mail/*", "/calendar", "/calendar/*", "/notes", "/notes/*", "/people", "/people/*", "/auth", "/auth/*", "/account", "/account/*", "/settings/account", "/settings/account/*", "/status", "/status/*"]
 
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["* * * * *"]
 
 [vars]
 ATLAS_AUTONOMY = "0"
@@ -74,7 +74,7 @@ preview_urls = false
 routes = [{ pattern = "next.inflite.ai", custom_domain = true }]
 
 [env.next.triggers]
-crons = ["*/15 * * * *"]
+crons = ["* * * * *"]
 
 [env.next.vars]
 ATLAS_AUTONOMY = "0"

@@ -1,4 +1,5 @@
 import { runAtlasScheduled } from "./atlas-scheduler.js";
+import { executeScheduledAtlas } from "./atlas-chat.js";
 import { atlas } from "./atlas.js";
 // InFlite Today, at inflite.ai: its page and files come from today/public (the assets); only /api/* and /version run
 // this Worker. It keeps nothing of its own: every /api/* request is checked here, then passed on with the account's
@@ -89,7 +90,7 @@ const refuse = (status, error) => json({ error }, status);
 const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === "/atlas" || url.pathname.startsWith("/atlas/")) return atlas(request, env);
+    if (url.pathname === "/atlas" || url.pathname.startsWith("/atlas/")) return atlas(request, env, { ctx });
     if (url.origin === "https://os.inflite.ai" && ["GET", "HEAD"].includes(request.method)) {
       const publicPage = /^\/(about|contact)(?:\/(?:index\.html)?)?$/.exec(url.pathname);
       if (publicPage) return Response.redirect("https://inflite.ai/" + publicPage[1] + "/", 301);
@@ -273,7 +274,7 @@ export default {
         return r.ok && (await r.json()).allowed === true;
       } catch { return false; }
     };
-    ctx.waitUntil(runAtlasScheduled(env,{verifyAdmin}));
+    ctx.waitUntil(runAtlasScheduled(env,{verifyAdmin,execute:args=>executeScheduledAtlas(env,args)}));
   },
   async fetch(request, env, ctx) {
     return withLocalNotFound(request, env, await worker.fetch(request, env, ctx));
