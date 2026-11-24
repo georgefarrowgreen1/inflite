@@ -39,7 +39,9 @@ test('the production tick installs the release schema on an existing database an
   const env = { ATLAS_DB: db, ASSETS: { async fetch() { return new Response('export const BUILD = "2.0.1";'); } } };
   const conversation = await createConversation(env, 'alice', { title: 'Keep my saved conversation', mode: 'research' });
   const health = async () => (await worker.fetch(new Request('https://inflite.ai/atlas/version?check=runs'), env, {})).json();
+  const parallel = async () => (await worker.fetch(new Request('https://inflite.ai/atlas/version?check=parallel'), env, {})).json();
   assert.deepEqual(await health(), { build: '2.0.1', min: null, runsReady: false });
+  assert.deepEqual(await parallel(), { build: '2.0.1', min: null, parallelReady: false });
   await worker.scheduled({}, env, {});
   assert.equal((await storageStatus(env)).schemaVersion, 9);
   const release = { ...env, ATLAS_RELEASE_SCHEMA: '11' };
@@ -47,6 +49,7 @@ test('the production tick installs the release schema on an existing database an
   assert.equal((await storageStatus(env)).schemaVersion, 11);
   await worker.scheduled({}, release, {});
   assert.deepEqual(await health(), { build: '2.0.1', min: null, runsReady: true });
+  assert.deepEqual(await parallel(), { build: '2.0.1', min: null, parallelReady: true });
   assert.deepEqual(await getConversation(env, 'alice', conversation.id), conversation);
   assert.equal((await worker.fetch(new Request('https://inflite.ai/atlas/api/runs'), env, {})).status, 401);
 });

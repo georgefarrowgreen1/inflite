@@ -3,6 +3,7 @@ import { executeScheduledAtlas } from "./atlas-chat.js";
 import { reconcileCodingBackground } from "./atlas-coding.js";
 import { runDueAtlasAnswers } from "./atlas-run-coordinator.js";
 import { runTimelineStorage } from "./atlas-run-timeline.js";
+import { parallelResearchStorage } from "./atlas-parallel-research.js";
 import { upgradeReleasedStorage } from "./atlas-store.js";
 import { atlas } from "./atlas.js";
 // InFlite Today, at inflite.ai: its page and files come from today/public (the assets); only /api/* and /version run
@@ -103,7 +104,9 @@ const worker = {
         if (["/atlas/", "/atlas/index.html"].includes(url.pathname)) return roofPage(request, env);
         if (url.pathname === "/atlas/version") {
           const release = { build: await atlasBuild(env, request), min: null };
-          if (url.searchParams.get("check") === "runs") release.runsReady = await runTimelineStorage(env);
+          const check = url.searchParams.get("check");
+          if (check === "runs") release.runsReady = await runTimelineStorage(env);
+          if (check === "parallel") release.parallelReady = await parallelResearchStorage(env);
           return json(release);
         }
         if (/^\/atlas\/(?:roof|assets)\/[a-z0-9._/-]+\.(?:js|css)$/.test(url.pathname)) return env.ASSETS.fetch(request);
