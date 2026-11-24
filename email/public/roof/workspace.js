@@ -137,7 +137,7 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
       atlas = { id: typeof object === "string" ? object : threadId, threadId };
     }
     if (atlas) {
-      const module = await fw.lazy(q => import("./atlas.js" + q));
+      const module = await fw.lazy((q) => import("./atlas.js" + q));
       // The loaded action rechecks this lease before reading or opening Mail.
       return module.runAtlas(ctx, intent, atlas, permitted);
     }
