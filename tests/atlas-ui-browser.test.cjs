@@ -82,8 +82,8 @@ function nativeAtlasPage(withWallpaper, shellLayout, toolsAction) {
         tab.addEventListener('click', () => show(key));
         tabs.append(tab);
       }
-      const run = /^#runs=([bcs]_[A-Za-z0-9_-]+)$/.exec(location.hash)?.[1];
-      await show(run ? 'runs' : 'conversations', run || new URL(location.href).searchParams.get('conversation'));
+      const run = /^#(tasks|runs)=([abcs]_[A-Za-z0-9_-]+)$/.exec(location.hash);
+      await show(run?.[1] || 'conversations', run?.[2] || new URL(location.href).searchParams.get('conversation'));
       document.querySelector('#in').hidden = false;
       root.dataset.atlasReady = 'true';
     </script></body></html>`;
@@ -127,7 +127,7 @@ async function open(options = {}) {
     fixture.requests.push({ path, method, body, search: url.search, headers: request.headers() });
     const reply = (data, status = 200, capturedOwner = owner) => route.fulfill({ status, headers: { 'X-Atlas-Owner': capturedOwner, 'Cache-Control': 'no-store' }, json: data });
     if (fixture.overrides.has(method + ' ' + path)) return fixture.overrides.get(method + ' ' + path)({ route, reply, body, url, owner });
-    if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 7 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, coding: fixture.coding, environments: { ready: fixture.environmentsReady, storageReady: fixture.environmentsReady }, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' }, runs: fixture.runsHealth });
+    if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 7 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, coding: fixture.coding, environments: { ready: fixture.environmentsReady, storageReady: fixture.environmentsReady }, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' }, runs: fixture.runsHealth || { ready: true, backgroundAvailable: false } });
     if (path === 'session') return reply({ owner, available: true, signedIn: true });
     if (path === 'setup') { fixture.environmentsReady = true; fixture.ready = true; fixture.coding = { ready: true, storageReady: true, message: '' }; return reply({ ready: true, schemaVersion: 7 }); }
     if (path === 'settings') { if (method === 'PATCH') Object.assign(fixture.settings, body); return reply(fixture.settings); }
@@ -166,6 +166,16 @@ async function open(options = {}) {
       if (method === 'DELETE') { fixture.environments = fixture.environments.filter(item => item.id !== environment.id); return reply({ removed: true }); }
       if (method === 'PATCH') { if (body.expectedRevision != null && body.expectedRevision !== environment.revision) return reply({ code: 'environment_changed', error: 'The environment changed. Reload it before saving.' }, 409); Object.assign(environment, body, { revision: environment.revision + 1 }); }
       return reply({ environment });
+    }
+    if (path === 'runs' && method === 'GET') {
+      const filter = url.searchParams.get('filter');
+      const items = fixture.codingRuns.filter(run => filter === 'review' ? run.reviewReady : filter === 'active' ? run.status === 'running' : filter === 'finished' ? !run.reviewReady && run.status === 'completed' : true);
+      return reply({ items: items.map(run => ({ ...run, kind: 'coding', title: run.prompt })), next: null });
+    }
+    const timeline = /^runs\/coding\/([^/]+)$/.exec(path);
+    if (timeline && method === 'GET') {
+      const run = fixture.codingRuns.find(item => item.id === timeline[1]);
+      return run ? reply({ run: { ...run, kind: 'coding', title: run.prompt }, events: [], nextAfter: 0, hasMore: false }) : reply({ error: 'Task missing.' }, 404);
     }
     if (path === 'coding/inbox') {
       const filter = url.searchParams.get('filter'), before = url.searchParams.get('before');
@@ -403,10 +413,10 @@ test('mobile Atlas keeps the draft and makes history, runs and environment actio
     await tabs.getByRole('button', { name: 'Tasks', exact: true }).click();
     await destination.getByRole('heading', { name: run.prompt }).waitFor();
     await t.screenshot('atlas-refined-mobile-tasks');
-    await destination.getByRole('button', { name: 'Recent runs' }).click();
-    const runs = page.getByRole('dialog', { name: 'Recent runs', exact: true });
-    await runs.getByRole('button', { name: 'Close recent runs' }).click();
-    await runs.waitFor({ state: 'hidden' });
+    await destination.getByRole('button', { name: 'Timeline' }).click();
+    await destination.getByRole('heading', { name: 'Run timeline' }).waitFor();
+    await destination.getByRole('button', { name: 'All tasks' }).click();
+    await destination.getByRole('heading', { name: 'Tasks', exact: true }).waitFor();
 
     await tabs.getByRole('button', { name: 'Environments' }).click();
     const list = destination.locator('#environments-list[aria-busy="false"]');
@@ -879,7 +889,7 @@ test('coding tasks restore after reload and navigation, poll remote progress and
   } finally { await t.close(); }
 });
 
-test('native mobile Recent runs retries and opens existing answer, review and schedule views', async () => {
+test('native Tasks brings answers, coding and scheduled runs into one mobile list', async () => {
   const run = codingRun({ status: 'completed', reviewReady: true });
   const t = await open({ native: true, toolsAction: true, width: 320, height: 844, mobile: true, fixture: {
     codingRuns: [run],
@@ -888,7 +898,7 @@ test('native mobile Recent runs retries and opens existing answer, review and sc
   const openRuns = async () => {
     await t.page.getByRole('button', { name: 'Atlas tools', exact: true }).click();
     await t.page.getByRole('dialog', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Recent runs', exact: true }).click();
-    return t.page.getByRole('dialog', { name: 'Recent runs', exact: true });
+    return t.page.locator('#atlas-destination');
   };
   try {
     const rows = [
@@ -900,16 +910,21 @@ test('native mobile Recent runs retries and opens existing answer, review and sc
     const dialog = await openRuns();
     await dialog.getByText('Runs are temporarily unavailable.').waitFor();
     t.fixture.overrides.set('GET runs', ({ reply }) => reply({ items: rows }));
-    await dialog.getByRole('button', { name: 'Refresh runs' }).click();
-    await dialog.getByRole('button', { name: /Beta planning.*Answer.*Completed/ }).click();
+    for (const entry of rows) t.fixture.overrides.set('GET runs/' + entry.kind + '/' + entry.id, ({ reply }) =>
+      reply({ run: { ...entry, revision: 1, active: false, ...(entry.kind === 'answer' ? { messageId: entry.id } : {}) }, events: [], nextAfter: 0, hasMore: false }));
+    await dialog.getByRole('button', { name: 'Refresh tasks' }).click();
+    await dialog.locator('article').filter({ hasText: 'Beta planning' }).getByRole('button', { name: 'Timeline' }).click();
+    await dialog.getByRole('button', { name: 'Open conversation' }).click();
     await t.page.getByText('Only beta content belongs here.').waitFor();
-    await (await openRuns()).getByRole('button', { name: /Repository repair.*Ready to review/ }).click();
+    await (await openRuns()).locator('article').filter({ hasText: 'Repository repair' }).getByRole('button', { name: 'Timeline' }).click();
+    await dialog.getByRole('button', { name: 'Review changes' }).click();
     const review = t.page.getByRole('dialog', { name: 'Review changes', exact: true });
     await review.waitFor();
     await review.getByRole('button', { name: 'Close review' }).click();
-    await (await openRuns()).getByRole('button', { name: /Weekly review.*Scheduled task/ }).click();
+    await (await openRuns()).locator('article').filter({ hasText: 'Weekly review' }).getByRole('button', { name: 'Timeline' }).click();
+    await dialog.getByRole('button', { name: 'Open scheduled work' }).click();
     await t.page.getByRole('dialog', { name: 'Scheduled tasks' }).getByText('A scheduled result with evidence.').waitFor();
-    assert.equal(t.fixture.requests.filter(call => call.path === 'runs').length, 4);
+    assert.ok(t.fixture.requests.filter(call => call.path === 'runs').every(call => new URLSearchParams(call.search).has('filter')));
     assert.equal(t.fixture.requests.some(call => call.method !== 'GET'), false);
     assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
@@ -919,13 +934,13 @@ test('a background answer reopens its mobile timeline and resumes the selected r
   const t = await open({ native: true, toolsAction: true, width: 320, height: 844, mobile: true, conversation: 'alpha',
     fixture: { runsHealth: { ready: true, backgroundAvailable: true } },
   });
-  const dialog = t.page.getByRole('dialog', { name: 'Run timeline', exact: true });
+  const dialog = t.page.locator('#atlas-destination');
   const event = (seq, checkpoint, status, revision = 1) => ({ seq, checkpoint, status, revision, at: now + seq * 1000 });
   let run, events, runPath;
   const openRuns = async () => {
     await t.page.getByRole('button', { name: 'Atlas tools', exact: true }).click();
     await t.page.getByRole('dialog', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Recent runs', exact: true }).click();
-    await t.page.getByRole('dialog', { name: 'Recent runs', exact: true }).getByRole('button', { name: /Alpha research.*Background answer/ }).click();
+    await dialog.locator('article').filter({ hasText: 'Alpha research' }).getByRole('button', { name: 'Timeline' }).click();
   };
   try {
     t.fixture.overrides.set('POST runs', ({ body, reply }) => {
@@ -948,7 +963,7 @@ test('a background answer reopens its mobile timeline and resumes the selected r
     await t.page.getByRole('button', { name: 'Run in background' }).click();
     await dialog.getByText('Atlas will start this run in the background.').waitFor();
     assert.equal(await t.page.locator('#prompt').inputValue(), '');
-    await dialog.getByRole('button', { name: 'Close run timeline' }).click();
+    await dialog.getByRole('button', { name: 'All tasks' }).click();
     await t.page.reload();
     await t.page.locator('[data-atlas-ready="true"]').waitFor();
     Object.assign(run, { status: 'uncertain', active: false, canStop: false, canResume: true, hasDraft: true });

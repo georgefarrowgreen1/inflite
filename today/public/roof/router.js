@@ -97,7 +97,8 @@ const argOf = (s) => (typeof s === "string" && ARG.test(s) ? s : null);
 // lowercase hex. Keep that exact form bounded to the existing 160-char workspace
 // route limit; other apps and Atlas task/brief identifiers retain their limits.
 export const atlasReference = (value) => typeof value === "string" && /^(?:[A-Za-z0-9_-]{1,40}|legacy-(?:[a-f0-9]{2}){1,60}-(?:research|developer|personal|fitness|tasks))$/.test(value) ? value : null;
-export const atlasRunReference = (value) => typeof value === "string" && /^[bcs]_[A-Za-z0-9_-]{1,38}$/.test(value) ? value : null;
+export const atlasRunReference = (value) => typeof value === "string" && /^(?:[bcs]_[A-Za-z0-9_-]{1,38}|a_[A-Za-z0-9_-]{1,80})$/.test(value) ? value : null;
+const atlasTaskReference = (value) => atlasRunReference(value) || argOf(value);
 // (You's arg and Weather's, as stage 1 had them: [\w-] only, never decoded)
 const arg1 = (s) => (typeof s === "string" && /^[\w-]{1,40}$/.test(s) ? s : null);
 const filesFolder = (s) => typeof s === "string" && /^[A-Za-z0-9_-]{32}$/.test(s) ? s : null;
@@ -160,7 +161,7 @@ export function parse(href, { roof = false, origin, workspace = false } = {}) {
     const ids = r.sections.map((s) => s[0]);
     const section = ids.includes(raw) ? raw : Object.hasOwn(r.aliases, raw) ? r.aliases[raw] : null;
     const key = section ? raw : ids[0];
-    const arg = section && eq >= 0 ? (r.app === "weather" ? arg1 : r.app === "atlas" ? ({ conversations: atlasArgIn, runs: atlasRunReference })[key] || argIn : argIn)(hash.slice(eq + 1)) : null;
+    const arg = section && eq >= 0 ? (r.app === "weather" ? arg1 : r.app === "atlas" ? ({ conversations: atlasArgIn, runs: atlasRunReference, tasks: value => atlasRunReference(value) || argIn(value) })[key] || argIn : argIn)(hash.slice(eq + 1)) : null;
     const query = u.search.length <= QUERY_MAX ? u.search : "";
     const raws = !!section && !!r.raw?.includes(raw);
     if (long && !raws) return null;
@@ -205,7 +206,7 @@ export function format(route) {
   const hasKey = route.key != null;
   const fits = hasKey && sectionOf(route.key) === section;
   const key = fits ? route.key : section;
-  const a = fits || !hasKey ? (r.app === "weather" ? arg1 : r.app === "atlas" ? ({ conversations: atlasReference, runs: atlasRunReference })[key] || argOf : argOf)(route.arg) : null;
+  const a = fits || !hasKey ? (r.app === "weather" ? arg1 : r.app === "atlas" ? ({ conversations: atlasReference, runs: atlasRunReference, tasks: atlasTaskReference })[key] || argOf : argOf)(route.arg) : null;
   if (a) return `${r.path}#${key}=${a}`;
   return key === ids[0] ? r.path : `${r.path}#${key}`;
 }

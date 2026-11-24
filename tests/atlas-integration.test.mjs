@@ -174,6 +174,17 @@ test('recent runs combines current owner records without exposing bodies or dupl
     { kind: 'answer', id: 'answer-1', title: conversation.title, status: 'completed', updatedAt: 1000, conversationId: conversation.id },
   ]);
   assert.deepEqual((await (await read('?limit=1')).json()).items, items.slice(0, 1));
+  const firstPage = await (await read('?filter=all&limit=1')).json();
+  assert.equal(firstPage.items[0].id, 'scheduled-1');
+  assert.deepEqual((await (await read('?filter=all&before=' + encodeURIComponent(firstPage.next))).json()).items.map(item => item.id), [run.id, 'answer-1']);
+  assert.deepEqual((await (await read('?filter=review')).json()).items.map(item => item.id), ['scheduled-1']);
+  assert.deepEqual((await (await read('?filter=active')).json()).items.map(item => item.id), [run.id]);
+  assert.deepEqual((await (await read('?filter=finished')).json()).items.map(item => item.id), ['answer-1']);
+  assert.equal((await read('?filter=other')).status, 400);
+  const savedAnswer = await (await read('/answer/answer-1?after=1')).json();
+  assert.equal(savedAnswer.run.messageId, 'answer-1');
+  assert.deepEqual(savedAnswer.events.map(event => event.status), ['completed']);
+  assert.equal((await read('/answer/answer-1', otherAccount)).status, 404);
   assert.deepEqual((await (await read('', otherAccount)).json()).items.map(item => item.title), [other.title]);
   const standard = () => Response.json({ signedIn: true, user: { id: 'alice' }, apps: { mail: false } });
   assert.equal((await read('', standard)).status, 403);

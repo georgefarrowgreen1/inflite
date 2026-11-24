@@ -29,6 +29,11 @@ export function publicAnswerRun(row) {
 }
 
 const snapshotQueries = {
+  answer: `
+    SELECT t.conversation_id,t.status,t.created_at,t.updated_at,t.error_code,c.title
+    FROM atlas_turns t JOIN atlas_conversations c ON c.owner=t.owner AND c.id=t.conversation_id
+    WHERE t.owner=? AND t.id=?
+  `,
   background: `
     SELECT a.conversation_id, a.request_id, a.revision, a.status, a.checkpoint, a.error_code, a.updated_at, c.title, c.archived,
       LENGTH(COALESCE(t.answer,'')) AS saved_chars, LENGTH(COALESCE(p.answer,'')) AS prior_chars
@@ -39,7 +44,7 @@ const snapshotQueries = {
     WHERE a.owner=? AND a.id=?
   `,
   coding: `
-    SELECT r.conversation_id, r.revision, r.status, r.phase AS checkpoint, r.stage, r.error_code, r.updated_at, r.cancel_requested, r.review_ready, c.title
+    SELECT r.conversation_id, r.revision, r.status, r.phase AS checkpoint, r.stage, r.error_code, r.updated_at, r.cancel_requested, r.review_ready, substr(r.prompt,1,140) AS title
     FROM atlas_coding_runs r JOIN atlas_conversations c ON c.owner=r.owner AND c.id=r.conversation_id
     WHERE r.owner=? AND r.id=?
   `,
@@ -55,15 +60,16 @@ export async function readAtlasRunTimeline(env, owner, kind, id, { after = 0, li
   if (!Object.hasOwn(snapshotQueries, kind) || !ID.test(id)) throw new AtlasStoreError('not_found', 'This Atlas run is unavailable.', 404);
   if (!Number.isSafeInteger(after) || after < 0) throw new AtlasStoreError('invalid_cursor', 'Choose a valid timeline cursor.', 400);
   const size = Number.isInteger(limit) ? Math.min(100, Math.max(1, limit)) : 40;
-  const [snapshot, page] = await env.ATLAS_DB.batch([
-    query(env, snapshotQueries[kind], owner, id),
+  const snapshotQuery = query(env, snapshotQueries[kind], owner, id);
+  const [snapshot, page] = kind === 'answer' ? [await snapshotQuery.all()] : await env.ATLAS_DB.batch([
+    snapshotQuery,
     query(env, 'SELECT seq,revision,status,checkpoint,stage,recorded_at FROM atlas_run_events WHERE owner=? AND kind=? AND run_id=? AND seq>? ORDER BY seq LIMIT ?', owner, kind, id, after, size + 1),
   ]);
-  if (!snapshot.success || !page.success) throw new AtlasStoreError('timeline_unavailable', 'Atlas could not read the timeline. Try again.', 503);
+  if (!snapshot.success || (page && !page.success)) throw new AtlasStoreError('timeline_unavailable', 'Atlas could not read the timeline. Try again.', 503);
   const row = snapshot.results?.[0];
   if (!row) throw new AtlasStoreError('not_found', 'This Atlas run is unavailable.', 404);
   const run = {
-    id, kind, title: row.title, status: row.status, checkpoint: row.checkpoint, stage: row.stage ?? null,
+    id, kind, title: row.title.split('\n')[0], status: row.status, checkpoint: row.checkpoint || row.status, stage: row.stage ?? null,
     revision: row.revision ?? 1, updatedAt: row.updated_at, errorCode: row.error_code ?? null,
     ...(row.conversation_id ? { conversationId: row.conversation_id } : {}),
     ...(kind === 'coding' ? { reviewReady: row.review_ready === 1 } : {}),
@@ -80,8 +86,15 @@ export async function readAtlasRunTimeline(env, owner, kind, id, { after = 0, li
       hasDraft: row.saved_chars > 0 || row.prior_chars > 0,
     });
   }
-  const events = page.results.slice(0, size).map(event => ({
+  if (kind === 'answer') Object.assign(run, { messageId: id, canStop: row.status === 'running' });
+  if (kind === 'coding') run.canStop = codingActive.has(row.status) && row.status !== 'publishing' && !row.cancel_requested;
+  if (kind === 'scheduled') run.canStop = run.active && !row.cancel_requested;
+  const rows = page?.results || [
+    { seq: 1, revision: 1, status: 'running', checkpoint: 'started', recorded_at: row.created_at },
+    ...(row.status === 'running' ? [] : [{ seq: 2, revision: 1, status: row.status, checkpoint: row.status, recorded_at: row.updated_at }]),
+  ].filter(event => event.seq > after);
+  const events = rows.slice(0, size).map(event => ({
     seq: event.seq, revision: event.revision, status: event.status, checkpoint: event.checkpoint, stage: event.stage, at: event.recorded_at,
   }));
-  return { run, events, nextAfter: events.at(-1)?.seq ?? after, hasMore: page.results.length > size };
+  return { run, events, nextAfter: events.at(-1)?.seq ?? after, hasMore: rows.length > size };
 }

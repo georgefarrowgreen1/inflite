@@ -26,51 +26,54 @@ export async function atlasActivity(env, owner, { limit = 12, schemaVersion = 6 
   return { items, ready: true };
 }
 
-export async function atlasRuns(env, owner, { limit = 24, schemaVersion = 6, timeline = false } = {}) {
+const inProgress = "status IN ('queued','preparing','running','waiting','publishing','stopping')";
+const needsReview = "(status IN ('failed','incomplete','uncertain') OR (review_ready=1 AND status<>'published' AND NOT (" + inProgress + ")))";
+const runFilters = {
+  all: '1', active: inProgress, review: needsReview,
+  finished: 'NOT (' + inProgress + ') AND NOT (' + needsReview + ')',
+};
+
+export async function atlasRuns(env, owner, { limit = 24, schemaVersion = 6, timeline = false, filter, before = null } = {}) {
   const count = Number.isInteger(limit) ? Math.max(1, Math.min(50, limit)) : 24;
-  const [answers, coding, scheduled, background] = await Promise.all([
-    projectionRows(env, `
-      SELECT t.id, t.conversation_id, c.title, t.status, t.updated_at
-      FROM atlas_turns t
-      JOIN atlas_conversations c ON c.owner=t.owner AND c.id=t.conversation_id
-      WHERE t.owner=? AND c.archived=0
-        AND t.id NOT IN (SELECT request_id FROM atlas_schedule_runs WHERE owner=?)
-        ${timeline ? "AND NOT EXISTS (SELECT 1 FROM atlas_run_events e WHERE e.owner=t.owner AND e.kind='background' AND e.attempt_id=t.id)" : ""}
-      ORDER BY t.updated_at DESC,t.id LIMIT ?
-    `, owner, owner, count),
-    schemaVersion >= 7 ? projectionRows(env, `
-      SELECT r.id, r.conversation_id, c.title, r.status, r.review_ready, r.updated_at
-      FROM atlas_coding_runs r
-      JOIN atlas_conversations c ON c.owner=r.owner AND c.id=r.conversation_id
-      WHERE r.owner=? AND c.archived=0
-      ORDER BY r.updated_at DESC,r.id LIMIT ?
-    `, owner, count) : [],
-    projectionRows(env, `
-      SELECT r.id, s.id AS schedule_id, s.title, r.status,
-        COALESCE(r.finished_at,r.started_at) AS updated_at
-      FROM atlas_schedule_runs r
-      JOIN atlas_schedules s ON s.owner=r.owner AND s.id=r.task_id
-      WHERE r.owner=?
-      ORDER BY updated_at DESC,r.id LIMIT ?
-    `, owner, count),
-    timeline ? projectionRows(env, `
-      SELECT r.id, r.conversation_id, c.title, r.status, r.updated_at
-      FROM atlas_answer_runs r
-      JOIN atlas_conversations c ON c.owner=r.owner AND c.id=r.conversation_id
-      WHERE r.owner=? AND (c.archived=0 OR r.status IN ('queued','running','stopping'))
-      ORDER BY r.updated_at DESC,r.id LIMIT ?
-    `, owner, count) : [],
-  ]);
-  const entry = (kind, row) => ({
-    kind, id: row.id, title: text(row.title, 160), status: text(row.status, 40), updatedAt: row.updated_at,
-  });
-  const items = [
-    ...answers.filter(row => ID.test(row.conversation_id)).map(row => ({ ...entry('answer', row), conversationId: row.conversation_id })),
-    ...coding.filter(row => ID.test(row.conversation_id)).map(row => ({ ...entry('coding', row), conversationId: row.conversation_id, reviewReady: row.review_ready === 1 })),
-    ...scheduled.filter(row => ID.test(row.schedule_id)).map(row => ({ ...entry('scheduled', row), scheduleId: row.schedule_id })),
-    ...background.map(row => ({ ...entry('background', row), conversationId: row.conversation_id })),
-  ].filter(item => ID.test(item.id))
-    .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id) || a.kind.localeCompare(b.kind))
-    .slice(0, count);
-  return { items };
+  const workspace = filter !== undefined || before !== null;
+  const cursor = before?.match(/^(0|[1-9]\d{0,15}):(answer|background|coding|scheduled):([A-Za-z0-9._:-]{1,600})$/);
+  if (!Object.hasOwn(runFilters, filter ?? 'all') || (before !== null && (!cursor || !Number.isSafeInteger(Number(cursor[1]))))) {
+    throw Object.assign(new Error('Choose a valid task filter or refresh the task list.'), { code: 'runs_filter_invalid', status: 400 });
+  }
+  const queries = [`
+    SELECT 'answer' AS kind,t.id,t.conversation_id,NULL AS schedule_id,c.title,t.status,0 AS review_ready,
+      NULL AS stage,t.updated_at
+    FROM atlas_turns t JOIN atlas_conversations c ON c.owner=t.owner AND c.id=t.conversation_id
+    WHERE t.owner=? AND c.archived=0
+      AND NOT EXISTS(SELECT 1 FROM atlas_schedule_runs s WHERE s.owner=t.owner AND s.request_id=t.id)
+      ${timeline ? "AND NOT EXISTS(SELECT 1 FROM atlas_run_events e WHERE e.owner=t.owner AND e.kind='background' AND e.attempt_id=t.id)" : ""}
+    `, `
+    SELECT 'scheduled',r.id,NULL,s.id,s.title,r.status,0,NULL,COALESCE(r.finished_at,r.started_at)
+    FROM atlas_schedule_runs r JOIN atlas_schedules s ON s.owner=r.owner AND s.id=r.task_id
+    WHERE r.owner=?
+  `];
+  if (schemaVersion >= 7) queries.push(`
+    SELECT 'coding',r.id,r.conversation_id,NULL,${workspace ? "substr(r.prompt,1,140)" : "c.title"},
+      r.status,r.review_ready,r.stage,r.updated_at
+    FROM atlas_coding_runs r JOIN atlas_conversations c ON c.owner=r.owner AND c.id=r.conversation_id
+    WHERE r.owner=? ${workspace ? "" : "AND c.archived=0"}
+  `);
+  if (timeline) queries.push(`
+    SELECT 'background',r.id,r.conversation_id,NULL,c.title,r.status,0,r.checkpoint,r.updated_at
+    FROM atlas_answer_runs r JOIN atlas_conversations c ON c.owner=r.owner AND c.id=r.conversation_id
+    WHERE r.owner=? AND (c.archived=0 OR r.status IN ('queued','running','stopping'))
+  `);
+  const afterCursor = cursor ? 'AND (updated_at<? OR (updated_at=? AND (id,kind)>(?,?)))' : '';
+  const params = [...queries.map(() => owner), ...(cursor ? [Number(cursor[1]), Number(cursor[1]), cursor[3], cursor[2]] : []), count + 1];
+  const rows = await projectionRows(env, `SELECT * FROM (${queries.join(' UNION ALL ')})
+    WHERE (${runFilters[filter ?? 'all']}) ${afterCursor}
+    ORDER BY updated_at DESC,id,kind LIMIT ?`, ...params);
+  const page = rows.slice(0, count), last = page.at(-1);
+  const items = page.filter(row => ID.test(row.id) && ID.test(row.conversation_id || row.schedule_id)).map(row => ({
+    kind: row.kind, id: row.id, title: text(row.title, 160).split('\n')[0], status: text(row.status, 40), updatedAt: row.updated_at,
+    ...(row.conversation_id ? { conversationId: row.conversation_id } : { scheduleId: row.schedule_id }),
+    ...(row.kind === 'coding' ? { reviewReady: row.review_ready === 1 } : {}),
+    ...(workspace && row.stage ? { stage: text(row.stage, 120) } : {}),
+  }));
+  return { items, ...(workspace ? { next: rows.length > count ? last.updated_at + ':' + last.kind + ':' + last.id : null } : {}) };
 }

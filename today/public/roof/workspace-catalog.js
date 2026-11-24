@@ -44,7 +44,7 @@ export function safeWorkspaceRoute(id, route) {
   const hash = route.slice(base.length + 1), at = hash.indexOf("="), key = at < 0 ? hash : hash.slice(0, at), value = at < 0 ? null : hash.slice(at + 1);
   if (["calendar", "notes", "people"].includes(id) && key === "item" && /^[a-f0-9]{32}$/.test(value || "")) return route;
   if (value === null && sections[id].includes(key)) return route;
-  if (id === "atlas" && key === "runs" && atlasRunReference(value)) return route;
+  if (id === "atlas" && (key === "runs" || key === "tasks") && atlasRunReference(value)) return route;
   if (id === "atlas" && ["conversations", "tasks", "briefs"].includes(key) && (key === "conversations" ? atlasReference(value) : objectId(value || ""))) return route;
   if ((id === "fitness" || id === "weather") && key === "day" && day(value || "")) return route;
   if ((id === "fitness" && key === "act" || id === "mail" && key === "thread" || id === "chats" && key === "open") && objectId(value || "")) return route;

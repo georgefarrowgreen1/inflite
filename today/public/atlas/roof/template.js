@@ -67,7 +67,7 @@ export function atlasMarkup() {
       <header class="atlas-destination-header">
         <h1 id="atlas-destination-title" class="atlas-destination-title" tabindex="-1"></h1>
         <div id="atlas-destination-actions" class="atlas-destination-actions">
-          <button id="task-recent-runs" type="button" class="quiet-button" data-open="runs" hidden>${glyph("clock")}Recent runs</button>
+          <button id="run-back-to-list" type="button" class="quiet-button" data-open="inbox" hidden>All tasks</button>
         </div>
       </header>
       <div id="atlas-destination-body"></div>
@@ -128,6 +128,7 @@ export function atlasMarkup() {
       <h3 id="run-heading"></h3>
       <p id="run-state" role="status"></p>
       <p id="run-checkpoint" class="field-help"></p>
+      <div id="run-updated"></div>
       <div class="button-row">
         <button id="run-open-result" class="quiet-button" type="button" hidden>Open conversation</button>
         <button id="run-resume" class="primary-button" type="button" hidden>Resume from checkpoint</button>
