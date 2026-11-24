@@ -102,6 +102,17 @@ async function open(options = {}) {
       if (method === 'PATCH') { if (body.expectedRevision != null && body.expectedRevision !== environment.revision) return reply({ code: 'environment_changed', error: 'The environment changed. Reload it before saving.' }, 409); Object.assign(environment, body, { revision: environment.revision + 1 }); }
       return reply({ environment });
     }
+    if (path === 'coding/inbox') {
+      const filter = url.searchParams.get('filter'), before = url.searchParams.get('before');
+      const rows = fixture.codingRuns.filter(run => {
+        if (filter === 'review') return run.status === 'completed' && run.reviewReady;
+        if (filter === 'active') return run.status === 'running';
+        if (filter === 'finished') return run.status === 'published';
+        return true;
+      });
+      const page = before ? rows.slice(1) : rows.slice(0, 1);
+      return reply({ runs: page.map(run => ({ ...run, title: run.prompt, conversationTitle: fixture.conversations.find(c => c.id === run.conversationId)?.title })), next: !before && rows.length > 1 ? 'fixture-next' : null });
+    }
     if (path === 'coding/runs') {
       if (method === 'POST') { const run = codingRun({ id: 'coding-' + fixture.next++, conversationId: body.conversationId, requestId: body.requestId, prompt: body.prompt, status: 'preparing', stage: 'preparing_workspace', ...(body.retryFromRunId ? { retryFromRunId: body.retryFromRunId, environment: { ...fixture.codingRuns.find(item => item.id === body.retryFromRunId)?.environment } } : body.environmentId ? { environment: { ...fixture.environments.find(item => item.id === body.environmentId), profileId: body.environmentId } } : {}) }); fixture.codingRuns.push(run); return reply({ run }, 202); }
       return reply({ runs: fixture.codingRuns.filter(run => run.conversationId === url.searchParams.get('conversationId')) });
@@ -112,7 +123,11 @@ async function open(options = {}) {
       if (match[2] === 'cancel') Object.assign(run, { status: 'cancelled', stage: 'cancelled', canContinue: true, finishedAt: now + 100 });
       if (match[2] === 'continue') Object.assign(run, { status: 'running', stage: 'working', prompt: body.prompt, requestId: body.requestId, revision: run.revision + 1, canContinue: false, reviewReady: false, checks: [] });
       if (match[2] === 'changes') return reply({ run, files: fixture.codingFiles[run.id] || [], checks: run.checks });
-      if (match[2] === 'diff') { const path = url.searchParams.get('path'); return reply({ path, operation: 'modify', binary: false, diff: fixture.codingDiffs[path] || '- before\n+ after' }); }
+      if (match[2] === 'diff') {
+        if (url.searchParams.get('revision') !== String(run.revision)) return reply({ code: 'coding_review_changed', error: 'This task has a newer revision. Refresh the review to see its changes.' }, 409);
+        const path = url.searchParams.get('path');
+        return reply({ path, operation: 'modify', binary: false, diff: fixture.codingDiffs[path] || '- before\n+ after' });
+      }
       if (match[2] === 'publish') { Object.assign(run, { status: 'published', canContinue: false, pullRequest: { url: 'https://github.com/fixture/atlas/pull/42', number: 42 } }); return reply({ run, pullRequest: run.pullRequest }); }
       return reply({ run });
     }
@@ -375,6 +390,46 @@ test('coding tasks restore after reload and navigation, poll remote progress and
     assert.match(await t.page.locator('.coding-run').textContent(), /Tests are not verified/);
     assert.equal(t.fixture.requests.some(call => /coding\/runs\/.+\/cancel$/.test(call.path)), false);
     assert.equal(t.fixture.requests.some(call => call.path === 'coding/runs' && call.method === 'POST'), false); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('the mobile Tasks inbox opens other conversations and reviews saved changes by revision', async () => {
+  const reviewable = codingRun({ status: 'completed', reviewReady: true, revision: 3, summary: 'Saved changes are ready.' });
+  const active = codingRun({ id: 'coding-other', conversationId: 'other-repo', prompt: 'Prepare another change' });
+  const fixture = developerFixture({ codingRuns: [reviewable, active], codingFiles: { 'coding-1': [{ path: 'src/app.js', operation: 'modify' }] } });
+  fixture.conversations.push({ id: active.conversationId, title: 'Other repository task', mode: 'developer', repository: 'fixture/atlas' });
+  const t = await open({ width: 320, height: 844, mobile: true, fixture });
+  try {
+    await t.page.locator('#navigation-toggle').click();
+    await t.page.locator('#navigation-dialog').getByRole('button', { name: 'Tasks', exact: true }).click();
+    const inbox = t.page.getByRole('dialog', { name: 'Tasks', exact: true });
+    await inbox.getByRole('button', { name: 'Load more tasks' }).click();
+    await inbox.getByRole('heading', { name: active.prompt }).waitFor();
+    assert.ok(t.fixture.requests.some(call => call.path === 'coding/inbox' && new URLSearchParams(call.search).get('before') === 'fixture-next'));
+    await inbox.getByLabel('Status').selectOption('review');
+    await inbox.getByRole('button', { name: 'Review changes' }).click();
+    const review = t.page.getByRole('dialog', { name: 'Review changes' });
+    await review.getByText('Revision 3', { exact: false }).waitFor();
+    assert.equal(t.fixture.requests.some(call => call.path === 'coding/runs'), false);
+    reviewable.revision = 4;
+    await review.locator('.patch-file summary').click();
+    await review.getByText('This task has a newer revision.', { exact: false }).waitFor();
+    assert.equal(await review.locator('#publish-coding').isDisabled(), true);
+    await review.getByRole('button', { name: 'Refresh review' }).click();
+    await review.getByText('Revision 4', { exact: false }).waitFor();
+    await review.locator('.patch-file summary').click();
+    await review.getByText('+ after', { exact: false }).waitFor();
+    const revisions = t.fixture.requests.filter(call => call.path.endsWith('/diff')).map(call => new URLSearchParams(call.search).get('revision'));
+    assert.deepEqual(revisions, ['3', '4']);
+    await review.getByRole('button', { name: 'Back to tasks' }).click();
+    assert.equal(await inbox.getByLabel('Status').inputValue(), 'review');
+    await inbox.getByLabel('Status').selectOption('active');
+    await inbox.getByRole('heading', { name: active.prompt }).waitFor();
+    await inbox.getByRole('button', { name: 'Open conversation' }).click();
+    await t.page.locator('.coding-run[data-run-id="coding-other"][open]').waitFor();
+    assert.equal(await t.page.locator('#conversation-title').textContent(), 'Other repository task');
+    assert.equal(t.fixture.requests.some(call => call.method === 'POST' && call.path.startsWith('coding/')), false);
+    assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
 });
 

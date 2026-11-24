@@ -89,6 +89,40 @@ export async function listCodingRuns(env, owner, conversationId) {
   return (await list(query(env, 'SELECT * FROM atlas_coding_runs WHERE owner=? AND conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 50', owner, conversationId))).map(row);
 }
 
+export async function listCodingInbox(env, owner, { filter = 'all', before = null } = {}) {
+  const active = "r.status IN ('preparing','running','waiting','uncertain','publishing')";
+  const review = 'r.review_ready=1 AND r.publish_url IS NULL AND NOT (' + active + ')';
+  let condition;
+  switch (filter) {
+    case 'all': condition = '1'; break;
+    case 'active': condition = active; break;
+    case 'review': condition = review; break;
+    case 'finished': condition = 'NOT (' + active + ') AND NOT (' + review + ')'; break;
+    default: throw new AtlasStoreError('coding_inbox_invalid', 'Choose a valid task filter.', 400);
+  }
+  const cursor = before?.match(/^(\d{1,16}):([a-zA-Z0-9._:-]{1,256})$/);
+  if (before !== null && (!cursor || !Number.isSafeInteger(Number(cursor[1])))) {
+    throw new AtlasStoreError('coding_inbox_invalid', 'Refresh the task list to continue.', 400);
+  }
+  const pageSize = 25;
+  const rows = await list(query(env, `SELECT r.id,r.conversation_id,c.title AS conversation_title,r.repository,
+    r.base_branch,substr(r.prompt,1,140) AS title,r.status,r.revision,r.review_ready,r.publish_url,
+    r.created_at,r.updated_at
+    FROM atlas_coding_runs r JOIN atlas_conversations c ON c.owner=r.owner AND c.id=r.conversation_id
+    WHERE r.owner=? AND (${condition})${cursor ? ' AND (r.created_at,r.id)<(?,?)' : ''}
+    ORDER BY r.created_at DESC,r.id DESC LIMIT ?`, owner, ...(cursor ? [Number(cursor[1]), cursor[2]] : []), pageSize + 1));
+  const page = rows.slice(0, pageSize), last = page.at(-1);
+  return {
+    runs: page.map(run => ({
+      id: run.id, conversationId: run.conversation_id, conversationTitle: run.conversation_title,
+      repository: run.repository, baseBranch: run.base_branch, title: run.title.split('\n')[0],
+      status: run.status, revision: run.revision, reviewReady: !!run.review_ready,
+      createdAt: run.created_at, updatedAt: run.updated_at,
+    })),
+    next: rows.length > pageSize ? last.created_at + ':' + last.id : null,
+  };
+}
+
 export async function ownerCodingRuns(env, owner, conversationId = null) {
   const result = await list(query(env, "SELECT * FROM atlas_coding_runs WHERE owner=? AND (session_id IS NOT NULL OR input_file_id IS NOT NULL OR status IN ('preparing','running','waiting','uncertain'))" + (conversationId ? ' AND conversation_id=?' : '') + ' ORDER BY created_at DESC LIMIT 501', owner, ...(conversationId ? [conversationId] : [])));
   if (result.length > 500) throw new AtlasStoreError('coding_cleanup_limit', 'There are too many workspaces to close in one request. Close older task conversations first.', 409);

@@ -171,6 +171,49 @@ async function route(env, path, { method = 'GET', body, owner = OWNER, signedIn 
   return { status: response.status, value, headers: response.headers };
 }
 
+test('the coding inbox filters and pages across the signed-in owner’s conversations', async t => {
+  const env = await fixture(t);
+  const otherOwner = 'other-owner';
+  const archived = await store.createConversation(env, OWNER, { title: 'Archived work', mode: 'developer', repository: REPOSITORY });
+  await store.updateConversation(env, OWNER, archived.id, { archived: true });
+  const current = await store.createConversation(env, OWNER, { title: 'Current work', mode: 'developer', repository: REPOSITORY });
+  const other = await store.createConversation(env, otherOwner, { title: 'Private work', mode: 'developer', repository: REPOSITORY });
+  const insert = env.ATLAS_DB.prepare(`INSERT INTO atlas_coding_runs
+    (owner,id,conversation_id,request_id,prompt,model,credential_updated_at,repository,input_key,created_at,updated_at,status,review_ready,publish_url,session_id)
+    VALUES(?,?,?,?,?,?,0,?,?,100,100,?,?,?,'private-session')`);
+  const entries = Array.from({ length: 26 }, (_, index) => ['task-' + String(index).padStart(2, '0'), archived.id, 'completed', 0, null, OWNER]);
+  entries.push(['task-review', archived.id, 'completed', 1, null, OWNER],
+    ['task-active', current.id, 'running', 0, null, OWNER],
+    ['task-published', current.id, 'published', 1, 'https://github.com/owner/project/pull/1', OWNER],
+    ['other-task', other.id, 'completed', 1, null, otherOwner]);
+  await env.ATLAS_DB.batch(entries.map(([id, conversation, status, ready, url, owner]) =>
+    insert.bind(owner, id, conversation, id, 'Task title\nPrivate instructions', MODEL, REPOSITORY, id, status, ready, url)));
+
+  const { value: first, status, headers } = await route(env, '/coding/inbox');
+  assert.equal(status, 200);
+  assert.match(headers.get('Cache-Control'), /no-store/);
+  assert.equal(first.runs.length, 25);
+  const { value: second } = await route(env, '/coding/inbox?before=' + encodeURIComponent(first.next));
+  const rows = [...first.runs, ...second.runs];
+  assert.equal(second.next, null);
+  assert.deepEqual(rows.map(run => run.id), entries.filter(entry => entry[5] === OWNER).map(entry => entry[0]).sort().reverse());
+  assert.equal(rows.find(run => run.id === 'task-review').conversationTitle, 'Archived work');
+  assert.equal(rows[0].title, 'Task title');
+  assert.doesNotMatch(JSON.stringify(rows), /private-session|Private instructions/);
+  for (const [filter, expected] of [['review', ['task-review']], ['active', ['task-active']]]) {
+    const result = await route(env, '/coding/inbox?filter=' + filter);
+    assert.deepEqual(result.value.runs.map(run => run.id), expected);
+  }
+  const finished = await route(env, '/coding/inbox?filter=finished');
+  assert.equal(finished.value.runs[0].id, 'task-published');
+  assert.equal(finished.value.runs.some(run => ['task-review', 'task-active'].includes(run.id)), false);
+  const isolated = await route(env, '/coding/inbox', { owner: otherOwner });
+  assert.deepEqual(isolated.value.runs.map(run => run.id), ['other-task']);
+  assert.equal((await route(env, '/coding/inbox', { admin: false })).status, 403);
+  assert.equal((await route(env, '/coding/inbox?filter=unknown')).status, 400);
+  assert.equal((await route(env, '/coding/inbox?before=invalid')).status, 400);
+});
+
 test('hosted coding orchestration uses persistent owner-scoped state and real provider evidence', async t => {
   const env = await fixture(t);
 
@@ -337,6 +380,11 @@ test('hosted coding orchestration uses persistent owner-scoped state and real pr
     assert.equal(completed.checks[0].turnId, undefined, 'provider IDs stay out of public command records');
     assert.equal((await state.requireCodingRun(env, OWNER, f.run.id)).checks[0].turnId, 'turn_2');
     assert.match((await coding.codingDiff(env, OWNER, f.run.id, 'src/value.js')).diff, /value = 3/);
+    const diffPath = '/coding/runs/' + f.run.id + '/diff?path=src%2Fvalue.js&revision=';
+    const stale = await route(env, diffPath + '1');
+    assert.equal(stale.status, 409);
+    assert.equal(stale.value.code, 'coding_review_changed');
+    assert.match((await route(env, diffPath + '2')).value.diff, /value = 3/);
     const duplicate = await coding.continueCodingRun(env, OWNER, f.run.id, { requestId, prompt: 'Make the value three and run the check again.' }, { send: remote.send });
     assert.equal(duplicate.revision, 2);
     assert.equal(remote.updateCalls, 1);

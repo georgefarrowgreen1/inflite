@@ -78,6 +78,8 @@ The initial request also advances setup within a bounded Worker background opera
 
 ### Reviewing and publishing
 
+Open **Tasks** from the sidebar or Workspace menu to browse your coding tasks across conversations, including archived ones. Filter by status, refresh the saved task states, or open the task's conversation to see its activity and available follow-up actions. Ready and published changes can be reviewed directly from the inbox.
+
 After a completed turn, Atlas retrieves the change artifact for that exact turn and revision, validates it against the pinned repository and stores each changed file separately. **Review changes** lists every stored change, including additions and deletions, and fetches each diff when the file is opened. It also shows the recorded commands, exit codes and output. Failed commands remain visible. The review does not turn the agent's proposed validation plan into a claim of completed testing.
 
 **Create draft pull request** remains a separate explicit action using the existing fresh administrator proof. It publishes the reviewed revision to a new branch and draft PR after validating the pinned base and changed file contents. A stale revision cannot be silently published. Retry/reconciliation uses the saved publication identity. Atlas does not merge or deploy the generated changes. Older prepared patch drafts remain accessible in **Draft changes**, with their original validation plans clearly identified as plans.
@@ -107,6 +109,8 @@ Resource bounds are independent of that spending allowance. They are defined in 
 Secret-like paths, dependency/cache directories, symlinks and submodules are excluded from the input workspace. The manifest records exclusions. Repository bytes are checked against immutable Git blob IDs. If the repository or result exceeds its resource bounds, Atlas reports that limit rather than silently preparing a partial repository or incomplete change bundle. Uploaded input files have a 24-hour expiry and are cleaned up when possible; this expiry is separate from hosted workspace inactivity and saved D1 results.
 
 The private coding API is `/atlas/api/coding/runs`: `POST` starts a task with `{conversationId, requestId, prompt}` plus optional `environmentId`, or `retryFromRunId` to restart a terminal task with its frozen configuration. Retry origins must belong to the same owner, conversation and repository, and require schema 8. `GET ?conversationId=...` returns saved snapshots including public `environment`, `cloud` and `recovery` details. `GET /:id` advances/reconciles one bounded phase. `POST /:id/cancel` stops work, and `POST /:id/continue` accepts a new `{requestId, prompt}`. `GET /:id/changes` lists the review and command evidence; `GET /:id/diff?path=...` retrieves one file diff. Publication requires `POST /:id/publish` with `{confirm:true, revision}`. Every route uses the existing owner marker and account authorization; provider session/environment identifiers are kept server-side.
+
+`GET /atlas/api/coding/inbox` lists up to 25 saved task summaries for the current owner, newest first. Pass `filter=all|active|review|finished` to select a status and the returned `next` value as `before` for the next page. The review screen sends the displayed revision with each diff request. If a continuation changes that revision, refresh the review before publishing.
 
 ## Usage and cancellation
 
