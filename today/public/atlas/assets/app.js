@@ -106,6 +106,7 @@ const state = { owner: null, epoch: 0, controllers: new Set(), health: null, set
 let sheets, navigationSheet, activeToast;
 let keyboardShell;
 let codingInbox;
+let inboxScroll = 0;
 const destinationRoutes = { inbox: "tasks", environments: "environments", briefs: "briefs" };
 let destination = null, briefRequest = null, briefListRequest = null;
 let runsRequest = null;
@@ -263,6 +264,7 @@ function leaveDestination() {
   const { name, source, content } = destination;
   destination = null;
   if (name === "inbox") closeCodingInbox(codingInbox);
+  if (name === "run-timeline") clearRunTimeline();
   if (name === "briefs") {
     briefListRequest?.abort(); briefListRequest = null; showBriefList();
     $("briefs-list").removeAttribute("aria-busy");
@@ -271,7 +273,7 @@ function leaveDestination() {
     $("environment-toolbar").append($("new-environment"));
     $("new-environment").hidden = false;
   }
-  $("task-recent-runs").hidden = true;
+  $("run-back-to-list").hidden = true;
   content.classList.remove("atlas-page-content");
   content.classList.add("ifs-body");
   source.append(content);
@@ -281,13 +283,15 @@ function leaveDestination() {
 }
 function enterDestination(name) {
   if (destination?.name === name) return;
+  if (destination?.name === "inbox" && name === "run-timeline") inboxScroll = $("atlas-destination-scroll").scrollTop;
+  else if (name === "inbox" && destination?.name !== "run-timeline") inboxScroll = 0;
   navigation(false); sheets.closeAll(); leaveDestination(); detachCodingObserver();
   if (threadSelection) { cancelThreadSelection(); ++state.navigation; $("conversation-status").replaceChildren(); }
   const source = $(name + "-dialog"), content = source.querySelector(".ifs-body");
   const page = $("atlas-destination"), heading = $("atlas-destination-title");
   destination = { name, source, content };
   heading.textContent = source.querySelector("h2").textContent;
-  $("task-recent-runs").hidden = name !== "inbox";
+  $("run-back-to-list").hidden = name !== "run-timeline";
   if (name === "environments") {
     $("atlas-destination-actions").append($("new-environment"));
     syncEnvironmentLayout();
@@ -931,6 +935,7 @@ async function saveEnvironment(event) {
   }, "environment-feedback");
 }
 async function showPanel(name, trigger, { page = false } = {}) {
+  if (fw && name === "runs") { sheets.closeAll(); fw.nav.section("tasks"); return; }
   if (fw && destinationRoutes[name] && !page) {
     navigation(false); sheets.closeAll(); fw.nav.section(destinationRoutes[name]); return;
   }
@@ -965,15 +970,15 @@ const runKinds = { answer: "Answer", background: "Background answer", coding: "C
 const runStatuses = { queued: "Queued", running: "Working", completed: "Completed", incomplete: "Incomplete",
   failed: "Failed", cancelled: "Stopped", skipped: "Skipped", stopping: "Stopping", uncertain: "Outcome unconfirmed" };
 const checkpointLabels = {
-  queued: "Queued", preparing: "Preparing the answer", dispatching: "Starting the response", draft_saved: "Saved a partial answer",
+  queued: "Queued", started: "Started responding", preparing: "Preparing the answer", dispatching: "Starting the response", draft_saved: "Saved a partial answer",
   saved: "Saved the response", requeued: "Recovered before dispatch", resume_queued: "Queued a new attempt",
   reconciled: "Recovered the recorded outcome", interrupted: "Worker interrupted", stop_requested: "Stop requested",
   completed: "Completed", cancelled: "Stopped", stopped: "Stopped",
 };
-const runPrefixes = { background: "b", coding: "c", scheduled: "s" };
+const runPrefixes = { answer: "a", background: "b", coding: "c", scheduled: "s" };
 const runFromReference = reference => {
-  const match = /^([bcs])_([A-Za-z0-9_-]{1,38})$/.exec(reference || "");
-  return match && { id: match[2], kind: { b: "background", c: "coding", s: "scheduled" }[match[1]] };
+  const match = /^([abcs])_([A-Za-z0-9_-]{1,80})$/.exec(reference || "");
+  return match && (match[1] === "a" || match[2].length <= 38) ? { id: match[2], kind: { a: "answer", b: "background", c: "coding", s: "scheduled" }[match[1]] } : null;
 };
 const runStatus = run => run.kind === "coding" ? codingStatus(run) : runStatuses[run.status] || "Status unavailable";
 const runPath = run => "runs/" + run.kind + "/" + encodeURIComponent(run.id);
@@ -988,7 +993,7 @@ async function openRunResult(run, trigger) {
   } else if (run.kind === "coding" && run.reviewReady && !codingActive(run)) {
     if (fw) fw.nav.go(fw.nav.href("tasks", run.id));
     else await reviewCodingRun(run.id);
-  } else if (run.kind === "background") {
+  } else if (run.kind === "background" || run.kind === "answer" && run.messageId) {
     await selectConversation(run.conversationId);
     if (state.activeId === run.conversationId) {
       const message = $("messages").querySelector('[data-message-id="' + CSS.escape(run.messageId) + '"]');
@@ -1001,7 +1006,7 @@ async function openRunResult(run, trigger) {
   }
 }
 function openRecentRun(run, trigger) {
-  if (state.health?.runs?.ready && run.kind !== "answer") return openRunTimeline(run, trigger);
+  if (state.health?.runs?.ready) return openRunTimeline(run, trigger);
   return openRunResult(run, trigger);
 }
 async function loadRecentRuns() {
@@ -1045,18 +1050,26 @@ function pauseRunTimeline() {
 function clearRunTimeline() {
   pauseRunTimeline();
   runTimeline = null;
-  for (const id of ["run-heading", "run-state", "run-checkpoint", "run-events"]) $(id).replaceChildren();
+  for (const id of ["run-heading", "run-state", "run-checkpoint", "run-events", "run-updated"]) $(id).replaceChildren();
   for (const id of ["run-open-result", "run-resume", "run-stop", "run-more", "run-copy-link"]) $(id).hidden = true;
   feedback("run-feedback", "");
 }
-function openRunTimeline(run, trigger) {
-  runTimeline?.sheet.now();
-  const sheet = openDialog("run-timeline", trigger, { onClose: clearRunTimeline });
+function openRunTimeline(run, trigger, { page = false } = {}) {
+  const reference = runPrefixes[run.kind] + "_" + run.id;
+  const link = runFromReference(reference) ? reference : null;
+  if (fw && !page) {
+    if (link) fw.nav.go(fw.nav.href("tasks", link));
+    else return openRunResult(run, trigger);
+    return;
+  }
+  if (runTimeline?.sheet) runTimeline.sheet.now();
+  else if (runTimeline) clearRunTimeline();
+  if (page) enterDestination("run-timeline");
+  const sheet = page ? null : openDialog("run-timeline", trigger, { onClose: clearRunTimeline });
   runTimeline = { sheet, ref: run, run: null, after: 0, request: null, timer: null, retry: 0 };
   $("run-heading").textContent = run.title || runKinds[run.kind];
   $("run-state").textContent = "Loading timeline…";
-  const reference = runPrefixes[run.kind] + "_" + run.id;
-  runTimeline.reference = runFromReference(reference) ? reference : null;
+  runTimeline.reference = link;
   $("run-copy-link").hidden = !runTimeline.reference;
   void loadRunTimeline();
 }
@@ -1064,6 +1077,10 @@ function renderRunTimeline(run, events, hasMore) {
   $("run-heading").textContent = run.title || runKinds[run.kind];
   const status = [runKinds[run.kind], run.stopRequested ? "Stopping" : runStatus(run), run.revision > 1 && "Revision " + run.revision].filter(Boolean).join(" · ");
   if ($("run-state").textContent !== status) $("run-state").textContent = status;
+  if (run.updatedAt !== runTimeline.updatedAt) {
+    runTimeline.updatedAt = run.updatedAt;
+    $("run-updated").replaceChildren(recordTime(run.updatedAt));
+  }
   const checkpoint = run.status === "queued" && run.kind === "background" ? "Atlas will start this run in the background."
     : run.status === "uncertain" && run.kind === "background" ? "Atlas could not confirm the outcome of the previous attempt."
     : run.status === "failed" && run.errorCode ? run.errorCode.replaceAll("_", " ") : run.kind === "coding" ? String(run.stage || "").replaceAll("_", " ") : "";
@@ -1275,6 +1292,7 @@ function codingStatus(run) { if (run.reviewReady && run.status !== "published" &
 function closeCodingInbox(inbox) {
   if (!inbox || codingInbox !== inbox) return;
   inbox.controller?.abort();
+  clearTimeout(inbox.timer);
   codingInbox = null;
   $("inbox-list").replaceChildren();
   $("inbox-list").removeAttribute("aria-busy");
@@ -1282,7 +1300,8 @@ function closeCodingInbox(inbox) {
 }
 function openCodingInbox(trigger, page) {
   if (codingInbox) return;
-  const inbox = { next: null, controller: null, filter: null };
+  const inbox = { next: null, controller: null, filter: null, page, restoreScroll: page ? inboxScroll : 0 };
+  inboxScroll = 0;
   codingInbox = inbox;
   if (!page) inbox.sheet = openDialog("inbox", trigger, { onClose: () => closeCodingInbox(inbox) });
   loadCodingInbox();
@@ -1299,18 +1318,17 @@ async function openTaskConversation(run) {
 }
 function inboxTask(run) {
   const card = node("article", "record-card inbox-task"), heading = node("div", "inbox-task-heading");
-  const status = node("span", "message-status", codingStatus(run));
+  const status = node("span", "message-status", run.kind ? runStatus(run) : codingStatus(run));
   status.dataset.status = run.status;
-  heading.append(node("h3", "", run.title || "Coding task"), status);
+  heading.append(node("h3", "", run.title || runKinds[run.kind] || "Coding task"), status);
   const meta = node("div", "record-meta");
-  meta.append(node("p", "muted", [run.repository, run.baseBranch].filter(Boolean).join(" · ")), recordTime(run.updatedAt));
+  meta.append(node("p", "muted", [runKinds[run.kind], run.repository, run.baseBranch].filter(Boolean).join(" · ")), recordTime(run.updatedAt));
   card.append(heading, meta);
   const actions = node("div", "button-row");
   if (run.reviewReady && (!codingActive(run) || run.status === "publishing")) {
     actions.append(button("Review changes", event => reviewCodingRun(run.id, { inboxTrigger: event.currentTarget }), "primary-button"));
   }
-  const open = button(fw ? "Conversation" : "Open conversation", () => openTaskConversation(run), "text-button inbox-open-conversation");
-  open.setAttribute("aria-label", "Open conversation");
+  const open = button(run.kind ? "Timeline" : "Open conversation", event => run.kind ? openRecentRun(run, event.currentTarget) : openTaskConversation(run), "text-button inbox-open-conversation");
   actions.append(open);
   card.append(actions);
   return card;
@@ -1319,6 +1337,7 @@ async function loadCodingInbox({ more = false } = {}) {
   const inbox = codingInbox;
   if (!inbox || more && (!inbox.next || inbox.controller)) return;
   inbox.controller?.abort();
+  clearTimeout(inbox.timer);
   const controller = new AbortController(), list = $("inbox-list"), loadMore = $("more-inbox");
   inbox.controller = controller;
   const current = () => codingInbox === inbox && inbox.controller === controller;
@@ -1332,17 +1351,24 @@ async function loadCodingInbox({ more = false } = {}) {
   loadMore.disabled = true;
   feedback("inbox-feedback", keepRows ? "" : "Loading tasks…");
   try {
-    const data = await api("coding/inbox?" + params, "GET", undefined, { signal: controller.signal, timeout: 30000 });
+    const data = await api((inbox.page ? "runs?" : "coding/inbox?") + params, "GET", undefined, { signal: controller.signal, timeout: 30000 });
     if (!current()) return;
-    const cards = data.runs.map(inboxTask);
-    if (more) list.append(...cards); else list.replaceChildren(...cards);
+    const runs = inbox.page ? data.items : data.runs;
+    const signature = JSON.stringify([filter, runs]);
+    if (more || !keepRows || inbox.signature !== signature || inbox.extended) {
+      const cards = runs.map(inboxTask);
+      if (more) list.append(...cards); else list.replaceChildren(...cards);
+      if (more) cards[0]?.querySelector("button")?.focus();
+    }
+    inbox.signature = signature;
+    inbox.extended = more;
     inbox.next = data.next; inbox.filter = filter;
     if (!list.children.length) {
-      const start = filter === "all" && fw ? button("New coding task", () => newConversation("developer"), "quiet-button") : null;
-      list.append(emptyState(filter === "all" ? "No coding tasks yet" : "No tasks match this status", filter === "all" && !fw ? "Start a task from a Developer conversation." : "", start));
+      const start = filter === "all" && inbox.page ? button("New conversation", () => newConversation(), "quiet-button") : null;
+      list.append(emptyState(filter === "all" ? inbox.page ? "No tasks yet" : "No coding tasks yet" : "No tasks match this status", filter === "all" && !inbox.page ? "Start a task from a Developer conversation." : "", start));
     }
     feedback("inbox-feedback", "");
-    if (more) cards[0]?.querySelector("button")?.focus();
+    if (inbox.restoreScroll) { $("atlas-destination-scroll").scrollTop = inbox.restoreScroll; inbox.restoreScroll = 0; }
   } catch (error) {
     if (current() && !error.accountChanged) feedback("inbox-feedback", errorText(error), true);
   } finally {
@@ -1352,6 +1378,7 @@ async function loadCodingInbox({ more = false } = {}) {
       $("refresh-inbox").removeAttribute("aria-busy");
       loadMore.hidden = !inbox.next;
       loadMore.disabled = false;
+      if (inbox.page && !inbox.extended && visible()) inbox.timer = setTimeout(() => { if (visible()) void loadCodingInbox(); }, 15000);
     }
   }
 }
@@ -1782,7 +1809,7 @@ function init() {
   $("run-copy-link").addEventListener("click", async () => {
     if (!runTimeline?.reference) return;
     try {
-      await navigator.clipboard.writeText(new URL("/atlas/#runs=" + runTimeline.reference, location.origin).href);
+      await navigator.clipboard.writeText(new URL("/atlas/#" + (fw ? "tasks" : "runs") + "=" + runTimeline.reference, location.origin).href);
       toast("Run link copied.");
     } catch { toast("Atlas could not copy the run link."); }
   });
@@ -1926,12 +1953,15 @@ return {
       } else if (key === "runs") {
         leaveDestination();
         const run = runFromReference(id);
-        if (run && state.health?.runs?.ready) openRunTimeline(run);
+        if (fw) fw.nav.go(fw.nav.href("tasks", run && state.health?.runs?.ready ? id : null), { replace: true });
+        else if (run && state.health?.runs?.ready) openRunTimeline(run);
         else await showPanel("runs");
       }
       else if (key === "tasks") {
+        const run = fw && runFromReference(id);
+        if (run && state.health?.runs?.ready) { openRunTimeline(run, null, { page: true }); return; }
         await showPanel("inbox", null, { page: !!fw });
-        if (id) {
+        if (id && !run) {
           if (generation !== routeEpoch) return;
           const data = await api("coding/runs/" + encodeURIComponent(id));
           if (generation !== routeEpoch) return;

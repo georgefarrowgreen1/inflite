@@ -6,7 +6,7 @@ import * as store from './atlas-store.js';
 import { providerStatus, connectProvider, disconnectProvider, availableModels } from './atlas-provider.js';
 import { testProvider, summarizeConversation, preparePatch, runAtlasPrompt, streamAtlasPrompt, cancelAtlasRequest, cancelOwnerRequests, executeScheduledAtlas, safeFailure, requestIdentifier } from './atlas-chat.js';
 import * as repository from './atlas-repository.js';
-import { runAtlasTask } from './atlas-scheduler.js';
+import { runAtlasTask, stopScheduledOccurrence } from './atlas-scheduler.js';
 import { evolution } from './atlas-evolution.js';
 import * as coding from './atlas-coding.js';
 import * as environments from './atlas-environments.js';
@@ -185,9 +185,12 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
     if (path === '/activity' && method === 'GET') return json(await atlasActivity(env, owner, { limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 12, schemaVersion: storage.schemaVersion }));
     if (path === '/runs' && method === 'GET') {
       const timeline = await runTimelineStorage(env, storage.schemaVersion);
-      return json(await atlasRuns(env, owner, { limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined, schemaVersion: storage.schemaVersion, timeline }));
+      return json(await atlasRuns(env, owner, {
+        limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
+        filter: url.searchParams.get('filter') ?? undefined, before: url.searchParams.get('before'), schemaVersion: storage.schemaVersion, timeline,
+      }));
     }
-    const runRoute = /^\/runs\/(background|coding|scheduled)\/([^/]+)(?:\/(stop|resume))?$/.exec(path);
+    const runRoute = /^\/runs\/(answer|background|coding|scheduled)\/([^/]+)(?:\/(stop|resume))?$/.exec(path);
     if ((path === '/runs' && method === 'POST') || runRoute) {
       if (!await runTimelineStorage(env, storage.schemaVersion)) fail('runs_storage_upgrade_required', 'Upgrade Atlas storage to use run timelines and background answers.', 409);
       if (!runRoute) {
@@ -207,6 +210,14 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
           await requireBackgroundAccess();
           return json({ run: publicAnswerRun(await resumeAtlasAnswer(env, owner, id, body)) }, 202);
         }
+      }
+      if (action === 'stop' && method === 'POST' && kind !== 'background') {
+        const { revision } = await input(request, 1024);
+        const { run } = await readAtlasRunTimeline(env, owner, kind, id, { limit: 1 });
+        if (revision !== run.revision || !run.canStop) fail('run_changed', 'The run has changed. Refresh its timeline.', 409);
+        if (kind === 'coding') return json({ run: await coding.cancelCodingRun(env, owner, id, { send, revision }) });
+        if (kind === 'scheduled') return json(await stopScheduledOccurrence(env, owner, id));
+        return json(await cancelAtlasRequest(env, owner, id));
       }
     }
 

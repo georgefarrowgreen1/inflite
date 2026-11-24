@@ -185,9 +185,10 @@ export async function beginCodingPublication(env, owner, run, lease, cancelGener
   return row(value);
 }
 
-export async function requestCodingCancellation(env, owner, id) {
+export async function requestCodingCancellation(env, owner, id, revision = null) {
   await requireCodingRun(env, owner, id);
-  await checked(query(env, 'UPDATE atlas_coding_runs SET cancel_requested=1,cancel_generation=cancel_generation+1,updated_at=? WHERE owner=? AND id=?', Date.now(), owner, id));
+  const result = await checked(query(env, 'UPDATE atlas_coding_runs SET cancel_requested=1,cancel_generation=cancel_generation+1,updated_at=? WHERE owner=? AND id=? AND (? IS NULL OR revision=?)', Date.now(), owner, id, revision, revision));
+  if (!result.meta.changes) throw new AtlasStoreError('run_changed', 'The run has changed. Refresh its timeline.', 409);
 }
 
 export async function saveCodingChanges(env, owner, run, lease, files) {

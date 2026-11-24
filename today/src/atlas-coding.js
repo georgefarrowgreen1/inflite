@@ -414,9 +414,10 @@ export async function reconcileCodingBackground(env, { verifyAdmin, send = fetch
 
 export async function cancelCodingRun(env, owner, id, options = {}) {
   await available(env); const run = await state.requireCodingRun(env, owner, id);
+  if (options.revision != null && options.revision !== run.revision) throw failure('run_changed', 'The run has changed. Refresh its timeline.');
   if (run.status === 'publishing') { await state.requestCodingCancellation(env, owner, id); return publicRun(await state.requireCodingRun(env, owner, id)); }
   if (!ACTIVE.has(run.status)) return publicRun(run);
-  await state.requestCodingCancellation(env, owner, id);
+  await state.requestCodingCancellation(env, owner, id, options.revision);
   return advanceCodingRun(env, owner, id, options);
 }
 

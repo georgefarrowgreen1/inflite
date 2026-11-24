@@ -9,6 +9,15 @@ async function batch(env,commands){const results=await env.ATLAS_DB.batch(comman
 function sourceList(values){return (Array.isArray(values)?values:[]).slice(0,100).flatMap(source=>{try{const url=new URL(source.url);return url.protocol==='https:'&&!url.username&&!url.password?[{url:url.href,title:String(source.title||url.hostname).slice(0,500)}]:[];}catch{return [];}});}
 const runRow=row=>row?{...row,sources:parse(row.sources_json,[]),manual:row.manual===1}:null;
 
+export async function stopScheduledOccurrence(env, owner, id) {
+  const [stopped] = await batch(env, [
+    ["UPDATE atlas_schedule_runs SET cancel_requested=1 WHERE owner=? AND id=? AND status IN ('queued','running') RETURNING id", owner, id],
+    ["UPDATE atlas_requests SET cancel_requested=1 WHERE owner=? AND id IN (SELECT request_id FROM atlas_schedule_runs WHERE owner=? AND id=? AND cancel_requested=1 AND status IN ('queued','running')) AND status IN ('pending','running')", owner, owner, id],
+  ]);
+  if (!stopped.results.length) fail('run_changed', 'The run has changed. Refresh its timeline.');
+  return { stopped: true };
+}
+
 async function claim(env,task,{manual,requestId,now}){
   const id=requestId||crypto.randomUUID(),key=manual?'manual:'+id:'scheduled:'+task.next_run;
   const existing=await query(env,'SELECT * FROM atlas_schedule_runs WHERE owner=? AND task_id=? AND occurrence_key=?',task.owner,task.id,key).first();
