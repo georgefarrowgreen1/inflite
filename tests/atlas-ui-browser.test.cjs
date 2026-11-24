@@ -336,7 +336,11 @@ test('coding storage upgrade leaves chat available and enables tasks through exi
     await t.page.locator('#mode').selectOption('developer'); await t.page.locator('#repository').selectOption('fixture/atlas'); await t.page.locator('#prompt').fill('Inspect this repository');
     assert.equal(await t.page.locator('#send').isEnabled(), true); assert.equal(await t.page.locator('#start-coding').isDisabled(), true);
     assert.equal(await t.page.locator('#upgrade-storage').isVisible(), true); assert.match(await t.page.locator('#setup-message').textContent(), /conversations are ready/);
-    await t.page.locator('#upgrade-storage').click(); await t.page.locator('#setup-banner').waitFor({ state: 'hidden' });
+    await t.page.locator('#upgrade-storage').click();
+    // The session privacy mask hides the banner before refreshed health and
+    // repository data are ready. Wait for the usable composer, not that mask.
+    await t.page.waitForFunction(() => !document.body.classList.contains('session-check') && document.getElementById('setup-banner').hidden && !document.getElementById('start-coding').disabled);
+    assert.equal(await t.page.locator('#mode').inputValue(), 'developer'); assert.equal(await t.page.locator('#repository').inputValue(), 'fixture/atlas'); assert.equal(await t.page.locator('#prompt').inputValue(), 'Inspect this repository');
     assert.equal(await t.page.locator('#start-coding').isEnabled(), true); assert.deepEqual(t.fixture.requests.find(call => call.path === 'setup').body, { confirm: true }); assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
 });
