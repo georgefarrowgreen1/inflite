@@ -1,10 +1,22 @@
-import {saveCredential,loadCredential} from "./atlas-credentials.js";
+import {saveCredential,loadCredential,credentialKeyBytes,CredentialSetupError} from "./atlas-credentials.js";
 import { evolution } from "./atlas-evolution.js";
 import { ask, accountCookie } from "./account.js";
 import { appFetch } from "./apps.js";
 import { bodyUpTo } from "./body.js";
 const headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","Cross-Origin-Resource-Policy":"same-origin","Referrer-Policy":"no-referrer"};
 const json=(data,status=200)=>Response.json(data,{status,headers:{...headers,"Content-Security-Policy":"default-src 'none'; frame-ancestors 'none'"}});
+const providerErrors={
+ provider_database_missing:"Atlas database is not configured.",
+ provider_database_read_failed:"Atlas could not read its saved connection. Check the Atlas database migrations.",
+ provider_identity_unavailable:"Atlas could not verify your recent sign-in. Try signing in again.",
+ provider_openai_unavailable:"Atlas could not reach OpenAI to validate the connection. Try again.",
+ provider_encryption_invalid:"Atlas encryption key has an invalid format. ATLAS_ENCRYPTION_KEY must be Base64 encoding of exactly 32 bytes.",
+ provider_encryption_failed:"Atlas could not encrypt the connection. Check the Worker encryption configuration.",
+ provider_database_write_failed:"OpenAI validation succeeded, but Atlas could not save the connection. Check the Atlas database.",
+ provider_database_delete_failed:"Atlas could not remove the saved connection. Check the Atlas database.",
+ provider_request_unreadable:"Atlas could not read the connection request. Try again.",
+};
+const providerError=code=>json({error:providerErrors[code],code},503);
 export async function atlas(request,env,{account=ask,send=fetch}={}){
  const url=new URL(request.url);
  if(!accountCookie(request)) return json({error:"Sign in required"},401);
@@ -17,24 +29,39 @@ export async function atlas(request,env,{account=ask,send=fetch}={}){
  }
  const owner=String(view.user.id);
  if(url.pathname==="/atlas/api/provider"){
-  if(!env.ATLAS_DB)return json({error:"Storage unavailable"},503);
+  if(!env.ATLAS_DB)return providerError("provider_database_missing");
+  let stage="provider_request_unreadable";
   try{
-   if(request.method==="GET"){const row=await env.ATLAS_DB.prepare("SELECT model FROM atlas_credentials WHERE owner=?").bind(owner).first();return json({connected:!!row,model:row?.model||null,setupAvailable:!!env.ATLAS_ENCRYPTION_KEY});}
+   if(request.method==="GET"){
+    stage="provider_database_read_failed";
+    const row=await env.ATLAS_DB.prepare("SELECT model FROM atlas_credentials WHERE owner=?").bind(owner).first();
+    if(env.ATLAS_ENCRYPTION_KEY)credentialKeyBytes(env);
+    return json({connected:!!row,model:row?.model||null,setupAvailable:!!env.ATLAS_ENCRYPTION_KEY});
+   }
    if(!["POST","DELETE"].includes(request.method))return json({error:"Method not allowed"},405);
    if(request.headers.get("Origin")!==url.origin||request.headers.get("X-Inflite")!=="1"||(request.headers.has("Sec-Fetch-Site")&&request.headers.get("Sec-Fetch-Site")!=="same-origin"))return json({error:"Invalid origin"},403);
    // Credential changes require an authoritative fresh-auth check, not a browser assertion.
    if(!env.ATLAS_ENCRYPTION_KEY)return json({error:"Credential encryption is not configured"},503);
+   stage="provider_identity_unavailable";
    const fresh=await account(env,request,{path:"atlas/fresh",timeout:8000});
    if(!fresh?.ok)return json({error:"Confirm your identity in InFlite first"},403);
    const proof=JSON.parse(await bodyUpTo(fresh,4096));if(proof?.fresh!==true||String(proof.owner)!==owner)return json({error:"Confirm your identity in InFlite first"},403);
-   if(request.method==="DELETE"){await env.ATLAS_DB.prepare("DELETE FROM atlas_credentials WHERE owner=?").bind(owner).run();return json({connected:false});}
+   if(request.method==="DELETE"){
+    stage="provider_database_delete_failed";
+    const result=await env.ATLAS_DB.prepare("DELETE FROM atlas_credentials WHERE owner=?").bind(owner).run();
+    if(result?.success===false)throw Error();
+    return json({connected:false});
+   }
+   stage="provider_request_unreadable";
    const raw=await bodyUpTo(request,8192);if(raw===null)return json({error:"Too large"},413);
    let d;try{d=JSON.parse(raw)}catch{return json({error:"Invalid request"},400);}
    if(typeof d?.key!=="string"||!/^sk-[A-Za-z0-9_-]{20,512}$/.test(d.key)||typeof d.model!=="string"||! /^[a-zA-Z0-9._-]{1,100}$/.test(d.model))return json({error:"Invalid key or model"},400);
+   credentialKeyBytes(env);
+   stage="provider_openai_unavailable";
    const check=await send("https://api.openai.com/v1/models/"+encodeURIComponent(d.model),{headers:{Authorization:"Bearer "+d.key},redirect:"error",signal:AbortSignal.timeout(10000)});
    if(!check.ok)return json({error:"OpenAI could not validate key and model"},400);
    await saveCredential(env,owner,d.key,d.model);return json({connected:true,model:d.model});
-  }catch{return json({error:"Provider setup unavailable"},503);}
+  }catch(error){return providerError(error instanceof CredentialSetupError?error.code:stage);}
  }
  if(url.pathname==="/atlas/api/evolution")return evolution(request,env,owner,json);
  if(url.pathname==="/atlas/api/stop"){
