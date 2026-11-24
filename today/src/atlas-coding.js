@@ -369,6 +369,11 @@ export async function getCodingRuns(env, owner, conversationId) {
   await available(env); return (await state.listCodingRuns(env, owner, conversationId)).map(publicRun);
 }
 
+export async function getCodingInbox(env, owner, options) {
+  await available(env);
+  return state.listCodingInbox(env, owner, options);
+}
+
 export async function progressCodingSetup(env, owner, id, options = {}) {
   const started = Date.now();
   let previousPhase;
@@ -473,8 +478,9 @@ export async function codingReview(env, owner, id) {
   return { run: result, files: run.review_ready ? await state.codingChanges(env, owner, run) : [], checks: result.checks };
 }
 
-export async function codingDiff(env, owner, id, path) {
+export async function codingDiff(env, owner, id, path, revision = null) {
   await available(env); const run = await state.requireCodingRun(env, owner, id);
+  if (revision !== null && revision !== String(run.revision)) throw failure('coding_review_changed', 'This task has a newer revision. Refresh the review to see its changes.');
   if (!run.review_ready) throw failure('coding_review_unavailable', 'The coding changes are not ready for review.');
   return state.codingFileDiff(env, owner, run, path);
 }

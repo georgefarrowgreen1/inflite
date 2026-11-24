@@ -1665,6 +1665,25 @@ html[data-midnight-lava] .atlas-sky canvas {
 .sidebar-tools { display: grid; gap: 3px; padding-bottom: 12px; border-bottom: 1px solid var(--atlas-line); }
 .atlas-app .sidebar-tools button { display: flex; gap: 10px; align-items: center; background: transparent; border: 0; text-align: left; font-size: 14px; padding: 7px 10px; min-height: 40px; }
 .sidebar-tools .atlas-glyph { width: 18px; color: var(--atlas-muted); }
+.inbox-toolbar,
+.inbox-task-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.inbox-toolbar #refresh-inbox { margin-inline-start: auto; }
+.inbox-task-heading h3 {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+}
+.inbox-task p,
+.inbox-task h3,
+#patch-detail h3,
+.review-summary { overflow-wrap: anywhere; }
+.review-summary { white-space: pre-wrap; }
+.atlas-app #more-inbox { align-self: start; }
 .sidebar-heading h2 { font-size: 12px; text-transform: none; letter-spacing: 0; }
 .conversation-list .thread-name { font-size: 14px; }
 .conversation-list .thread-date { font-size: 12px; }

@@ -194,6 +194,9 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
         console.warn(JSON.stringify({ event: 'atlas_coding_observation_failed', code: safeFailure(error).code }));
       }));
     };
+    if (path === '/coding/inbox' && method === 'GET') return json(await coding.getCodingInbox(env, owner, {
+      filter: url.searchParams.get('filter') ?? 'all', before: url.searchParams.get('before'),
+    }));
     if (path === '/coding/runs') {
       if (method === 'GET') return json({ runs: await coding.getCodingRuns(env, owner, url.searchParams.get('conversationId')) });
       if (method === 'POST') { const run = await coding.startCodingRun(env, owner, await input(request)); kickCoding(run.id); return json({ run }, 202); }
@@ -205,7 +208,7 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
       if (action === 'cancel' && method === 'POST') return json({ run: await coding.cancelCodingRun(env, owner, id, { send }) });
       if (action === 'continue' && method === 'POST') { const run = await coding.continueCodingRun(env, owner, id, await input(request), { send }); kickCoding(id); return json({ run }, 202); }
       if (action === 'changes' && method === 'GET') return json(await coding.codingReview(env, owner, id));
-      if (action === 'diff' && method === 'GET') return json(await coding.codingDiff(env, owner, id, url.searchParams.get('path')));
+      if (action === 'diff' && method === 'GET') return json(await coding.codingDiff(env, owner, id, url.searchParams.get('path'), url.searchParams.get('revision')));
       if (action === 'publish' && method === 'POST') { const body = await input(request); await fresh(); return json(await coding.publishCodingRun(env, owner, id, body, { send })); }
     }
     match = /^\/requests\/([^/]+)\/cancel$/.exec(path);

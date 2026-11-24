@@ -40,6 +40,7 @@ const $ = id => document.getElementById(id);
 const modeNames = { research: "Research", developer: "Developer", personal: "Personal", fitness: "Cycling & fitness", tasks: "Task planning" };
 const state = { owner: null, epoch: 0, controllers: new Set(), health: null, settings: null, conversations: [], conversation: null, messages: [], messagePage: {}, activeId: null, context: [], repositories: [], models: [], stream: null, dispatching: false, navigation: 0, contextLoad: 0, contexts: [], tasks: [], scheduleContext: [], patches: [], selectedPatch: null, codingRuns: [], codingObserver: null, codingLoading: false, codingLoadError: "", codingContinuation: null, codingRestart: null, codingReview: null, codingDispatching: false, intent: "code", environments: [], environmentsReady: null, environmentsLoading: false, environmentId: "", environmentEditingRevision: null, environmentEditorSession: 0, environmentEditorVersion: 0, environmentsRequest: 0, taskTabs: new Map(), taskExpanded: new Map(), taskChanges: new Map(), drafts: new Map(), privateReady: false, checking: null };
 let sheets, navigationSheet, activeToast;
+let codingInbox;
 const mobileQuery = "(max-width: 720px)";
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text != null) el.textContent = String(text); return el; }
 function button(text, action, className = "") { const el = node("button", className, text); el.type = "button"; el.addEventListener("click", action); return el; }
@@ -72,12 +73,13 @@ function clearPrivateState(message = "Your session changed. Checking access…")
   state.environments = []; state.environmentsReady = null; state.environmentsLoading = false; state.environmentId = ""; state.environmentEditingRevision = null; state.environmentEditorSession++; state.environmentEditorVersion++; state.environmentsRequest++; state.intent = "code"; state.taskTabs.clear(); state.taskExpanded.clear(); state.taskChanges.clear();
   state.epoch++; state.stream?.controller.abort(); state.stream = null; state.dispatching = false; state.owner = null; state.health = null; state.conversation = null; state.conversations = []; state.messages = []; state.activeId = null; state.context = []; state.contexts = []; state.repositories = []; state.models = []; state.tasks = []; state.scheduleContext = []; state.patches = []; state.selectedPatch = null; state.settings = null; state.privateReady = false; state.drafts.clear(); state.navigation++; state.contextLoad++;
   for (const controller of state.controllers) controller.abort(); state.controllers.clear(); state.messagePage = {};
-  for (const id of ["messages", "conversation-list", "attached-context", "provider-health", "usage-totals", "usage-requests", "briefs-list", "brief-detail", "context-list", "patches-list", "patch-detail", "schedules-list", "schedule-runs-list", "schedule-context", "thread-summary-text", "environments-list"]) $(id)?.replaceChildren();
+  for (const id of ["messages", "conversation-list", "attached-context", "provider-health", "usage-totals", "usage-requests", "briefs-list", "brief-detail", "context-list", "patches-list", "patch-detail", "inbox-list", "schedules-list", "schedule-runs-list", "schedule-context", "thread-summary-text", "environments-list"]) $(id)?.replaceChildren();
   for (const id of ["prompt", "provider-key", "github-token", "memory-text", "schedule-prompt", "schedule-title", "conversation-search", "environment-id", "environment-name", "environment-branch", "environment-setup", "environment-test"]) if ($(id)) $(id).value = "";
   sheets.closeAll();
   activeToast?.close();
   for (const notice of document.querySelectorAll(".ifl-toast")) notice.remove();
-  for (const id of ["provider-feedback", "github-feedback", "preferences-feedback", "patch-feedback", "context-feedback", "schedule-feedback", "context-repository", "github-health", "conversation-status", "coding-feedback", "environment-feedback", "environments-feedback", "toast"]) if ($(id)) $(id).textContent = "";
+  for (const id of ["provider-feedback", "github-feedback", "preferences-feedback", "patch-feedback", "inbox-feedback", "context-feedback", "schedule-feedback", "context-repository", "github-health", "conversation-status", "coding-feedback", "environment-feedback", "environments-feedback", "toast"]) if ($(id)) $(id).textContent = "";
+  $("inbox-filter").value = "all";
   for (const id of ["repository", "schedule-repository", "provider-model", "environment-repository", "coding-environment"]) if ($(id)) $(id).replaceChildren();
   $("environment-form").hidden = true; $("environment-empty").hidden = false;
   $("schedule-id").value = ""; $("fitness-consent").checked = false; $("schedule-fitness-consent").checked = false; $("memory-enabled").checked = false; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; $("schedule-form").hidden = true; $("schedule-runs").hidden = true;
@@ -133,7 +135,8 @@ function navigation(open) {
     toggle.setAttribute("aria-expanded", "false");
   } });
 }
-function openDialog(name, trigger) {
+function openDialog(name, trigger, options) {
+  if (trigger && navigationSheet?.el.contains(trigger)) trigger = $("navigation-toggle");
   navigation(false);
   const top = sheets.top();
   if (top?.el.id === "workspace-dialog" && name !== "workspace") {
@@ -141,7 +144,7 @@ function openDialog(name, trigger) {
     trigger = $("open-workspace");
   }
   trigger?.focus({ preventScroll: true });
-  return sheets.openEl($(name + "-dialog"));
+  return sheets.openEl($(name + "-dialog"), options);
 }
 function fitComposerViewport() {
   const viewport = window.visualViewport;
@@ -233,8 +236,8 @@ function updateComposer() {
   $("coding-health").hidden = !$("coding-health").textContent;
   $("coding-continue-note").hidden = !code || !recovery;
   $("coding-continue-label").textContent = continuation ? "Continuing this cloud workspace" : restart ? "Fresh workspace · original environment settings" : "";
-  const publish = $("publish-coding"), reviewedRun = state.codingRuns.find(run => run.id === state.codingReview?.id);
-  if (publish && reviewedRun) publish.disabled = publish.classList.contains("busy-label") || reviewedRun.revision !== state.codingReview.revision || !reviewedRun.reviewReady || codingActive(reviewedRun) || !state.health?.github?.connected;
+  const publish = $("publish-coding"), review = state.codingReview;
+  if (publish && review?.run) publish.disabled = publish.classList.contains("busy-label") || review.stale || !review.hasFiles || !review.run.reviewReady || codingActive(review.run) || !state.health?.github?.connected;
   $("attach-context").disabled = !$("repository").value || !state.health?.storage?.ready;
   const needsProvider = state.privateReady && state.health?.storage?.ready && (!state.health.provider?.keySaved || state.health.provider?.decryptable === false);
   $("connect-provider").hidden = !needsProvider;
@@ -518,6 +521,7 @@ async function saveEnvironment(event) {
   }, "environment-feedback");
 }
 async function showPanel(name, trigger) {
+  if (name === "inbox") return openCodingInbox(trigger);
   openDialog(name, trigger);
   try {
     if (name === "settings") { await refreshHealth(); if (state.health.storage?.ready) { await loadSettings(); if (state.health.provider?.keySaved) { const result = await api("models"); fillModels(result.models, result.selected); } } }
@@ -581,8 +585,12 @@ async function attachSelectedContext(control) {
   }, "context-feedback");
 }
 async function loadPatches({ reset = false } = {}) {
+  if (reset) {
+    state.codingReview = null;
+    $("patches-title").textContent = "Draft changes"; $("close-patches").setAttribute("aria-label", "Close draft changes");
+    $("patches-list").hidden = false; $("patch-detail").hidden = true; $("review-toolbar").hidden = true; feedback("patch-feedback", "");
+  }
   const data = await api("patches"), list = $("patches-list"); list.replaceChildren();
-  if (reset) { state.codingReview = null; list.hidden = false; $("patch-detail").hidden = true; feedback("patch-feedback", ""); }
   for (const run of state.codingRuns.filter(item => item.reviewReady || item.pullRequest)) { const card = node("article", "record-card"), open = button("", () => reviewCodingRun(run.id), "record-open"); open.append(node("h3", "", run.prompt), node("p", "", run.repository + " · " + codingStatus(run))); card.append(open); list.append(card); }
   for (const patch of data.patches || []) { const card = node("article", "record-card"), open = button("", () => showPatch(patch.id), "record-open"); open.append(node("h3", "", patch.title || "Draft changes"), node("p", "", patch.repository + " · " + patch.status)); card.append(open); list.append(card); }
   if (!list.children.length) list.append(node("p", "muted empty-small", "No changes to review here. Open a Developer conversation to start or reconnect to a coding task."));
@@ -602,16 +610,86 @@ async function showPatch(id, known) {
   } catch (error) { feedback("patch-feedback", errorText(error), true); }
 }
 function codingActive(run) { return ["preparing", "running", "waiting", "uncertain", "publishing"].includes(run.status); }
-function codingStatus(run) { if (run.status === "completed" && run.reviewReady) return "Ready to review"; return ({ preparing: "Preparing workspace", running: "Working", waiting: "Waiting", completed: "Completed", failed: "Failed", cancelled: "Stopped", uncertain: "Checking task state", publishing: "Creating pull request", published: "Published" })[run.status] || "Checking task state"; }
+function codingStatus(run) { if (run.reviewReady && run.status !== "published" && !codingActive(run)) return "Ready to review"; return ({ preparing: "Preparing workspace", running: "Working", waiting: "Waiting", completed: "Completed", failed: "Failed", cancelled: "Stopped", uncertain: "Checking task state", publishing: "Creating pull request", published: "Published" })[run.status] || "Checking task state"; }
+function openCodingInbox(trigger) {
+  if (codingInbox) return;
+  const inbox = { next: null, controller: null };
+  codingInbox = inbox;
+  inbox.sheet = openDialog("inbox", trigger, { onClose: () => {
+    inbox.controller?.abort();
+    codingInbox = null;
+    $("inbox-list").replaceChildren();
+  } });
+  loadCodingInbox();
+}
+async function openTaskConversation(run) {
+  codingInbox?.sheet.now();
+  state.taskExpanded.set(run.id, true);
+  await selectConversation(run.conversationId);
+  if (state.activeId === run.conversationId) {
+    const card = [...$("messages").querySelectorAll("[data-run-id]")].find(el => el.dataset.runId === run.id);
+    card?.scrollIntoView({ block: "nearest" });
+    card?.querySelector("summary")?.focus({ preventScroll: true });
+  }
+}
+function inboxTask(run) {
+  const card = node("article", "record-card inbox-task"), heading = node("div", "inbox-task-heading");
+  const status = node("span", "message-status", codingStatus(run));
+  status.dataset.status = run.status;
+  heading.append(node("h3", "", run.title || "Coding task"), status);
+  const context = [run.repository, run.baseBranch, run.conversationTitle].filter(Boolean).join(" · ");
+  card.append(heading, node("p", "muted", context), node("p", "task-updated", "Updated " + timestamp(run.updatedAt)));
+  const actions = node("div", "button-row");
+  if (run.reviewReady && (!codingActive(run) || run.status === "publishing")) {
+    actions.append(button("Review changes", event => reviewCodingRun(run.id, { inboxTrigger: event.currentTarget }), "primary-button"));
+  }
+  actions.append(button("Open conversation", () => openTaskConversation(run), "quiet-button"));
+  card.append(actions);
+  return card;
+}
+async function loadCodingInbox({ more = false } = {}) {
+  const inbox = codingInbox;
+  if (!inbox || more && (!inbox.next || inbox.controller)) return;
+  inbox.controller?.abort();
+  const controller = new AbortController(), list = $("inbox-list"), loadMore = $("more-inbox");
+  inbox.controller = controller;
+  const current = () => codingInbox === inbox && inbox.controller === controller;
+  const params = new URLSearchParams({ filter: $("inbox-filter").value });
+  if (more) params.set("before", inbox.next);
+  else { inbox.next = null; list.replaceChildren(); loadMore.hidden = true; }
+  list.setAttribute("aria-busy", "true");
+  loadMore.disabled = true;
+  feedback("inbox-feedback", "Loading tasks…");
+  try {
+    const data = await api("coding/inbox?" + params, "GET", undefined, { signal: controller.signal, timeout: 30000 });
+    if (!current()) return;
+    const cards = data.runs.map(inboxTask);
+    list.append(...cards);
+    inbox.next = data.next;
+    feedback("inbox-feedback", !list.children.length ? "No tasks match this status." : "");
+    if (more) cards[0]?.querySelector("button")?.focus();
+  } catch (error) {
+    if (current() && !error.accountChanged) feedback("inbox-feedback", errorText(error), true);
+  } finally {
+    if (current()) {
+      inbox.controller = null;
+      list.removeAttribute("aria-busy");
+      loadMore.hidden = !inbox.next;
+      loadMore.disabled = false;
+    }
+  }
+}
 function detachCodingObserver() {
   const observer = state.codingObserver; state.codingObserver = null; state.codingLoading = false;
   if (observer) { clearTimeout(observer.timer); observer.controller.abort(); }
 }
 function codingViewCurrent(observer) { return state.codingObserver === observer && observer.epoch === state.epoch && observer.navigation === state.navigation && observer.conversationId === state.activeId && document.visibilityState === "visible"; }
 function invalidateCodingReview(run) {
-  if (!state.codingReview || state.codingReview.id !== run.id || state.codingReview.revision === run.revision && run.reviewReady) return;
+  const review = state.codingReview;
+  if (!review?.run || review.id !== run.id || review.run.revision === run.revision && run.reviewReady) return;
+  review.stale = true;
   const publish = $("publish-coding"); if (publish) publish.disabled = true;
-  feedback("patch-feedback", "This task has changed. Open Review changes again before publishing.");
+  feedback("patch-feedback", "This task has changed. Refresh the review before publishing.");
 }
 function acceptCodingRun(run) {
   if (!run || run.conversationId !== state.activeId) return;
@@ -697,10 +775,15 @@ async function loadTaskChanges(run, panel) {
   panel.dataset.loaded = "loading"; panel.replaceChildren(node("p", "field-help", "Loading changed files…"));
   try {
     let data = state.taskChanges.get(key);
-    if (!data) { data = await api("coding/runs/" + encodeURIComponent(run.id) + "/changes"); checkEpoch(epoch); if (generation !== state.navigation) return; state.taskChanges.set(key, data); }
+    if (!data) {
+      data = await api("coding/runs/" + encodeURIComponent(run.id) + "/changes");
+      checkEpoch(epoch);
+      if (generation !== state.navigation) return;
+      if (data.run.revision === run.revision) state.taskChanges.set(key, data);
+    }
     if (!panel.isConnected || epoch !== state.epoch || generation !== state.navigation) return;
     const current = state.codingRuns.find(item => item.id === run.id);
-    if (!current || current.revision !== run.revision || !current.reviewReady) { panel.dataset.loaded = ""; panel.replaceChildren(node("p", "field-help", "The task changed. Reopen its changes after it finishes.")); return; }
+    if (!current || current.revision !== run.revision || data.run.revision !== run.revision || !data.run.reviewReady || !current.reviewReady) { panel.dataset.loaded = ""; panel.replaceChildren(node("p", "field-help", "The task changed. Reopen its changes after it finishes.")); return; }
     panel.replaceChildren(); const files = data.files || [];
     panel.append(node("p", "field-help", files.length + " changed file" + (files.length === 1 ? "" : "s")));
     for (const file of files) {
@@ -710,7 +793,7 @@ async function loadTaskChanges(run, panel) {
       details.addEventListener("toggle", async () => {
         if (!details.open || loaded || loading) return; loading = true; output.textContent = "Loading diff…";
         try {
-          const diff = await api("coding/runs/" + encodeURIComponent(run.id) + "/diff?path=" + encodeURIComponent(file.path)); checkEpoch(epoch);
+          const diff = await api(codingDiffPath(run, file)); checkEpoch(epoch);
           if (!details.isConnected || generation !== state.navigation) return;
           output.textContent = (diff.binary ? "Binary file. A text diff is unavailable." : diff.diff || "No text diff was recorded.") + (diff.diffTruncated ? "\n\nDiff preview truncated. The full file is retained for publication." : ""); loaded = true;
         } catch (error) { if (!error.accountChanged && details.isConnected) output.textContent = errorText(error); } finally { loading = false; }
@@ -805,44 +888,101 @@ async function startCodingTask() {
     }
   } finally { if (epoch === state.epoch) { state.codingDispatching = false; updateComposer(); } }
 }
-async function reviewCodingRun(id) {
-  const review = { id, revision: null, epoch: state.epoch }; state.codingReview = review; state.selectedPatch = null;
-  openDialog("patches"); $("patches-list").hidden = true; $("patch-detail").hidden = false; $("patch-detail").replaceChildren(); feedback("patch-feedback", "Loading changes…");
+function codingDiffPath(run, file) {
+  return "coding/runs/" + encodeURIComponent(run.id) + "/diff?" + new URLSearchParams({ path: file.path, revision: run.revision });
+}
+async function reviewCodingRun(id, { inboxTrigger } = {}) {
+  const inbox = inboxTrigger ? codingInbox : null;
+  const review = { id, inboxTrigger };
+  state.codingReview = review;
+  state.selectedPatch = null;
+  $("patches-title").textContent = "Review changes";
+  $("close-patches").setAttribute("aria-label", "Close review");
+  $("review-toolbar").hidden = false;
+  $("back-to-tasks").hidden = !inbox;
+  review.sheet = openDialog("patches", inboxTrigger, { onClose: () => {
+    state.codingReview = null;
+    $("patch-detail").replaceChildren();
+    if (codingInbox === inbox && inbox && state.privateReady) {
+      if (inbox.refreshAfterReview) {
+        inbox.refreshAfterReview = false;
+        loadCodingInbox();
+        $("refresh-inbox").focus();
+      } else inboxTrigger.focus({ preventScroll: true });
+    }
+  } });
+  const current = () => state.codingReview === review && !review.sheet.closed;
+  const detail = $("patch-detail");
+  $("patches-list").hidden = true;
+  detail.hidden = false;
+  detail.replaceChildren();
+  feedback("patch-feedback", "Loading changes…");
   try {
     const data = await api("coding/runs/" + encodeURIComponent(id) + "/changes");
-    if (state.codingReview !== review || review.epoch !== state.epoch) return;
-    const run = data.run; review.revision = run.revision; acceptCodingRun(run);
-    const detail = $("patch-detail"); detail.append(node("h3", "", "Review coding task"), node("p", "muted", run.repository + " · base " + String(run.baseSha || "").slice(0, 12)), node("p", "", run.summary || run.prompt));
-    const files = data.files || []; detail.append(node("p", "field-help", files.length + " changed file" + (files.length === 1 ? "" : "s") + ". Open each file to inspect its diff."));
+    if (!current()) return;
+    const run = data.run, files = data.files || [];
+    review.run = run;
+    review.hasFiles = files.length > 0;
+    acceptCodingRun(run);
+    const metadata = [run.repository, run.baseBranch, run.baseSha && "Base " + run.baseSha.slice(0, 12), "Revision " + run.revision].filter(Boolean);
+    detail.append(node("h3", "", run.prompt?.split("\n")[0].slice(0, 140) || "Coding task"), node("p", "muted", metadata.join(" · ")));
+    if (run.summary) detail.append(node("p", "review-summary", run.summary));
+    if (run.error?.message) detail.append(node("p", "message-error", run.error.message));
+    detail.append(node("h4", "", files.length + " changed file" + (files.length === 1 ? "" : "s")));
     for (const file of files) {
       const section = node("details", "patch-file"), output = node("pre", "", "Open to load the diff."); let loaded = false, loading = false;
       section.append(node("summary", "", file.operation + " · " + file.path), output);
       section.addEventListener("toggle", async () => {
         if (!section.open || loaded || loading) return; loading = true; output.textContent = "Loading diff…";
         try {
-          const result = await api("coding/runs/" + encodeURIComponent(id) + "/diff?path=" + encodeURIComponent(file.path));
-          if (state.codingReview !== review || review.epoch !== state.epoch || !section.isConnected) return;
+          const result = await api(codingDiffPath(run, file));
+          if (!current() || !section.isConnected) return;
           output.textContent = (result.binary ? "Binary file. A text diff is unavailable." : result.diff || "No text diff was recorded.") + (result.diffTruncated ? "\n\nDiff preview truncated. The complete file is included when you publish the draft pull request." : ""); loaded = true;
-        } catch (error) { if (!error.accountChanged && state.codingReview === review) output.textContent = errorText(error) + " Close and reopen this file to retry."; }
+        } catch (error) {
+          if (!error.accountChanged && current()) {
+            if (error.code === "coding_review_changed") {
+              review.stale = true;
+              updateComposer();
+            }
+            output.textContent = errorText(error) + (review.stale ? "" : " Close and reopen this file to retry.");
+          }
+        }
         finally { loading = false; }
       }); detail.append(section);
     }
     detail.append(codingChecks(data.checks || run.checks));
     const link = pullRequestLink(run.pullRequest);
-    if (link) detail.append(link); else {
-      detail.append(node("p", "field-help", "Publishing creates a new branch and a draft pull request for this reviewed revision. It does not merge or deploy the changes."));
+    if (link) detail.append(link);
+    else if (run.status === "publishing") detail.append(node("p", "field-help", "Draft pull request creation is in progress. Refresh the review to check its status."));
+    else if (run.reviewReady && files.length && !codingActive(run)) {
+      detail.append(node("p", "field-help", "This creates a draft pull request from the reviewed revision. Deployment happens through the reviewed release process."));
       const publish = button("Create draft pull request", e => busy(e.currentTarget, async () => {
-        if (state.codingReview !== review) return;
+        if (!current() || review.stale) return;
         if (!confirm("Create a new branch and draft pull request for these reviewed changes in " + run.repository + "?")) return;
-        const result = await api("coding/runs/" + encodeURIComponent(id) + "/publish", "POST", { confirm: true, revision: review.revision });
-        if (state.codingReview !== review || review.epoch !== state.epoch) return;
+        let result;
+        try { result = await api("coding/runs/" + encodeURIComponent(id) + "/publish", "POST", { confirm: true, revision: run.revision }); }
+        catch (error) {
+          if (!current() || error.accountChanged) return;
+          if (["coding_review_changed", "coding_review_unavailable", "coding_publish_pending"].includes(error.code)) review.stale = true;
+          throw error;
+        }
+        if (!current()) return;
         acceptCodingRun(result.run); const published = pullRequestLink(result.pullRequest || result.run?.pullRequest);
-        if (published) { publish.replaceWith(published); feedback("patch-feedback", "Draft pull request created."); } else { feedback("patch-feedback", "Publication is being checked. Refresh this review for its result."); await observeCodingRuns(); }
+        if (published) {
+          if (inbox) inbox.refreshAfterReview = true;
+          publish.replaceWith(published);
+          published.focus();
+          feedback("patch-feedback", "Draft pull request created.");
+        } else {
+          review.stale = true;
+          feedback("patch-feedback", "Publication is being checked. Refresh the review for its result.");
+        }
       }, "patch-feedback"), "primary-button"); publish.id = "publish-coding"; publish.disabled = !run.reviewReady || !files.length || !state.health?.github?.connected; detail.append(publish);
       if (!state.health?.github?.connected) detail.append(node("p", "field-help", "Connect GitHub in Settings to publish."));
     }
     feedback("patch-feedback", "");
-  } catch (error) { if (!error.accountChanged && state.codingReview === review) feedback("patch-feedback", errorText(error), true); }
+    updateComposer();
+  } catch (error) { if (!error.accountChanged && current()) feedback("patch-feedback", errorText(error), true); }
 }
 function scheduleDescription(task) {
   if (task.schedule_kind === "interval") return "Every " + (task.interval_minutes / 60) + " hours";
@@ -911,6 +1051,14 @@ function init() {
   $("prompt").addEventListener("focus", fitComposerViewport);
   $("prompt").addEventListener("blur", fitComposerViewport);
   for (const el of document.querySelectorAll("[data-open]")) el.addEventListener("click", () => showPanel(el.dataset.open, el));
+  $("inbox-filter").addEventListener("change", () => loadCodingInbox());
+  $("refresh-inbox").addEventListener("click", () => loadCodingInbox());
+  $("more-inbox").addEventListener("click", () => loadCodingInbox({ more: true }));
+  $("back-to-tasks").addEventListener("click", () => state.codingReview?.sheet.now());
+  $("refresh-review").addEventListener("click", () => {
+    const review = state.codingReview;
+    if (review) reviewCodingRun(review.id, { inboxTrigger: review.inboxTrigger });
+  });
   $("new-chat").addEventListener("click", () => newConversation()); $("conversation-search").addEventListener("input", renderThreads); $("show-archived").addEventListener("change", () => loadThreads().catch(error => toast(errorText(error))));
   $("load-older-messages").addEventListener("click", e => loadOlderMessages(e.currentTarget));
   $("mode").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; state.intent = "code"; state.codingContinuation = null; state.codingRestart = null; fillEnvironmentChoices(); renderContextChips(); updateComposer(); }); $("repository").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; state.environmentId = ""; state.codingContinuation = null; state.codingRestart = null; renderContextChips(); fillEnvironmentChoices(); updateComposer(); });
