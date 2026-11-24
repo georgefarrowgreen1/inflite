@@ -145,6 +145,47 @@ test('activity is an owner-scoped bounded durable projection with native destina
   assert.equal(foreign.status, 404);
 });
 
+test('recent runs combines current owner records without exposing bodies or duplicating scheduled answers', async t => {
+  const { env, conversation } = await fixture(t);
+  const otherAccount = async () => Response.json({ signedIn: true, user: { id: 'bob' }, apps: { mail: true } });
+  const developer = await store.createConversation(env, 'alice', { title: 'Repository repair', mode: 'developer', repository: 'owner/project' });
+  const run = await coding.createCodingRun(env, 'alice', { id: 'coding-1', conversationId: developer.id, requestId: 'coding-request', prompt: 'Private coding prompt', model: 'fixture', credentialUpdatedAt: 42, repository: 'owner/project' });
+  const schedule = await store.createTask(env, 'alice', { title: 'Weekly release review', prompt: 'Private schedule prompt', schedule_kind: 'interval', interval_minutes: 360 });
+  await store.createMessage(env, 'alice', conversation.id, { id: 'answer-1', prompt: 'Private question' });
+  await store.finishMessage(env, 'alice', 'answer-1', { status: 'completed', answer: 'Private response' });
+  await store.createMessage(env, 'alice', schedule.conversation_id, { id: 'scheduled-answer', prompt: 'Private generated question', status: 'failed' });
+  const other = await store.createConversation(env, 'bob', { title: 'Foreign conversation', mode: 'research' });
+  await store.createMessage(env, 'bob', other.id, { id: 'scheduled-answer', prompt: 'Foreign question' });
+  await env.ATLAS_DB.batch([
+    env.ATLAS_DB.prepare('UPDATE atlas_turns SET updated_at=1000 WHERE owner=? AND id=?').bind('alice', 'answer-1'),
+    env.ATLAS_DB.prepare('UPDATE atlas_coding_runs SET updated_at=2000 WHERE owner=? AND id=?').bind('alice', run.id),
+    env.ATLAS_DB.prepare("INSERT INTO atlas_schedule_runs(owner,id,task_id,request_id,occurrence_key,status,started_at,finished_at,result) VALUES(?,?,?,?,?,'failed',?,?,?)")
+      .bind('alice', 'scheduled-1', schedule.id, 'scheduled-answer', 'occurrence-1', 2500, 3000, 'Private scheduled result'),
+  ]);
+  const read = (path, identity = account) => atlas(request('/atlas/api/runs' + path), env, { account: identity, send: async () => assert.fail('Reading runs must not call a provider') });
+  const response = await read('');
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('Cache-Control'), /no-store/);
+  const { items } = await response.json();
+  assert.deepEqual(items, [
+    { kind: 'scheduled', id: 'scheduled-1', title: schedule.title, status: 'failed', updatedAt: 3000, scheduleId: schedule.id },
+    { kind: 'coding', id: run.id, title: developer.title, status: run.status, updatedAt: 2000, conversationId: developer.id, reviewReady: false },
+    { kind: 'answer', id: 'answer-1', title: conversation.title, status: 'completed', updatedAt: 1000, conversationId: conversation.id },
+  ]);
+  assert.deepEqual((await (await read('?limit=1')).json()).items, items.slice(0, 1));
+  assert.deepEqual((await (await read('', otherAccount)).json()).items.map(item => item.title), [other.title]);
+  const standard = () => Response.json({ signedIn: true, user: { id: 'alice' }, apps: { mail: false } });
+  assert.equal((await read('', standard)).status, 403);
+});
+
+test('recent runs remains available before coding storage is installed', async t => {
+  const { env, conversation } = await fixture(t, { version: 6 });
+  await store.createMessage(env, 'alice', conversation.id, { id: 'answer-only', prompt: 'Question' });
+  const response = await atlas(request('/atlas/api/runs'), env, { account });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).items.map(item => item.id), ['answer-only']);
+});
+
 test('schema eight keeps chat available, context requires explicit setup, and schema nine verifies its table', async t => {
   const { env, conversation } = await fixture(t, { version: 8 });
   assert.equal((await store.storageStatus(env)).ready, true);

@@ -33,14 +33,14 @@ function defaultFixture() {
     environments: [], environmentsReady: true, tasks: [], briefs: [], patches: [], coding: { ready: true, storageReady: true, message: '' }, codingRuns: [], codingFiles: {}, codingDiffs: {}, requests: [], overrides: new Map(), next: 1, older: null
   };
 }
-function nativeAtlasPage(withWallpaper, shellLayout) {
+function nativeAtlasPage(withWallpaper, shellLayout, toolsAction) {
   const optics = withWallpaper ? readFileSync(join(PUBLIC, 'index.html'), 'utf8').match(/<svg class="ifl-optics"[\s\S]*?<\/svg>/)?.[0] : '';
   if (withWallpaper) assert.ok(optics, 'the shell supplies the refractor SVG');
   const tabs = '<nav id="fixture-nav" class="ifl-segs" aria-label="Atlas sections"></nav>';
   const mount = '<div id="fixture-atlas"></div>';
   const shell = shellLayout
     ? `<div id="in" class="today-in" hidden><div id="hd"><header class="ifl-hd ifh has-secs"><h1>Atlas</h1><div class="ifl-row2">${tabs}</div></header></div><div id="views"><main id="m-atlas" class="view ifl-screen" data-app="atlas">${mount}</main></div><div class="ifl-workspace ws-dock-host"><nav class="ws-dock" aria-label="Dock"><button class="ws-dock-button">Apps</button></nav></div></div>`
-    : `<div id="in" hidden></div>${tabs}${mount}`;
+    : `<div id="in" hidden></div>${toolsAction ? '<button id="fixture-atlas-tools">Atlas tools</button>' : ''}${tabs}${mount}`;
   const head = atlasPage('fixture').split('<body')[0];
   return (shellLayout ? head.replace('</head>', '<link rel="stylesheet" href="/roof/workspace.css"></head>') : head) + `<body>
     <style nonce="fixture">
@@ -59,7 +59,10 @@ function nativeAtlasPage(withWallpaper, shellLayout) {
       const html = document.documentElement;
       const screenEl = document.querySelector('#m-atlas');
       if (screenEl) { html.classList.add('ifl-os'); html.dataset.app = 'atlas'; }
-      const fw = { screenEl, signal: new AbortController().signal, visible: () => true, fill(on) { if (screenEl) html.classList.toggle('ifl-fill', on); }, header: { set() {} },
+      const fw = { screenEl, signal: new AbortController().signal, visible: () => true, fill(on) { if (screenEl) html.classList.toggle('ifl-fill', on); }, header: { set(value) {
+        const tools = document.querySelector('#fixture-atlas-tools');
+        if (tools) tools.onclick = value.acts.find(action => action.label === 'Atlas tools').run;
+      } },
         tabs: { away(hide) { html.toggleAttribute('data-os-dock-away', hide); document.querySelector('.ws-dock').hidden = hide; } },
         nav: { section: key => show(key), href: (key, arg) => '#' + key + (arg ? '=' + encodeURIComponent(arg) : ''),
           go: path => show(...path.slice(1).split('=').map(decodeURIComponent)) } };
@@ -111,7 +114,7 @@ async function open(options = {}) {
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== ORIGIN) return route.abort();
-    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: options.native ? nativeAtlasPage(options.wallpaper, options.shellLayout) : atlasPage('fixture') });
+    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: options.native ? nativeAtlasPage(options.wallpaper, options.shellLayout, options.toolsAction) : atlasPage('fixture') });
     if (url.pathname === '/account/api/account/appearance') return route.fulfill({ json: { signedIn: true, id: fixture.owner, palette: 'inflite', appearance: options.theme || 'dark', glass: options.glass ?? true } });
     if (!url.pathname.startsWith('/atlas/api/')) {
       if (!['/theme.js', '/app.css', '/atlas.svg'].includes(url.pathname) && !url.pathname.startsWith('/roof/') && !url.pathname.startsWith('/atlas/assets/') && !url.pathname.startsWith('/atlas/roof/')) return route.fulfill({ status: 404, body: '' });
@@ -790,6 +793,42 @@ test('coding tasks restore after reload and navigation, poll remote progress and
     assert.match(await t.page.locator('.coding-run').textContent(), /Tests are not verified/);
     assert.equal(t.fixture.requests.some(call => /coding\/runs\/.+\/cancel$/.test(call.path)), false);
     assert.equal(t.fixture.requests.some(call => call.path === 'coding/runs' && call.method === 'POST'), false); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('native mobile Recent runs retries and opens existing answer, review and schedule views', async () => {
+  const run = codingRun({ status: 'completed', reviewReady: true });
+  const t = await open({ native: true, toolsAction: true, width: 320, height: 844, mobile: true, fixture: {
+    codingRuns: [run],
+    tasks: [{ id: 'scheduled-1', title: 'Weekly review', schedule_kind: 'interval', interval_minutes: 360 }],
+  } });
+  const openRuns = async () => {
+    await t.page.getByRole('button', { name: 'Atlas tools', exact: true }).click();
+    await t.page.getByRole('button', { name: 'Recent runs', exact: true }).click();
+    return t.page.getByRole('dialog', { name: 'Recent runs', exact: true });
+  };
+  try {
+    const rows = [
+      { kind: 'answer', id: 'beta-first', title: 'Beta planning', conversationId: 'beta', status: 'completed', updatedAt: now },
+      { kind: 'coding', ...run, title: 'Repository repair' },
+      { kind: 'scheduled', id: 'run-fixture', scheduleId: 'scheduled-1', title: 'Weekly review', status: 'completed', updatedAt: now },
+    ];
+    t.fixture.overrides.set('GET runs', ({ reply }) => reply({ code: 'runs_unavailable', error: 'Runs are temporarily unavailable.' }, 503));
+    const dialog = await openRuns();
+    await dialog.getByText('Runs are temporarily unavailable.').waitFor();
+    t.fixture.overrides.set('GET runs', ({ reply }) => reply({ items: rows }));
+    await dialog.getByRole('button', { name: 'Refresh runs' }).click();
+    await dialog.getByRole('button', { name: /Beta planning.*Answer.*Completed/ }).click();
+    await t.page.getByText('Only beta content belongs here.').waitFor();
+    await (await openRuns()).getByRole('button', { name: /Repository repair.*Ready to review/ }).click();
+    const review = t.page.getByRole('dialog', { name: 'Review changes', exact: true });
+    await review.waitFor();
+    await review.getByRole('button', { name: 'Close review' }).click();
+    await (await openRuns()).getByRole('button', { name: /Weekly review.*Scheduled task/ }).click();
+    await t.page.getByRole('dialog', { name: 'Scheduled tasks' }).getByText('A scheduled result with evidence.').waitFor();
+    assert.equal(t.fixture.requests.filter(call => call.path === 'runs').length, 4);
+    assert.equal(t.fixture.requests.some(call => call.method !== 'GET'), false);
+    assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
 });
 

@@ -11,7 +11,7 @@ import { evolution } from './atlas-evolution.js';
 import * as coding from './atlas-coding.js';
 import * as environments from './atlas-environments.js';
 import { workspaceContextStorageStatus, getWorkspaceContext, setWorkspaceContext, clearWorkspaceContext } from './atlas-workspace-context.js';
-import { atlasActivity } from './atlas-activity.js';
+import { atlasActivity, atlasRuns } from './atlas-activity.js';
 
 const PRIVATE = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', 'Referrer-Policy': 'no-referrer' };
 const API_CSP = "default-src 'none'; frame-ancestors 'none'";
@@ -175,6 +175,7 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
     if (!storage.ready) fail(storage.code || 'storage_upgrade_required', env.ATLAS_DB ? 'Finish Atlas storage setup to use this feature.' : 'The Atlas database is not configured.', env.ATLAS_DB ? 409 : 503);
     const options = { send, signal: request.signal };
     if (path === '/activity' && method === 'GET') return json(await atlasActivity(env, owner, { limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 12, schemaVersion: storage.schemaVersion }));
+    if (path === '/runs' && method === 'GET') return json(await atlasRuns(env, owner, { limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined, schemaVersion: storage.schemaVersion }));
 
     if (path === '/provider') {
       if (method === 'GET') return json(await providerStatus(env, owner));

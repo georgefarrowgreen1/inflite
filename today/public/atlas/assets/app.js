@@ -108,6 +108,7 @@ let keyboardShell;
 let codingInbox;
 const destinationRoutes = { inbox: "tasks", environments: "environments", briefs: "briefs" };
 let destination = null, briefRequest = null, briefListRequest = null;
+let runsRequest = null;
 let threadsRequest = null, threadsArchived = null, threadsError = "", threadSelection = null;
 const mobileQuery = "(max-width: 720px)";
 const dirtyForms = new Set();
@@ -831,6 +832,10 @@ async function showPanel(name, trigger, { page = false } = {}) {
   const samePage = page && destination?.name === name;
   if (page) enterDestination(name);
   if (name === "inbox") return openCodingInbox(trigger, page);
+  if (name === "runs") {
+    openDialog("runs", trigger, { onClose: clearRuns });
+    return loadRecentRuns();
+  }
   if (!page) openDialog(name, trigger);
   try {
     if (name === "settings") { await refreshHealth(); if (state.health.storage?.ready) { await loadSettings(); if (state.health.provider?.keySaved) { const result = await api("models"); fillModels(result.models, result.selected); } } }
@@ -843,6 +848,60 @@ async function showPanel(name, trigger, { page = false } = {}) {
       if (!page) await loading;
     }
   } catch (error) { toast(errorText(error)); }
+}
+function clearRuns() {
+  runsRequest?.abort();
+  runsRequest = null;
+  $("runs-list").removeAttribute("aria-busy");
+  $("runs-list").replaceChildren();
+  feedback("runs-feedback", "");
+}
+async function openRecentRun(run, trigger) {
+  sheets.top()?.now();
+  if (run.kind === "scheduled") {
+    await showPanel("schedules", trigger);
+    const task = state.tasks.find(task => task.id === run.scheduleId);
+    if (task && sheets.top()?.el.id === "schedules-dialog") await showRuns(task);
+  } else if (run.kind === "coding" && run.reviewReady && !codingActive(run)) {
+    if (fw) fw.nav.go(fw.nav.href("tasks", run.id));
+    else await reviewCodingRun(run.id);
+  } else if (fw) {
+    fw.nav.go(fw.nav.href("conversations", run.conversationId));
+  } else {
+    await selectConversation(run.conversationId);
+  }
+}
+async function loadRecentRuns() {
+  runsRequest?.abort();
+  const request = new AbortController(), list = $("runs-list");
+  runsRequest = request;
+  list.setAttribute("aria-busy", "true");
+  feedback("runs-feedback", "Loading runs…");
+  try {
+    const data = await api("runs", "GET", undefined, { signal: request.signal, timeout: 20000 });
+    if (runsRequest !== request) return;
+    const kinds = { answer: "Answer", coding: "Coding task", scheduled: "Scheduled task" };
+    const statuses = { queued: "Queued", running: "Working", completed: "Completed", incomplete: "Incomplete",
+      failed: "Failed", cancelled: "Stopped", skipped: "Skipped", uncertain: "Outcome unconfirmed" };
+    const rows = data.items.map(run => {
+      const kind = kinds[run.kind];
+      const status = run.kind === "coding" ? codingStatus(run) : statuses[run.status] || "Status unavailable";
+      const open = button("", event => openRecentRun(run, event.currentTarget), "record-open ifl-row atlas-disclosure");
+      const label = node("span", "ifl-tx");
+      label.append(node("b", "", run.title || kind), node("small", "", [kind, status, timestamp(run.updatedAt)].filter(Boolean).join(" · ")));
+      open.append(label);
+      return open;
+    });
+    list.replaceChildren(...(rows.length ? rows : [emptyState("No runs yet")]));
+    feedback("runs-feedback", "");
+  } catch (error) {
+    if (runsRequest === request && !error.accountChanged) feedback("runs-feedback", errorText(error), true);
+  } finally {
+    if (runsRequest === request) {
+      runsRequest = null;
+      list.removeAttribute("aria-busy");
+    }
+  }
 }
 async function loadUsage() {
   const data = await api("usage"), totals = data.totals || {}, limits = data.limits || {};
@@ -1471,6 +1530,7 @@ function init() {
   $("prompt").addEventListener("focus", fitComposerViewport);
   $("prompt").addEventListener("blur", fitComposerViewport);
   for (const el of all("[data-open]")) el.addEventListener("click", () => showPanel(el.dataset.open, el));
+  $("refresh-runs").addEventListener("click", loadRecentRuns);
   $("inbox-filter").addEventListener("change", () => loadCodingInbox());
   for (const control of all("[data-inbox-filter]")) control.addEventListener("click", () => {
     if ($("inbox-filter").value === control.dataset.inboxFilter) return;

@@ -72,6 +72,7 @@ export function atlasMarkup() {
   <header class="ifs-head"><h2 id="workspace-title" tabindex="-1">Workspace</h2><button class="ifs-btn icon-button" type="button" data-close aria-label="Close workspace">${glyph("x")}</button></header>
   <div class="ifs-body">
     <nav class="workspace-tools ifl-list" aria-label="Workspace tools">
+      <button class="ifl-row" data-open="runs" aria-haspopup="dialog">${glyph("activity")}Recent runs</button>
       <button class="ifl-row" data-open="inbox" aria-haspopup="dialog">${glyph("code")}Tasks</button>
       <button class="ifl-row" data-open="environments">${glyph("cloud")}Cloud environments</button>
       <button class="ifl-row" data-open="briefs">${glyph("doc")}Saved briefs</button>
@@ -80,6 +81,15 @@ export function atlasMarkup() {
       <button class="ifl-row" data-open="usage">${glyph("activity")}Usage</button>
       <button class="ifl-row" data-open="settings">${glyph("settings")}Settings</button>
     </nav>
+  </div>
+</dialog>
+<dialog id="runs-dialog" class="atlas-dialog ifl-sheet wide-dialog" aria-labelledby="runs-title">
+  <div class="ifs-grab" aria-hidden="true"></div>
+  <header class="ifs-head"><h2 id="runs-title" tabindex="-1">Recent runs</h2><button class="ifs-btn icon-button" type="button" data-close aria-label="Close recent runs">${glyph("x")}</button></header>
+  <div class="ifs-body dialog-content">
+    <div class="button-row"><button id="refresh-runs" class="quiet-button" type="button">Refresh runs</button></div>
+    <p id="runs-feedback" class="field-feedback" role="status"></p>
+    <div id="runs-list" class="record-list atlas-record-group ifl-list"></div>
   </div>
 </dialog>
 <dialog id="inbox-dialog" class="atlas-dialog ifl-sheet wide-dialog" aria-labelledby="inbox-title">
