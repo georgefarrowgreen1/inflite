@@ -269,7 +269,7 @@ export default {
     if (!env.ATLAS_VERIFY_KEY || env.ATLAS_AUTONOMY !== "1") return;
     const verifyAdmin = async owner => {
       try {
-        const r = await appFetch(env, "https://account.inflite.ai/api/atlas-admin", {method:"POST",headers:{Authorization:"Bearer "+env.ATLAS_VERIFY_KEY,"Content-Type":"application/json"},body:JSON.stringify({owner}),redirect:"error",signal:AbortSignal.timeout(8000)});
+        const r = await appFetch(env, "https://account.inflite.ai/api/atlas-admin", {method:"POST",headers:{Authorization:"Bearer "+env.ATLAS_VERIFY_KEY,"Content-Type":"application/json"},body:JSON.stringify({owner}),redirect:"manual",signal:AbortSignal.timeout(8000)});
         return r.ok && (await r.json()).allowed === true;
       } catch { return false; }
     };
