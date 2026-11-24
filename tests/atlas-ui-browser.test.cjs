@@ -33,9 +33,52 @@ function defaultFixture() {
     environments: [], environmentsReady: true, tasks: [], briefs: [], patches: [], coding: { ready: true, storageReady: true, message: '' }, codingRuns: [], codingFiles: {}, codingDiffs: {}, requests: [], overrides: new Map(), next: 1, older: null
   };
 }
+function nativeAtlasPage(withWallpaper) {
+  const optics = withWallpaper ? readFileSync(join(PUBLIC, 'index.html'), 'utf8').match(/<svg class="ifl-optics"[\s\S]*?<\/svg>/)?.[0] : '';
+  if (withWallpaper) assert.ok(optics, 'the shell supplies the refractor SVG');
+  return atlasPage('fixture').split('<body')[0] + `<body>
+    <style nonce="fixture">
+      body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+      #fixture-nav { margin: 12px 16px; flex: none; }
+      #fixture-nav .ifl-sec[aria-current="page"] { background: var(--ifl-raised); color: var(--ifl-text); }
+      #fixture-atlas { overflow: hidden; }
+    </style>
+    ${optics}${withWallpaper ? '<div class="sky" aria-hidden="true"><canvas></canvas></div>' : ''}
+    <div id="in" hidden></div>
+    <nav id="fixture-nav" class="ifl-segs" aria-label="Atlas sections"></nav>
+    <div id="fixture-atlas"></div>
+    <script type="module" nonce="fixture">
+      import { mount, SECTIONS } from '/atlas/roof/module.js';
+      import { createSheets } from '/roof/sheet.js';
+      const root = document.querySelector('#fixture-atlas');
+      const tabs = document.querySelector('#fixture-nav');
+      const fw = { signal: new AbortController().signal, visible: () => true, fill() {}, header: { set() {} },
+        nav: { section: key => show(key), href: (key, arg) => '#' + key + (arg ? '=' + encodeURIComponent(arg) : ''),
+          go: path => show(...path.slice(1).split('=').map(decodeURIComponent)) } };
+      fw.sheet = createSheets(fw);
+      const atlas = mount(root, fw);
+      async function show(key, arg) {
+        fw.sheet.closeAll();
+        for (const tab of tabs.children) tab.setAttribute('aria-current', tab.dataset.key === key ? 'page' : 'false');
+        fw.route = { key, arg };
+        await atlas.show(fw.route);
+      }
+      for (const [key, title] of SECTIONS) {
+        const tab = document.createElement('button');
+        tab.className = 'ifl-sec';
+        tab.dataset.key = key;
+        tab.textContent = title;
+        tab.addEventListener('click', () => show(key));
+        tabs.append(tab);
+      }
+      await show('conversations', new URL(location.href).searchParams.get('conversation'));
+      document.querySelector('#in').hidden = false;
+      root.dataset.atlasReady = 'true';
+    </script></body></html>`;
+}
 async function open(options = {}) {
   const fixture = Object.assign(defaultFixture(), options.fixture || {}), errors = [], security = [];
-  const context = await browser.newContext({ viewport: { width: options.width || 1280, height: options.height || 900 }, colorScheme: options.theme || 'dark', reducedMotion: 'reduce', serviceWorkers: 'block', hasTouch: !!options.mobile, isMobile: !!options.mobile });
+  const context = await browser.newContext({ viewport: { width: options.width || 1280, height: options.height || 900 }, deviceScaleFactor: options.deviceScaleFactor, colorScheme: options.theme || 'dark', reducedMotion: 'reduce', serviceWorkers: 'block', hasTouch: !!options.mobile, isMobile: !!options.mobile });
   await context.addInitScript(() => {
     window.__atlasStream = { owner: 'owner-a', controller: null, request: null, requests: [], cancelled: 0 };
     const actualFetch = window.fetch.bind(window);
@@ -52,7 +95,7 @@ async function open(options = {}) {
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== ORIGIN) return route.abort();
-    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: atlasPage('fixture') });
+    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: options.native ? nativeAtlasPage(options.wallpaper) : atlasPage('fixture') });
     if (url.pathname === '/account/api/account/appearance') return route.fulfill({ json: { signedIn: true, id: fixture.owner, palette: 'inflite', appearance: options.theme || 'dark', glass: options.glass ?? true } });
     if (!url.pathname.startsWith('/atlas/api/')) {
       if (!['/theme.js', '/app.css', '/apps/atlas.svg'].includes(url.pathname) && !url.pathname.startsWith('/roof/') && !url.pathname.startsWith('/atlas/assets/') && !url.pathname.startsWith('/atlas/roof/')) return route.fulfill({ status: 404, body: '' });
@@ -65,6 +108,7 @@ async function open(options = {}) {
     const reply = (data, status = 200, capturedOwner = owner) => route.fulfill({ status, headers: { 'X-Atlas-Owner': capturedOwner, 'Cache-Control': 'no-store' }, json: data });
     if (fixture.overrides.has(method + ' ' + path)) return fixture.overrides.get(method + ' ' + path)({ route, reply, body, url, owner });
     if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 7 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, coding: fixture.coding, environments: { ready: fixture.environmentsReady, storageReady: fixture.environmentsReady }, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' } });
+    if (path === 'session') return reply({ owner, available: true, signedIn: true });
     if (path === 'setup') { fixture.environmentsReady = true; fixture.ready = true; fixture.coding = { ready: true, storageReady: true, message: '' }; return reply({ ready: true, schemaVersion: 7 }); }
     if (path === 'settings') { if (method === 'PATCH') Object.assign(fixture.settings, body); return reply(fixture.settings); }
     if (path === 'models') return reply({ models: fixture.models, selected: fixture.model });
@@ -148,7 +192,8 @@ async function open(options = {}) {
   });
   const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
   await page.goto(ORIGIN + '/atlas' + (options.conversation ? '?conversation=' + encodeURIComponent(options.conversation) : ''));
-  await page.waitForFunction(() => !document.body.classList.contains('session-check'));
+  if (options.native) await page.locator('[data-atlas-ready="true"]').waitFor();
+  else await page.waitForFunction(() => !document.body.classList.contains('session-check'));
   await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, options.theme || 'dark');
   return { page, context, fixture, errors, security, async close() { security.push(...await page.evaluate(() => window.__atlasPolicyErrors || [])); await context.close(); }, async screenshot(name) { if (!process.env.ATLAS_UI_SCREENSHOTS) return; mkdirSync(process.env.ATLAS_UI_SCREENSHOTS, { recursive: true }); await page.screenshot({ path: join(process.env.ATLAS_UI_SCREENSHOTS, name + '.png'), fullPage: true }); } };
 }
@@ -157,6 +202,206 @@ async function openPanel(t, name) { await t.page.locator('#open-workspace').clic
 async function chooseMode(t, mode) { await t.page.locator('#composer-options').click(); await t.page.locator('#mode').selectOption(mode); await t.page.getByRole('button', { name: 'Close task options', exact: true }).click(); }
 async function eventually(check) { let last; for (let i = 0; i < 60; i++) { try { check(); return; } catch (error) { last = error; await new Promise(resolve => setTimeout(resolve, 20)); } } throw last; }
 async function emit(page, event, data) { await page.evaluate(({ event, data }) => window.__atlasEmit(event, data), { event, data }); }
+
+function backdrop(locator) {
+  return locator.evaluate(node => {
+    const style = getComputedStyle(node);
+    return style.backdropFilter || style.webkitBackdropFilter || 'none';
+  });
+}
+
+function material(locator) {
+  return locator.evaluate(node => {
+    const style = getComputedStyle(node);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d');
+    context.fillStyle = style.backgroundColor;
+    context.fillRect(0, 0, 1, 1);
+    return { radius: parseFloat(style.borderTopLeftRadius), shadow: style.boxShadow, alpha: context.getImageData(0, 0, 1, 1).data[3] };
+  });
+}
+
+async function expectLens(page, locator, profile) {
+  if (process.env.WEB_UI_BROWSER !== 'webkit') {
+    const filter = await backdrop(locator);
+    assert.ok(filter.includes('#ifl-system-lens-' + profile), filter);
+    assert.ok(filter.includes('blur('), filter);
+    return;
+  }
+  assert.match(await backdrop(locator), /blur\(/);
+  const surface = await locator.elementHandle();
+  await page.waitForFunction(node => {
+    const bounds = node.getBoundingClientRect(), wallpaper = document.querySelector('.sky > canvas');
+    const density = wallpaper.width / wallpaper.clientWidth;
+    return density >= 1.99 && [...document.querySelectorAll('.sky > .ifl-orb-lens')].some(layer => {
+      const lens = layer.getBoundingClientRect();
+      return Math.abs(lens.x - bounds.x) < 1 && Math.abs(lens.y - bounds.y) < 1 &&
+        Math.abs(lens.width - bounds.width) < 1 && Math.abs(lens.height - bounds.height) < 1 &&
+        layer.firstElementChild.width >= Math.floor(bounds.width * density);
+    });
+  }, surface);
+}
+
+test('native Atlas Liquid Glass uses the shared refractor and removes optics when Glass is Off', async () => {
+  const t = await open({ native: true, wallpaper: true, width: 390, mobile: true, deviceScaleFactor: 2, conversation: 'alpha' });
+  try {
+    const { page } = t;
+    const mode = process.env.WEB_UI_BROWSER === 'webkit' ? 'artwork' : 'backdrop';
+    await page.locator(`html[data-refractor="${mode}"]`).waitFor({ state: 'attached' });
+    const composer = page.locator('#composer');
+    const actions = page.locator('#conversation-menu summary');
+    const lensLayers = page.locator('.sky > .ifl-orb-lens');
+    const expectTranslucency = async surface => {
+      const { alpha } = await material(surface);
+      assert.ok(alpha > 0 && alpha < 255, `expected a visible translucent tint, got alpha ${alpha}`);
+    };
+    await expectLens(page, composer, 'control');
+    await expectTranslucency(composer);
+
+    await actions.click();
+    const menu = page.locator('#conversation-menu[open] > div');
+    await expectLens(page, menu, 'sheet');
+    await expectTranslucency(menu);
+    await page.evaluate(() => InFliteAppearance.setGlass({ glass: false }, { preview: true }));
+    assert.equal(await page.locator('html').getAttribute('data-refractor'), null);
+    assert.equal(await backdrop(composer), 'none');
+    assert.equal(await backdrop(menu), 'none');
+    assert.equal((await material(composer)).alpha, 255);
+    assert.equal((await material(menu)).alpha, 255);
+    assert.equal(await lensLayers.count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Rename', exact: true }).isVisible(), true);
+
+    await page.evaluate(() => InFliteAppearance.cancelGlassPreview());
+    await expectLens(page, menu, 'sheet');
+    await actions.click();
+    await menu.waitFor({ state: 'hidden' });
+    if (mode === 'artwork') await page.waitForFunction(() => document.querySelectorAll('.sky > .ifl-orb-lens').length === 1);
+
+    await page.locator('#composer-options').click();
+    const options = page.getByRole('dialog', { name: 'Task options', exact: true });
+    await options.waitFor();
+    await expectLens(page, options, 'sheet');
+    await page.emulateMedia({ contrast: 'more' });
+    await page.waitForFunction(() => !document.documentElement.hasAttribute('data-refractor'));
+    assert.equal(await backdrop(options), 'none');
+    assert.equal(await lensLayers.count(), 0);
+    await options.getByRole('button', { name: 'Close task options' }).click();
+    await options.waitFor({ state: 'hidden' });
+
+    await page.emulateMedia({ contrast: 'no-preference' });
+    await page.locator(`html[data-refractor="${mode}"]`).waitFor({ state: 'attached' });
+    const mount = page.locator('#fixture-atlas');
+    await mount.evaluate(root => {
+      const pane = document.createElement('div');
+      root.before(pane);
+      pane.append(root);
+      root.classList.add('ifl-in-pane');
+    });
+    assert.equal(await backdrop(composer), 'none');
+    await lensLayers.first().waitFor({ state: 'detached' });
+    await mount.evaluate(root => {
+      root.classList.remove('ifl-in-pane');
+      root.parentElement.replaceWith(root);
+    });
+    await expectLens(page, composer, 'control');
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+  assert.deepEqual(t.security, []);
+});
+
+test('native Atlas sections keep their shared matte material and painted edges without nested blur', async () => {
+  const run = codingRun({ status: 'completed', reviewReady: true });
+  const fixture = developerFixture({ codingRuns: [run], environments: [cloudEnvironment()], briefs: [{ id: 'research-notes', title: 'Research notes', answer: 'A saved research answer.', sources: [source], created_at: now }] });
+  const t = await open({ native: true, theme: 'light', fixture });
+  try {
+    const { page } = t;
+    const tabs = page.getByRole('navigation', { name: 'Atlas sections' });
+    const pageCard = async locator => {
+      await locator.waitFor();
+      const on = await material(locator);
+      assert.ok(on.radius >= 20, JSON.stringify(on));
+      assert.notEqual(on.shadow, 'none');
+      assert.equal(on.alpha, 255);
+      assert.equal(await backdrop(locator), 'none');
+      await page.evaluate(() => InFliteAppearance.setGlass({ glass: false }, { preview: true }));
+      const off = await material(locator);
+      assert.equal(off.radius, on.radius);
+      assert.equal(off.alpha, 255);
+      assert.notEqual(off.shadow, on.shadow);
+      await page.evaluate(() => InFliteAppearance.cancelGlassPreview());
+    };
+
+    await pageCard(page.locator('.starter-grid'));
+    await tabs.getByRole('button', { name: 'Tasks', exact: true }).click();
+    const taskList = page.locator('#inbox-list').filter({ hasText: run.prompt });
+    await pageCard(taskList);
+    await tabs.getByRole('button', { name: 'Environments', exact: true }).click();
+    await pageCard(page.locator('.environment-card'));
+    await tabs.getByRole('button', { name: 'Briefs', exact: true }).click();
+    await page.getByRole('button', { name: /Research notes/ }).click();
+    await pageCard(page.locator('.brief-card'));
+    await tabs.getByRole('button', { name: 'Settings', exact: true }).click();
+    const settings = page.locator('dialog[open] .settings-section').first();
+    await settings.waitFor();
+    assert.match(await backdrop(page.locator('dialog[open]')), /blur\(/);
+    assert.equal(await backdrop(settings), 'none');
+    assert.ok((await material(settings)).radius >= 20);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+  assert.deepEqual(t.security, []);
+});
+
+for (const [width, theme] of [[320, 'dark'], [1440, 'light']]) test('native Atlas uses inline sections and shared sheets at ' + width + 'px', async () => {
+  const run = codingRun({ status: 'completed', reviewReady: true });
+  const fixture = developerFixture({ codingRuns: [run], environments: [cloudEnvironment()], briefs: [{ id: 'research-notes', title: 'Research notes', answer: 'A saved research answer.', sources: [source], created_at: now }] });
+  const t = await open({ native: true, width, theme, mobile: width < 721, fixture });
+  try {
+    const tabs = t.page.getByRole('navigation', { name: 'Atlas sections' });
+    const destination = t.page.locator('#atlas-destination');
+    await t.page.getByRole('heading', { name: 'What shall we work on?' }).waitFor();
+    await t.page.locator('#prompt').fill('Keep this draft');
+    await t.screenshot('atlas-native-conversation-' + width);
+    await tabs.getByRole('button', { name: 'Tasks', exact: true }).click();
+    await destination.getByRole('heading', { name: run.prompt }).waitFor();
+    assert.equal(await t.page.locator('dialog[open]').count(), 0);
+    assert.equal(await t.page.locator('#conversation-main').isVisible(), false);
+    await t.screenshot('atlas-native-tasks-' + width);
+    await destination.getByRole('button', { name: 'In progress' }).click();
+    await destination.getByText('No tasks match this status').waitFor();
+    await destination.getByRole('button', { name: 'Review', exact: true }).click();
+    await destination.getByRole('button', { name: 'Review changes' }).click();
+    const review = t.page.getByRole('dialog', { name: 'Review changes' });
+    await review.getByText('0 changed files').waitFor();
+    await review.getByRole('button', { name: 'Back to tasks' }).click();
+    await review.waitFor({ state: 'hidden' });
+    assert.equal(await destination.getByRole('button', { name: 'Review', exact: true }).getAttribute('aria-pressed'), 'true');
+    await tabs.getByRole('button', { name: 'Environments' }).click();
+    await destination.getByRole('button', { name: 'Edit Atlas development' }).click();
+    assert.equal(await destination.getByText('No environments yet').isVisible(), false);
+    await destination.locator('#environment-name').fill('Keep this environment draft');
+    await t.screenshot('atlas-native-environments-' + width);
+    await tabs.getByRole('button', { name: 'Briefs' }).click();
+    await destination.getByRole('button', { name: /Research notes/ }).click();
+    await destination.getByText('A saved research answer.').waitFor();
+    await t.screenshot('atlas-native-brief-' + width);
+    await destination.getByRole('button', { name: 'All briefs' }).click();
+    await destination.getByRole('button', { name: /Research notes/ }).waitFor();
+    await tabs.getByRole('button', { name: 'Environments' }).click();
+    assert.equal(await destination.locator('#environment-name').inputValue(), 'Keep this environment draft');
+    const overflow = await destination.evaluate(el => el.scrollWidth > el.clientWidth || el.firstElementChild.scrollWidth > el.firstElementChild.clientWidth);
+    assert.equal(overflow, false);
+    await tabs.getByRole('button', { name: 'Conversations' }).click();
+    assert.equal(await t.page.locator('#prompt').inputValue(), 'Keep this draft');
+    await t.page.locator('#composer-options').click();
+    const options = t.page.getByRole('dialog', { name: 'Task options' });
+    await options.getByRole('button', { name: /^Personal/ }).click();
+    assert.match(await t.page.locator('#workspace-label').textContent(), /Personal/);
+    await options.getByRole('button', { name: 'Close task options' }).click();
+    await options.waitFor({ state: 'hidden' });
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
 
 for (const width of [320, 390, 1440]) for (const theme of ['light', 'dark']) test('mobile-first layout fits ' + width + 'px in ' + theme + ' appearance', async () => {
   const t = await open({ width, theme, height: 844, mobile: width < 721 });
