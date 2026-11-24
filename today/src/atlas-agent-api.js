@@ -19,6 +19,7 @@ const record = value => value !== null && typeof value === "object" && !Array.is
 const AGENT_ERRORS = {
   agent_input_invalid: [400, "Atlas could not prepare this coding request. Check the repository and try again."],
   agent_access_unavailable: [403, "This OpenAI key or project does not have access to hosted coding sessions. Enable Agents read and write access and Responses write access for the saved key."],
+  agent_files_access_unavailable: [403, "This OpenAI key or project cannot upload the repository workspace. Enable Files read and write access for the saved key."],
   agent_resource_missing: [404, "This coding session or its files are no longer available. Start a new coding task."],
   agent_resource_busy: [409, "The coding workspace is still changing. Check its latest status before trying this action again."],
   agent_budget_exceeded: [429, "This coding session has reached its spending limit."],
@@ -134,6 +135,7 @@ async function checkResponse(response, signal, agents) {
   let error;
   if (code === "session_budget_exceeded") error = new AtlasAgentAPIError("agent_budget_exceeded", options);
   else if (response.status === 403 && agents) error = new AtlasAgentAPIError("agent_access_unavailable", options);
+  else if (response.status === 403) error = new AtlasAgentAPIError("agent_files_access_unavailable", options);
   else if (response.status === 404 && !["model_not_found", "model_not_available", "invalid_model"].includes(code)) error = new AtlasAgentAPIError("agent_resource_missing", options);
   else if (response.status === 409) error = new AtlasAgentAPIError("agent_resource_busy", options);
   else error = classifyOpenAIError(response.status, body, options);

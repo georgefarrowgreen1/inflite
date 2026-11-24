@@ -97,6 +97,7 @@ test("lost mutating responses stay uncertain and are never retried automatically
 });
 
 test("provider failures expose static useful messages without upstream secrets", async () => {
+  await assert.rejects(() => agentInputFileUpload(new Uint8Array([1]), { ...opts, send: async () => Response.json({ error: { message: secret } }, { status: 403 }) }), error => error.code === 'agent_files_access_unavailable' && /Files read and write/.test(error.message) && !error.message.includes(secret));
   for (const [status, code, expected] of [
     [401, "invalid_api_key", "openai_authentication"],
     [403, "permission_denied", "agent_access_unavailable"],

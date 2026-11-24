@@ -309,7 +309,7 @@ export async function advanceCodingRun(env, owner, id, { send = fetch } = {}) {
       return publicRun(run);
     }
     const rejectedResult = run.phase === 'collect' && /^(coding_result_|coding_artifact_)/.test(error.code || '');
-    const noInput = rejectedResult || ['coding_configuration_unavailable', 'coding_network_unavailable', 'coding_workspace_failed', 'coding_budget_unavailable'].includes(error.code);
+    const noInput = rejectedResult || run.phase === 'snapshot' || ['coding_configuration_unavailable', 'coding_network_unavailable', 'coding_workspace_failed', 'coding_budget_unavailable'].includes(error.code);
     const rejectedCreation = run.phase === 'creating' && Number.isInteger(error.upstreamStatus) && error.upstreamStatus >= 400 && error.upstreamStatus < 500 && !error.acceptanceUnknown;
     const stillRemote = !noInput && !!run.session_id && ['environment', 'submit', 'submitting', 'observe', 'observe_cancel', 'collect', 'budget_update'].includes(run.phase);
     const uncertain = !noInput && !rejectedCreation && (error.acceptanceUnknown || run.phase === 'creating' || stillRemote);
