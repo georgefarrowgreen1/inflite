@@ -33,26 +33,34 @@ function defaultFixture() {
     environments: [], environmentsReady: true, tasks: [], briefs: [], patches: [], coding: { ready: true, storageReady: true, message: '' }, codingRuns: [], codingFiles: {}, codingDiffs: {}, requests: [], overrides: new Map(), next: 1, older: null
   };
 }
-function nativeAtlasPage(withWallpaper) {
+function nativeAtlasPage(withWallpaper, shellLayout) {
   const optics = withWallpaper ? readFileSync(join(PUBLIC, 'index.html'), 'utf8').match(/<svg class="ifl-optics"[\s\S]*?<\/svg>/)?.[0] : '';
   if (withWallpaper) assert.ok(optics, 'the shell supplies the refractor SVG');
-  return atlasPage('fixture').split('<body')[0] + `<body>
+  const tabs = '<nav id="fixture-nav" class="ifl-segs" aria-label="Atlas sections"></nav>';
+  const mount = '<div id="fixture-atlas"></div>';
+  const shell = shellLayout
+    ? `<div id="in" class="today-in" hidden><div id="hd"><header class="ifl-hd ifh has-secs"><h1>Atlas</h1><div class="ifl-row2">${tabs}</div></header></div><div id="views"><main id="m-atlas" class="view ifl-screen" data-app="atlas">${mount}</main></div><div class="ifl-workspace ws-dock-host"><nav class="ws-dock" aria-label="Dock"><button class="ws-dock-button">Apps</button></nav></div></div>`
+    : `<div id="in" hidden></div>${tabs}${mount}`;
+  const head = atlasPage('fixture').split('<body')[0];
+  return (shellLayout ? head.replace('</head>', '<link rel="stylesheet" href="/roof/workspace.css"></head>') : head) + `<body>
     <style nonce="fixture">
-      body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+      ${shellLayout ? '' : 'body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }'}
       #fixture-nav { margin: 12px 16px; flex: none; }
       #fixture-nav .ifl-sec[aria-current="page"] { background: var(--ifl-raised); color: var(--ifl-text); }
       #fixture-atlas { overflow: hidden; }
     </style>
     ${optics}${withWallpaper ? '<div class="sky" aria-hidden="true"><canvas></canvas></div>' : ''}
-    <div id="in" hidden></div>
-    <nav id="fixture-nav" class="ifl-segs" aria-label="Atlas sections"></nav>
-    <div id="fixture-atlas"></div>
+    ${shell}
     <script type="module" nonce="fixture">
       import { mount, SECTIONS } from '/atlas/roof/module.js';
       import { createSheets } from '/roof/sheet.js';
       const root = document.querySelector('#fixture-atlas');
       const tabs = document.querySelector('#fixture-nav');
-      const fw = { signal: new AbortController().signal, visible: () => true, fill() {}, header: { set() {} },
+      const html = document.documentElement;
+      const screenEl = document.querySelector('#m-atlas');
+      if (screenEl) { html.classList.add('ifl-os'); html.dataset.app = 'atlas'; }
+      const fw = { screenEl, signal: new AbortController().signal, visible: () => true, fill(on) { if (screenEl) html.classList.toggle('ifl-fill', on); }, header: { set() {} },
+        tabs: { away(hide) { html.toggleAttribute('data-os-dock-away', hide); document.querySelector('.ws-dock').hidden = hide; } },
         nav: { section: key => show(key), href: (key, arg) => '#' + key + (arg ? '=' + encodeURIComponent(arg) : ''),
           go: path => show(...path.slice(1).split('=').map(decodeURIComponent)) } };
       fw.sheet = createSheets(fw);
@@ -79,6 +87,14 @@ function nativeAtlasPage(withWallpaper) {
 async function open(options = {}) {
   const fixture = Object.assign(defaultFixture(), options.fixture || {}), errors = [], security = [];
   const context = await browser.newContext({ viewport: { width: options.width || 1280, height: options.height || 900 }, deviceScaleFactor: options.deviceScaleFactor, colorScheme: options.theme || 'dark', reducedMotion: 'reduce', serviceWorkers: 'block', hasTouch: !!options.mobile, isMobile: !!options.mobile });
+  if (options.shellLayout) await context.addInitScript(() => {
+    const viewport = Object.assign(new EventTarget(), { height: innerHeight, offsetTop: 0, scale: 1 });
+    Object.defineProperty(window, 'visualViewport', { value: viewport });
+    window.resizeAtlasViewport = (height, offsetTop = 0) => {
+      Object.assign(viewport, { height, offsetTop });
+      viewport.dispatchEvent(new Event('resize'));
+    };
+  });
   await context.addInitScript(() => {
     window.__atlasStream = { owner: 'owner-a', controller: null, request: null, requests: [], cancelled: 0 };
     const actualFetch = window.fetch.bind(window);
@@ -95,7 +111,7 @@ async function open(options = {}) {
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== ORIGIN) return route.abort();
-    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: options.native ? nativeAtlasPage(options.wallpaper) : atlasPage('fixture') });
+    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: options.native ? nativeAtlasPage(options.wallpaper, options.shellLayout) : atlasPage('fixture') });
     if (url.pathname === '/account/api/account/appearance') return route.fulfill({ json: { signedIn: true, id: fixture.owner, palette: 'inflite', appearance: options.theme || 'dark', glass: options.glass ?? true } });
     if (!url.pathname.startsWith('/atlas/api/')) {
       if (!['/theme.js', '/app.css', '/atlas.svg'].includes(url.pathname) && !url.pathname.startsWith('/roof/') && !url.pathname.startsWith('/atlas/assets/') && !url.pathname.startsWith('/atlas/roof/')) return route.fulfill({ status: 404, body: '' });
@@ -350,6 +366,56 @@ test('native Atlas sections keep their shared matte material and painted edges w
     assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
   assert.deepEqual(t.security, []);
+});
+
+test('the mobile native shell keeps Atlas scrollable above the dock during a coding task', async () => {
+  const run = codingRun({ status: 'preparing', stage: 'preparing_workspace', activity: [],
+    summary: Array.from({ length: 22 }, (_, i) => `Workspace preparation update ${i + 1}.`).join('\n\n') });
+  const briefs = Array.from({ length: 25 }, (_, i) => ({ id: 'brief-' + i, title: 'Saved brief ' + i, created_at: now }));
+  const t = await open({ native: true, shellLayout: true, width: 390, height: 750, mobile: true, conversation: 'repo', fixture: developerFixture({ codingRuns: [run], briefs }) });
+  try {
+    const { page } = t;
+    await page.locator('.coding-run[open]').waitFor();
+    const composer = page.locator('#composer'), messages = page.locator('#messages');
+    const dock = page.getByRole('navigation', { name: 'Dock' });
+    const dockTop = (await dock.boundingBox()).y;
+    const { y, height } = await composer.boundingBox();
+    assert.ok(y + height < dockTop, `composer bottom ${y + height} overlaps dock top ${dockTop}`);
+    const available = await messages.evaluate(el => el.scrollHeight - el.clientHeight);
+    assert.ok(available > 200, 'the long task must create a scrollable conversation');
+    await messages.evaluate(el => { el.scrollTop = 0; });
+    if (process.env.WEB_UI_BROWSER === 'webkit') {
+      await messages.focus();
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('ArrowDown');
+    } else {
+      const feed = await messages.boundingBox();
+      await page.mouse.move(feed.x + feed.width / 2, feed.y + feed.height / 2);
+      await page.mouse.wheel(0, 160);
+    }
+    await page.waitForFunction(() => document.getElementById('messages').scrollTop > 50);
+    assert.equal(await page.evaluate(() => scrollY), 0);
+    const readingPosition = await messages.evaluate(el => el.scrollTop);
+    run.summary += '\n\nWorkspace progress was refreshed.';
+    await messages.getByText('Workspace progress was refreshed.').waitFor();
+    assert.ok(Math.abs(await messages.evaluate(el => el.scrollTop) - readingPosition) <= 2, 'task refresh must preserve the scroll position');
+
+    await page.locator('#prompt').fill('Keep this draft');
+    await page.evaluate(() => resizeAtlasViewport(420, 18));
+    await page.waitForFunction(() => document.getElementById('composer').getBoundingClientRect().bottom <= 438);
+    assert.equal(await dock.isVisible(), false);
+    await page.locator('#prompt').blur();
+    await page.evaluate(() => resizeAtlasViewport(innerHeight));
+    await dock.waitFor();
+    await page.getByRole('button', { name: 'Briefs', exact: true }).click();
+    const destination = page.locator('#atlas-destination-scroll');
+    await destination.getByRole('button', { name: /Saved brief 24/ }).waitFor();
+    await destination.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    const last = await destination.getByRole('button', { name: /Saved brief 24/ }).boundingBox();
+    assert.ok(last.y + last.height < dockTop, 'the last row should be reachable above the dock');
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
 });
 
 for (const [width, theme] of [[320, 'dark'], [1440, 'light']]) test('native Atlas uses inline sections and shared sheets at ' + width + 'px', async () => {

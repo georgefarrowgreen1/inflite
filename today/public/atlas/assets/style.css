@@ -1928,12 +1928,25 @@ html[data-midnight-lava] .atlas-app .atlas-sky canvas {
 .atlas-app .composer .composer-context[data-intent=ask] { grid-template-columns: minmax(0, 1fr); }
 
 /* Native InFlite mount: the roof owns the screen, header, wallpaper and sheets. */
+html.ifl-fill #in:not([hidden]):has(> #views > #m-atlas:not([hidden])) {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: var(--atlas-viewport-bottom, 100dvh);
+  padding-block-end: calc(var(--tabs-h) + 8px + env(safe-area-inset-bottom, 0px));
+}
+html.ifl-fill #in[data-atlas-keyboard]:has(> #views > #m-atlas:not([hidden])) { padding-block-end: 0; }
+html.ifl-fill #in:has(> #views > #m-atlas:not([hidden])) > #hd > .ifl-hd { flex: none; }
+html.ifl-fill #in:has(> #views > #m-atlas:not([hidden])) > #views { flex: 1; min-height: 0; }
+html.ifl-fill #in > #views > #m-atlas { box-sizing: border-box; height: 100%; padding-block-end: 0; }
 .atlas-app.atlas-native:not(.atlas-native-content) {
   height: 100%; min-height: 0; flex: 1; width: 100%; max-width: none;
   background: transparent; isolation: auto; padding: 0; margin: 0;
 }
 .atlas-app.atlas-native > .atlas-header { display: none; }
 .atlas-app.atlas-native .atlas-layout { flex: 1; min-height: 0; }
+.atlas-app.atlas-native .messages,
+.atlas-app .atlas-destination-scroll { touch-action: pan-y pinch-zoom; }
 .atlas-app.atlas-native .conversation-main { padding-top: 0; }
 .atlas-app.atlas-native .conversation-toolbar { min-height: 56px; }
 .atlas-app.atlas-native .composer { margin-bottom: 0; }
@@ -2169,6 +2182,9 @@ dialog.ifl-sheet.atlas-native-sheet .conversation-navigation { padding: 0; }
   .atlas-app .conversation-toolbar { padding-inline: 0; }
   .atlas-app .conversation-main .composer { padding-inline: 9px; }
   .atlas-app .inbox-task-heading h3 { flex-basis: 10rem; }
+  .atlas-app .coding-run .message-status { max-width: none; white-space: normal; }
+  .atlas-app .coding-run-heading { flex-wrap: wrap; }
+  .atlas-app .coding-run-heading h3 { flex: 1 1 12rem; }
   .atlas-app .atlas-page-content .environments-layout:has(#environment-form:not([hidden])) .environment-directory { display: none; }
 }
 .atlas-app.ifl-in-pane .atlas-layout { display: flex; }
