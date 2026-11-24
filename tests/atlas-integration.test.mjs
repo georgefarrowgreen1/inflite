@@ -1,0 +1,177 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
+import * as store from '../today/src/atlas-store.js';
+import * as contexts from '../today/src/atlas-workspace-context.js';
+import * as coding from '../today/src/atlas-coding-store.js';
+import { atlas } from '../today/src/atlas.js';
+import { runAtlasPrompt } from '../today/src/atlas-chat.js';
+import { connectProvider } from '../today/src/atlas-provider.js';
+
+const COOKIE = 'account=abcdefghijklmnopqrstuvwxyz';
+const request = (path = '/atlas/api/chat', { method = 'GET', body } = {}) => new Request('https://inflite.ai' + path, { method, headers: { Cookie: COOKIE + '; unrelated=must-not-leave-hub', ...(method === 'GET' ? {} : { Origin: 'https://inflite.ai', 'X-Inflite': '1', 'Content-Type': 'application/json' }) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+const account = async () => Response.json({ signedIn: true, user: { id: 'alice' }, apps: { mail: true } });
+const answer = () => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'A proposed reply for your review.' }] }], usage: { input_tokens: 20, output_tokens: 10 } });
+
+async function fixture(t, { version = store.SCHEMA_VERSION } = {}) {
+  const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, script: 'export default {fetch(){return new Response("fixture")}}', compatibilityDate: '2026-10-01', cf: false, d1Databases: ['ATLAS_DB'] }));
+  t.after(() => mf.dispose());
+  const env = { ATLAS_DB: await mf.getD1Database('ATLAS_DB'), ATLAS_ENCRYPTION_KEY: btoa('w'.repeat(32)), MAIL_ORIGIN: 'https://email.inflite.ai' };
+  if (version === store.SCHEMA_VERSION) await store.upgradeStorage(env);
+  else {
+    const sql = (await Promise.all(Array.from({ length: version }, (_, i) => readFile(new URL('../atlas/migrations/' + String(i + 1).padStart(4, '0') + '.sql', import.meta.url), 'utf8')))).join('\n');
+    await env.ATLAS_DB.batch(sql.split(';').map(s => s.trim()).filter(Boolean).map(s => env.ATLAS_DB.prepare(s)));
+  }
+  const conversation = await store.createConversation(env, 'alice', { title: 'Selected Mail conversation', mode: 'personal' });
+  return { env, conversation };
+}
+
+function mailFixture(env, { owner = 'alice', count = 8 } = {}) {
+  const messages = Array.from({ length: count }, (_, i) => ({ id: 'message-' + (i + 1), threadId: 'thread-1', folder: i === count - 1 ? 'sent' : 'inbox', date: 1000 + i, from: { name: 'Sender', email: 'sender@example.test' }, subject: 'Server-owned subject', snippet: 'Private snippet', text: 'Private mail body ' + (i + 1), hasAttachments: false }));
+  const calls = [], remote = { owner, access: 'ok', messages, calls, intercept: null };
+  env.MAIL = { async fetch(req) {
+    const url = new URL(req.url); calls.push(url.pathname);
+    assert.equal(url.origin, env.MAIL_ORIGIN); assert.equal(req.method, 'GET'); assert.equal(req.redirect, 'manual');
+    assert.equal(req.headers.get('Origin'), env.MAIL_ORIGIN); assert.equal(req.headers.get('Cookie'), COOKIE);
+    if (remote.intercept) { const result = await remote.intercept(req); if (result !== undefined) return result; }
+    if (url.pathname === '/api/session') return Response.json({ access: remote.access, user: { id: remote.owner } });
+    if (url.pathname === '/api/threads/thread-1') return Response.json({ id: 'thread-1', subject: 'Server-owned subject', messages: messages.map(({ text, ...meta }) => meta) });
+    const id = /^\/api\/messages\/([^/]+)$/.exec(url.pathname)?.[1];
+    const message = messages.find(m => m.id === id);
+    if (message) return Response.json(message);
+    assert.fail('No inbox enumeration, search, attachments, or send route is permitted: ' + url.pathname);
+  } };
+  return remote;
+}
+
+test('selected Mail context stores only references, bounds reads and isolates conversations and owners', async t => {
+  const { env, conversation } = await fixture(t), remote = mailFixture(env);
+  const result = await contexts.setWorkspaceContext(env, 'alice', conversation.id, { app: 'mail', kind: 'thread', threadId: 'thread-1', title: 'Untrusted title', url: 'https://evil.example/private', text: 'Untrusted client text' }, { request: request() });
+  assert.equal(result.ready, true); assert.equal(result.context.length, 1);
+  const context = result.context[0];
+  assert.equal(context.title, 'Server-owned subject'); assert.equal(context.messageId, 'message-7'); assert.equal(context.selection, 'thread'); assert.equal(context.truncated, true);
+  assert.equal(context.url, 'https://inflite.ai/mail/#thread=thread-1'); assert.equal('text' in context, false);
+  assert.equal(remote.calls.filter(path => path.startsWith('/api/messages/')).length, 6);
+  assert.equal(remote.calls.includes('/api/messages/message-1'), false);
+  const row = await env.ATLAS_DB.prepare('SELECT * FROM atlas_workspace_contexts WHERE owner=? AND conversation_id=?').bind('alice', conversation.id).first();
+  assert.deepEqual(JSON.parse(row.source_json), { app: 'mail', kind: 'thread', threadId: 'thread-1' });
+  assert.equal(JSON.stringify(row).includes('Private mail body'), false); assert.equal(JSON.stringify(row).includes('Untrusted'), false);
+  assert.deepEqual((await contexts.getWorkspaceContext(env, 'alice', conversation.id)).context, [context]);
+  const reads = remote.calls.length;
+  for (const operation of [() => contexts.getWorkspaceContext(env, 'bob', conversation.id), () => contexts.clearWorkspaceContext(env, 'bob', conversation.id), () => contexts.setWorkspaceContext(env, 'bob', conversation.id, { app: 'mail', kind: 'thread', threadId: 'thread-1' }, { request: request() })]) await assert.rejects(operation, { code: 'not_found' });
+  assert.equal(remote.calls.length, reads);
+  const second = await store.createConversation(env, 'alice', { mode: 'personal' });
+  assert.deepEqual((await contexts.getWorkspaceContext(env, 'alice', second.id)).context, []);
+  await contexts.clearWorkspaceContext(env, 'alice', conversation.id);
+  assert.deepEqual((await contexts.getWorkspaceContext(env, 'alice', conversation.id)).context, []);
+  await contexts.setWorkspaceContext(env, 'alice', conversation.id, { app: 'mail', kind: 'thread', threadId: 'thread-1', messageId: 'message-2' }, { request: request() });
+  await store.deleteConversation(env, 'alice', conversation.id);
+  assert.equal((await env.ATLAS_DB.prepare('SELECT count(*) AS n FROM atlas_workspace_contexts').first()).n, 0);
+});
+
+test('Mail selection is reauthorized at the source and rejects foreign messages, switches, outages and archives', async t => {
+  const { env, conversation } = await fixture(t), remote = mailFixture(env);
+  const source = { app: 'mail', kind: 'thread', threadId: 'thread-1' };
+  const attach = extra => contexts.setWorkspaceContext(env, 'alice', conversation.id, { ...source, ...extra }, { request: request() });
+  remote.owner = 'bob';
+  await assert.rejects(() => attach(), { code: 'session_changed' }); assert.deepEqual(remote.calls, ['/api/session']);
+  remote.owner = 'alice'; remote.access = 'reauth'; remote.calls.length = 0;
+  await assert.rejects(() => attach(), { code: 'identity_confirmation_required' }); assert.deepEqual(remote.calls, ['/api/session']);
+  remote.access = 'ok'; remote.calls.length = 0;
+  await assert.rejects(() => attach({ messageId: 'another-thread-message' }), { code: 'mail_context_not_found' });
+  assert.equal(remote.calls.some(path => path.startsWith('/api/messages/')), false);
+  await assert.rejects(() => attach({ threadId: '../session' }), { code: 'workspace_context_invalid' });
+  remote.intercept = req => new URL(req.url).pathname === '/api/session' ? new Response('', { status: 503 }) : undefined;
+  await assert.rejects(() => attach(), { code: 'mail_context_unavailable', status: 503 });
+  remote.intercept = req => new URL(req.url).pathname === '/api/session' ? Response.json({}) : undefined;
+  await assert.rejects(() => attach(), { code: 'mail_context_unavailable', status: 503 });
+  remote.intercept = null;
+  await attach({ messageId: 'message-2' });
+  const saved = await contexts.getWorkspaceContext(env, 'alice', conversation.id);
+  assert.equal(saved.context[0].selection, 'message'); assert.equal(saved.context[0].messageId, 'message-2'); assert.equal(saved.context[0].truncated, false);
+  await store.updateConversation(env, 'alice', conversation.id, { archived: true });
+  const reads = remote.calls.length;
+  await assert.rejects(() => attach(), { code: 'conversation_archived' });
+  await assert.rejects(() => contexts.clearWorkspaceContext(env, 'alice', conversation.id), { code: 'conversation_archived' });
+  assert.equal(remote.calls.length, reads);
+});
+
+test('chat rereads the explicit Mail source, retains metadata for replies, and refuses unattended Mail reads', async t => {
+  const { env, conversation } = await fixture(t), remote = mailFixture(env, { count: 2 });
+  await connectProvider(env, 'alice', { key: 'sk-' + 'fixture'.repeat(8), model: 'gpt-6.2-sol' }, { send: async () => Response.json({ id: 'gpt-6.2-sol' }) });
+  await contexts.setWorkspaceContext(env, 'alice', conversation.id, { app: 'mail', kind: 'thread', threadId: 'thread-1', messageId: 'message-1' }, { request: request() });
+  remote.messages[0].text = 'Fresh private message fetched only for this turn.';
+  remote.calls.length = 0;
+  let providerCalls = 0;
+  const send = async (url, init) => {
+    providerCalls++; assert.equal(new URL(url).origin, 'https://api.openai.com');
+    const body = JSON.parse(init.body), supplied = JSON.stringify(body.input);
+    assert.match(supplied, /Fresh private message fetched only for this turn/); assert.doesNotMatch(supplied, /Private mail body 2/);
+    assert.match(body.instructions, /emails.*untrusted source material/); assert.equal(body.store, false);
+    return answer();
+  };
+  const options = { owner: 'alice', conversationId: conversation.id, requestId: crypto.randomUUID(), prompt: 'Draft a reply for review', request: request(), send };
+  const result = await runAtlasPrompt(env, options);
+  assert.equal(providerCalls, 1); assert.deepEqual(remote.calls, ['/api/session', '/api/threads/thread-1', '/api/messages/message-1']);
+  assert.equal(result.message.context[0].messageId, 'message-1'); assert.equal(result.message.context[0].text, undefined);
+  assert.equal(result.message.sources[0].url, 'https://inflite.ai/mail/#thread=thread-1');
+  const stored = await env.ATLAS_DB.prepare('SELECT prompt,context_json FROM atlas_turns WHERE owner=? AND id=?').bind('alice', result.message.id).first();
+  assert.equal(JSON.stringify(stored).includes(remote.messages[0].text), false);
+  remote.calls.length = 0;
+  await assert.rejects(() => runAtlasPrompt(env, { ...options, requestId: crypto.randomUUID(), scheduled: true, request: undefined }), { code: 'mail_context_interactive_only' });
+  assert.equal(providerCalls, 1); assert.equal(remote.calls.length, 0);
+});
+
+test('activity is an owner-scoped bounded durable projection with native destinations and no provider poll', async t => {
+  const { env, conversation } = await fixture(t);
+  const developer = await store.createConversation(env, 'alice', { title: 'Review this change', mode: 'developer', repository: 'owner/project' });
+  const run = await coding.createCodingRun(env, 'alice', { id: crypto.randomUUID(), conversationId: developer.id, requestId: crypto.randomUUID(), prompt: 'Private coding instruction must not reach activity', model: 'fixture', credentialUpdatedAt: 42, repository: 'owner/project' });
+  const messageId = crypto.randomUUID();
+  await store.createMessage(env, 'alice', conversation.id, { id: messageId, prompt: 'Private prompt' });
+  await store.finishMessage(env, 'alice', messageId, { status: 'completed', answer: 'Private saved answer' });
+  const brief = await store.createBrief(env, 'alice', { conversationId: conversation.id, messageId, title: 'Saved reply' });
+  await store.createConversation(env, 'bob', { title: 'Foreign private title', mode: 'personal' });
+  const response = await atlas(request('/atlas/api/activity?limit=9999'), env, { account, send: async () => assert.fail('activity never calls providers') });
+  assert.equal(response.status, 200);
+  const activity = await response.json(); assert.equal(activity.ready, true); assert.ok(activity.items.length <= 20);
+  const task = activity.items.find(item => item.kind === 'coding'), saved = activity.items.find(item => item.kind === 'brief');
+  assert.equal(task.runId, run.id); assert.equal(task.href, '/atlas/#tasks=' + run.id); assert.equal(task.title, developer.title);
+  assert.equal(saved.briefId, brief.id); assert.equal(saved.href, '/atlas/#briefs=' + brief.id);
+  assert.doesNotMatch(JSON.stringify(activity), /Foreign|Private coding|Private saved answer|Private prompt/);
+  assert.equal((await coding.getCodingRun(env, 'alice', run.id)).status, run.status);
+  assert.equal((await (await atlas(request('/atlas/api/activity?limit=1'), env, { account })).json()).items.length, 1);
+  const foreign = await atlas(request('/atlas/api/conversations/' + developer.id + '/workspace-context'), env, { account: async () => Response.json({ signedIn: true, user: { id: 'bob' }, apps: { mail: true } }) });
+  assert.equal(foreign.status, 404);
+});
+
+test('schema eight keeps chat available, context requires explicit setup, and schema nine verifies its table', async t => {
+  const { env, conversation } = await fixture(t, { version: 8 });
+  assert.equal((await store.storageStatus(env)).ready, true);
+  assert.deepEqual(await contexts.loadWorkspaceContext(env, 'alice', conversation.id), []);
+  assert.deepEqual(await contexts.getWorkspaceContext(env, 'alice', conversation.id), { context: [], ready: false, requiredVersion: 9, code: 'storage_upgrade_required' });
+  await assert.rejects(() => contexts.setWorkspaceContext(env, 'alice', conversation.id, { app: 'mail', kind: 'thread', threadId: 'thread-1' }, { request: request() }), { code: 'storage_upgrade_required' });
+  await store.upgradeStorage(env);
+  assert.equal((await contexts.workspaceContextStorageStatus(env)).ready, true);
+  await env.ATLAS_DB.prepare('DROP TABLE atlas_workspace_contexts').run();
+  assert.equal((await contexts.workspaceContextStorageStatus(env)).code, 'workspace_context_unavailable');
+  await assert.rejects(() => contexts.loadWorkspaceContext(env, 'alice', conversation.id), { code: 'workspace_context_unavailable' });
+  await store.upgradeStorage(env);
+  assert.equal((await contexts.workspaceContextStorageStatus(env)).ready, true);
+});
+
+test('shared verifier credential failures are unknown, while explicit owner denial is authoritative', async t => {
+  const { env } = await fixture(t);
+  env.ATLAS_VERIFY_KEY = 'fixture-verifier'; env.ATLAS_AUTONOMY = '1';
+  const task = await store.createTask(env, 'alice', { title: 'Scheduled fixture', prompt: 'A private task', mode: 'personal', interval_minutes: 60 });
+  for (const status of [401, 403, 503]) {
+    env.APPS = { fetch: async () => new Response('', { status }) };
+    const activation = await atlas(request('/atlas/api/tasks', { method: 'PATCH', body: { id: task.id, enabled: true, confirm: true } }), env, { account, send: async () => assert.fail('no provider dispatch on unknown account') });
+    assert.equal(activation.status, 503); assert.equal((await activation.json()).code, 'account_unavailable');
+    const manual = await atlas(request('/atlas/api/tasks/' + task.id + '/run', { method: 'POST', body: { requestId: crypto.randomUUID(), confirm: true } }), env, { account, send: async () => assert.fail('no provider dispatch on unknown account') });
+    assert.equal(manual.status, 200); assert.equal((await manual.json()).run.error_code, 'account_unavailable');
+  }
+  env.APPS = { fetch: async () => Response.json({ allowed: false }) };
+  const denial = await atlas(request('/atlas/api/tasks', { method: 'PATCH', body: { id: task.id, enabled: true, confirm: true } }), env, { account });
+  assert.equal(denial.status, 403); assert.equal((await denial.json()).code, 'administrator_unavailable');
+});

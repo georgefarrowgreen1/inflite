@@ -1,5 +1,5 @@
 // Geometry and metadata only. A window never owns a second app instance.
-export const WINDOW_APPS = Object.freeze(["fitness", "weather", "markets", "chats", "mail", "calendar", "notes", "people"]);
+export const WINDOW_APPS = Object.freeze(["fitness", "weather", "markets", "chats", "mail", "calendar", "notes", "people", "atlas"]);
 const finite = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const clean = (v) => Math.round(v * 10000) / 10000;

@@ -18,12 +18,12 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.52.21";
+const BUILD = "4.53.1";
 // (what's new in it, said once it's in)
-const NEWS = "Settings now goes straight to app preferences and calendar connections.";
+const NEWS = "Atlas joins InFlite with shared navigation, account recovery, reviewed app handoffs and task activity.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.32.4/store.js","/os.webmanifest"];
+const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.33.1/store.js","/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -2101,21 +2101,21 @@ function drawYouNow(arg = F?.route?.arg ?? null) {
     if (arg) m.goTo?.($("#you"), c, arg, drawn);
   }, () => {});
 }
-const appsCtx = (task) => ({ current: task.current, answer: S.answer, view: S.view, href: (app, section) => IFL.hub.href(app, section), ui: task.frame.ui, frame: task.frame });
+const appsCtx = (task) => ({ current: task.current, answer: S.answer, view: S.view, href: (app, section) => app === "atlas" ? "/atlas/" + (section ? "#" + section : "") : IFL.hub.href(app, section), ui: task.frame.ui, frame: task.frame });
 const youCtx = (task) => {
   const hostAction = run => settingsHost && (async (...args) => {
     const host = await settingsHost();
     if (task.active() && host) return run(host, ...args);
   });
   function legacyPreferences(app) {
-    if (!task.active() || (app === "mail" && !S.view?.apps?.mail)) return;
+    if (!task.active() || (["mail","atlas"].includes(app) && !S.view?.apps?.mail)) return;
     const name = OWN[app], home = safe(S.links?.[name]) || DEFAULT_LINKS[name];
     if (home) location.assign(home.replace(/\/$/, "") + "/#" + (app === "chats" ? "account" : "settings"));
   }
   let editing = false;
   async function editAppSettings(app, trigger, page) {
     if (!task.active() || editing) return;
-    if (!task.frame.session.apps[app] || (app === "mail" && !S.view?.apps?.mail)) {
+    if (!task.frame.session.apps[app] || (["mail","atlas"].includes(app) && !S.view?.apps?.mail)) {
       if (trigger) return legacyPreferences(app);
       return toast("Choose the app below to open its settings.");
     }
@@ -2166,8 +2166,8 @@ const youCtx = (task) => {
     security: hostAction(async (host, options) => { const security = await host.security(); if (task.active()) return security?.open(options); }),
     life: hostAction(async (host, action) => { const life = await host.life(); if (task.active()) return life?.[action]?.(); }),
     remembered: hostAction(host => host.remembered()),
-    frame: task.frame, go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => IFL.hub.href(app, section),
-    icon: (app) => { try { return IFL.iconUrl(app) || ""; } catch { return ""; } },
+    frame: task.frame, go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => app === "atlas" ? "/atlas/" + (section ? "#" + section : "") : IFL.hub.href(app, section),
+    icon: (app) => { try { return app === "atlas" ? "/apps/atlas.svg" : IFL.iconUrl(app) || ""; } catch { return ""; } },
   };
 };
 

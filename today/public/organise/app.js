@@ -1,9 +1,60 @@
 import {createStore} from './store.js';
 import {operationId} from '/roof/system-client.js';
-import {localDay,addDays,eventDay,overlaps} from './model.js';
+import {localDay,addDays,eventDay,overlaps,localInput,parseLocal,zone} from './model.js';
 const NAMES={calendar:'Calendar',notes:'Notes',people:'People'},SECTIONS={calendar:[['week','Week'],['agenda','Month']],notes:[['all','All notes']],people:[['contacts','Contacts']]};
+// The handoff is consumed before opening this review. Its delivery lease ends
+// when the app opens; the review belongs to this account and native app episode.
+export function openAtlasDraft(F,kind,value,{current,create}){
+ if(!['notes','calendar'].includes(kind)||value?.kind!==(kind==='notes'?'note-draft':'event-draft')||!current())return null;
+ const {el,btn}=F.ui,owner=F.session.view?.user?.id||F.session.user?.id;
+ if(!owner||F.signal.aborted)return null;
+ let sheet,closed=false,saving=false;
+ const active=()=>!closed&&!F.signal.aborted&&(F.session.view?.user?.id||F.session.user?.id)===owner&&current()&&!sheet?.closed&&!sheet?.el?.classList?.contains('closing');
+ const form=el('form',{class:'org-form'}),message=el('p',{class:'org-status',role:'status'});
+ const field=(label,type,initial,max,required=false)=>{
+  const input=el(type==='textarea'?'textarea':'input',{...(type==='textarea'?{rows:kind==='notes'?10:4}:{type}),maxlength:max,required,'aria-label':label});
+  input.value=initial??'';form.append(el('label',{class:'org-field'},el('span',{text:label}),input));return input;
+ };
+ const title=field('Title','text',value.title,160,true);
+ const content=field(kind==='notes'?'Note':'Description','textarea',kind==='notes'?value.text:value.description,kind==='notes'?64000:4000);
+ let start,end;
+ if(kind==='calendar'){
+  start=field('Starts','datetime-local',Number.isFinite(value.start)?localInput(value.start):'',null,true);
+  end=field('Ends','datetime-local',Number.isFinite(value.end)?localInput(value.end):'',null,true);
+  form.append(el('p',{class:'org-muted',text:'Times shown in '+zone()+'. Choose the date and time before creating this event.'}));
+ }
+ const links=value.source?.app==='mail'&&/^[A-Za-z0-9_-]{1,64}$/.test(value.source.threadId||'')?[{app:'mail',id:value.source.threadId}]:[];
+ if(links.length)form.append(el('p',{class:'org-muted',text:'The original Mail conversation will be linked to this '+(kind==='notes'?'note.':'event.')}));
+ const cancel=btn('Cancel',{run:()=>{closed=true;sheet?.now()}});
+ const confirm=btn(kind==='notes'?'Create note':'Create event',{primary:true,run:submit});
+ async function submit(){
+  if(!active()||saving)return;
+  message.textContent='';
+  try{
+   if(!form.checkValidity()||!title.value.trim()||title.value.length>160||content.value.length>(kind==='notes'?64000:4000)){
+    form.reportValidity();throw Error('Check the required fields before creating this '+(kind==='notes'?'note.':'event.'));
+   }
+   const initial={title:title.value.trim(),links:structuredClone(links)};
+   if(kind==='notes')Object.assign(initial,{text:content.value,checklist:[]});
+   else{
+    const starts=Number.isFinite(value.start)&&start.value===localInput(value.start)?value.start:parseLocal(start.value);
+    const ends=Number.isFinite(value.end)&&end.value===localInput(value.end)?value.end:parseLocal(end.value);
+    if(ends<=starts||ends-starts>366*864e5)throw Error('Choose an end time after the start, within one year.');
+    Object.assign(initial,{description:content.value,allDay:false,start:starts,end:ends,timezone:starts===value.start&&ends===value.end?value.timezone||zone():zone()});
+   }
+   saving=true;confirm.disabled=cancel.disabled=true;sheet?.setBusy(true);
+   const created=await create(initial,active);
+   if(created&&active()){closed=true;sheet.now()}
+  }catch(error){if(active())message.textContent=error.message}
+  finally{saving=false;confirm.disabled=cancel.disabled=false;if(active())sheet?.setBusy(false)}
+ }
+ form.addEventListener('submit',event=>{event.preventDefault();submit()});
+ const body=el('section',{class:'org'},el('p',{class:'org-muted',text:kind==='notes'?'Review the Atlas draft. Creating it adds it to your Notes.':'Review the Atlas draft. Creating it adds an event to your Calendar.'}),form,message,el('div',{class:'org-toolbar'},cancel,confirm));
+ sheet=F.sheet.open({sheet:'atlas-'+kind+'-draft',title:kind==='notes'?'Create a note from Atlas':'Create an event from Atlas',body,focus:title,onClose:()=>{closed=true}});
+ return sheet;
+}
 export async function mountApp(root,F,kind){
- const ui=F.ui,el=ui.el,store=await(F.workspace?.organiseStore?.(kind)||createStore(F,kind)),life=F.signal,live=()=>!life.aborted;let libraryY=null,libraryFocus=null,datesKey='',route=null,shown=false,loaded=false,reading=0,query='',cursor=null,ids=new Set(),editor=null,editorId=null,editorLoad=0,loading=false,error='',date=localDay(),section=SECTIONS[kind][0][0],searchTimer=0,external=[],noteFilter='all',noteView='list',feedRefreshedAt=0;
+ const ui=F.ui,el=ui.el,store=await(F.workspace?.organiseStore?.(kind)||createStore(F,kind)),life=F.signal,owner=F.session.view?.user?.id||F.session.user?.id,live=()=>!life.aborted&&(F.session.view?.user?.id||F.session.user?.id)===owner;let libraryY=null,libraryFocus=null,datesKey='',route=null,shown=false,loaded=false,reading=0,query='',cursor=null,ids=new Set(),editor=null,editorId=null,editorLoad=0,loading=false,error='',date=localDay(),section=SECTIONS[kind][0][0],searchTimer=0,external=[],noteFilter='all',noteView='list',feedRefreshedAt=0;
  const friends=new Map();
  let watchFriends=null,friendState='',friendsLoaded=false,friendView=null,editorSeed=null;
  root.classList.add('org');root.dataset.organise=kind;root.dataset.notesView=noteView;
@@ -180,9 +231,10 @@ export async function mountApp(root,F,kind){
    editor=module.createEditor({F,kind,id,value,store,detail,go,home,date,chat,friendFor:id=>friends.get(id),onSaved:()=>{ids.add(id);paint()},exportValue,linkPicker:()=>import('./links.js').then(m=>m.chooseLink(F,kind)),prepareInvitation});paint();
   }catch(e){if(live()&&mine===editorLoad)detail.replaceChildren(ui.error({title:'This item could not open',body:e.message,acts:[{label:'Try again',run:()=>{editorId=null;openEditor(id,{initial,chat})}}]}))}
  }
- async function create(initial){if(!store.ready())throw Error('Enable private device storage before creating an item.');const id=operationId(),value=initial||{title:kind==='notes'?'Untitled note':'',links:[],...(kind==='notes'?{text:'',checklist:[]}:kind==='people'?{email:'',phone:'',organisation:'',details:''}:{description:'',allDay:false,start:new Date(date+'T09:00:00').getTime(),end:new Date(date+'T10:00:00').getTime(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})};
-  if(kind==='notes')await store.save(id,value,{version:0});
-  if(live()&&shown)go(id,{initial:{id,kind,...value,version:0}},true);
+ async function create(initial,{persist=kind==='notes',current=()=>live()&&shown}={}){if(!current())return false;if(!store.ready())throw Error('Enable private device storage before creating an item.');const id=operationId(),value=initial||{title:kind==='notes'?'Untitled note':'',links:[],...(kind==='notes'?{text:'',checklist:[]}:kind==='people'?{email:'',phone:'',organisation:'',details:''}:{description:'',allDay:false,start:new Date(date+'T09:00:00').getTime(),end:new Date(date+'T10:00:00').getTime(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})};
+  if(persist)await store.save(id,value,{version:0});
+  if(current())go(id,{initial:{id,kind,...value,version:0}},true);
+  return true;
  }
  async function openExternal(v){const {openCalendarSource}=await import('./connected.js');if(live()&&shown)openCalendarSource(F,v,{create})}
  async function exportValue(v){const m=await import('./actions.js');if(live()&&shown)return m.exportValue(F,kind,v)}
@@ -191,7 +243,23 @@ export async function mountApp(root,F,kind){
  search.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{query=search.value.trim();load()},240)});
  const fileMeta=v=>({id:kind+':'+v.id,app:kind,name:v.title+(kind==='calendar'?'.ics':'.txt'),mime:kind==='calendar'?'text/calendar':'text/plain',category:'document',objectId:v.id,intent:'open',downloadIntent:'download',modifiedAt:v.updatedAt});
  const unregister=F.workspace?.provide({snapshot:()=>({status:error?'error':'ready',availability:{local:store.ready(),pending:store.pending().length,saving:store.pending().some(v=>v.state==='saving'),draft:!!editor?.dirty()||store.localForms().length>0,error:store.pending().some(v=>['failed','conflict'].includes(v.state))},actions:[{id:'new',label:kind==='calendar'?'New event':kind==='notes'?'New note':'Add person',enabled:store.ready()}],files:store.snapshot().filter(v=>!v.deleted).map(fileMeta)}),
-  async run(intent,object){if(!live()||!F.workspace.active())return{ok:false};if(intent==='new'){fresh();return{ok:true}}if(!/^[a-f0-9]{32}$/.test(object||''))return{ok:false};if(intent==='open'){go(object);return{ok:true}}if(intent==='download'){const [{downloadValue},value]=await Promise.all([import('./actions.js'),store.get(object)]);if(live()&&F.workspace.active())return downloadValue(F,root,kind,value)}return{ok:false}},
+  async run(intent,object,lease={}){
+   const permitted=()=>live()&&shown&&F.workspace.active()&&!lease.signal?.aborted&&lease.current?.()!==false;
+   if(!permitted())return{ok:false};
+   if(intent==='handoff'){
+    const value=F.workspace.handoffs?.take(object);
+    if(!value||!['notes','calendar'].includes(kind)||value.kind!==(kind==='notes'?'note-draft':'event-draft'))return{ok:false};
+    await editorModule();
+    if(!permitted())return{ok:false,cancelled:true};
+    const targetRoute=route,current=()=>live()&&shown&&route===targetRoute&&F.workspace.active();
+    const review=openAtlasDraft(F,kind,value,{current,create:async(initial,approved)=>{await editor?.flush();if(!approved())return false;return create(initial,{persist:true,current:approved})}});
+    return{ok:!!review,pending:!!review};
+   }
+   if(intent==='new'){fresh();return{ok:true}}
+   if(!/^[a-f0-9]{32}$/.test(object||''))return{ok:false};
+   if(intent==='open'){go(object);return{ok:true}}
+   if(intent==='download'){const [{downloadValue},value]=await Promise.all([import('./actions.js'),store.get(object)]);if(permitted())return downloadValue(F,root,kind,value)}return{ok:false}
+  },
   async search(q,lease={}){const result=await store.list({q});return live()&&!lease.signal?.aborted&&(!lease.current||lease.current())?{status:'ready',entries:result.records.slice(0,8).map(v=>({title:v.title,sub:v.matchPreview||v.preview||NAMES[kind],path:'/'+kind+'/#item='+v.id}))}:{status:'error',entries:[]}},
   async files({query:q='',current=()=>true}={}){const r=await store.list({q});return live()&&current()?{status:'ready',more:!!r.cursor,files:r.records.map(fileMeta)}:{status:'error',files:[]}}
  });

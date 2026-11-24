@@ -2,6 +2,8 @@
 // lines come from Today's answer; app destinations and Mail lenses retain the hub's
 // existing switches and standalone fallbacks. Chats has its own navigation tab.
 const APPS = [
+  {native:true,app:"atlas",name:"Atlas",what:"Conversations, coding tasks and cloud environments",only:view=>view?.apps?.mail===true,
+    links:[["Conversations","conversations","bubble"],["Tasks","tasks","check"],["Environments","environments","layers"]]},
   {native:true,app:"calendar",name:"Calendar",what:"Events and linked plans",links:[["Agenda","agenda","calendar"],["Week","week","calendar"]]},
   {native:true,app:"notes",name:"Notes",what:"Notes and checklists",links:[["All notes","all","file"]]},
   {native:true,app:"people",name:"People",what:"Your private contacts",links:[["Contacts","contacts","people"]]},

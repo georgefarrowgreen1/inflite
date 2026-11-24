@@ -1,4 +1,4 @@
-import { ask, accountCookie } from './account.js';
+import { ask, accountCookie, setCookies } from './account.js';
 import { appFetch } from './apps.js';
 import { bodyUpTo } from './body.js';
 import { atlasPage } from './atlas-page.js';
@@ -10,6 +10,8 @@ import { runAtlasTask } from './atlas-scheduler.js';
 import { evolution } from './atlas-evolution.js';
 import * as coding from './atlas-coding.js';
 import * as environments from './atlas-environments.js';
+import { workspaceContextStorageStatus, getWorkspaceContext, setWorkspaceContext, clearWorkspaceContext } from './atlas-workspace-context.js';
+import { atlasActivity } from './atlas-activity.js';
 
 const PRIVATE = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', 'Referrer-Policy': 'no-referrer' };
 const API_CSP = "default-src 'none'; frame-ancestors 'none'";
@@ -66,41 +68,71 @@ function exportConversation(env, owner, conversation, headers) {
 // An opaque identity marker lets the client discard late responses after an
 // account switch without exposing an email or raw account identifier.
 export async function atlas(request, env, { account = ask, send = fetch, ctx } = {}) {
+  const renewals = new Map();
+  const rememberCookies = response => {
+    for (const cookie of setCookies(response)) {
+      const match = /^((?:__Secure-)?account|ifl_rw)=/.exec(cookie);
+      if (match) renewals.set(match[1], cookie);
+    }
+  };
+  const response = await handleAtlas(request, env, { account, send, ctx, rememberCookies });
+  for (const cookie of renewals.values()) response.headers.append('Set-Cookie', cookie);
+  return response;
+}
+
+async function handleAtlas(request, env, { account, send, ctx, rememberCookies }) {
   const url = new URL(request.url), started = Date.now(), diagnosticId = crypto.randomUUID();
   let headers = { ...PRIVATE };
   const json = (data, status = 200) => Response.json(data, { status, headers: { ...headers, 'Content-Security-Policy': API_CSP } });
+  const accountUnavailable = () => json({ error: 'InFlite could not check your account right now. Your work is still saved. Try again shortly.', code: 'account_unavailable' }, 503);
+  const accountData = async (response, limit) => JSON.parse(await bodyUpTo(response, limit, { signal: AbortSignal.any([request.signal, AbortSignal.timeout(8000)]) }));
   if (!accountCookie(request)) return json({ error: 'Sign in to InFlite to open Atlas.', code: 'sign_in_required' }, 401);
-  let view;
+  let view, identityResponse;
   try {
-    const result = await account(env, request, { path: 'today/me', timeout: 8000 });
-    if (!result?.ok) return json({ error: 'Atlas access could not be verified.', code: 'access_denied' }, 403);
-    view = JSON.parse(await bodyUpTo(result, 65536));
-  } catch { return json({ error: 'Atlas access could not be verified.', code: 'access_denied' }, 403); }
-  if (view?.signedIn !== true || view?.apps?.mail !== true || !view?.user?.id) return json({ error: 'Atlas is available to InFlite administrators.', code: 'access_denied' }, 403);
+    const result = identityResponse = await account(env, request, { path: 'today/me', timeout: 8000 });
+    if (result?.status === 401) { rememberCookies(result); return json({ error: 'Sign in to InFlite to open Atlas.', code: 'sign_in_required' }, 401); }
+    if (result?.status === 403) { rememberCookies(result); return json({ error: 'Atlas is available to InFlite administrators.', code: 'access_denied' }, 403); }
+    if (!result?.ok) return accountUnavailable();
+    view = await accountData(result, 65536);
+  } catch { return accountUnavailable(); }
+  if (view?.signedIn === false) { rememberCookies(identityResponse); return json({ error: 'Sign in to InFlite to open Atlas.', code: 'sign_in_required' }, 401); }
+  if (view?.signedIn !== true || !view?.user?.id || !['string', 'number'].includes(typeof view.user.id)) return accountUnavailable();
+  rememberCookies(identityResponse);
+  if (view?.apps?.mail !== true) return json({ error: 'Atlas is available to InFlite administrators.', code: 'access_denied' }, 403);
   const owner = String(view.user.id);
   const ownerMarker = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('atlas-owner:' + owner))), b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
   headers['X-Atlas-Owner'] = ownerMarker;
   if (request.headers.has('X-Atlas-Owner') && request.headers.get('X-Atlas-Owner') !== ownerMarker) return json({ error: 'The signed-in account changed. Reload Atlas before continuing.', code: 'session_changed' }, 409);
   const fresh = async () => {
-    let proof;
+    let proof, response;
     try {
-      const response = await account(env, request, { path: 'atlas/fresh', timeout: 8000 });
-      if (response?.ok) proof = JSON.parse(await bodyUpTo(response, 4096));
+      response = await account(env, request, { path: 'atlas/fresh', timeout: 8000 });
+      if (response?.ok) proof = await accountData(response, 4096);
     } catch {}
-    if (proof?.fresh !== true || String(proof.owner) !== owner) fail('identity_confirmation_required', 'Confirm your identity in InFlite, then try again.', 403);
+    if ([401, 403].includes(response?.status) || proof?.fresh === false) { rememberCookies(response); fail('identity_confirmation_required', 'Confirm your identity in InFlite, then try again.', 403); }
+    if (!response?.ok || proof?.fresh !== true || !proof.owner) fail('account_unavailable', 'InFlite could not confirm your identity right now. Try again shortly.', 503);
+    rememberCookies(response);
+    if (String(proof.owner) !== owner) fail('session_changed', 'The signed-in account changed. Reload Atlas before continuing.', 409);
   };
   const verifyAdmin = async candidate => {
     if (String(candidate) !== owner) return false;
     try {
       if (env.ATLAS_VERIFY_KEY) {
         const response = await appFetch(env, 'https://account.inflite.ai/api/atlas-admin', { method: 'POST', headers: { Authorization: 'Bearer ' + env.ATLAS_VERIFY_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ owner }), redirect: 'manual', signal: AbortSignal.timeout(8000) });
-        return response.ok && JSON.parse(await bodyUpTo(response, 4096))?.allowed === true;
+        // A shared service key rejection is not evidence of owner revocation.
+        if (!response.ok) return null;
+        const proof = await accountData(response, 4096);
+        return typeof proof?.allowed === 'boolean' ? proof.allowed : null;
       }
       const response = await account(env, request, { path: 'today/me', timeout: 8000 });
-      if (!response?.ok) return false;
-      const current = JSON.parse(await bodyUpTo(response, 65536));
+      if ([401, 403].includes(response?.status)) { rememberCookies(response); return false; }
+      if (!response?.ok) return null;
+      const current = await accountData(response, 65536);
+      if (current?.signedIn === false) { rememberCookies(response); return false; }
+      if (current?.signedIn !== true || !current?.user?.id) return null;
+      rememberCookies(response);
       return current?.signedIn === true && current?.apps?.mail === true && String(current?.user?.id) === owner;
-    } catch { return false; }
+    } catch { return null; }
   };
   try {
     if (['GET', 'HEAD'].includes(request.method) && ['/atlas', '/atlas/'].includes(url.pathname)) {
@@ -114,6 +146,8 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
     if (!url.pathname.startsWith('/atlas/api/')) return json({ error: 'Atlas route not found.', code: 'not_found' }, 404);
     const path = url.pathname.slice('/atlas/api'.length), method = request.method;
     if (!['GET', 'HEAD'].includes(method) && (request.headers.get('Origin') !== url.origin || request.headers.get('X-Inflite') !== '1' || (request.headers.has('Sec-Fetch-Site') && request.headers.get('Sec-Fetch-Site') !== 'same-origin'))) fail('invalid_origin', 'Open Atlas on InFlite to make this change.', 403);
+    if (path === '/session' && method === 'GET') return json({ owner: ownerMarker, signedIn: true, available: true });
+    if (path === '/identity' && method === 'GET') { await fresh(); return json({ confirmed: true, owner: ownerMarker }); }
     const storage = await store.storageStatus(env);
     if (path === '/health' && method === 'GET') {
       const provider = await providerStatus(env, owner);
@@ -122,7 +156,7 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
         try { github = await repository.githubStatus(env, owner); }
         catch (error) { const safe = safeFailure(error); github = { connected: false, error: safe.error, code: safe.code }; }
       }
-      return json({ owner: ownerMarker, storage, provider, scheduling: scheduleAvailability(env), github, coding: await coding.codingHealth(env, provider), environments: await environments.environmentStorageStatus(env) });
+      return json({ owner: ownerMarker, storage, provider, scheduling: scheduleAvailability(env), github, coding: await coding.codingHealth(env, provider), environments: await environments.environmentStorageStatus(env), workspaceContext: await workspaceContextStorageStatus(env) });
     }
     if (path === '/setup' && method === 'POST') {
       const body = await input(request);
@@ -140,6 +174,7 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
     }
     if (!storage.ready) fail(storage.code || 'storage_upgrade_required', env.ATLAS_DB ? 'Finish Atlas storage setup to use this feature.' : 'The Atlas database is not configured.', env.ATLAS_DB ? 409 : 503);
     const options = { send, signal: request.signal };
+    if (path === '/activity' && method === 'GET') return json(await atlasActivity(env, owner, { limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 12, schemaVersion: storage.schemaVersion }));
 
     if (path === '/provider') {
       if (method === 'GET') return json(await providerStatus(env, owner));
@@ -168,6 +203,13 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
     if (path === '/conversations') {
       if (method === 'GET') return json({ conversations: await store.listConversations(env, owner, { archived: url.searchParams.get('archived') === '1' }) });
       if (method === 'POST') return json({ conversation: await store.createConversation(env, owner, await input(request)) }, 201);
+    }
+    const workspaceMatch = /^\/conversations\/([^/]+)\/workspace-context$/.exec(path);
+    if (workspaceMatch) {
+      const id = workspaceMatch[1];
+      if (method === 'GET') return json(await getWorkspaceContext(env, owner, id));
+      if (method === 'POST') return json(await setWorkspaceContext(env, owner, id, (await input(request, 4096)).source, { ...options, request }));
+      if (method === 'DELETE') return json(await clearWorkspaceContext(env, owner, id));
     }
     let match = /^\/conversations\/([^/]+)(?:\/(export|summary))?$/.exec(path);
     if (match) {
@@ -261,7 +303,9 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
           if (body.confirm !== true) fail('confirmation_required', 'Confirm recurring API usage before enabling this task.', 409);
           const availability = scheduleAvailability(env);
           if (!availability.available) fail('scheduling_unavailable', availability.reason, 503);
-          if (!await verifyAdmin(owner)) fail('administrator_unavailable', 'Administrator access could not be verified for scheduling.', 403);
+          const allowed = await verifyAdmin(owner);
+          if (allowed === false) fail('administrator_unavailable', 'Administrator access is no longer available for scheduling.', 403);
+          if (allowed !== true) fail('account_unavailable', 'InFlite could not check your account right now. Try again shortly.', 503);
           if (!(await providerStatus(env, owner)).decryptable) fail('provider_not_configured', 'Save an OpenAI connection before enabling this task.', 409);
         }
         return json({ task: await store.updateTask(env, owner, body.id, body) });
@@ -286,7 +330,7 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
     const safe = safeFailure(error, diagnosticId);
     const supplied = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599 ? error.status : 503;
     // An upstream credential rejection must never look like an InFlite sign-out.
-    const status = supplied === 401 ? 422 : supplied;
+    const status = supplied === 401 && safe.code !== 'sign_in_required' ? 422 : supplied;
     console.warn(JSON.stringify({ event: 'atlas_request_failed', requestId: diagnosticId, code: safe.code, status, durationMs: Date.now() - started }));
     return json(safe, status);
   }

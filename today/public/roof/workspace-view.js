@@ -19,7 +19,7 @@ import { captureLauncherOrigin } from "./launcher-motion.js";
 import { WINDOW_APPS, normalizeLayout, normalizeWindow, pixelBounds, relativeBounds, snapWindow } from "./workspace-windows.js";
 
 let serial = 0;
-const APP_NAMES = { calendar:"Calendar", notes:"Notes", people:"People", fitness: "Fitness", weather: "Weather", markets: "Markets", chats: "Chats", mail: "Mail" };
+const APP_NAMES = { atlas:"Atlas",calendar:"Calendar", notes:"Notes", people:"People", fitness: "Fitness", weather: "Weather", markets: "Markets", chats: "Chats", mail: "Mail" };
 const APP_ICONS = { chats: "chat" };
 const asText = value => value == null ? "" : String(value);
 const words = (node, value) => { const text = asText(value); if (node.textContent !== text) node.textContent = text; };

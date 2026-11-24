@@ -1,0 +1,5 @@
+/* A live native app in the shared InFlite window; no nested page or frame. */
+.ifl-in-pane.atlas-native { height: 100%; min-height: 0; }
+.ifl-pane-screen[data-app="atlas"] { min-width: 0; min-height: 0; overflow: hidden; }
+.ifl-pane-screen[data-app="atlas"] .atlas-layout { height: 100%; min-height: 0; }
+.ifl-pane-screen[data-app="atlas"] .conversation-main { min-width: 0; }

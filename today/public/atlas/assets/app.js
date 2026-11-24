@@ -2,6 +2,7 @@
    is checked on every response, including every new streaming response. */
 import { createSheets } from "../../roof/sheet.js";
 import { toast as showToast } from "../../roof/toast.js";
+import { nativeSheets, confirmAction, promptValue } from "../roof/native.js";
 
 export function safeUrl(value) {
   try { const u = new URL(String(value)); return u.protocol === "https:" && !u.username && !u.password ? u.href : null; } catch { return null; }
@@ -36,60 +37,132 @@ export async function* streamEvents(body, { signal, maxBytes = 8 * 1024 * 1024 }
   } finally { signal?.removeEventListener("abort", stop); await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
-const $ = id => document.getElementById(id);
+function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text != null) el.textContent = String(text); return el; }
+function button(text, action, className = "") { const el = node("button", className, text); el.type = "button"; el.addEventListener("click", action); return el; }
+function inlineMarkdown(target, text) {
+  const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\[[^\]\n]+\]\([^\s)]+\))/g;
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > last) target.append(document.createTextNode(text.slice(last, match.index)));
+    const token = match[0];
+    if (token.startsWith("`")) target.append(node("code", "", token.slice(1, -1)));
+    else if (token.startsWith("**") || token.startsWith("__")) target.append(node("strong", "", token.slice(2, -2)));
+    else { const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token), url = safeUrl(link?.[2]); if (url) { const a = node("a", "", link[1]); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; target.append(a); } else target.append(document.createTextNode(token)); }
+    last = match.index + token.length;
+  }
+  if (last < text.length) target.append(document.createTextNode(text.slice(last)));
+}
+function citationLinks(target, sources, start, end) {
+  const seen = new Set(); sources.forEach((source, i) => { const at = Number(source.start_index); const url = safeUrl(source.url); if (!url || !Number.isFinite(at) || at < start || at >= end || seen.has(url)) return; seen.add(url); const a = node("a", "inline-citation", String(i + 1)); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = source.title || new URL(url).hostname; a.setAttribute("aria-label", "Source " + (i + 1) + ": " + a.title); target.append(a); });
+}
+export function renderMarkdown(target, value, sources = [], notify = showToast) {
+  target.replaceChildren(); const text = String(value || ""), lines = text.split("\n"); let i = 0, offset = 0;
+  const cellText = line => line.trim().replace(/^\||\|$/g, "").split("|").map(x => x.trim());
+  const appendText = (el, raw, start) => { inlineMarkdown(el, raw); citationLinks(el, sources, start, start + raw.length + 1); target.append(el); };
+  while (i < lines.length) {
+    const line = lines[i], start = offset;
+    if (!line.trim()) { offset += line.length + 1; i++; continue; }
+    if (/^\s*```/.test(line)) {
+      const language = line.trim().slice(3).trim().slice(0, 40); offset += line.length + 1; i++; const code = [];
+      while (i < lines.length && !/^\s*```/.test(lines[i])) { code.push(lines[i]); offset += lines[i].length + 1; i++; }
+      if (i < lines.length) { offset += lines[i].length + 1; i++; }
+      const box = node("div", "code-block"), head = node("div", "code-header"), pre = node("pre"), content = node("code", "", code.join("\n")); head.append(node("span", "", language || "Code"), button("Copy code", async e => { try { await navigator.clipboard.writeText(code.join("\n")); e.currentTarget.textContent = "Copied"; } catch { notify("Select and copy the code manually."); } })); pre.append(content); box.append(head, pre); target.append(box); continue;
+    }
+    if (i + 1 < lines.length && line.includes("|") && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i + 1])) {
+      const wrapper = node("div", "table-scroll"), table = node("table"), head = node("thead"), row = node("tr"); for (const cell of cellText(line)) { const th = node("th"); inlineMarkdown(th, cell); row.append(th); } head.append(row); table.append(head); offset += line.length + lines[i + 1].length + 2; i += 2; const tbody = node("tbody");
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) { const tr = node("tr"); for (const cell of cellText(lines[i])) { const td = node("td"); inlineMarkdown(td, cell); tr.append(td); } tbody.append(tr); offset += lines[i].length + 1; i++; } table.append(tbody); wrapper.append(table); target.append(wrapper); continue;
+    }
+    const heading = /^(#{1,4})\s+(.+)$/.exec(line); if (heading) { appendText(node("h" + Math.min(heading[1].length + 1, 4)), heading[2], start); offset += line.length + 1; i++; continue; }
+    if (/^\s*>/.test(line)) { const quote = node("blockquote"); inlineMarkdown(quote, line.replace(/^\s*>\s?/, "")); citationLinks(quote, sources, start, start + line.length + 1); target.append(quote); offset += line.length + 1; i++; continue; }
+    const listMatch = /^\s*(?:[-*+]\s+|\d+[.)]\s+)/.exec(line);
+    if (listMatch) { const list = node(/^\s*\d/.test(line) ? "ol" : "ul"); while (i < lines.length && /^\s*(?:[-*+]\s+|\d+[.)]\s+)/.test(lines[i])) { const li = node("li"); inlineMarkdown(li, lines[i].replace(/^\s*(?:[-*+]\s+|\d+[.)]\s+)/, "")); citationLinks(li, sources, offset, offset + lines[i].length + 1); list.append(li); offset += lines[i].length + 1; i++; } target.append(list); continue; }
+    const paragraph = [line]; offset += line.length + 1; i++; while (i < lines.length && lines[i].trim() && !/^(?:#{1,4}\s|\s*```|\s*>|\s*[-*+]\s|\s*\d+[.)]\s)/.test(lines[i]) && !(i + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1]))) { paragraph.push(lines[i]); offset += lines[i].length + 1; i++; }
+    const p = node("p"); inlineMarkdown(p, paragraph.join("\n")); citationLinks(p, sources, start, offset); target.append(p);
+  }
+}
+
+export function createAtlasClient(root, { fw = null } = {}) {
+  if (!root) throw new TypeError("Atlas needs a mount root");
+  const lifetime = new AbortController();
+  const ids = new Map([...root.querySelectorAll("[id]")].map(el => [el.id, el]));
+  let disposed = false, shown = true, route = null, routeEpoch = 0, routing = false;
+  const $ = id => ids.get(id) || root.querySelector(`[id="${id}"]`) || sheets?.elements?.().map(el => el.querySelector(`[id="${id}"]`)).find(Boolean);
+  const all = selector => [...new Set([root, ...(sheets?.elements?.() || [])].flatMap(el => [...el.querySelectorAll(selector)]))];
+  const listen = (target, event, handler, options = {}) => target?.addEventListener(event, handler, { ...options, signal: lifetime.signal });
+  const visible = () => !disposed && shown && document.visibilityState === "visible" && (!fw || fw.visible());
 const modeNames = { research: "Research", developer: "Developer", personal: "Personal", fitness: "Cycling & fitness", tasks: "Task planning" };
-const state = { owner: null, epoch: 0, controllers: new Set(), health: null, settings: null, conversations: [], conversation: null, messages: [], messagePage: {}, activeId: null, context: [], repositories: [], models: [], stream: null, dispatching: false, navigation: 0, contextLoad: 0, contexts: [], tasks: [], scheduleContext: [], patches: [], selectedPatch: null, codingRuns: [], codingObserver: null, codingLoading: false, codingLoadError: "", codingContinuation: null, codingRestart: null, codingReview: null, codingDispatching: false, intent: "code", environments: [], environmentsReady: null, environmentsLoading: false, environmentId: "", environmentEditingRevision: null, environmentEditorSession: 0, environmentEditorVersion: 0, environmentsRequest: 0, taskTabs: new Map(), taskExpanded: new Map(), taskChanges: new Map(), drafts: new Map(), privateReady: false, checking: null };
+const state = { owner: null, epoch: 0, controllers: new Set(), health: null, settings: null, conversations: [], conversation: null, messages: [], messagePage: {}, activeId: null, context: [], repositories: [], models: [], stream: null, dispatching: false, navigation: 0, contextLoad: 0, contexts: [], tasks: [], scheduleContext: [], patches: [], selectedPatch: null, codingRuns: [], codingObserver: null, codingLoading: false, codingLoadError: "", codingContinuation: null, codingRestart: null, codingReview: null, codingDispatching: false, intent: "code", environments: [], environmentsReady: null, environmentsLoading: false, environmentId: "", environmentEditingRevision: null, environmentEditorSession: 0, environmentEditorVersion: 0, environmentsRequest: 0, taskTabs: new Map(), taskExpanded: new Map(), taskChanges: new Map(), drafts: new Map(), privateReady: false, checking: null, workspaceContext: [], contextPending: false, briefs: [] };
 let sheets, navigationSheet, activeToast;
 let codingInbox;
 const mobileQuery = "(max-width: 720px)";
-function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text != null) el.textContent = String(text); return el; }
-function button(text, action, className = "") { const el = node("button", className, text); el.type = "button"; el.addEventListener("click", action); return el; }
+const dirtyForms = new Set();
+let providerOff = null, routeSyncSuppressed = 0, nativeSettings = null, paintFrame = 0, queuedMessage = null;
+const identityHost = () => nativeSettings?.current() ? nativeSettings.fw : fw;
+function renderAnswer(target, value, sources) { return renderMarkdown(target, value, sources, toast); }
 function timestamp(value) { if (!value) return ""; const d = new Date(typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value); return Number.isNaN(d.getTime()) ? "" : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); }
 function shortDate(value) { if (!value) return ""; return new Date(Number(value) || value).toLocaleDateString([], { month: "short", day: "numeric" }); }
 function money(value) { return typeof value === "number" && Number.isFinite(value) ? "$" + value.toFixed(value < 0.01 && value > 0 ? 4 : 2) : "Unavailable"; }
 function uuid() { return crypto.randomUUID(); }
 function toast(message) {
-  activeToast = showToast(message);
-  const dialog = sheets.top()?.el;
-  if (dialog) dialog.append([...document.querySelectorAll(".ifl-toast")].at(-1));
+  if (disposed) return;
+  activeToast = fw ? fw.toast(message) : showToast(message);
 }
 function feedback(id, message, error = false) { const el = $(id); el.textContent = message || ""; el.classList.toggle("error", error); }
 function errorText(error) { return (error?.message || "Something went wrong. Try again.") + (error?.requestId ? " Reference: " + error.requestId : ""); }
 function actionableError(error, id) {
+  if (disposed) return;
   if (id) feedback(id, errorText(error), true); else toast(errorText(error));
   if (error?.code !== "identity_confirmation_required") return;
   const target = $(id || "setup-message");
   if (!id) { target.replaceChildren(node("span", "", "Confirm your identity to finish this setup, then retry here.")); $("setup-banner").hidden = false; }
-  const link = node("a", "identity-recovery", "Confirm identity in InFlite"); link.href = "/#settings=account-confirm"; link.target = "_blank"; link.rel = "noopener";
-  target.append(document.createTextNode(" "), link);
+  const recover = identityHost()?.confirmIdentity ? button("Confirm identity", async () => {
+    if (await identityHost().confirmIdentity({ reason: "Confirm your InFlite account to update Atlas connections.", expectedOwner: state.owner, signal: lifetime.signal })) {
+      feedback(id || "setup-message", "Identity confirmed. Retry your change.");
+    }
+  }, "identity-recovery") : node("a", "identity-recovery", "Confirm identity in InFlite");
+  if (!identityHost()?.confirmIdentity) recover.href = "/#settings=account-confirm";
+  target.append(document.createTextNode(" "), recover);
 }
 async function busy(control, action, feedbackId) {
-  if (control.disabled || control.classList.contains("busy-label")) return; control.disabled = true; control.classList.add("busy-label");
-  try { return await action(); } catch (error) { if (error.accountChanged) return; actionableError(error, feedbackId); }
-  finally { control.disabled = false; control.classList.remove("busy-label"); updateComposer(); }
+  if (disposed || control.disabled || control.classList.contains("busy-label")) return;
+  control.disabled = true; control.classList.add("busy-label");
+  try { return await action(); }
+  catch (error) {
+    if (error.accountChanged) return;
+    // This explicit server rejection happens before the write. Never retry an
+    // ambiguous network failure, which could repeat a successful operation.
+    if (error.code === "identity_confirmation_required" && identityHost()?.confirmIdentity) {
+      try {
+        const owner = state.owner, epoch = state.epoch;
+        const confirmed = await identityHost().confirmIdentity({ reason: "Confirm your InFlite account to save this Atlas change.", expectedOwner: owner, signal: lifetime.signal });
+        checkEpoch(epoch);
+        if (confirmed && state.owner === owner) return await action();
+      } catch (retryError) { if (!retryError.accountChanged) actionableError(retryError, feedbackId); return; }
+    }
+    actionableError(error, feedbackId);
+  } finally { control.disabled = false; control.classList.remove("busy-label"); if (!disposed) updateComposer(); }
 }
 function clearPrivateState(message = "Your session changed. Checking access…") {
   detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingReview = null; state.codingLoading = false; state.codingLoadError = ""; state.codingDispatching = false;
   state.environments = []; state.environmentsReady = null; state.environmentsLoading = false; state.environmentId = ""; state.environmentEditingRevision = null; state.environmentEditorSession++; state.environmentEditorVersion++; state.environmentsRequest++; state.intent = "code"; state.taskTabs.clear(); state.taskExpanded.clear(); state.taskChanges.clear();
-  state.epoch++; state.stream?.controller.abort(); state.stream = null; state.dispatching = false; state.owner = null; state.health = null; state.conversation = null; state.conversations = []; state.messages = []; state.activeId = null; state.context = []; state.contexts = []; state.repositories = []; state.models = []; state.tasks = []; state.scheduleContext = []; state.patches = []; state.selectedPatch = null; state.settings = null; state.privateReady = false; state.drafts.clear(); state.navigation++; state.contextLoad++;
+  state.epoch++; state.stream?.controller.abort(); state.stream = null; state.dispatching = false; state.owner = null; state.health = null; state.conversation = null; state.conversations = []; state.messages = []; state.activeId = null; state.context = []; state.contexts = []; state.repositories = []; state.models = []; state.tasks = []; state.scheduleContext = []; state.patches = []; state.selectedPatch = null; state.settings = null; state.privateReady = false; state.drafts.clear(); state.workspaceContext = []; state.contextPending = false; state.briefs = []; dirtyForms.clear(); state.navigation++; state.contextLoad++;
   for (const controller of state.controllers) controller.abort(); state.controllers.clear(); state.messagePage = {};
   for (const id of ["messages", "conversation-list", "attached-context", "provider-health", "usage-totals", "usage-requests", "briefs-list", "brief-detail", "context-list", "patches-list", "patch-detail", "inbox-list", "schedules-list", "schedule-runs-list", "schedule-context", "thread-summary-text", "environments-list"]) $(id)?.replaceChildren();
   for (const id of ["prompt", "provider-key", "github-token", "memory-text", "schedule-prompt", "schedule-title", "conversation-search", "environment-id", "environment-name", "environment-branch", "environment-setup", "environment-test"]) if ($(id)) $(id).value = "";
   sheets.closeAll();
   activeToast?.close();
-  for (const notice of document.querySelectorAll(".ifl-toast")) notice.remove();
   for (const id of ["provider-feedback", "github-feedback", "preferences-feedback", "patch-feedback", "inbox-feedback", "context-feedback", "schedule-feedback", "context-repository", "github-health", "conversation-status", "coding-feedback", "environment-feedback", "environments-feedback", "toast"]) if ($(id)) $(id).textContent = "";
   $("inbox-filter").value = "all";
   for (const id of ["repository", "schedule-repository", "provider-model", "environment-repository", "coding-environment"]) if ($(id)) $(id).replaceChildren();
   $("environment-form").hidden = true; $("environment-empty").hidden = false;
   $("schedule-id").value = ""; $("fitness-consent").checked = false; $("schedule-fitness-consent").checked = false; $("memory-enabled").checked = false; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; $("schedule-form").hidden = true; $("schedule-runs").hidden = true;
   replaceConversationUrl(null); navigation(false);
-  $("conversation-title").textContent = "New conversation"; $("connection-label").textContent = "Sign in required"; $("session-notice").textContent = message; document.body.classList.add("session-check"); updateComposer();
+  $("conversation-title").textContent = "New conversation"; $("connection-label").textContent = "Sign in required"; $("session-notice").textContent = message; root.classList.add("session-check"); updateComposer();
 }
-function checkEpoch(epoch) { if (epoch !== state.epoch) { const error = Error("This response belongs to a previous session."); error.accountChanged = true; throw error; } }
+function checkEpoch(epoch) { if (disposed || epoch !== state.epoch) { const error = Error("This response belongs to a previous session."); error.accountChanged = true; throw error; } }
 function inspectOwner(response, data, { health = false } = {}) {
   const next = response.headers.get("X-Atlas-Owner") || (health && typeof data?.owner === "string" ? data.owner : null);
-  if ((state.owner && next && state.owner !== next) || data?.code === "session_changed") { clearPrivateState(); const e = Error("Your account changed. Reloading Atlas…"); e.accountChanged = true; queueMicrotask(() => bootstrap()); throw e; }
+  if ((state.owner && next && state.owner !== next) || data?.code === "session_changed") { clearPrivateState(); const e = Error("Your account changed. Reloading Atlas…"); e.accountChanged = true; queueMicrotask(() => { if (!disposed) bootstrap(); }); throw e; }
   if ((response.status === 401 || response.status === 403) && (["sign_in_required", "access_denied"].includes(data?.code) || /^(Sign in required|Access denied)$/.test(data?.error || ""))) {
     clearPrivateState("Sign in to InFlite to continue. Your private workspace has been cleared.");
     const link = node("a", "", "Open InFlite sign-in"); link.href = "/account"; $("session-notice").append(node("br"), link);
@@ -107,7 +180,7 @@ async function api(path, method = "GET", body, { signal, timeout = 120000 } = {}
   try {
     const response = await fetch("/atlas/api/" + path, { method, credentials: "same-origin", cache: "no-store", headers: { "Content-Type": "application/json", "X-Inflite": "1", ...(state.owner ? { "X-Atlas-Owner": state.owner } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: controller.signal });
     let data; try { data = await response.json(); } catch { throw Error("Atlas returned an unreadable response. Try again."); }
-    checkEpoch(epoch); inspectOwner(response, data, { health: path === "health" });
+    checkEpoch(epoch); inspectOwner(response, data, { health: path === "health" || path === "session" });
     if (!response.ok) { const e = Error(data.error || "Request failed."); e.code = data.code; e.requestId = data.requestId; e.status = response.status; throw e; }
     return data;
   } catch (error) { checkEpoch(epoch); throw error; }
@@ -117,7 +190,7 @@ async function download(path, name) {
   const epoch = state.epoch;
   const response = await fetch("/atlas/api/" + path, { credentials: "same-origin", cache: "no-store", headers: { "X-Inflite": "1", ...(state.owner ? { "X-Atlas-Owner": state.owner } : {}) } });
   if (!response.ok) { let data = {}; try { data = await response.json(); } catch {} checkEpoch(epoch); inspectOwner(response, data); throw Error(data.error || "The export could not be downloaded."); }
-  checkEpoch(epoch); inspectOwner(response, null); const blob = await response.blob(); checkEpoch(epoch); const url = URL.createObjectURL(blob), a = node("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  checkEpoch(epoch); inspectOwner(response, null); const blob = await response.blob(); checkEpoch(epoch); const url = URL.createObjectURL(blob), a = node("a"); a.href = url; a.download = name; root.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function titleFilename(value) { return (String(value || "atlas").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "atlas") + ".md"; }
 function placeSidebar(mobile) {
@@ -126,7 +199,8 @@ function placeSidebar(mobile) {
 }
 function navigation(open) {
   if (!open) return navigationSheet?.now();
-  if (navigationSheet || !matchMedia(mobileQuery).matches) return;
+  if (navigationSheet) return;
+  if (!matchMedia(mobileQuery).matches) { $("conversation-search").focus(); return; }
   const toggle = $("navigation-toggle");
   toggle.setAttribute("aria-expanded", "true");
   toggle.focus({ preventScroll: true });
@@ -148,7 +222,8 @@ function openDialog(name, trigger, options) {
 }
 function fitComposerViewport() {
   const viewport = window.visualViewport;
-  const body = document.body;
+  const body = root;
+  if (fw) return; // The InFlite frame and shared sheets own mobile viewport fitting.
   const height = document.documentElement.clientHeight;
   const typing = matchMedia("(any-pointer: coarse)").matches && document.activeElement === $("prompt");
   if ((typing || body.classList.contains("atlas-keyboard")) && viewport && Math.abs(viewport.scale - 1) < .01 && height - viewport.height > 80) {
@@ -176,9 +251,10 @@ function renderHealth() {
   const health = state.health, provider = health?.provider || {}, ready = health?.storage?.ready === true;
   const codingUpgrade = ready && health?.coding?.storageReady === false;
   const environmentsUpgrade = ready && health?.environments?.ready === false;
-  $("setup-banner").hidden = ready && !codingUpgrade && !environmentsUpgrade; $("upgrade-storage").disabled = !health; $("upgrade-storage").hidden = health?.storage?.code === "storage_missing";
-  $("setup-message").textContent = health?.storage?.code === "storage_missing" ? "Connect Atlas storage in the deployment settings, then reload this page." : codingUpgrade ? "Upgrade storage to save coding tasks and reconnect to their progress. Your conversations are ready to use." : environmentsUpgrade ? "Save reusable cloud environments with repository setup and focused checks." : "Prepare storage for conversations, sources and saved work.";
-  $("upgrade-storage").textContent = codingUpgrade ? "Enable coding tasks" : environmentsUpgrade ? "Enable cloud environments" : "Prepare workspace";
+  const workspaceContextUpgrade = ready && health?.workspaceContext?.ready === false;
+  $("setup-banner").hidden = ready && !codingUpgrade && !environmentsUpgrade && !workspaceContextUpgrade; $("upgrade-storage").disabled = !health; $("upgrade-storage").hidden = health?.storage?.code === "storage_missing";
+  $("setup-message").textContent = health?.storage?.code === "storage_missing" ? "Connect Atlas storage in the deployment settings, then reload this page." : codingUpgrade ? "Upgrade storage to save coding tasks and reconnect to their progress. Your conversations are ready to use." : environmentsUpgrade ? "Save reusable cloud environments with repository setup and focused checks." : workspaceContextUpgrade ? "Enable selected Mail context and connected app drafts in your InFlite workspace. Existing conversations remain available." : "Prepare storage for conversations, sources and saved work.";
+  $("upgrade-storage").textContent = codingUpgrade ? "Enable coding tasks" : environmentsUpgrade ? "Enable cloud environments" : workspaceContextUpgrade ? "Enable connected context" : "Prepare workspace";
   const status = $("connection-status");
   let label = "Connect OpenAI", kind = "attention";
   if (!ready) label = "Finish setup";
@@ -208,10 +284,10 @@ function updateComposer() {
   $("send").disabled = !ready || !!state.stream || state.dispatching || state.codingDispatching || !$("prompt").value.trim();
   $("stop-response").hidden = !state.stream;
   $("mode").disabled = !!state.activeId || state.dispatching || state.codingDispatching; $("repository").disabled = !!state.activeId || state.dispatching || state.codingDispatching;
-  for (const control of document.querySelectorAll(".environment-use, #use-environment")) control.disabled = state.dispatching || state.codingDispatching;
+  for (const control of all(".environment-use, #use-environment")) control.disabled = state.dispatching || state.codingDispatching;
   const mode = state.conversation?.mode || $("mode").value;
   const code = mode === "developer" && state.intent === "code";
-  document.body.dataset.atlasMode = mode;
+  root.dataset.atlasMode = mode;
   $("workspace-label").textContent = modeNames[mode] || mode;
   $("composer-mode-label").textContent = mode === "developer" ? "" : modeNames[mode] || "Options";
   $("composer-intent").hidden = mode !== "developer";
@@ -239,6 +315,8 @@ function updateComposer() {
   const publish = $("publish-coding"), review = state.codingReview;
   if (publish && review?.run) publish.disabled = publish.classList.contains("busy-label") || review.stale || !review.hasFiles || !review.run.reviewReady || codingActive(review.run) || !state.health?.github?.connected;
   $("attach-context").disabled = !$("repository").value || !state.health?.storage?.ready;
+  if (state.contextPending) { $("send").disabled = true; $("start-coding").disabled = true; }
+  if (fw) updateNativeHeader();
   const needsProvider = state.privateReady && state.health?.storage?.ready && (!state.health.provider?.keySaved || state.health.provider?.decryptable === false);
   $("connect-provider").hidden = !needsProvider;
   $("connect-provider").textContent = state.health?.provider?.keySaved ? "Check provider connection" : "Connect provider";
@@ -253,8 +331,8 @@ function renderThreads() {
   for (const c of rows) { const b = button("", () => selectConversation(c.id)); b.setAttribute("aria-current", String(c.id === state.activeId)); b.append(node("span", "thread-name", c.title || "Untitled conversation"), node("span", "thread-date", (modeNames[c.mode] || c.mode) + " · " + shortDate(c.updated_at || c.created_at))); list.append(b); }
   if (!rows.length) list.append(node("p", "muted empty-small", query ? "No matching conversations." : $("show-archived").checked ? "No archived conversations." : "Your conversations will appear here."));
 }
-async function loadThreads() { const result = await api("conversations?archived=" + ($("show-archived").checked ? "1" : "0")); state.conversations = result.conversations || []; renderThreads(); }
-function replaceConversationUrl(id) { const url = new URL(location.href); if (id) url.searchParams.set("conversation", id); else url.searchParams.delete("conversation"); history.replaceState(null, "", url.pathname + url.search); }
+async function loadThreads() { const result = await api("conversations?archived=" + ($("show-archived").checked ? "1" : "0")); state.conversations = result.conversations || []; renderThreads(); fw?.workspace?.changed(); }
+function replaceConversationUrl(id) { if (fw) { if (!routing && !routeSyncSuppressed && shown) fw.nav.go(fw.nav.href("conversations", id || null), { replace: true }); return; } const url = new URL(location.href); if (id) url.searchParams.set("conversation", id); else url.searchParams.delete("conversation"); history.replaceState(null, "", url.pathname + url.search); }
 async function selectConversation(id, { preserveDraft = false } = {}) {
   if (!preserveDraft) saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingLoadError = ""; state.codingLoading = false; const generation = ++state.navigation; navigation(false); feedback("coding-feedback", ""); $("conversation-status").textContent = "Loading conversation…";
   try {
@@ -264,7 +342,7 @@ async function selectConversation(id, { preserveDraft = false } = {}) {
     $("archive-conversation").textContent = state.conversation.archived ? "Restore conversation" : "Archive";
     $("thread-summary").hidden = !state.conversation.summary; $("thread-summary-text").textContent = state.conversation.summary || "";
     state.messagePage = { hasMore: !!result.hasMore, nextBeforeId: result.nextBeforeId }; $("older-history").hidden = !state.messagePage.hasMore;
-    restoreDraft(id); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(id); $("conversation-status").textContent = ""; await observeCodingRuns();
+    state.workspaceContext = []; restoreDraft(id); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(id); $("conversation-status").textContent = ""; await Promise.allSettled([observeCodingRuns(), loadWorkspaceContext(id, generation)]);
   } catch (error) { if (generation === state.navigation) {
     if (error.accountChanged) return;
     $("conversation-status").replaceChildren(node("span", "", errorText(error)));
@@ -272,55 +350,17 @@ async function selectConversation(id, { preserveDraft = false } = {}) {
     else toast(errorText(error));
   } }
 }
-function newConversation(mode) { feedback("coding-feedback", ""); saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingLoadError = ""; state.codingLoading = false; state.navigation++; state.activeId = null; state.conversation = null; state.messages = []; state.messagePage = {}; state.context = []; $("conversation-title").textContent = "New conversation"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; if (mode && modeNames[mode]) $("mode").value = mode; restoreDraft(null); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(null); navigation(false); $("prompt").focus(); }
+function newConversation(mode) { feedback("coding-feedback", ""); saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingLoadError = ""; state.codingLoading = false; state.navigation++; state.activeId = null; state.conversation = null; state.messages = []; state.messagePage = {}; state.context = []; state.workspaceContext = []; $("conversation-title").textContent = "New conversation"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; if (mode && modeNames[mode]) $("mode").value = mode; restoreDraft(null); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(null); navigation(false); $("prompt").focus(); }
 async function loadOlderMessages(control) { await busy(control, async () => { const id = state.activeId, generation = state.navigation, before = state.messagePage.nextBeforeId; if (!id || !state.messagePage.hasMore || !before) return; const result = await api("conversations/" + encodeURIComponent(id) + "?before=" + encodeURIComponent(before) + "&limit=100"); if (id !== state.activeId || generation !== state.navigation) return; const container = $("messages"), height = container.scrollHeight, top = container.scrollTop, known = new Set(state.messages.map(m => m.id)); state.messages = [...(result.messages || []).filter(m => !known.has(m.id)), ...state.messages]; state.messagePage = { hasMore: !!result.hasMore, nextBeforeId: result.nextBeforeId }; $("older-history").hidden = !state.messagePage.hasMore; renderMessages(); container.scrollTop = container.scrollHeight - height + top; }); }
-async function ensureConversation(snapshot = {}) {
+async function ensureConversation(snapshot = {}, lease = {}) {
+  const current = () => !lease.signal?.aborted && (!lease.current || lease.current());
+  if (!current()) throw new DOMException("Action ended", "AbortError");
   if (state.activeId) return state.conversation;
   const generation = state.navigation, mode = snapshot.mode || $("mode").value, repository = snapshot.repository ?? $("repository").value;
-  const result = await api("conversations", "POST", { title: (snapshot.prompt ?? $("prompt").value).trim().slice(0, 80) || "New conversation", mode, repository: mode === "developer" ? repository || null : null });
+  const result = await api("conversations", "POST", { title: (snapshot.prompt ?? $("prompt").value).trim().slice(0, 80) || "New conversation", mode, repository: mode === "developer" ? repository || null : null }, { signal: lease.signal });
+  if (!current()) throw new DOMException("Action ended", "AbortError");
   if (generation === state.navigation && !state.activeId) { state.conversation = result.conversation; state.activeId = result.conversation.id; $("conversation-title").textContent = result.conversation.title; $("conversation-menu").hidden = false; replaceConversationUrl(state.activeId); updateComposer(); }
   loadThreads().catch(() => {}); return result.conversation;
-}
-function inlineMarkdown(target, text) {
-  const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\[[^\]\n]+\]\([^\s)]+\))/g;
-  let last = 0;
-  for (const match of text.matchAll(pattern)) {
-    if (match.index > last) target.append(document.createTextNode(text.slice(last, match.index)));
-    const token = match[0];
-    if (token.startsWith("`")) target.append(node("code", "", token.slice(1, -1)));
-    else if (token.startsWith("**") || token.startsWith("__")) target.append(node("strong", "", token.slice(2, -2)));
-    else { const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token), url = safeUrl(link?.[2]); if (url) { const a = node("a", "", link[1]); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; target.append(a); } else target.append(document.createTextNode(token)); }
-    last = match.index + token.length;
-  }
-  if (last < text.length) target.append(document.createTextNode(text.slice(last)));
-}
-function citationLinks(target, sources, start, end) {
-  const seen = new Set(); sources.forEach((source, i) => { const at = Number(source.start_index); const url = safeUrl(source.url); if (!url || !Number.isFinite(at) || at < start || at >= end || seen.has(url)) return; seen.add(url); const a = node("a", "inline-citation", String(i + 1)); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = source.title || new URL(url).hostname; a.setAttribute("aria-label", "Source " + (i + 1) + ": " + a.title); target.append(a); });
-}
-export function renderMarkdown(target, value, sources = []) {
-  target.replaceChildren(); const text = String(value || ""), lines = text.split("\n"); let i = 0, offset = 0;
-  const cellText = line => line.trim().replace(/^\||\|$/g, "").split("|").map(x => x.trim());
-  const appendText = (el, raw, start) => { inlineMarkdown(el, raw); citationLinks(el, sources, start, start + raw.length + 1); target.append(el); };
-  while (i < lines.length) {
-    const line = lines[i], start = offset;
-    if (!line.trim()) { offset += line.length + 1; i++; continue; }
-    if (/^\s*```/.test(line)) {
-      const language = line.trim().slice(3).trim().slice(0, 40); offset += line.length + 1; i++; const code = [];
-      while (i < lines.length && !/^\s*```/.test(lines[i])) { code.push(lines[i]); offset += lines[i].length + 1; i++; }
-      if (i < lines.length) { offset += lines[i].length + 1; i++; }
-      const box = node("div", "code-block"), head = node("div", "code-header"), pre = node("pre"), content = node("code", "", code.join("\n")); head.append(node("span", "", language || "Code"), button("Copy code", async e => { try { await navigator.clipboard.writeText(code.join("\n")); e.currentTarget.textContent = "Copied"; } catch { toast("Select and copy the code manually."); } })); pre.append(content); box.append(head, pre); target.append(box); continue;
-    }
-    if (i + 1 < lines.length && line.includes("|") && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i + 1])) {
-      const wrapper = node("div", "table-scroll"), table = node("table"), head = node("thead"), row = node("tr"); for (const cell of cellText(line)) { const th = node("th"); inlineMarkdown(th, cell); row.append(th); } head.append(row); table.append(head); offset += line.length + lines[i + 1].length + 2; i += 2; const tbody = node("tbody");
-      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) { const tr = node("tr"); for (const cell of cellText(lines[i])) { const td = node("td"); inlineMarkdown(td, cell); tr.append(td); } tbody.append(tr); offset += lines[i].length + 1; i++; } table.append(tbody); wrapper.append(table); target.append(wrapper); continue;
-    }
-    const heading = /^(#{1,4})\s+(.+)$/.exec(line); if (heading) { appendText(node("h" + Math.min(heading[1].length + 1, 4)), heading[2], start); offset += line.length + 1; i++; continue; }
-    if (/^\s*>/.test(line)) { const quote = node("blockquote"); inlineMarkdown(quote, line.replace(/^\s*>\s?/, "")); citationLinks(quote, sources, start, start + line.length + 1); target.append(quote); offset += line.length + 1; i++; continue; }
-    const listMatch = /^\s*(?:[-*+]\s+|\d+[.)]\s+)/.exec(line);
-    if (listMatch) { const list = node(/^\s*\d/.test(line) ? "ol" : "ul"); while (i < lines.length && /^\s*(?:[-*+]\s+|\d+[.)]\s+)/.test(lines[i])) { const li = node("li"); inlineMarkdown(li, lines[i].replace(/^\s*(?:[-*+]\s+|\d+[.)]\s+)/, "")); citationLinks(li, sources, offset, offset + lines[i].length + 1); list.append(li); offset += lines[i].length + 1; i++; } target.append(list); continue; }
-    const paragraph = [line]; offset += line.length + 1; i++; while (i < lines.length && lines[i].trim() && !/^(?:#{1,4}\s|\s*```|\s*>|\s*[-*+]\s|\s*\d+[.)]\s)/.test(lines[i]) && !(i + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1]))) { paragraph.push(lines[i]); offset += lines[i].length + 1; i++; }
-    const p = node("p"); inlineMarkdown(p, paragraph.join("\n")); citationLinks(p, sources, start, offset); target.append(p);
-  }
 }
 function sourceList(sources = []) { const list = node("ol", "source-list"); const seen = new Set(); sources.forEach((source, i) => { const url = safeUrl(source.url); if (!url || seen.has(url)) return; seen.add(url); const li = node("li"), a = node("a", "", (i + 1) + ". " + (source.title || new URL(url).hostname)); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = source.title || url; li.append(a); list.append(li); }); return list; }
 function renderMessages() {
@@ -347,17 +387,35 @@ function messageElement(message) {
   const user = node("article", "message user"), userBody = node("div", "message-content", message.prompt); user.append(userBody); group.append(user);
   const assistant = node("article", "message assistant"), heading = node("div", "message-heading"); heading.append(node("span", "assistant-label", "Atlas"));
   const status = node("span", "message-status", message.status === "running" ? "Responding…" : message.status === "completed" ? "" : message.status || ""); status.dataset.status = message.status; status.hidden = message.status === "completed"; heading.append(status); assistant.append(heading);
-  const body = node("div", "message-content"); renderMarkdown(body, message.answer || "", message.sources || []); assistant.append(body, sourceList(message.sources));
+  const body = node("div", "message-content"); renderAnswer(body, message.answer || "", message.sources || []); assistant.append(body, sourceList(message.sources));
   if (message.error_code || message.errorMessage) assistant.append(node("p", "message-error", message.errorMessage || "This response is " + (message.status || "unavailable") + ". " + String(message.error_code || "").replaceAll("_", " ")));
-  if (message.context?.length) { const used = node("div", "context-note context-chips"); used.setAttribute("aria-label", "Context used for this response"); for (const c of message.context) used.append(node("span", "context-chip", (c.path || c.title || c.repository || c.kind) + (c.ref ? " · " + String(c.ref).slice(0, 12) : ""))); assistant.append(used); }
+  if (message.context?.length) { const used = node("div", "context-note context-chips"); used.setAttribute("aria-label", "Context used for this response"); for (const c of message.context) used.append(node("span", "context-chip", (c.path || c.title || c.repository || c.kind) + (c.ref ? " · " + String(c.ref).slice(0, 12) : "") + (c.kind === "mail" && c.truncated ? " · Partial context" : ""))); assistant.append(used); }
   const actions = node("div", "message-actions");
   if (message.answer) actions.append(button("Copy answer", async () => { try { await navigator.clipboard.writeText(message.answer); toast("Answer copied."); } catch { toast("Select the answer to copy it."); } }));
   if (message.answer && message.status !== "running") actions.append(button("Save as brief", e => busy(e.currentTarget, async () => { const result = await api("briefs", "POST", { conversationId: state.activeId, messageId: message.id, title: state.conversation?.title }); toast("Saved to research briefs."); return result; })));
+  if (message.answer && message.status !== "running" && fw?.workspace?.handoffs) {
+    const context = (message.context || []).find(item => item.kind === "mail");
+    const source = context?.threadId ? { app: "mail", threadId: context.threadId } : undefined;
+    const title = (state.conversation?.title || "Atlas answer").slice(0, 160);
+    const handoff = (app, kind, payload) => async event => busy(event.currentTarget, async () => {
+      const result = await fw.workspace.handoffs.send(app, kind, payload);
+      if (result?.ok === false || result === false) toast("That app could not open. Your answer is still here.");
+    });
+    if (context?.threadId && context?.messageId && message.answer.length <= 16000) actions.append(button("Review reply in Mail", handoff("mail", "mail-reply", { threadId: context.threadId, messageId: context.messageId, text: message.answer })));
+    else if (message.answer.length <= 16000) actions.append(button("Draft in Mail", handoff("mail", "text", { subject: title, text: message.answer })));
+    if (message.answer.length <= 64000) actions.append(button("Save to Notes", handoff("notes", "note-draft", { title, text: message.answer, ...(source ? { source } : {}) })));
+    if (message.answer.length <= 4000) actions.append(button("Plan in Calendar", handoff("calendar", "event-draft", { title, description: message.answer, ...(source ? { source } : {}) })));
+  }
   if (["failed", "cancelled", "incomplete"].includes(message.status)) actions.append(button("Retry", () => { if (state.stream) return toast("Stop the current response first."); state.intent = "ask"; $("prompt").value = message.prompt; state.context = (message.context || []).filter(c => c.automatic !== true && ["file", "pull", "job"].includes(c.kind)).map(contextDescriptor); $("fitness-consent").checked = state.conversation?.mode === "fitness" && (!!message.includeFitness || (message.context || []).some(c => c.kind === "fitness")); renderContextChips(); resizePrompt(); updateComposer(); $("prompt").focus(); toast("Review the prompt, then Send to try again."); }));
   if (message.status === "uncertain") actions.append(button("Check saved result", () => selectConversation(state.activeId, { preserveDraft: true })));
   assistant.append(actions); group.append(assistant); return group;
 }
+function queueMessage(message, conversationId) {
+  queuedMessage = { message, conversationId };
+  if (!paintFrame) paintFrame = requestAnimationFrame(() => { paintFrame = 0; const next = queuedMessage; queuedMessage = null; if (next && !disposed) updateMessage(next.message, next.conversationId); });
+}
 function updateMessage(message, conversationId) {
+  if (queuedMessage?.message.id === message.id) { cancelAnimationFrame(paintFrame); paintFrame = 0; queuedMessage = null; }
   if (state.activeId !== conversationId) return;
   const index = state.messages.findIndex(m => m.id === message.id); if (index < 0) state.messages.push(message); else state.messages[index] = message;
   const container = $("messages"), nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
@@ -365,18 +423,67 @@ function updateMessage(message, conversationId) {
   if (nearBottom) container.scrollTop = container.scrollHeight;
 }
 function contextDescriptor(c) { const value = { kind: c.kind, repository: c.repository }; for (const k of ["path", "ref", "number", "id"]) if (c[k] != null) value[k] = c[k]; return value; }
-function renderContextChips() { const target = $("attached-context"); target.replaceChildren(); state.context.forEach((context, i) => { const chip = node("div", "context-chip"); const title = context.path || context.title || (context.kind === "pull" ? "PR #" + context.number : "Job " + context.id); chip.append(node("span", "", title), button("×", () => { state.context.splice(i, 1); renderContextChips(); updateComposer(); })); chip.lastChild.setAttribute("aria-label", "Remove " + title); chip.title = context.ref ? "Revision " + context.ref : title; target.append(chip); }); }
+function renderContextChips() { const target = $("attached-context"); target.replaceChildren(); state.context.forEach((context, i) => { const chip = node("div", "context-chip"); const title = context.path || context.title || (context.kind === "pull" ? "PR #" + context.number : "Job " + context.id); chip.append(node("span", "", title), button("×", () => { state.context.splice(i, 1); renderContextChips(); updateComposer(); })); chip.lastChild.setAttribute("aria-label", "Remove " + title); chip.title = context.ref ? "Revision " + context.ref : title; target.append(chip); }); renderWorkspaceContext(target); }
 function resizePrompt() { const el = $("prompt"); el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, matchMedia(mobileQuery).matches ? 140 : 180) + "px"; }
+async function loadWorkspaceContext(id = state.activeId, generation = state.navigation) {
+  if (!id || !fw) return;
+  try {
+    const data = await api("conversations/" + encodeURIComponent(id) + "/workspace-context");
+    if (generation !== state.navigation || state.activeId !== id) return;
+    state.workspaceContext = data.context || []; renderContextChips();
+  } catch (error) { if (!error.accountChanged && generation === state.navigation) toast("Connected context could not refresh. " + errorText(error)); }
+}
+function renderWorkspaceContext(target) {
+  for (const context of state.workspaceContext) {
+    const title = "Mail · " + (context.title || "Selected thread") + (context.truncated ? " · Partial context" : ""), chip = node("div", "context-chip workspace-context-chip");
+    chip.append(node("span", "", title), button("×", event => busy(event.currentTarget, async () => {
+      const id = state.activeId, generation = state.navigation;
+      await api("conversations/" + encodeURIComponent(id) + "/workspace-context", "DELETE");
+      if (id === state.activeId && generation === state.navigation) { state.workspaceContext = []; renderContextChips(); }
+    })));
+    chip.lastChild.setAttribute("aria-label", "Remove " + title); if (context.truncated) chip.title = "Partial context: older messages, long text or attachments may be omitted."; target.append(chip);
+  }
+  if (state.contextPending) target.append(node("span", "context-chip", "Connecting selected Mail context…"));
+}
+async function receiveHandoff(token, lease = {}) {
+  const ownerEpoch = state.epoch, episode = routeEpoch;
+  const current = () => !disposed && shown && ownerEpoch === state.epoch && episode === routeEpoch && !lease.signal?.aborted && (!lease.current || lease.current());
+  if (!fw?.workspace?.handoffs || !current()) return { ok: false };
+  await ready; if (!current() || !state.privateReady) return { ok: false };
+  const handoff = fw.workspace.handoffs.take(token);
+  if (handoff?.kind !== "mail-context" || !current()) return { ok: false };
+  // Delivery owns the shell's current route until it returns. A nested route
+  // change here would invalidate that lease, so synchronize it afterwards.
+  routeSyncSuppressed++;
+  newConversation("personal");
+  const generation = state.navigation;
+  state.contextPending = true; renderContextChips(); updateComposer();
+  try {
+    const conversation = await ensureConversation({ mode: "personal", prompt: handoff.subject || "Mail conversation" }, { ...lease, current });
+    if (!current() || generation !== state.navigation) return { ok: false };
+    const data = await api("conversations/" + encodeURIComponent(conversation.id) + "/workspace-context", "POST", { source: { app: "mail", kind: "thread", threadId: handoff.threadId, ...(handoff.messageId ? { messageId: handoff.messageId } : {}) } }, { signal: lease.signal });
+    if (!current() || generation !== state.navigation || state.activeId !== conversation.id) return { ok: false };
+    state.workspaceContext = data.context || [];
+    if (!$("prompt").value) $("prompt").value = "Help me with this email thread.";
+    saveDraft(); resizePrompt(); toast("Mail context is attached. Ask Atlas what you need.");
+    setTimeout(() => {
+      if (!disposed && shown && ownerEpoch === state.epoch && episode === routeEpoch && generation === state.navigation && state.activeId === conversation.id) replaceConversationUrl(conversation.id);
+    }, 0);
+    return { ok: true };
+  } catch (error) { if (current() && !error.accountChanged) toast("Mail context was not attached. " + errorText(error)); return { ok: false }; }
+  finally { routeSyncSuppressed--; if (!disposed && generation === state.navigation) { state.contextPending = false; renderContextChips(); updateComposer(); } }
+}
 async function sendMessage(event) {
   event?.preventDefault(); if (state.stream || state.dispatching || !$("prompt").value.trim()) return;
   const control = $("send"); if (control.disabled) return; control.disabled = true;
   const epoch = state.epoch, originId = state.activeId, generation = state.navigation, mode = state.conversation?.mode || $("mode").value;
+  const responseContext = state.workspaceContext.map(context => ({ ...context }));
   const draft = $("prompt").value, prompt = draft.trim(), repository = $("repository").value, context = state.context.map(contextDescriptor), includeFitness = mode === "fitness" && $("fitness-consent").checked;
   state.dispatching = true; $("prompt").value = ""; state.drafts.delete(originId || "new"); resizePrompt(); updateComposer();
   let active, restorePrompt = false;
   try {
     const conversation = await ensureConversation({ prompt, mode, repository }), requestId = uuid(), controller = new AbortController(); checkEpoch(epoch);
-    active = { epoch, conversationId: conversation.id, requestId, controller, stopped: false, message: { id: requestId, prompt, answer: "", status: "running", sources: [], context, includeFitness, created_at: Date.now() } };
+    active = { epoch, conversationId: conversation.id, requestId, controller, stopped: false, message: { id: requestId, prompt, answer: "", status: "running", sources: [], context: [...context, ...responseContext], includeFitness, created_at: Date.now() } };
     state.stream = active; state.dispatching = false; updateMessage(active.message, active.conversationId); updateComposer();
     const response = await fetch("/atlas/api/chat", { method: "POST", credentials: "same-origin", cache: "no-store", headers: { "Content-Type": "application/json", "X-Inflite": "1", "X-Atlas-Owner": state.owner, Accept: "text/event-stream" }, body: JSON.stringify({ conversationId: conversation.id, requestId, prompt, includeFitness, context, stream: true }), signal: controller.signal });
     if (!response.ok || !response.headers.get("Content-Type")?.includes("text/event-stream")) {
@@ -389,7 +496,7 @@ async function sendMessage(event) {
       let data; try { data = JSON.parse(packet.data); } catch { throw Error("Atlas returned an unreadable stream event."); }
       if (packet.event === "meta") { if (data.conversationId && data.conversationId !== active.conversationId) throw Error("Atlas returned a response for a different conversation."); if (typeof data.messageId === "string" && data.messageId !== active.message.id) { const previous = active.message.id; active.message.id = data.messageId; if (state.activeId === active.conversationId) { const existing = [...$("messages").children].find(el => el.dataset.messageId === previous); if (existing) existing.dataset.messageId = active.message.id; } } }
       else if (packet.event === "status") { if (state.activeId === active.conversationId) $("conversation-status").textContent = ({ connecting: "Connecting…", searching: "Searching sources…", reading_repository: "Reading repository…", responding: "Writing the response…", saving: "Saving the response…" })[data.stage] || "Working…"; }
-      else if (packet.event === "delta") { active.message.answer += typeof data.text === "string" ? data.text : ""; updateMessage(active.message, active.conversationId); }
+      else if (packet.event === "delta") { active.message.answer += typeof data.text === "string" ? data.text : ""; queueMessage(active.message, active.conversationId); }
       else if (packet.event === "source") { if (data.source?.url && !active.message.sources.some(s => s.url === data.source.url && s.start_index === data.source.start_index)) { active.message.sources.push(data.source); updateMessage(active.message, active.conversationId); } }
       else if (packet.event === "done") { terminal = true; const m = data.message || {}; active.message = { ...active.message, ...m, id: active.message.id, prompt, status: m.status || "completed" }; updateMessage(active.message, active.conversationId); break; }
       else if (packet.event === "error") { terminal = true; restorePrompt = true; active.message.status = active.message.answer ? "incomplete" : "failed"; active.message.error_code = data.code; active.message.errorMessage = (data.error || "The response could not finish.") + (data.requestId ? " Reference: " + data.requestId : ""); updateMessage(active.message, active.conversationId); break; }
@@ -422,6 +529,7 @@ async function stopResponse() { const active = state.stream; if (!active) return
 async function refreshHealth() { const data = await api("health", "GET", undefined, { timeout: 20000 }); state.health = data; renderHealth(); return data; }
 async function loadSettings() {
   const data = await api("settings"); state.settings = data.settings || data;
+  if (dirtyForms.has("preferences-form")) return;
   $("memory-enabled").checked = !!state.settings.memoryEnabled; $("memory-text").value = state.settings.memory || "";
   $("daily-request-limit").value = state.settings.dailyRequestLimit ?? 20; $("daily-budget").value = state.settings.dailyBudgetUsd ?? "";
   $("default-timezone").value = state.settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London";
@@ -478,7 +586,7 @@ function renderEnvironments() {
   }
   if (!state.environments.length) list.append(node("p", "environment-list-empty", upgrade ? "Your existing coding tasks remain available." : "No saved environments yet."));
 }
-function closeEnvironmentEditor() { state.environmentEditorSession++; state.environmentEditorVersion++; $("environment-form").hidden = true; $("environment-empty").hidden = false; $("environment-id").value = ""; state.environmentEditingRevision = null; feedback("environment-feedback", ""); }
+function closeEnvironmentEditor() { dirtyForms.delete("environment-form"); state.environmentEditorSession++; state.environmentEditorVersion++; $("environment-form").hidden = true; $("environment-empty").hidden = false; $("environment-id").value = ""; state.environmentEditingRevision = null; feedback("environment-feedback", ""); }
 function editEnvironment(environment) {
   state.environmentEditorSession++; state.environmentEditorVersion++;
   $("environment-empty").hidden = true; $("environment-form").hidden = false;
@@ -511,7 +619,7 @@ async function saveEnvironment(event) {
     await loadEnvironments(); checkEpoch(epoch);
     if (session !== state.environmentEditorSession) { toast("Environment saved."); return; }
     if (data.environment && version === state.environmentEditorVersion) {
-      editEnvironment(data.environment);
+      dirtyForms.delete("environment-form"); editEnvironment(data.environment);
       feedback("environment-feedback", "Environment saved. New tasks use these settings.");
     } else if (data.environment) {
       $("environment-id").value = data.environment.id; state.environmentEditingRevision = data.environment.revision;
@@ -543,12 +651,12 @@ async function loadUsage() {
   if (!list.children.length) list.append(node("p", "muted empty-small", "No requests recorded yet."));
 }
 async function loadBriefs() {
-  const data = await api("briefs"), list = $("briefs-list"); list.replaceChildren(); $("brief-detail").hidden = true;
+  const data = await api("briefs"), list = $("briefs-list"); state.briefs = data.briefs || []; fw?.workspace?.changed(); list.replaceChildren(); $("brief-detail").hidden = true;
   for (const brief of data.briefs || []) { const card = node("article", "record-card"), open = button("", () => showBrief(brief.id), "record-open"); open.append(node("h3", "", brief.title || "Research brief"), node("p", "", timestamp(brief.created_at))); card.append(open); list.append(card); }
   if (!list.children.length) list.append(node("p", "muted empty-small", "No saved briefs yet."));
 }
 async function showBrief(id) {
-  try { const result = await api("briefs/" + encodeURIComponent(id)), brief = result.brief, detail = $("brief-detail"); detail.replaceChildren(); detail.hidden = false; detail.append(node("h3", "", brief.title || "Research brief")); const content = node("div", "brief-content message-content"); renderMarkdown(content, brief.answer, brief.sources); detail.append(content, sourceList(brief.sources)); const actions = node("div", "button-row"); actions.append(button("Export brief", e => busy(e.currentTarget, () => download("briefs/" + encodeURIComponent(id) + "/export", titleFilename(brief.title)))), button("Delete brief", e => busy(e.currentTarget, async () => { if (!confirm("Delete this saved brief?")) return; await api("briefs/" + encodeURIComponent(id), "DELETE"); await loadBriefs(); }), "danger-text")); detail.append(actions); detail.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (error) { toast(errorText(error)); }
+  try { const result = await api("briefs/" + encodeURIComponent(id)), brief = result.brief, detail = $("brief-detail"); detail.replaceChildren(); detail.hidden = false; detail.append(node("h3", "", brief.title || "Research brief")); const content = node("div", "brief-content message-content"); renderAnswer(content, brief.answer, brief.sources); detail.append(content, sourceList(brief.sources)); const actions = node("div", "button-row"); actions.append(button("Export brief", e => busy(e.currentTarget, () => download("briefs/" + encodeURIComponent(id) + "/export", titleFilename(brief.title)))), button("Delete brief", e => busy(e.currentTarget, async () => { if (!await confirmAction(fw, "Delete this saved brief?")) return; await api("briefs/" + encodeURIComponent(id), "DELETE"); await loadBriefs(); }), "danger-text")); detail.append(actions); detail.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (error) { toast(errorText(error)); }
 }
 async function loadContextSources() {
   const repository = $("repository").value, kind = $("context-kind").value, ref = $("context-ref").value.trim(), generation = ++state.contextLoad;
@@ -601,11 +709,11 @@ async function showPatch(id, known) {
     state.codingReview = null;
     const patch = known || (await api("patches/" + encodeURIComponent(id))).patch; state.selectedPatch = patch;
     const detail = $("patch-detail"); detail.replaceChildren(); detail.hidden = false; detail.append(node("h3", "", patch.title || "Draft changes"), node("p", "muted", patch.repository + " · base " + String(patch.baseSha || patch.base_sha || "").slice(0, 12)));
-    const summary = node("div", "message-content brief-content"); renderMarkdown(summary, patch.summary || ""); detail.append(summary);
+    const summary = node("div", "message-content brief-content"); renderAnswer(summary, patch.summary || ""); detail.append(summary);
     for (const file of patchFiles(patch)) { const section = node("details", "patch-file"); section.append(node("summary", "", file.path), node("pre", "", file.diff || "Before\n" + (file.before || "") + "\n\nAfter\n" + (file.after || file.content || ""))); detail.append(section); }
-    const plan = node("div", "message-content brief-content"); const testPlan = patch.testPlan || patch.test_plan || ""; renderMarkdown(plan, "### Validation plan\n" + (Array.isArray(testPlan) ? testPlan.map(x => "- " + x).join("\n") : testPlan)); detail.append(plan);
+    const plan = node("div", "message-content brief-content"); const testPlan = patch.testPlan || patch.test_plan || ""; renderAnswer(plan, "### Validation plan\n" + (Array.isArray(testPlan) ? testPlan.map(x => "- " + x).join("\n") : testPlan)); detail.append(plan);
     if (patch.url && safeUrl(patch.url)) { const a = node("a", "", "Open draft pull request ↗"); a.href = safeUrl(patch.url); a.target = "_blank"; a.rel = "noopener noreferrer"; detail.append(a); }
-    else { detail.append(node("p", "field-help", "Review every file above. Publishing creates a new branch and a draft pull request for this exact change.")); const publish = button("Create draft pull request", e => busy(e.currentTarget, async () => { if (!confirm("Publish these reviewed changes to a new branch and create a draft pull request in " + patch.repository + "?")) return; const result = await api("patches/" + encodeURIComponent(patch.id) + "/publish", "POST", { confirm: true }); await showPatch(patch.id, { ...patch, ...result, status: "published" }); await loadPatches(); feedback("patch-feedback", "Draft pull request created."); }), "primary-button"); publish.disabled = !state.health?.github?.connected || !["draft", "ready"].includes(patch.status || "draft"); detail.append(publish); if (!state.health?.github?.connected) detail.append(node("p", "field-help", "Connect GitHub in Settings to publish.")); }
+    else { detail.append(node("p", "field-help", "Review every file above. Publishing creates a new branch and a draft pull request for this exact change.")); const publish = button("Create draft pull request", e => busy(e.currentTarget, async () => { if (!await confirmAction(fw, "Publish these reviewed changes to a new branch and create a draft pull request in " + patch.repository + "?")) return; const result = await api("patches/" + encodeURIComponent(patch.id) + "/publish", "POST", { confirm: true }); await showPatch(patch.id, { ...patch, ...result, status: "published" }); await loadPatches(); feedback("patch-feedback", "Draft pull request created."); }), "primary-button"); publish.disabled = !state.health?.github?.connected || !["draft", "ready"].includes(patch.status || "draft"); detail.append(publish); if (!state.health?.github?.connected) detail.append(node("p", "field-help", "Connect GitHub in Settings to publish.")); }
     detail.scrollIntoView({ block: "start", behavior: "smooth" });
   } catch (error) { feedback("patch-feedback", errorText(error), true); }
 }
@@ -683,7 +791,7 @@ function detachCodingObserver() {
   const observer = state.codingObserver; state.codingObserver = null; state.codingLoading = false;
   if (observer) { clearTimeout(observer.timer); observer.controller.abort(); }
 }
-function codingViewCurrent(observer) { return state.codingObserver === observer && observer.epoch === state.epoch && observer.navigation === state.navigation && observer.conversationId === state.activeId && document.visibilityState === "visible"; }
+function codingViewCurrent(observer) { return state.codingObserver === observer && observer.epoch === state.epoch && observer.navigation === state.navigation && observer.conversationId === state.activeId && visible(); }
 function invalidateCodingReview(run) {
   const review = state.codingReview;
   if (!review?.run || review.id !== run.id || review.run.revision === run.revision && run.reviewReady) return;
@@ -700,7 +808,7 @@ function acceptCodingRun(run) {
 }
 async function observeCodingRuns({ restore = true } = {}) {
   detachCodingObserver();
-  if (!state.activeId || state.conversation?.mode !== "developer" || !state.privateReady || state.health?.coding?.storageReady !== true || document.visibilityState !== "visible") return;
+  if (!state.activeId || state.conversation?.mode !== "developer" || !state.privateReady || state.health?.coding?.storageReady !== true || !visible()) return;
   const observer = { epoch: state.epoch, navigation: state.navigation, conversationId: state.activeId, controller: new AbortController(), failures: 0, timer: null };
   state.codingObserver = observer;
   const poll = async (loadList = false) => {
@@ -833,7 +941,7 @@ function renderCodingRuns() {
     const overview = parts.get("overview");
     overview.append(node("p", "task-cloud-state", cloudState + (run.environment?.name ? " · " + run.environment.name : "")));
     if (run.stage && codingActive(run)) { const progress = node("div", "task-progress"); progress.append(node("span", "task-progress-indicator"), node("p", "coding-stage", String(run.stage).replaceAll("_", " "))); overview.append(progress); }
-    if (run.summary) { const summary = node("div", "message-content"); renderMarkdown(summary, run.summary); overview.append(summary); }
+    if (run.summary) { const summary = node("div", "message-content"); renderAnswer(summary, run.summary); overview.append(summary); }
     const recovery = taskRecoveryText(run); if (recovery) overview.append(node("p", "task-recovery", recovery));
     const changes = run.changes || {}; if (run.reviewReady) overview.append(node("p", "coding-change-count", (changes.added || 0) + " added · " + (changes.modified || 0) + " modified · " + (changes.deleted || 0) + " deleted"));
     if (codingActive(run) && run.activity?.length) { const latest = run.activity[run.activity.length - 1]; overview.append(node("p", "task-latest", [latest.label, latest.detail || latest.text].filter(Boolean).join(": "))); }
@@ -958,7 +1066,7 @@ async function reviewCodingRun(id, { inboxTrigger } = {}) {
       detail.append(node("p", "field-help", "This creates a draft pull request from the reviewed revision. Deployment happens through the reviewed release process."));
       const publish = button("Create draft pull request", e => busy(e.currentTarget, async () => {
         if (!current() || review.stale) return;
-        if (!confirm("Create a new branch and draft pull request for these reviewed changes in " + run.repository + "?")) return;
+        if (!await confirmAction(fw, "Create a new branch and draft pull request for these reviewed changes in " + run.repository + "?")) return;
         let result;
         try { result = await api("coding/runs/" + encodeURIComponent(id) + "/publish", "POST", { confirm: true, revision: run.revision }); }
         catch (error) {
@@ -995,8 +1103,8 @@ async function loadSchedules() {
   for (const task of state.tasks) {
     const card = node("article", "record-card"); card.append(node("h3", "", task.title || task.prompt?.slice(0, 80) || "Scheduled task"), node("p", "", scheduleDescription(task)), node("p", "", (task.enabled ? "Enabled" : "Paused") + (task.next_run ? " · Next: " + timestamp(task.next_run) : "") + (task.last_status ? " · Last: " + task.last_status : "")));
     const actions = node("div", "button-row"); actions.append(button("Edit", () => editSchedule(task)));
-    const toggle = button(task.enabled ? "Pause" : "Enable", e => busy(e.currentTarget, async () => { if (!task.enabled && !confirm("Enable recurring API usage for this task? It will use your saved model and connection.")) return; await api("tasks", "PATCH", { id: task.id, enabled: !task.enabled, confirm: true }); await loadSchedules(); })); toggle.disabled = !task.enabled && !data.autonomous; actions.append(toggle);
-    actions.append(button("Run once", e => busy(e.currentTarget, async () => { if (!confirm("Run this task now using your saved connection and daily allowance?")) return; await api("tasks/" + encodeURIComponent(task.id) + "/run", "POST", { requestId: uuid(), confirm: true }); await loadSchedules(); await showRuns(task); toast("Task run finished. See its result below."); })), button("Run history", () => showRuns(task))); card.append(actions); list.append(card);
+    const toggle = button(task.enabled ? "Pause" : "Enable", e => busy(e.currentTarget, async () => { if (!task.enabled && !await confirmAction(fw, "Enable recurring API usage for this task? It will use your saved model and connection.")) return; await api("tasks", "PATCH", { id: task.id, enabled: !task.enabled, confirm: true }); await loadSchedules(); })); toggle.disabled = !task.enabled && !data.autonomous; actions.append(toggle);
+    actions.append(button("Run once", e => busy(e.currentTarget, async () => { if (!await confirmAction(fw, "Run this task now using your saved connection and daily allowance?")) return; await api("tasks/" + encodeURIComponent(task.id) + "/run", "POST", { requestId: uuid(), confirm: true }); await loadSchedules(); await showRuns(task); toast("Task run finished. See its result below."); })), button("Run history", () => showRuns(task))); card.append(actions); list.append(card);
   }
   if (!list.children.length) list.append(node("p", "muted empty-small", "No scheduled tasks yet."));
 }
@@ -1007,50 +1115,63 @@ function editSchedule(task) {
   const repository = task?.repository || $("repository").value || ""; if (repository && ![...$("schedule-repository").options].some(o => o.value === repository)) { const option = node("option", "", repository); option.value = repository; $("schedule-repository").append(option); } $("schedule-repository").value = repository;
   $("schedule-fitness-consent").checked = task?.mode === "fitness" && !!task?.includeFitness; state.scheduleContext = Array.isArray(task?.context) ? task.context.map(contextDescriptor) : [];
   $("schedule-mode").disabled = !!task; $("schedule-repository").disabled = !!task;
-  for (const box of document.querySelectorAll('input[name="weekday"]')) box.checked = (task?.weekdays || [1]).includes(Number(box.value)); feedback("schedule-feedback", ""); scheduleFields(); $("schedule-form").scrollIntoView({ block: "start", behavior: "smooth" });
+  for (const box of all('input[name="weekday"]')) box.checked = (task?.weekdays || [1]).includes(Number(box.value)); feedback("schedule-feedback", ""); scheduleFields(); $("schedule-form").scrollIntoView({ block: "start", behavior: "smooth" });
 }
 async function saveSchedule(event) {
   event.preventDefault(); const control = $("schedule-form").querySelector('button[type="submit"]');
   await busy(control, async () => {
     const id = $("schedule-id").value, existing = state.tasks.find(t => t.id === id), kind = $("schedule-kind").value;
-    const body = { title: $("schedule-title").value.trim(), prompt: $("schedule-prompt").value.trim(), mode: $("schedule-mode").value, repository: $("schedule-mode").value === "developer" ? $("schedule-repository").value || null : null, includeFitness: $("schedule-mode").value === "fitness" && $("schedule-fitness-consent").checked, context: $("schedule-mode").value === "developer" ? state.scheduleContext.filter(c => c.repository === $("schedule-repository").value).map(contextDescriptor) : [], schedule_kind: kind, timezone: $("schedule-timezone").value.trim(), ...(kind === "interval" ? { interval_minutes: Number($("schedule-interval").value) * 60 } : { local_time: $("schedule-time").value }), ...(kind === "weekly" ? { weekdays: [...document.querySelectorAll('input[name="weekday"]:checked')].map(el => Number(el.value)) } : {}) };
+    const body = { title: $("schedule-title").value.trim(), prompt: $("schedule-prompt").value.trim(), mode: $("schedule-mode").value, repository: $("schedule-mode").value === "developer" ? $("schedule-repository").value || null : null, includeFitness: $("schedule-mode").value === "fitness" && $("schedule-fitness-consent").checked, context: $("schedule-mode").value === "developer" ? state.scheduleContext.filter(c => c.repository === $("schedule-repository").value).map(contextDescriptor) : [], schedule_kind: kind, timezone: $("schedule-timezone").value.trim(), ...(kind === "interval" ? { interval_minutes: Number($("schedule-interval").value) * 60 } : { local_time: $("schedule-time").value }), ...(kind === "weekly" ? { weekdays: [...all('input[name="weekday"]:checked')].map(el => Number(el.value)) } : {}) };
     if (kind === "weekly" && !body.weekdays.length) throw Error("Choose at least one weekday.");
-    if (existing?.enabled && !confirm("Apply these changes to the active recurring task?")) return;
+    if (existing?.enabled && !await confirmAction(fw, "Apply these changes to the active recurring task?")) return;
     await api("tasks", id ? "PATCH" : "POST", id ? { ...body, id, enabled: !!existing?.enabled, confirm: !!existing?.enabled } : body); $("schedule-form").hidden = true; await loadSchedules(); toast(id ? "Task updated." : "Task saved paused.");
   }, "schedule-feedback");
 }
 async function showRuns(task) {
-  try { const data = await api("tasks/" + encodeURIComponent(task.id) + "/runs"), section = $("schedule-runs"), list = $("schedule-runs-list"); section.hidden = false; $("schedule-runs-title").textContent = "Run history · " + (task.title || "Task"); list.replaceChildren(); for (const run of data.runs || []) { const card = node("article", "record-card"); card.append(node("h4", "", run.status + " · " + timestamp(run.started_at || run.created_at))); if (run.error_code) card.append(node("p", "", String(run.error_code).replaceAll("_", " "))); if (run.result) { const content = node("div", "run-content message-content"); renderMarkdown(content, run.result, run.sources); card.append(content, sourceList(run.sources)); } if (run.request_id) card.append(node("p", "context-note", "Reference: " + run.request_id)); list.append(card); } if (!list.children.length) list.append(node("p", "muted empty-small", "This task has not run yet.")); section.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (error) { toast(errorText(error)); }
+  try { const data = await api("tasks/" + encodeURIComponent(task.id) + "/runs"), section = $("schedule-runs"), list = $("schedule-runs-list"); section.hidden = false; $("schedule-runs-title").textContent = "Run history · " + (task.title || "Task"); list.replaceChildren(); for (const run of data.runs || []) { const card = node("article", "record-card"); card.append(node("h4", "", run.status + " · " + timestamp(run.started_at || run.created_at))); if (run.error_code) card.append(node("p", "", String(run.error_code).replaceAll("_", " "))); if (run.result) { const content = node("div", "run-content message-content"); renderAnswer(content, run.result, run.sources); card.append(content, sourceList(run.sources)); } if (run.request_id) card.append(node("p", "context-note", "Reference: " + run.request_id)); list.append(card); } if (!list.children.length) list.append(node("p", "muted empty-small", "This task has not run yet.")); section.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (error) { toast(errorText(error)); }
 }
 async function bootstrap() {
   const epoch = state.epoch;
-  $("session-notice").textContent = "Checking your session…"; document.body.classList.add("session-check");
+  $("session-notice").textContent = "Checking your session…"; root.classList.add("session-check");
   try {
-    const health = await refreshHealth(); if (!health.storage?.ready) { state.privateReady = true; document.body.classList.remove("session-check"); renderMessages(); updateComposer(); return; }
+    const health = await refreshHealth(); if (!health.storage?.ready) { state.privateReady = true; fw?.workspace?.changed(); root.classList.remove("session-check"); renderMessages(); updateComposer(); return; }
     const results = await Promise.allSettled([loadThreads(), loadSettings(), loadRepositories(), loadEnvironments()]); checkEpoch(epoch);
     const failed = results.find(result => result.status === "rejected"); if (failed && !state.owner) return;
-    state.privateReady = true; document.body.classList.remove("session-check"); renderHealth();
-    const id = new URL(location.href).searchParams.get("conversation"); if (id) await selectConversation(id); else renderMessages();
+    state.privateReady = true; fw?.workspace?.changed(); root.classList.remove("session-check"); renderHealth();
+    const id = fw ? null : new URL(location.href).searchParams.get("conversation"); if (id) await selectConversation(id); else renderMessages();
     if (failed) toast(errorText(failed.reason));
   } catch (error) { if (!error.accountChanged) { $("session-notice").textContent = errorText(error); const retry = button("Try again", () => bootstrap()); $("session-notice").append(node("br"), retry); } }
 }
 async function verifyVisibleSession() {
-  if (document.visibilityState !== "visible" || state.checking) return;
-  document.body.classList.add("session-check"); $("session-notice").textContent = "Checking your session…";
-  state.checking = (async () => { try { await refreshHealth(); if (state.privateReady && state.owner) { document.body.classList.remove("session-check"); await observeCodingRuns(); } else if (state.owner) await bootstrap(); } catch (error) { if (!error.accountChanged) $("session-notice").textContent = errorText(error); } finally { state.checking = null; } })();
+  if (!visible() || state.checking) return;
+  if (!state.privateReady) { root.classList.add("session-check"); $("session-notice").textContent = "Checking your session…"; }
+  state.checking = (async () => {
+    try {
+      await (fw ? api("session", "GET", undefined, { timeout: 15000 }) : refreshHealth());
+      root.classList.remove("session-degraded");
+      if (state.privateReady && state.owner) { root.classList.remove("session-check"); await observeCodingRuns(); }
+      else if (state.owner) await bootstrap();
+    } catch (error) {
+      if (!error.accountChanged) {
+        $("session-notice").textContent = "Connection interrupted. Your draft is kept here. " + errorText(error);
+        root.classList.add("session-degraded");
+        if (state.privateReady) root.classList.remove("session-check");
+      }
+    } finally { state.checking = null; }
+  })();
   await state.checking;
 }
 function init() {
-  sheets = createSheets();
+  sheets = fw ? nativeSheets(fw) : createSheets();
   const mobile = matchMedia(mobileQuery);
   placeSidebar(mobile.matches);
-  mobile.addEventListener("change", event => placeSidebar(event.matches));
+  listen(mobile, "change", event => placeSidebar(event.matches));
   $("navigation-toggle").addEventListener("click", () => navigation(true));
-  window.visualViewport?.addEventListener("resize", fitComposerViewport);
-  window.visualViewport?.addEventListener("scroll", fitComposerViewport);
+  listen(window.visualViewport, "resize", fitComposerViewport);
+  listen(window.visualViewport, "scroll", fitComposerViewport);
   $("prompt").addEventListener("focus", fitComposerViewport);
   $("prompt").addEventListener("blur", fitComposerViewport);
-  for (const el of document.querySelectorAll("[data-open]")) el.addEventListener("click", () => showPanel(el.dataset.open, el));
+  for (const el of all("[data-open]")) el.addEventListener("click", () => showPanel(el.dataset.open, el));
   $("inbox-filter").addEventListener("change", () => loadCodingInbox());
   $("refresh-inbox").addEventListener("click", () => loadCodingInbox());
   $("more-inbox").addEventListener("click", () => loadCodingInbox({ more: true }));
@@ -1062,21 +1183,21 @@ function init() {
   $("new-chat").addEventListener("click", () => newConversation()); $("conversation-search").addEventListener("input", renderThreads); $("show-archived").addEventListener("change", () => loadThreads().catch(error => toast(errorText(error))));
   $("load-older-messages").addEventListener("click", e => loadOlderMessages(e.currentTarget));
   $("mode").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; state.intent = "code"; state.codingContinuation = null; state.codingRestart = null; fillEnvironmentChoices(); renderContextChips(); updateComposer(); }); $("repository").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; state.environmentId = ""; state.codingContinuation = null; state.codingRestart = null; renderContextChips(); fillEnvironmentChoices(); updateComposer(); });
-  $("prompt").addEventListener("input", () => { resizePrompt(); updateComposer(); }); $("prompt").addEventListener("keydown", event => { if (event.key === "Enter" && !event.isComposing && !event.shiftKey && (event.ctrlKey || event.metaKey || !matchMedia("(pointer:coarse)").matches)) { event.preventDefault(); const submit = $("start-coding").hidden ? $("send") : $("start-coding"); if (!submit.disabled) $("composer").requestSubmit(); } });
+  $("prompt").addEventListener("input", () => { saveDraft(); resizePrompt(); updateComposer(); }); $("prompt").addEventListener("keydown", event => { if (event.key === "Enter" && !event.isComposing && !event.shiftKey && (event.ctrlKey || event.metaKey || !matchMedia("(pointer:coarse)").matches)) { event.preventDefault(); const submit = $("start-coding").hidden ? $("send") : $("start-coding"); if (!submit.disabled) $("composer").requestSubmit(); } });
   $("composer").addEventListener("submit", event => { event.preventDefault(); if ((state.conversation?.mode || $("mode").value) === "developer" && state.intent === "code") startCodingTask(); else sendMessage(event); }); $("stop-response").addEventListener("click", stopResponse);
   $("upgrade-storage").addEventListener("click", e => busy(e.currentTarget, async () => { await api("setup", "POST", { confirm: true }); await bootstrap(); toast("Workspace storage is ready."); }));
   $("provider-model").addEventListener("change", () => { $("custom-model-label").hidden = $("provider-model").value !== "custom"; updateModelHelp(); }); $("provider-custom-model").addEventListener("input", updateModelHelp);
   $("provider-form").addEventListener("submit", event => { event.preventDefault(); const key = $("provider-key").value.trim(), model = currentModel(); if (!key && !state.health?.provider?.keySaved) return feedback("provider-feedback", "Enter the OpenAI key to save this connection.", true); if (!model) return feedback("provider-feedback", "Choose a model or enter a model ID.", true); $("provider-key").value = ""; busy($("save-provider"), async () => { await api("provider", "POST", { ...(key ? { key } : {}), model }); feedback("provider-feedback", key ? "Key saved. Use the short test to verify an actual response." : "Model saved. Test a short response with this model."); await refreshHealth(); const result = await api("models"); fillModels(result.models, result.selected || model); }, "provider-feedback"); });
   $("load-models").addEventListener("click", e => busy(e.currentTarget, async () => { const result = await api("models"); fillModels(result.models, result.selected); feedback("provider-feedback", "Available models refreshed."); }, "provider-feedback"));
   $("test-provider").addEventListener("click", e => busy(e.currentTarget, async () => { feedback("provider-feedback", "Testing a short response…"); await api("provider/test", "POST", { research: $("test-research").checked, requestId: uuid() }); await refreshHealth(); feedback("provider-feedback", "The connection produced a response successfully."); }, "provider-feedback"));
-  $("remove-provider").addEventListener("click", e => busy(e.currentTarget, async () => { if (!confirm("Remove your saved OpenAI connection? Scheduled work using it will no longer be able to run.")) return; await api("provider", "DELETE"); await refreshHealth(); feedback("provider-feedback", "Saved key removed."); }, "provider-feedback"));
+  $("remove-provider").addEventListener("click", e => busy(e.currentTarget, async () => { if (!await confirmAction(fw, "Remove your saved OpenAI connection? Scheduled work using it will no longer be able to run.")) return; await api("provider", "DELETE"); await refreshHealth(); feedback("provider-feedback", "Saved key removed."); }, "provider-feedback"));
   $("github-form").addEventListener("submit", event => { event.preventDefault(); const token = $("github-token").value.trim(); $("github-token").value = ""; if (!token) return feedback("github-feedback", "Enter a GitHub token.", true); busy($("github-form").querySelector('button[type="submit"]'), async () => { await api("github", "POST", { token }); await refreshHealth(); await loadRepositories(); feedback("github-feedback", "GitHub connection saved."); }, "github-feedback"); });
-  $("remove-github").addEventListener("click", e => busy(e.currentTarget, async () => { if (!confirm("Remove your saved GitHub connection?")) return; await api("github", "DELETE"); await refreshHealth(); await loadRepositories(); feedback("github-feedback", "GitHub connection removed."); }, "github-feedback"));
-  $("preferences-form").addEventListener("submit", event => { event.preventDefault(); busy($("preferences-form").querySelector('button[type="submit"]'), async () => { const budget = $("daily-budget").value; await api("settings", "PATCH", { memoryEnabled: $("memory-enabled").checked, memory: $("memory-text").value, dailyRequestLimit: Number($("daily-request-limit").value), dailyBudgetUsd: budget === "" ? null : Number(budget), timezone: $("default-timezone").value.trim() }); await loadSettings(); feedback("preferences-feedback", "Preferences saved."); }, "preferences-feedback"); });
-  $("clear-memory").addEventListener("click", e => busy(e.currentTarget, async () => { if (!confirm("Clear your saved personal context?")) return; await api("settings", "PATCH", { memoryEnabled: false, memory: "" }); await loadSettings(); feedback("preferences-feedback", "Saved personal context cleared."); }, "preferences-feedback"));
-  $("rename-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id) return; const title = window.prompt("Conversation title", state.conversation.title); if (!title?.trim()) return; await api("conversations/" + encodeURIComponent(id), "PATCH", { title: title.trim() }); await selectConversation(id); await loadThreads(); }));
+  $("remove-github").addEventListener("click", e => busy(e.currentTarget, async () => { if (!await confirmAction(fw, "Remove your saved GitHub connection?")) return; await api("github", "DELETE"); await refreshHealth(); await loadRepositories(); feedback("github-feedback", "GitHub connection removed."); }, "github-feedback"));
+  $("preferences-form").addEventListener("submit", event => { event.preventDefault(); busy($("preferences-form").querySelector('button[type="submit"]'), async () => { const budget = $("daily-budget").value; await api("settings", "PATCH", { memoryEnabled: $("memory-enabled").checked, memory: $("memory-text").value, dailyRequestLimit: Number($("daily-request-limit").value), dailyBudgetUsd: budget === "" ? null : Number(budget), timezone: $("default-timezone").value.trim() }); dirtyForms.delete("preferences-form"); await loadSettings(); feedback("preferences-feedback", "Preferences saved."); }, "preferences-feedback"); });
+  $("clear-memory").addEventListener("click", e => busy(e.currentTarget, async () => { if (!await confirmAction(fw, "Clear your saved personal context?")) return; await api("settings", "PATCH", { memoryEnabled: false, memory: "" }); await loadSettings(); feedback("preferences-feedback", "Saved personal context cleared."); }, "preferences-feedback"));
+  $("rename-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id) return; const title = await promptValue(fw, "Conversation title", state.conversation.title); if (!title?.trim()) return; await api("conversations/" + encodeURIComponent(id), "PATCH", { title: title.trim() }); await selectConversation(id); await loadThreads(); }));
   $("archive-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id) return; await api("conversations/" + encodeURIComponent(id), "PATCH", { archived: !state.conversation.archived }); newConversation(); await loadThreads(); }));
-  $("delete-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id || !confirm("Delete this conversation and its saved messages?")) return; if (state.stream?.conversationId === id) await stopResponse(); await api("conversations/" + encodeURIComponent(id), "DELETE"); state.drafts.delete(id); newConversation(); await loadThreads(); }));
+  $("delete-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id || !await confirmAction(fw, "Delete this conversation and its saved messages?")) return; if (state.stream?.conversationId === id) await stopResponse(); await api("conversations/" + encodeURIComponent(id), "DELETE"); state.drafts.delete(id); newConversation(); await loadThreads(); }));
   $("export-conversation").addEventListener("click", e => busy(e.currentTarget, () => download("conversations/" + encodeURIComponent(state.activeId) + "/export", titleFilename(state.conversation.title))));
   $("summarize-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id) return; const result = await api("conversations/" + encodeURIComponent(id) + "/summary", "POST", { requestId: uuid() }); if (state.activeId === id) await selectConversation(id); const count = Number.isInteger(result.summarizedTurns) ? "Summarized " + result.summarizedTurns + " earlier turn" + (result.summarizedTurns === 1 ? "." : "s.") : "Earlier context summarized."; toast(count + (result.hasMore ? " More remains; summarize again when ready." : " The full conversation is retained.")); }));
   $("attach-context").addEventListener("click", event => { const top = sheets.top(); if (top?.el.id === "task-options-dialog") top.now(); openDialog("context", event.currentTarget); $("context-search").value = ""; loadContextSources(); }); $("context-refresh").addEventListener("click", loadContextSources); $("context-kind").addEventListener("change", () => { $("context-ref-label").hidden = $("context-kind").value !== "file"; loadContextSources(); }); $("context-search").addEventListener("input", renderContextSources); $("context-attach").addEventListener("click", e => attachSelectedContext(e.currentTarget));
@@ -1088,12 +1209,116 @@ function init() {
   for (const event of ["input", "change"]) $("environment-form").addEventListener(event, () => { state.environmentEditorVersion++; });
   $("use-environment").addEventListener("click", () => { const environment = state.environments.find(item => item.id === $("environment-id").value); if (environment) useEnvironment(environment); });
   $("upgrade-environments").addEventListener("click", event => busy(event.currentTarget, async () => { await api("setup", "POST", { confirm: true }); await refreshHealth(); await loadEnvironments(); toast("Cloud environments are ready."); }, "environments-feedback"));
-  $("start-coding").addEventListener("click", startCodingTask); $("clear-coding-continuation").addEventListener("click", () => { state.codingContinuation = null; state.codingRestart = null; fillEnvironmentChoices(); updateComposer(); }); $("new-schedule").addEventListener("click", () => editSchedule()); $("schedule-kind").addEventListener("change", scheduleFields); $("schedule-mode").addEventListener("change", scheduleFields); $("schedule-form").addEventListener("submit", saveSchedule); $("cancel-schedule-edit").addEventListener("click", () => { $("schedule-form").hidden = true; });
+  $("start-coding").addEventListener("click", startCodingTask); $("clear-coding-continuation").addEventListener("click", () => { state.codingContinuation = null; state.codingRestart = null; fillEnvironmentChoices(); updateComposer(); }); $("new-schedule").addEventListener("click", () => editSchedule()); $("schedule-kind").addEventListener("change", scheduleFields); $("schedule-mode").addEventListener("change", scheduleFields); $("schedule-form").addEventListener("submit", saveSchedule); $("cancel-schedule-edit").addEventListener("click", () => { dirtyForms.delete("schedule-form"); $("schedule-form").hidden = true; });
   $("schedule-repository").addEventListener("change", () => { state.scheduleContext = []; scheduleFields(); }); $("schedule-use-context").addEventListener("click", () => { state.scheduleContext = state.context.filter(c => c.repository === $("schedule-repository").value).map(contextDescriptor); renderScheduleContext(); });
-  $("stop-schedules").addEventListener("click", e => busy(e.currentTarget, async () => { if (!confirm("Pause all your scheduled tasks?")) return; await api("stop", "POST", {}); await loadSchedules(); toast("All scheduled tasks paused."); }));
+  $("stop-schedules").addEventListener("click", e => busy(e.currentTarget, async () => { if (!await confirmAction(fw, "Pause all your scheduled tasks?")) return; await api("stop", "POST", {}); await loadSchedules(); toast("All scheduled tasks paused."); }));
   let zones = ["Europe/London", "UTC"]; try { if (Intl.supportedValuesOf) zones = ["UTC", ...Intl.supportedValuesOf("timeZone")]; } catch {} for (const zone of zones) { const option = node("option"); option.value = zone; $("timezones").append(option); }
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { detachCodingObserver(); document.body.classList.add("session-check"); } else verifyVisibleSession(); });
-  window.addEventListener("focus", verifyVisibleSession); window.addEventListener("pagehide", () => { detachCodingObserver(); $("provider-key").value = ""; $("github-token").value = ""; document.body.classList.add("session-check"); }); window.addEventListener("pageshow", event => { if (event.persisted) verifyVisibleSession(); });
-  bootstrap();
+  listen(document, "visibilitychange", () => { if (document.visibilityState === "hidden") { detachCodingObserver(); if (!fw) root.classList.add("session-check"); } else verifyVisibleSession(); });
+  listen(window, "focus", verifyVisibleSession); listen(window, "pagehide", () => { detachCodingObserver(); $("provider-key").value = ""; $("github-token").value = ""; if (!fw) root.classList.add("session-check"); }); listen(window, "pageshow", event => { if (event.persisted) verifyVisibleSession(); });
+  for (const name of ["preferences-form", "environment-form", "schedule-form"]) listen($(name), "input", () => { dirtyForms.add(name); });
+  return bootstrap();
 }
-if (typeof document !== "undefined") { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true }); else init(); }
+function updateNativeHeader() {
+  if (!fw || disposed || !shown) return;
+  fw.header.set({ title: "Atlas", compactTitle: "Atlas", line: "", crumb: { text: "InFlite", app: "atlas" },
+    acts: [
+      { icon: "menu", label: "Conversations", run: () => navigation(true) },
+      { icon: "plus", label: "New conversation", run: () => newConversation() },
+      { icon: "more", label: "Atlas tools", run: () => showPanel("workspace") },
+    ],
+  });
+}
+function hasDraft() {
+  return dirtyForms.size > 0 || !!$("prompt")?.value.trim() || !!$("provider-key")?.value || !!$("github-token")?.value || [...state.drafts.values()].some(draft => draft.prompt?.trim());
+}
+function isBusy() { return !disposed && (hasDraft() || !!state.stream || state.dispatching || state.codingDispatching || state.contextPending || all(".busy-label").length > 0); }
+const fileMetadata = (value, kind) => ({
+  id: "atlas:" + kind + ":" + value.id, app: "atlas", name: titleFilename(value.title),
+  mime: "text/markdown", category: "document", objectId: kind + ":" + value.id,
+  intent: "open", downloadIntent: "download", modifiedAt: Number(value.updated_at || value.created_at) || 0,
+});
+function workspaceFiles() { return [...state.conversations.map(value => fileMetadata(value, "conversation")), ...state.briefs.map(value => fileMetadata(value, "brief"))]; }
+async function workspaceRun(intent, object, lease = {}) {
+  const current = () => !disposed && !lease.signal?.aborted && (!lease.current || lease.current());
+  if (!current() || !fw?.workspace?.active()) return { ok: false };
+  if (intent === "handoff") return receiveHandoff(object, lease);
+  await ready; if (!current()) return { ok: false };
+  if (intent === "new") { newConversation(); return { ok: true }; }
+  if (["tasks", "environments", "briefs", "settings"].includes(intent)) { fw.nav.section(intent); return { ok: true }; }
+  if (!["open", "download"].includes(intent) || typeof object !== "string") return { ok: false };
+  const match = /^(conversation|brief):(.+)$/.exec(object);
+  if (!match) return { ok: false };
+  const [, kind, id] = match;
+  const valid = /^[A-Za-z0-9_-]{1,40}$/.test(id) || kind === "conversation" && /^legacy-(?:[a-f0-9]{2}){1,60}-(?:research|developer|personal|fitness|tasks)$/.test(id);
+  if (!valid) return { ok: false };
+  if (intent === "download") { await download((kind === "brief" ? "briefs/" : "conversations/") + encodeURIComponent(id) + "/export", "atlas-" + kind + ".md"); return { ok: true }; }
+  fw.nav.go(fw.nav.href(kind === "brief" ? "briefs" : "conversations", id)); return { ok: true };
+}
+const ready = init();
+function attachWorkspace() {
+  if (disposed || !fw?.workspace || providerOff) return;
+  providerOff = fw.workspace.provide({
+  snapshot: () => ({ status: state.privateReady ? "ready" : "loading", availability: { local: false, draft: hasDraft(), saving: !!state.stream || state.dispatching || state.codingDispatching, pending: 0 },
+    actions: [{ id: "new", label: "New conversation", enabled: state.privateReady }, { id: "tasks", label: "Coding tasks", enabled: state.privateReady }, { id: "environments", label: "Cloud environments", enabled: state.privateReady }], files: workspaceFiles() }),
+  run: workspaceRun,
+  search: async (query, lease = {}) => ({ status: disposed || lease.signal?.aborted ? "error" : "ready", entries: disposed || lease.signal?.aborted ? [] : state.conversations.filter(value => String(value.title).toLowerCase().includes(String(query).toLowerCase())).slice(0, 8).map(value => ({ title: value.title, sub: modeNames[value.mode] || "Atlas", path: fw.nav.href("conversations", value.id) })) }),
+  files: async ({ query = "", current = () => true } = {}) => ({ status: !disposed && current() ? "ready" : "error", files: !disposed && current() ? workspaceFiles().filter(value => value.name.toLowerCase().includes(query.toLowerCase())) : [], more: false }),
+  });
+}
+attachWorkspace();
+function unmount() {
+  if (disposed) return;
+  shown = false; ++routeEpoch; disposed = true; ++state.epoch; cancelAnimationFrame(paintFrame); paintFrame = 0; queuedMessage = null;
+  lifetime.abort(); detachCodingObserver(); state.stream?.controller.abort(); state.stream = null;
+  for (const controller of state.controllers) controller.abort(); state.controllers.clear();
+  sheets?.closeAll(); activeToast?.close(); providerOff?.(); providerOff = null;
+  state.drafts.clear(); dirtyForms.clear(); state.messages = []; state.conversations = []; state.workspaceContext = []; state.briefs = []; state.owner = null;
+  for (const input of all("input, textarea")) input.value = "";
+  root.replaceChildren(); root.classList.remove("atlas-app", "atlas-native", "session-check", "session-degraded");
+}
+listen(fw?.signal, "abort", unmount, { once: true });
+return {
+  ready,
+  async show(nextRoute = {}) {
+    if (disposed) return;
+    const generation = ++routeEpoch; shown = true; route = nextRoute; updateNativeHeader(); fw?.fill(true);
+    await ready; if (disposed || generation !== routeEpoch) return;
+    routing = true;
+    try {
+      const key = nextRoute.key || nextRoute.section || "conversations", id = nextRoute.arg;
+      if (key === "conversations" && id && id !== state.activeId) await selectConversation(id);
+      else if (key === "tasks") {
+        if (id) {
+          const data = await api("coding/runs/" + encodeURIComponent(id));
+          if (generation !== routeEpoch) return;
+          if (data.run?.conversationId && data.run.conversationId !== state.activeId) await selectConversation(data.run.conversationId);
+          if (generation === routeEpoch) await reviewCodingRun(id);
+        } else await showPanel("inbox");
+      } else if (key === "briefs") { await showPanel("briefs"); if (id && generation === routeEpoch) await showBrief(id); }
+      else if (["environments", "settings"].includes(key)) await showPanel(key);
+      if (generation === routeEpoch) { resizePrompt(); updateComposer(); if (state.privateReady) await observeCodingRuns(); }
+    } catch (error) { if (!error.accountChanged) toast(errorText(error)); }
+    finally { if (generation === routeEpoch) routing = false; }
+  },
+  hide() { if (disposed) return; shown = false; ++routeEpoch; routing = false; saveDraft(); detachCodingObserver(); sheets.closeAll(); $("provider-key").value = ""; $("github-token").value = ""; },
+  back() { const top = sheets.top(); if (top) { top.now(); return true; } return false; },
+  async settingsPanel(host, current = () => true) {
+    await ready; if (disposed || !current()) return;
+    nativeSettings = { fw: host, current };
+    sheets.openEl($("settings-dialog"), { framework: host, onClose: () => { nativeSettings = null; } });
+    try { await refreshHealth(); if (!current() || disposed) return; if (state.health?.storage?.ready) await loadSettings(); }
+    catch (error) { if (current() && !error.accountChanged) actionableError(error, "provider-feedback"); }
+  },
+  busy: isBusy,
+  flush: async () => { saveDraft(); return { lost: hasDraft() ? 1 : 0 }; },
+  sendable: () => null,
+  workspace: attachWorkspace,
+  onIntent: workspaceRun,
+  unmount,
+};
+}
+
+if (typeof document !== "undefined") {
+  const standalone = () => { if (document.body.classList.contains("atlas-app")) createAtlasClient(document.body); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", standalone, { once: true }); else standalone();
+}

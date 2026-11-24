@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.24.11";
-export const NEWS = "Mail now tells you when an address is blocked by the sending provider.";
+export const BUILD = "2.25.1";
+export const NEWS = "Bring a selected conversation into Atlas, then review an Atlas reply in Mail before sending.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);
@@ -395,6 +395,15 @@ export async function mount(root, fw) {
       workspace ||= m.createWorkspace(root, ctx, { current: () => alive && !fw.signal?.aborted, ready: () => bootState.started ||= start(), resize: () => { if (onScreen && fw.visible()) syncLayout(); } });
       syncLayout(); workspace.observeLayout(); return workspace;
     }).catch((e) => { workspaceAsked = null; if (alive && !fw.signal?.aborted) { console.error(e); fw.toast("Mail workspace tools couldn’t open. Try again."); } return null; });
+  };
+  ctx.open.atlas = async thread => {
+    const mine = seen, current = () => here(mine) && canRead() && store.get().threadId === thread?.id;
+    if (!current()) return;
+    const integration = await workspaceReady();
+    if (!current() || !integration) return;
+    const result = await integration.run("ask-atlas", thread.id, { current });
+    if (current() && !result?.ok && !result?.cancelled) fw.toast(result?.error || "Atlas could not open. Try again.");
+    return result;
   };
   return {
     async settingsPanel(host,current,page) {

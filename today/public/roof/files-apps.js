@@ -15,7 +15,7 @@ export function createAppFilesIndex(F, { sources = () => [], load, runIntent, op
     if (!live()) return [];
     const seen = new Set();
     try { return (sources() || []).filter(s => s && APPS.has(s.app) && !seen.has(s.app) && seen.add(s.app)
-      && !(s.app === "mail" && (F.session?.apps?.mail === false || F.session?.view?.apps?.mail === false))).slice(0, APPS.size); } catch (_) { return []; }
+      && !(["mail", "atlas"].includes(s.app) && (F.session?.apps?.[s.app] === false || F.session?.view?.apps?.mail !== true))).slice(0, APPS.size); } catch (_) { return []; }
   };
   const emit = () => {
     if (queued || !live()) return;

@@ -9,11 +9,11 @@ import { atlas } from '../today/src/atlas.js';
 
 const repository = 'georgefarrowgreen1/inflite';
 const profile = (patch = {}) => ({ name: 'Atlas development', repository, ...patch });
-async function fixture(t, { version = 8 } = {}) {
+async function fixture(t, { version = store.SCHEMA_VERSION } = {}) {
   const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, script: 'export default {fetch(){return new Response("fixture")}}', compatibilityDate: '2026-10-01', cf: false, d1Databases: ['ATLAS_DB'] }));
   t.after(() => mf.dispose());
   const env = { ATLAS_DB: await mf.getD1Database('ATLAS_DB') };
-  if (version === 8) await store.upgradeStorage(env);
+  if (version === store.SCHEMA_VERSION) await store.upgradeStorage(env);
   else {
     const sql = (await Promise.all(Array.from({ length: version }, (_, i) => readFile(new URL('../atlas/migrations/' + String(i + 1).padStart(4, '0') + '.sql', import.meta.url), 'utf8')))).join('\n');
     await env.ATLAS_DB.batch(sql.split(';').map(value => value.trim()).filter(Boolean).map(value => env.ATLAS_DB.prepare(value)));
@@ -32,10 +32,10 @@ test('schema seven remains usable and explicit cloud upgrade preserves conversat
   assert.equal((await environments.resolveEnvironment(env, 'alice', { repository })).machine, 'medium');
   await assert.rejects(() => environments.createEnvironment(env, 'alice', profile()), { code: 'environments_storage_upgrade_required' });
   const upgrades = await Promise.all([store.upgradeStorage(env), store.upgradeStorage(env)]);
-  assert.ok(upgrades.every(result => result.schemaVersion === 8));
+  assert.ok(upgrades.every(result => result.schemaVersion === store.SCHEMA_VERSION));
   await store.upgradeStorage(env);
   assert.equal((await environments.environmentStorageStatus(env)).ready, true);
-  assert.equal((await store.storageStatus(env)).schemaVersion, 8);
+  assert.equal((await store.storageStatus(env)).schemaVersion, store.SCHEMA_VERSION);
   assert.equal((await store.getSettings(env, 'alice')).dailyBudgetUsd, 50);
   assert.equal((await store.getSettings(env, 'alice')).dailyRequestLimit, 100);
   assert.equal((await store.getConversation(env, 'alice', conversation.id)).title, 'Existing work');
@@ -56,7 +56,7 @@ test('partial schema eight is not ready until cloud observation and retry column
   assert.equal((await store.storageStatus(env)).schemaVersion, 8);
   assert.equal((await environments.environmentStorageStatus(env)).ready, false);
   const upgraded = await store.upgradeStorage(env);
-  assert.equal(upgraded.schemaVersion, 8);
+  assert.equal(upgraded.schemaVersion, store.SCHEMA_VERSION);
   assert.equal((await environments.environmentStorageStatus(env)).ready, true);
   const columns = await env.ATLAS_DB.prepare('PRAGMA table_info(atlas_coding_runs)').all();
   for (const name of ['environment_profile_id', 'environment_config_json', 'cloud_status', 'cloud_checked_at', 'retry_from_run_id']) assert.equal(columns.results.filter(column => column.name === name).length, 1);
@@ -150,7 +150,7 @@ test('environment HTTP routes expose readiness, protect ownership and origin, an
   assert.equal((await call('/health')).value.environments.ready, false);
   assert.equal((await call('/environments', { method: 'POST', body: profile() })).value.code, 'environments_storage_upgrade_required');
   assert.equal((await call('/setup', { method: 'POST', body: { confirm: true }, fresh: false })).status, 403);
-  assert.equal((await call('/setup', { method: 'POST', body: { confirm: true } })).value.schemaVersion, 8);
+  assert.equal((await call('/setup', { method: 'POST', body: { confirm: true } })).value.schemaVersion, store.SCHEMA_VERSION);
   const created = await call('/environments', { method: 'POST', body: profile({ setupCommand: 'printf ready' }) });
   assert.equal(created.status, 201); const id = created.value.environment.id;
   assert.equal((await call('/environments')).value.environments[0].id, id);

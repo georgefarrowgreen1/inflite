@@ -55,11 +55,12 @@ async function executeClaim(env,task,claimResult,{manual,verifyAdmin,execute,now
   if(claimResult.duplicate)return {...claimResult.run,duplicate:true};
   const run=claimResult.run,controller=new AbortController(),started=Date.now();
   const clock=()=>now+Math.max(0,Date.now()-started);
-  const denied=async()=>{
-    if(typeof verifyAdmin!=='function')return manual?false:true;
-    try{return await verifyAdmin(task.owner)!==true;}catch{return true;}
+  const access=async()=>{
+    if(typeof verifyAdmin!=='function')return manual?true:null;
+    try{const value=await verifyAdmin(task.owner);return typeof value==='boolean'?value:null;}catch{return null;}
   };
-  if(await denied())return finish(env,task,run,{status:'skipped',errorCode:'administrator_unavailable',now:clock(),manual,pause:!manual});
+  const allowed=await access();
+  if(allowed!==true)return finish(env,task,run,{status:'skipped',errorCode:allowed===false?'administrator_unavailable':'account_unavailable',now:clock(),manual,pause:allowed===false&&!manual});
   if(!await checkActive(env,task,run,manual,clock()))return finish(env,task,run,{status:'cancelled',errorCode:'task_stopped',now:clock(),manual});
   await query(env,"UPDATE atlas_schedule_runs SET status='running' WHERE owner=? AND id=? AND status='queued'",task.owner,run.id).run();
   let checking=false,nextHeartbeat=clock()+30000;
@@ -77,7 +78,9 @@ async function executeClaim(env,task,claimResult,{manual,verifyAdmin,execute,now
   },1500);
   const beforeDispatch=async()=>{
     if(controller.signal.aborted||!await checkActive(env,task,run,manual,clock()))fail('task_stopped','This task was stopped.');
-    if(await denied())fail('administrator_unavailable','Administrator access could not be verified.',403);
+    const verified=await access();
+    if(verified===false)fail('administrator_unavailable','Administrator access is no longer available.',403);
+    if(verified!==true)fail('account_unavailable','InFlite could not check the account right now. The recurring task remains enabled.',503);
   };
   try{
     await beforeDispatch();

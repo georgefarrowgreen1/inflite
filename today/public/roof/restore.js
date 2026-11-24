@@ -1,6 +1,6 @@
 // Reopening keeps only a verified account's curated screen reference and scroll.
 // Never persist queries, names, content, share/auth tokens or unsaved editor text.
-import { REGISTRY, parse, format, ownPath, safeFilesLocation } from "./router.js";
+import { REGISTRY, parse, format, ownPath, safeFilesLocation, atlasReference } from "./router.js";
 export const RESUME_PREFIX = "ifl:resume:v1:";
 const parseTarget = path => parse(path, { roof: true, workspace: true });
 export function resumeTarget(value) {
@@ -11,7 +11,7 @@ export function resumeTarget(value) {
   const path = format(r);
   if (r.kind === "app") {
     const R = REGISTRY[r.app], section = R.sections.some(([id]) => id === r.key) && !r.arg;
-    const object = R.stay?.includes(r.key) && /^[A-Za-z0-9_-]{1,40}$/.test(r.arg || "");
+    const object = R.stay?.includes(r.key) && (r.app === "atlas" && r.key === "conversations" ? atlasReference(r.arg) : /^[A-Za-z0-9_-]{1,40}$/.test(r.arg || ""));
     if (!section && !object || r.hash) return null;
     if (path !== value.path && value.path !== R.path) return null;
     return { path, y };

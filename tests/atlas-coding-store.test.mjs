@@ -30,7 +30,7 @@ test('coding schema is additive: version six chat remains ready before the expli
   assert.equal((await coding.codingStorageStatus(env)).storageReady, true);
   assert.equal((await store.getConversation(env, 'alice', conversation.id)).title, 'Existing chat');
   await store.upgradeStorage(env);
-  assert.equal((await store.storageStatus(env)).schemaVersion, 8);
+  assert.equal((await store.storageStatus(env)).schemaVersion, store.SCHEMA_VERSION);
 });
 
 test('coding state isolates owners, keeps provider IDs private and permits one active task per conversation', async t => {

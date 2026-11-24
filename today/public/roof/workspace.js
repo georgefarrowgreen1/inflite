@@ -10,7 +10,7 @@ import { WORKSPACE_APPS, getWorkspaceApp, safeWorkspaceRoute } from "./workspace
 import { createWorkspaceCommands, notificationActions } from "./workspace-commands.js";
 import { createFilesService } from "./files-service.js";
 import { safeFilesLocation } from "./files-location.js";
-import { createActivityRegistry, createWorkspaceActivity } from "./workspace-activity.js";
+import { createActivityRegistry, createWorkspaceActivity, createAtlasActivityReader } from "./workspace-activity.js";
 import { createWorkspaceRecovery } from "./workspace-recovery.js";
 import { createWorkspaceRecoveryView } from "./workspace-recovery-view.js";
 import { createConnectionView } from "./connection.js";
@@ -35,7 +35,7 @@ export async function createWorkspace(F, options = {}) {
   const background = F.ui.el("div", { hidden: true, inert: true, "aria-hidden": "true" });
   options.dockRoot?.append(background);
   const organiseStores=new Map();
-  const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.32.4/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
+  const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.33.1/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
   let securityLoad=null;
   const security=()=>securityLoad||=(import('./security-module.js').then(m=>live()?m.createSecurityModule(F,{remembered:()=>system().then(s=>s?.devices()),calendars:()=>lifeTools().then(s=>s?.calendars())}):null).catch(e=>{securityLoad=null;throw e}));
   let lifeLoad=null;
@@ -51,7 +51,9 @@ export async function createWorkspace(F, options = {}) {
   offs.push(()=>{stopLaunch?.();if(F.nav.launchMotion===launchMotion)F.nav.launchMotion=null});
   const live = () => !gone && !F.signal.aborted && F.session.view?.user?.id === owner;
   const organiseTimer=setTimeout(()=>{if(live())import('/organise/today.js').then(m=>{if(live())m.connectToday(F,today)}).catch(()=>{})},1500);F.signal.addEventListener('abort',()=>clearTimeout(organiseTimer),{once:true});
-  const activity = createActivityRegistry(F), activityView = createWorkspaceActivity(F, { registry: activity });
+  const activity = createActivityRegistry(F);
+  const atlasActivity = createAtlasActivityReader(F, {registry:activity,open:href=>openApp('atlas',href)});
+  const activityView = createWorkspaceActivity(F, {registry:activity,onOpen:()=>atlasActivity.refresh({force:true})});
   const fileActivity = activity.source("files", { current: live, signal: F.signal });
   recovery = createWorkspaceRecovery(F, { getHandle: app => handles.get(app), retry: retryApp,
     activity: activity.source("recovery", { current: live, signal: F.signal }), onChange: () => { paintNativeRecovery(); paint(); } });
@@ -65,7 +67,7 @@ export async function createWorkspace(F, options = {}) {
     },{current:()=>live()&&!handle.signal.aborted,signal:handle.signal});
     return live()&&!lease.signal?.aborted&&guarded(()=>!lease.current||lease.current(),false)?instance:null;
   };
-  const appOn = (app) => !!F.session.apps?.[app] && (app !== "mail" || F.session.view?.apps?.mail === true);
+  const appOn = (app) => !!F.session.apps?.[app] && (!["mail", "atlas"].includes(app) || F.session.view?.apps?.mail === true);
   const favouriteKey='ifl:launcher:v1:'+owner;
   const readFavourites = () => initialFavourites(guarded(() => JSON.parse(localStorage.getItem(favouriteKey))), id => id === "files" || appOn(id));
   let favourites = readFavourites(), favouriteNotice = null;
@@ -121,7 +123,7 @@ export async function createWorkspace(F, options = {}) {
         const entry = { provider, signal, epoch: 0 }; providers.set(app, entry); refreshProvider(app);
         return () => { if (providers.get(app) === entry) { providers.delete(app); snapshots.delete(app); paint(); } };
       },
-      changed: () => { if (usable()) queueProvider(app); },
+      changed: () => { if (usable()) { queueProvider(app); if (app === "atlas") atlasActivity.refresh(); } },
       context: Object.freeze({ get: () => EMPTY_CONTEXT, capture: () => usable, subscribe: () => () => {}, update: () => false }),
     });
   }
@@ -269,7 +271,7 @@ export async function createWorkspace(F, options = {}) {
     const result=await entry.provider.search(query,{...lease,current:()=>valid()&&providers.get(app)===entry});return valid()?result:{status:'error',entries:[]};
   }
   async function openSource(source){
-    if(!live()||!source||!['mail','chats','fitness','weather','markets','files','calendar','notes','people'].includes(source.app))return false;
+    if(!live()||!source||!['mail','chats','fitness','weather','markets','files','calendar','notes','people','atlas'].includes(source.app))return false;
     if (isRecordApp(source.app)) {
       if (!/^[a-f0-9]{32}$/.test(source.id)) return false;
       return openApp(source.app, '/' + source.app + '/#item=' + source.id);
@@ -478,7 +480,7 @@ export async function createWorkspace(F, options = {}) {
     if (gone) return;
     gone = true; appsMenu?.now();appsMenu=null;++scene;
     for (const off of offs.splice(0)) off();
-    explorer?.destroy(); dialogs?.destroy(); handoffs.destroy(); connection.destroy(); recoveryView?.destroy(); recovery?.destroy(); activityView.destroy(); activity.destroy(); pendingFilesQuery = null;
+    explorer?.destroy(); dialogs?.destroy(); handoffs.destroy(); connection.destroy(); recoveryView?.destroy(); recovery?.destroy(); atlasActivity.destroy(); activityView.destroy(); activity.destroy(); pendingFilesQuery = null;
     providers.clear(); snapshots.clear(); recentApps.clear(); files?.destroy(); commands?.destroy(); background.remove();
     restoreToday(); anchor.remove(); view.destroy(); html.classList.remove("ifl-os", "os-workspace"); html.removeAttribute("data-os-dock-away"); document.title = originalTitle;
     if (F.tabs.away === dockAway) F.tabs.away = nativeAway;
@@ -492,19 +494,20 @@ export async function createWorkspace(F, options = {}) {
     await loadApp(r.app, handles.get(r.app), { current: () => live() && F.route === r });
   };
   offs.push(F.on("apps", () => {
+    if (atlasActivity.observed || !appOn("atlas")) atlasActivity.refresh();
     for (const app of handles.keys()) {
       if (appOn(app)) { acquire(app); queueProvider(app); }
       else { handles.get(app).hide({ detach: true }); snapshots.delete(app); }
     }
     files?.update?.(); paint();
-  }), F.on("changed", (app) => queueProvider(app)), F.on("visible", () => { for (const app of providers.keys()) queueProvider(app); }), F.on("route", (r) => {
+  }), F.on("changed", (app) => queueProvider(app)), F.on("visible", () => { for (const app of providers.keys()) queueProvider(app); if (atlasActivity.observed) atlasActivity.refresh(); }), F.on("route", (r) => {
     if (r.kind === "app") { document.title = `${REGISTRY[r.app].name} — InFlite`; recentApps.delete(r.app); recentApps.set(r.app, safeWorkspaceRoute(r.app, format(r)) || getWorkspaceApp(r.app)?.href); }
     paint(); activate(r).catch(() => {});
   }));
   files = createFilesService(F, {
     authoriseTransfer:async(app,item,lease)=>{const m=await import('./security-client.js');if(!live())throw new DOMException('This account was released','AbortError');return m.approveFileTransfer(F,app,item,lease)},
     activity: fileActivity,share:source=>lifeTools().then(v=>live()&&v?.share(source)),remind:source=>system().then(s=>live()&&s?.capture(source)),
-    sources: () => WORKSPACE_APPS.filter(a => ["fitness", "mail", "chats", "markets", "calendar", "notes", "people"].includes(a.id) && appOn(a.id)).map(a => ({ app: a.id, name: a.name, transient: a.id === "chats", status: snapshots.get(a.id)?.status || (snapshots.get(a.id)?.loading ? "loading" : providers.has(a.id) ? "ready" : "loading"), files: snapshots.get(a.id)?.files || [] })),
+    sources: () => WORKSPACE_APPS.filter(a => ["fitness", "mail", "chats", "markets", "calendar", "notes", "people", "atlas"].includes(a.id) && appOn(a.id)).map(a => ({ app: a.id, name: a.name, transient: a.id === "chats", status: snapshots.get(a.id)?.status || (snapshots.get(a.id)?.loading ? "loading" : providers.has(a.id) ? "ready" : "loading"), files: snapshots.get(a.id)?.files || [] })),
     load: loadFiles, runIntent, openExplorer: openFiles,
   });
   // A stable capability exists immediately; picker code/styles are fetched only
@@ -527,7 +530,7 @@ export async function createWorkspace(F, options = {}) {
   offs.push(F.search.provide({id:'reminders350',group:'Reminders',order:12,scope:'account',search:(q,lease)=>q.trim().length<2?[]:system().then(s=>live()&&s?s.search(q,lease):[])}));
   offs.push(F.search.provide({id:'document-contents',group:'Document contents',order:90,search:q=>q.trim().length<2?[]:[{title:'Search inside documents',offer:true,layer:true,sub:'Text, Markdown, CSV and JSON · open content search',run:current=>lifeTools().then(v=>live()&&current()&&v?.searchDocuments(q))}]}));
   F.search.useDiscovery?.(createDiscoveryView);
-  for (const app of ['files','calendar','notes','people','mail','chats','fitness','markets','weather']) {
+  for (const app of ['files','calendar','notes','people','mail','chats','fitness','markets','weather','atlas']) {
     offs.push(F.search.provide({
       id: 'discover-' + app, group: REGISTRY[app]?.name || 'Files', order: 22, scope: 'account',
       async search(query, lease) {

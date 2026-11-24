@@ -91,7 +91,18 @@ const refuse = (status, error) => json({ error }, status);
 const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === "/atlas" || url.pathname.startsWith("/atlas/")) return atlas(request, env, { ctx });
+    if (url.pathname === "/atlas" || url.pathname.startsWith("/atlas/")) {
+      if (["GET", "HEAD"].includes(request.method)) {
+        if (url.pathname === "/atlas" || ["/atlas/", "/atlas/index.html"].includes(url.pathname) && url.searchParams.has("conversation")) {
+          const id = url.searchParams.get("conversation"), fragment = /^(?:[A-Za-z0-9_-]{1,40}|legacy-(?:[a-f0-9]{2}){1,60}-(?:research|developer|personal|fitness|tasks))$/.test(id || "") ? "#conversations=" + id : url.hash;
+          return new Response(null, { status: 302, headers: { Location: "/atlas/" + fragment, "Cache-Control": "no-store" } });
+        }
+        if (["/atlas/", "/atlas/index.html"].includes(url.pathname)) return roofPage(request, env);
+        if (url.pathname === "/atlas/version") return json({ build: await atlasBuild(env, request), min: null });
+        if (/^\/atlas\/(?:roof|assets)\/[a-z0-9._/-]+\.(?:js|css)$/.test(url.pathname)) return env.ASSETS.fetch(request);
+      }
+      return atlas(request, env, { ctx });
+    }
     if (url.origin === "https://os.inflite.ai" && ["GET", "HEAD"].includes(request.method)) {
       const publicPage = /^\/(about|contact)(?:\/(?:index\.html)?)?$/.exec(url.pathname);
       if (publicPage) return Response.redirect("https://inflite.ai/" + publicPage[1] + "/", 301);
@@ -262,6 +273,7 @@ function picture(res) {
 // Which Today is deployed: the build number in its app.js (BUILD), read once per deployment of this Worker, so a page
 // running older code (a copy kept by the phone, say) can tell it's behind
 const appBuild = assetBuild("/app.js");
+const atlasBuild = assetBuild("/atlas/roof/module.js");
 async function version(env, request) {
   return json({ build: await appBuild(env, request), min: null });
 }
@@ -271,9 +283,13 @@ export default {
     if (!env.ATLAS_VERIFY_KEY) return;
     const verifyAdmin = async owner => {
       try {
-        const r = await appFetch(env, "https://account.inflite.ai/api/atlas-admin", {method:"POST",headers:{Authorization:"Bearer "+env.ATLAS_VERIFY_KEY,"Content-Type":"application/json"},body:JSON.stringify({owner}),redirect:"manual",signal:AbortSignal.timeout(8000)});
-        return r.ok && (await r.json()).allowed === true;
-      } catch { return false; }
+        const signal = AbortSignal.timeout(8000);
+        const r = await appFetch(env, "https://account.inflite.ai/api/atlas-admin", {method:"POST",headers:{Authorization:"Bearer "+env.ATLAS_VERIFY_KEY,"Content-Type":"application/json"},body:JSON.stringify({owner}),redirect:"manual",signal});
+        if (!r.ok) { r.body?.cancel().catch(() => {}); return null; }
+        const body = await bodyUpTo(r,4096,{signal});
+        const result = body === null ? null : JSON.parse(body);
+        return typeof result?.allowed === "boolean" ? result.allowed : null;
+      } catch { return null; }
     };
     ctx.waitUntil(reconcileCodingBackground(env,{verifyAdmin}));
     if (env.ATLAS_AUTONOMY === "1") ctx.waitUntil(runAtlasScheduled(env,{verifyAdmin,execute:args=>executeScheduledAtlas(env,args)}));

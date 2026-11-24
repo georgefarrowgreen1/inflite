@@ -62,7 +62,7 @@ export function icon(name, { app, size = 24 } = {}) {
   if (app) {
     const i = el("img", { class: `ifl-appic s${size}`, alt: "", width: size, height: size, data: { app } });
     // (one the menu hasn't: no picture at all, never a broken one)
-    try { i.src = IFL()?.iconUrl(app) || ""; } catch (_) {}
+    try { i.src = app === "atlas" ? "/apps/atlas.svg" : IFL()?.iconUrl(app) || ""; } catch (_) {}
     i.hidden = !i.getAttribute("src");
     return i;
   }

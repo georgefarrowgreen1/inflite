@@ -397,7 +397,12 @@ export async function reconcileCodingBackground(env, { verifyAdmin, send = fetch
   const rows = await env.ATLAS_DB.prepare("SELECT owner,id FROM atlas_coding_runs WHERE status IN ('preparing','running','waiting','uncertain') AND (lease_until IS NULL OR lease_until<?) ORDER BY updated_at,id LIMIT ?").bind(Date.now(), count).all();
   let observed = 0;
   for (const run of rows.results || []) {
-    if (!await verifyAdmin(run.owner)) {
+    let allowed;
+    try { allowed = await verifyAdmin(run.owner); } catch { allowed = null; }
+    // A transport failure is not revoked access. Leave the durable run intact
+    // for the next successful observation, without dispatching any new work.
+    if (allowed !== true && allowed !== false) continue;
+    if (allowed === false) {
       await state.requestCodingCancellation(env, run.owner, run.id);
       // Cleanup is allowed after entitlement revocation; further task input is
       // not. advance sees the persisted cancel intent before taking any phase.

@@ -12,7 +12,7 @@ for (const [name, view] of [['standard', { signedIn: true, user: { id: 'other' }
     let calls = 0;
     for (const path of ['/atlas', '/atlas/assets/app.js', '/atlas/api/health', '/atlas/api/conversations', '/atlas/api/provider', '/atlas/api/tasks', '/atlas/api/briefs', '/atlas/api/github', '/atlas/api/patches']) {
       const response = await atlas(request(path), {}, { account: async () => Response.json(view), send: async () => { calls++; } });
-      assert.equal(response.status, 403); assert.equal((await response.json()).code, 'access_denied');
+      assert.equal(response.status, view.signedIn === false ? 401 : 403); assert.equal((await response.json()).code, view.signedIn === false ? 'sign_in_required' : 'access_denied');
       assert.match(response.headers.get('Cache-Control'), /no-store/);
     }
     assert.equal(calls, 0);
@@ -21,7 +21,53 @@ for (const [name, view] of [['standard', { signedIn: true, user: { id: 'other' }
 
 test('missing cookie and account outage fail closed', async () => {
   assert.equal((await atlas(request('/atlas', { cookie: false }), {})).status, 401);
-  for (const account of [async () => null, async () => { throw Error('private failure'); }, async () => new Response('invalid')]) assert.equal((await atlas(request(), {}, { account })).status, 403);
+  for (const account of [async () => null, async () => { throw Error('private failure'); }, async () => new Response('invalid'), async () => Response.json({}, { status: 503 }), async () => Response.json({})]) {
+    const response = await atlas(request(), {}, { account });
+    assert.equal(response.status, 503); assert.equal((await response.json()).code, 'account_unavailable');
+  }
+});
+
+test('session and confirmed identity are owner-bound without touching storage or a provider', async () => {
+  const env = { ATLAS_DB: { prepare() { assert.fail('identity does not depend on storage'); } } };
+  const send = async () => assert.fail('identity does not contact providers');
+  const account = async (_env, _request, options) => Response.json(options.path === 'atlas/fresh' ? { fresh: true, owner: 'owner' } : admin);
+  const session = await atlas(request('/atlas/api/session'), env, { account, send });
+  assert.equal(session.status, 200);
+  const value = await session.json(); assert.equal(value.signedIn, true); assert.equal(value.available, true); assert.match(value.owner, /^[a-f0-9]{32}$/);
+  const identity = await atlas(request('/atlas/api/identity', { headers: { 'X-Atlas-Owner': value.owner } }), env, { account, send });
+  assert.equal(identity.status, 200); assert.deepEqual(await identity.json(), { confirmed: true, owner: value.owner });
+  const switched = await atlas(request('/atlas/api/identity', { headers: { 'X-Atlas-Owner': '0'.repeat(32) } }), env, { account, send });
+  assert.equal(switched.status, 409);
+});
+
+test('identity confirmation distinguishes expiry and account-switch from a transient outage', async () => {
+  for (const [proof, expected, code] of [
+    [() => Response.json({ fresh: false }), 403, 'identity_confirmation_required'],
+    [() => new Response('', { status: 403 }), 403, 'identity_confirmation_required'],
+    [() => Response.json({ fresh: true, owner: 'another-owner' }), 409, 'session_changed'],
+    [() => null, 503, 'account_unavailable'],
+    [() => new Response('', { status: 502 }), 503, 'account_unavailable'],
+    [() => new Response('bad json'), 503, 'account_unavailable'],
+    [() => Response.json({}), 503, 'account_unavailable'],
+  ]) {
+    const result = await atlas(request('/atlas/api/identity'), {}, { account: async (_env, _request, options) => options.path === 'atlas/fresh' ? proof() : Response.json(admin) });
+    assert.equal(result.status, expected); assert.equal((await result.json()).code, code);
+  }
+});
+
+test('Atlas forwards only authoritative account cookie renewals and preserves cookies on an outage', async () => {
+  const headers = new Headers();
+  headers.append('Set-Cookie', '__Secure-account=renewedabcdefghijklmnopqrstuvwxyz; Domain=.inflite.ai; Path=/; Secure; HttpOnly');
+  headers.append('Set-Cookie', 'ifl_rw=1; Path=/; Secure');
+  headers.append('Set-Cookie', 'unrelated=private; Path=/');
+  const response = await atlas(request('/atlas/api/session'), {}, { account: async () => Response.json(admin, { headers }) });
+  assert.equal(response.headers.getSetCookie().length, 2);
+  assert.ok(response.headers.getSetCookie().some(cookie => cookie.startsWith('__Secure-account=renewed')));
+  assert.ok(response.headers.getSetCookie().every(cookie => !cookie.startsWith('unrelated=')));
+  const failed = await atlas(request('/atlas/api/session'), {}, { account: async () => new Response('', { status: 503, headers: { 'Set-Cookie': 'account=; Max-Age=0; Path=/' } }) });
+  assert.equal(failed.status, 503); assert.equal(failed.headers.has('Set-Cookie'), false);
+  const malformed = await atlas(request('/atlas/api/session'), {}, { account: async () => Response.json({}, { headers: { 'Set-Cookie': 'account=; Max-Age=0; Path=/' } }) });
+  assert.equal(malformed.status, 503); assert.equal(malformed.headers.has('Set-Cookie'), false);
 });
 
 test('admin page is private, nonce-protected and initializes the shared theme correctly', async () => {
