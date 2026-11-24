@@ -2,8 +2,8 @@ import { atlasMarkup } from "./template.js";
 import { createAtlasClient } from "../assets/app.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.0.1";
-export const NEWS = "Atlas joins InFlite with shared navigation, account confirmation and connected app context.";
+export const BUILD = "1.0.2";
+export const NEWS = "More reliable task activity and connected drafts in your InFlite workspace.";
 export const SECTIONS = [["conversations", "Conversations"], ["tasks", "Tasks"], ["environments", "Environments"], ["briefs", "Briefs"], ["settings", "Settings"]];
 
 export function mount(root, fw) {

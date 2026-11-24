@@ -6,7 +6,8 @@ import worker from '../today/src/index.js';
 import { parse, format, REGISTRY, atlasReference } from '../today/public/roof/router.js';
 import { safeWorkspaceRoute } from '../today/public/roof/workspace-catalog.js';
 import { resumeTarget } from '../today/public/roof/restore.js';
-import { createActivityRegistry, createAtlasActivityReader } from '../today/public/roof/workspace-activity-state.js';
+import { createActivityRegistry } from '../today/public/roof/workspace-activity-state.js';
+import { createAtlasActivityReader } from '../today/public/atlas/roof/activity.js';
 
 const marker = owner => createHash('sha256').update('atlas-owner:' + owner).digest('hex').slice(0,32);
 const deferred = () => { let resolve; const promise = new Promise(done => resolve = done); return {resolve,promise}; };
@@ -91,6 +92,18 @@ function activityFixture(send) {
 }
 const activity = (status='running') => ({ready:true,items:[{id:'run-one',kind:'coding',title:'Fix navigation',stage:'Running checks',status,updatedAt:123,href:'/atlas/#tasks=run-one'}]});
 const activityResponse = (data=activity(),owner='alice') => Response.json(data,{headers:{'X-Atlas-Owner':marker(owner)}});
+
+test('Activity does not interrupt the shell or send an unbound request when secure hashing is unavailable', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis,'crypto');
+  let h, calls = 0;
+  try {
+    Object.defineProperty(globalThis,'crypto',{configurable:true,value:{}});
+    assert.doesNotThrow(() => { h = activityFixture(async()=>{calls++;return activityResponse();}); });
+    const result = await h.reader.refresh();
+    assert.equal(result.ok,false); assert.match(result.error,/refresh/);
+    assert.equal(calls,0); assert.deepEqual(h.registry.snapshot(),[]);
+  } finally { h?.life.abort(); Object.defineProperty(globalThis,'crypto',descriptor); }
+});
 
 test('shared Activity deduplicates reads, opens native routes and never dispatches task writes', async () => {
   const wait = deferred(), sent = [];

@@ -10,7 +10,7 @@ import { WORKSPACE_APPS, getWorkspaceApp, safeWorkspaceRoute } from "./workspace
 import { createWorkspaceCommands, notificationActions } from "./workspace-commands.js";
 import { createFilesService } from "./files-service.js";
 import { safeFilesLocation } from "./files-location.js";
-import { createActivityRegistry, createWorkspaceActivity, createAtlasActivityReader } from "./workspace-activity.js";
+import { createActivityRegistry, createWorkspaceActivity } from "./workspace-activity.js";
 import { createWorkspaceRecovery } from "./workspace-recovery.js";
 import { createWorkspaceRecoveryView } from "./workspace-recovery-view.js";
 import { createConnectionView } from "./connection.js";
@@ -52,7 +52,24 @@ export async function createWorkspace(F, options = {}) {
   const live = () => !gone && !F.signal.aborted && F.session.view?.user?.id === owner;
   const organiseTimer=setTimeout(()=>{if(live())import('/organise/today.js').then(m=>{if(live())m.connectToday(F,today)}).catch(()=>{})},1500);F.signal.addEventListener('abort',()=>clearTimeout(organiseTimer),{once:true});
   const activity = createActivityRegistry(F);
-  const atlasActivity = createAtlasActivityReader(F, {registry:activity,open:href=>openApp('atlas',href)});
+  let atlasReader = null, atlasLoading = null, atlasObserved = false;
+  const atlasActivity = {
+    get observed() { return atlasObserved; },
+    async refresh(options) {
+      if (!live()) return {ok:false,cancelled:true};
+      if (!appOn("atlas")) return atlasReader?.refresh(options) || {ok:true};
+      atlasObserved = true;
+      try {
+        // Atlas metadata joins Activity only after an explicit view or Atlas
+        // change. Ordinary shell startup downloads no Atlas application code.
+        if (!atlasReader) await (atlasLoading ||= import("../atlas/roof/activity.js").then(module => {
+          if (live()) atlasReader = module.createAtlasActivityReader(F, {registry:activity,open:href=>openApp("atlas",href)});
+        }).finally(() => { atlasLoading = null; }));
+        return live() ? atlasReader.refresh(options) : {ok:false,cancelled:true};
+      } catch { return {ok:false,error:"Atlas activity couldn’t refresh. Try again."}; }
+    },
+    destroy() { atlasReader?.destroy(); },
+  };
   const activityView = createWorkspaceActivity(F, {registry:activity,onOpen:()=>atlasActivity.refresh({force:true})});
   const fileActivity = activity.source("files", { current: live, signal: F.signal });
   recovery = createWorkspaceRecovery(F, { getHandle: app => handles.get(app), retry: retryApp,
