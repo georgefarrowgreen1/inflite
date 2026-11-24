@@ -59,7 +59,7 @@ export function atlasMarkup() {
     <button id="manage-environments" type="button" class="icon-button" data-open="environments" aria-label="Manage cloud environments" title="Manage cloud environments">${glyph("settings")}</button>
   </div>
   <div class="composer-bottom"><div class="composer-controls"><div id="composer-intent" class="intent-switch" role="group" aria-label="Task mode" hidden><button id="intent-code" type="button" aria-pressed="true">Code</button><button id="intent-ask" type="button" aria-pressed="false">Ask</button></div><button id="composer-options" type="button" class="quiet-button composer-options" data-open="task-options" aria-haspopup="dialog" aria-label="Task options">${glyph("more")}<span id="composer-mode-label">Research</span></button></div><div class="composer-actions"><button id="start-coding" type="button" class="primary-button" aria-describedby="coding-feedback" hidden>Work on task</button><button id="stop-response" type="button" class="quiet-button" hidden>Stop</button><button id="send" type="submit" class="primary-button" disabled>Send</button></div></div>
-  <div class="composer-assistance"><p id="composer-hint" class="field-help"></p><button id="background-answer" class="text-button" type="button" hidden>${glyph("clock")}Run in background</button><button id="connect-provider" class="text-button" type="button" data-open="settings" hidden>Connect provider</button><p id="coding-feedback" class="field-feedback" role="status"></p></div>
+  <div class="composer-assistance"><p id="composer-hint" class="field-help"></p><button id="background-answer" class="text-button" type="button" hidden>${glyph("clock")}Run in background</button><button id="parallel-research" class="text-button" type="button" hidden>Research in parallel</button><button id="connect-provider" class="text-button" type="button" data-open="settings" hidden>Connect provider</button><p id="coding-feedback" class="field-feedback" role="status"></p></div>
 </form></main>
 <section id="atlas-destination" class="atlas-destination" aria-labelledby="atlas-destination-title" hidden>
   <div id="atlas-destination-scroll" class="atlas-destination-scroll">
@@ -135,6 +135,10 @@ export function atlasMarkup() {
         <button id="run-stop" class="danger-text" type="button" hidden>Stop run</button>
       </div>
     </div>
+    <section id="run-subtasks" class="run-subtasks" aria-labelledby="run-subtasks-title" hidden>
+      <h3 id="run-subtasks-title">Subtasks</h3>
+      <div id="run-subtask-list" class="ifl-list"></div>
+    </section>
     <ol id="run-events" class="ifl-list atlas-run-events" aria-label="Saved events"></ol>
     <p id="run-feedback" class="field-feedback" role="status"></p>
     <div class="button-row">

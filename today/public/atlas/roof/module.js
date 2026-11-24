@@ -2,8 +2,8 @@ import { atlasMarkup } from "./template.js";
 import { createAtlasClient } from "../assets/app.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.1.1";
-export const NEWS = "Tasks brings every Atlas run together with a full-page timeline and its available actions.";
+export const BUILD = "2.2.1";
+export const NEWS = "Run independent research and verification in parallel, with saved evidence for each subtask.";
 export const SECTIONS = [["conversations", "Conversations"], ["tasks", "Tasks"], ["environments", "Environments"], ["briefs", "Briefs"], ["settings", "Settings"]];
 
 export function mount(root, fw) {

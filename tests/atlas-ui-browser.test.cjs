@@ -997,6 +997,43 @@ test('a background answer reopens its mobile timeline and resumes the selected r
   } finally { await t.close(); }
 });
 
+test('parallel research confirms its allowance and shows independent evidence in Tasks', async () => {
+  const t = await open({ native: true, width: 390, mobile: true, conversation: 'alpha', fixture: {
+    runsHealth: { ready: true, backgroundAvailable: true, parallelAvailable: true },
+  } });
+  try {
+    t.fixture.overrides.set('POST runs', ({ body, reply }) => {
+      assert.equal(body.plan, 'parallel_research');
+      assert.equal(body.confirm, true);
+      const run = { kind: 'background', id: body.requestId, status: 'completed', plan: body.plan, revision: 1, conversationId: 'alpha', title: 'Source comparison', subtasks: [
+        { step: 'research', status: 'completed', answer: 'First source independently found.', sources: [source] },
+        { step: 'verification', status: 'completed', answer: 'Verified against a second source.', sources: [] },
+      ] };
+      t.fixture.overrides.set('GET runs/background/' + run.id, ({ reply: detail }) => detail({ run, events: [], nextAfter: 0, hasMore: false }));
+      return reply({ run }, 202);
+    });
+    const prompt = t.page.getByRole('textbox', { name: 'Message Atlas' });
+    await prompt.fill('Compare the sources independently.');
+    const start = t.page.getByRole('button', { name: 'Research in parallel' });
+    await start.click();
+    const confirm = t.page.getByRole('dialog', { name: 'Confirm action', exact: true });
+    await confirm.getByText('up to three requests', { exact: false }).waitFor();
+    await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await confirm.waitFor({ state: 'hidden' });
+    assert.equal(await prompt.inputValue(), 'Compare the sources independently.');
+    assert.equal(t.fixture.requests.filter(call => call.method === 'POST').length, 0);
+    await start.click();
+    await confirm.getByRole('button', { name: 'Continue', exact: true }).click();
+    const steps = t.page.getByRole('region', { name: 'Subtasks', exact: true });
+    await steps.getByText('Research · Completed', { exact: true }).click();
+    await steps.getByText('First source independently found.').waitFor();
+    await steps.getByText('Verification · Completed', { exact: true }).click();
+    await steps.getByText('Verified against a second source.').waitFor();
+    assert.equal(t.fixture.requests.filter(call => call.method === 'POST' && call.path === 'runs').length, 1);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
 test('the mobile Tasks inbox opens other conversations and reviews saved changes by revision', async () => {
   const reviewable = codingRun({ status: 'completed', reviewReady: true, revision: 3, summary: 'Saved changes are ready.' });
   const active = codingRun({ id: 'coding-other', conversationId: 'other-repo', prompt: 'Prepare another change' });

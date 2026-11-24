@@ -2025,7 +2025,13 @@ dialog.ifl-sheet.atlas-native-sheet .conversation-navigation { padding: 0; }
 .atlas-app .atlas-run-events li::before { content: ""; position: absolute; inset-inline-start: 18px; inset-block-start: 20px; width: 7px; height: 7px; border-radius: 50%; background: var(--atlas-accent); }
 .atlas-app .atlas-run-events li:not(:last-child)::after { content: ""; position: absolute; inset-inline-start: 21px; inset-block: 28px -18px; width: 1px; background: var(--atlas-border); }
 .atlas-app .atlas-run-events li + li { border-top: 1px solid var(--atlas-border); }
-.atlas-app #background-answer { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+.atlas-app .run-subtasks { margin: 14px 0; }
+.atlas-app .run-subtasks h3 { margin-bottom: 8px; }
+.atlas-app .run-subtask { padding: 12px 16px; overflow-wrap: anywhere; }
+.atlas-app .run-subtask + .run-subtask { border-top: 1px solid var(--atlas-border); }
+.atlas-app .run-subtask summary { cursor: pointer; font-weight: 600; }
+.atlas-app .run-subtask .message-content { margin-top: 10px; }
+.atlas-app :is(#background-answer, #parallel-research) { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
 .atlas-app #background-answer .atlas-glyph { width: 16px; height: 16px; }
 .atlas-app .conversation-toolbar { border-bottom: 0; }
 .atlas-app .welcome { min-height: 0; padding: clamp(14px, 4vh, 36px) 0 20px; }

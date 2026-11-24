@@ -415,6 +415,8 @@ function updateComposer() {
   $("send").hidden = code || !!state.stream;
   $("background-answer").hidden = code || (!!fw && !hasPrompt) || state.health?.runs?.backgroundAvailable !== true || state.workspaceContext.some(source => source.kind === "mail");
   $("background-answer").disabled = $("send").disabled || state.contextPending;
+  $("parallel-research").hidden = mode !== "research" || !hasPrompt || state.health?.runs?.parallelAvailable !== true || $("background-answer").hidden;
+  $("parallel-research").disabled = $("background-answer").disabled;
   $("prompt").placeholder = mode === "developer" ? code ? "Describe the change you want to make…" : "Ask about your repository…" : "What should we work on?";
   $("repository-note").hidden = mode !== "developer" || !$("repository").value;
   const continuation = state.codingRuns.find(run => run.id === state.codingContinuation && run.canContinue);
@@ -746,18 +748,20 @@ async function sendMessage(event) {
   }
 }
 async function stopResponse() { const active = state.stream; if (!active) return; active.stopped = true; const cancellation = api("requests/" + encodeURIComponent(active.requestId) + "/cancel", "POST", {}).catch(() => {}); active.controller.abort(); await cancellation; }
-async function queueBackgroundAnswer(event) {
-  const button = event.currentTarget;
+async function queueBackgroundAnswer(button, plan) {
   if (button.disabled || button.hidden) return;
   const draft = $("prompt").value, prompt = draft.trim(), generation = state.navigation, epoch = state.epoch;
   const mode = state.conversation?.mode || $("mode").value, repository = $("repository").value;
   const context = state.context.map(contextDescriptor), includeFitness = mode === "fitness" && $("fitness-consent").checked;
   state.dispatching = true; updateComposer();
-  feedback("coding-feedback", "Saving run…");
   try {
+    if (plan && !await confirmAction(fw, "Run independent research and verification, then combine the findings? This uses up to three requests from your Atlas allowance.")) return;
+    checkEpoch(epoch);
+    if (generation !== state.navigation) return;
+    feedback("coding-feedback", "Saving run…");
     const conversation = await ensureConversation({ prompt, mode, repository });
     checkEpoch(epoch);
-    const payload = { conversationId: conversation.id, prompt, includeFitness, context };
+    const payload = { conversationId: conversation.id, prompt, includeFitness, context, ...(plan ? { plan, confirm: true } : {}) };
     const key = JSON.stringify(payload);
     // If the response is lost, retry the same submission instead of creating
     // another run. The server validates that the original payload still matches.
@@ -973,8 +977,9 @@ const checkpointLabels = {
   queued: "Queued", started: "Started responding", preparing: "Preparing the answer", dispatching: "Starting the response", draft_saved: "Saved a partial answer",
   saved: "Saved the response", requeued: "Recovered before dispatch", resume_queued: "Queued a new attempt",
   reconciled: "Recovered the recorded outcome", interrupted: "Worker interrupted", stop_requested: "Stop requested",
-  completed: "Completed", cancelled: "Stopped", stopped: "Stopped",
+  completed: "Completed", cancelled: "Stopped", stopped: "Stopped", researching: "Researching and verifying", synthesizing: "Combining the findings",
 };
+const subtaskLabels = { research: "Research", verification: "Verification" };
 const runPrefixes = { answer: "a", background: "b", coding: "c", scheduled: "s" };
 const runFromReference = reference => {
   const match = /^([abcs])_([A-Za-z0-9_-]{1,80})$/.exec(reference || "");
@@ -1050,7 +1055,8 @@ function pauseRunTimeline() {
 function clearRunTimeline() {
   pauseRunTimeline();
   runTimeline = null;
-  for (const id of ["run-heading", "run-state", "run-checkpoint", "run-events", "run-updated"]) $(id).replaceChildren();
+  for (const id of ["run-heading", "run-state", "run-checkpoint", "run-events", "run-updated", "run-subtask-list"]) $(id).replaceChildren();
+  $("run-subtasks").hidden = true;
   for (const id of ["run-open-result", "run-resume", "run-stop", "run-more", "run-copy-link"]) $(id).hidden = true;
   feedback("run-feedback", "");
 }
@@ -1075,7 +1081,7 @@ function openRunTimeline(run, trigger, { page = false } = {}) {
 }
 function renderRunTimeline(run, events, hasMore) {
   $("run-heading").textContent = run.title || runKinds[run.kind];
-  const status = [runKinds[run.kind], run.stopRequested ? "Stopping" : runStatus(run), run.revision > 1 && "Revision " + run.revision].filter(Boolean).join(" · ");
+  const status = [run.plan === "parallel_research" ? "Parallel research" : runKinds[run.kind], run.stopRequested ? "Stopping" : runStatus(run), run.revision > 1 && "Revision " + run.revision].filter(Boolean).join(" · ");
   if ($("run-state").textContent !== status) $("run-state").textContent = status;
   if (run.updatedAt !== runTimeline.updatedAt) {
     runTimeline.updatedAt = run.updatedAt;
@@ -1083,16 +1089,18 @@ function renderRunTimeline(run, events, hasMore) {
   }
   const checkpoint = run.status === "queued" && run.kind === "background" ? "Atlas will start this run in the background."
     : run.status === "uncertain" && run.kind === "background" ? "Atlas could not confirm the outcome of the previous attempt."
-    : run.status === "failed" && run.errorCode ? run.errorCode.replaceAll("_", " ") : run.kind === "coding" ? String(run.stage || "").replaceAll("_", " ") : "";
+    : run.status === "failed" && run.errorCode ? run.errorCode.replaceAll("_", " ") : run.kind === "coding" ? String(run.stage || "").replaceAll("_", " ") : run.plan ? checkpointLabels[run.checkpoint] || "" : "";
   $("run-checkpoint").textContent = [checkpoint, run.kind === "background" && run.status !== "completed" && run.hasDraft ? "A partial answer is saved." : ""].filter(Boolean).join(" ");
   $("run-open-result").hidden = !run.conversationId && !run.scheduleId;
   $("run-open-result").textContent = run.kind === "scheduled" ? "Open scheduled work" : run.kind === "coding" && run.reviewReady && !codingActive(run) ? "Review changes" : "Open conversation";
   $("run-resume").hidden = !run.canResume; $("run-resume").textContent = run.hasDraft ? "Resume from checkpoint" : "Retry run";
   $("run-stop").hidden = !run.canStop;
   $("run-more").hidden = !hasMore;
+  renderRunSubtasks(run.subtasks);
   for (const event of events) {
     const item = node("li", "ifl-tx");
-    const title = event.checkpoint === "stop_requested" ? checkpointLabels.stop_requested
+    const title = event.checkpoint === "subtask" ? subtaskLabels[event.stage] + " · " + (runStatuses[event.status] || "Updated")
+      : event.checkpoint === "stop_requested" ? checkpointLabels.stop_requested
       : run.kind === "coding" ? event.stage?.replaceAll("_", " ") || runStatuses[event.status] : checkpointLabels[event.checkpoint] || runStatuses[event.status];
     const meta = node("small", "record-meta");
     meta.append(recordTime(event.at));
@@ -1100,6 +1108,29 @@ function renderRunTimeline(run, events, hasMore) {
     item.append(node("b", "", title || "Run updated"), meta);
     $("run-events").append(item);
   }
+}
+function renderRunSubtasks(subtasks) {
+  if (!Array.isArray(subtasks)) return;
+  $("run-subtasks").hidden = !subtasks.length;
+  const list = $("run-subtask-list"), signature = JSON.stringify(subtasks);
+  if (runTimeline.subtaskSignature === signature) return;
+  runTimeline.subtaskSignature = signature;
+  const expanded = new Set([...list.querySelectorAll("details[open]")].map(row => row.dataset.step));
+  list.replaceChildren(...subtasks.map(step => {
+    const title = [subtaskLabels[step.step], runStatuses[step.status]].filter(Boolean).join(" · ");
+    if (!step.answer) {
+      const row = node("div", "run-subtask");
+      row.append(node("b", "", title));
+      if (step.errorCode) row.append(node("p", "field-help", step.errorCode.replaceAll("_", " ")));
+      return row;
+    }
+    const row = node("details", "run-subtask"), answer = node("div", "message-content");
+    row.dataset.step = step.step;
+    row.open = expanded.has(step.step);
+    renderAnswer(answer, step.answer, step.sources);
+    row.append(node("summary", "", title), answer, sourceList(step.sources));
+    return row;
+  }));
 }
 async function loadRunTimeline() {
   const timeline = runTimeline;
@@ -1798,7 +1829,8 @@ function init() {
   $("prompt").addEventListener("blur", fitComposerViewport);
   for (const el of all("[data-open]")) el.addEventListener("click", () => showPanel(el.dataset.open, el));
   $("refresh-runs").addEventListener("click", loadRecentRuns);
-  $("background-answer").addEventListener("click", queueBackgroundAnswer);
+  $("background-answer").addEventListener("click", event => queueBackgroundAnswer(event.currentTarget));
+  $("parallel-research").addEventListener("click", event => queueBackgroundAnswer(event.currentTarget, "parallel_research"));
   $("run-refresh").addEventListener("click", loadRunTimeline);
   $("run-more").addEventListener("click", loadRunTimeline);
   $("run-stop").addEventListener("click", event => changeRun(event, "stop"));

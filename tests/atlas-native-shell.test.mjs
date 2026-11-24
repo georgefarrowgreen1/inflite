@@ -42,8 +42,9 @@ test('the production tick installs the release schema on an existing database an
   assert.deepEqual(await health(), { build: '2.0.1', min: null, runsReady: false });
   await worker.scheduled({}, env, {});
   assert.equal((await storageStatus(env)).schemaVersion, 9);
-  const release = { ...env, ATLAS_RELEASE_SCHEMA: '10' };
+  const release = { ...env, ATLAS_RELEASE_SCHEMA: '11' };
   await worker.scheduled({}, release, {});
+  assert.equal((await storageStatus(env)).schemaVersion, 11);
   await worker.scheduled({}, release, {});
   assert.deepEqual(await health(), { build: '2.0.1', min: null, runsReady: true });
   assert.deepEqual(await getConversation(env, 'alice', conversation.id), conversation);
@@ -144,11 +145,11 @@ test('Activity does not interrupt the shell or send an unbound request when secu
   } finally { h?.life.abort(); Object.defineProperty(globalThis,'crypto',descriptor); }
 });
 
-test('shared Activity deduplicates reads, opens native routes and never dispatches task writes', async () => {
-  const wait = deferred(), sent = [];
-  const h = activityFixture(async(path,options)=>{sent.push({path,options});return wait.promise;});
+test('shared Activity deduplicates reads, opens native routes and never dispatches task writes', { timeout: 5000 }, async () => {
+  const wait = deferred(), dispatched = deferred(), sent = [];
+  const h = activityFixture(async(path,options)=>{sent.push({path,options});dispatched.resolve();return wait.promise;});
   const first = h.reader.refresh(), second = h.reader.refresh();
-  await tick(); assert.equal(sent.length,1);
+  await dispatched.promise; assert.equal(sent.length,1);
   assert.equal(sent[0].options.headers['X-Atlas-Owner'],marker('alice'));
   assert.equal(sent[0].options.method,undefined);
   wait.resolve(activityResponse()); await Promise.all([first,second]);
