@@ -38,7 +38,7 @@ export async function* streamEvents(body, { signal, maxBytes = 8 * 1024 * 1024 }
 
 const $ = id => document.getElementById(id);
 const modeNames = { research: "Research", developer: "Developer", personal: "Personal", fitness: "Cycling & fitness", tasks: "Task planning" };
-const state = { owner: null, epoch: 0, controllers: new Set(), health: null, settings: null, conversations: [], conversation: null, messages: [], messagePage: {}, activeId: null, context: [], repositories: [], models: [], stream: null, dispatching: false, navigation: 0, contextLoad: 0, contexts: [], tasks: [], scheduleContext: [], patches: [], selectedPatch: null, codingRuns: [], codingObserver: null, codingLoading: false, codingLoadError: "", codingContinuation: null, codingReview: null, codingDispatching: false, drafts: new Map(), privateReady: false, checking: null };
+const state = { owner: null, epoch: 0, controllers: new Set(), health: null, settings: null, conversations: [], conversation: null, messages: [], messagePage: {}, activeId: null, context: [], repositories: [], models: [], stream: null, dispatching: false, navigation: 0, contextLoad: 0, contexts: [], tasks: [], scheduleContext: [], patches: [], selectedPatch: null, codingRuns: [], codingObserver: null, codingLoading: false, codingLoadError: "", codingContinuation: null, codingRestart: null, codingReview: null, codingDispatching: false, intent: "code", environments: [], environmentsReady: null, environmentsLoading: false, environmentId: "", environmentEditingRevision: null, environmentEditorSession: 0, environmentEditorVersion: 0, environmentsRequest: 0, taskTabs: new Map(), taskExpanded: new Map(), taskChanges: new Map(), drafts: new Map(), privateReady: false, checking: null };
 let sheets, navigationSheet, activeToast;
 const mobileQuery = "(max-width: 720px)";
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text != null) el.textContent = String(text); return el; }
@@ -54,22 +54,32 @@ function toast(message) {
 }
 function feedback(id, message, error = false) { const el = $(id); el.textContent = message || ""; el.classList.toggle("error", error); }
 function errorText(error) { return (error?.message || "Something went wrong. Try again.") + (error?.requestId ? " Reference: " + error.requestId : ""); }
+function actionableError(error, id) {
+  if (id) feedback(id, errorText(error), true); else toast(errorText(error));
+  if (error?.code !== "identity_confirmation_required") return;
+  const target = $(id || "setup-message");
+  if (!id) { target.replaceChildren(node("span", "", "Confirm your identity to finish this setup, then retry here.")); $("setup-banner").hidden = false; }
+  const link = node("a", "identity-recovery", "Confirm identity in InFlite"); link.href = "/#settings=account-confirm"; link.target = "_blank"; link.rel = "noopener";
+  target.append(document.createTextNode(" "), link);
+}
 async function busy(control, action, feedbackId) {
   if (control.disabled || control.classList.contains("busy-label")) return; control.disabled = true; control.classList.add("busy-label");
-  try { return await action(); } catch (error) { if (error.accountChanged) return; if (feedbackId) feedback(feedbackId, errorText(error), true); else toast(errorText(error)); }
+  try { return await action(); } catch (error) { if (error.accountChanged) return; actionableError(error, feedbackId); }
   finally { control.disabled = false; control.classList.remove("busy-label"); updateComposer(); }
 }
 function clearPrivateState(message = "Your session changed. Checking access…") {
-  detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingReview = null; state.codingLoading = false; state.codingLoadError = ""; state.codingDispatching = false;
+  detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingReview = null; state.codingLoading = false; state.codingLoadError = ""; state.codingDispatching = false;
+  state.environments = []; state.environmentsReady = null; state.environmentsLoading = false; state.environmentId = ""; state.environmentEditingRevision = null; state.environmentEditorSession++; state.environmentEditorVersion++; state.environmentsRequest++; state.intent = "code"; state.taskTabs.clear(); state.taskExpanded.clear(); state.taskChanges.clear();
   state.epoch++; state.stream?.controller.abort(); state.stream = null; state.dispatching = false; state.owner = null; state.health = null; state.conversation = null; state.conversations = []; state.messages = []; state.activeId = null; state.context = []; state.contexts = []; state.repositories = []; state.models = []; state.tasks = []; state.scheduleContext = []; state.patches = []; state.selectedPatch = null; state.settings = null; state.privateReady = false; state.drafts.clear(); state.navigation++; state.contextLoad++;
   for (const controller of state.controllers) controller.abort(); state.controllers.clear(); state.messagePage = {};
-  for (const id of ["messages", "conversation-list", "attached-context", "provider-health", "usage-totals", "usage-requests", "briefs-list", "brief-detail", "context-list", "patches-list", "patch-detail", "schedules-list", "schedule-runs-list", "schedule-context", "thread-summary-text"]) $(id)?.replaceChildren();
-  for (const id of ["prompt", "provider-key", "github-token", "memory-text", "schedule-prompt", "schedule-title", "conversation-search"]) if ($(id)) $(id).value = "";
+  for (const id of ["messages", "conversation-list", "attached-context", "provider-health", "usage-totals", "usage-requests", "briefs-list", "brief-detail", "context-list", "patches-list", "patch-detail", "schedules-list", "schedule-runs-list", "schedule-context", "thread-summary-text", "environments-list"]) $(id)?.replaceChildren();
+  for (const id of ["prompt", "provider-key", "github-token", "memory-text", "schedule-prompt", "schedule-title", "conversation-search", "environment-id", "environment-name", "environment-branch", "environment-setup", "environment-test"]) if ($(id)) $(id).value = "";
   sheets.closeAll();
   activeToast?.close();
   for (const notice of document.querySelectorAll(".ifl-toast")) notice.remove();
-  for (const id of ["provider-feedback", "github-feedback", "preferences-feedback", "patch-feedback", "context-feedback", "schedule-feedback", "context-repository", "github-health", "conversation-status", "coding-feedback", "toast"]) if ($(id)) $(id).textContent = "";
-  for (const id of ["repository", "schedule-repository", "provider-model"]) if ($(id)) $(id).replaceChildren();
+  for (const id of ["provider-feedback", "github-feedback", "preferences-feedback", "patch-feedback", "context-feedback", "schedule-feedback", "context-repository", "github-health", "conversation-status", "coding-feedback", "environment-feedback", "environments-feedback", "toast"]) if ($(id)) $(id).textContent = "";
+  for (const id of ["repository", "schedule-repository", "provider-model", "environment-repository", "coding-environment"]) if ($(id)) $(id).replaceChildren();
+  $("environment-form").hidden = true; $("environment-empty").hidden = false;
   $("schedule-id").value = ""; $("fitness-consent").checked = false; $("schedule-fitness-consent").checked = false; $("memory-enabled").checked = false; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; $("schedule-form").hidden = true; $("schedule-runs").hidden = true;
   replaceConversationUrl(null); navigation(false);
   $("conversation-title").textContent = "New conversation"; $("connection-label").textContent = "Sign in required"; $("session-notice").textContent = message; document.body.classList.add("session-check"); updateComposer();
@@ -162,9 +172,10 @@ function fillModels(models = [], selected) {
 function renderHealth() {
   const health = state.health, provider = health?.provider || {}, ready = health?.storage?.ready === true;
   const codingUpgrade = ready && health?.coding?.storageReady === false;
-  $("setup-banner").hidden = ready && !codingUpgrade; $("upgrade-storage").disabled = !health; $("upgrade-storage").hidden = health?.storage?.code === "storage_missing";
-  $("setup-message").textContent = health?.storage?.code === "storage_missing" ? "Connect Atlas storage in the deployment settings, then reload this page." : codingUpgrade ? "Upgrade storage to save coding tasks and reconnect to their progress. Your conversations are ready to use." : "Prepare storage for conversations, sources and saved work.";
-  $("upgrade-storage").textContent = codingUpgrade ? "Enable coding tasks" : "Prepare workspace";
+  const environmentsUpgrade = ready && health?.environments?.ready === false;
+  $("setup-banner").hidden = ready && !codingUpgrade && !environmentsUpgrade; $("upgrade-storage").disabled = !health; $("upgrade-storage").hidden = health?.storage?.code === "storage_missing";
+  $("setup-message").textContent = health?.storage?.code === "storage_missing" ? "Connect Atlas storage in the deployment settings, then reload this page." : codingUpgrade ? "Upgrade storage to save coding tasks and reconnect to their progress. Your conversations are ready to use." : environmentsUpgrade ? "Save reusable cloud environments with repository setup and focused checks." : "Prepare storage for conversations, sources and saved work.";
+  $("upgrade-storage").textContent = codingUpgrade ? "Enable coding tasks" : environmentsUpgrade ? "Enable cloud environments" : "Prepare workspace";
   const status = $("connection-status");
   let label = "Connect OpenAI", kind = "attention";
   if (!ready) label = "Finish setup";
@@ -193,21 +204,35 @@ function updateComposer() {
   const ready = state.privateReady && state.health?.storage?.ready && state.health?.provider?.keySaved && state.health?.provider?.decryptable !== false && !state.conversation?.archived;
   $("send").disabled = !ready || !!state.stream || state.dispatching || state.codingDispatching || !$("prompt").value.trim();
   $("stop-response").hidden = !state.stream;
-  $("mode").disabled = !!state.activeId; $("repository").disabled = !!state.activeId;
+  $("mode").disabled = !!state.activeId || state.dispatching || state.codingDispatching; $("repository").disabled = !!state.activeId || state.dispatching || state.codingDispatching;
+  for (const control of document.querySelectorAll(".environment-use, #use-environment")) control.disabled = state.dispatching || state.codingDispatching;
   const mode = state.conversation?.mode || $("mode").value;
+  const code = mode === "developer" && state.intent === "code";
+  document.body.dataset.atlasMode = mode;
   $("workspace-label").textContent = modeNames[mode] || mode;
-  $("repository-control").hidden = mode !== "developer"; $("fitness-control").hidden = mode !== "fitness"; $("start-coding").hidden = mode !== "developer";
+  $("composer-mode-label").textContent = mode === "developer" ? "" : modeNames[mode] || "Options";
+  $("composer-intent").hidden = mode !== "developer";
+  $("intent-code").setAttribute("aria-pressed", String(state.intent === "code")); $("intent-ask").setAttribute("aria-pressed", String(state.intent === "ask"));
+  $("repository-control").dataset.intent = code ? "code" : "ask"; $("coding-environment").closest(".environment-context").hidden = !code; $("manage-environments").hidden = !code;
+  $("repository-control").hidden = mode !== "developer"; $("fitness-control").hidden = mode !== "fitness"; $("start-coding").hidden = !code;
+  $("send").hidden = code || !!state.stream;
+  $("prompt").placeholder = mode === "developer" ? code ? "Describe the change you want to make…" : "Ask about your repository…" : "What should we work on?";
   $("repository-note").hidden = mode !== "developer" || !$("repository").value;
   const continuation = state.codingRuns.find(run => run.id === state.codingContinuation && run.canContinue);
   if (!continuation) state.codingContinuation = null;
+  const restart = state.codingRuns.find(run => run.id === state.codingRestart && !codingActive(run));
+  if (!restart) state.codingRestart = null;
+  const recovery = continuation || restart;
   const activeTask = state.codingRuns.some(run => codingActive(run) && run.id !== continuation?.id);
-  $("start-coding").textContent = continuation ? "Continue task" : "Work on task";
+  $("start-coding").textContent = continuation ? "Continue task" : restart ? "Start again" : "Work on task";
   $("start-coding").disabled = !ready || state.health?.coding?.ready !== true || state.health?.coding?.storageReady !== true || !$("repository").value || !!state.stream || state.dispatching || state.codingDispatching || state.codingLoading || !!state.codingLoadError || activeTask || !$("prompt").value.trim();
+  $("coding-environment").disabled = !!recovery || activeTask || state.environmentsLoading || state.codingDispatching;
+  $("coding-environment").title = recovery ? "This task keeps its original cloud environment." : "Choose reusable cloud setup for the next task.";
   $("coding-options").hidden = mode !== "developer";
   $("coding-health").textContent = state.health?.coding?.ready ? "" : state.health?.coding?.message || "Coding tasks are unavailable. You can still ask Atlas about this repository with Send.";
   $("coding-health").hidden = !$("coding-health").textContent;
-  $("coding-continue-note").hidden = !continuation;
-  $("coding-continue-label").textContent = continuation ? "Next instruction for: " + continuation.prompt : "";
+  $("coding-continue-note").hidden = !code || !recovery;
+  $("coding-continue-label").textContent = continuation ? "Continuing this cloud workspace" : restart ? "Fresh workspace · original environment settings" : "";
   const publish = $("publish-coding"), reviewedRun = state.codingRuns.find(run => run.id === state.codingReview?.id);
   if (publish && reviewedRun) publish.disabled = publish.classList.contains("busy-label") || reviewedRun.revision !== state.codingReview.revision || !reviewedRun.reviewReady || codingActive(reviewedRun) || !state.health?.github?.connected;
   $("attach-context").disabled = !$("repository").value || !state.health?.storage?.ready;
@@ -217,8 +242,8 @@ function updateComposer() {
   $("composer-hint").textContent = !state.health?.storage?.ready ? "Prepare the workspace to start a conversation." : state.conversation?.archived ? "Restore this conversation to continue." : state.stream && state.stream.conversationId !== state.activeId ? "A response is running in another conversation." : "";
   $("composer-hint").hidden = !$("composer-hint").textContent;
 }
-function saveDraft() { state.drafts.set(state.activeId || "new", { prompt: $("prompt").value, context: [...state.context], fitness: $("fitness-consent").checked }); }
-function restoreDraft(id) { const draft = state.drafts.get(id || "new"); $("prompt").value = draft?.prompt || ""; state.context = draft?.context || []; $("fitness-consent").checked = !!draft?.fitness; renderContextChips(); resizePrompt(); }
+function saveDraft() { state.drafts.set(state.activeId || "new", { prompt: $("prompt").value, context: [...state.context], fitness: $("fitness-consent").checked, environmentId: state.environmentId, intent: state.intent }); }
+function restoreDraft(id) { const draft = state.drafts.get(id || "new"); $("prompt").value = draft?.prompt || ""; state.context = draft?.context || []; state.environmentId = draft?.environmentId || ""; state.intent = draft?.intent || "code"; $("fitness-consent").checked = !!draft?.fitness; renderContextChips(); fillEnvironmentChoices(); resizePrompt(); }
 function renderThreads() {
   const list = $("conversation-list"), query = $("conversation-search").value.trim().toLowerCase(); list.replaceChildren();
   const rows = state.conversations.filter(c => !query || String(c.title).toLowerCase().includes(query));
@@ -228,7 +253,7 @@ function renderThreads() {
 async function loadThreads() { const result = await api("conversations?archived=" + ($("show-archived").checked ? "1" : "0")); state.conversations = result.conversations || []; renderThreads(); }
 function replaceConversationUrl(id) { const url = new URL(location.href); if (id) url.searchParams.set("conversation", id); else url.searchParams.delete("conversation"); history.replaceState(null, "", url.pathname + url.search); }
 async function selectConversation(id, { preserveDraft = false } = {}) {
-  if (!preserveDraft) saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingLoadError = ""; state.codingLoading = false; const generation = ++state.navigation; navigation(false); feedback("coding-feedback", ""); $("conversation-status").textContent = "Loading conversation…";
+  if (!preserveDraft) saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingLoadError = ""; state.codingLoading = false; const generation = ++state.navigation; navigation(false); feedback("coding-feedback", ""); $("conversation-status").textContent = "Loading conversation…";
   try {
     const result = await api("conversations/" + encodeURIComponent(id)); if (generation !== state.navigation) return;
     state.conversation = result.conversation; state.activeId = id; state.messages = result.messages || []; if (state.stream?.conversationId === id) { const at = state.messages.findIndex(m => m.id === state.stream.message.id); if (at < 0) state.messages.push(state.stream.message); else state.messages[at] = state.stream.message; } $("mode").value = state.conversation.mode; setRepository(state.conversation.repository || "");
@@ -237,9 +262,14 @@ async function selectConversation(id, { preserveDraft = false } = {}) {
     $("thread-summary").hidden = !state.conversation.summary; $("thread-summary-text").textContent = state.conversation.summary || "";
     state.messagePage = { hasMore: !!result.hasMore, nextBeforeId: result.nextBeforeId }; $("older-history").hidden = !state.messagePage.hasMore;
     restoreDraft(id); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(id); $("conversation-status").textContent = ""; await observeCodingRuns();
-  } catch (error) { if (generation === state.navigation) { $("conversation-status").textContent = errorText(error); toast(errorText(error)); } }
+  } catch (error) { if (generation === state.navigation) {
+    if (error.accountChanged) return;
+    $("conversation-status").replaceChildren(node("span", "", errorText(error)));
+    if (error.status === 404) { state.activeId = null; state.conversation = null; state.messages = []; state.codingRuns = []; $("conversation-title").textContent = "Conversation unavailable"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; renderMessages(); updateComposer(); $("conversation-status").append(button("Start a new conversation", () => { newConversation(); $("conversation-status").replaceChildren(); }, "text-button")); }
+    else toast(errorText(error));
+  } }
 }
-function newConversation(mode) { feedback("coding-feedback", ""); saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingLoadError = ""; state.codingLoading = false; state.navigation++; state.activeId = null; state.conversation = null; state.messages = []; state.messagePage = {}; state.context = []; $("conversation-title").textContent = "New conversation"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; if (mode && modeNames[mode]) $("mode").value = mode; restoreDraft(null); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(null); navigation(false); $("prompt").focus(); }
+function newConversation(mode) { feedback("coding-feedback", ""); saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingLoadError = ""; state.codingLoading = false; state.navigation++; state.activeId = null; state.conversation = null; state.messages = []; state.messagePage = {}; state.context = []; $("conversation-title").textContent = "New conversation"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; if (mode && modeNames[mode]) $("mode").value = mode; restoreDraft(null); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(null); navigation(false); $("prompt").focus(); }
 async function loadOlderMessages(control) { await busy(control, async () => { const id = state.activeId, generation = state.navigation, before = state.messagePage.nextBeforeId; if (!id || !state.messagePage.hasMore || !before) return; const result = await api("conversations/" + encodeURIComponent(id) + "?before=" + encodeURIComponent(before) + "&limit=100"); if (id !== state.activeId || generation !== state.navigation) return; const container = $("messages"), height = container.scrollHeight, top = container.scrollTop, known = new Set(state.messages.map(m => m.id)); state.messages = [...(result.messages || []).filter(m => !known.has(m.id)), ...state.messages]; state.messagePage = { hasMore: !!result.hasMore, nextBeforeId: result.nextBeforeId }; $("older-history").hidden = !state.messagePage.hasMore; renderMessages(); container.scrollTop = container.scrollHeight - height + top; }); }
 async function ensureConversation(snapshot = {}) {
   if (state.activeId) return state.conversation;
@@ -320,7 +350,7 @@ function messageElement(message) {
   const actions = node("div", "message-actions");
   if (message.answer) actions.append(button("Copy answer", async () => { try { await navigator.clipboard.writeText(message.answer); toast("Answer copied."); } catch { toast("Select the answer to copy it."); } }));
   if (message.answer && message.status !== "running") actions.append(button("Save as brief", e => busy(e.currentTarget, async () => { const result = await api("briefs", "POST", { conversationId: state.activeId, messageId: message.id, title: state.conversation?.title }); toast("Saved to research briefs."); return result; })));
-  if (["failed", "cancelled", "incomplete"].includes(message.status)) actions.append(button("Retry", () => { if (state.stream) return toast("Stop the current response first."); $("prompt").value = message.prompt; state.context = (message.context || []).filter(c => c.automatic !== true && ["file", "pull", "job"].includes(c.kind)).map(contextDescriptor); $("fitness-consent").checked = state.conversation?.mode === "fitness" && (!!message.includeFitness || (message.context || []).some(c => c.kind === "fitness")); renderContextChips(); resizePrompt(); updateComposer(); $("prompt").focus(); toast("Review the prompt, then Send to try again."); }));
+  if (["failed", "cancelled", "incomplete"].includes(message.status)) actions.append(button("Retry", () => { if (state.stream) return toast("Stop the current response first."); state.intent = "ask"; $("prompt").value = message.prompt; state.context = (message.context || []).filter(c => c.automatic !== true && ["file", "pull", "job"].includes(c.kind)).map(contextDescriptor); $("fitness-consent").checked = state.conversation?.mode === "fitness" && (!!message.includeFitness || (message.context || []).some(c => c.kind === "fitness")); renderContextChips(); resizePrompt(); updateComposer(); $("prompt").focus(); toast("Review the prompt, then Send to try again."); }));
   if (message.status === "uncertain") actions.append(button("Check saved result", () => selectConversation(state.activeId, { preserveDraft: true })));
   assistant.append(actions); group.append(assistant); return group;
 }
@@ -396,10 +426,97 @@ async function loadSettings() {
 }
 async function loadRepositories() {
   const data = await api("repositories"); state.repositories = data.repositories || [];
-  for (const id of ["repository", "schedule-repository"]) { const el = $(id), selected = el.value; el.replaceChildren(); const none = node("option", "", "Select repository"); none.value = ""; el.append(none); for (const repo of state.repositories) { const option = node("option", "", repo.full_name || repo); option.value = repo.full_name || repo; el.append(option); } if ([...el.options].some(o => o.value === selected)) el.value = selected; }
-  if (state.conversation?.repository) setRepository(state.conversation.repository); updateComposer();
+  for (const id of ["repository", "schedule-repository", "environment-repository"]) { const el = $(id), selected = el.value; el.replaceChildren(); const none = node("option", "", "Select repository"); none.value = ""; el.append(none); for (const repo of state.repositories) { const option = node("option", "", repo.full_name || repo); option.value = repo.full_name || repo; el.append(option); } if ([...el.options].some(o => o.value === selected)) el.value = selected; }
+  if (state.conversation?.repository) setRepository(state.conversation.repository); fillEnvironmentChoices(); updateComposer();
 }
 function setRepository(value) { const el = $("repository"); if (value && ![...el.options].some(o => o.value === value)) { const option = node("option", "", value); option.value = value; el.append(option); } el.value = value; }
+function fillEnvironmentChoices() {
+  const select = $("coding-environment"), repository = $("repository").value;
+  const recovery = state.codingRuns.find(run => run.id === (state.codingContinuation || state.codingRestart));
+  if (recovery) { const option = node("option", "", (recovery.environment?.name || "Original environment") + " · " + (recovery.environment?.branch || recovery.baseBranch || "default branch")); option.value = "task:" + recovery.id; select.replaceChildren(option); return; }
+  select.replaceChildren(); const defaultOption = node("option", "", "Default environment"); defaultOption.value = ""; select.append(defaultOption);
+  const compatible = state.environments.filter(environment => environment.repository === repository);
+  for (const environment of compatible) { const option = node("option", "", environment.name); option.value = environment.id; select.append(option); }
+  if (state.environmentId && !compatible.some(environment => environment.id === state.environmentId)) state.environmentId = "";
+  select.value = state.environmentId;
+}
+async function loadEnvironments() {
+  const epoch = state.epoch, generation = ++state.environmentsRequest;
+  state.environmentsLoading = true; updateComposer();
+  feedback("environments-feedback", "Loading environments…");
+  try {
+    const data = await api("environments"); checkEpoch(epoch); if (generation !== state.environmentsRequest) return;
+    state.environments = data.environments || []; state.environmentsReady = data.ready !== false;
+    fillEnvironmentChoices(); renderEnvironments(); feedback("environments-feedback", "");
+  } catch (error) {
+    if (error.accountChanged) throw error;
+    if (generation !== state.environmentsRequest) return;
+    if (error.code === "environments_storage_upgrade_required") { state.environments = []; state.environmentsReady = false; fillEnvironmentChoices(); renderEnvironments(); }
+    else feedback("environments-feedback", errorText(error), true);
+  } finally { if (epoch === state.epoch && generation === state.environmentsRequest) { state.environmentsLoading = false; updateComposer(); } }
+}
+function renderEnvironments() {
+  const list = $("environments-list"); list.replaceChildren();
+  const upgrade = state.environmentsReady === false;
+  $("environments-upgrade").hidden = !upgrade; $("new-environment").disabled = upgrade; $("create-first-environment").disabled = upgrade;
+  for (const environment of state.environments) {
+    const card = node("article", "environment-card"); card.dataset.environmentId = environment.id;
+    const open = button("", () => editEnvironment(environment), "environment-open");
+    open.append(node("strong", "", environment.name), node("span", "environment-repository", environment.repository), node("span", "environment-config", (environment.branch || "Default branch") + " · " + (environment.machine || "medium")));
+    open.setAttribute("aria-label", "Edit " + environment.name);
+    const actions = node("div", "environment-card-actions");
+    actions.append(button("Use", () => useEnvironment(environment), "text-button environment-use"), button("Duplicate", () => editEnvironment({ ...environment, id: null, name: environment.name.slice(0, 70) + " copy" }), "text-button"), button("Archive", e => busy(e.currentTarget, async () => {
+      await api("environments/" + encodeURIComponent(environment.id), "DELETE");
+      if ($("environment-id").value === environment.id) closeEnvironmentEditor();
+      if (state.environmentId === environment.id) state.environmentId = "";
+      await loadEnvironments(); toast("Environment archived. Existing tasks keep their setup.");
+    }, "environments-feedback"), "text-button"));
+    card.append(open, actions); list.append(card);
+  }
+  if (!state.environments.length) list.append(node("p", "environment-list-empty", upgrade ? "Your existing coding tasks remain available." : "No saved environments yet."));
+}
+function closeEnvironmentEditor() { state.environmentEditorSession++; state.environmentEditorVersion++; $("environment-form").hidden = true; $("environment-empty").hidden = false; $("environment-id").value = ""; state.environmentEditingRevision = null; feedback("environment-feedback", ""); }
+function editEnvironment(environment) {
+  state.environmentEditorSession++; state.environmentEditorVersion++;
+  $("environment-empty").hidden = true; $("environment-form").hidden = false;
+  $("environment-form-title").textContent = environment?.id ? "Edit environment" : "New environment";
+  $("environment-id").value = environment?.id || ""; state.environmentEditingRevision = environment?.id ? environment.revision : null;
+  $("environment-name").value = environment?.name || ""; $("environment-branch").value = environment?.branch || ""; $("environment-setup").value = environment?.setupCommand || ""; $("environment-test").value = environment?.testCommand || "";
+  const repository = environment?.repository || $("repository").value;
+  const select = $("environment-repository"); if (repository && ![...select.options].some(option => option.value === repository)) { const option = node("option", "", repository); option.value = repository; select.append(option); } select.value = repository;
+  $("environment-machine").value = environment?.machine || "medium"; $("environment-network").value = environment?.network || "dependencies";
+  $("use-environment").hidden = !environment?.id; $("use-environment").disabled = state.dispatching || state.codingDispatching; feedback("environment-feedback", "");
+  $("environment-form").scrollIntoView({ block: "nearest" }); $("environment-name").focus({ preventScroll: true });
+}
+function useEnvironment(environment) {
+  if (state.dispatching || state.codingDispatching) return;
+  if (state.activeId && state.conversation?.repository !== environment.repository) newConversation("developer");
+  state.codingContinuation = null; state.codingRestart = null;
+  $("mode").value = "developer"; setRepository(environment.repository); state.environmentId = environment.id; state.intent = "code";
+  fillEnvironmentChoices(); updateComposer(); saveDraft();
+  const sheet = sheets.top(); if (sheet?.el.id === "environments-dialog") sheet.now();
+  $("prompt").focus(); toast(environment.name + " selected for the next task.");
+}
+async function saveEnvironment(event) {
+  event.preventDefault();
+  await busy($("save-environment"), async () => {
+    const id = $("environment-id").value, epoch = state.epoch, session = state.environmentEditorSession, version = state.environmentEditorVersion;
+    const body = { name: $("environment-name").value.trim(), repository: $("environment-repository").value, branch: $("environment-branch").value.trim(), setupCommand: $("environment-setup").value, testCommand: $("environment-test").value, machine: $("environment-machine").value, network: $("environment-network").value, ...(id && state.environmentEditingRevision != null ? { expectedRevision: state.environmentEditingRevision } : {}) };
+    let data;
+    try { data = await api("environments" + (id ? "/" + encodeURIComponent(id) : ""), id ? "PATCH" : "POST", body); }
+    catch (error) { if (error.accountChanged || session === state.environmentEditorSession) throw error; toast(errorText(error)); return; }
+    await loadEnvironments(); checkEpoch(epoch);
+    if (session !== state.environmentEditorSession) { toast("Environment saved."); return; }
+    if (data.environment && version === state.environmentEditorVersion) {
+      editEnvironment(data.environment);
+      feedback("environment-feedback", "Environment saved. New tasks use these settings.");
+    } else if (data.environment) {
+      $("environment-id").value = data.environment.id; state.environmentEditingRevision = data.environment.revision;
+      $("environment-form-title").textContent = "Edit environment"; $("use-environment").hidden = false;
+      feedback("environment-feedback", "Environment saved. Your newer edits have not been saved yet.");
+    }
+  }, "environment-feedback");
+}
 async function showPanel(name, trigger) {
   openDialog(name, trigger);
   try {
@@ -408,6 +525,7 @@ async function showPanel(name, trigger) {
     if (name === "briefs") await loadBriefs();
     if (name === "schedules") await loadSchedules();
     if (name === "patches") await loadPatches({ reset: true });
+    if (name === "environments") await loadEnvironments();
   } catch (error) { toast(errorText(error)); }
 }
 async function loadUsage() {
@@ -484,7 +602,7 @@ async function showPatch(id, known) {
   } catch (error) { feedback("patch-feedback", errorText(error), true); }
 }
 function codingActive(run) { return ["preparing", "running", "waiting", "uncertain", "publishing"].includes(run.status); }
-function codingStatus(run) { return ({ preparing: "Preparing workspace", running: "Working", waiting: "Waiting", completed: "Completed", failed: "Failed", cancelled: "Stopped", uncertain: "Checking task state", publishing: "Creating pull request", published: "Published" })[run.status] || "Checking task state"; }
+function codingStatus(run) { if (run.status === "completed" && run.reviewReady) return "Ready to review"; return ({ preparing: "Preparing workspace", running: "Working", waiting: "Waiting", completed: "Completed", failed: "Failed", cancelled: "Stopped", uncertain: "Checking task state", publishing: "Creating pull request", published: "Published" })[run.status] || "Checking task state"; }
 function detachCodingObserver() {
   const observer = state.codingObserver; state.codingObserver = null; state.codingLoading = false;
   if (observer) { clearTimeout(observer.timer); observer.controller.abort(); }
@@ -543,10 +661,13 @@ async function observeCodingRuns({ restore = true } = {}) {
 function codingChecks(checks = [], { prefix = "", opened = new Set() } = {}) {
   const section = node("section", "coding-checks"); section.append(node("h4", "", "Executed commands"));
   if (!checks.length) { section.append(node("p", "field-help", "No command results have been reported. Tests are not verified.")); return section; }
+  const succeeded = checks.filter(check => check.exitCode === 0).length, failed = checks.filter(check => Number.isInteger(check.exitCode) && check.exitCode !== 0).length;
+  section.append(node("p", "checks-totals", succeeded + " succeeded" + (failed ? " · " + failed + " failed" : "") + (checks.length - succeeded - failed ? " · " + (checks.length - succeeded - failed) + " pending or unreported" : "")));
   for (const [index, check] of checks.entries()) {
     const details = node("details", "coding-check"), summary = node("summary"), exit = Number.isInteger(check.exitCode) ? " · exit " + check.exitCode : " · no exit code reported";
     details.dataset.disclosure = prefix + ":command:" + index; details.open = opened.has(details.dataset.disclosure);
-    summary.append(node("code", "", check.command || "Command"), node("span", "check-result", " — " + (check.outcome || check.status || "unknown") + exit)); details.append(summary);
+    summary.append(node("code", "", check.command || "Command"), node("span", "check-result", (check.outcome || check.status || "unknown") + exit)); details.append(summary); details.dataset.outcome = check.exitCode === 0 ? "success" : Number.isInteger(check.exitCode) ? "failed" : "unknown";
+    if (check.command) details.append(node("code", "command-full", check.command));
     details.append(node("pre", "", check.output || "No output was recorded."));
     if (check.outputTruncated || check.truncated) details.append(node("p", "field-help", "This command or its output was truncated in the activity record.")); section.append(details);
   }
@@ -554,7 +675,50 @@ function codingChecks(checks = [], { prefix = "", opened = new Set() } = {}) {
 }
 function pullRequestLink(pullRequest) {
   const href = safeUrl(pullRequest?.url); if (!href) return null;
-  const link = node("a", "", "Open draft pull request ↗"); link.href = href; link.target = "_blank"; link.rel = "noopener noreferrer"; return link;
+  const link = node("a", "", "Open draft pull request"); link.href = href; link.target = "_blank"; link.rel = "noopener noreferrer"; return link;
+}
+function prepareTaskRecovery(run, continuing) {
+  state.intent = "code"; state.codingContinuation = continuing ? run.id : null; state.codingRestart = continuing ? null : run.id;
+  if (!continuing) $("prompt").value = run.prompt || "";
+  fillEnvironmentChoices();
+  resizePrompt(); updateComposer(); $("prompt").focus();
+  toast(continuing ? "Add the next instruction to continue this workspace." : "Review the task, then start again in a fresh workspace.");
+}
+function taskRecoveryText(run) {
+  if (run.recovery?.reason) return run.recovery.reason;
+  if (run.status === "cancelled") return run.canContinue ? "This task was stopped. Its cloud workspace is available to continue." : "This task was stopped. Start again to use a fresh cloud workspace.";
+  if (run.status === "failed") return run.canContinue ? "The task needs attention. You can continue in the same workspace with another instruction." : "The task could not finish. Review the error, then start again in a fresh workspace.";
+  if (run.status === "completed" && !run.summary) return run.reviewReady ? "Changes are ready for your review." : "This task finished without saved file changes.";
+  return "";
+}
+async function loadTaskChanges(run, panel) {
+  if (panel.dataset.loaded || !run.reviewReady) return;
+  const epoch = state.epoch, generation = state.navigation, key = run.id + ":" + run.revision;
+  panel.dataset.loaded = "loading"; panel.replaceChildren(node("p", "field-help", "Loading changed files…"));
+  try {
+    let data = state.taskChanges.get(key);
+    if (!data) { data = await api("coding/runs/" + encodeURIComponent(run.id) + "/changes"); checkEpoch(epoch); if (generation !== state.navigation) return; state.taskChanges.set(key, data); }
+    if (!panel.isConnected || epoch !== state.epoch || generation !== state.navigation) return;
+    const current = state.codingRuns.find(item => item.id === run.id);
+    if (!current || current.revision !== run.revision || !current.reviewReady) { panel.dataset.loaded = ""; panel.replaceChildren(node("p", "field-help", "The task changed. Reopen its changes after it finishes.")); return; }
+    panel.replaceChildren(); const files = data.files || [];
+    panel.append(node("p", "field-help", files.length + " changed file" + (files.length === 1 ? "" : "s")));
+    for (const file of files) {
+      const details = node("details", "patch-file task-file"), summary = node("summary"), output = node("pre", "", "Open to load the diff.");
+      summary.append(node("span", "file-operation", file.operation || "modify"), node("span", "file-path", file.path)); details.append(summary, output);
+      let loaded = false, loading = false;
+      details.addEventListener("toggle", async () => {
+        if (!details.open || loaded || loading) return; loading = true; output.textContent = "Loading diff…";
+        try {
+          const diff = await api("coding/runs/" + encodeURIComponent(run.id) + "/diff?path=" + encodeURIComponent(file.path)); checkEpoch(epoch);
+          if (!details.isConnected || generation !== state.navigation) return;
+          output.textContent = (diff.binary ? "Binary file. A text diff is unavailable." : diff.diff || "No text diff was recorded.") + (diff.diffTruncated ? "\n\nDiff preview truncated. The full file is retained for publication." : ""); loaded = true;
+        } catch (error) { if (!error.accountChanged && details.isConnected) output.textContent = errorText(error); } finally { loading = false; }
+      }); panel.append(details);
+    }
+    if (!files.length) panel.append(node("p", "field-help", "No file changes were saved for this revision."));
+    panel.append(button("Review changes", event => busy(event.currentTarget, () => reviewCodingRun(run.id)), "quiet-button")); panel.dataset.loaded = "true";
+  } catch (error) { if (!error.accountChanged && panel.isConnected && epoch === state.epoch) { panel.dataset.loaded = ""; panel.replaceChildren(node("p", "message-error", errorText(error)), button("Retry loading changes", () => loadTaskChanges(run, panel), "text-button")); } }
 }
 function renderCodingRuns() {
   const container = $("messages"), previous = $("coding-runs"), nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
@@ -562,41 +726,76 @@ function renderCodingRuns() {
   const signature = JSON.stringify([state.codingRuns, state.codingLoadError, state.health?.coding?.ready, state.health?.coding?.backgroundAvailable, state.conversation?.archived]);
   if (previous?.dataset.snapshot === signature) return;
   const opened = new Set([...previous?.querySelectorAll("details[open]") || []].map(el => el.dataset.disclosure).filter(Boolean));
+  const focused = previous?.contains(document.activeElement) ? { id: document.activeElement.id, runId: document.activeElement.closest("[data-run-id]")?.dataset.runId, role: document.activeElement.getAttribute("role"), text: document.activeElement.textContent } : null;
   const list = node("section", "coding-runs"); list.id = "coding-runs"; list.setAttribute("aria-label", "Coding tasks"); list.dataset.snapshot = signature;
   if (state.codingLoadError) { const notice = node("div", "notice-inline coding-reconnect"); notice.append(node("p", "", state.codingLoadError), button("Reconnect", () => observeCodingRuns())); list.append(notice); }
   const runs = [...state.codingRuns].sort((a, b) => Number(a.createdAt) - Number(b.createdAt) || String(a.id).localeCompare(String(b.id)));
   for (const run of runs) {
-    const card = node("article", "coding-run"), heading = node("div", "coding-run-heading"); card.dataset.runId = run.id;
-    const status = node("span", "message-status", codingStatus(run)); status.dataset.status = run.status; status.setAttribute("role", "status"); heading.append(node("h3", "", "Coding task"), status);
-    card.append(heading, node("p", "coding-prompt", run.prompt), node("p", "field-help", run.repository + (run.baseBranch ? " · " + run.baseBranch : "") + (run.baseSha ? " · " + run.baseSha.slice(0, 12) : "")));
-    if (run.stage && codingActive(run)) card.append(node("p", "coding-stage", String(run.stage).replaceAll("_", " ")));
-    if (run.summary) { const summary = node("div", "message-content"); renderMarkdown(summary, run.summary); card.append(summary); }
+    const card = node("details", "coding-run"), heading = node("div", "coding-run-heading"); card.dataset.runId = run.id; card.dataset.disclosure = run.id + ":task"; card.open = state.taskExpanded.has(run.id) ? state.taskExpanded.get(run.id) : run === runs[runs.length - 1]; card.addEventListener("toggle", () => { if (card.isConnected) state.taskExpanded.set(run.id, card.open); });
+    const status = node("span", "message-status", codingStatus(run)); status.dataset.status = run.status; status.setAttribute("role", "status"); heading.append(node("h3", "", run.prompt?.split("\n")[0].slice(0, 140) || "Coding task"), status);
+    const cloudState = run.cloud?.label || ({ preparing: "Preparing cloud workspace", running: "Cloud workspace running", waiting: "Cloud workspace waiting", completed: run.canContinue ? "Cloud workspace available" : "Cloud task completed", cancelled: run.canContinue ? "Cloud workspace available" : "Cloud task stopped", failed: "Cloud task needs attention", published: "Changes published" })[run.status] || "Cloud workspace";
+    const metadata = node("div", "task-metadata"); metadata.append(node("span", "task-repository", run.repository), node("span", "task-branch", run.baseBranch || run.environment?.branch || "Default branch"));
+    const taskHeading = node("summary", "task-switch"); taskHeading.append(heading, metadata); card.append(taskHeading);
     if (run.error?.message) card.append(node("p", "message-error", run.error.message));
-    if (run.activity?.length) { const details = node("details", "coding-activity"), entries = node("ol"); details.dataset.disclosure = run.id + ":activity"; details.open = opened.has(details.dataset.disclosure); details.append(node("summary", "", "Activity · " + run.activity.length)); for (const entry of run.activity) entries.append(node("li", "", [entry.label, entry.detail || entry.text].filter(Boolean).join(": ") + (entry.truncated ? " (truncated)" : ""))); details.append(entries); card.append(details); }
-    const changes = run.changes || {}; if (run.reviewReady) card.append(node("p", "coding-change-count", (changes.added || 0) + " added · " + (changes.modified || 0) + " modified · " + (changes.deleted || 0) + " deleted"));
-    if (run.checks?.length || !codingActive(run)) card.append(codingChecks(run.checks, { prefix: run.id, opened }));
+    const tabs = node("div", "task-tabs"), panels = node("div", "task-panels"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Task details");
+    const parts = new Map(), controls = new Map(); const chosen = state.taskTabs.get(run.id) || "overview";
+    for (const [name, label] of [["overview", "Overview"], ["activity", "Activity"], ["changes", "Changes"], ["checks", "Checks"]]) {
+      const panel = node("section", "task-panel"), control = button(label, () => selectTaskTab(name));
+      panel.id = "task-" + run.id + "-" + name; panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", panel.id + "-tab"); panel.hidden = chosen !== name;
+      control.id = panel.id + "-tab"; control.setAttribute("role", "tab"); control.setAttribute("aria-controls", panel.id); control.setAttribute("aria-selected", String(chosen === name)); control.tabIndex = chosen === name ? 0 : -1;
+      control.addEventListener("keydown", event => { const names = [...parts.keys()]; let next = names.indexOf(name); if (event.key === "ArrowRight") next = (next + 1) % names.length; else if (event.key === "ArrowLeft") next = (next + names.length - 1) % names.length; else if (event.key === "Home") next = 0; else if (event.key === "End") next = names.length - 1; else return; event.preventDefault(); selectTaskTab(names[next]); controls.get(names[next]).focus(); });
+      parts.set(name, panel); controls.set(name, control); tabs.append(control); panels.append(panel);
+    }
+    function selectTaskTab(name) { state.taskTabs.set(run.id, name); for (const [key, panel] of parts) { panel.hidden = key !== name; const control = controls.get(key); control.setAttribute("aria-selected", String(key === name)); control.tabIndex = key === name ? 0 : -1; } if (name === "changes") loadTaskChanges(run, parts.get(name)); }
+    const overview = parts.get("overview");
+    overview.append(node("p", "task-cloud-state", cloudState + (run.environment?.name ? " · " + run.environment.name : "")));
+    if (run.stage && codingActive(run)) { const progress = node("div", "task-progress"); progress.append(node("span", "task-progress-indicator"), node("p", "coding-stage", String(run.stage).replaceAll("_", " "))); overview.append(progress); }
+    if (run.summary) { const summary = node("div", "message-content"); renderMarkdown(summary, run.summary); overview.append(summary); }
+    const recovery = taskRecoveryText(run); if (recovery) overview.append(node("p", "task-recovery", recovery));
+    const changes = run.changes || {}; if (run.reviewReady) overview.append(node("p", "coding-change-count", (changes.added || 0) + " added · " + (changes.modified || 0) + " modified · " + (changes.deleted || 0) + " deleted"));
+    if (codingActive(run) && run.activity?.length) { const latest = run.activity[run.activity.length - 1]; overview.append(node("p", "task-latest", [latest.label, latest.detail || latest.text].filter(Boolean).join(": "))); }
+    const details = node("details", "task-workspace-details"); details.dataset.disclosure = run.id + ":workspace"; details.open = opened.has(details.dataset.disclosure); details.append(node("summary", "", "Workspace details"), node("p", "field-help", "OpenAI-hosted Linux workspace · " + (run.environment?.machine || "medium") + " machine"), node("p", "field-help", run.environment?.name || "Default environment"));
+    if (run.baseSha) details.append(node("p", "field-help", "Source commit " + run.baseSha));
+    if (run.environment?.setupCommand) details.append(node("pre", "", "Setup: " + run.environment.setupCommand));
+    if (run.environment?.testCommand) details.append(node("pre", "", "Verification: " + run.environment.testCommand));
+    details.append(node("p", "field-help", "Workspace reuse lasts while the cloud session is available. A new task starts from its repository branch.")); overview.append(details);
+    if (run.prompt?.includes("\n") || run.prompt?.length > 140) { const instruction = node("details", "task-instructions"); instruction.append(node("summary", "", "Task instructions"), node("p", "coding-prompt", run.prompt)); overview.append(instruction); }
+    const activity = parts.get("activity"), entries = node("ol", "task-activity-list");
+    for (const entry of run.activity || []) { const item = node("li"); item.append(node("strong", "", entry.label || entry.type || "Activity")); if (entry.detail || entry.text) item.append(node("p", "", (entry.detail || entry.text) + (entry.truncated ? " (truncated)" : ""))); entries.append(item); }
+    activity.append(entries); if (!entries.children.length) activity.append(node("p", "field-help", codingActive(run) ? "Activity will appear as Atlas prepares and works in the cloud workspace." : "No activity was reported for this task."));
+    parts.get("checks").append(codingChecks(run.checks, { prefix: run.id, opened }));
+    parts.get("changes").append(node("p", "field-help", codingActive(run) ? "File changes become available when Atlas finishes this task." : "This task has no saved file changes to review."));
+    card.append(tabs, panels);
     const actions = node("div", "button-row coding-actions");
-    if (run.reviewReady) actions.append(button("Review changes", e => busy(e.currentTarget, () => reviewCodingRun(run.id))));
-    if (run.canContinue && !state.conversation?.archived) actions.append(button("Continue task", () => { state.codingContinuation = run.id; updateComposer(); $("prompt").focus(); toast("Describe the next step, then select Continue task."); }));
+    if (run.reviewReady) actions.append(button("Review changes", e => busy(e.currentTarget, () => reviewCodingRun(run.id)), "primary-button"));
+    if (run.canContinue && !state.conversation?.archived) actions.append(button("Continue task", () => prepareTaskRecovery(run, true), "quiet-button"));
+    if ((run.recovery?.action === "restart" || ["failed", "cancelled"].includes(run.status)) && !codingActive(run) && !state.conversation?.archived) actions.append(button("Start again", () => prepareTaskRecovery(run, false), run.canContinue ? "text-button" : "primary-button"));
+    if (run.status === "failed" && /access|permission|provider|credential/.test(run.error?.code || "")) actions.append(button("Connection settings", event => showPanel("settings", event.currentTarget), "text-button"));
     if (["preparing", "running", "waiting", "uncertain"].includes(run.status)) actions.append(button("Stop task", e => busy(e.currentTarget, async () => { detachCodingObserver(); try { const result = await api("coding/runs/" + encodeURIComponent(run.id) + "/cancel", "POST", {}); acceptCodingRun(result.run); } finally { await observeCodingRuns({ restore: false }); } }), "danger-text"));
     const link = pullRequestLink(run.pullRequest); if (link) actions.append(link); card.append(actions);
-    if (codingActive(run)) card.append(node("p", "field-help", state.health?.coding?.backgroundAvailable ? "This task can continue while you are away. Use Stop task to cancel it." : "Leaving does not cancel this task. Keep this page open until work starts; reopen it to finish setup or collect results."));
-    card.append(node("p", "field-help", "Updated " + timestamp(run.updatedAt || run.createdAt))); list.append(card);
+    if (codingActive(run)) card.append(node("p", "task-away-note field-help", state.health?.coding?.backgroundAvailable ? "Runs in the cloud. You can return to this task later." : run.status === "preparing" ? "Keep Atlas open while the workspace prepares. Leaving does not cancel this task." : "Running in the cloud. Leaving does not cancel this task; return here for results."));
+    card.append(node("p", "task-updated", "Updated " + timestamp(run.updatedAt || run.createdAt))); list.append(card);
+    if (chosen === "changes") queueMicrotask(() => loadTaskChanges(run, parts.get("changes")));
   }
   container.querySelector(".welcome")?.remove(); if (previous) previous.replaceWith(list); else container.append(list); if (nearBottom) container.scrollTop = container.scrollHeight;
+  if (focused) {
+    const candidate = focused.id ? $(focused.id) : [...list.querySelectorAll("[data-run-id]")].find(item => item.dataset.runId === focused.runId)?.querySelectorAll("button, summary, a");
+    const control = candidate instanceof Element ? candidate : [...candidate || []].find(item => item.textContent === focused.text && item.getAttribute("role") === focused.role);
+    if (control && list.contains(control)) control.focus({ preventScroll: true });
+  }
 }
 async function startCodingTask() {
   const control = $("start-coding"); if (control.disabled || state.codingDispatching) return;
-  const epoch = state.epoch, navigation = state.navigation, originId = state.activeId, prompt = $("prompt").value.trim(), repository = $("repository").value, continuation = state.codingContinuation;
+  const epoch = state.epoch, navigation = state.navigation, originId = state.activeId, prompt = $("prompt").value.trim(), repository = $("repository").value, continuation = state.codingContinuation, restart = state.codingRestart, environmentId = state.environmentId;
   state.codingDispatching = true; feedback("coding-feedback", "Starting task…"); updateComposer();
   try {
     const conversation = await ensureConversation({ prompt, mode: "developer", repository }); checkEpoch(epoch);
     const path = continuation ? "coding/runs/" + encodeURIComponent(continuation) + "/continue" : "coding/runs";
-    const result = await api(path, "POST", { ...(continuation ? {} : { conversationId: conversation.id }), requestId: uuid(), prompt }); checkEpoch(epoch);
+    const result = await api(path, "POST", { ...(continuation ? {} : { conversationId: conversation.id, ...(restart ? { retryFromRunId: restart } : environmentId ? { environmentId } : {}) }), requestId: uuid(), prompt }); checkEpoch(epoch);
     if (navigation === state.navigation && state.activeId === conversation.id) {
       feedback("coding-feedback", "");
       if ($("prompt").value.trim() === prompt) $("prompt").value = "";
-      state.drafts.delete(originId || "new"); state.codingContinuation = null; resizePrompt(); acceptCodingRun(result.run); await observeCodingRuns({ restore: false });
+      state.drafts.delete(originId || "new"); state.codingContinuation = null; state.codingRestart = null; fillEnvironmentChoices(); resizePrompt(); acceptCodingRun(result.run); await observeCodingRuns({ restore: false });
     }
     loadThreads().catch(() => {});
   } catch (error) {
@@ -688,7 +887,7 @@ async function bootstrap() {
   $("session-notice").textContent = "Checking your session…"; document.body.classList.add("session-check");
   try {
     const health = await refreshHealth(); if (!health.storage?.ready) { state.privateReady = true; document.body.classList.remove("session-check"); renderMessages(); updateComposer(); return; }
-    const results = await Promise.allSettled([loadThreads(), loadSettings(), loadRepositories()]); checkEpoch(epoch);
+    const results = await Promise.allSettled([loadThreads(), loadSettings(), loadRepositories(), loadEnvironments()]); checkEpoch(epoch);
     const failed = results.find(result => result.status === "rejected"); if (failed && !state.owner) return;
     state.privateReady = true; document.body.classList.remove("session-check"); renderHealth();
     const id = new URL(location.href).searchParams.get("conversation"); if (id) await selectConversation(id); else renderMessages();
@@ -714,9 +913,9 @@ function init() {
   for (const el of document.querySelectorAll("[data-open]")) el.addEventListener("click", () => showPanel(el.dataset.open, el));
   $("new-chat").addEventListener("click", () => newConversation()); $("conversation-search").addEventListener("input", renderThreads); $("show-archived").addEventListener("change", () => loadThreads().catch(error => toast(errorText(error))));
   $("load-older-messages").addEventListener("click", e => loadOlderMessages(e.currentTarget));
-  $("mode").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; renderContextChips(); updateComposer(); }); $("repository").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; renderContextChips(); updateComposer(); });
-  $("prompt").addEventListener("input", () => { resizePrompt(); updateComposer(); }); $("prompt").addEventListener("keydown", event => { if (event.key === "Enter" && !event.isComposing && !event.shiftKey && (event.ctrlKey || event.metaKey || !matchMedia("(pointer:coarse)").matches)) { event.preventDefault(); if (!$("send").disabled) $("composer").requestSubmit(); } });
-  $("composer").addEventListener("submit", sendMessage); $("stop-response").addEventListener("click", stopResponse);
+  $("mode").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; state.intent = "code"; state.codingContinuation = null; state.codingRestart = null; fillEnvironmentChoices(); renderContextChips(); updateComposer(); }); $("repository").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; state.environmentId = ""; state.codingContinuation = null; state.codingRestart = null; renderContextChips(); fillEnvironmentChoices(); updateComposer(); });
+  $("prompt").addEventListener("input", () => { resizePrompt(); updateComposer(); }); $("prompt").addEventListener("keydown", event => { if (event.key === "Enter" && !event.isComposing && !event.shiftKey && (event.ctrlKey || event.metaKey || !matchMedia("(pointer:coarse)").matches)) { event.preventDefault(); const submit = $("start-coding").hidden ? $("send") : $("start-coding"); if (!submit.disabled) $("composer").requestSubmit(); } });
+  $("composer").addEventListener("submit", event => { event.preventDefault(); if ((state.conversation?.mode || $("mode").value) === "developer" && state.intent === "code") startCodingTask(); else sendMessage(event); }); $("stop-response").addEventListener("click", stopResponse);
   $("upgrade-storage").addEventListener("click", e => busy(e.currentTarget, async () => { await api("setup", "POST", { confirm: true }); await bootstrap(); toast("Workspace storage is ready."); }));
   $("provider-model").addEventListener("change", () => { $("custom-model-label").hidden = $("provider-model").value !== "custom"; updateModelHelp(); }); $("provider-custom-model").addEventListener("input", updateModelHelp);
   $("provider-form").addEventListener("submit", event => { event.preventDefault(); const key = $("provider-key").value.trim(), model = currentModel(); if (!key && !state.health?.provider?.keySaved) return feedback("provider-feedback", "Enter the OpenAI key to save this connection.", true); if (!model) return feedback("provider-feedback", "Choose a model or enter a model ID.", true); $("provider-key").value = ""; busy($("save-provider"), async () => { await api("provider", "POST", { ...(key ? { key } : {}), model }); feedback("provider-feedback", key ? "Key saved. Use the short test to verify an actual response." : "Model saved. Test a short response with this model."); await refreshHealth(); const result = await api("models"); fillModels(result.models, result.selected || model); }, "provider-feedback"); });
@@ -732,8 +931,16 @@ function init() {
   $("delete-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id || !confirm("Delete this conversation and its saved messages?")) return; if (state.stream?.conversationId === id) await stopResponse(); await api("conversations/" + encodeURIComponent(id), "DELETE"); state.drafts.delete(id); newConversation(); await loadThreads(); }));
   $("export-conversation").addEventListener("click", e => busy(e.currentTarget, () => download("conversations/" + encodeURIComponent(state.activeId) + "/export", titleFilename(state.conversation.title))));
   $("summarize-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id) return; const result = await api("conversations/" + encodeURIComponent(id) + "/summary", "POST", { requestId: uuid() }); if (state.activeId === id) await selectConversation(id); const count = Number.isInteger(result.summarizedTurns) ? "Summarized " + result.summarizedTurns + " earlier turn" + (result.summarizedTurns === 1 ? "." : "s.") : "Earlier context summarized."; toast(count + (result.hasMore ? " More remains; summarize again when ready." : " The full conversation is retained.")); }));
-  $("attach-context").addEventListener("click", event => { openDialog("context", event.currentTarget); $("context-search").value = ""; loadContextSources(); }); $("context-refresh").addEventListener("click", loadContextSources); $("context-kind").addEventListener("change", () => { $("context-ref-label").hidden = $("context-kind").value !== "file"; loadContextSources(); }); $("context-search").addEventListener("input", renderContextSources); $("context-attach").addEventListener("click", e => attachSelectedContext(e.currentTarget));
-  $("start-coding").addEventListener("click", startCodingTask); $("clear-coding-continuation").addEventListener("click", () => { state.codingContinuation = null; updateComposer(); }); $("new-schedule").addEventListener("click", () => editSchedule()); $("schedule-kind").addEventListener("change", scheduleFields); $("schedule-mode").addEventListener("change", scheduleFields); $("schedule-form").addEventListener("submit", saveSchedule); $("cancel-schedule-edit").addEventListener("click", () => { $("schedule-form").hidden = true; });
+  $("attach-context").addEventListener("click", event => { const top = sheets.top(); if (top?.el.id === "task-options-dialog") top.now(); openDialog("context", event.currentTarget); $("context-search").value = ""; loadContextSources(); }); $("context-refresh").addEventListener("click", loadContextSources); $("context-kind").addEventListener("change", () => { $("context-ref-label").hidden = $("context-kind").value !== "file"; loadContextSources(); }); $("context-search").addEventListener("input", renderContextSources); $("context-attach").addEventListener("click", e => attachSelectedContext(e.currentTarget));
+  $("intent-code").addEventListener("click", () => { state.intent = "code"; updateComposer(); saveDraft(); });
+  $("intent-ask").addEventListener("click", () => { state.intent = "ask"; state.codingContinuation = null; state.codingRestart = null; fillEnvironmentChoices(); updateComposer(); saveDraft(); });
+  $("coding-environment").addEventListener("change", () => { state.codingContinuation = null; state.codingRestart = null; state.environmentId = $("coding-environment").value; saveDraft(); updateComposer(); });
+  $("new-environment").addEventListener("click", () => editEnvironment()); $("create-first-environment").addEventListener("click", () => editEnvironment());
+  $("cancel-environment-edit").addEventListener("click", closeEnvironmentEditor); $("environment-form").addEventListener("submit", saveEnvironment);
+  for (const event of ["input", "change"]) $("environment-form").addEventListener(event, () => { state.environmentEditorVersion++; });
+  $("use-environment").addEventListener("click", () => { const environment = state.environments.find(item => item.id === $("environment-id").value); if (environment) useEnvironment(environment); });
+  $("upgrade-environments").addEventListener("click", event => busy(event.currentTarget, async () => { await api("setup", "POST", { confirm: true }); await refreshHealth(); await loadEnvironments(); toast("Cloud environments are ready."); }, "environments-feedback"));
+  $("start-coding").addEventListener("click", startCodingTask); $("clear-coding-continuation").addEventListener("click", () => { state.codingContinuation = null; state.codingRestart = null; fillEnvironmentChoices(); updateComposer(); }); $("new-schedule").addEventListener("click", () => editSchedule()); $("schedule-kind").addEventListener("change", scheduleFields); $("schedule-mode").addEventListener("change", scheduleFields); $("schedule-form").addEventListener("submit", saveSchedule); $("cancel-schedule-edit").addEventListener("click", () => { $("schedule-form").hidden = true; });
   $("schedule-repository").addEventListener("change", () => { state.scheduleContext = []; scheduleFields(); }); $("schedule-use-context").addEventListener("click", () => { state.scheduleContext = state.context.filter(c => c.repository === $("schedule-repository").value).map(contextDescriptor); renderScheduleContext(); });
   $("stop-schedules").addEventListener("click", e => busy(e.currentTarget, async () => { if (!confirm("Pause all your scheduled tasks?")) return; await api("stop", "POST", {}); await loadSchedules(); toast("All scheduled tasks paused."); }));
   let zones = ["Europe/London", "UTC"]; try { if (Intl.supportedValuesOf) zones = ["UTC", ...Intl.supportedValuesOf("timeZone")]; } catch {} for (const zone of zones) { const option = node("option"); option.value = zone; $("timezones").append(option); }

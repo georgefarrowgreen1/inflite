@@ -8,6 +8,8 @@ import { saveCredential } from '../today/src/atlas-credentials.js';
 import { getProvider } from '../today/src/atlas-provider.js';
 import { repositoryBlobSha, connectGithub } from '../today/src/atlas-repository.js';
 import { atlas } from '../today/src/atlas.js';
+import { createEnvironment, updateEnvironment, archiveEnvironment } from '../today/src/atlas-environments.js';
+import { githubFixture } from './helpers/atlas-coding-fixtures.mjs';
 
 const OWNER = 'coding-owner';
 const SECRET = 'sk-' + 'coding-fixture'.repeat(5);
@@ -39,10 +41,10 @@ async function patchRun(env, id, patch) {
   finally { await state.releaseCodingRun(env, OWNER, id, claimed.lease); }
 }
 
-async function newRun(env, patch = {}) {
+async function newRun(env, patch = {}, options = {}) {
   const conversation = await store.createConversation(env, OWNER, { title: 'Coding fixture', mode: 'developer', repository: REPOSITORY });
   const requestId = uid();
-  const started = await coding.startCodingRun(env, OWNER, { conversationId: conversation.id, requestId, prompt: 'Improve the fixture and run its focused checks.' });
+  const started = await coding.startCodingRun(env, OWNER, { conversationId: conversation.id, requestId, prompt: 'Improve the fixture and run its focused checks.', ...options });
   const before = 'export const value = 1;\n';
   const manifest = { version: 1, runId: started.id, revision: 1, repository: REPOSITORY, baseSha: BASE, baseBranch: 'main', baseTreeSha: TREE, files: [{ path: 'src/value.js', mode: '100644', size: textBytes(before).length, sha: await repositoryBlobSha(textBytes(before)) }], excluded: [] };
   const run = await patchRun(env, started.id, { phase: 'create_ready', base_branch: 'main', base_sha: BASE, base_tree_sha: TREE, manifest_json: JSON.stringify(manifest), input_file_id: 'file_fixture', ...patch });
@@ -54,7 +56,7 @@ function remoteFixture(fixture) {
   const environmentId = 'env_' + fixture.run.id.replaceAll('-', '');
   const remote = {
     calls: [], inputs: [], cancelCalls: 0, createCalls: 0, updateCalls: 0,
-    session: { id: sessionId, object: 'agent.session', agent: { model: MODEL }, environment: { type: 'openai_hosted', id: environmentId, network: { access: 'restricted', allowed_domains: HOSTS } }, metadata: { atlas_run_id: fixture.run.id }, review: 'auto_review', spend_control: { limit: 200, consumed: 0 }, status: 'idle', required_actions: [] },
+    session: { id: sessionId, object: 'agent.session', agent: { model: MODEL }, environment: { type: 'openai_hosted', id: environmentId, container_size: 'medium', network: { access: 'restricted', allowed_domains: HOSTS } }, metadata: { atlas_run_id: fixture.run.id }, review: 'auto_review', spend_control: { limit: 200, consumed: 0 }, status: 'idle', required_actions: [] },
     environment: { id: environmentId, type: 'openai_hosted', status: 'connected' },
     turns: [], items: [], artifacts: [], contents: new Map(), exists: false,
     hiddenRecovery: false, loseCreateResponse: false, loseInputResponse: false, rejectBudgetUpdate: false,
@@ -483,5 +485,195 @@ test('hosted coding orchestration uses persistent owner-scoped state and real pr
     assert.equal(deniedRemote.createCalls, 0);
     assert.equal(deniedRemote.inputs.length, 0);
     assert.equal((await state.requireCodingRun(isolated, OWNER, denied.run.id)).status, 'cancelled');
+  });
+
+  await t.test('selected environment commands and machine settings are frozen for a run and its continuation', async () => {
+    const profile = await createEnvironment(env, OWNER, { name: 'Atlas focused checks', repository: REPOSITORY, branch: 'feature/cloud', machine: 'small', network: 'off', setupCommand: 'printf ready', testCommand: 'node --test tests/fixture.test.mjs' });
+    const f = await newRun(env, { base_branch: 'feature/cloud' }, { environmentId: profile.id });
+    const remote = remoteFixture(f);
+    remote.onCreate = async body => {
+      assert.equal(body.environment.container_size, 'small');
+      assert.deepEqual(body.environment.network, { access: 'disabled' });
+      assert.equal(body.environment.setup_commands.length, 2);
+      assert.match(body.environment.setup_commands[0].command, /bootstrap\.py/);
+      assert.deepEqual(body.environment.setup_commands[1], { command: 'printf ready', cwd: '/workspace/repo' });
+      remote.session.environment.container_size = body.environment.container_size;
+      remote.session.environment.network = body.environment.network;
+    };
+    await coding.advanceCodingRun(env, OWNER, f.run.id, { send: remote.send });
+    await updateEnvironment(env, OWNER, profile.id, { name: 'Changed later', machine: 'large', network: 'dependencies', setupCommand: 'echo changed', testCommand: 'npm run all', expectedRevision: 1 });
+    const saved = await state.requireCodingRun(env, OWNER, f.run.id);
+    assert.equal(saved.environment.name, 'Atlas focused checks');
+    assert.equal(saved.environment.machine, 'small');
+    await coding.advanceCodingRun(env, OWNER, f.run.id, { send: remote.send });
+    await coding.advanceCodingRun(env, OWNER, f.run.id, { send: remote.send });
+    const input = remote.inputs[0].input[0].content[0].text;
+    assert.match(input, /Cloud environment: Atlas focused checks/);
+    assert.match(input, /node --test tests\/fixture\.test\.mjs/);
+    assert.ok(!input.includes('npm run all'));
+    await coding.advanceCodingRun(env, OWNER, f.run.id, { send: remote.send });
+    remote.finish('turn_1');
+    const completed = await coding.advanceCodingRun(env, OWNER, f.run.id, { send: remote.send });
+    assert.equal(completed.environment.profileId, profile.id);
+    assert.equal(completed.cloud.state, 'available');
+    await archiveEnvironment(env, OWNER, profile.id);
+    const continued = await coding.continueCodingRun(env, OWNER, f.run.id, { requestId: uid(), prompt: 'Continue the existing workspace.' }, { send: remote.send });
+    assert.equal(continued.environment.name, 'Atlas focused checks');
+    assert.equal(continued.environment.branch, 'feature/cloud');
+    assert.equal(continued.environment.setupCommand, 'printf ready');
+    assert.equal(remote.createCalls, 1, 'continuation never creates a second environment or repeats setup');
+  });
+
+  await t.test('environment-selected branches reach the immutable repository archive', async () => {
+    const profile = await createEnvironment(env, OWNER, { name: 'Feature branch', repository: REPOSITORY, branch: 'feature/cloud' });
+    const f = await newRun(env, { phase: 'snapshot', input_file_id: null }, { environmentId: profile.id });
+    const remote = remoteFixture(f), github = (await githubFixture()).api;
+    github.branches.set('feature/cloud', github.baseSha);
+    const send = async (url, init) => {
+      if (new URL(url).hostname !== 'api.openai.com') return github.send(url, init);
+      if (new URL(url).pathname === '/v1/files' && init?.method === 'POST') return json({ id: 'file_fixture' });
+      return remote.send(url, init);
+    };
+    const prepared = await coding.advanceCodingRun(env, OWNER, f.run.id, { send });
+    assert.equal(prepared.baseBranch, 'feature/cloud');
+    assert.equal(prepared.baseSha, github.baseSha);
+    assert.ok(github.calls.some(call => decodeURIComponent(call.url.pathname).endsWith('/git/ref/heads/feature/cloud')));
+    assert.equal((await state.requireCodingRun(env, OWNER, f.run.id)).manifest.baseBranch, 'feature/cloud');
+  });
+
+  await t.test('duplicate requests reject a different environment and foreign profiles before reservation', async () => {
+    const a = await createEnvironment(env, OWNER, { name: 'A', repository: REPOSITORY });
+    const b = await createEnvironment(env, OWNER, { name: 'B', repository: REPOSITORY });
+    const f = await newRun(env, {}, { environmentId: a.id });
+    await assert.rejects(() => coding.startCodingRun(env, OWNER, { conversationId: f.conversation.id, requestId: f.requestId, prompt: f.run.prompt, environmentId: b.id }), { code: 'request_id_reused' });
+    const foreign = await createEnvironment(env, 'other-owner', { name: 'Private', repository: REPOSITORY });
+    const requestId = uid();
+    await assert.rejects(() => coding.startCodingRun(env, OWNER, { conversationId: f.conversation.id, requestId, prompt: 'Use a foreign profile', environmentId: foreign.id }), { code: 'not_found' });
+    assert.equal(await store.getRequest(env, OWNER, requestId), null);
+  });
+
+  await t.test('explicit retries preserve archived environment snapshots and bind idempotency to their source task', async () => {
+    const profile = await createEnvironment(env, OWNER, { name: 'Original recipe', repository: REPOSITORY, branch: 'feature/original', setupCommand: 'printf original', machine: 'small' });
+    const f = await newRun(env, {}, { environmentId: profile.id });
+    const activeRetryId = uid();
+    await assert.rejects(() => coding.startCodingRun(env, OWNER, { conversationId: f.conversation.id, requestId: activeRetryId, prompt: 'Retry', retryFromRunId: f.run.id }), { code: 'coding_retry_active' });
+    assert.equal(await store.getRequest(env, OWNER, activeRetryId), null);
+    await patchRun(env, f.run.id, { status: 'cancelled', phase: 'done' });
+    await updateEnvironment(env, OWNER, profile.id, { branch: 'feature/new', setupCommand: 'printf changed', expectedRevision: profile.revision });
+    await archiveEnvironment(env, OWNER, profile.id);
+    const requestId = uid(), body = { conversationId: f.conversation.id, requestId, prompt: 'Retry with a refined instruction', retryFromRunId: f.run.id };
+    await assert.rejects(() => coding.startCodingRun(env, OWNER, { ...body, environmentId: null }), { code: 'coding_retry_environment_changed' });
+    assert.equal(await store.getRequest(env, OWNER, requestId), null, 'an explicit default selection cannot replace the frozen saved environment');
+    const retried = await coding.startCodingRun(env, OWNER, body);
+    assert.notEqual(retried.id, f.run.id);
+    assert.equal(retried.retryFromRunId, f.run.id);
+    assert.equal(retried.environment.name, 'Original recipe');
+    assert.equal(retried.environment.branch, 'feature/original');
+    assert.equal(retried.environment.setupCommand, 'printf original');
+    assert.equal(retried.environment.machine, 'small');
+    assert.equal((await coding.startCodingRun(env, OWNER, body)).id, retried.id, 'a lost response does not create another retry');
+    await assert.rejects(() => coding.startCodingRun(env, OWNER, { ...body, retryFromRunId: retried.id }), { code: 'request_id_reused' });
+    await assert.rejects(() => coding.startCodingRun(env, OWNER, { ...body, environmentId: 'different-profile' }), { code: 'request_id_reused' });
+    const otherConversation = await store.createConversation(env, OWNER, { mode: 'developer', repository: REPOSITORY });
+    await assert.rejects(() => coding.startCodingRun(env, OWNER, { ...body, requestId: uid(), conversationId: otherConversation.id }), { code: 'coding_retry_mismatch' });
+    const foreignConversation = await store.createConversation(env, 'other-owner', { mode: 'developer', repository: REPOSITORY });
+    const foreign = await state.createCodingRun(env, 'other-owner', { id: uid(), conversationId: foreignConversation.id, requestId: uid(), prompt: 'Private', model: MODEL, credentialUpdatedAt: 1, repository: REPOSITORY });
+    await assert.rejects(() => coding.startCodingRun(env, OWNER, { ...body, requestId: uid(), retryFromRunId: foreign.id }), { code: 'not_found' });
+  });
+
+  await t.test('transient terminal connection failures preserve an explicit, rechecked continuation', async () => {
+    const f = await newRun(env), remote = remoteFixture(f);
+    await seedRemote(env, f, remote); remote.finish('turn_1');
+    const unavailable = (url, init) => new URL(url).pathname === '/v1/agents/environments/' + remote.environment.id ? Response.json({ error: { code: 'server_error' } }, { status: 503 }) : remote.send(url, init);
+    const completed = await coding.advanceCodingRun(env, OWNER, f.run.id, { send: unavailable });
+    assert.equal(completed.status, 'completed');
+    assert.equal(completed.reviewReady, true);
+    assert.equal(completed.canContinue, true);
+    assert.equal(completed.cloud.state, 'unknown');
+    assert.equal(completed.cloud.connectionCheckRequired, true);
+    assert.equal(completed.recovery.action, 'continue');
+    remote.environment.status = 'provisioning';
+    const requestId = uid();
+    await assert.rejects(() => coding.continueCodingRun(env, OWNER, f.run.id, { requestId, prompt: 'Continue' }, { send: remote.send }), { code: 'coding_workspace_not_ready' });
+    assert.equal(await store.getRequest(env, OWNER, requestId), null);
+    assert.equal(state.publicCodingRun(await state.requireCodingRun(env, OWNER, f.run.id)).canContinue, true);
+    remote.environment.status = 'connected';
+    const continued = await coding.continueCodingRun(env, OWNER, f.run.id, { requestId, prompt: 'Continue' }, { send: remote.send });
+    assert.equal(continued.revision, 2);
+    assert.equal(remote.inputs.length, 0, 'checking the connection does not itself submit the next instruction');
+    assert.equal(remote.updateCalls, 1);
+    const failed = await newRun(env), failedRemote = remoteFixture(failed);
+    await seedRemote(env, failed, failedRemote); failedRemote.finish('turn_1', 1, { status: 'failed', exitCode: 1 });
+    const failedUnavailable = (url, init) => new URL(url).pathname === '/v1/agents/environments/' + failedRemote.environment.id ? Response.json({ error: { code: 'server_error' } }, { status: 503 }) : failedRemote.send(url, init);
+    const failedResult = await coding.advanceCodingRun(env, OWNER, failed.run.id, { send: failedUnavailable });
+    assert.equal(failedResult.error.code, 'coding_turn_failed', 'connection observation does not overwrite the task failure');
+    assert.equal(failedResult.cloud.state, 'unknown');
+    assert.equal(failedResult.canContinue, true);
+  });
+
+  await t.test('continuation timeout, network and server failures remain retryable without another allowance', async () => {
+    const f = await newRun(env), remote = remoteFixture(f);
+    await seedRemote(env, f, remote); remote.finish('turn_1');
+    await coding.advanceCodingRun(env, OWNER, f.run.id, { send: remote.send });
+    const faults = [
+      { path: '/v1/agents/environments/' + remote.environment.id, code: 'openai_network', fail: () => { throw new TypeError('simulated connection failure'); } },
+      { path: '/v1/agents/sessions/' + remote.session.id, code: 'openai_timeout', fail: () => { throw new DOMException('simulated timeout', 'TimeoutError'); } },
+      { path: '/v1/agents/environments/' + remote.environment.id, status: 503, fail: () => Response.json({ error: { code: 'server_error' } }, { status: 503 }) },
+    ];
+    for (const fault of faults) {
+      await patchRun(env, f.run.id, { cloud_status: 'connected' });
+      const requestId = uid();
+      const send = (url, init) => new URL(url).pathname === fault.path ? fault.fail() : remote.send(url, init);
+      await assert.rejects(() => coding.continueCodingRun(env, OWNER, f.run.id, { requestId, prompt: 'Continue' }, { send }), error => fault.code ? error.code === fault.code : error.upstreamStatus === fault.status);
+      const result = state.publicCodingRun(await state.requireCodingRun(env, OWNER, f.run.id));
+      assert.equal(result.cloud.state, 'unknown');
+      assert.equal(result.canContinue, true);
+      assert.equal(result.reviewReady, true);
+      assert.equal(result.recovery.action, 'continue');
+      assert.equal(await store.getRequest(env, OWNER, requestId), null);
+    }
+    assert.equal(remote.updateCalls, 0);
+    assert.equal(remote.inputs.length, 0);
+  });
+
+  await t.test('setup failure, stopped setup and expired workspaces offer truthful recovery actions', async () => {
+    const profile = await createEnvironment(env, OWNER, { name: 'Failing setup', repository: REPOSITORY, setupCommand: 'exit 7' });
+    const failed = await newRun(env, {}, { environmentId: profile.id }), remote = remoteFixture(failed);
+    await coding.advanceCodingRun(env, OWNER, failed.run.id, { send: remote.send });
+    remote.environment.status = 'failed';
+    const result = await coding.advanceCodingRun(env, OWNER, failed.run.id, { send: remote.send });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.error.code, 'coding_workspace_failed');
+    assert.match(result.error.message, /setup command and network policy/);
+    assert.equal(result.recovery.action, 'restart');
+    assert.equal(remote.inputs.length, 0);
+    const stopped = await newRun(env), stoppedRemote = remoteFixture(stopped);
+    const cancelled = await coding.cancelCodingRun(env, OWNER, stopped.run.id, { send: stoppedRemote.send });
+    assert.equal(cancelled.recovery.action, 'restart');
+    assert.equal(cancelled.cloud.state, 'stopped');
+    assert.match(cancelled.recovery.reason, /before.*ready/);
+    const resumable = await newRun(env), reusableRemote = remoteFixture(resumable);
+    await seedRemote(env, resumable, reusableRemote);
+    reusableRemote.finish('turn_1');
+    await coding.advanceCodingRun(env, OWNER, resumable.run.id, { send: reusableRemote.send });
+    reusableRemote.environment.status = 'expired';
+    const requestId = uid();
+    await assert.rejects(() => coding.continueCodingRun(env, OWNER, resumable.run.id, { requestId, prompt: 'Continue' }, { send: reusableRemote.send }), { code: 'coding_workspace_expired' });
+    const expired = state.publicCodingRun(await state.requireCodingRun(env, OWNER, resumable.run.id));
+    assert.equal(expired.canContinue, false);
+    assert.equal(expired.cloud.state, 'expired');
+    assert.equal(expired.recovery.action, 'restart');
+    assert.equal(expired.reviewReady, true, 'saved diffs remain reviewable after workspace expiry');
+    assert.equal(await store.getRequest(env, OWNER, requestId), null, 'expired continuation does not reserve more budget');
+    const missingSession = await newRun(env), missingRemote = remoteFixture(missingSession);
+    await seedRemote(env, missingSession, missingRemote);
+    missingRemote.finish('turn_1');
+    await coding.advanceCodingRun(env, OWNER, missingSession.run.id, { send: missingRemote.send });
+    const sendMissing = (url, init) => new URL(url).pathname === '/v1/agents/sessions/' + missingRemote.session.id && (!init?.method || init.method === 'GET') ? Response.json({ error: { code: 'resource_not_found' } }, { status: 404 }) : missingRemote.send(url, init);
+    await assert.rejects(() => coding.continueCodingRun(env, OWNER, missingSession.run.id, { requestId: uid(), prompt: 'Continue' }, { send: sendMissing }), { code: 'coding_workspace_expired' });
+    assert.equal(state.publicCodingRun(await state.requireCodingRun(env, OWNER, missingSession.run.id)).recovery.action, 'restart');
+    assert.equal((await state.requireCodingRun(env, OWNER, missingSession.run.id)).can_continue, 0);
+    const noArtifact = await newRun(env, { phase: 'done', status: 'completed', error_code: 'coding_changes_missing', error_message: 'No change bundle', can_continue: 0 });
+    assert.equal(state.publicCodingRun(noArtifact.run).recovery.action, 'restart');
   });
 });

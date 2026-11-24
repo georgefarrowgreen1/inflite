@@ -30,7 +30,7 @@ function defaultFixture() {
     conversations: [{ id: 'alpha', title: 'Alpha research', mode: 'research', archived: false, created_at: now, updated_at: now }, { id: 'beta', title: 'Beta planning', mode: 'personal', archived: false, created_at: now, updated_at: now }],
     messages: { alpha: [{ id: 'alpha-first', prompt: 'Summarize the evidence', answer: 'Evidence here.\n\n| Finding | Status |\n| --- | --- |\n| Safe rendering | Verified |\n\n```js\nconst secure = true;\n```', status: 'completed', sources: [source], context: [], created_at: now }], beta: [{ id: 'beta-first', prompt: 'Plan a project', answer: 'Only beta content belongs here.', status: 'completed', sources: [], context: [], created_at: now }] },
     settings: { memoryEnabled: false, memory: 'Owner A private memory', dailyRequestLimit: 20, dailyBudgetUsd: null, timezone: 'Europe/London' },
-    tasks: [], briefs: [], patches: [], coding: { ready: true, storageReady: true, message: '' }, codingRuns: [], codingFiles: {}, codingDiffs: {}, requests: [], overrides: new Map(), next: 1, older: null
+    environments: [], environmentsReady: true, tasks: [], briefs: [], patches: [], coding: { ready: true, storageReady: true, message: '' }, codingRuns: [], codingFiles: {}, codingDiffs: {}, requests: [], overrides: new Map(), next: 1, older: null
   };
 }
 async function open(options = {}) {
@@ -63,8 +63,8 @@ async function open(options = {}) {
     fixture.requests.push({ path, method, body, search: url.search, headers: request.headers() });
     const reply = (data, status = 200, capturedOwner = owner) => route.fulfill({ status, headers: { 'X-Atlas-Owner': capturedOwner, 'Cache-Control': 'no-store' }, json: data });
     if (fixture.overrides.has(method + ' ' + path)) return fixture.overrides.get(method + ' ' + path)({ route, reply, body, url, owner });
-    if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 7 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, coding: fixture.coding, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' } });
-    if (path === 'setup') { fixture.ready = true; fixture.coding = { ready: true, storageReady: true, message: '' }; return reply({ ready: true, schemaVersion: 7 }); }
+    if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 7 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, coding: fixture.coding, environments: { ready: fixture.environmentsReady, storageReady: fixture.environmentsReady }, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' } });
+    if (path === 'setup') { fixture.environmentsReady = true; fixture.ready = true; fixture.coding = { ready: true, storageReady: true, message: '' }; return reply({ ready: true, schemaVersion: 7 }); }
     if (path === 'settings') { if (method === 'PATCH') Object.assign(fixture.settings, body); return reply(fixture.settings); }
     if (path === 'models') return reply({ models: fixture.models, selected: fixture.model });
     if (path === 'provider') { if (method === 'POST') { fixture.connected = true; fixture.model = body.model; fixture.tested = false; } else if (method === 'DELETE') fixture.connected = false; return reply({ keySaved: fixture.connected }); }
@@ -90,8 +90,20 @@ async function open(options = {}) {
       return reply({ conversation, messages: fixture.messages[conversation.id] || [], hasMore: !!fixture.older, nextBeforeId: fixture.older ? 'alpha-first' : null });
     }
     if (/^requests\/.+\/cancel$/.test(path)) return reply({ cancelled: true });
+    if (path === 'environments') {
+      if (method === 'POST') { const environment = { ...body, id: 'environment-' + fixture.next++, revision: 1, createdAt: now, updatedAt: now }; fixture.environments.push(environment); return reply({ environment }, 201); }
+      return reply({ environments: fixture.environmentsReady ? fixture.environments : [], ready: fixture.environmentsReady });
+    }
+    const environmentMatch = /^environments\/([^/]+)$/.exec(path);
+    if (environmentMatch) {
+      const environment = fixture.environments.find(item => item.id === environmentMatch[1]);
+      if (!environment) return reply({ code: 'not_found', error: 'Environment missing.' }, 404);
+      if (method === 'DELETE') { fixture.environments = fixture.environments.filter(item => item.id !== environment.id); return reply({ removed: true }); }
+      if (method === 'PATCH') { if (body.expectedRevision != null && body.expectedRevision !== environment.revision) return reply({ code: 'environment_changed', error: 'The environment changed. Reload it before saving.' }, 409); Object.assign(environment, body, { revision: environment.revision + 1 }); }
+      return reply({ environment });
+    }
     if (path === 'coding/runs') {
-      if (method === 'POST') { const run = codingRun({ id: 'coding-' + fixture.next++, conversationId: body.conversationId, requestId: body.requestId, prompt: body.prompt, status: 'preparing', stage: 'preparing_workspace' }); fixture.codingRuns.push(run); return reply({ run }, 202); }
+      if (method === 'POST') { const run = codingRun({ id: 'coding-' + fixture.next++, conversationId: body.conversationId, requestId: body.requestId, prompt: body.prompt, status: 'preparing', stage: 'preparing_workspace', ...(body.retryFromRunId ? { retryFromRunId: body.retryFromRunId, environment: { ...fixture.codingRuns.find(item => item.id === body.retryFromRunId)?.environment } } : body.environmentId ? { environment: { ...fixture.environments.find(item => item.id === body.environmentId), profileId: body.environmentId } } : {}) }); fixture.codingRuns.push(run); return reply({ run }, 202); }
       return reply({ runs: fixture.codingRuns.filter(run => run.conversationId === url.searchParams.get('conversationId')) });
     }
     match = /^coding\/runs\/([^/]+)(?:\/(cancel|continue|changes|diff|publish))?$/.exec(path);
@@ -119,13 +131,14 @@ async function open(options = {}) {
     return reply({ error: 'Unhandled fixture route: ' + path, code: 'fixture_route_missing' }, 404);
   });
   const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
-  await page.goto(ORIGIN + '/atlas');
+  await page.goto(ORIGIN + '/atlas' + (options.conversation ? '?conversation=' + encodeURIComponent(options.conversation) : ''));
   await page.waitForFunction(() => !document.body.classList.contains('session-check'));
   await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, options.theme || 'dark');
   return { page, context, fixture, errors, security, async close() { security.push(...await page.evaluate(() => window.__atlasPolicyErrors || [])); await context.close(); }, async screenshot(name) { if (!process.env.ATLAS_UI_SCREENSHOTS) return; mkdirSync(process.env.ATLAS_UI_SCREENSHOTS, { recursive: true }); await page.screenshot({ path: join(process.env.ATLAS_UI_SCREENSHOTS, name + '.png'), fullPage: true }); } };
 }
 async function openThread(t, title) { if (await t.page.locator('#navigation-toggle').isVisible()) await t.page.locator('#navigation-toggle').click(); await t.page.locator('#conversation-list').getByRole('button', { name: new RegExp(title) }).click(); await t.page.waitForFunction(title => document.getElementById('conversation-title').textContent === title, title); }
 async function openPanel(t, name) { await t.page.locator('#open-workspace').click(); await t.page.locator('.workspace-tools [data-open="' + name + '"]').click(); await t.page.locator('#' + name + '-dialog').waitFor({ state: 'visible' }); }
+async function chooseMode(t, mode) { await t.page.locator('#composer-options').click(); await t.page.locator('#mode').selectOption(mode); await t.page.getByRole('button', { name: 'Close task options', exact: true }).click(); }
 async function eventually(check) { let last; for (let i = 0; i < 60; i++) { try { check(); return; } catch (error) { last = error; await new Promise(resolve => setTimeout(resolve, 20)); } } throw last; }
 async function emit(page, event, data) { await page.evaluate(({ event, data }) => window.__atlasEmit(event, data), { event, data }); }
 
@@ -258,13 +271,16 @@ test('account switching drops late private responses and starts the new account 
 
 test('Send explores a repository without manual sources and Work on task starts independently', async () => {
   const t = await open({ width: 320, height: 844, mobile: true }); try {
-    await t.page.locator('#mode').selectOption('developer'); await t.page.locator('#repository').selectOption('fixture/atlas');
+    await chooseMode(t, 'developer'); await t.page.locator('#repository').selectOption('fixture/atlas');
+    await t.page.locator('#composer-options').click();
     assert.equal(await t.page.locator('#repository-note').textContent(), 'Atlas finds and reads relevant files automatically.');
     assert.equal(await t.page.locator('#repository-note').isVisible(), true);
     assert.equal(await t.page.getByRole('button', { name: 'Add specific sources (optional)' }).isVisible(), true);
-    const geometry = await t.page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth, note: document.getElementById('repository-note').getBoundingClientRect().toJSON(), composer: document.getElementById('composer').getBoundingClientRect().toJSON(), height: innerHeight }));
+    await t.page.getByRole('button', { name: 'Close task options', exact: true }).click();
+    const geometry = await t.page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth, composer: document.getElementById('composer').getBoundingClientRect().toJSON(), height: innerHeight }));
     assert.ok(geometry.scrollWidth <= geometry.width + 1 && geometry.composer.bottom <= geometry.height + 1, JSON.stringify(geometry));
-    assert.ok(geometry.note.width > 200 && geometry.note.left >= geometry.composer.left && geometry.note.right <= geometry.composer.right, JSON.stringify(geometry));
+    assert.ok(geometry.composer.height <= 190, JSON.stringify(geometry));
+    await t.page.locator('#intent-ask').click();
     await t.page.locator('#prompt').fill('import repo'); await t.page.locator('#send').click();
     await t.page.waitForFunction(() => !!window.__atlasStream.request);
     const request = await t.page.evaluate(() => window.__atlasStream.request), created = t.fixture.requests.find(r => r.path === 'conversations' && r.method === 'POST');
@@ -281,7 +297,7 @@ test('Send explores a repository without manual sources and Work on task starts 
     assert.match(await t.page.locator('[aria-label="Context used for this response"]').textContent(), /README\.md.*aaaaaaaaaaaa.*src\/app\.js/s);
     assert.equal(await t.page.locator('.source-list a[href="' + files[1].url + '"]').count(), 1);
     assert.equal(await t.page.locator('#attached-context').textContent(), '');
-    await t.page.locator('#prompt').fill('Correct the application entry point'); await t.page.locator('#start-coding').click();
+    await t.page.locator('#intent-code').click(); await t.page.locator('#prompt').fill('Correct the application entry point'); await t.page.locator('#start-coding').click();
     await t.page.locator('.coding-run').waitFor();
     const started = t.fixture.requests.find(r => r.path === 'coding/runs' && r.method === 'POST');
     assert.equal(started.body.prompt, 'Correct the application entry point'); assert.equal(started.body.conversationId, request.conversationId);
@@ -311,11 +327,11 @@ for (const includeExplicit of [false, true]) test('Retry refreshes automatic rep
 
 test('coding tasks start directly with a repository and prompt at 320px without file selection', async () => {
   const t = await open({ width: 320, height: 844, mobile: true }); try {
-    await t.page.locator('#mode').selectOption('developer'); await t.page.locator('#repository').selectOption('fixture/atlas');
+    await chooseMode(t, 'developer'); await t.page.locator('#repository').selectOption('fixture/atlas');
     await t.page.locator('#prompt').fill('Implement the feature across the repository and run the focused checks.');
     assert.equal(await t.page.locator('#start-coding').isEnabled(), true);
     assert.match(await t.page.locator('#coding-allowance').textContent(), /\$2 task allowance.*best effort.*additional or delayed.*compute.*separately/);
-    await t.page.locator('.coding-permissions summary').click(); assert.match(await t.page.locator('.coding-permissions').textContent(), /edit files and run commands in an isolated workspace/);
+    await t.page.locator('#composer-options').click(); await t.page.locator('.coding-permissions summary').click(); assert.match(await t.page.locator('.coding-permissions').textContent(), /edit files and run commands in an isolated workspace/); await t.page.getByRole('button', { name: 'Close task options', exact: true }).click();
     const geometry = await t.page.evaluate(() => ({ width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, composer: document.getElementById('composer').getBoundingClientRect().toJSON() }));
     assert.ok(geometry.scrollWidth <= geometry.width + 1 && geometry.composer.left >= 0 && geometry.composer.right <= geometry.width + 1 && geometry.composer.bottom <= geometry.height + 1, JSON.stringify(geometry));
     await t.page.locator('#start-coding').click(); await t.page.locator('.coding-run').waitFor();
@@ -333,7 +349,7 @@ test('coding tasks start directly with a repository and prompt at 320px without 
 
 test('coding storage upgrade leaves chat available and enables tasks through existing setup', async () => {
   const t = await open({ fixture: { coding: { ready: false, storageReady: false, message: 'Prepare coding task storage.' } } }); try {
-    await t.page.locator('#mode').selectOption('developer'); await t.page.locator('#repository').selectOption('fixture/atlas'); await t.page.locator('#prompt').fill('Inspect this repository');
+    await chooseMode(t, 'developer'); await t.page.locator('#repository').selectOption('fixture/atlas'); await t.page.locator('#prompt').fill('Inspect this repository');
     assert.equal(await t.page.locator('#send').isEnabled(), true); assert.equal(await t.page.locator('#start-coding').isDisabled(), true);
     assert.equal(await t.page.locator('#upgrade-storage').isVisible(), true); assert.match(await t.page.locator('#setup-message').textContent(), /conversations are ready/);
     await t.page.locator('#upgrade-storage').click();
@@ -500,7 +516,7 @@ test('the mobile composer fits the keyboard viewport and recovers a failed send 
   const t = await open({ width: 390, mobile: true, fixture: developerFixture() });
   try {
     await openThread(t, 'Repository task');
-    await t.page.locator('#attach-context').click();
+    await t.page.locator('#intent-ask').click(); await t.page.locator('#composer-options').click(); await t.page.locator('#attach-context').click();
     const file = t.page.locator('#context-list label').filter({ hasText: 'README.md' });
     await file.locator('input').check();
     await t.page.locator('#context-attach').click();
@@ -568,4 +584,234 @@ test('conversation actions rename, export, archive, restore and confirm deletion
     assert.equal(t.fixture.requests.filter(call => call.method === 'DELETE').length, 1);
     assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
+});
+
+
+function cloudEnvironment(extra = {}) {
+  return { id: 'environment-atlas', name: 'Atlas development', repository: 'fixture/atlas', branch: 'main', setupCommand: 'npm ci', testCommand: 'npm run test:atlas', machine: 'medium', network: 'dependencies', revision: 1, createdAt: now, updatedAt: now, ...extra };
+}
+for (const width of [320, 390, 1440]) test('coding workspace keeps a compact composer and actionable stopped task at ' + width + 'px', async () => {
+  const run = codingRun({ status: 'cancelled', stage: 'cancelled', canContinue: false, environment: { ...cloudEnvironment(), profileId: 'environment-atlas' }, cloud: { state: 'stopped', label: 'Cloud workspace stopped' }, recovery: { action: 'restart', reason: 'Start again in a new workspace using the original environment settings.' } });
+  const t = await open({ width, height: 844, mobile: width < 721, fixture: developerFixture({ codingRuns: [run], environments: [cloudEnvironment()] }) });
+  try {
+    await openThread(t, 'Repository task');
+    assert.equal(await t.page.locator('#start-coding').isVisible(), true);
+    assert.equal(await t.page.locator('#send').isVisible(), false);
+    assert.equal(await t.page.locator('.coding-run').getByRole('button', { name: 'Start again', exact: true }).isVisible(), true);
+    assert.equal(await t.page.locator('#coding-options').isVisible(), false);
+    assert.equal(await t.page.getByRole('tab', { name: 'Overview', exact: true }).evaluate(el => getComputedStyle(el).whiteSpace), 'nowrap');
+    const geometry = await t.page.evaluate(() => { const rect = selector => document.querySelector(selector).getBoundingClientRect().toJSON(); return { width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, composer: rect('#composer'), messages: rect('#messages'), toolbar: rect('.conversation-toolbar'), header: rect('.atlas-header') }; });
+    assert.ok(geometry.scrollWidth <= width + 1, JSON.stringify(geometry));
+    assert.ok(geometry.composer.height <= 190, JSON.stringify(geometry));
+    assert.ok(geometry.composer.bottom <= geometry.height + 1 && geometry.messages.bottom <= geometry.composer.top + 1, JSON.stringify(geometry));
+    assert.ok(geometry.toolbar.top >= geometry.header.bottom - 1 && geometry.messages.height >= 300, JSON.stringify(geometry));
+    await t.screenshot('atlas-cloud-workspace-' + width);
+    await t.page.locator('#intent-ask').click();
+    assert.equal(await t.page.locator('#send').isVisible(), true);
+    assert.equal(await t.page.locator('#start-coding').isVisible(), false);
+    assert.equal(await t.page.locator('#coding-environment').isVisible(), false);
+    await t.page.locator('#intent-code').click();
+    assert.equal(await t.page.locator('#coding-environment').isVisible(), true);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('cloud profiles create, edit with revision, duplicate, select and archive without starting a task', async () => {
+  const t = await open({ width: 390, height: 844, mobile: true, fixture: developerFixture() });
+  try {
+    await openThread(t, 'Repository task'); await t.page.locator('#manage-environments').click(); await t.page.locator('#create-first-environment').click();
+    await t.page.locator('#environment-name').fill('Atlas focused checks');
+    await t.page.locator('#environment-repository').selectOption('fixture/atlas');
+    await t.page.locator('#environment-branch').fill('feature/atlas');
+    await t.page.locator('#environment-setup').fill('npm ci --ignore-scripts');
+    await t.page.locator('#environment-test').fill('npm run test:atlas');
+    await t.page.locator('.environment-advanced summary').click();
+    await t.page.locator('#environment-machine').selectOption('large'); await t.page.locator('#environment-network').selectOption('off');
+    await t.page.locator('#save-environment').click();
+    await t.page.waitForFunction(() => document.getElementById('environment-feedback').textContent.includes('Environment saved'));
+    const created = t.fixture.environments[0];
+    assert.deepEqual(t.fixture.requests.find(r => r.path === 'environments' && r.method === 'POST').body, { name: 'Atlas focused checks', repository: 'fixture/atlas', branch: 'feature/atlas', setupCommand: 'npm ci --ignore-scripts', testCommand: 'npm run test:atlas', machine: 'large', network: 'off' });
+    assert.equal(t.fixture.requests.filter(r => r.path === 'coding/runs' && r.method === 'POST').length, 0);
+    await t.screenshot('atlas-cloud-environment-editor-390');
+    await t.page.locator('#environment-name').fill('Atlas verified setup'); await t.page.locator('#save-environment').click();
+    await eventually(() => assert.equal(created.revision, 2));
+    assert.equal(t.fixture.requests.find(r => r.path === 'environments/' + created.id && r.method === 'PATCH').body.expectedRevision, 1);
+    await t.page.getByRole('button', { name: 'Edit Atlas verified setup', exact: true }).waitFor();
+    await t.page.locator('#environments-list').getByRole('button', { name: 'Duplicate', exact: true }).click();
+    assert.equal(await t.page.locator('#environment-id').inputValue(), '');
+    assert.equal(await t.page.locator('#environment-setup').inputValue(), 'npm ci --ignore-scripts');
+    await t.page.locator('#save-environment').click(); await eventually(() => assert.equal(t.fixture.environments.length, 2));
+    await t.page.waitForFunction(() => document.getElementById('use-environment').hidden === false);
+    await t.page.locator('#use-environment').click(); await t.page.locator('#environments-dialog').waitFor({ state: 'hidden' });
+    const selected = await t.page.locator('#coding-environment').inputValue(); assert.equal(selected, t.fixture.environments[1].id);
+    await t.page.locator('#prompt').fill('Implement a focused improvement'); await t.page.locator('#start-coding').click();
+    await eventually(() => assert.equal(t.fixture.requests.filter(r => r.path === 'coding/runs' && r.method === 'POST').length, 1));
+    assert.equal(t.fixture.requests.find(r => r.path === 'coding/runs' && r.method === 'POST').body.environmentId, selected);
+    await t.page.locator('#header-environments').click();
+    await t.page.locator('.environment-card[data-environment-id="' + selected + '"]').getByRole('button', { name: 'Archive', exact: true }).click();
+    await eventually(() => assert.equal(t.fixture.environments.length, 1));
+    assert.equal(t.fixture.codingRuns[0].environment.name, 'Atlas verified setup copy');
+    assert.equal(t.fixture.codingRuns[0].environment.branch, 'feature/atlas');
+    assert.equal(t.fixture.requests.filter(r => /\/cancel$/.test(r.path)).length, 0);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('a stale cloud profile edit preserves the draft and displays the conflict', async () => {
+  const environment = cloudEnvironment(), t = await open({ fixture: { environments: [environment] } });
+  try {
+    await t.page.locator('#header-environments').click(); await t.page.getByRole('button', { name: 'Edit Atlas development', exact: true }).click();
+    await t.page.locator('#environment-test').fill('npm run test:atlas:browser'); environment.revision = 2;
+    await t.page.locator('#save-environment').click();
+    await t.page.waitForFunction(() => document.getElementById('environment-feedback').textContent.includes('changed'));
+    assert.equal(await t.page.locator('#environment-test').inputValue(), 'npm run test:atlas:browser');
+    assert.equal(environment.testCommand, 'npm run test:atlas'); assert.equal(t.fixture.requests.filter(r => r.path === 'coding/runs' && r.method === 'POST').length, 0);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('completed expired work restarts only on explicit submit with its frozen environment snapshot', async () => {
+  const frozen = { ...cloudEnvironment({ id: 'archived-profile', branch: 'release/atlas', setupCommand: 'npm ci --ignore-scripts' }), profileId: 'archived-profile' };
+  const run = codingRun({ id: 'prior-task', status: 'completed', stage: 'completed', canContinue: false, environment: frozen, cloud: { state: 'expired', label: 'Cloud workspace expired' }, recovery: { action: 'restart', reason: 'The original workspace expired. Start again with the same environment settings.' } });
+  const t = await open({ fixture: developerFixture({ codingRuns: [run], environments: [cloudEnvironment({ id: 'archived-profile', branch: 'changed-branch', setupCommand: 'changed setup' })] }) });
+  try {
+    await openThread(t, 'Repository task'); await t.page.locator('.coding-run').getByRole('button', { name: 'Start again', exact: true }).click();
+    assert.equal(await t.page.locator('#prompt').inputValue(), run.prompt);
+    assert.equal(await t.page.locator('#coding-environment').isDisabled(), true);
+    assert.match(await t.page.locator('#coding-environment').textContent(), /release\/atlas/);
+    assert.match(await t.page.locator('#coding-continue-label').textContent(), /original environment settings/);
+    assert.equal(t.fixture.requests.filter(r => r.path === 'coding/runs' && r.method === 'POST').length, 0);
+    await t.page.locator('#intent-ask').click(); await t.page.locator('#intent-code').click();
+    assert.equal(await t.page.locator('#start-coding').textContent(), 'Work on task');
+    await t.page.locator('.coding-run').getByRole('button', { name: 'Start again', exact: true }).click();
+    t.fixture.environments = [];
+    await t.page.locator('#prompt').fill('Retry the original task and verify it'); await t.page.locator('#start-coding').click();
+    await eventually(() => assert.equal(t.fixture.requests.filter(r => r.path === 'coding/runs' && r.method === 'POST').length, 1));
+    const call = t.fixture.requests.find(r => r.path === 'coding/runs' && r.method === 'POST');
+    assert.equal(call.body.retryFromRunId, 'prior-task'); assert.equal(Object.hasOwn(call.body, 'environmentId'), false);
+    assert.equal(t.fixture.codingRuns[1].environment.branch, 'release/atlas'); assert.equal(t.fixture.codingRuns[1].environment.setupCommand, 'npm ci --ignore-scripts');
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('task tabs preserve keyboard focus during progress and expose real command output and changed files', async () => {
+  const run = codingRun(), t = await open({ fixture: developerFixture({ codingRuns: [run], codingFiles: { 'coding-1': [{ path: 'src/app.js', operation: 'modify' }] } }) });
+  try {
+    await openThread(t, 'Repository task'); await t.page.getByRole('tab', { name: 'Activity', exact: true }).click();
+    run.activity.push({ label: 'Running focused checks', detail: 'Executed npm run test:atlas.' }); run.updatedAt += 1;
+    await t.page.waitForFunction(() => document.getElementById('task-coding-1-activity')?.textContent.includes('Running focused checks'), undefined, { timeout: 10000 });
+    assert.equal(await t.page.getByRole('tab', { name: 'Activity', exact: true }).getAttribute('aria-selected'), 'true');
+    assert.equal(await t.page.getByRole('tab', { name: 'Activity', exact: true }).evaluate(el => document.activeElement === el), true);
+    Object.assign(run, { status: 'completed', stage: 'completed', summary: 'Ready for review.', reviewReady: true, canContinue: true, revision: 2, checks: [{ command: 'npm run test:atlas', exitCode: 1, status: 'completed', outcome: 'failed', output: 'A meaningful check failed.' }], changes: { added: 0, modified: 1, deleted: 0 } });
+    await t.page.waitForFunction(() => document.querySelector('.coding-run .message-status')?.textContent === 'Ready to review', undefined, { timeout: 10000 });
+    await t.page.getByRole('tab', { name: 'Checks', exact: true }).click();
+    await t.page.locator('#task-coding-1-checks .coding-check summary').click();
+    assert.match(await t.page.locator('#task-coding-1-checks .coding-check pre').textContent(), /meaningful check failed/);
+    await t.page.getByRole('tab', { name: 'Changes', exact: true }).click(); await t.page.locator('#task-coding-1-changes .task-file').waitFor();
+    await t.page.locator('#task-coding-1-changes .task-file summary').click();
+    await t.page.waitForFunction(() => document.querySelector('#task-coding-1-changes .task-file pre').textContent.includes('+ after'));
+    assert.equal(t.fixture.requests.filter(r => /\/publish$/.test(r.path)).length, 0);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('cloud storage upgrade keeps default coding available and gives an identity confirmation action', async () => {
+  const t = await open({ fixture: developerFixture({ environmentsReady: false }) });
+  try {
+    await openThread(t, 'Repository task'); await t.page.locator('#prompt').fill('Use the default workspace');
+    assert.equal(await t.page.locator('#start-coding').isEnabled(), true);
+    t.fixture.overrides.set('POST setup', ({ reply }) => reply({ code: 'identity_confirmation_required', error: 'Confirm your identity to prepare cloud environment settings.' }, 403));
+    await t.page.locator('#manage-environments').click(); await t.page.locator('#upgrade-environments').click();
+    const link = t.page.locator('#environments-feedback').getByRole('link', { name: 'Confirm identity in InFlite' }); await link.waitFor();
+    assert.equal(await link.getAttribute('href'), '/#settings=account-confirm');
+    assert.equal(await t.page.locator('#new-environment').isDisabled(), true);
+    t.fixture.overrides.delete('POST setup'); await t.page.locator('#upgrade-environments').click();
+    await t.page.locator('#environments-upgrade').waitFor({ state: 'hidden' }); assert.equal(await t.page.locator('#new-environment').isEnabled(), true);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('owner changes clear environment scripts, selected profiles and late environment responses', async () => {
+  const environment = cloudEnvironment({ name: 'OWNER A PRIVATE PROFILE', setupCommand: 'echo OWNER_A_PRIVATE_SETUP' });
+  const t = await open({ fixture: developerFixture({ environments: [environment] }) }); let release;
+  try {
+    await openThread(t, 'Repository task'); await t.page.locator('#coding-environment').selectOption(environment.id);
+    await t.page.locator('#manage-environments').click(); await t.page.getByRole('button', { name: 'Edit OWNER A PRIVATE PROFILE', exact: true }).click();
+    const delayed = new Promise(resolve => { release = resolve; }); let held = false;
+    t.fixture.overrides.set('GET environments', async ({ reply, owner }) => { held = true; t.fixture.overrides.delete('GET environments'); await delayed; try { return await reply({ environments: [environment], ready: true }, 200, owner); } catch {} });
+    await t.page.locator('#environments-dialog [data-close]').click(); await t.page.locator('#header-environments').click(); await eventually(() => assert.equal(held, true));
+    t.fixture.owner = 'owner-b'; t.fixture.environments = []; t.fixture.conversations = []; t.fixture.messages = {}; t.fixture.codingRuns = [];
+    await t.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await t.page.waitForFunction(() => !document.body.classList.contains('session-check') && document.getElementById('conversation-title').textContent === 'New conversation'); release();
+    await t.page.waitForTimeout(40);
+    assert.equal(await t.page.locator('#environment-setup').inputValue(), ''); assert.equal(await t.page.locator('#environment-name').inputValue(), '');
+    assert.doesNotMatch(await t.page.locator('body').textContent(), /OWNER A PRIVATE PROFILE|OWNER_A_PRIVATE_SETUP/);
+    assert.equal(await t.page.locator('#coding-environment').inputValue(), ''); assert.deepEqual(t.errors, []);
+  } finally { release?.(); await t.close(); }
+});
+
+test('an unavailable conversation has a working new-conversation recovery action', async () => {
+  const t = await open({ conversation: 'no-longer-exists' });
+  try {
+    await t.page.getByRole('button', { name: 'Start a new conversation', exact: true }).waitFor();
+    await t.page.getByRole('button', { name: 'Start a new conversation', exact: true }).click();
+    assert.equal(await t.page.locator('#conversation-title').textContent(), 'New conversation'); assert.equal(new URL(t.page.url()).searchParams.has('conversation'), false);
+    await t.page.locator('#prompt').fill('A fresh conversation'); assert.equal(await t.page.locator('#send').isEnabled(), true); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+
+for (const switchEditor of [false, true]) test('a delayed cloud profile save preserves ' + (switchEditor ? 'a different editor draft' : 'newer input in the same editor'), async () => {
+  const environment = cloudEnvironment(), t = await open({ fixture: { environments: [environment] } }); let release;
+  try {
+    await t.page.locator('#header-environments').click(); await t.page.getByRole('button', { name: 'Edit Atlas development', exact: true }).click();
+    const delayed = new Promise(resolve => { release = resolve; }); let held = false;
+    t.fixture.overrides.set('PATCH environments/environment-atlas', async ({ reply, body }) => { held = true; t.fixture.overrides.delete('PATCH environments/environment-atlas'); await delayed; Object.assign(environment, body, { revision: 2 }); return reply({ environment }); });
+    await t.page.locator('#environment-setup').fill('npm ci --ignore-scripts'); await t.page.locator('#save-environment').click(); await eventually(() => assert.equal(held, true));
+    if (switchEditor) { await t.page.locator('#new-environment').click(); await t.page.locator('#environment-name').fill('A separate unsaved environment'); }
+    await t.page.locator('#environment-setup').fill('npm ci --ignore-scripts && npm run build');
+    release(); await t.page.waitForFunction(() => !document.getElementById('save-environment').disabled);
+    assert.equal(await t.page.locator('#environment-setup').inputValue(), 'npm ci --ignore-scripts && npm run build');
+    assert.equal(environment.setupCommand, 'npm ci --ignore-scripts');
+    if (switchEditor) { assert.equal(await t.page.locator('#environment-name').inputValue(), 'A separate unsaved environment'); assert.equal(await t.page.locator('#environment-id').inputValue(), ''); }
+    else {
+      assert.match(await t.page.locator('#environment-feedback').textContent(), /newer edits have not been saved/);
+      await t.page.locator('#save-environment').click(); await eventually(() => assert.equal(environment.revision, 3));
+      assert.equal(t.fixture.requests.filter(r => r.path === 'environments/environment-atlas' && r.method === 'PATCH')[1].body.expectedRevision, 2);
+    }
+    assert.deepEqual(t.errors, []);
+  } finally { release?.(); await t.close(); }
+});
+
+test('an older environment list cannot resurrect an archived profile after a newer refresh', async () => {
+  const environment = cloudEnvironment(), t = await open({ fixture: { environments: [environment] } }); let release;
+  try {
+    await t.page.locator('#header-environments').click(); await t.page.getByRole('button', { name: 'Edit Atlas development', exact: true }).waitFor();
+    await t.page.locator('#environments-dialog [data-close]').click(); await t.page.locator('#environments-dialog').waitFor({ state: 'hidden' });
+    const delayed = new Promise(resolve => { release = resolve; }); let held = false;
+    t.fixture.overrides.set('GET environments', async ({ reply }) => { held = true; t.fixture.overrides.delete('GET environments'); await delayed; return reply({ environments: [environment], ready: true }); });
+    await t.page.locator('#header-environments').click(); await eventually(() => assert.equal(held, true));
+    await t.page.locator('#environments-list').getByRole('button', { name: 'Archive', exact: true }).click();
+    await t.page.waitForFunction(() => document.querySelectorAll('#environments-list .environment-card').length === 0);
+    release(); await t.page.waitForTimeout(60);
+    assert.equal(await t.page.locator('#environments-list .environment-card').count(), 0); assert.equal(t.fixture.environments.length, 0);
+    assert.doesNotMatch(await t.page.locator('#coding-environment').textContent(), /Atlas development/); assert.deepEqual(t.errors, []);
+  } finally { release?.(); await t.close(); }
+});
+
+test('new task dispatch locks repository and environment selection while its conversation is being created', async () => {
+  const t = await open({ fixture: { environments: [cloudEnvironment({ repository: 'fixture/other' })] } }); let release;
+  try {
+    await chooseMode(t, 'developer'); await t.page.locator('#repository').selectOption('fixture/atlas');
+    const delayed = new Promise(resolve => { release = resolve; }); let held = false;
+    t.fixture.overrides.set('POST conversations', async ({ reply, body }) => { held = true; await delayed; const conversation = { ...body, id: 'pending-conversation', created_at: now }; t.fixture.conversations.push(conversation); t.fixture.messages[conversation.id] = []; return reply({ conversation }, 201); });
+    await t.page.locator('#prompt').fill('Start in fixture atlas'); await t.page.locator('#start-coding').click(); await eventually(() => assert.equal(held, true));
+    assert.equal(await t.page.locator('#repository').isDisabled(), true); assert.equal(await t.page.locator('#mode').isDisabled(), true); assert.equal(await t.page.locator('#coding-environment').isDisabled(), true);
+    await t.page.locator('#header-environments').click(); await t.page.locator('#environments-list .environment-use').waitFor();
+    assert.equal(await t.page.locator('#environments-list .environment-use').isEnabled(), false);
+    release(); await eventually(() => assert.equal(t.fixture.requests.filter(r => r.path === 'coding/runs' && r.method === 'POST').length, 1));
+    assert.equal(await t.page.locator('#repository').inputValue(), 'fixture/atlas');
+    assert.equal(t.fixture.requests.find(r => r.path === 'coding/runs' && r.method === 'POST').body.conversationId, 'pending-conversation');
+    assert.deepEqual(t.errors, []);
+  } finally { release?.(); await t.close(); }
 });
