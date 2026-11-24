@@ -2,7 +2,6 @@
    is checked on every response, including every new streaming response. */
 import { createSheets } from "../../roof/sheet.js";
 import { toast as showToast } from "../../roof/toast.js";
-import { atlasRunReference } from "../../roof/router.js";
 import { nativeSheets, confirmAction, promptValue } from "../roof/native.js";
 
 export function safeUrl(value) {
@@ -908,8 +907,8 @@ const checkpointLabels = {
 };
 const runPrefixes = { background: "b", coding: "c", scheduled: "s" };
 const runFromReference = reference => {
-  const id = atlasRunReference(reference);
-  return id && { id: id.slice(2), kind: { b: "background", c: "coding", s: "scheduled" }[id[0]] };
+  const match = /^([bcs])_([A-Za-z0-9_-]{1,38})$/.exec(reference || "");
+  return match && { id: match[2], kind: { b: "background", c: "coding", s: "scheduled" }[match[1]] };
 };
 const runStatus = run => run.kind === "coding" ? codingStatus(run) : runStatuses[run.status] || "Status unavailable";
 const runPath = run => "runs/" + run.kind + "/" + encodeURIComponent(run.id);
@@ -988,9 +987,9 @@ function openRunTimeline(run, trigger) {
   runTimeline = { sheet, ref: run, run: null, after: 0, request: null, timer: null, retry: 0 };
   $("run-heading").textContent = run.title || runKinds[run.kind];
   $("run-state").textContent = "Loading timeline…";
-  const reference = atlasRunReference(runPrefixes[run.kind] + "_" + run.id);
-  $("run-copy-link").hidden = !reference;
-  runTimeline.reference = reference;
+  const reference = runPrefixes[run.kind] + "_" + run.id;
+  runTimeline.reference = runFromReference(reference) ? reference : null;
+  $("run-copy-link").hidden = !runTimeline.reference;
   void loadRunTimeline();
 }
 function renderRunTimeline(run, events, hasMore) {
