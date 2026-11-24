@@ -14,6 +14,7 @@ import { workspaceContextStorageStatus, getWorkspaceContext, setWorkspaceContext
 import { atlasActivity, atlasRuns } from './atlas-activity.js';
 import { enqueueAtlasAnswer, resumeAtlasAnswer, stopAtlasAnswer } from './atlas-run-coordinator.js';
 import { publicAnswerRun, readAtlasRunTimeline, runTimelineStorage } from './atlas-run-timeline.js';
+import { parallelResearchStorage } from './atlas-parallel-research.js';
 
 const PRIVATE = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', 'Referrer-Policy': 'no-referrer' };
 const API_CSP = "default-src 'none'; frame-ancestors 'none'";
@@ -159,12 +160,14 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
     const storage = await store.storageStatus(env);
     if (path === '/health' && method === 'GET') {
       const [provider, timelineReady] = await Promise.all([providerStatus(env, owner), runTimelineStorage(env, storage.schemaVersion)]);
+      const backgroundAvailable = timelineReady && !!env.ATLAS_VERIFY_KEY;
+      const parallelAvailable = backgroundAvailable && await parallelResearchStorage(env, storage.schemaVersion);
       let github = { connected: false };
       if (storage.ready) {
         try { github = await repository.githubStatus(env, owner); }
         catch (error) { const safe = safeFailure(error); github = { connected: false, error: safe.error, code: safe.code }; }
       }
-      return json({ owner: ownerMarker, storage, provider, scheduling: scheduleAvailability(env), github, coding: await coding.codingHealth(env, provider), environments: await environments.environmentStorageStatus(env), workspaceContext: await workspaceContextStorageStatus(env), runs: { ready: timelineReady, backgroundAvailable: timelineReady && !!env.ATLAS_VERIFY_KEY } });
+      return json({ owner: ownerMarker, storage, provider, scheduling: scheduleAvailability(env), github, coding: await coding.codingHealth(env, provider), environments: await environments.environmentStorageStatus(env), workspaceContext: await workspaceContextStorageStatus(env), runs: { ready: timelineReady, backgroundAvailable, ...(parallelAvailable ? { parallelAvailable } : {}) } });
     }
     if (path === '/setup' && method === 'POST') {
       const body = await input(request);

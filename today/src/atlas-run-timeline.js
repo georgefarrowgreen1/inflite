@@ -1,4 +1,5 @@
 import { AtlasStoreError } from './atlas-store.js';
+import { PARALLEL_RESEARCH, readParallelResearch } from './atlas-parallel-research.js';
 
 const TIMELINE_SCHEMA_VERSION = 10;
 const ID = /^[A-Za-z0-9._:-]{1,600}$/;
@@ -36,6 +37,7 @@ const snapshotQueries = {
   `,
   background: `
     SELECT a.conversation_id, a.request_id, a.revision, a.status, a.checkpoint, a.error_code, a.updated_at, c.title, c.archived,
+      json_extract(a.input_json,'$.plan') AS plan,
       LENGTH(COALESCE(t.answer,'')) AS saved_chars, LENGTH(COALESCE(p.answer,'')) AS prior_chars
     FROM atlas_answer_runs a
     JOIN atlas_conversations c ON c.owner=a.owner AND c.id=a.conversation_id
@@ -85,6 +87,7 @@ export async function readAtlasRunTimeline(env, owner, kind, id, { after = 0, li
       canResume: !!env.ATLAS_VERIFY_KEY && !row.archived && resumable.has(row.status),
       hasDraft: row.saved_chars > 0 || row.prior_chars > 0,
     });
+    if (row.plan === PARALLEL_RESEARCH) Object.assign(run, { plan: row.plan, subtasks: await readParallelResearch(env, owner, id) });
   }
   if (kind === 'answer') Object.assign(run, { messageId: id, canStop: row.status === 'running' });
   if (kind === 'coding') run.canStop = codingActive.has(row.status) && row.status !== 'publishing' && !row.cancel_requested;

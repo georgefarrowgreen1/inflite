@@ -358,6 +358,78 @@ test('a running answer saves a real stream checkpoint and an explicit stop retai
   }
 });
 
+test('parallel research dispatches independent evidence checks together and saves one cited answer', async t => {
+  const { env, call } = await runFixture(t);
+  const conversation = await store.createConversation(env, 'alice', { title: 'Research the evidence', mode: 'research' });
+  const requestId = crypto.randomUUID(), path = '/background/' + requestId;
+  const input = { requestId, conversationId: conversation.id, prompt: 'Compare three credible sources.', plan: 'parallel_research' };
+  assert.equal((await call('', input)).status, 409);
+  assert.equal((await call('', { ...input, confirm: true })).status, 202);
+  assert.deepEqual((await call(path)).data.run.subtasks.map(step => step.status), ['queued', 'queued']);
+  let release;
+  const bothStarted = new Promise(resolve => { release = resolve; });
+  const calls = [];
+  const send = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    if (!body.tools?.length) {
+      assert.equal(calls.length, 3);
+      assert.match(JSON.stringify(body.input), /evidence from research/);
+      assert.match(JSON.stringify(body.input), /evidence from verification/);
+      return answer();
+    }
+    assert.deepEqual(body.tools.map(tool => tool.type), ['web_search']);
+    const step = body.instructions.startsWith('Independently') ? 'verification' : 'research';
+    if (calls.length === 2) release();
+    let timer;
+    try { await Promise.race([bothStarted, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Subtasks did not start together')), 3000); })]); }
+    finally { clearTimeout(timer); }
+    return Response.json({ status: 'completed', output: [{ type: 'message', content: [{
+      type: 'output_text', text: 'evidence from ' + step, annotations: [{ type: 'url_citation', title: step, url: 'https://example.org/' + step, start_index: 0, end_index: 8 }],
+    }] }], usage: { input_tokens: 20, output_tokens: 10 } });
+  };
+  assert.equal((await runDueAtlasAnswers(env, { verifyAdmin: async owner => owner === 'alice', send })).ran, 1);
+  const { run, events } = (await call(path)).data;
+  assert.equal(run.status, 'completed');
+  assert.deepEqual(run.subtasks.map(step => step.status), ['completed', 'completed']);
+  assert.equal(events.filter(event => event.checkpoint === 'subtask').length, 4);
+  const messages = await store.listMessages(env, 'alice', conversation.id);
+  assert.equal(messages.length, 1);
+  assert.deepEqual(messages[0].sources.map(source => source.url), ['https://example.org/research', 'https://example.org/verification']);
+  assert.equal((await store.usageSummary(env, 'alice')).totals.requests, 3);
+});
+
+test('recovery holds an interrupted parallel subtask for review and reuses completed evidence on explicit retry', async t => {
+  const { env, model, call } = await runFixture(t);
+  const conversation = await store.createConversation(env, 'alice', { title: 'Recover evidence', mode: 'research' });
+  const requestId = crypto.randomUUID(), path = '/background/' + requestId, interrupted = crypto.randomUUID();
+  const input = { requestId, conversationId: conversation.id, prompt: 'Review the release notes.', plan: 'parallel_research', confirm: true };
+  assert.equal((await call('', input)).status, 202);
+  await store.reserveRequest(env, 'alice', { id: interrupted, operation: 'research_subtask', model, conversationId: conversation.id });
+  await store.markRequestDispatched(env, 'alice', interrupted);
+  await env.ATLAS_DB.batch([
+    env.ATLAS_DB.prepare("UPDATE atlas_answer_runs SET status='running',lease_token='expired',lease_until=0 WHERE owner='alice' AND id=?").bind(requestId),
+    env.ATLAS_DB.prepare("UPDATE atlas_run_subtasks SET status='completed',answer='Previously verified evidence.' WHERE owner='alice' AND run_id=? AND step='research'").bind(requestId),
+    env.ATLAS_DB.prepare("UPDATE atlas_run_subtasks SET status='running',request_id=? WHERE owner='alice' AND run_id=? AND step='verification'").bind(interrupted, requestId),
+  ]);
+  const verifyAdmin = async () => true;
+  await runDueAtlasAnswers(env, { verifyAdmin, send: async () => assert.fail('Do not replay a dispatched subtask during recovery') });
+  const prior = (await call(path)).data.run;
+  assert.equal(prior.status, 'uncertain');
+  assert.deepEqual(prior.subtasks.map(step => step.status), ['completed', 'uncertain']);
+  assert.equal((await call(path + '/resume', { revision: 1, confirm: true })).status, 202);
+  const operations = [];
+  await runDueAtlasAnswers(env, { verifyAdmin, send: async (_url, init) => {
+    const body = JSON.parse(init.body);
+    operations.push(body.instructions);
+    if (!body.tools?.length) assert.match(JSON.stringify(body.input), /Previously verified evidence/);
+    return answer();
+  } });
+  assert.equal(operations.length, 2);
+  assert.match(operations[0], /^Independently investigate/);
+  assert.equal((await call(path)).data.run.status, 'completed');
+});
+
 test('schema eight keeps chat available, context requires explicit setup, and schema nine verifies its table', async t => {
   const { env, conversation } = await fixture(t, { version: 8 });
   assert.equal((await store.storageStatus(env)).ready, true);

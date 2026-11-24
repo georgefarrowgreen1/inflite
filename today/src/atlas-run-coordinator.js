@@ -3,6 +3,7 @@ import { requestIdentifier, runAtlasPrompt } from './atlas-chat.js';
 import { getProvider } from './atlas-provider.js';
 import { getWorkspaceContext } from './atlas-workspace-context.js';
 import { runTimelineStorage } from './atlas-run-timeline.js';
+import { PARALLEL_RESEARCH, executeParallelResearch, parallelResearchStorage, recoverParallelResearch } from './atlas-parallel-research.js';
 
 const EXECUTION_MS = 180000;
 const LEASE_MS = EXECUTION_MS + 30000;
@@ -34,6 +35,12 @@ function readInput(body, conversation) {
   if (!Array.isArray(context) || context.length > 6 || (context.length && (conversation.mode !== 'developer' || !conversation.repository))) {
     fail('context_invalid', 'Choose up to six sources from the selected repository.', 400);
   }
+  if (body.plan !== undefined) {
+    if (body.plan !== PARALLEL_RESEARCH || conversation.mode !== 'research' || includeFitness || context.length) {
+      fail('research_plan_invalid', 'Use a Research conversation for parallel public research.', 400);
+    }
+    if (body.confirm !== true) fail('confirmation_required', 'Confirm the Atlas allowance for parallel research.');
+  }
   const selections = context.map(source => {
     if (!source || !['file', 'pull', 'job'].includes(source.kind) || source.repository !== conversation.repository) {
       fail('context_invalid', 'The selected sources must belong to this repository.', 400);
@@ -49,7 +56,7 @@ function readInput(body, conversation) {
     }
     return selection;
   });
-  return JSON.stringify({ prompt: body.prompt.trim(), includeFitness, context: selections });
+  return JSON.stringify({ prompt: body.prompt.trim(), includeFitness, context: selections, ...(body.plan ? { plan: body.plan } : {}) });
 }
 
 async function checkConversation(env, owner, id) {
@@ -77,6 +84,7 @@ export async function enqueueAtlasAnswer(env, owner, body) {
   };
   const existing = await duplicate();
   if (existing) return existing;
+  if (body.plan && !await parallelResearchStorage(env)) fail('subtask_storage_upgrade_required', 'Upgrade Atlas storage to run parallel research.');
   await verifyBackgroundContext(env, owner, conversation.id);
   const { updatedAt } = await getProvider(env, owner);
   const now = Date.now();
@@ -147,16 +155,17 @@ async function recoverJob(env, job, now, allowed) {
   // won the race leaves dispatched=1 and can never be retried automatically.
   const request = await cancelRequest(env, job.owner, job.request_id, { undispatchedOnly: true });
   const message = await getMessage(env, job.owner, job.request_id);
-  if (!request.dispatched && job.status !== 'stopping' && allowed && request.error_code === 'request_cancelled') {
+  const subtaskNeedsReview = JSON.parse(job.input_json).plan === PARALLEL_RESEARCH && await recoverParallelResearch(env, job, now);
+  if (!request.dispatched && !subtaskNeedsReview && job.status !== 'stopping' && allowed && request.error_code === 'request_cancelled') {
     if (message?.status === 'running') await finishMessage(env, job.owner, job.request_id, { status: 'cancelled', errorCode: 'run_interrupted' });
     const requeued = await query(env, "UPDATE atlas_answer_runs SET revision=revision+1,request_id=?,status='queued',checkpoint='requeued',lease_token=NULL,lease_until=NULL,available_at=?,updated_at=? WHERE owner=? AND id=? AND lease_token=? AND status='running' RETURNING id",
       crypto.randomUUID(), now, now, job.owner, job.id, job.lease_token).first();
     if (requeued) return;
   }
-  const fallback = request.dispatched
+  const fallback = request.dispatched || subtaskNeedsReview
     ? { status: 'uncertain', code: 'run_interrupted' }
     : { status: 'cancelled', code: allowed ? 'request_cancelled' : 'administrator_unavailable' };
-  const final = !request.dispatched && !allowed ? fallback : recordedOutcome(message, request, fallback);
+  const final = !request.dispatched && (!allowed || subtaskNeedsReview) ? fallback : recordedOutcome(message, request, fallback);
   if (message?.status === 'running') {
     await finishMessage(env, job.owner, job.request_id, { answer: message.answer, sources: message.sources, status: final.status, errorCode: final.code });
   }
@@ -195,11 +204,11 @@ async function executeJob(env, candidate, { verifyAdmin, send, clock }) {
   }
   const guard = "owner=? AND id=? AND lease_token=? AND lease_until>? AND status='running'";
   const lease = () => [job.owner, job.id, token, clock()];
-  const beforeDispatch = async () => {
+  const beforeDispatch = async (checkpoint = 'dispatching') => {
     const allowed = await access();
     if (allowed !== true) fail(allowed === false ? 'administrator_unavailable' : 'account_unavailable', 'InFlite could not authorize this background run.', 503);
-    const active = await query(env, "UPDATE atlas_answer_runs SET checkpoint=CASE WHEN checkpoint='draft_saved' THEN checkpoint ELSE 'dispatching' END,updated_at=? WHERE " + guard + ' RETURNING id',
-      clock(), ...lease()).first();
+    const active = await query(env, "UPDATE atlas_answer_runs SET checkpoint=CASE WHEN checkpoint='draft_saved' THEN checkpoint ELSE ? END,updated_at=? WHERE " + guard + ' RETURNING id',
+      checkpoint, clock(), ...lease()).first();
     if (!active) fail('request_cancelled', 'The run was stopped or its worker has changed.');
     const connection = await query(env, 'SELECT updated_at FROM atlas_credentials WHERE owner=?', job.owner).first();
     if (connection?.updated_at !== job.connection_version) fail('provider_connection_changed', 'The saved OpenAI connection changed. Review the run before trying again.');
@@ -210,16 +219,24 @@ async function executeJob(env, candidate, { verifyAdmin, send, clock }) {
   };
   let outcome;
   try {
+    const input = JSON.parse(job.input_json);
+    const signal = AbortSignal.timeout(EXECUTION_MS);
+    let researchEvidence;
+    if (input.plan === PARALLEL_RESEARCH) {
+      await checkConversation(env, job.owner, job.conversation_id);
+      await verifyBackgroundContext(env, job.owner, job.conversation_id);
+      researchEvidence = await executeParallelResearch(env, job, { prompt: input.prompt, beforeDispatch: () => beforeDispatch('researching'), signal, send, clock });
+    }
     const result = await runAtlasPrompt(env, {
-      ...JSON.parse(job.input_json), owner: job.owner, conversationId: job.conversation_id,
+      ...input, researchEvidence, owner: job.owner, conversationId: job.conversation_id,
       requestId: job.request_id, connectionVersion: job.connection_version, resumeFrom: job.resume_from,
-      background: true, signal: AbortSignal.timeout(EXECUTION_MS), send, beforeDispatch, onCheckpoint,
+      background: true, signal, send, beforeDispatch: () => beforeDispatch(researchEvidence ? 'synthesizing' : 'dispatching'), onCheckpoint,
     });
     outcome = { status: result.message.status, code: result.message.error_code };
   } catch (error) {
     const [request, message] = await Promise.all([getRequest(env, job.owner, job.request_id), getMessage(env, job.owner, job.request_id)]);
     const code = typeof error?.code === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(error.code) ? error.code : 'run_failed';
-    outcome = recordedOutcome(message, request, { status: code === 'request_cancelled' ? 'cancelled' : 'failed', code });
+    outcome = recordedOutcome(message, request, { status: code === 'request_cancelled' ? 'cancelled' : code === 'parallel_subtask_uncertain' ? 'uncertain' : 'failed', code });
   }
   const saved = ['completed', 'incomplete'].includes(outcome.status) ? 'saved' : outcome.status;
   await settleJob(env, job, outcome.status, saved, outcome.code, clock());

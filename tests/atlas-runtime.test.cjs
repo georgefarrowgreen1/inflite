@@ -81,7 +81,7 @@ test('Atlas routes, owner context, streaming and scheduling integrate in workerd
     assert.equal((await call('/conversations')).status, 409);
     assert.equal((await post('/setup', {})).status, 409);
     assert.equal((await post('/setup', { confirm: true }, { headers: { 'X-Fixture-Fresh': 'false' } })).status, 403);
-    assert.equal((await post('/setup', { confirm: true })).value.schemaVersion, 10);
+    assert.equal((await post('/setup', { confirm: true })).value.schemaVersion, health.value.storage.requiredVersion);
     assert.equal((await post('/setup', { confirm: true })).value.ready, true);
     assert.equal(calls.length, 0);
   });
