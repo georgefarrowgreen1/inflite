@@ -205,6 +205,10 @@ test('Atlas routes, owner context, streaming and scheduling integrate in workerd
     const body = { conversationId: second.id, requestId: uid(), prompt: 'Continue after the tab closes' };
     const before = payloads.length;
     assert.equal((await post('/runs', body)).value.code, 'background_unavailable');
+    adminAllowed = false;
+    assert.equal((await post('/runs', body, { headers })).value.code, 'administrator_unavailable');
+    assert.equal((await call('/runs/background/' + body.requestId)).status, 404);
+    adminAllowed = true;
     const submissions = await Promise.all([post('/runs', body, { headers }), post('/runs', body, { headers })]);
     assert.ok(submissions.every(response => response.status === 202 && response.value.run.id === body.requestId));
     assert.equal(submissions[0].value.run.messageId, submissions[1].value.run.messageId);

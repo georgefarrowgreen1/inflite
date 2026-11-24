@@ -192,6 +192,12 @@ test('recent runs remains available before coding storage is installed', async t
 async function runFixture(t) {
   const { env, conversation } = await fixture(t);
   env.ATLAS_VERIFY_KEY = 'fixture';
+  env.APPS = { async fetch(req) {
+    assert.equal(new URL(req.url).pathname, '/api/atlas-admin');
+    assert.equal(req.headers.get('Authorization'), 'Bearer fixture');
+    assert.equal(req.headers.get('Cookie'), null);
+    return Response.json({ allowed: (await req.json()).owner === 'alice' });
+  } };
   const model = 'gpt-6.2-sol', send = async () => assert.fail('The HTTP request must never call a provider');
   await connectProvider(env, 'alice', { key: 'sk-' + 'fixture'.repeat(8), model }, { send: async () => Response.json({ id: model }) });
   return {

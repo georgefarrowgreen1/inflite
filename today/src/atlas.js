@@ -136,6 +136,12 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
       return current?.signedIn === true && current?.apps?.mail === true && String(current?.user?.id) === owner;
     } catch { return null; }
   };
+  const requireBackgroundAccess = async () => {
+    if (!env.ATLAS_VERIFY_KEY) fail('background_unavailable', 'Background runs need the InFlite account verification connection.', 503);
+    const allowed = await verifyAdmin(owner);
+    if (allowed === false) fail('administrator_unavailable', 'InFlite could not confirm administrator access for background work.', 403);
+    if (allowed !== true) fail('background_unavailable', 'InFlite could not verify access for background work. Try again shortly.', 503);
+  };
   try {
     if (['GET', 'HEAD'].includes(request.method) && ['/atlas', '/atlas/'].includes(url.pathname)) {
       const nonce = crypto.randomUUID();
@@ -184,7 +190,11 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
     const runRoute = /^\/runs\/(background|coding|scheduled)\/([^/]+)(?:\/(stop|resume))?$/.exec(path);
     if ((path === '/runs' && method === 'POST') || runRoute) {
       if (!await runTimelineStorage(env, storage.schemaVersion)) fail('runs_storage_upgrade_required', 'Upgrade Atlas storage to use run timelines and background answers.', 409);
-      if (!runRoute) return json({ run: publicAnswerRun(await enqueueAtlasAnswer(env, owner, await input(request))) }, 202);
+      if (!runRoute) {
+        const body = await input(request);
+        await requireBackgroundAccess();
+        return json({ run: publicAnswerRun(await enqueueAtlasAnswer(env, owner, body)) }, 202);
+      }
       const [, kind, id, action] = runRoute;
       if (!action && method === 'GET') return json(await readAtlasRunTimeline(env, owner, kind, id, {
         after: Number(url.searchParams.get('after') ?? 0),
@@ -192,7 +202,11 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
       }));
       if (kind === 'background' && method === 'POST') {
         if (action === 'stop') return json({ run: publicAnswerRun(await stopAtlasAnswer(env, owner, id, await input(request, 1024))) });
-        if (action === 'resume') return json({ run: publicAnswerRun(await resumeAtlasAnswer(env, owner, id, await input(request, 1024))) }, 202);
+        if (action === 'resume') {
+          const body = await input(request, 1024);
+          await requireBackgroundAccess();
+          return json({ run: publicAnswerRun(await resumeAtlasAnswer(env, owner, id, body)) }, 202);
+        }
       }
     }
 

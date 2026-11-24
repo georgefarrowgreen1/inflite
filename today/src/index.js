@@ -2,6 +2,8 @@ import { runAtlasScheduled } from "./atlas-scheduler.js";
 import { executeScheduledAtlas } from "./atlas-chat.js";
 import { reconcileCodingBackground } from "./atlas-coding.js";
 import { runDueAtlasAnswers } from "./atlas-run-coordinator.js";
+import { runTimelineStorage } from "./atlas-run-timeline.js";
+import { upgradeReleasedStorage } from "./atlas-store.js";
 import { atlas } from "./atlas.js";
 // InFlite Today, at inflite.ai: its page and files come from today/public (the assets); only /api/* and /version run
 // this Worker. It keeps nothing of its own: every /api/* request is checked here, then passed on with the account's
@@ -99,7 +101,11 @@ const worker = {
           return new Response(null, { status: 302, headers: { Location: "/atlas/" + fragment, "Cache-Control": "no-store" } });
         }
         if (["/atlas/", "/atlas/index.html"].includes(url.pathname)) return roofPage(request, env);
-        if (url.pathname === "/atlas/version") return json({ build: await atlasBuild(env, request), min: null });
+        if (url.pathname === "/atlas/version") {
+          const release = { build: await atlasBuild(env, request), min: null };
+          if (url.searchParams.get("check") === "runs") release.runsReady = await runTimelineStorage(env);
+          return json(release);
+        }
         if (/^\/atlas\/(?:roof|assets)\/[a-z0-9._/-]+\.(?:js|css)$/.test(url.pathname)) return env.ASSETS.fetch(request);
       }
       return atlas(request, env, { ctx });
@@ -281,6 +287,8 @@ async function version(env, request) {
 
 export default {
   async scheduled(controller, env, ctx) {
+    try { await upgradeReleasedStorage(env); }
+    catch { console.warn(JSON.stringify({event:"atlas_release_migration_failed"})); }
     if (!env.ATLAS_VERIFY_KEY) return;
     const verifyAdmin = async owner => {
       try {

@@ -195,6 +195,15 @@ export async function upgradeStorage(env){
   if(!status)fail('storage_upgrade_failed','Atlas storage upgrade could not be verified.',503);
   return status;
 }
+
+export async function upgradeReleasedStorage(env){
+  if(!env?.ATLAS_DB||env.ATLAS_RELEASE_SCHEMA!==String(SCHEMA_VERSION))return;
+  // The deployed cron applies this release to an existing Atlas database.
+  // An empty binding still needs explicit administrator setup.
+  const recorded=await first(env,'SELECT version FROM atlas_schema WHERE id=1');
+  if(!recorded||recorded.version>=SCHEMA_VERSION||!(await storageStatus(env)).ready)return;
+  await upgradeStorage(env);
+}
 export async function getSettings(env,owner){
   const row=await first(env,'SELECT * FROM atlas_settings WHERE owner=?',ownerId(owner));
   return row?{memoryEnabled:bool(row.memory_enabled),memory:row.memory,dailyRequestLimit:row.daily_request_limit,dailyBudgetUsd:row.daily_budget_usd,timezone:row.timezone}:{...DEFAULTS};
