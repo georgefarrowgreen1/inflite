@@ -18,11 +18,11 @@ async function addMessage(env,owner,conversationId,{answer='A sourced answer',so
 }
 
 test('real D1 migration creates fresh storage and matches the checked-in migrations',async t=>{
-  const sql=(await Promise.all(Array.from({length:6},(_,i)=>readFile(new URL('../atlas/migrations/'+String(i+1).padStart(4,'0')+'.sql',import.meta.url),'utf8')))).join('\n');
+  const sql=(await Promise.all(Array.from({length:7},(_,i)=>readFile(new URL('../atlas/migrations/'+String(i+1).padStart(4,'0')+'.sql',import.meta.url),'utf8')))).join('\n');
   assert.equal(store.SCHEMA_SQL,sql);
   const env=await fixture(t,{upgrade:false});assert.equal((await store.storageStatus(env)).ready,false);
-  assert.deepEqual(await store.upgradeStorage(env),{ready:true,schemaVersion:6,requiredVersion:6});
-  assert.deepEqual(await store.upgradeStorage(env),{ready:true,schemaVersion:6,requiredVersion:6});
+  assert.deepEqual(await store.upgradeStorage(env),{ready:true,schemaVersion:7,requiredVersion:7});
+  assert.deepEqual(await store.upgradeStorage(env),{ready:true,schemaVersion:7,requiredVersion:7});
   assert.equal((await store.storageStatus({})).code,'storage_missing');
 });
 

@@ -22,13 +22,15 @@ after(async () => { await browser?.close(); });
 const source = { url: 'https://example.org/research', title: 'Research evidence', start_index: 0, end_index: 14 };
 function repositoryFile(path, extra = {}) { return { kind: 'file', repository: 'fixture/atlas', path, ref: 'a'.repeat(40), blobSha: 'b'.repeat(40), mode: '100644', title: path, url: 'https://github.com/fixture/atlas/blob/' + 'a'.repeat(40) + '/' + path, ...extra }; }
 const now = 1795500000000;
+function codingRun(extra = {}) { return { id: 'coding-1', conversationId: 'repo', requestId: 'request-1', repository: 'fixture/atlas', baseBranch: 'main', baseSha: 'a'.repeat(40), prompt: 'Build the repository improvement', status: 'running', stage: 'inspecting_repository', summary: '', createdAt: now, updatedAt: now, revision: 1, changes: { added: 0, modified: 0, deleted: 0 }, checks: [], activity: [{ type: 'message', label: 'Atlas update', detail: 'Reading repository instructions.', source: 'assistant', truncated: false }], budgetUsd: 2, providerRecordedSpendUsd: null, canContinue: false, reviewReady: false, ...extra }; }
+function developerFixture(extra = {}) { return { conversations: [{ id: 'repo', title: 'Repository task', mode: 'developer', repository: 'fixture/atlas', created_at: now }], messages: { repo: [] }, ...extra }; }
 function defaultFixture() {
   return {
     owner: 'owner-a', ready: true, connected: true, scheduling: true, models: [{ id: 'gpt-6.2-sol', label: 'GPT-6.2 Sol', webSearch: true }, { id: 'fixture-alternate', label: 'Fixture alternate', webSearch: false }], model: 'gpt-6.2-sol', tested: true,
     conversations: [{ id: 'alpha', title: 'Alpha research', mode: 'research', archived: false, created_at: now, updated_at: now }, { id: 'beta', title: 'Beta planning', mode: 'personal', archived: false, created_at: now, updated_at: now }],
     messages: { alpha: [{ id: 'alpha-first', prompt: 'Summarize the evidence', answer: 'Evidence here.\n\n| Finding | Status |\n| --- | --- |\n| Safe rendering | Verified |\n\n```js\nconst secure = true;\n```', status: 'completed', sources: [source], context: [], created_at: now }], beta: [{ id: 'beta-first', prompt: 'Plan a project', answer: 'Only beta content belongs here.', status: 'completed', sources: [], context: [], created_at: now }] },
     settings: { memoryEnabled: false, memory: 'Owner A private memory', dailyRequestLimit: 20, dailyBudgetUsd: null, timezone: 'Europe/London' },
-    tasks: [], briefs: [], patches: [], requests: [], overrides: new Map(), next: 1, older: null
+    tasks: [], briefs: [], patches: [], coding: { ready: true, storageReady: true, message: '' }, codingRuns: [], codingFiles: {}, codingDiffs: {}, requests: [], overrides: new Map(), next: 1, older: null
   };
 }
 async function open(options = {}) {
@@ -58,11 +60,11 @@ async function open(options = {}) {
     }
     const path = url.pathname.slice('/atlas/api/'.length), method = request.method(), owner = fixture.owner;
     let body; try { body = request.postDataJSON(); } catch {}
-    fixture.requests.push({ path, method, body, headers: request.headers() });
+    fixture.requests.push({ path, method, body, search: url.search, headers: request.headers() });
     const reply = (data, status = 200, capturedOwner = owner) => route.fulfill({ status, headers: { 'X-Atlas-Owner': capturedOwner, 'Cache-Control': 'no-store' }, json: data });
     if (fixture.overrides.has(method + ' ' + path)) return fixture.overrides.get(method + ' ' + path)({ route, reply, body, url, owner });
-    if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 6 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' } });
-    if (path === 'setup') { fixture.ready = true; return reply({ ready: true, schemaVersion: 6 }); }
+    if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 7 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, coding: fixture.coding, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' } });
+    if (path === 'setup') { fixture.ready = true; fixture.coding = { ready: true, storageReady: true, message: '' }; return reply({ ready: true, schemaVersion: 7 }); }
     if (path === 'settings') { if (method === 'PATCH') Object.assign(fixture.settings, body); return reply(fixture.settings); }
     if (path === 'models') return reply({ models: fixture.models, selected: fixture.model });
     if (path === 'provider') { if (method === 'POST') { fixture.connected = true; fixture.model = body.model; fixture.tested = false; } else if (method === 'DELETE') fixture.connected = false; return reply({ keySaved: fixture.connected }); }
@@ -88,6 +90,20 @@ async function open(options = {}) {
       return reply({ conversation, messages: fixture.messages[conversation.id] || [], hasMore: !!fixture.older, nextBeforeId: fixture.older ? 'alpha-first' : null });
     }
     if (/^requests\/.+\/cancel$/.test(path)) return reply({ cancelled: true });
+    if (path === 'coding/runs') {
+      if (method === 'POST') { const run = codingRun({ id: 'coding-' + fixture.next++, conversationId: body.conversationId, requestId: body.requestId, prompt: body.prompt, status: 'preparing', stage: 'preparing_workspace' }); fixture.codingRuns.push(run); return reply({ run }, 202); }
+      return reply({ runs: fixture.codingRuns.filter(run => run.conversationId === url.searchParams.get('conversationId')) });
+    }
+    match = /^coding\/runs\/([^/]+)(?:\/(cancel|continue|changes|diff|publish))?$/.exec(path);
+    if (match) {
+      const run = fixture.codingRuns.find(item => item.id === match[1]); if (!run) return reply({ code: 'not_found', error: 'Task missing.' }, 404);
+      if (match[2] === 'cancel') Object.assign(run, { status: 'cancelled', stage: 'cancelled', canContinue: true, finishedAt: now + 100 });
+      if (match[2] === 'continue') Object.assign(run, { status: 'running', stage: 'working', prompt: body.prompt, requestId: body.requestId, revision: run.revision + 1, canContinue: false, reviewReady: false, checks: [] });
+      if (match[2] === 'changes') return reply({ run, files: fixture.codingFiles[run.id] || [], checks: run.checks });
+      if (match[2] === 'diff') { const path = url.searchParams.get('path'); return reply({ path, operation: 'modify', binary: false, diff: fixture.codingDiffs[path] || '- before\n+ after' }); }
+      if (match[2] === 'publish') { Object.assign(run, { status: 'published', canContinue: false, pullRequest: { url: 'https://github.com/fixture/atlas/pull/42', number: 42 } }); return reply({ run, pullRequest: run.pullRequest }); }
+      return reply({ run });
+    }
     if (path === 'usage') return reply({ day: '2026-11-24', limits: { dailyRequestLimit: 20, dailyBudgetUsd: 2 }, totals: { requests: 3, completed: 2, failed: 1, pending: 0, inputTokens: 120, outputTokens: 40, estimatedCostUsd: 0.004, unknownCostRequests: 1 }, requests: [] });
     if (path === 'briefs') { if (method === 'POST') { const message = fixture.messages[body.conversationId]?.find(m => m.id === body.messageId); const brief = { id: 'brief-' + fixture.next++, title: body.title || 'Saved brief', created_at: now, ...message }; fixture.briefs.push(brief); return reply({ brief }, 201); } return reply({ briefs: fixture.briefs }); }
     match = /^briefs\/([^/]+)(?:\/(export))?$/.exec(path);
@@ -240,7 +256,7 @@ test('account switching drops late private responses and starts the new account 
   } finally { release?.(); await t.close(); }
 });
 
-test('selecting a repository supports import repo without manual sources and reuses the files read for a reviewed draft', async () => {
+test('Send explores a repository without manual sources and Work on task starts independently', async () => {
   const t = await open({ width: 320, height: 844, mobile: true }); try {
     await t.page.locator('#mode').selectOption('developer'); await t.page.locator('#repository').selectOption('fixture/atlas');
     assert.equal(await t.page.locator('#repository-note').textContent(), 'Atlas finds and reads relevant files automatically.');
@@ -265,41 +281,13 @@ test('selecting a repository supports import repo without manual sources and reu
     assert.match(await t.page.locator('[aria-label="Context used for this response"]').textContent(), /README\.md.*aaaaaaaaaaaa.*src\/app\.js/s);
     assert.equal(await t.page.locator('.source-list a[href="' + files[1].url + '"]').count(), 1);
     assert.equal(await t.page.locator('#attached-context').textContent(), '');
-    await t.page.locator('#prompt').fill('Correct the application entry point'); await t.page.locator('#prepare-patch').click();
-    await t.page.locator('#patch-detail .patch-file').waitFor();
-    const prepared = t.fixture.requests.find(r => r.path === 'patches/prepare');
-    assert.deepEqual(prepared.body.paths, ['README.md', 'src/app.js']); assert.equal(prepared.body.repository, 'fixture/atlas'); assert.equal(prepared.body.ref, 'a'.repeat(40));
+    await t.page.locator('#prompt').fill('Correct the application entry point'); await t.page.locator('#start-coding').click();
+    await t.page.locator('.coding-run').waitFor();
+    const started = t.fixture.requests.find(r => r.path === 'coding/runs' && r.method === 'POST');
+    assert.equal(started.body.prompt, 'Correct the application entry point'); assert.equal(started.body.conversationId, request.conversationId);
+    assert.deepEqual(Object.keys(started.body).sort(), ['conversationId', 'prompt', 'requestId']);
     assert.equal(t.fixture.requests.filter(r => /\/publish$/.test(r.path)).length, 0);
-    assert.equal(await t.page.getByRole('button', { name: 'Create draft pull request' }).isVisible(), true); assert.deepEqual(t.errors, []);
-  } finally { await t.close(); }
-});
-
-for (const scenario of [
-  { title: 'more than five files', files: Array.from({ length: 6 }, (_, i) => repositoryFile('src/file-' + i + '.js')), feedback: /up to five existing files/ },
-  { title: 'different revisions', files: [repositoryFile('src/app.js'), repositoryFile('README.md', { ref: 'c'.repeat(40) })], feedback: /different revisions/ }
-]) test('automatic repository context keeps chat available when a draft spans ' + scenario.title, async () => {
-  const t = await open({ fixture: { conversations: [{ id: 'repo', title: 'Repository investigation', mode: 'developer', repository: 'fixture/atlas', created_at: now }], messages: { repo: [{ id: 'repo-read', status: 'completed', prompt: 'Investigate the repository', answer: 'Here are the findings.', context: scenario.files, sources: [] }] } } });
-  try {
-    await openThread(t, 'Repository investigation'); await t.page.locator('#prompt').fill('Make this change');
-    assert.equal(await t.page.locator('#send').isEnabled(), true);
-    await t.page.locator('#prepare-patch').click(); await t.page.locator('#patches-dialog').waitFor({ state: 'visible' });
-    assert.match(await t.page.locator('#patch-feedback').textContent(), scenario.feedback);
-    assert.equal(t.fixture.requests.some(r => r.path === 'patches/prepare'), false);
-    await t.page.getByRole('button', { name: 'Close draft changes' }).click();
-    assert.equal(await t.page.locator('#send').isEnabled(), true); assert.deepEqual(t.errors, []);
-  } finally { await t.close(); }
-});
-
-test('automatic draft context uses the latest completed answer instead of silently reusing older files', async () => {
-  const t = await open({ fixture: { conversations: [{ id: 'repo', title: 'Repository investigation', mode: 'developer', repository: 'fixture/atlas', created_at: now }], messages: { repo: [
-    { id: 'old-read', status: 'completed', prompt: 'Read the app', answer: 'The app has been read.', context: [repositoryFile('src/app.js')], sources: [] },
-    { id: 'latest', status: 'completed', prompt: 'Discuss another approach', answer: 'Here is another approach.', context: [], sources: [] },
-    { id: 'partial', status: 'incomplete', prompt: 'Inspect a different file', answer: 'Partial findings.', context: [repositoryFile('README.md')], sources: [] }
-  ] } } });
-  try {
-    await openThread(t, 'Repository investigation'); await t.page.locator('#prompt').fill('Prepare this change');
-    assert.equal(await t.page.locator('#prepare-patch').isDisabled(), true); assert.equal(await t.page.locator('#send').isEnabled(), true);
-    assert.equal(t.fixture.requests.some(r => r.path === 'repositories/context' || r.path === 'patches/prepare'), false); assert.deepEqual(t.errors, []);
+    assert.equal(t.fixture.requests.some(r => r.path === 'patches/prepare'), false); assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
 });
 
@@ -321,10 +309,128 @@ for (const includeExplicit of [false, true]) test('Retry refreshes automatic rep
   } finally { await t.close(); }
 });
 
-test('developer context prepares a reviewable patch and requires a separate explicit publication', async () => {
-  const t = await open(); try {
-    await t.page.locator('#mode').selectOption('developer'); await t.page.locator('#repository').selectOption('fixture/atlas'); await t.page.locator('#attach-context').click(); await t.page.locator('#context-list input').first().check(); await t.page.locator('#context-attach').click(); await t.page.locator('#context-dialog').waitFor({ state: 'hidden' }); assert.match(await t.page.locator('#attached-context').textContent(), /src\/app.js/);
-    await t.page.locator('#prompt').fill('Make a small correction'); await t.page.locator('#prepare-patch').click(); await t.page.locator('#patch-detail .patch-file').waitFor(); assert.equal(t.fixture.requests.filter(r => /\/publish$/.test(r.path)).length, 0); assert.match(await t.page.locator('#patch-detail').textContent(), /Validation plan/);
+test('coding tasks start directly with a repository and prompt at 320px without file selection', async () => {
+  const t = await open({ width: 320, height: 844, mobile: true }); try {
+    await t.page.locator('#mode').selectOption('developer'); await t.page.locator('#repository').selectOption('fixture/atlas');
+    await t.page.locator('#prompt').fill('Implement the feature across the repository and run the focused checks.');
+    assert.equal(await t.page.locator('#start-coding').isEnabled(), true);
+    assert.match(await t.page.locator('#coding-allowance').textContent(), /\$2 task allowance.*best effort.*additional or delayed.*compute.*separately/);
+    await t.page.locator('.coding-permissions summary').click(); assert.match(await t.page.locator('.coding-permissions').textContent(), /edit files and run commands in an isolated workspace/);
+    const geometry = await t.page.evaluate(() => ({ width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, composer: document.getElementById('composer').getBoundingClientRect().toJSON() }));
+    assert.ok(geometry.scrollWidth <= geometry.width + 1 && geometry.composer.left >= 0 && geometry.composer.right <= geometry.width + 1 && geometry.composer.bottom <= geometry.height + 1, JSON.stringify(geometry));
+    await t.page.locator('#start-coding').click(); await t.page.locator('.coding-run').waitFor();
+    const created = t.fixture.requests.find(call => call.path === 'conversations' && call.method === 'POST'), started = t.fixture.requests.find(call => call.path === 'coding/runs' && call.method === 'POST');
+    assert.equal(created.body.mode, 'developer'); assert.equal(created.body.repository, 'fixture/atlas');
+    assert.equal(started.body.prompt, 'Implement the feature across the repository and run the focused checks.');
+    assert.deepEqual(Object.keys(started.body).sort(), ['conversationId', 'prompt', 'requestId']); assert.match(started.body.requestId, /^[a-f0-9-]{36}$/);
+    assert.equal(t.fixture.requests.some(call => ['repositories/tree', 'repositories/context', 'patches/prepare'].includes(call.path)), false);
+    assert.equal(await t.page.evaluate(() => window.__atlasStream.requests.length), 0);
+    assert.match(await t.page.locator('.coding-run').textContent(), /Leaving does not cancel this task/);
+    assert.equal(await t.page.locator('#prompt').inputValue(), ''); assert.deepEqual(t.errors, []);
+    await t.screenshot('atlas-coding-task-320');
+  } finally { await t.close(); }
+});
+
+test('coding storage upgrade leaves chat available and enables tasks through existing setup', async () => {
+  const t = await open({ fixture: { coding: { ready: false, storageReady: false, message: 'Prepare coding task storage.' } } }); try {
+    await t.page.locator('#mode').selectOption('developer'); await t.page.locator('#repository').selectOption('fixture/atlas'); await t.page.locator('#prompt').fill('Inspect this repository');
+    assert.equal(await t.page.locator('#send').isEnabled(), true); assert.equal(await t.page.locator('#start-coding').isDisabled(), true);
+    assert.equal(await t.page.locator('#upgrade-storage').isVisible(), true); assert.match(await t.page.locator('#setup-message').textContent(), /conversations are ready/);
+    await t.page.locator('#upgrade-storage').click(); await t.page.locator('#setup-banner').waitFor({ state: 'hidden' });
+    assert.equal(await t.page.locator('#start-coding').isEnabled(), true); assert.deepEqual(t.fixture.requests.find(call => call.path === 'setup').body, { confirm: true }); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('coding tasks restore after reload and navigation, poll remote progress and never cancel on detach', async () => {
+  const run = codingRun();
+  const fixture = developerFixture({ codingRuns: [run] }); fixture.conversations.push({ id: 'other', title: 'Another conversation', mode: 'research', created_at: now }); fixture.messages.other = [];
+  const t = await open({ fixture }); try {
+    await openThread(t, 'Repository task'); await t.page.locator('.coding-run').waitFor();
+    await t.page.reload(); await t.page.locator('.coding-run').waitFor(); assert.match(await t.page.locator('.coding-run').textContent(), /Build the repository improvement/);
+    await openThread(t, 'Another conversation'); assert.equal(await t.page.locator('.coding-run').count(), 0);
+    await openThread(t, 'Repository task'); await t.page.locator('.coding-run').waitFor();
+    Object.assign(run, { status: 'completed', stage: 'completed', summary: 'Implemented and saved the result.', changes: { added: 0, modified: 1, deleted: 0 }, canContinue: true, reviewReady: true });
+    await t.page.waitForFunction(() => document.querySelector('.coding-run')?.textContent.includes('Implemented and saved the result.'), undefined, { timeout: 10000 });
+    assert.ok(t.fixture.requests.some(call => call.path === 'coding/runs/coding-1' && call.method === 'GET'));
+    assert.match(await t.page.locator('.coding-run').textContent(), /Tests are not verified/);
+    assert.equal(t.fixture.requests.some(call => /coding\/runs\/.+\/cancel$/.test(call.path)), false);
+    assert.equal(t.fixture.requests.some(call => call.path === 'coding/runs' && call.method === 'POST'), false); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('coding review handles six files, additions, deletions and failed executed commands before explicit publication', async () => {
+  const files = Array.from({ length: 6 }, (_, i) => ({ path: 'src/file-' + i + '.js', operation: i < 2 ? 'add' : i === 5 ? 'delete' : 'modify', beforeMode: i < 2 ? null : '100644', afterMode: i === 5 ? null : '100644', bytes: 40 }));
+  const run = codingRun({ status: 'completed', stage: 'completed', reviewReady: true, canContinue: true, revision: 3, changes: { added: 2, modified: 3, deleted: 1 }, checks: [{ command: 'npm run test:atlas', status: 'completed', outcome: 'failed', source: 'provider_command_execution', exitCode: 1, output: 'One focused test failed: expected a saved result.' }] });
+  const t = await open({ width: 320, height: 844, mobile: true, fixture: developerFixture({ codingRuns: [run], codingFiles: { 'coding-1': files } }) }); try {
+    await openThread(t, 'Repository task'); await t.page.getByRole('button', { name: 'Review changes', exact: true }).click();
+    await t.page.waitForFunction(() => document.querySelectorAll('#patch-detail .patch-file').length === 6);
+    assert.match(await t.page.locator('#patch-detail').textContent(), /6 changed files/);
+    assert.match(await t.page.locator('#patch-detail .patch-file').first().textContent(), /add · src\/file-0/); assert.match(await t.page.locator('#patch-detail .patch-file').last().textContent(), /delete · src\/file-5/);
+    assert.match(await t.page.locator('#patch-detail .coding-checks').textContent(), /Executed commands.*npm run test:atlas.*failed.*exit 1/s);
+    assert.doesNotMatch(await t.page.locator('#patch-detail').textContent(), /Tests passed|Validation plan/);
+    assert.equal(t.fixture.requests.filter(call => /\/diff$/.test(call.path)).length, 0);
+    await t.page.locator('#patch-detail .patch-file summary').first().click(); await t.page.waitForFunction(() => document.querySelector('#patch-detail .patch-file pre').textContent.includes('+ after'));
+    const diff = t.fixture.requests.filter(call => /\/diff$/.test(call.path)); assert.equal(diff.length, 1); assert.equal(new URLSearchParams(diff[0].search).get('path'), files[0].path);
+    await t.page.locator('#patch-detail .coding-check summary').click(); assert.match(await t.page.locator('#patch-detail .coding-check pre').textContent(), /One focused test failed/);
+    const size = await t.page.locator('#patches-dialog').evaluate(el => ({ width: innerWidth, right: el.getBoundingClientRect().right, left: el.getBoundingClientRect().left, scroll: document.documentElement.scrollWidth })); assert.ok(size.left >= 0 && size.right <= size.width + 1 && size.scroll <= size.width + 1, JSON.stringify(size));
+    t.page.once('dialog', dialog => dialog.dismiss()); await t.page.locator('#publish-coding').click(); assert.equal(t.fixture.requests.filter(call => /\/publish$/.test(call.path)).length, 0);
+    t.page.once('dialog', dialog => dialog.accept()); await t.page.locator('#publish-coding').click(); await t.page.locator('#patch-detail').getByRole('link', { name: 'Open draft pull request' }).waitFor();
+    assert.deepEqual(t.fixture.requests.find(call => /\/publish$/.test(call.path)).body, { confirm: true, revision: 3 });
+    assert.equal(t.fixture.requests.filter(call => /\/publish$/.test(call.path)).length, 1); assert.deepEqual(t.errors, []);
+    await t.screenshot('atlas-coding-review-320');
+  } finally { await t.close(); }
+});
+
+test('Stop task is explicit and Continue task submits a new instruction without manual sources', async () => {
+  const t = await open({ fixture: developerFixture({ codingRuns: [codingRun()] }) }); try {
+    await openThread(t, 'Repository task'); await t.page.getByRole('button', { name: 'Stop task', exact: true }).click();
+    await t.page.waitForFunction(() => document.querySelector('.coding-run .message-status')?.textContent === 'Stopped');
+    assert.equal(t.fixture.requests.filter(call => /\/cancel$/.test(call.path)).length, 1);
+    await t.page.locator('.coding-run').getByRole('button', { name: 'Continue task', exact: true }).click();
+    await t.page.locator('#prompt').fill('Fix the remaining failing check and continue.'); assert.equal(await t.page.locator('#start-coding').textContent(), 'Continue task'); await t.page.locator('#start-coding').click();
+    await eventually(() => assert.equal(t.fixture.requests.filter(call => /\/continue$/.test(call.path)).length, 1));
+    const request = t.fixture.requests.find(call => /\/continue$/.test(call.path)); assert.deepEqual(Object.keys(request.body).sort(), ['prompt', 'requestId']); assert.equal(request.body.prompt, 'Fix the remaining failing check and continue.'); assert.notEqual(request.body.requestId, 'request-1');
+    assert.equal(t.fixture.requests.some(call => call.path === 'coding/runs' && call.method === 'POST'), false); assert.equal(t.fixture.requests.some(call => call.path === 'repositories/context'), false);
+    await t.page.waitForFunction(() => document.querySelector('.coding-run .message-status')?.textContent === 'Working'); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('coding project permission failures stay actionable without clearing the conversation', async () => {
+  const t = await open({ fixture: developerFixture() }); try {
+    await openThread(t, 'Repository task');
+    t.fixture.overrides.set('GET coding/runs/coding-1', ({ reply }) => {
+      const run = t.fixture.codingRuns[0]; Object.assign(run, { status: 'failed', stage: 'Task could not start', canContinue: false, error: { code: 'agent_access_unavailable', message: 'This OpenAI key or project does not have access to hosted coding sessions. Enable Agents read and write access and Responses write access for the saved key.' } });
+      return reply({ run });
+    });
+    await t.page.locator('#prompt').fill('Implement a change'); await t.page.locator('#start-coding').click();
+    await t.page.waitForFunction(() => document.querySelector('.coding-run .message-error')?.textContent.includes('Enable Agents read and write'), undefined, { timeout: 10000 });
+    assert.equal(await t.page.locator('#conversation-title').textContent(), 'Repository task'); assert.equal(await t.page.locator('.coding-run .message-status').textContent(), 'Failed');
+    assert.equal(await t.page.locator('.coding-run').getByRole('button', { name: 'Continue task', exact: true }).count(), 0);
+    await t.page.locator('#prompt').fill('Explain this repository instead');
+    assert.equal(await t.page.locator('#send').isEnabled(), true); assert.equal(await t.page.evaluate(() => document.body.classList.contains('session-check')), false); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('account switching clears coding progress and drops a late task response', async () => {
+  const t = await open({ fixture: developerFixture({ codingRuns: [codingRun()] }) }); let release; try {
+    await openThread(t, 'Repository task'); await t.page.locator('.coding-run').waitFor();
+    const delayed = new Promise(resolve => { release = resolve; }); let held = false;
+    t.fixture.overrides.set('GET coding/runs', async ({ reply, owner }) => { held = true; await delayed; try { return await reply({ runs: [codingRun({ summary: 'LATE OWNER A CODING CONTENT' })] }, 200, owner); } catch {} });
+    await t.page.getByRole('button', { name: 'Stop task', exact: true }).waitFor(); await t.page.evaluate(() => window.dispatchEvent(new Event('focus'))); await eventually(() => assert.equal(held, true));
+    t.fixture.owner = 'owner-b'; t.fixture.settings = { memoryEnabled: false, memory: '', dailyRequestLimit: 20, timezone: 'UTC' }; t.fixture.conversations = []; t.fixture.messages = {}; t.fixture.codingRuns = [];
+    // A second owned request observes the account switch while the coding snapshot is delayed.
+    await t.page.locator('.workspace-tools [data-open="usage"]').click(); await t.page.waitForFunction(() => !document.body.classList.contains('session-check') && document.getElementById('conversation-title').textContent === 'New conversation'); release();
+    await t.page.waitForTimeout(40); assert.equal(await t.page.locator('.coding-run').count(), 0); assert.equal(await t.page.locator('#prompt').inputValue(), '');
+    assert.doesNotMatch(await t.page.locator('body').textContent(), /LATE OWNER A|Build the repository improvement|Repository task/);
+    assert.equal(t.fixture.requests.some(call => /coding\/runs\/.+\/cancel$/.test(call.path)), false); assert.deepEqual(t.errors, []);
+  } finally { release?.(); await t.close(); }
+});
+
+test('previously prepared changes remain reviewable and require explicit publication', async () => {
+  const patch = { id: 'legacy', title: 'Previous prepared draft', repository: 'fixture/atlas', baseSha: 'a'.repeat(40), summary: 'A saved proposal.', status: 'draft', files: [{ path: 'src/app.js', diff: '- one\n+ two' }], testPlan: ['Run focused checks.'] };
+  const t = await open({ fixture: { patches: [patch] } }); try {
+    await openPanel(t, 'patches'); await t.page.getByRole('button', { name: /Previous prepared draft/ }).click();
+    await t.page.locator('#patch-detail .patch-file').waitFor(); assert.match(await t.page.locator('#patch-detail').textContent(), /Validation plan/);
     t.page.once('dialog', dialog => dialog.dismiss()); await t.page.getByRole('button', { name: 'Create draft pull request' }).click(); assert.equal(t.fixture.requests.filter(r => /\/publish$/.test(r.path)).length, 0);
     t.page.once('dialog', dialog => dialog.accept()); await t.page.getByRole('button', { name: 'Create draft pull request' }).click(); await t.page.getByRole('link', { name: 'Open draft pull request' }).waitFor(); assert.equal(t.fixture.requests.filter(r => /\/publish$/.test(r.path)).length, 1); assert.deepEqual(t.errors, []);
   } finally { await t.close(); }

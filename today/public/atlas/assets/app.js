@@ -35,7 +35,7 @@ export async function* streamEvents(body, { signal, maxBytes = 8 * 1024 * 1024 }
 
 const $ = id => document.getElementById(id);
 const modeNames = { research: "Research", developer: "Developer", personal: "Personal", fitness: "Cycling & fitness", tasks: "Task planning" };
-const state = { owner: null, epoch: 0, controllers: new Set(), health: null, settings: null, conversations: [], conversation: null, messages: [], messagePage: {}, activeId: null, context: [], repositories: [], models: [], stream: null, dispatching: false, navigation: 0, contextLoad: 0, contexts: [], tasks: [], scheduleContext: [], patches: [], selectedPatch: null, drafts: new Map(), privateReady: false, checking: null };
+const state = { owner: null, epoch: 0, controllers: new Set(), health: null, settings: null, conversations: [], conversation: null, messages: [], messagePage: {}, activeId: null, context: [], repositories: [], models: [], stream: null, dispatching: false, navigation: 0, contextLoad: 0, contexts: [], tasks: [], scheduleContext: [], patches: [], selectedPatch: null, codingRuns: [], codingObserver: null, codingLoading: false, codingLoadError: "", codingContinuation: null, codingReview: null, codingDispatching: false, drafts: new Map(), privateReady: false, checking: null };
 let toastTimer;
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text != null) el.textContent = String(text); return el; }
 function button(text, action, className = "") { const el = node("button", className, text); el.type = "button"; el.addEventListener("click", action); return el; }
@@ -52,6 +52,7 @@ async function busy(control, action, feedbackId) {
   finally { control.disabled = false; control.classList.remove("busy-label"); updateComposer(); }
 }
 function clearPrivateState(message = "Your session changed. Checking access…") {
+  detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingReview = null; state.codingLoading = false; state.codingLoadError = ""; state.codingDispatching = false;
   state.epoch++; state.stream?.controller.abort(); state.stream = null; state.dispatching = false; state.owner = null; state.health = null; state.conversation = null; state.conversations = []; state.messages = []; state.activeId = null; state.context = []; state.contexts = []; state.repositories = []; state.models = []; state.tasks = []; state.scheduleContext = []; state.patches = []; state.selectedPatch = null; state.settings = null; state.privateReady = false; state.drafts.clear(); state.navigation++; state.contextLoad++;
   for (const controller of state.controllers) controller.abort(); state.controllers.clear(); state.messagePage = {};
   for (const id of ["messages", "conversation-list", "attached-context", "provider-health", "usage-totals", "usage-requests", "briefs-list", "brief-detail", "context-list", "patches-list", "patch-detail", "schedules-list", "schedule-runs-list", "schedule-context", "thread-summary-text"]) $(id)?.replaceChildren();
@@ -112,8 +113,10 @@ function fillModels(models = [], selected) {
 }
 function renderHealth() {
   const health = state.health, provider = health?.provider || {}, ready = health?.storage?.ready === true;
-  $("setup-banner").hidden = ready; $("upgrade-storage").disabled = !health; $("upgrade-storage").hidden = health?.storage?.code === "storage_missing";
-  $("setup-message").textContent = health?.storage?.code === "storage_missing" ? "Connect Atlas storage in the deployment settings, then reload this page." : "Prepare storage for conversations, sources and saved work.";
+  const codingUpgrade = ready && health?.coding?.storageReady === false;
+  $("setup-banner").hidden = ready && !codingUpgrade; $("upgrade-storage").disabled = !health; $("upgrade-storage").hidden = health?.storage?.code === "storage_missing";
+  $("setup-message").textContent = health?.storage?.code === "storage_missing" ? "Connect Atlas storage in the deployment settings, then reload this page." : codingUpgrade ? "Upgrade storage to save coding tasks and reconnect to their progress. Your conversations are ready to use." : "Prepare storage for conversations, sources and saved work.";
+  $("upgrade-storage").textContent = codingUpgrade ? "Enable coding tasks" : "Prepare workspace";
   const status = $("connection-status");
   let label = "Connect OpenAI", kind = "attention";
   if (!ready) label = "Finish setup";
@@ -140,14 +143,25 @@ function renderHealth() {
 }
 function updateComposer() {
   const ready = state.privateReady && state.health?.storage?.ready && state.health?.provider?.keySaved && state.health?.provider?.decryptable !== false && !state.conversation?.archived;
-  $("send").disabled = !ready || !!state.stream || state.dispatching || !$("prompt").value.trim();
+  $("send").disabled = !ready || !!state.stream || state.dispatching || state.codingDispatching || !$("prompt").value.trim();
   $("stop-response").hidden = !state.stream;
   $("mode").disabled = !!state.activeId; $("repository").disabled = !!state.activeId;
   const mode = state.conversation?.mode || $("mode").value;
   $("workspace-label").textContent = modeNames[mode] || mode;
-  $("repository-control").hidden = mode !== "developer"; $("fitness-control").hidden = mode !== "fitness"; $("prepare-patch").hidden = mode !== "developer";
+  $("repository-control").hidden = mode !== "developer"; $("fitness-control").hidden = mode !== "fitness"; $("start-coding").hidden = mode !== "developer";
   $("repository-note").hidden = mode !== "developer" || !$("repository").value;
-  $("prepare-patch").disabled = !ready || !!state.stream || state.dispatching || !$("prompt").value.trim() || !patchSources().length;
+  const continuation = state.codingRuns.find(run => run.id === state.codingContinuation && run.canContinue);
+  if (!continuation) state.codingContinuation = null;
+  const activeTask = state.codingRuns.some(run => codingActive(run) && run.id !== continuation?.id);
+  $("start-coding").textContent = continuation ? "Continue task" : "Work on task";
+  $("start-coding").disabled = !ready || state.health?.coding?.ready !== true || state.health?.coding?.storageReady !== true || !$("repository").value || !!state.stream || state.dispatching || state.codingDispatching || state.codingLoading || !!state.codingLoadError || activeTask || !$("prompt").value.trim();
+  $("coding-options").hidden = mode !== "developer";
+  $("coding-health").textContent = state.health?.coding?.ready ? "" : state.health?.coding?.message || "Coding tasks are unavailable. You can still ask Atlas about this repository with Send.";
+  $("coding-health").hidden = !$("coding-health").textContent;
+  $("coding-continue-note").hidden = !continuation;
+  $("coding-continue-label").textContent = continuation ? "Next instruction for: " + continuation.prompt : "";
+  const publish = $("publish-coding"), reviewedRun = state.codingRuns.find(run => run.id === state.codingReview?.id);
+  if (publish && reviewedRun) publish.disabled = publish.classList.contains("busy-label") || reviewedRun.revision !== state.codingReview.revision || !reviewedRun.reviewReady || codingActive(reviewedRun) || !state.health?.github?.connected;
   $("attach-context").disabled = !$("repository").value || !state.health?.storage?.ready;
   $("composer-hint").textContent = !state.health?.storage?.ready ? "Prepare the workspace to start a conversation." : !state.health?.provider?.keySaved ? "Connect OpenAI in Settings to start." : state.conversation?.archived ? "Restore this conversation to continue." : state.stream && state.stream.conversationId !== state.activeId ? "A response is running in another conversation." : state.activeId ? "Context stays with this conversation." : "A new conversation starts with a fresh context.";
 }
@@ -162,7 +176,7 @@ function renderThreads() {
 async function loadThreads() { const result = await api("conversations?archived=" + ($("show-archived").checked ? "1" : "0")); state.conversations = result.conversations || []; renderThreads(); }
 function replaceConversationUrl(id) { const url = new URL(location.href); if (id) url.searchParams.set("conversation", id); else url.searchParams.delete("conversation"); history.replaceState(null, "", url.pathname + url.search); }
 async function selectConversation(id, { preserveDraft = false } = {}) {
-  if (!preserveDraft) saveDraft(); const generation = ++state.navigation; navigation(false); $("conversation-status").textContent = "Loading conversation…";
+  if (!preserveDraft) saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingLoadError = ""; state.codingLoading = false; const generation = ++state.navigation; navigation(false); $("conversation-status").textContent = "Loading conversation…";
   try {
     const result = await api("conversations/" + encodeURIComponent(id)); if (generation !== state.navigation) return;
     state.conversation = result.conversation; state.activeId = id; state.messages = result.messages || []; if (state.stream?.conversationId === id) { const at = state.messages.findIndex(m => m.id === state.stream.message.id); if (at < 0) state.messages.push(state.stream.message); else state.messages[at] = state.stream.message; } $("mode").value = state.conversation.mode; setRepository(state.conversation.repository || "");
@@ -170,10 +184,10 @@ async function selectConversation(id, { preserveDraft = false } = {}) {
     $("archive-conversation").textContent = state.conversation.archived ? "Restore conversation" : "Archive";
     $("thread-summary").hidden = !state.conversation.summary; $("thread-summary-text").textContent = state.conversation.summary || "";
     state.messagePage = { hasMore: !!result.hasMore, nextBeforeId: result.nextBeforeId }; $("older-history").hidden = !state.messagePage.hasMore;
-    restoreDraft(id); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(id); $("conversation-status").textContent = "";
+    restoreDraft(id); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(id); $("conversation-status").textContent = ""; await observeCodingRuns();
   } catch (error) { if (generation === state.navigation) { $("conversation-status").textContent = errorText(error); toast(errorText(error)); } }
 }
-function newConversation(mode) { saveDraft(); state.navigation++; state.activeId = null; state.conversation = null; state.messages = []; state.messagePage = {}; state.context = []; $("conversation-title").textContent = "New conversation"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; if (mode && modeNames[mode]) $("mode").value = mode; restoreDraft(null); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(null); navigation(false); $("prompt").focus(); }
+function newConversation(mode) { saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingLoadError = ""; state.codingLoading = false; state.navigation++; state.activeId = null; state.conversation = null; state.messages = []; state.messagePage = {}; state.context = []; $("conversation-title").textContent = "New conversation"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; if (mode && modeNames[mode]) $("mode").value = mode; restoreDraft(null); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(null); navigation(false); $("prompt").focus(); }
 async function loadOlderMessages(control) { await busy(control, async () => { const id = state.activeId, generation = state.navigation, before = state.messagePage.nextBeforeId; if (!id || !state.messagePage.hasMore || !before) return; const result = await api("conversations/" + encodeURIComponent(id) + "?before=" + encodeURIComponent(before) + "&limit=100"); if (id !== state.activeId || generation !== state.navigation) return; const container = $("messages"), height = container.scrollHeight, top = container.scrollTop, known = new Set(state.messages.map(m => m.id)); state.messages = [...(result.messages || []).filter(m => !known.has(m.id)), ...state.messages]; state.messagePage = { hasMore: !!result.hasMore, nextBeforeId: result.nextBeforeId }; $("older-history").hidden = !state.messagePage.hasMore; renderMessages(); container.scrollTop = container.scrollHeight - height + top; }); }
 async function ensureConversation(snapshot = {}) {
   if (state.activeId) return state.conversation;
@@ -226,11 +240,12 @@ export function renderMarkdown(target, value, sources = []) {
 function sourceList(sources = []) { const list = node("ol", "source-list"); const seen = new Set(); sources.forEach((source, i) => { const url = safeUrl(source.url); if (!url || seen.has(url)) return; seen.add(url); const li = node("li"), a = node("a", "", (i + 1) + ". " + (source.title || new URL(url).hostname)); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = source.title || url; li.append(a); list.append(li); }); return list; }
 function renderMessages() {
   const container = $("messages"); container.replaceChildren();
-  if (!state.messages.length) {
+  if (!state.messages.length && !state.codingRuns.length && !state.codingLoadError) {
     const welcome = node("div", "welcome"), mark = node("div", "welcome-mark", "✳"); mark.setAttribute("aria-hidden", "true"); welcome.append(mark, node("h2", "", "What shall we work on?"), node("p", "", "Research a question, explore your code or make a plan. Start a new conversation for each topic."));
     const starters = node("div", "starter-grid"); for (const [label, mode, prompt] of [["Research with sources ↗", "research", "Help me research a question and compare reliable sources."], ["Investigate a code issue ↗", "developer", "Help me investigate a failure in my repository."], ["Make a practical plan ↗", "personal", "Help me turn an idea into a practical plan."]]) starters.append(button(label, () => { if (!state.activeId) $("mode").value = mode; $("prompt").value = prompt; resizePrompt(); updateComposer(); $("prompt").focus(); })); welcome.append(starters); container.append(welcome); return;
   }
   for (const message of state.messages) container.append(messageElement(message));
+  renderCodingRuns();
   container.scrollTop = container.scrollHeight;
 }
 function messageElement(message) {
@@ -252,7 +267,7 @@ function updateMessage(message, conversationId) {
   if (state.activeId !== conversationId) return;
   const index = state.messages.findIndex(m => m.id === message.id); if (index < 0) state.messages.push(message); else state.messages[index] = message;
   const container = $("messages"), nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
-  const old = [...container.children].find(el => el.dataset.messageId === message.id); const fresh = messageElement(message); if (old) old.replaceWith(fresh); else { if (!container.querySelector(".turn")) container.replaceChildren(); container.append(fresh); }
+  const old = [...container.children].find(el => el.dataset.messageId === message.id); const fresh = messageElement(message); if (old) old.replaceWith(fresh); else { container.querySelector(".welcome")?.remove(); container.insertBefore(fresh, $("coding-runs")); }
   if (nearBottom) container.scrollTop = container.scrollHeight;
 }
 function contextDescriptor(c) { const value = { kind: c.kind, repository: c.repository }; for (const k of ["path", "ref", "number", "id"]) if (c[k] != null) value[k] = c[k]; return value; }
@@ -316,7 +331,7 @@ async function showPanel(name) {
     if (name === "usage") await loadUsage();
     if (name === "briefs") await loadBriefs();
     if (name === "schedules") await loadSchedules();
-    if (name === "patches") await loadPatches();
+    if (name === "patches") await loadPatches({ reset: true });
   } catch (error) { toast(errorText(error)); }
 }
 async function loadUsage() {
@@ -368,14 +383,17 @@ async function attachSelectedContext(control) {
     renderContextChips(); updateComposer(); $("context-dialog").close(); toast("Sources added. Atlas can still explore the rest of this repository.");
   }, "context-feedback");
 }
-async function loadPatches() {
+async function loadPatches({ reset = false } = {}) {
   const data = await api("patches"), list = $("patches-list"); list.replaceChildren();
+  if (reset) { state.codingReview = null; list.hidden = false; $("patch-detail").hidden = true; feedback("patch-feedback", ""); }
+  for (const run of state.codingRuns.filter(item => item.reviewReady || item.pullRequest)) { const card = node("article", "record-card"), open = button("", () => reviewCodingRun(run.id), "record-open"); open.append(node("h3", "", run.prompt), node("p", "", run.repository + " · " + codingStatus(run))); card.append(open); list.append(card); }
   for (const patch of data.patches || []) { const card = node("article", "record-card"), open = button("", () => showPatch(patch.id), "record-open"); open.append(node("h3", "", patch.title || "Draft changes"), node("p", "", patch.repository + " · " + patch.status)); card.append(open); list.append(card); }
-  if (!list.children.length) list.append(node("p", "muted empty-small", "No prepared changes yet."));
+  if (!list.children.length) list.append(node("p", "muted empty-small", "No changes to review here. Open a Developer conversation to start or reconnect to a coding task."));
 }
 function patchFiles(patch) { if (Array.isArray(patch.files)) return patch.files; try { return JSON.parse(patch.files_json || "[]"); } catch { return []; } }
 async function showPatch(id, known) {
   try {
+    state.codingReview = null;
     const patch = known || (await api("patches/" + encodeURIComponent(id))).patch; state.selectedPatch = patch;
     const detail = $("patch-detail"); detail.replaceChildren(); detail.hidden = false; detail.append(node("h3", "", patch.title || "Draft changes"), node("p", "muted", patch.repository + " · base " + String(patch.baseSha || patch.base_sha || "").slice(0, 12)));
     const summary = node("div", "message-content brief-content"); renderMarkdown(summary, patch.summary || ""); detail.append(summary);
@@ -386,33 +404,163 @@ async function showPatch(id, known) {
     detail.scrollIntoView({ block: "start", behavior: "smooth" });
   } catch (error) { feedback("patch-feedback", errorText(error), true); }
 }
-function patchSources() {
-  const explicit = state.context.filter(c => c.kind === "file");
-  if (explicit.length) return explicit;
-  const latest = [...state.messages].reverse().find(message => message.status === "completed");
-  const repository = state.conversation?.repository || $("repository").value, seen = new Set();
-  const references = [...(Array.isArray(latest?.context) ? latest.context : []), ...(Array.isArray(latest?.sources) ? latest.sources : [])];
-  return references.filter(source => {
-    if (source.kind !== "file" || source.repository !== repository || typeof source.path !== "string" || !source.path || source.path.startsWith(".github/workflows/") || !/^[a-f0-9]{40}$/i.test(source.ref || "") || !/^[a-f0-9]{40}$/i.test(source.blobSha || "") || !["100644", "100755"].includes(source.mode)) return false;
-    const key = source.path + "\n" + source.ref;
-    if (seen.has(key)) return false;
-    seen.add(key); return true;
-  });
+function codingActive(run) { return ["preparing", "running", "waiting", "uncertain", "publishing"].includes(run.status); }
+function codingStatus(run) { return ({ preparing: "Preparing workspace", running: "Working", waiting: "Waiting", completed: "Completed", failed: "Failed", cancelled: "Stopped", uncertain: "Checking task state", publishing: "Creating pull request", published: "Published" })[run.status] || "Checking task state"; }
+function detachCodingObserver() {
+  const observer = state.codingObserver; state.codingObserver = null; state.codingLoading = false;
+  if (observer) { clearTimeout(observer.timer); observer.controller.abort(); }
 }
-async function preparePatch(control) {
-  await busy(control, async () => {
-    const prompt = $("prompt").value.trim(), files = patchSources(), paths = [...new Set(files.map(c => c.path))], repository = $("repository").value;
-    const refs = [...new Set(files.map(c => c.ref).filter(Boolean))];
-    openDialog("patches");
-    $("patch-detail").replaceChildren(); $("patch-detail").hidden = true; feedback("patch-feedback", "");
-    if (!prompt || !repository || !paths.length) throw Error("Describe the change after Atlas has read the relevant files, or add specific sources.");
-    if (files.some(file => file.repository !== repository)) throw Error("The attached files belong to another repository. Remove those sources before preparing changes.");
-    if (paths.length > 5) throw Error("One draft can change up to five existing files. Ask Atlas to focus on a smaller change, or add the specific files to edit in Sources.");
-    if (refs.length > 1) throw Error("The files come from different revisions. Ask Atlas to read them at one revision, or add sources from the same revision.");
-    const conversation = await ensureConversation(); feedback("patch-feedback", "Preparing a reviewable draft…");
-    const result = await api("patches/prepare", "POST", { conversationId: conversation.id, requestId: uuid(), prompt, repository, paths, ...(refs[0] ? { ref: refs[0] } : {}) });
-    await loadPatches(); await showPatch(result.patch.id, result.patch); feedback("patch-feedback", "Draft prepared. Review the file changes and validation plan before publishing.");
-  }, "patch-feedback");
+function codingViewCurrent(observer) { return state.codingObserver === observer && observer.epoch === state.epoch && observer.navigation === state.navigation && observer.conversationId === state.activeId && document.visibilityState === "visible"; }
+function invalidateCodingReview(run) {
+  if (!state.codingReview || state.codingReview.id !== run.id || state.codingReview.revision === run.revision && run.reviewReady) return;
+  const publish = $("publish-coding"); if (publish) publish.disabled = true;
+  feedback("patch-feedback", "This task has changed. Open Review changes again before publishing.");
+}
+function acceptCodingRun(run) {
+  if (!run || run.conversationId !== state.activeId) return;
+  state.codingLoadError = "";
+  const index = state.codingRuns.findIndex(item => item.id === run.id);
+  if (index < 0) state.codingRuns.push(run); else state.codingRuns[index] = run;
+  invalidateCodingReview(run); renderCodingRuns(); updateComposer();
+}
+async function observeCodingRuns({ restore = true } = {}) {
+  detachCodingObserver();
+  if (!state.activeId || state.conversation?.mode !== "developer" || !state.privateReady || state.health?.coding?.storageReady !== true || document.visibilityState !== "visible") return;
+  const observer = { epoch: state.epoch, navigation: state.navigation, conversationId: state.activeId, controller: new AbortController(), failures: 0, timer: null };
+  state.codingObserver = observer;
+  const poll = async (loadList = false) => {
+    if (!codingViewCurrent(observer)) return;
+    if (loadList) { state.codingLoading = true; updateComposer(); }
+    try {
+      if (loadList) {
+        const data = await api("coding/runs?conversationId=" + encodeURIComponent(observer.conversationId), "GET", undefined, { signal: observer.controller.signal, timeout: 30000 });
+        if (!codingViewCurrent(observer)) return;
+        state.codingRuns = (data.runs || []).filter(run => run?.conversationId === observer.conversationId);
+      } else {
+        const results = await Promise.allSettled(state.codingRuns.filter(codingActive).map(run => api("coding/runs/" + encodeURIComponent(run.id), "GET", undefined, { signal: observer.controller.signal, timeout: 120000 })));
+        if (!codingViewCurrent(observer)) return;
+        let failure;
+        for (const result of results) {
+          if (result.status === "rejected") { failure ||= result.reason; continue; }
+          const run = result.value.run, index = state.codingRuns.findIndex(item => item.id === run?.id);
+          if (index >= 0 && run.conversationId === observer.conversationId) state.codingRuns[index] = run;
+        }
+        if (failure) throw failure;
+      }
+      observer.failures = 0; state.codingLoadError = "";
+      for (const run of state.codingRuns) invalidateCodingReview(run);
+    } catch (error) {
+      if (!codingViewCurrent(observer) || error.accountChanged) return;
+      observer.failures++; state.codingLoadError = "Progress could not be refreshed. The task may still be running. Reconnecting… " + errorText(error);
+    } finally {
+      if (codingViewCurrent(observer)) {
+        state.codingLoading = false; renderCodingRuns(); updateComposer();
+        if (observer.failures || state.codingRuns.some(codingActive)) observer.timer = setTimeout(() => poll(observer.failures > 0 && loadList), Math.min(30000, 5000 * 2 ** observer.failures));
+      }
+    }
+  };
+  if (restore) await poll(true); else if (state.codingRuns.some(codingActive)) observer.timer = setTimeout(() => poll(), 5000);
+}
+function codingChecks(checks = [], { prefix = "", opened = new Set() } = {}) {
+  const section = node("section", "coding-checks"); section.append(node("h4", "", "Executed commands"));
+  if (!checks.length) { section.append(node("p", "field-help", "No command results have been reported. Tests are not verified.")); return section; }
+  for (const [index, check] of checks.entries()) {
+    const details = node("details", "coding-check"), summary = node("summary"), exit = Number.isInteger(check.exitCode) ? " · exit " + check.exitCode : " · no exit code reported";
+    details.dataset.disclosure = prefix + ":command:" + index; details.open = opened.has(details.dataset.disclosure);
+    summary.append(node("code", "", check.command || "Command"), node("span", "check-result", " — " + (check.outcome || check.status || "unknown") + exit)); details.append(summary);
+    details.append(node("pre", "", check.output || "No output was recorded."));
+    if (check.outputTruncated || check.truncated) details.append(node("p", "field-help", "This command or its output was truncated in the activity record.")); section.append(details);
+  }
+  return section;
+}
+function pullRequestLink(pullRequest) {
+  const href = safeUrl(pullRequest?.url); if (!href) return null;
+  const link = node("a", "", "Open draft pull request ↗"); link.href = href; link.target = "_blank"; link.rel = "noopener noreferrer"; return link;
+}
+function renderCodingRuns() {
+  const container = $("messages"), previous = $("coding-runs"), nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+  if (!state.codingRuns.length && !state.codingLoadError) { previous?.remove(); if (!state.messages.length && !container.querySelector(".welcome")) renderMessages(); return; }
+  const signature = JSON.stringify([state.codingRuns, state.codingLoadError, state.health?.coding?.ready, state.health?.coding?.backgroundAvailable, state.conversation?.archived]);
+  if (previous?.dataset.snapshot === signature) return;
+  const opened = new Set([...previous?.querySelectorAll("details[open]") || []].map(el => el.dataset.disclosure).filter(Boolean));
+  const list = node("section", "coding-runs"); list.id = "coding-runs"; list.setAttribute("aria-label", "Coding tasks"); list.dataset.snapshot = signature;
+  if (state.codingLoadError) { const notice = node("div", "notice-inline coding-reconnect"); notice.append(node("p", "", state.codingLoadError), button("Reconnect", () => observeCodingRuns())); list.append(notice); }
+  const runs = [...state.codingRuns].sort((a, b) => Number(a.createdAt) - Number(b.createdAt) || String(a.id).localeCompare(String(b.id)));
+  for (const run of runs) {
+    const card = node("article", "coding-run"), heading = node("div", "coding-run-heading"); card.dataset.runId = run.id;
+    const status = node("span", "message-status", codingStatus(run)); status.dataset.status = run.status; status.setAttribute("role", "status"); heading.append(node("h3", "", "Coding task"), status);
+    card.append(heading, node("p", "coding-prompt", run.prompt), node("p", "field-help", run.repository + (run.baseBranch ? " · " + run.baseBranch : "") + (run.baseSha ? " · " + run.baseSha.slice(0, 12) : "")));
+    if (run.stage && codingActive(run)) card.append(node("p", "coding-stage", String(run.stage).replaceAll("_", " ")));
+    if (run.summary) { const summary = node("div", "message-content"); renderMarkdown(summary, run.summary); card.append(summary); }
+    if (run.error?.message) card.append(node("p", "message-error", run.error.message));
+    if (run.activity?.length) { const details = node("details", "coding-activity"), entries = node("ol"); details.dataset.disclosure = run.id + ":activity"; details.open = opened.has(details.dataset.disclosure); details.append(node("summary", "", "Activity · " + run.activity.length)); for (const entry of run.activity) entries.append(node("li", "", [entry.label, entry.detail || entry.text].filter(Boolean).join(": ") + (entry.truncated ? " (truncated)" : ""))); details.append(entries); card.append(details); }
+    const changes = run.changes || {}; if (run.reviewReady) card.append(node("p", "coding-change-count", (changes.added || 0) + " added · " + (changes.modified || 0) + " modified · " + (changes.deleted || 0) + " deleted"));
+    if (run.checks?.length || !codingActive(run)) card.append(codingChecks(run.checks, { prefix: run.id, opened }));
+    const actions = node("div", "button-row coding-actions");
+    if (run.reviewReady) actions.append(button("Review changes", e => busy(e.currentTarget, () => reviewCodingRun(run.id))));
+    if (run.canContinue && !state.conversation?.archived) actions.append(button("Continue task", () => { state.codingContinuation = run.id; updateComposer(); $("prompt").focus(); toast("Describe the next step, then select Continue task."); }));
+    if (["preparing", "running", "waiting", "uncertain"].includes(run.status)) actions.append(button("Stop task", e => busy(e.currentTarget, async () => { detachCodingObserver(); try { const result = await api("coding/runs/" + encodeURIComponent(run.id) + "/cancel", "POST", {}); acceptCodingRun(result.run); } finally { await observeCodingRuns({ restore: false }); } }), "danger-text"));
+    const link = pullRequestLink(run.pullRequest); if (link) actions.append(link); card.append(actions);
+    if (codingActive(run)) card.append(node("p", "field-help", state.health?.coding?.backgroundAvailable ? "This task can continue while you are away. Use Stop task to cancel it." : "Leaving does not cancel this task. Keep this page open until work starts; reopen it to finish setup or collect results."));
+    card.append(node("p", "field-help", "Updated " + timestamp(run.updatedAt || run.createdAt))); list.append(card);
+  }
+  container.querySelector(".welcome")?.remove(); if (previous) previous.replaceWith(list); else container.append(list); if (nearBottom) container.scrollTop = container.scrollHeight;
+}
+async function startCodingTask() {
+  const control = $("start-coding"); if (control.disabled || state.codingDispatching) return;
+  const epoch = state.epoch, navigation = state.navigation, originId = state.activeId, prompt = $("prompt").value.trim(), repository = $("repository").value, continuation = state.codingContinuation;
+  state.codingDispatching = true; updateComposer();
+  try {
+    const conversation = await ensureConversation({ prompt, mode: "developer", repository }); checkEpoch(epoch);
+    const path = continuation ? "coding/runs/" + encodeURIComponent(continuation) + "/continue" : "coding/runs";
+    const result = await api(path, "POST", { ...(continuation ? {} : { conversationId: conversation.id }), requestId: uuid(), prompt }); checkEpoch(epoch);
+    if (navigation === state.navigation && state.activeId === conversation.id) {
+      if ($("prompt").value.trim() === prompt) $("prompt").value = "";
+      state.drafts.delete(originId || "new"); state.codingContinuation = null; resizePrompt(); acceptCodingRun(result.run); await observeCodingRuns({ restore: false });
+    }
+    loadThreads().catch(() => {});
+  } catch (error) {
+    if (!error.accountChanged && epoch === state.epoch) { toast(errorText(error)); if (navigation === state.navigation && state.activeId) await observeCodingRuns(); }
+  } finally { if (epoch === state.epoch) { state.codingDispatching = false; updateComposer(); } }
+}
+async function reviewCodingRun(id) {
+  const review = { id, revision: null, epoch: state.epoch }; state.codingReview = review; state.selectedPatch = null;
+  openDialog("patches"); $("patches-list").hidden = true; $("patch-detail").hidden = false; $("patch-detail").replaceChildren(); feedback("patch-feedback", "Loading changes…");
+  try {
+    const data = await api("coding/runs/" + encodeURIComponent(id) + "/changes");
+    if (state.codingReview !== review || review.epoch !== state.epoch) return;
+    const run = data.run; review.revision = run.revision; acceptCodingRun(run);
+    const detail = $("patch-detail"); detail.append(node("h3", "", "Review coding task"), node("p", "muted", run.repository + " · base " + String(run.baseSha || "").slice(0, 12)), node("p", "", run.summary || run.prompt));
+    const files = data.files || []; detail.append(node("p", "field-help", files.length + " changed file" + (files.length === 1 ? "" : "s") + ". Open each file to inspect its diff."));
+    for (const file of files) {
+      const section = node("details", "patch-file"), output = node("pre", "", "Open to load the diff."); let loaded = false, loading = false;
+      section.append(node("summary", "", file.operation + " · " + file.path), output);
+      section.addEventListener("toggle", async () => {
+        if (!section.open || loaded || loading) return; loading = true; output.textContent = "Loading diff…";
+        try {
+          const result = await api("coding/runs/" + encodeURIComponent(id) + "/diff?path=" + encodeURIComponent(file.path));
+          if (state.codingReview !== review || review.epoch !== state.epoch || !section.isConnected) return;
+          output.textContent = (result.binary ? "Binary file. A text diff is unavailable." : result.diff || "No text diff was recorded.") + (result.diffTruncated ? "\n\nDiff preview truncated. The complete file is included when you publish the draft pull request." : ""); loaded = true;
+        } catch (error) { if (!error.accountChanged && state.codingReview === review) output.textContent = errorText(error) + " Close and reopen this file to retry."; }
+        finally { loading = false; }
+      }); detail.append(section);
+    }
+    detail.append(codingChecks(data.checks || run.checks));
+    const link = pullRequestLink(run.pullRequest);
+    if (link) detail.append(link); else {
+      detail.append(node("p", "field-help", "Publishing creates a new branch and a draft pull request for this reviewed revision. It does not merge or deploy the changes."));
+      const publish = button("Create draft pull request", e => busy(e.currentTarget, async () => {
+        if (state.codingReview !== review) return;
+        if (!confirm("Create a new branch and draft pull request for these reviewed changes in " + run.repository + "?")) return;
+        const result = await api("coding/runs/" + encodeURIComponent(id) + "/publish", "POST", { confirm: true, revision: review.revision });
+        if (state.codingReview !== review || review.epoch !== state.epoch) return;
+        acceptCodingRun(result.run); const published = pullRequestLink(result.pullRequest || result.run?.pullRequest);
+        if (published) { publish.replaceWith(published); feedback("patch-feedback", "Draft pull request created."); } else { feedback("patch-feedback", "Publication is being checked. Refresh this review for its result."); await observeCodingRuns(); }
+      }, "patch-feedback"), "primary-button"); publish.id = "publish-coding"; publish.disabled = !run.reviewReady || !files.length || !state.health?.github?.connected; detail.append(publish);
+      if (!state.health?.github?.connected) detail.append(node("p", "field-help", "Connect GitHub in Settings to publish."));
+    }
+    feedback("patch-feedback", "");
+  } catch (error) { if (!error.accountChanged && state.codingReview === review) feedback("patch-feedback", errorText(error), true); }
 }
 function scheduleDescription(task) {
   if (task.schedule_kind === "interval") return "Every " + (task.interval_minutes / 60) + " hours";
@@ -467,7 +615,7 @@ async function bootstrap() {
 async function verifyVisibleSession() {
   if (document.visibilityState !== "visible" || state.checking) return;
   document.body.classList.add("session-check"); $("session-notice").textContent = "Checking your session…";
-  state.checking = (async () => { try { await refreshHealth(); if (state.privateReady && state.owner) document.body.classList.remove("session-check"); else if (state.owner) await bootstrap(); } catch (error) { if (!error.accountChanged) $("session-notice").textContent = errorText(error); } finally { state.checking = null; } })();
+  state.checking = (async () => { try { await refreshHealth(); if (state.privateReady && state.owner) { document.body.classList.remove("session-check"); await observeCodingRuns(); } else if (state.owner) await bootstrap(); } catch (error) { if (!error.accountChanged) $("session-notice").textContent = errorText(error); } finally { state.checking = null; } })();
   await state.checking;
 }
 function init() {
@@ -497,12 +645,12 @@ function init() {
   $("export-conversation").addEventListener("click", e => busy(e.currentTarget, () => download("conversations/" + encodeURIComponent(state.activeId) + "/export", titleFilename(state.conversation.title))));
   $("summarize-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id) return; const result = await api("conversations/" + encodeURIComponent(id) + "/summary", "POST", { requestId: uuid() }); if (state.activeId === id) await selectConversation(id); const count = Number.isInteger(result.summarizedTurns) ? "Summarized " + result.summarizedTurns + " earlier turn" + (result.summarizedTurns === 1 ? "." : "s.") : "Earlier context summarized."; toast(count + (result.hasMore ? " More remains; summarize again when ready." : " The full conversation is retained.")); }));
   $("attach-context").addEventListener("click", () => { openDialog("context"); $("context-search").value = ""; loadContextSources(); }); $("context-refresh").addEventListener("click", loadContextSources); $("context-kind").addEventListener("change", () => { $("context-ref-label").hidden = $("context-kind").value !== "file"; loadContextSources(); }); $("context-search").addEventListener("input", renderContextSources); $("context-attach").addEventListener("click", e => attachSelectedContext(e.currentTarget));
-  $("prepare-patch").addEventListener("click", e => preparePatch(e.currentTarget)); $("new-schedule").addEventListener("click", () => editSchedule()); $("schedule-kind").addEventListener("change", scheduleFields); $("schedule-mode").addEventListener("change", scheduleFields); $("schedule-form").addEventListener("submit", saveSchedule); $("cancel-schedule-edit").addEventListener("click", () => { $("schedule-form").hidden = true; });
+  $("start-coding").addEventListener("click", startCodingTask); $("clear-coding-continuation").addEventListener("click", () => { state.codingContinuation = null; updateComposer(); }); $("new-schedule").addEventListener("click", () => editSchedule()); $("schedule-kind").addEventListener("change", scheduleFields); $("schedule-mode").addEventListener("change", scheduleFields); $("schedule-form").addEventListener("submit", saveSchedule); $("cancel-schedule-edit").addEventListener("click", () => { $("schedule-form").hidden = true; });
   $("schedule-repository").addEventListener("change", () => { state.scheduleContext = []; scheduleFields(); }); $("schedule-use-context").addEventListener("click", () => { state.scheduleContext = state.context.filter(c => c.repository === $("schedule-repository").value).map(contextDescriptor); renderScheduleContext(); });
   $("stop-schedules").addEventListener("click", e => busy(e.currentTarget, async () => { if (!confirm("Pause all your scheduled tasks?")) return; await api("stop", "POST", {}); await loadSchedules(); toast("All scheduled tasks paused."); }));
   let zones = ["Europe/London", "UTC"]; try { if (Intl.supportedValuesOf) zones = ["UTC", ...Intl.supportedValuesOf("timeZone")]; } catch {} for (const zone of zones) { const option = node("option"); option.value = zone; $("timezones").append(option); }
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") document.body.classList.add("session-check"); else verifyVisibleSession(); });
-  window.addEventListener("focus", verifyVisibleSession); window.addEventListener("pagehide", () => { $("provider-key").value = ""; $("github-token").value = ""; document.body.classList.add("session-check"); }); window.addEventListener("pageshow", event => { if (event.persisted) verifyVisibleSession(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { detachCodingObserver(); document.body.classList.add("session-check"); } else verifyVisibleSession(); });
+  window.addEventListener("focus", verifyVisibleSession); window.addEventListener("pagehide", () => { detachCodingObserver(); $("provider-key").value = ""; $("github-token").value = ""; document.body.classList.add("session-check"); }); window.addEventListener("pageshow", event => { if (event.persisted) verifyVisibleSession(); });
   document.addEventListener("keydown", event => { if (event.key === "Escape") navigation(false); }); bootstrap();
 }
 if (typeof document !== "undefined") { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true }); else init(); }
