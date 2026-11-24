@@ -88,7 +88,15 @@ test('bootstrap/export runs real Git and Python, retains ignored tracked inputs 
   await writeFile(join(meta, 'manifest.json'), JSON.stringify(manifest));
   for (const [name, script] of [['bootstrap.py', WORKSPACE_BOOTSTRAP], ['export_changes.py', WORKSPACE_EXPORTER]]) await writeFile(join(meta, name), script.replaceAll('/workspace', root));
   const run = (script, args = []) => execFileSync('python3', [join(meta, script), ...args], { encoding: 'utf8', stdio: 'pipe' });
-  run('bootstrap.py'); assert.equal(execFileSync('git', ['ls-files', 'tracked-input.txt'], { cwd: repo, encoding: 'utf8' }).trim(), 'tracked-input.txt');
+  const ready = JSON.parse(run('bootstrap.py'));
+  assert.equal(ready.ready, true);
+  assert.equal(ready.baseSha, manifest.baseSha);
+  const bootstrap = JSON.parse(await readFile(join(meta, 'bootstrap.json'), 'utf8'));
+  const localHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+  assert.equal(bootstrap.workspaceCommit, localHead);
+  assert.notEqual(localHead, manifest.baseSha, 'the ready workspace deliberately has a synthetic Git baseline distinct from its source commit');
+  assert.equal(bootstrap.baseSha, manifest.baseSha);
+  assert.equal(execFileSync('git', ['ls-files', 'tracked-input.txt'], { cwd: repo, encoding: 'utf8' }).trim(), 'tracked-input.txt');
   assert.equal(execFileSync('git', ['remote'], { cwd: repo, encoding: 'utf8' }).trim(), '');
   await writeFile(join(repo, 'src/app.js'), 'new\n'); await chmod(join(repo, 'src/app.js'), 0o755); await unlink(join(repo, 'remove.txt'));
   await writeFile(join(repo, 'new-binary.bin'), Buffer.from([0, 255])); await mkdir(join(repo, 'node_modules'), { recursive: true }); await writeFile(join(repo, 'node_modules/ignored'), 'generated dependency');
@@ -97,6 +105,8 @@ test('bootstrap/export runs real Git and Python, retains ignored tracked inputs 
   await writeFile(join(repo, 'ignored-but-staged.txt'), 'explicit addition\n'); execFileSync('git', ['add', '--force', 'ignored-but-staged.txt'], { cwd: repo });
   run('bootstrap.py'); assert.equal(await readFile(join(repo, 'src/app.js'), 'utf8'), 'new\n', 'continuation must not reset edits');
   run('export_changes.py', ['--revision', '2']); const artifact = JSON.parse(await readFile(join(root, 'outputs/atlas-changes.json'), 'utf8'));
+  assert.equal(artifact.baseSha, manifest.baseSha, 'export retains the GitHub source identity, not the synthetic local HEAD');
+  await assert.rejects(() => validateCodingArtifact({ ...artifact, baseSha: localHead }, { ...manifest, revision: 2 }), { code: 'coding_result_scope' });
   const result = await validateCodingArtifact(artifact, { ...manifest, revision: 2 });
   assert.deepEqual(result.files.map(file => [file.path, file.operation]), [['ignored-but-staged.txt', 'add'], ['new-binary.bin', 'add'], ['remove.txt', 'delete'], ['src/app.js', 'modify'], ['src/new.js', 'add'], ['tracked-input.txt', 'modify']]);
   assert.equal(result.files[3].afterMode, '100755'); assert.equal(result.files[1].binary, true);

@@ -228,6 +228,8 @@ test('hosted coding orchestration uses persistent owner-scoped state and real pr
       assert.equal(body.spend_control.limit, 200);
       assert.equal(body.environment.files[0].file_id, 'file_fixture');
       assert.match(body.environment.setup_commands[0].command, /bootstrap\.py/);
+      assert.match(body.agent.instructions, /Do not require local Git HEAD to equal the GitHub source commit/);
+      assert.match(body.agent.instructions, /synthetic baseline commit/);
       assert.ok(!JSON.stringify(body).includes(SECRET));
     };
     await coding.advanceCodingRun(env, OWNER, f.run.id, { send: remote.send });
@@ -240,6 +242,11 @@ test('hosted coding orchestration uses persistent owner-scoped state and real pr
     assert.equal((await state.requireCodingRun(env, OWNER, f.run.id)).phase, 'submit');
     await coding.advanceCodingRun(env, OWNER, f.run.id, { send: remote.send });
     assert.equal(remote.inputs.length, 1);
+    const taskContext = remote.inputs[0].input[0].content[0].text;
+    assert.ok(taskContext.includes('Pinned GitHub source commit: ' + BASE));
+    assert.match(taskContext, /workspaceCommit in \/workspace\/atlas\/bootstrap\.json/);
+    assert.match(taskContext, /Do not require local Git HEAD to equal the GitHub source commit or treat that difference as a workspace readiness failure/);
+    assert.match(taskContext, /original GitHub source SHA for artifact validation and reviewed publication/);
     assert.equal(remote.calls.find(call => call.body?.events?.[0]?.type === 'agent.session.input.message').idempotencyKey, f.run.input_key);
     remote.turns.push(remote.turn('sub_turn', 'completed', { subagent_id: 'subagent_fixture' }));
     remote.artifacts.push({ id: 'stale_artifact', turn_id: 'old_turn', session_id: remote.session.id, environment_id: remote.environment.id, path: OUTPUT_PATH, size_bytes: 1 });
@@ -370,6 +377,8 @@ test('hosted coding orchestration uses persistent owner-scoped state and real pr
     assert.equal(remote.inputs.length, 2);
     const taskText = remote.inputs[1].input[0].content[0].text;
     assert.match(taskText, /Keep all prior task edits/);
+    assert.match(taskText, /Do not require local Git HEAD to equal the GitHub source commit/);
+    assert.ok(taskText.includes('Pinned GitHub source commit: ' + BASE), 'follow-ups retain the original source identity independently of local HEAD');
     assert.match(taskText, /--revision 2/);
     remote.finish('turn_2', 2, { after: 'export const value = 3;\n' });
     const completed = await coding.advanceCodingRun(env, OWNER, f.run.id, { send: remote.send });
