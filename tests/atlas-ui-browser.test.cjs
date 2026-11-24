@@ -33,14 +33,14 @@ function defaultFixture() {
     environments: [], environmentsReady: true, tasks: [], briefs: [], patches: [], coding: { ready: true, storageReady: true, message: '' }, codingRuns: [], codingFiles: {}, codingDiffs: {}, requests: [], overrides: new Map(), next: 1, older: null
   };
 }
-function nativeAtlasPage(withWallpaper, shellLayout) {
+function nativeAtlasPage(withWallpaper, shellLayout, toolsAction) {
   const optics = withWallpaper ? readFileSync(join(PUBLIC, 'index.html'), 'utf8').match(/<svg class="ifl-optics"[\s\S]*?<\/svg>/)?.[0] : '';
   if (withWallpaper) assert.ok(optics, 'the shell supplies the refractor SVG');
   const tabs = '<nav id="fixture-nav" class="ifl-segs" aria-label="Atlas sections"></nav>';
   const mount = '<div id="fixture-atlas"></div>';
   const shell = shellLayout
     ? `<div id="in" class="today-in" hidden><div id="hd"><header class="ifl-hd ifh has-secs"><h1>Atlas</h1><div class="ifl-row2">${tabs}</div></header></div><div id="views"><main id="m-atlas" class="view ifl-screen" data-app="atlas">${mount}</main></div><div class="ifl-workspace ws-dock-host"><nav class="ws-dock" aria-label="Dock"><button class="ws-dock-button">Apps</button></nav></div></div>`
-    : `<div id="in" hidden></div>${tabs}${mount}`;
+    : `<div id="in" hidden></div>${toolsAction ? '<button id="fixture-atlas-tools">Atlas tools</button>' : ''}${tabs}${mount}`;
   const head = atlasPage('fixture').split('<body')[0];
   return (shellLayout ? head.replace('</head>', '<link rel="stylesheet" href="/roof/workspace.css"></head>') : head) + `<body>
     <style nonce="fixture">
@@ -59,7 +59,10 @@ function nativeAtlasPage(withWallpaper, shellLayout) {
       const html = document.documentElement;
       const screenEl = document.querySelector('#m-atlas');
       if (screenEl) { html.classList.add('ifl-os'); html.dataset.app = 'atlas'; }
-      const fw = { screenEl, signal: new AbortController().signal, visible: () => true, fill(on) { if (screenEl) html.classList.toggle('ifl-fill', on); }, header: { set() {} },
+      const fw = { screenEl, signal: new AbortController().signal, visible: () => true, fill(on) { if (screenEl) html.classList.toggle('ifl-fill', on); }, header: { set(value) {
+        const tools = document.querySelector('#fixture-atlas-tools');
+        if (tools) tools.onclick = value.acts.find(action => action.label === 'Atlas tools').run;
+      } },
         tabs: { away(hide) { html.toggleAttribute('data-os-dock-away', hide); document.querySelector('.ws-dock').hidden = hide; } },
         nav: { section: key => show(key), href: (key, arg) => '#' + key + (arg ? '=' + encodeURIComponent(arg) : ''),
           go: path => show(...path.slice(1).split('=').map(decodeURIComponent)) } };
@@ -79,7 +82,8 @@ function nativeAtlasPage(withWallpaper, shellLayout) {
         tab.addEventListener('click', () => show(key));
         tabs.append(tab);
       }
-      await show('conversations', new URL(location.href).searchParams.get('conversation'));
+      const run = /^#runs=([bcs]_[A-Za-z0-9_-]+)$/.exec(location.hash)?.[1];
+      await show(run ? 'runs' : 'conversations', run || new URL(location.href).searchParams.get('conversation'));
       document.querySelector('#in').hidden = false;
       root.dataset.atlasReady = 'true';
     </script></body></html>`;
@@ -111,7 +115,7 @@ async function open(options = {}) {
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== ORIGIN) return route.abort();
-    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: options.native ? nativeAtlasPage(options.wallpaper, options.shellLayout) : atlasPage('fixture') });
+    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: options.native ? nativeAtlasPage(options.wallpaper, options.shellLayout, options.toolsAction) : atlasPage('fixture') });
     if (url.pathname === '/account/api/account/appearance') return route.fulfill({ json: { signedIn: true, id: fixture.owner, palette: 'inflite', appearance: options.theme || 'dark', glass: options.glass ?? true } });
     if (!url.pathname.startsWith('/atlas/api/')) {
       if (!['/theme.js', '/app.css', '/atlas.svg'].includes(url.pathname) && !url.pathname.startsWith('/roof/') && !url.pathname.startsWith('/atlas/assets/') && !url.pathname.startsWith('/atlas/roof/')) return route.fulfill({ status: 404, body: '' });
@@ -123,7 +127,7 @@ async function open(options = {}) {
     fixture.requests.push({ path, method, body, search: url.search, headers: request.headers() });
     const reply = (data, status = 200, capturedOwner = owner) => route.fulfill({ status, headers: { 'X-Atlas-Owner': capturedOwner, 'Cache-Control': 'no-store' }, json: data });
     if (fixture.overrides.has(method + ' ' + path)) return fixture.overrides.get(method + ' ' + path)({ route, reply, body, url, owner });
-    if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 7 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, coding: fixture.coding, environments: { ready: fixture.environmentsReady, storageReady: fixture.environmentsReady }, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' } });
+    if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 7 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, coding: fixture.coding, environments: { ready: fixture.environmentsReady, storageReady: fixture.environmentsReady }, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' }, runs: fixture.runsHealth });
     if (path === 'session') return reply({ owner, available: true, signedIn: true });
     if (path === 'setup') { fixture.environmentsReady = true; fixture.ready = true; fixture.coding = { ready: true, storageReady: true, message: '' }; return reply({ ready: true, schemaVersion: 7 }); }
     if (path === 'settings') { if (method === 'PATCH') Object.assign(fixture.settings, body); return reply(fixture.settings); }
@@ -353,7 +357,7 @@ test('native Atlas sections keep their shared matte material and painted edges w
     const taskList = page.locator('#inbox-list').filter({ hasText: run.prompt });
     await pageCard(taskList);
     await tabs.getByRole('button', { name: 'Environments', exact: true }).click();
-    await pageCard(page.locator('.environment-card'));
+    await pageCard(page.locator('#environments-list[aria-busy="false"] .environment-card'));
     await tabs.getByRole('button', { name: 'Briefs', exact: true }).click();
     await page.getByRole('button', { name: /Research notes/ }).click();
     await pageCard(page.locator('.brief-card'));
@@ -396,7 +400,19 @@ test('the mobile native shell keeps Atlas scrollable above the dock during a cod
     }
     await page.waitForFunction(() => document.getElementById('messages').scrollTop > 50);
     assert.equal(await page.evaluate(() => scrollY), 0);
-    const readingPosition = await messages.evaluate(el => el.scrollTop);
+    // Native keyboard and wheel scrolling can finish after Playwright returns.
+    // Compare the refresh against a settled reader position.
+    const readingPosition = await messages.evaluate(async el => {
+      let previous = el.scrollTop, still = 0;
+      for (let frame = 0; frame < 60; frame++) {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const current = el.scrollTop;
+        still = current === previous ? still + 1 : 0;
+        if (still === 5) return current;
+        previous = current;
+      }
+      throw Error("The native scroll did not settle.");
+    });
     run.summary += '\n\nWorkspace progress was refreshed.';
     await messages.getByText('Workspace progress was refreshed.').waitFor();
     assert.ok(Math.abs(await messages.evaluate(el => el.scrollTop) - readingPosition) <= 2, 'task refresh must preserve the scroll position');
@@ -790,6 +806,109 @@ test('coding tasks restore after reload and navigation, poll remote progress and
     assert.match(await t.page.locator('.coding-run').textContent(), /Tests are not verified/);
     assert.equal(t.fixture.requests.some(call => /coding\/runs\/.+\/cancel$/.test(call.path)), false);
     assert.equal(t.fixture.requests.some(call => call.path === 'coding/runs' && call.method === 'POST'), false); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('native mobile Recent runs retries and opens existing answer, review and schedule views', async () => {
+  const run = codingRun({ status: 'completed', reviewReady: true });
+  const t = await open({ native: true, toolsAction: true, width: 320, height: 844, mobile: true, fixture: {
+    codingRuns: [run],
+    tasks: [{ id: 'scheduled-1', title: 'Weekly review', schedule_kind: 'interval', interval_minutes: 360 }],
+  } });
+  const openRuns = async () => {
+    await t.page.getByRole('button', { name: 'Atlas tools', exact: true }).click();
+    await t.page.getByRole('button', { name: 'Recent runs', exact: true }).click();
+    return t.page.getByRole('dialog', { name: 'Recent runs', exact: true });
+  };
+  try {
+    const rows = [
+      { kind: 'answer', id: 'beta-first', title: 'Beta planning', conversationId: 'beta', status: 'completed', updatedAt: now },
+      { kind: 'coding', ...run, title: 'Repository repair' },
+      { kind: 'scheduled', id: 'run-fixture', scheduleId: 'scheduled-1', title: 'Weekly review', status: 'completed', updatedAt: now },
+    ];
+    t.fixture.overrides.set('GET runs', ({ reply }) => reply({ code: 'runs_unavailable', error: 'Runs are temporarily unavailable.' }, 503));
+    const dialog = await openRuns();
+    await dialog.getByText('Runs are temporarily unavailable.').waitFor();
+    t.fixture.overrides.set('GET runs', ({ reply }) => reply({ items: rows }));
+    await dialog.getByRole('button', { name: 'Refresh runs' }).click();
+    await dialog.getByRole('button', { name: /Beta planning.*Answer.*Completed/ }).click();
+    await t.page.getByText('Only beta content belongs here.').waitFor();
+    await (await openRuns()).getByRole('button', { name: /Repository repair.*Ready to review/ }).click();
+    const review = t.page.getByRole('dialog', { name: 'Review changes', exact: true });
+    await review.waitFor();
+    await review.getByRole('button', { name: 'Close review' }).click();
+    await (await openRuns()).getByRole('button', { name: /Weekly review.*Scheduled task/ }).click();
+    await t.page.getByRole('dialog', { name: 'Scheduled tasks' }).getByText('A scheduled result with evidence.').waitFor();
+    assert.equal(t.fixture.requests.filter(call => call.path === 'runs').length, 4);
+    assert.equal(t.fixture.requests.some(call => call.method !== 'GET'), false);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('a background answer reopens its mobile timeline and resumes the selected revision', async () => {
+  const t = await open({ native: true, toolsAction: true, width: 320, height: 844, mobile: true, conversation: 'alpha',
+    fixture: { runsHealth: { ready: true, backgroundAvailable: true } },
+  });
+  const dialog = t.page.getByRole('dialog', { name: 'Run timeline', exact: true });
+  const event = (seq, checkpoint, status, revision = 1) => ({ seq, checkpoint, status, revision, at: now + seq * 1000 });
+  let run, events, runPath;
+  const openRuns = async () => {
+    await t.page.getByRole('button', { name: 'Atlas tools', exact: true }).click();
+    await t.page.getByRole('button', { name: 'Recent runs', exact: true }).click();
+    await t.page.getByRole('dialog', { name: 'Recent runs', exact: true }).getByRole('button', { name: /Alpha research.*Background answer/ }).click();
+  };
+  try {
+    t.fixture.overrides.set('POST runs', ({ body, reply }) => {
+      assert.equal(body.conversationId, 'alpha');
+      assert.equal(body.prompt, 'Finish the release summary while I am away');
+      run = { id: body.requestId, title: 'Alpha research', conversationId: 'alpha', messageId: 'background-message', kind: 'background',
+        status: 'queued', revision: 1, active: true, canStop: true,
+      };
+      events = [event(1, 'queued', 'queued')];
+      runPath = 'runs/background/' + run.id;
+      t.fixture.overrides.set('GET ' + runPath, ({ reply, url }) => {
+        const after = Number(url.searchParams.get('after'));
+        const page = events.filter(event => event.seq > after);
+        return reply({ run, events: page, nextAfter: page.at(-1)?.seq ?? after, hasMore: false });
+      });
+      return reply({ run }, 202);
+    });
+    t.fixture.overrides.set('GET runs', ({ reply }) => reply({ items: [run] }));
+    await t.page.getByRole('textbox', { name: 'Message Atlas' }).fill('Finish the release summary while I am away');
+    await t.page.getByRole('button', { name: 'Run in background' }).click();
+    await dialog.getByText('Atlas will start this run in the background.').waitFor();
+    assert.equal(await t.page.locator('#prompt').inputValue(), '');
+    await dialog.getByRole('button', { name: 'Close run timeline' }).click();
+    await t.page.reload();
+    await t.page.locator('[data-atlas-ready="true"]').waitFor();
+    Object.assign(run, { status: 'uncertain', active: false, canStop: false, canResume: true, hasDraft: true });
+    events.push(event(2, 'draft_saved', 'running'), event(3, 'interrupted', 'uncertain'));
+    await openRuns();
+    await dialog.getByText('Saved a partial answer', { exact: true }).waitFor();
+    await dialog.getByText('Worker interrupted', { exact: true }).waitFor();
+    assert.equal(t.fixture.requests.filter(call => call.method === 'POST').length, 1);
+    t.fixture.overrides.set('POST ' + runPath + '/resume', ({ body, reply }) => {
+      assert.deepEqual(body, { revision: 1, confirm: true });
+      Object.assign(run, { status: 'queued', revision: 2, active: true, canStop: true, canResume: false });
+      events.push(event(4, 'resume_queued', 'queued', 2));
+      return reply({ run }, 202);
+    });
+    await dialog.getByRole('button', { name: 'Resume from checkpoint' }).click();
+    await t.page.getByRole('dialog', { name: 'Confirm action' }).getByRole('button', { name: 'Continue', exact: true }).click();
+    await dialog.getByText('Queued a new attempt', { exact: true }).waitFor();
+    assert.equal(await dialog.getByRole('list', { name: 'Saved events' }).getByRole('listitem').count(), 4);
+    assert.ok(t.fixture.requests.some(call => call.path === runPath && call.search === '?after=3'));
+
+    Object.assign(run, { status: 'completed', active: false, canStop: false });
+    events.push(event(5, 'saved', 'completed', 2));
+    t.fixture.messages.alpha.push({ id: run.messageId, prompt: 'Finish the release summary while I am away', answer: 'The durable result is saved in this conversation.', status: 'completed', created_at: now });
+    await t.page.goto(ORIGIN + '/atlas#runs=b_' + run.id);
+    await dialog.getByText('Saved the response', { exact: true }).waitFor();
+    assert.equal(await dialog.getByRole('list', { name: 'Saved events' }).getByRole('listitem').count(), 5);
+    await dialog.getByRole('button', { name: 'Open conversation' }).click();
+    await t.page.getByText('The durable result is saved in this conversation.', { exact: true }).waitFor();
+    assert.deepEqual(t.fixture.requests.filter(call => call.method === 'POST').map(call => call.path), ['runs', runPath + '/resume']);
+    assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
 });
 

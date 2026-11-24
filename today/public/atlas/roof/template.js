@@ -49,7 +49,7 @@ export function atlasMarkup() {
   <label class="sr-only" for="prompt">Message Atlas</label><textarea id="prompt" rows="2" maxlength="12000" placeholder="What should we work on?" autocomplete="off"></textarea>
   <div id="repository-control" class="repository-control composer-context" hidden><div class="composer-context-field repository-context"><label class="sr-only" for="repository">Repository</label><select id="repository" aria-describedby="repository-note"><option value="">Select repository</option></select></div><div class="composer-context-field environment-context">${glyph("cloud")}<label class="sr-only" for="coding-environment">Cloud environment</label><select id="coding-environment"><option value="">Default environment</option></select></div><button id="manage-environments" type="button" class="icon-button" data-open="environments" aria-label="Manage cloud environments" title="Manage cloud environments">${glyph("settings")}</button></div>
   <div class="composer-bottom"><div class="composer-controls"><div id="composer-intent" class="intent-switch" role="group" aria-label="Task mode" hidden><button id="intent-code" type="button" aria-pressed="true">Code</button><button id="intent-ask" type="button" aria-pressed="false">Ask</button></div><button id="composer-options" type="button" class="quiet-button composer-options" data-open="task-options" aria-haspopup="dialog" aria-label="Task options">${glyph("more")}<span id="composer-mode-label">Research</span></button></div><div class="composer-actions"><button id="start-coding" type="button" class="primary-button" aria-describedby="coding-feedback" hidden>Work on task</button><button id="stop-response" type="button" class="quiet-button" hidden>Stop</button><button id="send" type="submit" class="primary-button" disabled>Send</button></div></div>
-  <div class="composer-assistance"><p id="composer-hint" class="field-help"></p><button id="connect-provider" class="text-button" type="button" data-open="settings" hidden>Connect provider</button><p id="coding-feedback" class="field-feedback" role="status"></p></div>
+  <div class="composer-assistance"><p id="composer-hint" class="field-help"></p><button id="background-answer" class="text-button" type="button" hidden>Run in background</button><button id="connect-provider" class="text-button" type="button" data-open="settings" hidden>Connect provider</button><p id="coding-feedback" class="field-feedback" role="status"></p></div>
 </form></main>
 <section id="atlas-destination" class="atlas-destination" aria-labelledby="atlas-destination-title" hidden>
   <div id="atlas-destination-scroll" class="atlas-destination-scroll">
@@ -72,6 +72,7 @@ export function atlasMarkup() {
   <header class="ifs-head"><h2 id="workspace-title" tabindex="-1">Workspace</h2><button class="ifs-btn icon-button" type="button" data-close aria-label="Close workspace">${glyph("x")}</button></header>
   <div class="ifs-body">
     <nav class="workspace-tools ifl-list" aria-label="Workspace tools">
+      <button class="ifl-row" data-open="runs" aria-haspopup="dialog">${glyph("activity")}Recent runs</button>
       <button class="ifl-row" data-open="inbox" aria-haspopup="dialog">${glyph("code")}Tasks</button>
       <button class="ifl-row" data-open="environments">${glyph("cloud")}Cloud environments</button>
       <button class="ifl-row" data-open="briefs">${glyph("doc")}Saved briefs</button>
@@ -80,6 +81,38 @@ export function atlasMarkup() {
       <button class="ifl-row" data-open="usage">${glyph("activity")}Usage</button>
       <button class="ifl-row" data-open="settings">${glyph("settings")}Settings</button>
     </nav>
+  </div>
+</dialog>
+<dialog id="runs-dialog" class="atlas-dialog ifl-sheet wide-dialog" aria-labelledby="runs-title">
+  <div class="ifs-grab" aria-hidden="true"></div>
+  <header class="ifs-head"><h2 id="runs-title" tabindex="-1">Recent runs</h2><button class="ifs-btn icon-button" type="button" data-close aria-label="Close recent runs">${glyph("x")}</button></header>
+  <div class="ifs-body dialog-content">
+    <div class="button-row"><button id="refresh-runs" class="quiet-button" type="button">Refresh runs</button></div>
+    <p id="runs-feedback" class="field-feedback" role="status"></p>
+    <div id="runs-list" class="record-list atlas-record-group ifl-list"></div>
+  </div>
+</dialog>
+<dialog id="run-timeline-dialog" class="atlas-dialog ifl-sheet wide-dialog" aria-labelledby="run-timeline-title">
+  <div class="ifs-grab" aria-hidden="true"></div>
+  <header class="ifs-head"><h2 id="run-timeline-title" tabindex="-1">Run timeline</h2><button class="ifs-btn icon-button" type="button" data-close aria-label="Close run timeline">${glyph("x")}</button></header>
+  <div class="ifs-body dialog-content">
+    <div class="record-card atlas-run-state">
+      <h3 id="run-heading"></h3>
+      <p id="run-state" role="status"></p>
+      <p id="run-checkpoint" class="field-help"></p>
+      <div class="button-row">
+        <button id="run-open-result" class="quiet-button" type="button" hidden>Open conversation</button>
+        <button id="run-resume" class="primary-button" type="button" hidden>Resume from checkpoint</button>
+        <button id="run-stop" class="danger-text" type="button" hidden>Stop run</button>
+      </div>
+    </div>
+    <ol id="run-events" class="ifl-list atlas-run-events" aria-label="Saved events"></ol>
+    <p id="run-feedback" class="field-feedback" role="status"></p>
+    <div class="button-row">
+      <button id="run-more" class="quiet-button" type="button" hidden>Load more events</button>
+      <button id="run-refresh" class="quiet-button" type="button">Refresh timeline</button>
+      <button id="run-copy-link" class="text-button" type="button" hidden>Copy run link</button>
+    </div>
   </div>
 </dialog>
 <dialog id="inbox-dialog" class="atlas-dialog ifl-sheet wide-dialog" aria-labelledby="inbox-title">

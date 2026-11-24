@@ -11,7 +11,9 @@ import { evolution } from './atlas-evolution.js';
 import * as coding from './atlas-coding.js';
 import * as environments from './atlas-environments.js';
 import { workspaceContextStorageStatus, getWorkspaceContext, setWorkspaceContext, clearWorkspaceContext } from './atlas-workspace-context.js';
-import { atlasActivity } from './atlas-activity.js';
+import { atlasActivity, atlasRuns } from './atlas-activity.js';
+import { enqueueAtlasAnswer, resumeAtlasAnswer, stopAtlasAnswer } from './atlas-run-coordinator.js';
+import { publicAnswerRun, readAtlasRunTimeline, runTimelineStorage } from './atlas-run-timeline.js';
 
 const PRIVATE = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', 'Referrer-Policy': 'no-referrer' };
 const API_CSP = "default-src 'none'; frame-ancestors 'none'";
@@ -134,6 +136,12 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
       return current?.signedIn === true && current?.apps?.mail === true && String(current?.user?.id) === owner;
     } catch { return null; }
   };
+  const requireBackgroundAccess = async () => {
+    if (!env.ATLAS_VERIFY_KEY) fail('background_unavailable', 'Background runs need the InFlite account verification connection.', 503);
+    const allowed = await verifyAdmin(owner);
+    if (allowed === false) fail('administrator_unavailable', 'InFlite could not confirm administrator access for background work.', 403);
+    if (allowed !== true) fail('background_unavailable', 'InFlite could not verify access for background work. Try again shortly.', 503);
+  };
   try {
     if (['GET', 'HEAD'].includes(request.method) && ['/atlas', '/atlas/'].includes(url.pathname)) {
       const nonce = crypto.randomUUID();
@@ -150,13 +158,13 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
     if (path === '/identity' && method === 'GET') { await fresh(); return json({ confirmed: true, owner: ownerMarker }); }
     const storage = await store.storageStatus(env);
     if (path === '/health' && method === 'GET') {
-      const provider = await providerStatus(env, owner);
+      const [provider, timelineReady] = await Promise.all([providerStatus(env, owner), runTimelineStorage(env, storage.schemaVersion)]);
       let github = { connected: false };
       if (storage.ready) {
         try { github = await repository.githubStatus(env, owner); }
         catch (error) { const safe = safeFailure(error); github = { connected: false, error: safe.error, code: safe.code }; }
       }
-      return json({ owner: ownerMarker, storage, provider, scheduling: scheduleAvailability(env), github, coding: await coding.codingHealth(env, provider), environments: await environments.environmentStorageStatus(env), workspaceContext: await workspaceContextStorageStatus(env) });
+      return json({ owner: ownerMarker, storage, provider, scheduling: scheduleAvailability(env), github, coding: await coding.codingHealth(env, provider), environments: await environments.environmentStorageStatus(env), workspaceContext: await workspaceContextStorageStatus(env), runs: { ready: timelineReady, backgroundAvailable: timelineReady && !!env.ATLAS_VERIFY_KEY } });
     }
     if (path === '/setup' && method === 'POST') {
       const body = await input(request);
@@ -175,6 +183,32 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
     if (!storage.ready) fail(storage.code || 'storage_upgrade_required', env.ATLAS_DB ? 'Finish Atlas storage setup to use this feature.' : 'The Atlas database is not configured.', env.ATLAS_DB ? 409 : 503);
     const options = { send, signal: request.signal };
     if (path === '/activity' && method === 'GET') return json(await atlasActivity(env, owner, { limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 12, schemaVersion: storage.schemaVersion }));
+    if (path === '/runs' && method === 'GET') {
+      const timeline = await runTimelineStorage(env, storage.schemaVersion);
+      return json(await atlasRuns(env, owner, { limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined, schemaVersion: storage.schemaVersion, timeline }));
+    }
+    const runRoute = /^\/runs\/(background|coding|scheduled)\/([^/]+)(?:\/(stop|resume))?$/.exec(path);
+    if ((path === '/runs' && method === 'POST') || runRoute) {
+      if (!await runTimelineStorage(env, storage.schemaVersion)) fail('runs_storage_upgrade_required', 'Upgrade Atlas storage to use run timelines and background answers.', 409);
+      if (!runRoute) {
+        const body = await input(request);
+        await requireBackgroundAccess();
+        return json({ run: publicAnswerRun(await enqueueAtlasAnswer(env, owner, body)) }, 202);
+      }
+      const [, kind, id, action] = runRoute;
+      if (!action && method === 'GET') return json(await readAtlasRunTimeline(env, owner, kind, id, {
+        after: Number(url.searchParams.get('after') ?? 0),
+        limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
+      }));
+      if (kind === 'background' && method === 'POST') {
+        if (action === 'stop') return json({ run: publicAnswerRun(await stopAtlasAnswer(env, owner, id, await input(request, 1024))) });
+        if (action === 'resume') {
+          const body = await input(request, 1024);
+          await requireBackgroundAccess();
+          return json({ run: publicAnswerRun(await resumeAtlasAnswer(env, owner, id, body)) }, 202);
+        }
+      }
+    }
 
     if (path === '/provider') {
       if (method === 'GET') return json(await providerStatus(env, owner));

@@ -38,6 +38,16 @@ Schema version 8 adds owner-scoped cloud environment configurations and immutabl
 
 Schema version 9 adds `atlas_workspace_contexts`, keyed by owner and conversation. It stores the selected source reference and bounded display metadata, not a copy of Mail message bodies. `health.workspaceContext.ready` reports this capability separately, so an existing version 8 database continues serving chat and coding tasks before the context upgrade. Apply `atlas/migrations/0009.sql` through the normal migration command, or use Atlas's explicit setup action, `POST /atlas/api/setup` with `{confirm:true}`, after fresh account confirmation. Setup verifies the new table and remains safe to repeat. Reads never apply a migration or change the encryption secret.
 
+Schema version 10 adds durable background answers and a shared run timeline. The production Worker applies the upgrade to its existing Atlas database on the minute trigger after deployment. **Enable run timelines** remains available through the authenticated setup flow. Existing conversations, coding tasks and schedules remain usable while the upgrade is pending. `/atlas/version?check=runs` reports only release and timeline readiness. Background answers require the same `ATLAS_VERIFY_KEY` secret on the production `inflite` and `inflite-apps` Workers. Each background dispatch rechecks the current administrator through that connection.
+
+## Background answers and run timelines
+
+Choose **Run in background** in an answer composer. Once Atlas shows the run as queued, you can close the tab. The Worker picks up queued work on its minute trigger and uses the owner's saved connection and allowance. A conversation with selected Mail context uses **Send** for interactive authorization. The minute trigger for manually queued answers is independent of the recurring task setting.
+
+Open **Atlas tools → Recent runs** or a saved run link to see the same timeline. The timeline appends saved events after a cursor and suspends reads when the tab is hidden. Background answers, coding tasks and scheduled occurrences record changes to their state as they work. Older runs retain their result and may have only the current status if their history predates the upgrade.
+
+If an expired worker lease can be fenced before dispatch, Atlas queues a fresh attempt on the same run. After a provider dispatch, Atlas recovers any recorded outcome or marks it unconfirmed and retains saved text. **Resume from checkpoint** explicitly schedules a new attempt using that text as context. It preserves the original attempt and is charged under the usual allowance. Coding uses its saved hosted workspace phases and existing continuation controls. Completed answers open in their conversations with the existing review actions for Notes, Calendar and Mail.
+
 ## Cloud environments
 
 Open **Cloud environments** to save a repository setup, then select it in the Developer composer. Each configuration includes a name, repository, optional branch, machine size, setup command, check command and network policy. Leaving the branch blank uses the repository's current default branch. Atlas pins the selected branch to an immutable commit before preparing the workspace.

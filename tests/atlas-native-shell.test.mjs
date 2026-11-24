@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import worker from '../today/src/index.js';
+import { createConversation, getConversation, storageStatus } from '../today/src/atlas-store.js';
 import { parse, format, REGISTRY, atlasReference } from '../today/public/roof/router.js';
 import { safeWorkspaceRoute } from '../today/public/roof/workspace-catalog.js';
 import { resumeTarget } from '../today/public/roof/restore.js';
@@ -26,6 +28,26 @@ test('Atlas cold links and legacy conversation links enter the existing shell', 
   const redirect = await worker.fetch(new Request('https://inflite.ai/atlas?conversation=thread-123&secret=not-persisted'),env,{});
   assert.equal(redirect.headers.get('Location'),'/atlas/#conversations=thread-123');
   assert.equal((await worker.fetch(new Request('https://inflite.ai/atlas/api/session'),env,{})).status,401);
+});
+
+test('the production tick installs the release schema on an existing database and publishes readiness', async t => {
+  const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, script: 'export default {fetch(){return new Response("fixture")}}', compatibilityDate: '2026-10-01', cf: false, d1Databases: ['ATLAS_DB'] }));
+  t.after(() => mf.dispose());
+  const db = await mf.getD1Database('ATLAS_DB');
+  const legacy = Array.from({ length: 9 }, (_, i) => readFileSync(new URL('../atlas/migrations/' + String(i + 1).padStart(4, '0') + '.sql', import.meta.url), 'utf8')).join('\n');
+  await db.batch(legacy.split(';').map(sql => sql.trim()).filter(Boolean).map(sql => db.prepare(sql)));
+  const env = { ATLAS_DB: db, ASSETS: { async fetch() { return new Response('export const BUILD = "2.0.1";'); } } };
+  const conversation = await createConversation(env, 'alice', { title: 'Keep my saved conversation', mode: 'research' });
+  const health = async () => (await worker.fetch(new Request('https://inflite.ai/atlas/version?check=runs'), env, {})).json();
+  assert.deepEqual(await health(), { build: '2.0.1', min: null, runsReady: false });
+  await worker.scheduled({}, env, {});
+  assert.equal((await storageStatus(env)).schemaVersion, 9);
+  const release = { ...env, ATLAS_RELEASE_SCHEMA: '10' };
+  await worker.scheduled({}, release, {});
+  await worker.scheduled({}, release, {});
+  assert.deepEqual(await health(), { build: '2.0.1', min: null, runsReady: true });
+  assert.deepEqual(await getConversation(env, 'alice', conversation.id), conversation);
+  assert.equal((await worker.fetch(new Request('https://inflite.ai/atlas/api/runs'), env, {})).status, 401);
 });
 
 test('Atlas routes retain only curated opaque references and respect native module availability', () => {
@@ -81,6 +103,23 @@ test('migrated Atlas conversations preserve exact bounded legacy IDs without wid
   }
   assert.equal(atlasReference({toString:()=>longest}),null);
   assert.equal(resumeTarget({path:'/atlas/#conversations=legacy-%61'+hex+'-research'}),null);
+});
+
+test('Atlas run links restore only typed opaque references', () => {
+  const path = '/atlas/#runs=b_123e4567-e89b-12d3-a456-426614174000';
+  const route = parse(path, { roof: { atlas: true } });
+  assert.equal(route.key, 'runs');
+  assert.equal(route.section, 'conversations');
+  assert.equal(format(route), path);
+  assert.equal(safeWorkspaceRoute('atlas', path), path);
+  assert.equal(resumeTarget({ path }).path, path);
+  assert.equal(parse(path, { roof: { atlas: false } }), null);
+  for (const suffix of ['private-title', 'b_private%20title', 'x_run', 'b_' + 'x'.repeat(39)]) {
+    const invalid = '/atlas/#runs=' + suffix;
+    assert.equal(parse(invalid, { roof: true }).arg, null);
+    assert.equal(resumeTarget({ path: invalid }), null);
+    assert.equal(safeWorkspaceRoute('atlas', invalid), null);
+  }
 });
 
 function activityFixture(send) {
