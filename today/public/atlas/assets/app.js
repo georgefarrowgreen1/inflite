@@ -2,6 +2,7 @@
    is checked on every response, including every new streaming response. */
 import { createSheets } from "../../roof/sheet.js";
 import { toast as showToast } from "../../roof/toast.js";
+import { atlasRunReference } from "../../roof/router.js";
 import { nativeSheets, confirmAction, promptValue } from "../roof/native.js";
 
 export function safeUrl(value) {
@@ -109,6 +110,7 @@ let codingInbox;
 const destinationRoutes = { inbox: "tasks", environments: "environments", briefs: "briefs" };
 let destination = null, briefRequest = null, briefListRequest = null;
 let runsRequest = null;
+let runTimeline = null, answerSubmission = null;
 let threadsRequest = null, threadsArchived = null, threadsError = "", threadSelection = null;
 const mobileQuery = "(max-width: 720px)";
 const dirtyForms = new Set();
@@ -164,6 +166,7 @@ function clearPrivateState(message = "Your session changed. Checking access…")
   briefListRequest?.abort(); briefListRequest = null; showBriefList();
   threadsRequest?.abort(); threadsRequest = null; threadsArchived = null; threadsError = "";
   cancelThreadSelection();
+  answerSubmission = null;
   detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingReview = null; state.codingLoading = false; state.codingLoadError = ""; state.codingDispatching = false;
   state.environments = []; state.environmentsReady = null; state.environmentsLoading = false; state.environmentId = ""; state.environmentEditingRevision = null; state.environmentEditorSession++; state.environmentEditorVersion++; state.environmentsRequest++; state.intent = "code"; state.taskTabs.clear(); state.taskExpanded.clear(); state.taskChanges.clear();
   state.epoch++; state.stream?.controller.abort(); state.stream = null; state.dispatching = false; state.owner = null; state.health = null; state.conversation = null; state.conversations = []; state.messages = []; state.activeId = null; state.context = []; state.contexts = []; state.repositories = []; state.models = []; state.tasks = []; state.scheduleContext = []; state.patches = []; state.selectedPatch = null; state.settings = null; state.privateReady = false; state.drafts.clear(); state.workspaceContext = []; state.contextPending = false; state.briefs = []; dirtyForms.clear(); state.navigation++; state.contextLoad++;
@@ -332,9 +335,10 @@ function renderHealth() {
   const codingUpgrade = ready && health?.coding?.storageReady === false;
   const environmentsUpgrade = ready && health?.environments?.ready === false;
   const workspaceContextUpgrade = ready && health?.workspaceContext?.ready === false;
-  $("setup-banner").hidden = ready && !codingUpgrade && !environmentsUpgrade && !workspaceContextUpgrade; $("upgrade-storage").disabled = !health; $("upgrade-storage").hidden = health?.storage?.code === "storage_missing";
-  $("setup-message").textContent = health?.storage?.code === "storage_missing" ? "Connect Atlas storage in the deployment settings, then reload this page." : codingUpgrade ? "Upgrade storage to save coding tasks and reconnect to their progress. Your conversations are ready to use." : environmentsUpgrade ? "Save reusable cloud environments with repository setup and focused checks." : workspaceContextUpgrade ? "Enable selected Mail context and connected app drafts in your InFlite workspace. Existing conversations remain available." : "Prepare storage for conversations, sources and saved work.";
-  $("upgrade-storage").textContent = codingUpgrade ? "Enable coding tasks" : environmentsUpgrade ? "Enable cloud environments" : workspaceContextUpgrade ? "Enable connected context" : "Prepare workspace";
+  const runsUpgrade = ready && health?.runs?.ready === false;
+  $("setup-banner").hidden = ready && !codingUpgrade && !environmentsUpgrade && !workspaceContextUpgrade && !runsUpgrade; $("upgrade-storage").disabled = !health; $("upgrade-storage").hidden = health?.storage?.code === "storage_missing";
+  $("setup-message").textContent = health?.storage?.code === "storage_missing" ? "Connect Atlas storage in the deployment settings, then reload this page." : codingUpgrade ? "Upgrade storage to save coding tasks and reconnect to their progress. Your conversations are ready to use." : environmentsUpgrade ? "Save reusable cloud environments with repository setup and focused checks." : workspaceContextUpgrade ? "Enable selected Mail context and connected app drafts in your InFlite workspace. Existing conversations remain available." : runsUpgrade ? "Enable saved timelines and checkpoints for Atlas runs." : "Prepare storage for conversations, sources and saved work.";
+  $("upgrade-storage").textContent = codingUpgrade ? "Enable coding tasks" : environmentsUpgrade ? "Enable cloud environments" : workspaceContextUpgrade ? "Enable connected context" : runsUpgrade ? "Enable run timelines" : "Prepare workspace";
   const status = $("connection-status");
   let label = "Connect OpenAI", kind = "attention";
   if (!ready) label = "Finish setup";
@@ -380,6 +384,8 @@ function updateComposer() {
   $("repository-control").dataset.intent = code ? "code" : "ask"; $("coding-environment").closest(".environment-context").hidden = !code; $("manage-environments").hidden = !code;
   $("repository-control").hidden = mode !== "developer"; $("fitness-control").hidden = mode !== "fitness"; $("start-coding").hidden = !code;
   $("send").hidden = code || !!state.stream;
+  $("background-answer").hidden = code || state.health?.runs?.backgroundAvailable !== true || state.workspaceContext.some(source => source.kind === "mail");
+  $("background-answer").disabled = $("send").disabled || state.contextPending;
   $("prompt").placeholder = mode === "developer" ? code ? "Describe the change you want to make…" : "Ask about your repository…" : "What should we work on?";
   $("repository-note").hidden = mode !== "developer" || !$("repository").value;
   const continuation = state.codingRuns.find(run => run.id === state.codingContinuation && run.canContinue);
@@ -701,6 +707,41 @@ async function sendMessage(event) {
   }
 }
 async function stopResponse() { const active = state.stream; if (!active) return; active.stopped = true; const cancellation = api("requests/" + encodeURIComponent(active.requestId) + "/cancel", "POST", {}).catch(() => {}); active.controller.abort(); await cancellation; }
+async function queueBackgroundAnswer(event) {
+  const button = event.currentTarget;
+  if (button.disabled || button.hidden) return;
+  const draft = $("prompt").value, prompt = draft.trim(), generation = state.navigation, epoch = state.epoch;
+  const mode = state.conversation?.mode || $("mode").value, repository = $("repository").value;
+  const context = state.context.map(contextDescriptor), includeFitness = mode === "fitness" && $("fitness-consent").checked;
+  state.dispatching = true; updateComposer();
+  feedback("coding-feedback", "Saving run…");
+  try {
+    const conversation = await ensureConversation({ prompt, mode, repository });
+    checkEpoch(epoch);
+    const payload = { conversationId: conversation.id, prompt, includeFitness, context };
+    const key = JSON.stringify(payload);
+    // If the response is lost, retry the same submission instead of creating
+    // another run. The server validates that the original payload still matches.
+    if (answerSubmission?.key !== key) answerSubmission = { key, id: uuid() };
+    const { run } = await api("runs", "POST", { ...payload, requestId: answerSubmission.id }, { timeout: 20000 });
+    answerSubmission = null;
+    const saved = state.drafts.get(conversation.id);
+    if (saved?.prompt === draft) state.drafts.set(conversation.id, { ...saved, prompt: "" });
+    if (state.activeId === conversation.id && generation === state.navigation) {
+      if ($("prompt").value === draft) { $("prompt").value = ""; saveDraft(); resizePrompt(); }
+      feedback("coding-feedback", "");
+      if (visible()) openRunTimeline(run, button);
+    } else toast("Atlas saved the run. Open Recent runs to follow it.");
+  } catch (error) {
+    if (!error.accountChanged && epoch === state.epoch) {
+      if (error.status && error.status < 500) answerSubmission = null;
+      if (generation === state.navigation) feedback("coding-feedback", errorText(error), true);
+      else toast(errorText(error));
+    }
+  } finally {
+    if (epoch === state.epoch) { state.dispatching = false; updateComposer(); }
+  }
+}
 async function refreshHealth() { const data = await api("health", "GET", undefined, { timeout: 20000 }); state.health = data; renderHealth(); return data; }
 async function loadSettings() {
   const data = await api("settings"); state.settings = data.settings || data;
@@ -856,8 +897,26 @@ function clearRuns() {
   $("runs-list").replaceChildren();
   feedback("runs-feedback", "");
 }
-async function openRecentRun(run, trigger) {
-  sheets.top()?.now();
+const runKinds = { answer: "Answer", background: "Background answer", coding: "Coding task", scheduled: "Scheduled task" };
+const runStatuses = { queued: "Queued", running: "Working", completed: "Completed", incomplete: "Incomplete",
+  failed: "Failed", cancelled: "Stopped", skipped: "Skipped", stopping: "Stopping", uncertain: "Outcome unconfirmed" };
+const checkpointLabels = {
+  queued: "Queued", preparing: "Preparing the answer", dispatching: "Starting the response", draft_saved: "Saved a partial answer",
+  saved: "Saved the response", requeued: "Recovered before dispatch", resume_queued: "Queued a new attempt",
+  reconciled: "Recovered the recorded outcome", interrupted: "Worker interrupted", stop_requested: "Stop requested",
+  completed: "Completed", cancelled: "Stopped", stopped: "Stopped",
+};
+const runPrefixes = { background: "b", coding: "c", scheduled: "s" };
+const runFromReference = reference => {
+  const id = atlasRunReference(reference);
+  return id && { id: id.slice(2), kind: { b: "background", c: "coding", s: "scheduled" }[id[0]] };
+};
+const runStatus = run => run.kind === "coding" ? codingStatus(run) : runStatuses[run.status] || "Status unavailable";
+const runPath = run => "runs/" + run.kind + "/" + encodeURIComponent(run.id);
+
+async function openRunResult(run, trigger) {
+  if (sheets.top()?.el.id === "run-timeline-dialog") sheets.top().now();
+  if (sheets.top()?.el.id === "runs-dialog") sheets.top().now();
   if (run.kind === "scheduled") {
     await showPanel("schedules", trigger);
     const task = state.tasks.find(task => task.id === run.scheduleId);
@@ -865,11 +924,21 @@ async function openRecentRun(run, trigger) {
   } else if (run.kind === "coding" && run.reviewReady && !codingActive(run)) {
     if (fw) fw.nav.go(fw.nav.href("tasks", run.id));
     else await reviewCodingRun(run.id);
+  } else if (run.kind === "background") {
+    await selectConversation(run.conversationId);
+    if (state.activeId === run.conversationId) {
+      const message = $("messages").querySelector('[data-message-id="' + CSS.escape(run.messageId) + '"]');
+      message?.scrollIntoView({ block: "nearest" });
+    }
   } else if (fw) {
     fw.nav.go(fw.nav.href("conversations", run.conversationId));
   } else {
     await selectConversation(run.conversationId);
   }
+}
+function openRecentRun(run, trigger) {
+  if (state.health?.runs?.ready && run.kind !== "answer") return openRunTimeline(run, trigger);
+  return openRunResult(run, trigger);
 }
 async function loadRecentRuns() {
   runsRequest?.abort();
@@ -880,12 +949,9 @@ async function loadRecentRuns() {
   try {
     const data = await api("runs", "GET", undefined, { signal: request.signal, timeout: 20000 });
     if (runsRequest !== request) return;
-    const kinds = { answer: "Answer", coding: "Coding task", scheduled: "Scheduled task" };
-    const statuses = { queued: "Queued", running: "Working", completed: "Completed", incomplete: "Incomplete",
-      failed: "Failed", cancelled: "Stopped", skipped: "Skipped", uncertain: "Outcome unconfirmed" };
     const rows = data.items.map(run => {
-      const kind = kinds[run.kind];
-      const status = run.kind === "coding" ? codingStatus(run) : statuses[run.status] || "Status unavailable";
+      const kind = runKinds[run.kind];
+      const status = runStatus(run);
       const open = button("", event => openRecentRun(run, event.currentTarget), "record-open ifl-row atlas-disclosure");
       const label = node("span", "ifl-tx");
       label.append(node("b", "", run.title || kind), node("small", "", [kind, status, timestamp(run.updatedAt)].filter(Boolean).join(" · ")));
@@ -902,6 +968,97 @@ async function loadRecentRuns() {
       list.removeAttribute("aria-busy");
     }
   }
+}
+function pauseRunTimeline() {
+  if (!runTimeline) return;
+  clearTimeout(runTimeline.timer);
+  runTimeline.request?.abort();
+  runTimeline.request = null;
+}
+function clearRunTimeline() {
+  pauseRunTimeline();
+  runTimeline = null;
+  for (const id of ["run-heading", "run-state", "run-checkpoint", "run-events"]) $(id).replaceChildren();
+  for (const id of ["run-open-result", "run-resume", "run-stop", "run-more", "run-copy-link"]) $(id).hidden = true;
+  feedback("run-feedback", "");
+}
+function openRunTimeline(run, trigger) {
+  runTimeline?.sheet.now();
+  const sheet = openDialog("run-timeline", trigger, { onClose: clearRunTimeline });
+  runTimeline = { sheet, ref: run, run: null, after: 0, request: null, timer: null, retry: 0 };
+  $("run-heading").textContent = run.title || runKinds[run.kind];
+  $("run-state").textContent = "Loading timeline…";
+  const reference = atlasRunReference(runPrefixes[run.kind] + "_" + run.id);
+  $("run-copy-link").hidden = !reference;
+  runTimeline.reference = reference;
+  void loadRunTimeline();
+}
+function renderRunTimeline(run, events, hasMore) {
+  $("run-heading").textContent = run.title || runKinds[run.kind];
+  const status = [runKinds[run.kind], run.stopRequested ? "Stopping" : runStatus(run), run.revision > 1 && "Revision " + run.revision].filter(Boolean).join(" · ");
+  if ($("run-state").textContent !== status) $("run-state").textContent = status;
+  const checkpoint = run.status === "queued" && run.kind === "background" ? "Atlas will start this run in the background."
+    : run.status === "uncertain" && run.kind === "background" ? "Atlas could not confirm the outcome of the previous attempt."
+    : run.status === "failed" && run.errorCode ? run.errorCode.replaceAll("_", " ") : run.kind === "coding" ? run.stage || "" : "";
+  $("run-checkpoint").textContent = [checkpoint, run.kind === "background" && run.status !== "completed" && run.hasDraft ? "A partial answer is saved." : ""].filter(Boolean).join(" ");
+  $("run-open-result").hidden = !run.conversationId && !run.scheduleId;
+  $("run-open-result").textContent = run.kind === "scheduled" ? "Open scheduled work" : run.kind === "coding" && run.reviewReady && !codingActive(run) ? "Review changes" : "Open conversation";
+  $("run-resume").hidden = !run.canResume; $("run-resume").textContent = run.hasDraft ? "Resume from checkpoint" : "Retry run";
+  $("run-stop").hidden = !run.canStop;
+  $("run-more").hidden = !hasMore;
+  for (const event of events) {
+    const item = node("li", "ifl-tx");
+    const title = event.checkpoint === "stop_requested" ? checkpointLabels.stop_requested
+      : run.kind === "coding" ? event.stage || runStatuses[event.status] : checkpointLabels[event.checkpoint] || runStatuses[event.status];
+    item.append(node("b", "", title || "Run updated"), node("small", "", [timestamp(event.at), event.revision > 1 && "Revision " + event.revision].filter(Boolean).join(" · ")));
+    $("run-events").append(item);
+  }
+}
+async function loadRunTimeline() {
+  const timeline = runTimeline;
+  if (!timeline || timeline.request || !visible()) return;
+  clearTimeout(timeline.timer);
+  const request = new AbortController();
+  timeline.request = request;
+  let follow = false;
+  try {
+    const result = await api(runPath(timeline.ref) + "?after=" + timeline.after, "GET", undefined, { signal: request.signal, timeout: 15000 });
+    if (runTimeline !== timeline || timeline.request !== request) return;
+    timeline.run = result.run;
+    renderRunTimeline(result.run, result.events.filter(event => event.seq > timeline.after), result.hasMore);
+    timeline.after = result.nextAfter;
+    timeline.retry = 0;
+    if (result.run.status !== "failed") feedback("run-feedback", timeline.after ? "" : "No timeline events have been saved for this run.");
+    else feedback("run-feedback", "This run could not finish.", true);
+    follow = result.run.active && !result.hasMore;
+  } catch (error) {
+    if (runTimeline !== timeline || timeline.request !== request || error.accountChanged) return;
+    feedback("run-feedback", errorText(error), true);
+    if (!timeline.run) $("run-state").textContent = "Timeline unavailable";
+    if (error.status === 404) for (const id of ["run-open-result", "run-resume", "run-stop"]) $(id).hidden = true;
+    timeline.retry++;
+    follow = !error.status || error.status >= 500;
+  } finally {
+    if (runTimeline === timeline && timeline.request === request) {
+      timeline.request = null;
+      if (follow && visible()) timeline.timer = setTimeout(loadRunTimeline, timeline.retry ? Math.min(30000, 5000 * (timeline.retry + 1)) : 5000);
+    }
+  }
+}
+async function changeRun(event, action) {
+  const timeline = runTimeline, run = timeline?.run;
+  if (!run) return;
+  await busy(event.currentTarget, async () => {
+    if (action === "resume" && !await confirmAction(fw, "Start a new attempt using your Atlas allowance? The previous result will remain available.")) return;
+    if (runTimeline !== timeline) return;
+    try { await api(runPath(run) + "/" + action, "POST", { revision: run.revision, ...(action === "resume" ? { confirm: true } : {}) }); }
+    finally {
+      if (runTimeline === timeline) {
+        pauseRunTimeline();
+        await loadRunTimeline();
+      }
+    }
+  }, "run-feedback");
 }
 async function loadUsage() {
   const data = await api("usage"), totals = data.totals || {}, limits = data.limits || {};
@@ -1483,6 +1640,8 @@ async function bootstrap() {
     });
     state.privateReady = true; fw?.workspace?.changed(); root.classList.remove("session-check"); renderHealth();
     const id = fw ? null : new URL(location.href).searchParams.get("conversation"); if (id) await selectConversation(id); else renderMessages();
+    const run = !fw && health.runs?.ready && runFromReference(/^#runs=(.*)$/.exec(location.hash)?.[1]);
+    if (run) openRunTimeline(run);
     await history;
   } catch (error) { if (!error.accountChanged) { $("session-notice").textContent = errorText(error); const retry = button("Try again", () => bootstrap()); $("session-notice").append(node("br"), retry); } }
 }
@@ -1493,7 +1652,7 @@ async function verifyVisibleSession() {
     try {
       await (fw ? api("session", "GET", undefined, { timeout: 15000 }) : refreshHealth());
       root.classList.remove("session-degraded");
-      if (state.privateReady && state.owner) { root.classList.remove("session-check"); if (!state.codingObserver && !threadSelection) await observeCodingRuns(); }
+      if (state.privateReady && state.owner) { root.classList.remove("session-check"); void loadRunTimeline(); if (!state.codingObserver && !threadSelection) await observeCodingRuns(); }
       else if (state.owner) await bootstrap();
     } catch (error) {
       if (!error.accountChanged) {
@@ -1531,6 +1690,21 @@ function init() {
   $("prompt").addEventListener("blur", fitComposerViewport);
   for (const el of all("[data-open]")) el.addEventListener("click", () => showPanel(el.dataset.open, el));
   $("refresh-runs").addEventListener("click", loadRecentRuns);
+  $("background-answer").addEventListener("click", queueBackgroundAnswer);
+  $("run-refresh").addEventListener("click", loadRunTimeline);
+  $("run-more").addEventListener("click", loadRunTimeline);
+  $("run-stop").addEventListener("click", event => changeRun(event, "stop"));
+  $("run-resume").addEventListener("click", event => changeRun(event, "resume"));
+  $("run-open-result").addEventListener("click", event => {
+    if (runTimeline?.run) void openRunResult(runTimeline.run, event.currentTarget);
+  });
+  $("run-copy-link").addEventListener("click", async () => {
+    if (!runTimeline?.reference) return;
+    try {
+      await navigator.clipboard.writeText(new URL("/atlas/#runs=" + runTimeline.reference, location.origin).href);
+      toast("Run link copied.");
+    } catch { toast("Atlas could not copy the run link."); }
+  });
   $("inbox-filter").addEventListener("change", () => loadCodingInbox());
   for (const control of all("[data-inbox-filter]")) control.addEventListener("click", () => {
     if ($("inbox-filter").value === control.dataset.inboxFilter) return;
@@ -1581,8 +1755,8 @@ function init() {
   $("schedule-repository").addEventListener("change", () => { state.scheduleContext = []; scheduleFields(); }); $("schedule-use-context").addEventListener("click", () => { state.scheduleContext = state.context.filter(c => c.repository === $("schedule-repository").value).map(contextDescriptor); renderScheduleContext(); });
   $("stop-schedules").addEventListener("click", e => busy(e.currentTarget, async () => { if (!await confirmAction(fw, "Pause all your scheduled tasks?")) return; await api("stop", "POST", {}); await loadSchedules(); toast("All scheduled tasks paused."); }));
   let zones = ["Europe/London", "UTC"]; try { if (Intl.supportedValuesOf) zones = ["UTC", ...Intl.supportedValuesOf("timeZone")]; } catch {} for (const zone of zones) { const option = node("option"); option.value = zone; $("timezones").append(option); }
-  listen(document, "visibilitychange", () => { if (document.visibilityState === "hidden") { detachCodingObserver(); if (!fw) root.classList.add("session-check"); } else verifyVisibleSession(); });
-  listen(window, "focus", verifyVisibleSession); listen(window, "pagehide", () => { detachCodingObserver(); $("provider-key").value = ""; $("github-token").value = ""; if (!fw) root.classList.add("session-check"); }); listen(window, "pageshow", event => { if (event.persisted) verifyVisibleSession(); });
+  listen(document, "visibilitychange", () => { if (document.visibilityState === "hidden") { detachCodingObserver(); pauseRunTimeline(); if (!fw) root.classList.add("session-check"); } else verifyVisibleSession(); });
+  listen(window, "focus", verifyVisibleSession); listen(window, "pagehide", () => { detachCodingObserver(); pauseRunTimeline(); $("provider-key").value = ""; $("github-token").value = ""; if (!fw) root.classList.add("session-check"); }); listen(window, "pageshow", event => { if (event.persisted) verifyVisibleSession(); });
   for (const name of ["preferences-form", "environment-form", "schedule-form"]) listen($(name), "input", () => { dirtyForms.add(name); });
   return bootstrap();
 }
@@ -1641,6 +1815,7 @@ function unmount() {
   lifetime.abort(); detachCodingObserver(); state.stream?.controller.abort(); state.stream = null;
   for (const controller of state.controllers) controller.abort(); state.controllers.clear();
   leaveDestination(); sheets?.closeAll(); activeToast?.close(); providerOff?.(); providerOff = null;
+  answerSubmission = null;
   state.drafts.clear(); dirtyForms.clear(); state.messages = []; state.conversations = []; state.workspaceContext = []; state.briefs = []; state.owner = null;
   for (const input of all("input, textarea")) input.value = "";
   root.replaceChildren(); root.classList.remove("atlas-app", "atlas-native", "session-check", "session-degraded");
@@ -1659,6 +1834,11 @@ return {
       if (key === "conversations") {
         if (destination) { sheets.closeAll(); leaveDestination(); }
         if (id && id !== state.activeId) await selectConversation(id);
+      } else if (key === "runs") {
+        leaveDestination();
+        const run = runFromReference(id);
+        if (run && state.health?.runs?.ready) openRunTimeline(run);
+        else await showPanel("runs");
       }
       else if (key === "tasks") {
         await showPanel("inbox", null, { page: !!fw });

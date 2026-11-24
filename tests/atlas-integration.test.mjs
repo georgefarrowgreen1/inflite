@@ -8,6 +8,7 @@ import * as coding from '../today/src/atlas-coding-store.js';
 import { atlas } from '../today/src/atlas.js';
 import { runAtlasPrompt } from '../today/src/atlas-chat.js';
 import { connectProvider } from '../today/src/atlas-provider.js';
+import { runDueAtlasAnswers } from '../today/src/atlas-run-coordinator.js';
 
 const COOKIE = 'account=abcdefghijklmnopqrstuvwxyz';
 const request = (path = '/atlas/api/chat', { method = 'GET', body } = {}) => new Request('https://inflite.ai' + path, { method, headers: { Cookie: COOKIE + '; unrelated=must-not-leave-hub', ...(method === 'GET' ? {} : { Origin: 'https://inflite.ai', 'X-Inflite': '1', 'Content-Type': 'application/json' }) }, ...(body ? { body: JSON.stringify(body) } : {}) });
@@ -184,6 +185,160 @@ test('recent runs remains available before coding storage is installed', async t
   const response = await atlas(request('/atlas/api/runs'), env, { account });
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).items.map(item => item.id), ['answer-only']);
+  const health = await atlas(request('/atlas/api/health'), env, { account });
+  assert.deepEqual((await health.json()).runs, { ready: false, backgroundAvailable: false });
+});
+
+async function runFixture(t) {
+  const { env, conversation } = await fixture(t);
+  env.ATLAS_VERIFY_KEY = 'fixture';
+  const model = 'gpt-6.2-sol', send = async () => assert.fail('The HTTP request must never call a provider');
+  await connectProvider(env, 'alice', { key: 'sk-' + 'fixture'.repeat(8), model }, { send: async () => Response.json({ id: model }) });
+  return {
+    env, conversation, model,
+    async call(path, body) {
+      const response = await atlas(request('/atlas/api/runs' + path, { ...(body ? { method: 'POST', body } : {}) }), env, { account, send });
+      return { status: response.status, data: await response.json() };
+    },
+  };
+}
+
+test('an expired pre-dispatch lease is fenced and recovered once without reusing its ledger', async t => {
+  const { env, conversation, model, call } = await runFixture(t);
+  const requestId = crypto.randomUUID(), path = '/background/' + requestId;
+  const { data: { run } } = await call('', { conversationId: conversation.id, requestId, prompt: 'Resume a queued answer' });
+  await store.reserveRequest(env, 'alice', { id: run.messageId, operation: 'chat', model, conversationId: conversation.id });
+  await store.createMessage(env, 'alice', conversation.id, { id: run.messageId, prompt: 'Resume a queued answer' });
+  await env.ATLAS_DB.prepare("UPDATE atlas_answer_runs SET status='running',checkpoint='preparing',lease_token='expired',lease_until=0 WHERE owner='alice' AND id=?").bind(run.id).run();
+  const verifyAdmin = async owner => owner === 'alice';
+  const send = async () => assert.fail('Recovery must first fence the previous attempt');
+  assert.equal((await runDueAtlasAnswers(env, { verifyAdmin, send })).ran, 1);
+  const recovered = (await call(path)).data;
+  assert.equal(recovered.run.status, 'queued'); assert.equal(recovered.run.revision, 2);
+  assert.notEqual(recovered.run.messageId, run.messageId);
+  assert.equal(recovered.events.at(-1).checkpoint, 'requeued');
+  await assert.rejects(() => store.markRequestDispatched(env, 'alice', run.messageId), { code: 'request_cancelled' });
+  assert.equal((await call(path + '/stop', { revision: 1 })).status, 409);
+  let dispatched = 0;
+  const execute = async () => { dispatched++; return answer(); };
+  const ticks = await Promise.all([runDueAtlasAnswers(env, { verifyAdmin, send: execute }), runDueAtlasAnswers(env, { verifyAdmin, send: execute })]);
+  assert.equal(ticks.reduce((sum, tick) => sum + tick.ran, 0), 1);
+  assert.equal(dispatched, 1);
+  const finished = (await call(path)).data;
+  assert.equal(finished.run.status, 'completed');
+  assert.equal(finished.run.messageId, recovered.run.messageId);
+});
+
+test('an expired dispatched run retains its partial answer and requires explicit revision-bound resume', async t => {
+  const { env, conversation, model, call } = await runFixture(t);
+  const requestId = crypto.randomUUID(), path = '/background/' + requestId;
+  const prompt = 'Finish the release checklist', savedDraft = 'A private saved draft checkpoint';
+  const { data: { run } } = await call('', { conversationId: conversation.id, requestId, prompt });
+  await store.reserveRequest(env, 'alice', { id: run.messageId, operation: 'chat', model, conversationId: conversation.id });
+  await store.createMessage(env, 'alice', conversation.id, { id: run.messageId, prompt });
+  await store.markRequestDispatched(env, 'alice', run.messageId);
+  await env.ATLAS_DB.batch([
+    env.ATLAS_DB.prepare("UPDATE atlas_answer_runs SET status='running',checkpoint='draft_saved',lease_token='expired',lease_until=0 WHERE owner='alice' AND id=?").bind(run.id),
+    env.ATLAS_DB.prepare("UPDATE atlas_turns SET answer=? WHERE owner='alice' AND id=?").bind(savedDraft, run.messageId),
+  ]);
+  const verifyAdmin = async () => true;
+  const noDispatch = async () => assert.fail('An already-dispatched request must never be replayed');
+  const [one, two] = await Promise.all([runDueAtlasAnswers(env, { verifyAdmin, send: noDispatch }), runDueAtlasAnswers(env, { verifyAdmin, send: noDispatch })]);
+  assert.equal(one.ran + two.ran, 1);
+  const uncertain = (await call(path + '?limit=1')).data;
+  assert.equal(uncertain.run.status, 'uncertain');
+  assert.equal(uncertain.run.savedChars, savedDraft.length);
+  assert.equal(uncertain.run.hasDraft, true); assert.equal(uncertain.run.canResume, true);
+  assert.equal(uncertain.hasMore, true);
+  const replay = (await call(path + '?after=' + uncertain.nextAfter)).data;
+  assert.deepEqual(replay.events.map(event => event.checkpoint), ['draft_saved', 'interrupted']);
+  assert.doesNotMatch(JSON.stringify(replay), /private saved draft/);
+  assert.equal((await store.getMessage(env, 'alice', run.messageId)).answer, savedDraft);
+  assert.equal((await store.getRequest(env, 'alice', run.messageId)).status, 'uncertain');
+  assert.equal((await call(path + '/resume', { revision: 1 })).status, 409);
+  const attempts = await Promise.all([call(path + '/resume', { revision: 1, confirm: true }), call(path + '/resume', { revision: 1, confirm: true })]);
+  assert.deepEqual(attempts.map(item => item.status).sort(), [202, 409]);
+  let dispatched = 0;
+  await runDueAtlasAnswers(env, { verifyAdmin, send: async (_url, init) => {
+    dispatched++; assert.match(init.body, /private saved draft checkpoint/); return answer();
+  } });
+  assert.equal(dispatched, 1);
+  const completed = (await call(path)).data;
+  assert.equal(completed.run.revision, 2); assert.equal(completed.run.status, 'completed');
+  assert.deepEqual(completed.events.map(event => event.seq), [1, 2, 3, 4, 5, 6, 7]);
+  assert.equal((await store.getMessage(env, 'alice', run.messageId)).answer, savedDraft);
+  await store.deleteConversation(env, 'alice', conversation.id);
+  assert.equal((await call(path)).status, 404);
+  assert.equal((await env.ATLAS_DB.prepare('SELECT COUNT(*) AS count FROM atlas_run_events WHERE run_id=?').bind(run.id).first()).count, 0);
+});
+
+test('recovery finalizes an already-saved answer without dispatching it again', async t => {
+  const { env, conversation, model, call } = await runFixture(t);
+  const requestId = crypto.randomUUID(), prompt = 'Recover a completed answer';
+  const { data: { run } } = await call('', { conversationId: conversation.id, requestId, prompt });
+  await env.ATLAS_DB.prepare("UPDATE atlas_answer_runs SET status='running',checkpoint='dispatching',lease_token='expired',lease_until=0 WHERE owner='alice' AND id=?").bind(run.id).run();
+  await store.reserveRequest(env, 'alice', { id: run.messageId, operation: 'chat', model, conversationId: conversation.id });
+  await store.createMessage(env, 'alice', conversation.id, { id: run.messageId, prompt });
+  await store.markRequestDispatched(env, 'alice', run.messageId);
+  await store.finishRequest(env, 'alice', run.messageId, { status: 'completed', estimatedCostUsd: 0.01 });
+  await store.finishMessage(env, 'alice', run.messageId, { status: 'completed', answer: 'Already saved' });
+  await runDueAtlasAnswers(env, { verifyAdmin: async () => true, send: async () => assert.fail('The recorded result is authoritative') });
+  const recovered = (await call('/background/' + requestId)).data;
+  assert.equal(recovered.run.status, 'completed'); assert.equal(recovered.run.revision, 1);
+  assert.equal(recovered.run.messageId, run.messageId);
+  assert.deepEqual(recovered.events.map(event => event.checkpoint), ['queued', 'dispatching', 'reconciled']);
+  assert.equal((await store.getRequest(env, 'alice', run.messageId)).estimated_cost_usd, 0.01);
+});
+
+test('account proof, explicit stop and Mail context gate background dispatch', async t => {
+  const { env, conversation, call } = await runFixture(t);
+  const requestId = crypto.randomUUID(), path = '/background/' + requestId;
+  const body = { conversationId: conversation.id, requestId, prompt: 'Run when verified' };
+  assert.equal((await call('', body)).status, 202);
+  assert.equal((await call('', { ...body, requestId: crypto.randomUUID() })).data.code, 'run_active');
+  const send = async () => assert.fail('This job is not approved for dispatch');
+  assert.equal((await runDueAtlasAnswers(env, { verifyAdmin: async () => null, send })).ran, 0);
+  assert.equal((await call(path)).data.run.status, 'queued');
+  assert.equal((await call(path + '/stop', { revision: 1 })).data.run.status, 'cancelled');
+  const revoked = crypto.randomUUID();
+  assert.equal((await call('', { ...body, requestId: revoked })).status, 202);
+  assert.equal((await runDueAtlasAnswers(env, { verifyAdmin: async () => false, send })).ran, 1);
+  assert.equal((await call('/background/' + revoked)).data.run.errorCode, 'administrator_unavailable');
+  const remote = mailFixture(env);
+  await contexts.setWorkspaceContext(env, 'alice', conversation.id, { app: 'mail', kind: 'thread', threadId: 'thread-1' }, { request: request() });
+  const previous = remote.calls.length;
+  assert.equal((await call('', { ...body, requestId: crypto.randomUUID() })).data.code, 'mail_context_interactive_only');
+  assert.equal(remote.calls.length, previous);
+});
+
+test('a running answer saves a real stream checkpoint and an explicit stop retains it', async t => {
+  const { env, conversation, call } = await runFixture(t);
+  const requestId = crypto.randomUUID(), path = '/background/' + requestId;
+  const { data: { run } } = await call('', { conversationId: conversation.id, requestId, prompt: 'A long background answer' });
+  const fragment = 'Saved answer detail. '.repeat(240);
+  const packet = 'data: ' + JSON.stringify({ type: 'response.output_text.delta', delta: fragment }) + '\n\n';
+  let controller;
+  const body = new ReadableStream({ start(stream) { controller = stream; stream.enqueue(new TextEncoder().encode(packet)); } });
+  const completion = runDueAtlasAnswers(env, { verifyAdmin: async () => true, send: async () => new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }) });
+  try {
+    let timeline;
+    for (let check = 0; check < 50; check++) {
+      timeline = (await call(path)).data;
+      if (timeline.run.checkpoint === 'draft_saved') break;
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+    assert.equal(timeline.run.checkpoint, 'draft_saved'); assert.ok(timeline.run.savedChars >= 4096);
+    assert.equal((await call(path + '/stop', { revision: 1 })).data.run.status, 'stopping');
+    assert.equal((await store.getRequest(env, 'alice', run.messageId)).cancel_requested, 1);
+    await completion;
+    const stopped = (await call(path)).data;
+    assert.equal(stopped.run.status, 'cancelled');
+    assert.deepEqual(stopped.events.map(event => event.checkpoint), ['queued', 'preparing', 'dispatching', 'draft_saved', 'stop_requested', 'cancelled']);
+    assert.equal((await store.getMessage(env, 'alice', run.messageId)).answer, fragment);
+  } finally {
+    try { controller.close(); } catch {}
+    await completion;
+  }
 });
 
 test('schema eight keeps chat available, context requires explicit setup, and schema nine verifies its table', async t => {

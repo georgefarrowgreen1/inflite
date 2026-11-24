@@ -17,11 +17,11 @@ async function claim(env,task,{manual,requestId,now}){
   const active=manual?'1=1':"s.enabled=1 AND s.next_run<=? AND EXISTS(SELECT 1 FROM atlas_controls c WHERE c.owner=s.owner AND c.stopped=0)";
   const args=[task.owner,id,task.id,id,key,manual?now:task.next_run,now,task.prompt,Number(manual),task.owner,task.id,...(manual?[]:[now])];
   const writes=await batch(env,[
-    ["INSERT OR IGNORE INTO atlas_schedule_runs(owner,id,task_id,request_id,occurrence_key,scheduled_for,status,started_at,prompt_snapshot,manual) SELECT ?,?,?,?,?,?,'queued',?,?,? FROM atlas_schedules s WHERE s.owner=? AND s.id=? AND s.lease_id IS NULL AND "+active,...args],
+    ["INSERT OR IGNORE INTO atlas_schedule_runs(owner,id,task_id,request_id,occurrence_key,scheduled_for,status,started_at,prompt_snapshot,manual) SELECT ?,?,?,?,?,?,'queued',?,?,? FROM atlas_schedules s WHERE s.owner=? AND s.id=? AND s.lease_id IS NULL AND "+active+" RETURNING id",...args],
     ["UPDATE atlas_schedules SET lease_id=?,lease_until=?,updated_at=? WHERE owner=? AND id=? AND lease_id IS NULL AND EXISTS(SELECT 1 FROM atlas_schedule_runs r WHERE r.owner=? AND r.id=? AND r.task_id=atlas_schedules.id AND r.status='queued')",id,now+LEASE_MS,now,task.owner,task.id,task.owner,id]
   ]);
   const own=await query(env,'SELECT lease_id FROM atlas_schedules WHERE owner=? AND id=? AND lease_id=?',task.owner,task.id,id).first();
-  if(!own||writes[0]?.meta?.changes!==1){
+  if(!own||writes[0]?.results?.length!==1){
     const duplicate=await query(env,'SELECT * FROM atlas_schedule_runs WHERE owner=? AND task_id=? AND occurrence_key=?',task.owner,task.id,key).first();
     if(duplicate)return {duplicate:true,run:runRow(duplicate)};
     if(manual)fail('task_running','This task already has an active run.');
@@ -110,12 +110,12 @@ export async function recoverAtlasRuns(env,{now=Date.now(),limit=20,owner=null}=
     const next=task.enabled?(run.manual?task.next_run:nextTaskRun(task,now)):null;
     const interrupted="EXISTS(SELECT 1 FROM atlas_schedule_runs r WHERE r.owner=? AND r.id=? AND r.status='uncertain' AND r.error_code='execution_interrupted' AND r.finished_at=?)";
     const writes=await batch(env,[
-      ["UPDATE atlas_schedule_runs SET status='uncertain',error_code='execution_interrupted',finished_at=? WHERE owner=? AND id=? AND status IN ('queued','running') AND EXISTS(SELECT 1 FROM atlas_schedules s WHERE s.owner=? AND s.id=? AND s.lease_id=? AND s.lease_until<=?)",now,task.owner,run.id,task.owner,task.id,run.id,now],
+      ["UPDATE atlas_schedule_runs SET status='uncertain',error_code='execution_interrupted',finished_at=? WHERE owner=? AND id=? AND status IN ('queued','running') AND EXISTS(SELECT 1 FROM atlas_schedules s WHERE s.owner=? AND s.id=? AND s.lease_id=? AND s.lease_until<=?) RETURNING id",now,task.owner,run.id,task.owner,task.id,run.id,now],
       ["UPDATE atlas_requests SET status=CASE WHEN dispatched=1 THEN 'uncertain' ELSE 'failed' END,error_code='execution_interrupted',finished_at=? WHERE owner=? AND id=? AND status IN ('pending','running') AND "+interrupted,now,task.owner,run.request_id,task.owner,run.id,now],
       ["UPDATE atlas_turns SET status='uncertain',error_code='execution_interrupted',updated_at=? WHERE owner=? AND id=? AND status='running' AND "+interrupted,now,task.owner,run.request_id,task.owner,run.id,now],
       ["UPDATE atlas_schedules SET lease_id=NULL,lease_until=NULL,next_run=CASE WHEN enabled=0 THEN NULL WHEN ?=1 THEN next_run WHEN next_run IS ? THEN ? ELSE next_run END,updated_at=? WHERE owner=? AND id=? AND lease_id=? AND lease_until<=? AND "+interrupted,Number(!!run.manual),task.next_run,next,now,task.owner,task.id,run.id,now,task.owner,run.id,now]
     ]);
-    if(writes[0]?.meta?.changes===1)recovered++;
+    if(writes[0]?.results?.length===1)recovered++;
   }
   return {recovered};
 }

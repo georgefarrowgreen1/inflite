@@ -1,6 +1,7 @@
 import { runAtlasScheduled } from "./atlas-scheduler.js";
 import { executeScheduledAtlas } from "./atlas-chat.js";
 import { reconcileCodingBackground } from "./atlas-coding.js";
+import { runDueAtlasAnswers } from "./atlas-run-coordinator.js";
 import { atlas } from "./atlas.js";
 // InFlite Today, at inflite.ai: its page and files come from today/public (the assets); only /api/* and /version run
 // this Worker. It keeps nothing of its own: every /api/* request is checked here, then passed on with the account's
@@ -292,6 +293,7 @@ export default {
       } catch { return null; }
     };
     ctx.waitUntil(reconcileCodingBackground(env,{verifyAdmin}));
+    ctx.waitUntil(runDueAtlasAnswers(env,{verifyAdmin}));
     if (env.ATLAS_AUTONOMY === "1") ctx.waitUntil(runAtlasScheduled(env,{verifyAdmin,execute:args=>executeScheduledAtlas(env,args)}));
   },
   async fetch(request, env, ctx) {

@@ -7,7 +7,7 @@ Atlas 2.0 should give an InFlite administrator one place to delegate work, steer
 - Conversations stream answers with sources, attached repository references and explicitly selected InFlite Mail context. Saved briefs and reviewed handoffs turn an answer into something a user can reuse.
 - Coding tasks use isolated cloud workspaces and reusable environment recipes. They persist status, checks, reviewable diffs and follow-up revisions. Publishing a draft pull request already requires fresh InFlite identity confirmation.
 - Scheduled work has leases, run history, cancellation and usage limits. Automatic execution is controlled by the deployment setting.
-- Those paths persist different records and expose different progress and recovery flows. A disconnected user can see a task in its own area, but there is no common timeline, approval queue or checkpoint model.
+- Recent runs brings those records together. Background answers, coding tasks and scheduled occurrences now write to the same timeline with a cursor and a revision. Coding publication and app handoffs retain their existing review controls.
 
 ## Workspace
 
@@ -30,7 +30,7 @@ Use InFlite’s shared segmented navigation, Liquid Glass surfaces, lists and sh
 
 ## Architecture
 
-- Keep the InFlite Worker as the identity and API boundary. Add a durable coordinator for run and revision state, an append-only event sequence, and a queue or alarm to handle progress independently of the browser. Time-bounded leases and idempotency keys let jobs recover after retries or worker restarts. Use an event cursor for streaming and replay, with a bounded status read as the fallback.
+- The InFlite Worker remains the identity and API boundary. The coordinator stores queued answers in D1 and advances them on the existing minute trigger. Time-bounded leases, the dispatch ledger and a fresh attempt ID after safe recovery guard against duplicate execution. An ordered event cursor lets clients reconnect to the same timeline with bounded reads.
 - Reuse the existing hosted Agents runner for isolated repository work, the research path for sourced answers, and the scheduler for due occurrences. Adapt each runner to publish the same lifecycle and evidence events. Split work into parallel, independent subtasks only where useful. The coordinator owns the parent budget and result, and verifies each subtask’s output before incorporating it.
 - Put tool calls behind an operation-specific capability policy. Read context through owner-scoped connectors and treat retrieved text as data. Scope access to the selected resources and keep credentials outside the workspace. Require explicit, expiring approvals for external writes and budget expansion. Preserve the existing account recheck on publication.
 - Store large diffs and logs separately from events, with access and retention bound to the run. Use references in the timeline, paginate history and checks, and load heavier details only when opened. Describe committed actions and verified facts in the timeline.
@@ -38,7 +38,7 @@ Use InFlite’s shared segmented navigation, Liquid Glass surfaces, lists and sh
 
 ## Implementation sequence
 
-1. **Started.** Recent runs is an owner-scoped, read-only view over durable answers, coding tasks and scheduled occurrences. It opens existing detail views and avoids counting a scheduled answer twice. It requires no new schema or credentials.
-2. **Next.** Add the durable run protocol and replayable timeline, initially mirroring existing executors. Test recovery and cancellation before relying on the new coordinator for any job.
+1. **Built.** Recent runs brings together saved answers, coding tasks and scheduled occurrences and opens their existing detail views.
+2. **Built.** The coordinator queues background answers, captures ordered events from all three executors, and supports explicit stop and checkpoint recovery. Schema version 10 adds the run and event tables. The minute trigger uses the existing account verification connection.
 3. **Then.** Ship the mobile and desktop run workspace, project configuration, revision-bound approvals and check evidence. Migrate new runs incrementally behind the existing administrator entitlement and preserve older links.
 4. **After verification.** Add scoped InFlite draft handoffs, project automations and parallel subtasks with per-run limits. Release through the existing production Wrangler workflow after local and CI verification.

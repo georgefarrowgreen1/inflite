@@ -83,6 +83,23 @@ test('migrated Atlas conversations preserve exact bounded legacy IDs without wid
   assert.equal(resumeTarget({path:'/atlas/#conversations=legacy-%61'+hex+'-research'}),null);
 });
 
+test('Atlas run links restore only typed opaque references', () => {
+  const path = '/atlas/#runs=b_123e4567-e89b-12d3-a456-426614174000';
+  const route = parse(path, { roof: { atlas: true } });
+  assert.equal(route.key, 'runs');
+  assert.equal(route.section, 'conversations');
+  assert.equal(format(route), path);
+  assert.equal(safeWorkspaceRoute('atlas', path), path);
+  assert.equal(resumeTarget({ path }).path, path);
+  assert.equal(parse(path, { roof: { atlas: false } }), null);
+  for (const suffix of ['private-title', 'b_private%20title', 'x_run', 'b_' + 'x'.repeat(39)]) {
+    const invalid = '/atlas/#runs=' + suffix;
+    assert.equal(parse(invalid, { roof: true }).arg, null);
+    assert.equal(resumeTarget({ path: invalid }), null);
+    assert.equal(safeWorkspaceRoute('atlas', invalid), null);
+  }
+});
+
 function activityFixture(send) {
   const life = new AbortController(), opened = [];
   const F = {signal:life.signal,session:{view:{user:{id:'alice'},apps:{mail:true}},apps:{atlas:true}}};

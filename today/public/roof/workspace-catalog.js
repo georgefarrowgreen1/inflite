@@ -1,6 +1,6 @@
 // Workspace manifest v1. These describe trusted first-party integrations, not a
 // security sandbox or a grant of browser/server permissions. No app data lives here.
-import { atlasReference } from "./router.js";
+import { atlasReference, atlasRunReference } from "./router.js";
 export const WORKSPACE_MANIFEST_VERSION = 1;
 const app = (id, name, href, pane, capabilities) => Object.freeze({
   manifestVersion: WORKSPACE_MANIFEST_VERSION, id, name, icon: id, href, pane,
@@ -44,6 +44,7 @@ export function safeWorkspaceRoute(id, route) {
   const hash = route.slice(base.length + 1), at = hash.indexOf("="), key = at < 0 ? hash : hash.slice(0, at), value = at < 0 ? null : hash.slice(at + 1);
   if (["calendar", "notes", "people"].includes(id) && key === "item" && /^[a-f0-9]{32}$/.test(value || "")) return route;
   if (value === null && sections[id].includes(key)) return route;
+  if (id === "atlas" && key === "runs" && atlasRunReference(value)) return route;
   if (id === "atlas" && ["conversations", "tasks", "briefs"].includes(key) && (key === "conversations" ? atlasReference(value) : objectId(value || ""))) return route;
   if ((id === "fitness" || id === "weather") && key === "day" && day(value || "")) return route;
   if ((id === "fitness" && key === "act" || id === "mail" && key === "thread" || id === "chats" && key === "open") && objectId(value || "")) return route;

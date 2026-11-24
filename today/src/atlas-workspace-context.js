@@ -157,6 +157,7 @@ export async function loadWorkspaceContext(env, owner, conversationId, options =
   }
   const row = await env.ATLAS_DB.prepare('SELECT source_json FROM atlas_workspace_contexts WHERE owner=? AND conversation_id=?').bind(owner, conversationId).first();
   if (!row) return [];
+  if (options.background) fail('mail_context_interactive_only', 'Use Send in this conversation to include its selected Mail context.', 409);
   if (options.scheduled) fail('mail_context_interactive_only', 'This conversation includes Mail context. Open it in Atlas to continue, or use a separate conversation for scheduled work.', 409);
   return [await resolveMailContext(env, owner, JSON.parse(row.source_json), options)];
 }

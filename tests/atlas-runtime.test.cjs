@@ -8,7 +8,10 @@ test('Atlas routes, owner context, streaming and scheduling integrate in workerd
   const secret = 'sk-' + 'fixture'.repeat(8), model = 'gpt-6.2-sol';
   const entry = `
     import { atlas } from ${JSON.stringify(path.resolve(__dirname, '../today/src/atlas.js'))};
-    export default { async fetch(request, env, ctx) {
+    import worker from ${JSON.stringify(path.resolve(__dirname, '../today/src/index.js'))};
+    export default { scheduled(controller, env, ctx) {
+      return worker.scheduled(controller, { ...env, ATLAS_ENCRYPTION_KEY: btoa('k'.repeat(32)), ATLAS_VERIFY_KEY: 'fixture-verifier', ATLAS_AUTONOMY: '0', APPS: { fetch: req => fetch(req) } }, ctx);
+    }, async fetch(request, env, ctx) {
       const owner = request.headers.get('X-Fixture-Owner') || 'alice';
       const config = { ...env, ATLAS_ENCRYPTION_KEY: btoa('k'.repeat(32)), OPENAI_API_KEY: 'must-never-use-global-key', ATLAS_AUTONOMY: request.headers.get('X-Fixture-Autonomy') || '0' };
       if (request.headers.get('X-Fixture-Verify')) config.ATLAS_VERIFY_KEY = 'fixture-verifier';
@@ -78,7 +81,7 @@ test('Atlas routes, owner context, streaming and scheduling integrate in workerd
     assert.equal((await call('/conversations')).status, 409);
     assert.equal((await post('/setup', {})).status, 409);
     assert.equal((await post('/setup', { confirm: true }, { headers: { 'X-Fixture-Fresh': 'false' } })).status, 403);
-    assert.equal((await post('/setup', { confirm: true })).value.schemaVersion, 9);
+    assert.equal((await post('/setup', { confirm: true })).value.schemaVersion, 10);
     assert.equal((await post('/setup', { confirm: true })).value.ready, true);
     assert.equal(calls.length, 0);
   });
@@ -184,6 +187,8 @@ test('Atlas routes, owner context, streaming and scheduling integrate in workerd
     const headers = { 'X-Fixture-Verify': '1' }, id = uid();
     const run = await post('/tasks/' + task.id + '/run', { requestId: id, confirm: true }, { headers });
     assert.equal(run.status, 200); assert.equal(run.value.run.status, 'completed');
+    const timeline = (await call('/runs/scheduled/' + id)).value;
+    assert.deepEqual(timeline.events.map(event => event.status), ['queued', 'running', 'completed']);
     assert.match(JSON.stringify(payloads.at(-1).input), /Current scheduled owner fitness/);
     const before = payloads.length;
     assert.equal((await post('/tasks/' + task.id + '/run', { requestId: id, confirm: true }, { headers })).value.run.duplicate, true);
@@ -193,6 +198,35 @@ test('Atlas routes, owner context, streaming and scheduling integrate in workerd
     assert.equal(denied.value.run.status, 'skipped'); assert.equal(payloads.length, before);
     assert.equal((await call('/tasks/' + task.id + '/runs', { owner: 'bob' })).status, 404);
     adminAllowed = true;
+  });
+
+  await t.test('cron finishes a queued answer after its HTTP client leaves and replays the same timeline', async () => {
+    const headers = { 'X-Fixture-Verify': '1' };
+    const body = { conversationId: second.id, requestId: uid(), prompt: 'Continue after the tab closes' };
+    const before = payloads.length;
+    assert.equal((await post('/runs', body)).value.code, 'background_unavailable');
+    const submissions = await Promise.all([post('/runs', body, { headers }), post('/runs', body, { headers })]);
+    assert.ok(submissions.every(response => response.status === 202 && response.value.run.id === body.requestId));
+    assert.equal(submissions[0].value.run.messageId, submissions[1].value.run.messageId);
+    assert.equal(payloads.length, before);
+    const detail = '/runs/background/' + body.requestId;
+    const first = (await call(detail + '?limit=1', { headers })).value;
+    assert.deepEqual(first.events.map(event => [event.seq, event.checkpoint]), [[1, 'queued']]);
+    assert.equal((await call(detail, { owner: 'bob', headers })).status, 404);
+    assert.equal((await call(detail, { headers: { ...headers, 'X-Fixture-Admin': 'false' } })).status, 403);
+
+    const runtime = await mf.getWorker();
+    const tick = await runtime.scheduled({ cron: '* * * * *' });
+    assert.equal(tick.outcome, 'ok');
+    const replay = (await call(detail + '?after=' + first.nextAfter, { headers })).value;
+    assert.equal(replay.run.status, 'completed');
+    assert.deepEqual(replay.events.map(event => event.checkpoint), ['preparing', 'dispatching', 'saved']);
+    assert.deepEqual(replay.events.map(event => event.seq), [2, 3, 4]);
+    assert.equal(payloads.length, before + 1);
+    assert.equal((await call('/conversations/' + second.id)).value.messages.find(item => item.id === replay.run.messageId).answer, 'Fixture answer');
+    assert.ok(!(await call('/runs')).value.items.some(item => item.id === replay.run.messageId));
+    assert.equal((await runtime.scheduled({ cron: '* * * * *' })).outcome, 'ok');
+    assert.equal(payloads.length, before + 1);
   });
 
   await t.test('archiving fixes context boundaries and deleting a conversation removes its messages and briefs', async () => {

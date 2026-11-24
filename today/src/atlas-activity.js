@@ -26,15 +26,16 @@ export async function atlasActivity(env, owner, { limit = 12, schemaVersion = 6 
   return { items, ready: true };
 }
 
-export async function atlasRuns(env, owner, { limit = 24, schemaVersion = 6 } = {}) {
+export async function atlasRuns(env, owner, { limit = 24, schemaVersion = 6, timeline = false } = {}) {
   const count = Number.isInteger(limit) ? Math.max(1, Math.min(50, limit)) : 24;
-  const [answers, coding, scheduled] = await Promise.all([
+  const [answers, coding, scheduled, background] = await Promise.all([
     projectionRows(env, `
       SELECT t.id, t.conversation_id, c.title, t.status, t.updated_at
       FROM atlas_turns t
       JOIN atlas_conversations c ON c.owner=t.owner AND c.id=t.conversation_id
       WHERE t.owner=? AND c.archived=0
         AND t.id NOT IN (SELECT request_id FROM atlas_schedule_runs WHERE owner=?)
+        ${timeline ? "AND NOT EXISTS (SELECT 1 FROM atlas_run_events e WHERE e.owner=t.owner AND e.kind='background' AND e.attempt_id=t.id)" : ""}
       ORDER BY t.updated_at DESC,t.id LIMIT ?
     `, owner, owner, count),
     schemaVersion >= 7 ? projectionRows(env, `
@@ -52,6 +53,13 @@ export async function atlasRuns(env, owner, { limit = 24, schemaVersion = 6 } = 
       WHERE r.owner=?
       ORDER BY updated_at DESC,r.id LIMIT ?
     `, owner, count),
+    timeline ? projectionRows(env, `
+      SELECT r.id, r.conversation_id, c.title, r.status, r.updated_at
+      FROM atlas_answer_runs r
+      JOIN atlas_conversations c ON c.owner=r.owner AND c.id=r.conversation_id
+      WHERE r.owner=? AND (c.archived=0 OR r.status IN ('queued','running','stopping'))
+      ORDER BY r.updated_at DESC,r.id LIMIT ?
+    `, owner, count) : [],
   ]);
   const entry = (kind, row) => ({
     kind, id: row.id, title: text(row.title, 160), status: text(row.status, 40), updatedAt: row.updated_at,
@@ -60,6 +68,7 @@ export async function atlasRuns(env, owner, { limit = 24, schemaVersion = 6 } = 
     ...answers.filter(row => ID.test(row.conversation_id)).map(row => ({ ...entry('answer', row), conversationId: row.conversation_id })),
     ...coding.filter(row => ID.test(row.conversation_id)).map(row => ({ ...entry('coding', row), conversationId: row.conversation_id, reviewReady: row.review_ready === 1 })),
     ...scheduled.filter(row => ID.test(row.schedule_id)).map(row => ({ ...entry('scheduled', row), scheduleId: row.schedule_id })),
+    ...background.map(row => ({ ...entry('background', row), conversationId: row.conversation_id })),
   ].filter(item => ID.test(item.id))
     .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id) || a.kind.localeCompare(b.kind))
     .slice(0, count);

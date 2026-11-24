@@ -2006,6 +2006,18 @@ dialog.ifl-sheet.atlas-native-sheet .conversation-navigation { padding: 0; }
 .atlas-app .atlas-page-content { display: grid; min-width: 0; gap: 10px; }
 .atlas-app .atlas-page-content > .field-feedback:empty,
 .atlas-app .atlas-record-group:empty { display: none; }
+.atlas-app .atlas-run-state p:empty,
+.atlas-app .atlas-run-state .button-row:not(:has(button:not([hidden]))),
+.atlas-app .atlas-run-events:empty { display: none; }
+.atlas-app .atlas-run-events {
+  display: grid;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.atlas-app .atlas-run-events li { padding: 12px 16px; overflow-wrap: anywhere; }
+.atlas-app .atlas-run-events li + li { border-top: 1px solid var(--atlas-border); }
+.atlas-app #background-answer { min-height: 44px; }
 .atlas-app .conversation-toolbar { border-bottom: 0; }
 .atlas-app .welcome { min-height: 0; padding: clamp(14px, 4vh, 36px) 0 20px; }
 .atlas-app .welcome-mark { background: var(--atlas-panel); border-color: var(--atlas-border); box-shadow: var(--atlas-panel-shadow); }
