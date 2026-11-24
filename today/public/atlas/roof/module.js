@@ -2,8 +2,8 @@ import { atlasMarkup } from "./template.js";
 import { createAtlasClient } from "../assets/app.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.0.1";
-export const NEWS = "Open Recent runs to follow Atlas work and resume from saved checkpoints.";
+export const BUILD = "2.0.2";
+export const NEWS = "Find conversation history and Recent runs faster, with clearer tasks, environment profiles and saved briefs.";
 export const SECTIONS = [["conversations", "Conversations"], ["tasks", "Tasks"], ["environments", "Environments"], ["briefs", "Briefs"], ["settings", "Settings"]];
 
 export function mount(root, fw) {
