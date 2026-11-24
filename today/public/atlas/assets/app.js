@@ -104,6 +104,7 @@ const modeDetails = {
 };
 const state = { owner: null, epoch: 0, controllers: new Set(), health: null, settings: null, conversations: [], conversation: null, messages: [], messagePage: {}, activeId: null, context: [], repositories: [], models: [], stream: null, dispatching: false, navigation: 0, contextLoad: 0, contexts: [], tasks: [], scheduleContext: [], patches: [], selectedPatch: null, codingRuns: [], codingObserver: null, codingLoading: false, codingLoadError: "", codingContinuation: null, codingRestart: null, codingReview: null, codingDispatching: false, intent: "code", environments: [], environmentsReady: null, environmentsLoading: false, environmentId: "", environmentEditingRevision: null, environmentEditorSession: 0, environmentEditorVersion: 0, environmentsRequest: 0, taskTabs: new Map(), taskExpanded: new Map(), taskChanges: new Map(), drafts: new Map(), privateReady: false, checking: null, workspaceContext: [], contextPending: false, briefs: [] };
 let sheets, navigationSheet, activeToast;
+let keyboardShell;
 let codingInbox;
 const destinationRoutes = { inbox: "tasks", environments: "environments", briefs: "briefs" };
 let destination = null, briefRequest = null, briefListRequest = null;
@@ -279,13 +280,32 @@ function enterDestination(name) {
   page.hidden = false;
   heading.focus({ preventScroll: true });
 }
+function clearNativeKeyboard() {
+  if (!keyboardShell) return;
+  keyboardShell.style.removeProperty("--atlas-viewport-bottom");
+  keyboardShell.removeAttribute("data-atlas-keyboard");
+  keyboardShell = null;
+  fw.tabs?.away(false);
+}
 function fitComposerViewport() {
   const viewport = window.visualViewport;
   const body = root;
-  if (fw) return; // The InFlite frame and shared sheets own mobile viewport fitting.
   const height = document.documentElement.clientHeight;
   const typing = matchMedia("(any-pointer: coarse)").matches && document.activeElement === $("prompt");
-  if ((typing || body.classList.contains("atlas-keyboard")) && viewport && Math.abs(viewport.scale - 1) < .01 && height - viewport.height > 80) {
+  const keyboardUp = viewport && Math.abs(viewport.scale - 1) < .01 && height - viewport.height > 80;
+  if (fw) {
+    const shell = fw.screenEl?.closest("#in");
+    if (!typing || !keyboardUp || !visible() || !shell || root.classList.contains("ifl-in-pane")) return clearNativeKeyboard();
+    if (shell !== keyboardShell) {
+      clearNativeKeyboard();
+      keyboardShell = shell;
+      shell.setAttribute("data-atlas-keyboard", "");
+      fw.tabs?.away(true);
+    }
+    shell.style.setProperty("--atlas-viewport-bottom", Math.round(viewport.height + viewport.offsetTop) + "px");
+    return;
+  }
+  if ((typing || body.classList.contains("atlas-keyboard")) && keyboardUp) {
     body.style.setProperty("--atlas-visible-height", Math.round(viewport.height) + "px");
     body.style.setProperty("--atlas-visible-top", Math.round(viewport.offsetTop) + "px");
     body.classList.add("atlas-keyboard");
@@ -492,8 +512,8 @@ async function ensureConversation(snapshot = {}, lease = {}) {
   loadThreads().catch(() => {}); return result.conversation;
 }
 function sourceList(sources = []) { const list = node("ol", "source-list"); const seen = new Set(); sources.forEach((source, i) => { const url = safeUrl(source.url); if (!url || seen.has(url)) return; seen.add(url); const li = node("li"), a = node("a", "", (i + 1) + ". " + (source.title || new URL(url).hostname)); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = source.title || url; li.append(a); list.append(li); }); return list; }
-function isAtLatest(container) {
-  return container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+function isAtLatest(container, tolerance = 100) {
+  return container.scrollHeight - container.scrollTop - container.clientHeight < tolerance;
 }
 function updateLatestControl() {
   const control = $("jump-to-latest");
@@ -1165,7 +1185,8 @@ async function loadTaskChanges(run, panel) {
   } catch (error) { if (!error.accountChanged && panel.isConnected && epoch === state.epoch) { panel.dataset.loaded = ""; panel.replaceChildren(node("p", "message-error", errorText(error)), button("Retry loading changes", () => loadTaskChanges(run, panel), "text-button")); } }
 }
 function renderCodingRuns() {
-  const container = $("messages"), previous = $("coding-runs"), nearBottom = isAtLatest(container);
+  const container = $("messages"), previous = $("coding-runs"), scrollTop = container.scrollTop;
+  const nearBottom = isAtLatest(container, 24);
   if (!state.codingRuns.length && !state.codingLoadError) { previous?.remove(); if (!state.messages.length && !container.querySelector(".welcome")) renderMessages(); else updateLatestControl(); return; }
   const flags = [state.health?.coding?.ready, state.health?.coding?.backgroundAvailable, state.conversation?.archived];
   const signature = JSON.stringify([state.codingRuns, state.codingLoadError, flags]);
@@ -1228,7 +1249,7 @@ function renderCodingRuns() {
   }
   container.querySelector(".welcome")?.remove(); if (previous) previous.replaceWith(list); else container.append(list);
   if (nearBottom) jumpToLatest();
-  else updateLatestControl();
+  else { container.scrollTop = scrollTop; updateLatestControl(); }
   if (focused) {
     const candidate = focused.id ? $(focused.id) : [...list.querySelectorAll("[data-run-id]")].find(item => item.dataset.runId === focused.runId)?.querySelectorAll("button, summary, a");
     const control = candidate instanceof Element ? candidate : [...candidate || []].find(item => item.textContent === focused.text && item.getAttribute("role") === focused.role);
@@ -1555,6 +1576,7 @@ function attachWorkspace() {
 attachWorkspace();
 function unmount() {
   if (disposed) return;
+  clearNativeKeyboard();
   shown = false; ++routeEpoch; disposed = true; ++state.epoch; cancelAnimationFrame(paintFrame); paintFrame = 0; queuedMessage = null;
   lifetime.abort(); detachCodingObserver(); state.stream?.controller.abort(); state.stream = null;
   for (const controller of state.controllers) controller.abort(); state.controllers.clear();
@@ -1597,7 +1619,7 @@ return {
     } catch (error) { if (!error.accountChanged) toast(errorText(error)); }
     finally { if (generation === routeEpoch) routing = false; }
   },
-  hide() { if (disposed) return; shown = false; ++routeEpoch; routing = false; saveDraft(); if (threadSelection) { cancelThreadSelection(); $("conversation-status").replaceChildren(); } detachCodingObserver(); sheets.closeAll(); leaveDestination(); $("provider-key").value = ""; $("github-token").value = ""; },
+  hide() { if (disposed) return; clearNativeKeyboard(); shown = false; ++routeEpoch; routing = false; saveDraft(); if (threadSelection) { cancelThreadSelection(); $("conversation-status").replaceChildren(); } detachCodingObserver(); sheets.closeAll(); leaveDestination(); $("provider-key").value = ""; $("github-token").value = ""; },
   back() { const top = sheets.top(); if (top) { top.now(); return true; } return false; },
   async settingsPanel(host, current = () => true) {
     await ready; if (disposed || !current()) return;

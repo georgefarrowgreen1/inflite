@@ -2,8 +2,8 @@ import { atlasMarkup } from "./template.js";
 import { createAtlasClient } from "../assets/app.js";
 
 export const CONTRACT = 1;
-export const BUILD = "1.0.3";
-export const NEWS = "Atlas uses InFlite’s Liquid Glass and gives tasks, cloud environments and saved briefs their own screens.";
+export const BUILD = "1.0.4";
+export const NEWS = "Scroll through Atlas tasks and keep the composer within reach above the dock and keyboard.";
 export const SECTIONS = [["conversations", "Conversations"], ["tasks", "Tasks"], ["environments", "Environments"], ["briefs", "Briefs"], ["settings", "Settings"]];
 
 export function mount(root, fw) {
