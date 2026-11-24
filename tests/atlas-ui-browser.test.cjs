@@ -357,7 +357,9 @@ test('native Atlas sections keep their shared matte material and painted edges w
     const taskList = page.locator('#inbox-list').filter({ hasText: run.prompt });
     await pageCard(taskList);
     await tabs.getByRole('button', { name: 'Environments', exact: true }).click();
-    await pageCard(page.locator('#environments-list[aria-busy="false"] .environment-card'));
+    const environmentList = page.locator('#environments-list[aria-busy="false"]');
+    await pageCard(environmentList);
+    assert.equal((await material(environmentList.locator('.environment-card'))).shadow, 'none');
     await tabs.getByRole('button', { name: 'Briefs', exact: true }).click();
     await page.getByRole('button', { name: /Research notes/ }).click();
     await pageCard(page.locator('.brief-card'));
@@ -367,6 +369,68 @@ test('native Atlas sections keep their shared matte material and painted edges w
     assert.match(await backdrop(page.locator('dialog[open]')), /blur\(/);
     assert.equal(await backdrop(settings), 'none');
     assert.ok((await material(settings)).radius >= 20);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+  assert.deepEqual(t.security, []);
+});
+
+test('mobile Atlas keeps the draft and makes history, runs and environment actions reachable', async () => {
+  const environments = [cloudEnvironment({ repository: 'owner-with-a-long-name/atlas', name: 'Atlas development' })];
+  const run = codingRun({ status: 'completed', reviewReady: true });
+  const overrides = new Map([['GET repositories', ({ reply }) => reply({ connected: true, repositories: [{ full_name: environments[0].repository }] })]]);
+  const fixture = developerFixture({ codingRuns: [run], environments, overrides });
+  const t = await open({ native: true, shellLayout: true, wallpaper: true, width: 390, height: 844, mobile: true, fixture });
+  try {
+    const { page } = t;
+    const tabs = page.getByRole('navigation', { name: 'Atlas sections' });
+    const destination = page.locator('#atlas-destination');
+    await page.getByRole('button', { name: 'Conversation history' }).click();
+    const history = page.getByRole('dialog', { name: 'Conversations', exact: true });
+    await history.getByRole('button', { name: /Repository task/ }).waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'navigation-title');
+    await history.getByRole('button', { name: 'Close conversations' }).click();
+    await history.waitFor({ state: 'hidden' });
+
+    await page.locator('#prompt').fill('Keep my draft for the Atlas repository');
+    await page.getByRole('button', { name: 'Investigate a code issue' }).click();
+    await page.getByLabel('Repository', { exact: true }).selectOption(environments[0].repository);
+    await page.getByLabel('Cloud environment', { exact: true }).selectOption(environments[0].id);
+    assert.equal(await page.locator('#repository-display').textContent(), 'atlas');
+    assert.equal(await page.locator('#environment-display').textContent(), 'Atlas development');
+    await page.locator('#prompt').blur();
+    await t.screenshot('atlas-refined-mobile-conversations');
+
+    await tabs.getByRole('button', { name: 'Tasks', exact: true }).click();
+    await destination.getByRole('heading', { name: run.prompt }).waitFor();
+    await t.screenshot('atlas-refined-mobile-tasks');
+    await destination.getByRole('button', { name: 'Recent runs' }).click();
+    const runs = page.getByRole('dialog', { name: 'Recent runs', exact: true });
+    await runs.getByRole('button', { name: 'Close recent runs' }).click();
+    await runs.waitFor({ state: 'hidden' });
+
+    await tabs.getByRole('button', { name: 'Environments' }).click();
+    const list = destination.locator('#environments-list[aria-busy="false"]');
+    const edit = list.getByRole('button', { name: 'Edit Atlas development' });
+    await edit.waitFor();
+    assert.equal(await list.getByRole('button', { name: 'Archive' }).count(), 0);
+    await t.screenshot('atlas-refined-mobile-environments');
+    await edit.click();
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'environment-form-title');
+    await destination.getByRole('button', { name: 'Archive', exact: true }).click();
+    const confirm = page.getByRole('dialog', { name: 'Confirm action' });
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await confirm.waitFor({ state: 'hidden' });
+    assert.equal(t.fixture.environments.length, 1);
+    assert.equal(t.fixture.requests.some(request => request.method === 'DELETE' && request.path.startsWith('environments/')), false);
+    await destination.getByRole('button', { name: 'Duplicate', exact: true }).click();
+    assert.equal(await destination.locator('#environment-name').inputValue(), 'Atlas development copy');
+
+    await tabs.getByRole('button', { name: 'Briefs', exact: true }).click();
+    const conversations = destination.getByRole('button', { name: 'Open conversations' });
+    await conversations.waitFor();
+    await t.screenshot('atlas-refined-mobile-briefs');
+    await conversations.click();
+    assert.equal(await page.locator('#prompt').inputValue(), 'Keep my draft for the Atlas repository');
     assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
   assert.deepEqual(t.security, []);
@@ -448,6 +512,12 @@ for (const [width, theme] of [[320, 'dark'], [1440, 'light']]) test('native Atla
     await destination.getByRole('heading', { name: run.prompt }).waitFor();
     assert.equal(await t.page.locator('dialog[open]').count(), 0);
     assert.equal(await t.page.locator('#conversation-main').isVisible(), false);
+    assert.equal(await destination.locator('.inbox-filter-segments').evaluate(filter => [...filter.children].every(button => {
+      const range = document.createRange();
+      range.selectNodeContents(button);
+      const text = range.getBoundingClientRect(), item = button.getBoundingClientRect(), rail = filter.getBoundingClientRect();
+      return text.left >= item.left && text.right <= item.right && item.right <= rail.right;
+    })), true, 'task filter labels fit inside their segments');
     await t.screenshot('atlas-native-tasks-' + width);
     await destination.getByRole('button', { name: 'In progress' }).click();
     await destination.getByText('No tasks match this status').waitFor();
@@ -817,7 +887,7 @@ test('native mobile Recent runs retries and opens existing answer, review and sc
   } });
   const openRuns = async () => {
     await t.page.getByRole('button', { name: 'Atlas tools', exact: true }).click();
-    await t.page.getByRole('button', { name: 'Recent runs', exact: true }).click();
+    await t.page.getByRole('dialog', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Recent runs', exact: true }).click();
     return t.page.getByRole('dialog', { name: 'Recent runs', exact: true });
   };
   try {
@@ -854,7 +924,7 @@ test('a background answer reopens its mobile timeline and resumes the selected r
   let run, events, runPath;
   const openRuns = async () => {
     await t.page.getByRole('button', { name: 'Atlas tools', exact: true }).click();
-    await t.page.getByRole('button', { name: 'Recent runs', exact: true }).click();
+    await t.page.getByRole('dialog', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Recent runs', exact: true }).click();
     await t.page.getByRole('dialog', { name: 'Recent runs', exact: true }).getByRole('button', { name: /Alpha research.*Background answer/ }).click();
   };
   try {

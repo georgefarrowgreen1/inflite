@@ -119,6 +119,14 @@ const identityHost = () => nativeSettings?.current() ? nativeSettings.fw : fw;
 function renderAnswer(target, value, sources) { return renderMarkdown(target, value, sources, toast); }
 function timestamp(value) { if (!value) return ""; const d = new Date(typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value); return Number.isNaN(d.getTime()) ? "" : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); }
 function shortDate(value) { if (!value) return ""; return new Date(Number(value) || value).toLocaleDateString([], { month: "short", day: "numeric" }); }
+function recordTime(value) {
+  const time = node("time", "record-time"), date = new Date(Number(value) || value);
+  if (!value || Number.isNaN(date.getTime())) { time.hidden = true; return time; }
+  const year = date.getFullYear() === new Date().getFullYear() ? undefined : "numeric";
+  time.textContent = date.toLocaleDateString([], { month: "short", day: "numeric", year }) + " · " + date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  time.dateTime = date.toISOString();
+  return time;
+}
 function money(value) { return typeof value === "number" && Number.isFinite(value) ? "$" + value.toFixed(value < 0.01 && value > 0 ? 4 : 2) : "Unavailable"; }
 function uuid() { return crypto.randomUUID(); }
 function toast(message) {
@@ -225,7 +233,7 @@ function placeSidebar(narrow) {
   const slot = $(drawer ? "navigation-slot" : "sidebar-slot"), sidebar = $("atlas-sidebar");
   if (sidebar.parentNode !== slot) slot.append(sidebar);
 }
-function navigation(open) {
+function navigation(open, { search = !!fw } = {}) {
   if (!open) return navigationSheet?.now();
   if (navigationSheet) return;
   if (!drawerLayout() && !destination) { $("conversation-search").focus(); return; }
@@ -233,7 +241,7 @@ function navigation(open) {
   toggle.setAttribute("aria-expanded", "true");
   toggle.focus({ preventScroll: true });
   $("navigation-slot").append($("atlas-sidebar"));
-  navigationSheet = sheets.openEl($("navigation-dialog"), { focus: fw ? $("conversation-search") : undefined, onClose: () => {
+  navigationSheet = sheets.openEl($("navigation-dialog"), { focus: search ? $("conversation-search") : undefined, onClose: () => {
     navigationSheet = null;
     toggle.setAttribute("aria-expanded", "false");
     if (!drawerLayout()) $("sidebar-slot").append($("atlas-sidebar"));
@@ -259,6 +267,11 @@ function leaveDestination() {
     briefListRequest?.abort(); briefListRequest = null; showBriefList();
     $("briefs-list").removeAttribute("aria-busy");
   }
+  if (name === "environments") {
+    $("environment-toolbar").append($("new-environment"));
+    $("new-environment").hidden = false;
+  }
+  $("task-recent-runs").hidden = true;
   content.classList.remove("atlas-page-content");
   content.classList.add("ifs-body");
   source.append(content);
@@ -274,6 +287,11 @@ function enterDestination(name) {
   const page = $("atlas-destination"), heading = $("atlas-destination-title");
   destination = { name, source, content };
   heading.textContent = source.querySelector("h2").textContent;
+  $("task-recent-runs").hidden = name !== "inbox";
+  if (name === "environments") {
+    $("atlas-destination-actions").append($("new-environment"));
+    syncEnvironmentLayout();
+  }
   content.classList.remove("ifs-body");
   content.classList.add("atlas-page-content");
   $("atlas-destination-body").replaceChildren(content);
@@ -364,7 +382,8 @@ function renderHealth() {
 }
 function updateComposer() {
   const ready = state.privateReady && !threadSelection && state.health?.storage?.ready && state.health?.provider?.keySaved && state.health?.provider?.decryptable !== false && !state.conversation?.archived;
-  $("send").disabled = !ready || !!state.stream || state.dispatching || state.codingDispatching || !$("prompt").value.trim();
+  const hasPrompt = !!$("prompt").value.trim();
+  $("send").disabled = !ready || !!state.stream || state.dispatching || state.codingDispatching || !hasPrompt;
   $("stop-response").hidden = !state.stream;
   $("mode").disabled = !!state.activeId || state.dispatching || state.codingDispatching; $("repository").disabled = !!state.activeId || state.dispatching || state.codingDispatching;
   if (fw) for (const button of $("mode-choices").children) {
@@ -380,10 +399,17 @@ function updateComposer() {
   $("composer-mode-label").textContent = mode === "developer" ? "" : modeNames[mode] || "Options";
   $("composer-intent").hidden = mode !== "developer";
   $("intent-code").setAttribute("aria-pressed", String(state.intent === "code")); $("intent-ask").setAttribute("aria-pressed", String(state.intent === "ask"));
-  $("repository-control").dataset.intent = code ? "code" : "ask"; $("coding-environment").closest(".environment-context").hidden = !code; $("manage-environments").hidden = !code;
+  $("repository-control").dataset.intent = code ? "code" : "ask"; $("coding-environment").closest(".environment-context").hidden = !code; $("manage-environments").hidden = !!fw || !code;
+  if (fw && mode === "developer") {
+    const repository = $("repository").value, environment = $("coding-environment").selectedOptions[0]?.textContent || "Default environment";
+    $("repository-display").textContent = repository.split("/").at(-1) || "Select repository";
+    $("repository-display").parentElement.title = repository;
+    $("environment-display").textContent = environment;
+    $("environment-display").parentElement.title = environment;
+  }
   $("repository-control").hidden = mode !== "developer"; $("fitness-control").hidden = mode !== "fitness"; $("start-coding").hidden = !code;
   $("send").hidden = code || !!state.stream;
-  $("background-answer").hidden = code || state.health?.runs?.backgroundAvailable !== true || state.workspaceContext.some(source => source.kind === "mail");
+  $("background-answer").hidden = code || (!!fw && !hasPrompt) || state.health?.runs?.backgroundAvailable !== true || state.workspaceContext.some(source => source.kind === "mail");
   $("background-answer").disabled = $("send").disabled || state.contextPending;
   $("prompt").placeholder = mode === "developer" ? code ? "Describe the change you want to make…" : "Ask about your repository…" : "What should we work on?";
   $("repository-note").hidden = mode !== "developer" || !$("repository").value;
@@ -394,7 +420,7 @@ function updateComposer() {
   const recovery = continuation || restart;
   const activeTask = state.codingRuns.some(run => codingActive(run) && run.id !== continuation?.id);
   $("start-coding").textContent = continuation ? "Continue task" : restart ? "Start again" : "Work on task";
-  $("start-coding").disabled = !ready || state.health?.coding?.ready !== true || state.health?.coding?.storageReady !== true || !$("repository").value || !!state.stream || state.dispatching || state.codingDispatching || state.codingLoading || !!state.codingLoadError || activeTask || !$("prompt").value.trim();
+  $("start-coding").disabled = !ready || state.health?.coding?.ready !== true || state.health?.coding?.storageReady !== true || !$("repository").value || !!state.stream || state.dispatching || state.codingDispatching || state.codingLoading || !!state.codingLoadError || activeTask || !hasPrompt;
   $("coding-environment").disabled = !!recovery || activeTask || state.environmentsLoading || state.codingDispatching;
   $("coding-environment").title = recovery ? "This task keeps its original cloud environment." : "Choose reusable cloud setup for the next task.";
   $("coding-options").hidden = mode !== "developer";
@@ -535,14 +561,24 @@ function jumpToLatest({ focus = false } = {}) {
 function renderMessages() {
   const container = $("messages"); container.replaceChildren();
   if (!state.messages.length && !state.codingRuns.length && !state.codingLoadError) {
+    if (fw && state.activeId) {
+      const empty = emptyState("No messages yet");
+      empty.classList.add("empty-conversation");
+      container.append(empty);
+      updateLatestControl();
+      return;
+    }
     const welcome = $("welcome-template").content.cloneNode(true);
+    welcome.querySelector("[data-history]").addEventListener("click", () => navigation(true, { search: false }));
+    const recent = welcome.querySelector('[data-open="runs"]');
+    recent.addEventListener("click", () => showPanel("runs", recent));
     for (const starter of welcome.querySelectorAll("[data-starter]")) starter.addEventListener("click", () => {
       if (!state.activeId && $("mode").value !== starter.dataset.mode) {
         $("mode").value = starter.dataset.mode;
         $("mode").dispatchEvent(new Event("change"));
       }
-      $("prompt").value = starter.dataset.starter;
-      resizePrompt(); updateComposer(); $("prompt").focus();
+      if (!$("prompt").value.trim()) $("prompt").value = starter.dataset.starter;
+      resizePrompt(); updateComposer(); saveDraft(); $("prompt").focus();
     });
     container.append(welcome);
     updateLatestControl();
@@ -598,7 +634,7 @@ function updateMessage(message, conversationId) {
   const liveText = message.status === "running" && old?.querySelector(".streaming-text")?.firstChild;
   if (liveText) liveText.data = message.answer || "";
   else if (old) old.replaceWith(messageElement(message));
-  else { container.querySelector(".welcome")?.remove(); container.insertBefore(messageElement(message), $("coding-runs")); }
+  else { container.querySelector(".welcome, .empty-conversation")?.remove(); container.insertBefore(messageElement(message), $("coding-runs")); }
   if (nearBottom) jumpToLatest();
   else updateLatestControl();
 }
@@ -798,6 +834,22 @@ function syncEnvironmentLayout() {
   $("environment-detail").hidden = !empty && !editing;
   $("environment-directory").hidden = empty && !editing;
   $("environments-list").setAttribute("aria-busy", String(state.environmentsLoading));
+  if (destination?.name === "environments") {
+    $("new-environment").hidden = editing || !state.environmentsReady || empty;
+  }
+}
+function duplicateEnvironment(environment) {
+  editEnvironment({ ...environment, id: null, name: environment.name.slice(0, 70) + " copy" });
+}
+async function archiveEnvironment(environment, control) {
+  await busy(control, async () => {
+    if (fw && !await confirmAction(fw, "Archive " + environment.name + "? Existing tasks keep their setup.")) return;
+    await api("environments/" + encodeURIComponent(environment.id), "DELETE");
+    if (state.environmentId === environment.id) state.environmentId = "";
+    await loadEnvironments();
+    if ($("environment-id").value === environment.id) closeEnvironmentEditor();
+    toast("Environment archived. Existing tasks keep their setup.");
+  }, "environments-feedback");
 }
 function renderEnvironments() {
   const list = $("environments-list"); list.replaceChildren();
@@ -810,19 +862,26 @@ function renderEnvironments() {
       node("small", "environment-config", (environment.branch || "Default branch") + " · " + (environment.machine || "medium")));
     open.append(details);
     open.setAttribute("aria-label", "Edit " + environment.name);
-    const actions = node("div", "environment-card-actions");
-    actions.append(button("Use", () => useEnvironment(environment), "text-button environment-use"), button("Duplicate", () => editEnvironment({ ...environment, id: null, name: environment.name.slice(0, 70) + " copy" }), "text-button"), button("Archive", e => busy(e.currentTarget, async () => {
-      await api("environments/" + encodeURIComponent(environment.id), "DELETE");
-      if ($("environment-id").value === environment.id) closeEnvironmentEditor();
-      if (state.environmentId === environment.id) state.environmentId = "";
-      await loadEnvironments(); toast("Environment archived. Existing tasks keep their setup.");
-    }, "environments-feedback"), "text-button danger-text"));
+    const actions = node("div", "environment-card-actions"), use = button(fw ? "Use for task" : "Use", () => useEnvironment(environment), "text-button environment-use");
+    if (fw) use.setAttribute("aria-label", "Use " + environment.name + " for a task");
+    actions.append(use);
+    if (!fw) actions.append(button("Duplicate", () => duplicateEnvironment(environment), "text-button"),
+      button("Archive", event => archiveEnvironment(environment, event.currentTarget), "text-button danger-text"));
     card.append(open, actions); list.append(card);
   }
   syncEnvironmentLayout();
 }
-function closeEnvironmentEditor() { dirtyForms.delete("environment-form"); state.environmentEditorSession++; state.environmentEditorVersion++; $("environment-form").hidden = true; $("environment-id").value = ""; state.environmentEditingRevision = null; feedback("environment-feedback", ""); syncEnvironmentLayout(); }
-function editEnvironment(environment) {
+function closeEnvironmentEditor() {
+  const id = $("environment-id").value;
+  dirtyForms.delete("environment-form"); state.environmentEditorSession++; state.environmentEditorVersion++;
+  $("environment-form").hidden = true; $("environment-id").value = ""; state.environmentEditingRevision = null;
+  feedback("environment-feedback", ""); syncEnvironmentLayout();
+  if (destination?.name === "environments") {
+    const opened = $("environments-list").querySelector(`[data-environment-id="${CSS.escape(id)}"] .environment-open`);
+    (opened || $("atlas-destination-title")).focus();
+  }
+}
+function editEnvironment(environment, { focus = true } = {}) {
   state.environmentEditorSession++; state.environmentEditorVersion++;
   $("environment-empty").hidden = true; $("environment-form").hidden = false;
   $("environment-form-title").textContent = environment?.id ? "Edit environment" : "New environment";
@@ -832,12 +891,17 @@ function editEnvironment(environment) {
   const select = $("environment-repository"); if (repository && ![...select.options].some(option => option.value === repository)) { const option = node("option", "", repository); option.value = repository; select.append(option); } select.value = repository;
   $("environment-machine").value = environment?.machine || "medium"; $("environment-network").value = environment?.network || "dependencies";
   $("use-environment").hidden = !environment?.id; $("use-environment").disabled = state.dispatching || state.codingDispatching; feedback("environment-feedback", "");
+  $("environment-editor-actions").hidden = !fw || !environment?.id;
   syncEnvironmentLayout();
-  $("environment-form").scrollIntoView({ block: "nearest" }); $("environment-name").focus({ preventScroll: true });
+  if (focus) {
+    if (destination?.name === "environments") $("atlas-destination-scroll").scrollTop = 0;
+    else $("environment-form").scrollIntoView({ block: "nearest" });
+    $(fw ? "environment-form-title" : "environment-name").focus({ preventScroll: true });
+  }
 }
 function useEnvironment(environment) {
   if (state.dispatching || state.codingDispatching) return;
-  if (state.activeId && state.conversation?.repository !== environment.repository) newConversation("developer");
+  if (state.activeId && (state.conversation?.mode !== "developer" || state.conversation.repository !== environment.repository)) newConversation("developer");
   state.codingContinuation = null; state.codingRestart = null;
   $("mode").value = "developer"; setRepository(environment.repository); state.environmentId = environment.id; state.intent = "code";
   fillEnvironmentChoices(); updateComposer(); saveDraft();
@@ -856,11 +920,12 @@ async function saveEnvironment(event) {
     await loadEnvironments(); checkEpoch(epoch);
     if (session !== state.environmentEditorSession) { toast("Environment saved."); return; }
     if (data.environment && version === state.environmentEditorVersion) {
-      dirtyForms.delete("environment-form"); editEnvironment(data.environment);
+      dirtyForms.delete("environment-form"); editEnvironment(data.environment, { focus: false });
       feedback("environment-feedback", "Environment saved. New tasks use these settings.");
     } else if (data.environment) {
       $("environment-id").value = data.environment.id; state.environmentEditingRevision = data.environment.revision;
       $("environment-form-title").textContent = "Edit environment"; $("use-environment").hidden = false;
+      $("environment-editor-actions").hidden = !fw;
       feedback("environment-feedback", "Environment saved. Your newer edits have not been saved yet.");
     }
   }, "environment-feedback");
@@ -950,11 +1015,14 @@ async function loadRecentRuns() {
     if (runsRequest !== request) return;
     const rows = data.items.map(run => {
       const kind = runKinds[run.kind];
-      const status = runStatus(run);
-      const open = button("", event => openRecentRun(run, event.currentTarget), "record-open ifl-row atlas-disclosure");
+      const status = node("span", "message-status", runStatus(run));
+      status.dataset.status = run.status;
+      const open = button("", event => openRecentRun(run, event.currentTarget), "record-open run-open ifl-row atlas-disclosure");
       const label = node("span", "ifl-tx");
-      label.append(node("b", "", run.title || kind), node("small", "", [kind, status, timestamp(run.updatedAt)].filter(Boolean).join(" · ")));
-      open.append(label);
+      const meta = node("small", "record-meta");
+      meta.append(node("span", "", kind), recordTime(run.updatedAt));
+      label.append(node("b", "", run.title || kind), meta);
+      open.append(label, status);
       return open;
     });
     list.replaceChildren(...(rows.length ? rows : [emptyState("No runs yet")]));
@@ -998,7 +1066,7 @@ function renderRunTimeline(run, events, hasMore) {
   if ($("run-state").textContent !== status) $("run-state").textContent = status;
   const checkpoint = run.status === "queued" && run.kind === "background" ? "Atlas will start this run in the background."
     : run.status === "uncertain" && run.kind === "background" ? "Atlas could not confirm the outcome of the previous attempt."
-    : run.status === "failed" && run.errorCode ? run.errorCode.replaceAll("_", " ") : run.kind === "coding" ? run.stage || "" : "";
+    : run.status === "failed" && run.errorCode ? run.errorCode.replaceAll("_", " ") : run.kind === "coding" ? String(run.stage || "").replaceAll("_", " ") : "";
   $("run-checkpoint").textContent = [checkpoint, run.kind === "background" && run.status !== "completed" && run.hasDraft ? "A partial answer is saved." : ""].filter(Boolean).join(" ");
   $("run-open-result").hidden = !run.conversationId && !run.scheduleId;
   $("run-open-result").textContent = run.kind === "scheduled" ? "Open scheduled work" : run.kind === "coding" && run.reviewReady && !codingActive(run) ? "Review changes" : "Open conversation";
@@ -1008,8 +1076,11 @@ function renderRunTimeline(run, events, hasMore) {
   for (const event of events) {
     const item = node("li", "ifl-tx");
     const title = event.checkpoint === "stop_requested" ? checkpointLabels.stop_requested
-      : run.kind === "coding" ? event.stage || runStatuses[event.status] : checkpointLabels[event.checkpoint] || runStatuses[event.status];
-    item.append(node("b", "", title || "Run updated"), node("small", "", [timestamp(event.at), event.revision > 1 && "Revision " + event.revision].filter(Boolean).join(" · ")));
+      : run.kind === "coding" ? event.stage?.replaceAll("_", " ") || runStatuses[event.status] : checkpointLabels[event.checkpoint] || runStatuses[event.status];
+    const meta = node("small", "record-meta");
+    meta.append(recordTime(event.at));
+    if (event.revision > 1) meta.append(node("span", "", "Attempt " + event.revision));
+    item.append(node("b", "", title || "Run updated"), meta);
     $("run-events").append(item);
   }
 }
@@ -1085,11 +1156,12 @@ async function loadBriefs() {
         else showBrief(brief.id);
       }, "record-open ifl-row atlas-disclosure");
       const text = node("span", "ifl-tx");
-      text.append(node("b", "", brief.title || "Research brief"), node("small", "", timestamp(brief.created_at)));
+      text.append(node("b", "", brief.title || "Research brief"), recordTime(brief.created_at));
       open.append(text);
       return open;
     });
-    list.replaceChildren(...(rows.length ? rows : [emptyState("No saved briefs yet", "Save an answer to keep it with its sources.")]));
+    const openConversations = destination?.name === "briefs" ? button("Open conversations", () => fw.nav.section("conversations"), "quiet-button") : null;
+    list.replaceChildren(...(rows.length ? rows : [emptyState("No saved briefs yet", "Choose Save as brief on an answer to keep it with its sources.", openConversations)]));
   } catch (error) {
     if (briefListRequest === request && !error.accountChanged) list.replaceChildren(
       emptyState("Briefs are unavailable", errorText(error), button("Try again", loadBriefs, "quiet-button")));
@@ -1130,7 +1202,7 @@ async function showBrief(id) {
         showBriefList(); await loadBriefs();
         if (page && destination?.name === "briefs") fw.nav.section("briefs");
       }), "danger-text"));
-    card.append(title, content, sourceList(brief.sources), actions);
+    card.append(title, recordTime(brief.created_at), content, sourceList(brief.sources), actions);
     detail.replaceChildren(...[back, card].filter(Boolean));
     if (page) { title.tabIndex = -1; title.focus({ preventScroll: true }); $("atlas-destination-scroll").scrollTop = 0; }
     else detail.scrollIntoView({ block: "start" });
@@ -1206,6 +1278,7 @@ function closeCodingInbox(inbox) {
   codingInbox = null;
   $("inbox-list").replaceChildren();
   $("inbox-list").removeAttribute("aria-busy");
+  $("refresh-inbox").removeAttribute("aria-busy");
 }
 function openCodingInbox(trigger, page) {
   if (codingInbox) return;
@@ -1229,13 +1302,16 @@ function inboxTask(run) {
   const status = node("span", "message-status", codingStatus(run));
   status.dataset.status = run.status;
   heading.append(node("h3", "", run.title || "Coding task"), status);
-  const context = [run.repository, run.baseBranch, run.conversationTitle].filter(Boolean).join(" · ");
-  card.append(heading, node("p", "muted", context), node("p", "task-updated", "Updated " + timestamp(run.updatedAt)));
+  const meta = node("div", "record-meta");
+  meta.append(node("p", "muted", [run.repository, run.baseBranch].filter(Boolean).join(" · ")), recordTime(run.updatedAt));
+  card.append(heading, meta);
   const actions = node("div", "button-row");
   if (run.reviewReady && (!codingActive(run) || run.status === "publishing")) {
     actions.append(button("Review changes", event => reviewCodingRun(run.id, { inboxTrigger: event.currentTarget }), "primary-button"));
   }
-  actions.append(button("Open conversation", () => openTaskConversation(run), "quiet-button"));
+  const open = button(fw ? "Conversation" : "Open conversation", () => openTaskConversation(run), "text-button inbox-open-conversation");
+  open.setAttribute("aria-label", "Open conversation");
+  actions.append(open);
   card.append(actions);
   return card;
 }
@@ -1252,16 +1328,19 @@ async function loadCodingInbox({ more = false } = {}) {
   if (more) params.set("before", inbox.next);
   else if (!keepRows) { inbox.next = null; list.replaceChildren(); loadMore.hidden = true; }
   list.setAttribute("aria-busy", "true");
+  $("refresh-inbox").setAttribute("aria-busy", "true");
   loadMore.disabled = true;
-  feedback("inbox-feedback", more || !keepRows ? "Loading tasks…" : "Refreshing tasks…");
+  feedback("inbox-feedback", keepRows ? "" : "Loading tasks…");
   try {
     const data = await api("coding/inbox?" + params, "GET", undefined, { signal: controller.signal, timeout: 30000 });
     if (!current()) return;
     const cards = data.runs.map(inboxTask);
     if (more) list.append(...cards); else list.replaceChildren(...cards);
     inbox.next = data.next; inbox.filter = filter;
-    if (!list.children.length) list.append(emptyState(filter === "all" ? "No coding tasks yet" : "No tasks match this status",
-      filter === "all" ? "Start a task from a Developer conversation." : ""));
+    if (!list.children.length) {
+      const start = filter === "all" && fw ? button("New coding task", () => newConversation("developer"), "quiet-button") : null;
+      list.append(emptyState(filter === "all" ? "No coding tasks yet" : "No tasks match this status", filter === "all" && !fw ? "Start a task from a Developer conversation." : "", start));
+    }
     feedback("inbox-feedback", "");
     if (more) cards[0]?.querySelector("button")?.focus();
   } catch (error) {
@@ -1270,6 +1349,7 @@ async function loadCodingInbox({ more = false } = {}) {
     if (current()) {
       inbox.controller = null;
       list.removeAttribute("aria-busy");
+      $("refresh-inbox").removeAttribute("aria-busy");
       loadMore.hidden = !inbox.next;
       loadMore.disabled = false;
     }
@@ -1402,7 +1482,7 @@ async function loadTaskChanges(run, panel) {
 function renderCodingRuns() {
   const container = $("messages"), previous = $("coding-runs"), scrollTop = container.scrollTop;
   const nearBottom = isAtLatest(container, 24);
-  if (!state.codingRuns.length && !state.codingLoadError) { previous?.remove(); if (!state.messages.length && !container.querySelector(".welcome")) renderMessages(); else updateLatestControl(); return; }
+  if (!state.codingRuns.length && !state.codingLoadError) { previous?.remove(); if (!state.messages.length && !container.querySelector(".welcome, .empty-conversation")) renderMessages(); else updateLatestControl(); return; }
   const flags = [state.health?.coding?.ready, state.health?.coding?.backgroundAvailable, state.conversation?.archived];
   const signature = JSON.stringify([state.codingRuns, state.codingLoadError, flags]);
   if (codingSnapshots.get(previous) === signature) return;
@@ -1462,7 +1542,7 @@ function renderCodingRuns() {
     card.append(node("p", "task-updated", "Updated " + timestamp(run.updatedAt || run.createdAt))); list.append(card);
     if (chosen === "changes") queueMicrotask(() => loadTaskChanges(run, parts.get("changes")));
   }
-  container.querySelector(".welcome")?.remove(); if (previous) previous.replaceWith(list); else container.append(list);
+  container.querySelector(".welcome, .empty-conversation")?.remove(); if (previous) previous.replaceWith(list); else container.append(list);
   if (nearBottom) jumpToLatest();
   else { container.scrollTop = scrollTop; updateLatestControl(); }
   if (focused) {
@@ -1668,6 +1748,8 @@ function init() {
   const mobile = matchMedia(mobileQuery);
   placeSidebar(mobile.matches);
   if (fw) {
+    $("prompt").rows = 1;
+    $("task-options-environments").hidden = false;
     const choices = $("mode-choices"), select = $("mode");
     for (const [mode, title] of Object.entries(modeNames)) {
       const choice = button("", () => {
@@ -1749,6 +1831,14 @@ function init() {
   $("cancel-environment-edit").addEventListener("click", closeEnvironmentEditor); $("environment-form").addEventListener("submit", saveEnvironment);
   for (const event of ["input", "change"]) $("environment-form").addEventListener(event, () => { state.environmentEditorVersion++; });
   $("use-environment").addEventListener("click", () => { const environment = state.environments.find(item => item.id === $("environment-id").value); if (environment) useEnvironment(environment); });
+  $("duplicate-environment").addEventListener("click", () => {
+    const environment = state.environments.find(item => item.id === $("environment-id").value);
+    if (environment) duplicateEnvironment(environment);
+  });
+  $("archive-environment").addEventListener("click", event => {
+    const environment = state.environments.find(item => item.id === $("environment-id").value);
+    if (environment) archiveEnvironment(environment, event.currentTarget);
+  });
   $("upgrade-environments").addEventListener("click", event => busy(event.currentTarget, async () => { await api("setup", "POST", { confirm: true }); await refreshHealth(); await loadEnvironments(); toast("Cloud environments are ready."); }, "environments-feedback"));
   $("start-coding").addEventListener("click", startCodingTask); $("clear-coding-continuation").addEventListener("click", () => { state.codingContinuation = null; state.codingRestart = null; fillEnvironmentChoices(); updateComposer(); }); $("new-schedule").addEventListener("click", () => editSchedule()); $("schedule-kind").addEventListener("change", scheduleFields); $("schedule-mode").addEventListener("change", scheduleFields); $("schedule-form").addEventListener("submit", saveSchedule); $("cancel-schedule-edit").addEventListener("click", () => { dirtyForms.delete("schedule-form"); $("schedule-form").hidden = true; });
   $("schedule-repository").addEventListener("change", () => { state.scheduleContext = []; scheduleFields(); }); $("schedule-use-context").addEventListener("click", () => { state.scheduleContext = state.context.filter(c => c.repository === $("schedule-repository").value).map(contextDescriptor); renderScheduleContext(); });
