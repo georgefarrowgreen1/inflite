@@ -1,5 +1,5 @@
 import { loadStyles } from "./modules.js";
-export { createActivityRegistry, createAtlasActivityReader } from "./workspace-activity-state.js";
+export { createActivityRegistry } from "./workspace-activity-state.js";
 
 const LABELS = Object.freeze({ queued: "Waiting to start", running: "In progress", waiting: "Needs attention", succeeded: "Completed", failed: "Couldn’t finish", cancelled: "Cancelled", "handed-off": "Opened download" });
 const ACTIVE = new Set(["queued", "running"]), FINISHED = new Set(["succeeded", "failed", "cancelled", "handed-off"]);

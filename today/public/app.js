@@ -18,7 +18,7 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.53.2";
+const BUILD = "4.53.3";
 // (what's new in it, said once it's in)
 const NEWS = "Atlas brings Liquid Glass to conversations and gives tasks, cloud environments and saved briefs dedicated screens.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
@@ -2167,7 +2167,7 @@ const youCtx = (task) => {
     life: hostAction(async (host, action) => { const life = await host.life(); if (task.active()) return life?.[action]?.(); }),
     remembered: hostAction(host => host.remembered()),
     frame: task.frame, go: (path) => task.active() && task.frame.nav.go(path), href: (app, section) => app === "atlas" ? "/atlas/" + (section ? "#" + section : "") : IFL.hub.href(app, section),
-    icon: (app) => { try { return app === "atlas" ? "/apps/atlas.svg" : IFL.iconUrl(app) || ""; } catch { return ""; } },
+    icon: (app) => { try { return app === "atlas" ? "/atlas.svg" : IFL.iconUrl(app) || ""; } catch { return ""; } },
   };
 };
 

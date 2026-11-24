@@ -12,6 +12,7 @@ function version(base, path) {
 }
 for (const [app, base, entry, module] of [
   ['Today',root,'today/public/app.js'], ['Mail',root,'email/public/app.js','email/public/roof/mail.js'],
+  ['Atlas',root,'today/public/atlas/roof/module.js'],
   ['Weather',apps,'weather/app.js','weather/roof/weather.js'], ['Fitness',apps,'fitness/app.js','fitness/roof/fitness.js'],
   ['Markets',apps,'markets/app.js','markets/roof/markets.js'], ['Chats',apps,'pigeon/app.js','pigeon/roof/chats.js'],
   ['Account and sign-in',apps,'account/app.js'], ['Status',apps,'status/app.js']

@@ -1,5 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const moduleAt=import('../today/public/roof/handoffs.js');
+const atlasModuleAt=import('../today/public/atlas/roof/handoffs.js');
 const defer=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve}};
 async function fixture(deliver,options={}){const {createHandoffs}=await moduleAt,life=new AbortController(),source=new AbortController(),F={signal:life.signal,session:{view:{user:{id:'ann'}}}},state={app:'fitness',now:100,enabled:true};
  const host=createHandoffs(F,{available:()=>state.enabled,now:()=>state.now,deliver:(...args)=>deliver(...args),...options});
@@ -34,7 +35,7 @@ test('Mail gives Atlas only the selected source reference, consumed once by Atla
 });
 
 test('Atlas reply and text drafts cannot supply recipients, headers or executable content fields',async()=>{
- const {handoffPayload}=await moduleAt;
+ const {handoffPayload}=await atlasModuleAt;
  const unsafe={threadId:'thread-a',messageId:'msg-a',subject:'Reply',text:'Thanks\nSee you\u202e\u0000',to:'other@example.test',bcc:['private@example.test'],inReplyTo:'<fake>',html:'<script>alert(1)</script>',send:true};
  assert.deepEqual(handoffPayload('atlas','mail','mail-reply',unsafe),{threadId:'thread-a',messageId:'msg-a',text:'Thanks\nSee you'});
  assert.deepEqual(handoffPayload('atlas','mail','text',unsafe),{subject:'Reply',text:'Thanks\nSee you'});
@@ -45,7 +46,7 @@ test('Atlas reply and text drafts cannot supply recipients, headers or executabl
 });
 
 test('Atlas note and event drafts use bounded native fields and validate source and time',async()=>{
- const {handoffPayload}=await moduleAt,source={app:'mail',threadId:'thread-a',body:'private'},note={title:'Meeting agenda',text:'1. Review\n2. Decide',source,save:true};
+ const {handoffPayload}=await atlasModuleAt,source={app:'mail',threadId:'thread-a',body:'private'},note={title:'Meeting agenda',text:'1. Review\n2. Decide',source,save:true};
  assert.deepEqual(handoffPayload('atlas','notes','note-draft',note),{title:'Meeting agenda',text:note.text,source:{app:'mail',threadId:'thread-a'}});
  const event={title:'Review',description:'Discuss next steps',start:1800000000000,end:1800003600000,timezone:'Europe/London',source,attendees:['person@example.test']};
  assert.deepEqual(handoffPayload('atlas','calendar','event-draft',event),{title:event.title,description:event.description,start:event.start,end:event.end,timezone:event.timezone,source:{app:'mail',threadId:'thread-a'}});
@@ -59,4 +60,25 @@ test('revoking only the target capability retires an already issued Atlas handof
  let t,enabled=true;
  t=await fixture(async(target,token,lease)=>{t.state.app=target;enabled=false;assert.equal(lease.current(),false);assert.equal(t.sdk(target).take(token),null);return{ok:false,cancelled:true}},{available:app=>app!=='atlas'||enabled});
  t.state.app='mail';assert.equal((await t.sdk('mail').send('atlas','mail-context',{threadId:'thread-a'})).ok,false);t.host.destroy();
+});
+
+test('Atlas validation import cannot outlive its source account, availability or navigation',async()=>{
+ for(const mode of ['owner','navigation','revoked','abort','destroy']){
+  let calls=0;const t=await fixture(()=>{calls++;return{ok:true}});t.state.app='mail';
+  const pending=t.sdk('mail').send('atlas','mail-context',{threadId:'thread-a'});
+  if(mode==='owner')t.F.session.view.user.id='beth';
+  if(mode==='navigation')t.state.app='weather';
+  if(mode==='revoked')t.state.enabled=false;
+  if(mode==='abort')t.source.abort();
+  if(mode==='destroy')t.host.destroy();
+  assert.deepEqual(await pending,{ok:false,cancelled:true},mode);assert.equal(calls,0,mode);t.host.destroy();
+ }
+});
+
+test('concurrent Atlas validation imports cannot replace an in-flight payload',async()=>{
+ const gate=defer();let calls=0,t;
+ t=await fixture(async(target,token)=>{calls++;t.state.app=target;assert.equal(t.sdk(target).take(token).threadId,'thread-a');await gate.promise;return{ok:true}});
+ t.state.app='mail';const first=t.sdk('mail').send('atlas','mail-context',{threadId:'thread-a'});
+ const second=t.sdk('mail').send('atlas','mail-context',{threadId:'thread-b'});
+ assert.equal((await second).ok,false);gate.resolve();assert.equal((await first).ok,true);assert.equal(calls,1);t.host.destroy();
 });

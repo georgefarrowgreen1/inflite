@@ -16,7 +16,8 @@ export function normalizeWorkspaceFile(value, app) {
   for (const key of ["downloadIntent", "shareIntent"]) if (opaque(value[key])) out[key] = value[key];
   if (Number.isSafeInteger(value.size) && value.size >= 0) out.size = value.size;
   if (Number.isFinite(value.modifiedAt) && value.modifiedAt > 0) out.modifiedAt = value.modifiedAt;
-  if (fileText(value.source, 140)) out.source = fileText(value.source, 140);
+  const source = fileText(value.source, 140);
+  if (source) out.source = source;
   return out;
 }
 const kind = (f) => f.category === "route" || /\.gpx$/i.test(f.name) || f.mime === "application/gpx+xml" ? "routes" : f.category === "workout" || /\.(fit|tcx|zwo|erg|mrc)$/i.test(f.name) ? "workouts" : f.category === "image" || f.mime.startsWith("image/") ? "images" : f.category === "audio" || f.mime.startsWith("audio/") ? "audio" : "documents";

@@ -26,11 +26,11 @@ Saving a connection checks model metadata. **Test with a short response** makes 
 
 The model picker intersects project availability with verified Responses capabilities. Known model families have dated pricing metadata. A custom saved model is clearly labelled unverified; its availability does not prove every workspace/tool works. OpenAI authentication, model access, exhausted quota, rate limiting, timeout, malformed responses and interrupted output have distinct safe error codes. Upstream response bodies, prompts and keys are not logged. Each HTTP error includes a correlation identifier; usage records also retain a sanitized upstream request identifier where available.
 
-Configure `ATLAS_ENCRYPTION_KEY` as a secret on each target Worker: `inflite-next` for staging and `inflite` for production. It must be the base64 encoding of exactly 32 random bytes. Keep the existing key stable: replacing it makes stored credentials unreadable. Secrets are environment-specific, so a secret added only to production or GitHub does not configure staging. The deployment workflow checks that the staging Worker has the secret and preserves it; it does not generate, copy or rotate it. Never commit secret values.
+Configure `ATLAS_ENCRYPTION_KEY` as a secret on the production `inflite` Worker. It must be the base64 encoding of exactly 32 random bytes. Keep the existing key stable because replacing it makes stored credentials unreadable. Never commit secret values.
 
 Interactive and scheduled Atlas requests use only the requesting owner's encrypted connection. There is no Worker-level `OPENAI_API_KEY` or `ATLAS_MODEL` fallback. No new provider secret belongs in GitHub Actions for these features.
 
-`ATLAS_DB` stores encrypted provider/integration credentials, conversations, turns, source references, briefs, settings, execution ledgers, schedules, run history, patch drafts and coding tasks. Provision and bind the appropriate database with `node tools/atlas-bind.mjs next` or `node tools/atlas-bind.mjs production`. Staging uses `inflite-atlas-next`; production uses `inflite-atlas-production`. The binding helper changes only the selected environment and refuses an existing conflicting ID.
+`ATLAS_DB` stores encrypted provider and integration credentials, conversations, turns, source references, briefs, settings, execution ledgers, schedules, run history, patch drafts and coding tasks. Production uses `inflite-atlas-production`. Use `node tools/atlas-bind.mjs production` when provisioning the production database. The binding helper refuses an existing conflicting ID.
 
 Schema version 7 adds `atlas_coding_runs` and `atlas_coding_changes` without changing existing encrypted credentials or history. Apply all migrations in `atlas/migrations` with Wrangler, or select **Prepare workspace** / **Enable coding tasks** in Atlas. The authenticated setup action sends an explicit confirmation and requires the existing fresh administrator proof. Reads never apply DDL. A version 6 database remains ready for chat while `health.coding.storageReady` reports that coding tasks need the version 7 upgrade. Existing history imports into named conversations, existing task drafts import paused, and incomplete legacy runs become uncertain. Import markers prevent deleted imported history from reappearing after a repeated upgrade.
 
@@ -146,31 +146,14 @@ The default allowance is20 requests per owner per UTC day, configurable from1 to
 
 Stop aborts local streaming and persists an owner-specific cancellation marker checked by running work. Partial text is retained where received. Requests that may have reached the provider are recorded honestly as failed, incomplete, cancelled or uncertain, not automatically refunded or silently replayed. Explicit Retry creates a new request and may incur another charge.
 
-## Automated staging deployment
+## Production deployment
 
-The GitHub environment `atlas-staging` supplies `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Scope the token to the account with Workers Scripts edit, D1 edit and the necessary route permissions. Verify the environment's actual access controls; naming it in YAML does not establish reviewer protection. The `inflite-next` Worker must already have `ATLAS_ENCRYPTION_KEY` and the existing shared `HUB_KEY`; the account service must allow the staging origin as described in `wrangler.toml`. The workflow checks secret names only. It cannot verify their values or that the encryption key can decrypt existing records.
+Atlas has no staging site. Use the GitHub-connected Cloudflare Workers Builds workflow to deploy `claude/inflite` to `inflite.ai`. The build runs Wrangler with the repository configuration.
 
-`.github/workflows/atlas-staging.yml` is manual and restricted to the canonical default branch, `claude/inflite`. It checks out that default-branch commit and cannot deploy `atlas-integration` or another feature branch. GitHub also requires the workflow definition on the default branch before manual dispatch. This preserves the repository's default-branch restriction for jobs with deployment secrets.
-
-The workflow runs the Atlas tests, verifies deployment credentials and existing Worker secret names, binds the staging D1 database, applies migrations, and deploys with `ATLAS_AUTONOMY="0"` from the Wrangler configuration. Anonymous smoke checks require `/atlas` to redirect to `/atlas/`, the native shell at `/atlas/` to return `200` with `X-InFlite-Shell: 1`, and all checked private API routes to remain `401` or `403`. Public shell code is not private account data. The workflow leaves the existing encryption secret unchanged.
-
-## Staging a tested feature commit before merge
-
-The default-only workflow cannot validate an unmerged Atlas release. An authorized release operator with Cloudflare access must use a local checkout of the reviewed feature commit after its CI passes. Do not merge the application merely to make its staging workflow available.
-
-Install the locked dependencies and run `npm run test:atlas`. Use `npx wrangler secret list --env next --format json` to confirm `ATLAS_ENCRYPTION_KEY` and `HUB_KEY` are already configured on `inflite-next`, without reading or replacing their values. Check that the staging Wrangler configuration still has `ATLAS_AUTONOMY="0"`, then run:
-
-```sh
-node tools/atlas-bind.mjs next
-npx wrangler d1 migrations apply ATLAS_DB --remote --env next
-npx wrangler deploy --env next
-```
-
-Record the tested commit and deployed Worker version, then complete the authenticated and anonymous checks below. A passing CI run does not establish that this staging deployment or verification occurred.
-
-## Release verification
-
-Run `npm ci --ignore-scripts --no-audit --no-fund`, `npm run test:atlas` and the existing CI suite before deployment. On staging, verify private API denial for signed-out and standard users, the public native shell, administrator access, fresh-authentication enforcement, credential connect and removal, an explicitly authorized AI request, owner-scoped history, and existing site routes. The authenticated credential round trip must verify the encryption secret is usable; the anonymous smoke check alone is insufficient. Only release to production after these checks pass, the production database migrations are applied, and the production Worker secret is configured. Existing Workers Builds handles production deployment after merge.
+1. Review the release commit and run the Atlas and shared InFlite CI checks. Use local fixtures for account, credential, migration and provider scenarios.
+2. For a release that changes storage, verify the production database binding and migration state. Confirm that the production Worker still has its existing encryption secret. Preserve its value.
+3. Merge the tested change into `claude/inflite`. Watch the Workers Builds check for `inflite` and verify the expected versions at `/version` and `/atlas/version`.
+4. Verify `/atlas` redirects to `/atlas/`, the native shell returns `200` with `X-InFlite-Shell: 1`, and signed-out requests to private Atlas APIs receive `401` or `403`. Use an authorized administrator to confirm live readiness when authenticated access is available. Live paid requests and GitHub publication require their own authorization.
 
 `npm run test:atlas` exercises the provider, router, scheduler and storage in real workerd/Miniflare and D1 with fixture outbound services. It includes redirects, credential revision changes, partial streams, duplicate paid requests, account boundaries, more than1000 exported turns, source/brief persistence, cost reservations, timezone transitions and scheduler recovery. `npm run test:atlas:browser` runs fixture-only mobile/desktop flows; use `WEB_UI_BROWSER=webkit` for WebKit. The dedicated Atlas CI workflow installs both browsers and stores screenshots. No real keys, paid OpenAI requests or GitHub writes are used by CI. These checks establish application behavior; they do not prove the currently deployed live account, encryption secret or provider balance is valid.
 
@@ -187,7 +170,7 @@ Run `npm ci --ignore-scripts --no-audit --no-fund`, `npm run test:atlas` and the
 
 Use an authorized administrator, the reviewed deployment and a disposable repository with the existing owner connections. These are operator verification steps; the fixture tests do not perform live provider execution or GitHub publication.
 
-1. Verify `/atlas/api/health` after deployment. General storage remains usable at version 6; coding needs version 7. On a version 6 staging database, confirm **Send** still works and **Enable coding tasks** uses the existing fresh-proof setup action. After applying the migration, verify both readiness fields and the reported background availability. Signed-out access must remain denied.
+1. Verify `/atlas/api/health` after deployment. General storage remains usable at version 6; coding needs version 7. With a local version 6 database fixture, confirm **Send** still works and **Enable coding tasks** uses the existing fresh-proof setup action. After applying the migration, verify both readiness fields and the reported background availability. Signed-out access must remain denied.
 2. Create a new Developer conversation, select the test repository and start **Work on task** without adding Sources or first sending an investigation. Use a small fixture change across at least six files, including an addition and deletion, with a known focused check. Confirm one accepted task appears and its pinned branch/commit and progress survive reloading.
 3. Inspect actual command records, exit codes and output. Include a deliberately failing check in the disposable test to verify the failure remains visible; a completed agent turn must not turn that failed process into “tests passed.” Confirm the result artifact was exported for the completed turn and saved revision, and that the review lists its actual file operations. Missing or invalid artifacts must be reported rather than rendered as completed edits.
 4. After execution begins, leave and reopen the page. Confirm reconnecting observes the existing task and sends no cancellation or duplicate input. When `backgroundAvailable` is true, also close during preparation and verify the minute reconciliation finishes setup. When it is false, verify the instruction to keep the page open until work starts and the ability to finish setup after reopening.
@@ -207,7 +190,7 @@ Every run decrypts the owner's saved OpenAI connection and shares the interactiv
 
 `atlas/quality/cases.json` defines eight representative tasks covering primary-source research, missing evidence, scoped code changes, untrusted instructions, conversation continuity, prioritization, Fitness consent boundaries and structured comparisons. The optional collector runs nine model requests through a current owner's configured Atlas connection. It creates separate conversations, keeps shared personal memory disabled for comparability, records results after each case and archives completed benchmark conversations. It never provisions or reads an OpenAI key and never automatically retries paid work.
 
-To collect live results in an authenticated operator session, provide `ATLAS_SESSION_COOKIE` through a secure local environment (never commit it or place it on a command line), set `ATLAS_BASE_URL` to `https://next.inflite.ai` or `https://inflite.ai`, and run:
+To collect live results in an authenticated operator session, provide `ATLAS_SESSION_COOKIE` through a secure local environment (never commit it or place it on a command line), set `ATLAS_BASE_URL` to `https://inflite.ai`, and run:
 
 ```sh
 node tools/atlas-quality.mjs run /private/path/atlas-results.json --confirm-api-usage
