@@ -10,7 +10,7 @@ async function fixture(t, { legacy = false } = {}) {
   t.after(() => mf.dispose());
   const env = { ATLAS_DB: await mf.getD1Database('ATLAS_DB') };
   if (legacy) {
-    const sql = (await Promise.all(Array.from({ length: 6 }, (_, i) => readFile(new URL('../atlas/migrations/' + String(i + 1).padStart(4, '0') + '.sql', import.meta.url), 'utf8')))).join('\n');
+    const sql = (await Promise.all(Array.from({ length: Number.isInteger(legacy) ? legacy : 6 }, (_, i) => readFile(new URL('../atlas/migrations/' + String(i + 1).padStart(4, '0') + '.sql', import.meta.url), 'utf8')))).join('\n');
     await env.ATLAS_DB.batch(sql.split(';').map(value => value.trim()).filter(Boolean).map(value => env.ATLAS_DB.prepare(value)));
   } else await store.upgradeStorage(env);
   return env;
@@ -30,7 +30,7 @@ test('coding schema is additive: version six chat remains ready before the expli
   assert.equal((await coding.codingStorageStatus(env)).storageReady, true);
   assert.equal((await store.getConversation(env, 'alice', conversation.id)).title, 'Existing chat');
   await store.upgradeStorage(env);
-  assert.equal((await store.storageStatus(env)).schemaVersion, 7);
+  assert.equal((await store.storageStatus(env)).schemaVersion, 8);
 });
 
 test('coding state isolates owners, keeps provider IDs private and permits one active task per conversation', async t => {
@@ -49,6 +49,37 @@ test('coding state isolates owners, keeps provider IDs private and permits one a
   assert.equal(await coding.claimCodingRun(env, 'alice', run.id), null);
   await coding.releaseCodingRun(env, 'alice', run.id, claim.lease);
   assert.ok(await coding.claimCodingRun(env, 'alice', run.id));
+});
+
+test('schema seven keeps default cloud coding usable while saved environment profiles await upgrade', async t => {
+  const env = await fixture(t, { legacy: 7 });
+  const status = await coding.codingStorageStatus(env);
+  assert.equal(status.ready, true);
+  assert.equal(status.schemaVersion, 7);
+  const run = await create(env);
+  assert.equal(coding.publicCodingRun(run).environment.profileId, null);
+  assert.equal(coding.publicCodingRun(run).environment.machine, 'medium');
+  const conversation = await store.createConversation(env, 'alice', { mode: 'developer', repository: 'owner/repo' });
+  await assert.rejects(() => coding.createCodingRun(env, 'alice', { id: id(), conversationId: conversation.id, requestId: id(), prompt: 'Use saved config', model: 'gpt-6.2-sol', credentialUpdatedAt: 42, repository: 'owner/repo', environment: { id: 'saved-profile' } }), { code: 'environments_storage_upgrade_required' });
+  await store.upgradeStorage(env);
+  assert.equal((await coding.getCodingRun(env, 'alice', run.id)).id, run.id);
+});
+
+test('partial schema eight preserves default coding and explicitly gates saved configuration and retries', async t => {
+  const env = await fixture(t, { legacy: 7 });
+  const sql = await readFile(new URL('../atlas/migrations/0008.sql', import.meta.url), 'utf8');
+  const partial = sql.split(';').map(value => value.trim()).filter(Boolean).filter(value => !/ADD COLUMN (cloud_checked_at|retry_from_run_id)\b/.test(value));
+  await env.ATLAS_DB.batch(partial.map(value => env.ATLAS_DB.prepare(value)));
+  assert.equal((await coding.codingStorageStatus(env)).ready, true);
+  const run = await create(env);
+  assert.equal(coding.publicCodingRun(run).environment.profileId, null);
+  assert.equal(coding.publicCodingRun(run).environment.machine, 'medium');
+  const conversation = await store.createConversation(env, 'alice', { mode: 'developer', repository: 'owner/repo' });
+  const input = { id: id(), conversationId: conversation.id, requestId: id(), prompt: 'Use saved config', model: 'gpt-6.2-sol', credentialUpdatedAt: 42, repository: 'owner/repo' };
+  await assert.rejects(() => coding.createCodingRun(env, 'alice', { ...input, environment: { id: 'saved-profile' } }), { code: 'environments_storage_upgrade_required' });
+  await assert.rejects(() => coding.createCodingRun(env, 'alice', { ...input, retryFromRunId: run.id }), { code: 'environments_storage_upgrade_required' });
+  await store.upgradeStorage(env);
+  assert.equal((await coding.getCodingRun(env, 'alice', run.id)).id, run.id);
 });
 
 test('multi-file changes exceed a single D1 row safely, support deletion and stay bound to a revision', async t => {

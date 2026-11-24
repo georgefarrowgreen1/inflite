@@ -1,4 +1,5 @@
 import { AtlasStoreError, getConversation } from './atlas-store.js';
+import { environmentStorageStatus } from './atlas-environments.js';
 
 const ACTIVE = new Set(['preparing', 'running', 'waiting', 'uncertain', 'publishing']);
 const encode = new TextEncoder();
@@ -17,19 +18,42 @@ export async function codingStorageStatus(env) {
     const tables = await list(query(env, "SELECT name FROM sqlite_schema WHERE type='table' AND name IN ('atlas_coding_runs','atlas_coding_changes')"));
     const version = await query(env, 'SELECT version FROM atlas_schema WHERE id=1').first();
     const ready = tables.length === 2 && version?.version >= 7;
-    return { ready, storageReady: ready, message: ready ? 'Hosted coding tasks use your saved OpenAI connection.' : 'Upgrade Atlas storage to enable coding workspaces.', budgetUsd: 2 };
+    return { ready, storageReady: ready, schemaVersion: version?.version || 0, message: ready ? 'Hosted coding tasks use your saved OpenAI connection.' : 'Upgrade Atlas storage to enable coding workspaces.', budgetUsd: 2 };
   } catch { return { ready: false, storageReady: false, message: 'Upgrade Atlas storage to enable coding workspaces.', budgetUsd: 2 }; }
 }
 
 function row(value) {
   if (!value) return null;
-  return { ...value, manifest: parse(value.manifest_json, {}), priorTurns: parse(value.prior_turns_json, []), checks: parse(value.checks_json, []), activity: parse(value.activity_json, []), changes: parse(value.changes_json, { added: 0, modified: 0, deleted: 0 }) };
+  return { ...value, environment: parse(value.environment_config_json, {}), manifest: parse(value.manifest_json, {}), priorTurns: parse(value.prior_turns_json, []), checks: parse(value.checks_json, []), activity: parse(value.activity_json, []), changes: parse(value.changes_json, { added: 0, modified: 0, deleted: 0 }) };
+}
+
+function workspaceState(run) {
+  const connected = !!run.environment_id && !!run.session_id;
+  const expired = run.cloud_status === 'expired' || ['coding_workspace_expired', 'agent_resource_missing'].includes(run.error_code);
+  const canContinue = connected && !expired && !!run.can_continue && !ACTIVE.has(run.status) && !run.publish_url;
+  const connectionUnknown = run.cloud_status === 'unknown' || ['coding_workspace_check_pending', 'coding_workspace_not_ready'].includes(run.error_code);
+  const restart = !run.publish_url && !ACTIVE.has(run.status) && (expired || ['failed', 'cancelled'].includes(run.status) || !!run.error_code);
+  const state = expired ? 'expired' : run.status === 'preparing' ? 'preparing' : ['running', 'waiting', 'uncertain', 'publishing'].includes(run.status) ? 'running' : canContinue && connectionUnknown ? 'unknown' : canContinue ? 'available' : run.status === 'cancelled' ? 'stopped' : 'unavailable';
+  const reason = expired ? 'The cloud workspace is no longer available. Saved changes are still available for review.'
+    : canContinue && connectionUnknown ? 'The task has finished, but Atlas could not confirm its cloud connection. Continue checks the workspace before starting or reserving another allowance.'
+    : canContinue ? 'Continue in the same cloud workspace with its existing files. Atlas checks the connection before starting.'
+    : run.status === 'cancelled' ? connected ? 'The task was stopped. Start again in a fresh cloud workspace.' : 'The task was stopped before its cloud workspace was ready. Start again to prepare a new workspace.'
+    : run.error_code === 'coding_workspace_failed' ? 'Cloud setup failed before Atlas could run the task. Check the environment setup command and network access, then start again.'
+    : run.status === 'failed' ? 'Review the error and any saved changes, then start again in a new cloud workspace.'
+    : run.publish_url ? 'The reviewed changes have been published. Start a new task for more changes.'
+    : 'Cloud workspaces are prepared for each task and can be reused for follow-ups while available.';
+  return {
+    canContinue,
+    cloud: { provider: 'openai', type: 'openai_hosted', state, label: ({ preparing: 'Preparing cloud workspace', running: 'Cloud workspace active', available: 'Cloud workspace available', unknown: 'Cloud connection needs checking', expired: 'Cloud workspace expired', stopped: 'Cloud workspace stopped', unavailable: 'Cloud workspace unavailable' })[state], observedAt: run.cloud_checked_at || run.updated_at, connectionCheckRequired: canContinue },
+    recovery: { action: canContinue ? 'continue' : restart ? 'restart' : null, label: canContinue ? 'Continue task' : restart ? 'Start again' : null, reason },
+  };
 }
 
 export function publicCodingRun(run) {
   if (!run) return null;
+  const workspace = workspaceState(run), configuration = run.environment || {};
   return {
-    id: run.id, conversationId: run.conversation_id, requestId: run.request_id,
+    id: run.id, conversationId: run.conversation_id, requestId: run.request_id, retryFromRunId: run.retry_from_run_id || null,
     repository: run.repository, baseBranch: run.base_branch, baseSha: run.base_sha,
     prompt: run.prompt, model: run.model, status: run.status, stage: run.stage,
     revision: run.revision, summary: run.summary,
@@ -37,7 +61,9 @@ export function publicCodingRun(run) {
     activity: run.activity.map(({ type, label, detail, status, source, truncated }) => ({ type, label, detail, status, source, truncated })),
     changes: run.changes,
     createdAt: run.created_at, updatedAt: run.updated_at, finishedAt: run.finished_at,
-    canContinue: !!run.can_continue && !ACTIVE.has(run.status) && !run.publish_url,
+    canContinue: workspace.canContinue,
+    environment: { profileId: run.environment_profile_id || null, name: configuration.name || 'Default cloud environment', repository: run.repository, branch: configuration.branch || run.base_branch || '', machine: configuration.machine || 'medium', network: configuration.network || 'dependencies', setupCommand: configuration.setupCommand || '', testCommand: configuration.testCommand || '', revision: configuration.revision || 1 },
+    cloud: workspace.cloud, recovery: workspace.recovery,
     reviewReady: !!run.review_ready && !!(run.changes.added + run.changes.modified + run.changes.deleted),
     budgetUsd: run.budget_cents / 100,
     providerRecordedSpendUsd: Number.isInteger(run.consumed_after) ? Math.max(0, run.consumed_after - run.consumed_before) / 100 : null,
@@ -69,21 +95,27 @@ export async function ownerCodingRuns(env, owner, conversationId = null) {
   return result.map(row);
 }
 
-export async function createCodingRun(env, owner, { id, conversationId, requestId, prompt, model, credentialUpdatedAt, repository }) {
+export async function createCodingRun(env, owner, { id, conversationId, requestId, prompt, model, credentialUpdatedAt, repository, environment = {}, retryFromRunId = null }) {
   for (const value of [id, requestId]) checkId(value);
   const conversation = await getConversation(env, owner, conversationId);
   if (!conversation) missing();
   if (conversation.archived) throw new AtlasStoreError('conversation_archived', 'Restore this conversation before starting a task.', 409);
   if (conversation.mode !== 'developer' || conversation.repository !== repository) fail('Choose a repository in a Developer conversation.');
   const now = Date.now();
+  // A migration can have recorded its version before every additive column is
+  // available. Default tasks still use the schema-seven insert in that case.
+  const profileStorage = (await environmentStorageStatus(env)).ready;
+  if (!profileStorage && (environment.id || retryFromRunId)) throw new AtlasStoreError('environments_storage_upgrade_required', 'Upgrade Atlas storage to use saved cloud environments and task retries.', 409);
   try {
-    const value = await query(env, "INSERT INTO atlas_coding_runs(owner,id,conversation_id,request_id,prompt,model,credential_updated_at,repository,input_key,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM atlas_coding_runs WHERE owner=? AND conversation_id=?)<50 RETURNING *", owner, id, conversationId, requestId, prompt, model, credentialUpdatedAt, repository, 'atlas-' + requestId, now, now, owner, conversationId).first();
+    const fields = 'owner,id,conversation_id,request_id,prompt,model,credential_updated_at,repository,input_key,created_at,updated_at' + (profileStorage ? ',environment_profile_id,environment_config_json,retry_from_run_id' : '');
+    const args = [owner, id, conversationId, requestId, prompt, model, credentialUpdatedAt, repository, 'atlas-' + requestId, now, now, ...(profileStorage ? [environment.id || null, json(environment, 65536), retryFromRunId] : [])];
+    const value = await query(env, 'INSERT INTO atlas_coding_runs(' + fields + ') SELECT ' + args.map(() => '?').join(',') + ' WHERE (SELECT COUNT(*) FROM atlas_coding_runs WHERE owner=? AND conversation_id=?)<50 RETURNING *', ...args, owner, conversationId).first();
     if (!value) throw new AtlasStoreError('coding_run_limit', 'Start a new conversation to keep working on this repository.', 409);
     return row(value);
   } catch (error) {
     const duplicate = await codingRunByRequest(env, owner, requestId);
     if (duplicate) {
-      if (duplicate.conversation_id !== conversationId || duplicate.prompt !== prompt) throw new AtlasStoreError('request_id_reused', 'This task identifier belongs to another request.', 409);
+      if (duplicate.conversation_id !== conversationId || duplicate.prompt !== prompt || (duplicate.environment_profile_id || null) !== (environment.id || null) || (duplicate.retry_from_run_id || null) !== retryFromRunId) throw new AtlasStoreError('request_id_reused', 'This task identifier belongs to another request.', 409);
       return duplicate;
     }
     const active = await query(env, "SELECT id FROM atlas_coding_runs WHERE owner=? AND conversation_id=? AND status IN ('preparing','running','waiting','uncertain','publishing')", owner, conversationId).first();
@@ -98,7 +130,7 @@ export async function claimCodingRun(env, owner, id) {
   return claimed ? { run: row(claimed), lease } : null;
 }
 
-const COLUMNS = new Set(['request_id','prompt','model','credential_updated_at','base_branch','base_sha','base_tree_sha','status','stage','phase','revision','manifest_json','session_id','environment_id','input_file_id','turn_id','prior_turns_json','input_key','budget_cents','total_budget_cents','consumed_before','consumed_after','summary','checks_json','activity_json','changes_json','error_code','error_message','review_ready','can_continue','cancel_requested','publish_url','publish_number','finished_at','dispatched_at']);
+const COLUMNS = new Set(['request_id','prompt','model','credential_updated_at','base_branch','base_sha','base_tree_sha','status','stage','phase','revision','manifest_json','session_id','environment_id','input_file_id','turn_id','prior_turns_json','input_key','budget_cents','total_budget_cents','consumed_before','consumed_after','summary','checks_json','activity_json','changes_json','error_code','error_message','review_ready','can_continue','cancel_requested','publish_url','publish_number','finished_at','dispatched_at','cloud_status','cloud_checked_at']);
 
 export async function updateCodingRun(env, owner, id, lease, patch, { cancelGeneration } = {}) {
   const fields = Object.keys(patch);

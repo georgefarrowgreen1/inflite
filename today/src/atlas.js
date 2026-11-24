@@ -9,6 +9,7 @@ import * as repository from './atlas-repository.js';
 import { runAtlasTask } from './atlas-scheduler.js';
 import { evolution } from './atlas-evolution.js';
 import * as coding from './atlas-coding.js';
+import * as environments from './atlas-environments.js';
 
 const PRIVATE = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', 'Referrer-Policy': 'no-referrer' };
 const API_CSP = "default-src 'none'; frame-ancestors 'none'";
@@ -121,7 +122,7 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
         try { github = await repository.githubStatus(env, owner); }
         catch (error) { const safe = safeFailure(error); github = { connected: false, error: safe.error, code: safe.code }; }
       }
-      return json({ owner: ownerMarker, storage, provider, scheduling: scheduleAvailability(env), github, coding: await coding.codingHealth(env, provider) });
+      return json({ owner: ownerMarker, storage, provider, scheduling: scheduleAvailability(env), github, coding: await coding.codingHealth(env, provider), environments: await environments.environmentStorageStatus(env) });
     }
     if (path === '/setup' && method === 'POST') {
       const body = await input(request);
@@ -149,6 +150,20 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
     if (path === '/settings') {
       if (method === 'GET') return json(await store.getSettings(env, owner));
       if (method === 'PATCH') return json(await store.saveSettings(env, owner, await input(request)));
+    }
+    if (path === '/environments') {
+      if (method === 'GET') {
+        const status = await environments.environmentStorageStatus(env);
+        return json({ ...status, environments: status.ready ? await environments.listEnvironments(env, owner) : [] });
+      }
+      if (method === 'POST') return json({ environment: await environments.createEnvironment(env, owner, await input(request)) }, 201);
+    }
+    const environmentMatch = /^\/environments\/([^/]+)$/.exec(path);
+    if (environmentMatch) {
+      const id = environmentMatch[1];
+      if (method === 'GET') { const environment = await environments.getEnvironment(env, owner, id); if (!environment) absent(); return json({ environment }); }
+      if (method === 'PATCH') return json({ environment: await environments.updateEnvironment(env, owner, id, await input(request)) });
+      if (method === 'DELETE') return json(await environments.archiveEnvironment(env, owner, id));
     }
     if (path === '/conversations') {
       if (method === 'GET') return json({ conversations: await store.listConversations(env, owner, { archived: url.searchParams.get('archived') === '1' }) });
