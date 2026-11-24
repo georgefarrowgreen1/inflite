@@ -125,32 +125,21 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
     if (!present()) return { ok: false, cancelled: true };
     if (blocked(store.get())) return { ok: false, error: store.get().access === "notadmin" ? "Mail is only available to its owner." : "Open Mail and confirm it’s you to continue." };
     const permitted = () => present() && store.get().access === "ok";
+    let atlas = null;
     if (intent === "handoff") {
       const value = sdk.handoffs?.take(object);
       if (value?.kind === "text") return { ok: !!(await ctx.open.compose({ subject: value.subject, text: value.text, ...(value.to?{to:[{email:value.to}]}:{}) }, permitted)), pending: true };
-      if (value?.kind !== "mail-reply" || !ID.test(value.threadId || "") || !ID.test(value.messageId || "") || typeof value.text !== "string" || !value.text.trim() || value.text.length > 16000) return { ok: false };
-      const result = await api.thread(value.threadId);
-      if (!permitted()) return { ok: false, cancelled: true };
-      const thread = result?.thread || result, messages = result?.messages || thread?.messages || [];
-      if (thread?.id !== value.threadId || !messages.some(m => m.id === value.messageId && !["trash", "drafts"].includes(m.folder))) return { ok: false, error: "The source message is no longer available. Open the conversation in Mail." };
-      const meta = await api.meta(value.messageId);
-      if (!permitted()) return { ok: false, cancelled: true };
-      if (meta?.id !== value.messageId || ["trash", "drafts"].includes(meta.folder) || meta.threadId !== value.threadId) return { ok: false, error: "The source reply could not be verified. Open the conversation in Mail." };
-      // Addresses, quoting and reply headers come only from Mail's current
-      // authorised metadata. Atlas supplies the editable words, never recipients.
-      return { ok: !!(await ctx.open.compose({ ...logic.replyDraft(meta, "reply", store.get().me), text: value.text }, permitted)), pending: true };
+      if (value?.kind !== "mail-reply") return { ok: false };
+      atlas = value;
     }
     if (intent === "ask-atlas") {
-      const id = typeof object === "string" ? object : store.get().threadId;
-      if (!ID.test(id || "") || id !== store.get().threadId) return { ok: false, error: "Choose a conversation in Mail first." };
-      if (!sdk.handoffs?.can("atlas", "mail-context")) return { ok: false, error: "Atlas is not available in this workspace." };
-      const result = await api.thread(id);
-      if (!permitted() || store.get().threadId !== id) return { ok: false, cancelled: true };
-      const thread = result?.thread || result, messages = result?.messages || thread?.messages || [];
-      if (thread?.id !== id || thread.trashed || !messages.some(m => ID.test(m.id || "") && !["trash", "drafts"].includes(m.folder))) return { ok: false, error: "That conversation is no longer available." };
-      // Only the selected reference crosses the shell. Atlas reads its bounded
-      // context through its authenticated server endpoint when you attach it.
-      return sdk.handoffs.send("atlas", "mail-context", { threadId: id, subject: clean(thread.subject) });
+      const threadId = store.get().threadId;
+      atlas = { id: typeof object === "string" ? object : threadId, threadId };
+    }
+    if (atlas) {
+      const module = await fw.lazy(q => import("./atlas.js" + q));
+      // The loaded action rechecks this lease before reading or opening Mail.
+      return module.runAtlas(ctx, intent, atlas, permitted);
     }
     if (intent === "compose-attach") {
       if (!sdk.files?.open) return { ok: false, error: "Open Mail in InFlite OS to attach Drive files." };

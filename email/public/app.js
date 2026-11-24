@@ -284,9 +284,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.25.1";
+  const BUILD = "2.25.2";
   // (what's new in it, said once it's in)
-  const NEWS = "Bring a selected conversation into Atlas, then review an Atlas reply in Mail before sending.";
+  const NEWS = "Atlas conversation tools now load when you use them, keeping the Mail workspace lighter.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.

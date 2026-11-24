@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.25.1";
-export const NEWS = "Bring a selected conversation into Atlas, then review an Atlas reply in Mail before sending.";
+export const BUILD = "2.25.2";
+export const NEWS = "Atlas conversation tools now load when you use them, keeping the Mail workspace lighter.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

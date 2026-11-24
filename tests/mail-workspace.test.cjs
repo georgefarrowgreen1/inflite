@@ -2,10 +2,10 @@
 // presentation is local: no message body, attachment bytes or send API exists.
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
-const { readFile } = require('node:fs/promises');
 const { resolve } = require('node:path');
+const { pathToFileURL } = require('node:url');
 let createWorkspace, createStore, logic, FILE_LIMITS;
-const moduleAt = async name => import('data:text/javascript;base64,' + (await readFile(resolve(__dirname, '../email/public/roof', name))).toString('base64'));
+const moduleAt = async name => import(pathToFileURL(resolve(__dirname, '../email/public/roof', name)).href);
 before(async () => {
   ({ createWorkspace, FILE_LIMITS } = await moduleAt('workspace.js'));
   ({ createStore } = await moduleAt('store.js'));
@@ -20,6 +20,7 @@ function fixture({ access = 'ok', api = {}, ready } = {}) {
   const root = { classList: { add: x => classes.add(x), remove: x => classes.delete(x) } };
   const sdk = { active: () => state.active, changed: () => state.changes++, provide: p => { state.provider = p; return () => state.removed++; } };
   const fw = { signal: controller.signal, workspace: sdk, session: { user: { id: 'ann' } },
+    lazy: async load => { state.imports=(state.imports||0)+1;if(state.importGate)await state.importGate.promise;return load(''); },
     ui: { el: (tag, props, ...children) => ({ tag, ...props, children }) }, sheet: { open: spec => sheets.push(spec) } };
   const transport = {
     async search(q) { calls.push(['search', q]); return { threads: [{ id: 'thread-a' }] }; },
@@ -254,5 +255,34 @@ test('Atlas Mail reply revalidates membership and retires late results at every 
   if(mode==='meta')t.ctx.api.meta=async()=>({id:'msg-a',threadId:'thread-b',folder:'inbox'});
   if(mode==='trash')t.ctx.api.meta=async()=>({id:'msg-a',threadId:'thread-a',folder:'trash'});
   assert.equal((await t.workspace.run('handoff','opaque')).ok,false,mode);assert.deepEqual(t.opened,[],mode);
+ }
+});
+
+test('ordinary Mail workflows do not load the Atlas action module',async()=>{
+ const t=fixture();
+ await t.workspace.files();await t.workspace.run('reply','thread-a');await t.workspace.run('compose');
+ t.fw.workspace.handoffs={take:()=>({kind:'text',subject:'A native draft',text:'Review this text.'})};
+ assert.equal((await t.workspace.run('handoff','opaque')).ok,true);
+ assert.equal(t.state.imports||0,0);t.workspace.destroy();
+});
+
+test('a delayed Atlas action import rechecks its account, presentation and selected conversation',async()=>{
+ for(const intent of ['ask-atlas','handoff'])for(const change of ['owner','caller','access','abort','active',...(intent==='ask-atlas'?['selected','availability']:[])]){
+  const t=fixture(),gate=deferred(),sent=[],taken=[];let current=true,available=true;
+  t.state.importGate=gate;t.store.set({threadId:'thread-a'});
+  t.fw.workspace.handoffs={can:()=>available,send:async(...args)=>{sent.push(args);return{ok:true}},take:token=>{taken.push(token);return{kind:'mail-reply',threadId:'thread-a',messageId:'msg-a',text:'Review this reply.'}}};
+  const pending=t.workspace.run(intent,intent==='ask-atlas'?'thread-a':'opaque',{current:()=>current});
+  await tick();assert.equal(t.state.imports,1);assert.deepEqual(t.calls,[]);
+  if(change==='owner')t.fw.session.user.id='bea';
+  if(change==='caller')current=false;
+  if(change==='access')t.store.set({access:'reauth'});
+  if(change==='abort')t.controller.abort();
+  if(change==='active')t.state.active=false;
+  if(change==='selected')t.store.set({threadId:'thread-b'});
+  if(change==='availability')available=false;
+  gate.resolve();assert.equal((await pending).ok,false,intent+'/'+change);
+  assert.deepEqual(t.calls,[],intent+'/'+change);assert.deepEqual(t.opened,[]);assert.deepEqual(sent,[]);
+  assert.deepEqual(taken,intent==='handoff'?['opaque']:[],'an imported action never consumes a token again');
+  t.workspace.destroy();
  }
 });

@@ -27,7 +27,7 @@ const fw=T.fw={ui,signal:controller.signal,theme:()=> 'light',on:(event,fn)=>{co
 T.instance=await mount(root,fw);T.go=path=>{T.navigations.push(path);let hash=path.split('#')[1]||'',id=new URLSearchParams(hash).get('thread');T.route=id?{key:'thread',arg:id,section:'people'}:{key:hash||'people',section:hash||'people'};return T.instance.show(T.route)};
 T.openSettings=()=>T.instance.settingsPanel({...fw,sheet:{open:spec=>F.sheet.open({...spec,app:'settings'})}},()=>true);
 await T.go('/mail/');await T.instance.workspace();
-T.setPane=async pane=>{T.instance.hide();root.classList.toggle('ifl-in-pane',pane);(pane?slot:document.getElementById('full')).append(root);await T.instance.show(T.route);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))};
+T.setPane=async pane=>{T.instance.hide();const full=document.getElementById('full');slot.hidden=!pane;full.hidden=pane;root.classList.toggle('ifl-in-pane',pane);(pane?slot:full).append(root);await T.instance.show(T.route);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))};
 T.abort=()=>{controller.abort();T.instance.unmount()};T.ready=true;
 `;
 async function open({ width = 1440, paneWidth = 500, access = 'ok', owner = 'owner-a', emptyMailbox = false } = {}) {
@@ -411,6 +411,11 @@ test('Mail gives the desktop message body its own scroll area and keeps the repl
     const frame = t.page.locator('.mr-msgs iframe.mail-body.designed');
     await frame.waitFor();
     await t.page.locator('.mr-qr').waitFor();
+    await t.page.waitForFunction(() => {
+      const frame = document.querySelector('.mr-msgs iframe.mail-body.designed');
+      const scroll = frame?.closest('.mr-content');
+      return frame?.getAttribute('height') === '1440' && scroll.scrollHeight > scroll.clientHeight + 100;
+    });
     const layout = await frame.evaluate(async el => {
       const scroll = el.closest('.mr-content'), foot = scroll.nextElementSibling;
       scroll.scrollTop = scroll.scrollHeight;
