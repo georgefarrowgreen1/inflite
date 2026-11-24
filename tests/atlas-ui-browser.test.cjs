@@ -20,6 +20,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 const source = { url: 'https://example.org/research', title: 'Research evidence', start_index: 0, end_index: 14 };
+function repositoryFile(path, extra = {}) { return { kind: 'file', repository: 'fixture/atlas', path, ref: 'a'.repeat(40), blobSha: 'b'.repeat(40), mode: '100644', title: path, url: 'https://github.com/fixture/atlas/blob/' + 'a'.repeat(40) + '/' + path, ...extra }; }
 const now = 1795500000000;
 function defaultFixture() {
   return {
@@ -237,6 +238,87 @@ test('account switching drops late private responses and starts the new account 
     await t.page.evaluate(() => window.dispatchEvent(new Event('focus'))); await t.page.waitForFunction(() => !document.body.classList.contains('session-check') && document.getElementById('conversation-title').textContent === 'New conversation'); release();
     await t.page.waitForTimeout(40); assert.equal(await t.page.locator('#prompt').inputValue(), ''); assert.equal(await t.page.locator('#memory-text').inputValue(), ''); assert.doesNotMatch(await t.page.locator('body').textContent(), /LATE OWNER A|Alpha research|Unsent private/); assert.equal(new URL(t.page.url()).searchParams.has('conversation'), false); assert.deepEqual(t.errors, []);
   } finally { release?.(); await t.close(); }
+});
+
+test('selecting a repository supports import repo without manual sources and reuses the files read for a reviewed draft', async () => {
+  const t = await open({ width: 320, height: 844, mobile: true }); try {
+    await t.page.locator('#mode').selectOption('developer'); await t.page.locator('#repository').selectOption('fixture/atlas');
+    assert.equal(await t.page.locator('#repository-note').textContent(), 'Atlas finds and reads relevant files automatically.');
+    assert.equal(await t.page.locator('#repository-note').isVisible(), true);
+    assert.equal(await t.page.getByRole('button', { name: 'Add specific sources (optional)' }).isVisible(), true);
+    const geometry = await t.page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth, note: document.getElementById('repository-note').getBoundingClientRect().toJSON(), composer: document.getElementById('composer').getBoundingClientRect().toJSON(), height: innerHeight }));
+    assert.ok(geometry.scrollWidth <= geometry.width + 1 && geometry.composer.bottom <= geometry.height + 1, JSON.stringify(geometry));
+    assert.ok(geometry.note.width > 200 && geometry.note.left >= geometry.composer.left && geometry.note.right <= geometry.composer.right, JSON.stringify(geometry));
+    await t.page.locator('#prompt').fill('import repo'); await t.page.locator('#send').click();
+    await t.page.waitForFunction(() => !!window.__atlasStream.request);
+    const request = await t.page.evaluate(() => window.__atlasStream.request), created = t.fixture.requests.find(r => r.path === 'conversations' && r.method === 'POST');
+    assert.equal(request.prompt, 'import repo'); assert.deepEqual(request.context, []);
+    assert.equal(created.body.mode, 'developer'); assert.equal(created.body.repository, 'fixture/atlas');
+    assert.equal(t.fixture.requests.some(r => ['repositories/tree', 'repositories/context'].includes(r.path)), false);
+    assert.equal(await t.page.locator('#context-dialog').isVisible(), false);
+    await emit(t.page, 'status', { stage: 'reading_repository' });
+    await t.page.waitForFunction(() => document.getElementById('conversation-status').textContent === 'Reading repository…');
+    const files = [repositoryFile('README.md'), repositoryFile('src/app.js')];
+    await emit(t.page, 'source', { source: files[1] });
+    await emit(t.page, 'done', { message: { status: 'completed', answer: 'I have inspected fixture/atlas and its application entry point.', context: [...files, repositoryFile('foreign.js', { repository: 'fixture/other' }), repositoryFile('.github/workflows/deploy.yml'), repositoryFile('symlink.js', { mode: '120000' })], sources: files } });
+    await t.page.locator('#stop-response').waitFor({ state: 'hidden' });
+    assert.match(await t.page.locator('[aria-label="Context used for this response"]').textContent(), /README\.md.*aaaaaaaaaaaa.*src\/app\.js/s);
+    assert.equal(await t.page.locator('.source-list a[href="' + files[1].url + '"]').count(), 1);
+    assert.equal(await t.page.locator('#attached-context').textContent(), '');
+    await t.page.locator('#prompt').fill('Correct the application entry point'); await t.page.locator('#prepare-patch').click();
+    await t.page.locator('#patch-detail .patch-file').waitFor();
+    const prepared = t.fixture.requests.find(r => r.path === 'patches/prepare');
+    assert.deepEqual(prepared.body.paths, ['README.md', 'src/app.js']); assert.equal(prepared.body.repository, 'fixture/atlas'); assert.equal(prepared.body.ref, 'a'.repeat(40));
+    assert.equal(t.fixture.requests.filter(r => /\/publish$/.test(r.path)).length, 0);
+    assert.equal(await t.page.getByRole('button', { name: 'Create draft pull request' }).isVisible(), true); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+for (const scenario of [
+  { title: 'more than five files', files: Array.from({ length: 6 }, (_, i) => repositoryFile('src/file-' + i + '.js')), feedback: /up to five existing files/ },
+  { title: 'different revisions', files: [repositoryFile('src/app.js'), repositoryFile('README.md', { ref: 'c'.repeat(40) })], feedback: /different revisions/ }
+]) test('automatic repository context keeps chat available when a draft spans ' + scenario.title, async () => {
+  const t = await open({ fixture: { conversations: [{ id: 'repo', title: 'Repository investigation', mode: 'developer', repository: 'fixture/atlas', created_at: now }], messages: { repo: [{ id: 'repo-read', status: 'completed', prompt: 'Investigate the repository', answer: 'Here are the findings.', context: scenario.files, sources: [] }] } } });
+  try {
+    await openThread(t, 'Repository investigation'); await t.page.locator('#prompt').fill('Make this change');
+    assert.equal(await t.page.locator('#send').isEnabled(), true);
+    await t.page.locator('#prepare-patch').click(); await t.page.locator('#patches-dialog').waitFor({ state: 'visible' });
+    assert.match(await t.page.locator('#patch-feedback').textContent(), scenario.feedback);
+    assert.equal(t.fixture.requests.some(r => r.path === 'patches/prepare'), false);
+    await t.page.getByRole('button', { name: 'Close draft changes' }).click();
+    assert.equal(await t.page.locator('#send').isEnabled(), true); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('automatic draft context uses the latest completed answer instead of silently reusing older files', async () => {
+  const t = await open({ fixture: { conversations: [{ id: 'repo', title: 'Repository investigation', mode: 'developer', repository: 'fixture/atlas', created_at: now }], messages: { repo: [
+    { id: 'old-read', status: 'completed', prompt: 'Read the app', answer: 'The app has been read.', context: [repositoryFile('src/app.js')], sources: [] },
+    { id: 'latest', status: 'completed', prompt: 'Discuss another approach', answer: 'Here is another approach.', context: [], sources: [] },
+    { id: 'partial', status: 'incomplete', prompt: 'Inspect a different file', answer: 'Partial findings.', context: [repositoryFile('README.md')], sources: [] }
+  ] } } });
+  try {
+    await openThread(t, 'Repository investigation'); await t.page.locator('#prompt').fill('Prepare this change');
+    assert.equal(await t.page.locator('#prepare-patch').isDisabled(), true); assert.equal(await t.page.locator('#send').isEnabled(), true);
+    assert.equal(t.fixture.requests.some(r => r.path === 'repositories/context' || r.path === 'patches/prepare'), false); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+for (const includeExplicit of [false, true]) test('Retry refreshes automatic repository context' + (includeExplicit ? ' while retaining explicit sources' : ' without manual sources'), async () => {
+  const automatic = Array.from({ length: 8 }, (_, i) => repositoryFile('src/read-' + i + '.js', { automatic: true }));
+  const explicit = includeExplicit ? [repositoryFile('docs/pinned.md')] : [];
+  const t = await open({ fixture: { conversations: [{ id: 'repo', title: 'Repository investigation', mode: 'developer', repository: 'fixture/atlas', created_at: now }], messages: { repo: [
+    { id: 'interrupted', status: 'incomplete', prompt: 'Investigate this repository', answer: 'Partial findings.', context: [...explicit, ...automatic], sources: [] }
+  ] } } });
+  try {
+    await openThread(t, 'Repository investigation'); await t.page.getByRole('button', { name: 'Retry', exact: true }).click();
+    assert.equal(await t.page.locator('#prompt').inputValue(), 'Investigate this repository');
+    assert.equal(await t.page.locator('#attached-context .context-chip').count(), explicit.length);
+    assert.doesNotMatch(await t.page.locator('#attached-context').textContent(), /read-\d/);
+    await t.page.locator('#send').click(); await t.page.waitForFunction(() => !!window.__atlasStream.request);
+    const request = await t.page.evaluate(() => window.__atlasStream.request);
+    assert.deepEqual(request.context, explicit.map(({ kind, repository, path, ref }) => ({ kind, repository, path, ref })));
+    assert.equal(request.conversationId, 'repo'); assert.equal(t.fixture.requests.some(r => r.path === 'repositories/tree'), false); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
 });
 
 test('developer context prepares a reviewable patch and requires a separate explicit publication', async () => {

@@ -30,6 +30,8 @@ const ERRORS = {
   openai_output_limit: [502, "The answer reached its output limit. The partial response has been kept."],
   openai_incomplete: [502, "OpenAI did not finish this answer. The partial response has been kept."],
   openai_stream_interrupted: [502, "The response stream was interrupted. The partial response has been kept."],
+  openai_tool_invalid: [502, "The model requested an unsupported repository operation. Try again."],
+  repository_exploration_limit: [422, "Atlas reached this turn's repository reading limit. Ask it to continue with a more focused question."],
   request_cancelled: [499, "The request was stopped."],
   integration_secret_invalid: [400, "Enter a valid integration credential."],
   integration_secret_unreadable: [503, "Atlas cannot decrypt this integration. Reconnect it or restore the original encryption secret."],
@@ -74,6 +76,10 @@ const MAX_EVENT = 256 * 1024;
 const MAX_ANSWER = 128 * 1024;
 const MAX_SOURCES = 50;
 const MODEL_ID = /^[a-zA-Z0-9._-]{1,100}$/;
+const MAX_TOOL_ROUNDS = 4;
+const MAX_FUNCTION_CALLS = 20;
+const MAX_TOOL_OUTPUT_BYTES = 128 * 1024;
+const encoder = new TextEncoder();
 const safeRequestId = id => typeof id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(id) ? id : null;
 const tokenCount = n => Number.isSafeInteger(n) && n >= 0 && n <= 10000000 ? n : null;
 
@@ -257,6 +263,14 @@ function resultFrom(response, model, requestId, fallback = {}) {
   const status = response.status ?? "completed";
   if (status === "failed" || response.error) throw classifyOpenAIError(502, { error: response.error }, { upstreamRequestId: requestId, usage });
   if (content.refusal && !content.answer.trim()) throw new AtlasProviderError("openai_refused", { upstreamRequestId: requestId, usage });
+  const toolCalls = response.output.filter(item => item?.type === "function_call");
+  if (toolCalls.length) {
+    if (!fallback.allowFunctionCalls) throw new AtlasProviderError("openai_tool_invalid", { upstreamRequestId: requestId, usage });
+    if (status !== "completed") throw new AtlasProviderError(incompleteCode(response.incomplete_details?.reason), { upstreamRequestId: requestId, usage });
+    // A function-only response is a complete intermediate step, not an empty
+    // answer. Replay ALL output items (including encrypted reasoning) unchanged.
+    return { answer: "", sources: [], status: "completed", usage, toolCalls, continuation: response.output, upstreamRequestId: requestId || null };
+  }
   if (!content.answer.trim()) throw new AtlasProviderError(status === "incomplete" ? incompleteCode(response.incomplete_details?.reason) : "openai_empty_response", { upstreamRequestId: requestId, usage });
   if (!["completed", "incomplete", "cancelled", "in_progress", "queued"].includes(status)) throw new AtlasProviderError("openai_invalid_response", { upstreamRequestId: requestId, usage });
   return {
@@ -267,17 +281,17 @@ function resultFrom(response, model, requestId, fallback = {}) {
   };
 }
 
-async function consumeStream(response, { model, signal, onEvent, requestId }) {
+async function consumeStream(response, { model, signal, onEvent, requestId, allowFunctionCalls = false }) {
   if (!response.body) throw new AtlasProviderError("openai_invalid_response", { upstreamRequestId: requestId });
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8", { fatal: true });
-  const parts = new Map(), webCalls = new Set();
-  let buffer = "", data = [], dataBytes = 0, bytes = 0, terminal = null, streamError = null, ended = false, refusal = false;
+  const parts = new Map(), webCalls = new Set(), phases = new Map();
+  let buffer = "", data = [], dataBytes = 0, bytes = 0, terminal = null, streamError = null, ended = false, refusal = false, hasToolCalls = false, streamedText = "";
   const emit = async (type, payload) => { if (typeof onEvent === "function") await abortable(Promise.resolve().then(() => onEvent(type, payload)), signal); };
   const keyFor = event => [Number.isInteger(event.output_index) ? event.output_index : 0, Number.isInteger(event.content_index) ? event.content_index : 0].join(":");
   const partFor = event => { const key = keyFor(event); if (!parts.has(key)) parts.set(key, { text: "", annotations: [], output: Number(event.output_index) || 0, content: Number(event.content_index) || 0 }); return parts.get(key); };
-  const contents = () => {
-    const ordered = [...parts.values()].sort((a, b) => a.output - b.output || a.content - b.content);
+  const contents = (finalOnly = false) => {
+    const ordered = [...parts.values()].filter(part => !finalOnly || phases.get(part.output) === "final_answer" || (!hasToolCalls && phases.get(part.output) !== "commentary")).sort((a, b) => a.output - b.output || a.content - b.content);
     let answer = "", sources = [];
     for (const part of ordered) {
       if (answer) answer += "\n";
@@ -297,17 +311,26 @@ async function consumeStream(response, { model, signal, onEvent, requestId }) {
       if (typeof event.delta !== "string") throw new AtlasProviderError("openai_invalid_response", { upstreamRequestId: requestId });
       const part = partFor(event); part.text += event.delta;
       if (contents().answer.length > MAX_ANSWER) throw new AtlasProviderError("openai_response_too_large", { upstreamRequestId: requestId });
-      await emit("delta", { text: event.delta });
+      // Explicit final answers can stream immediately. Commentary and messages
+      // without a phase wait until we know whether another tool round follows.
+      if (!allowFunctionCalls || phases.get(part.output) === "final_answer") {
+        streamedText += event.delta;
+        await emit("delta", { text: event.delta });
+      }
     } else if (event.type === "response.output_text.annotation.added") {
       partFor(event).annotations.push(event.annotation);
       const source = sourceFrom(event.annotation);
-      if (source) await emit("source", { source });
+      if (source && !allowFunctionCalls) await emit("source", { source });
     } else if (event.type.startsWith("response.web_search_call.")) {
       if (typeof event.item_id === "string") webCalls.add(event.item_id);
       if (event.type.endsWith(".searching") || event.type.endsWith(".in_progress")) await emit("status", { stage: "searching" });
       if (event.type.endsWith(".completed")) await emit("status", { stage: "responding" });
-    } else if (event.type === "response.output_item.added" && event.item?.type === "web_search_call") {
-      if (typeof event.item.id === "string") webCalls.add(event.item.id);
+    } else if (event.type === "response.output_item.added") {
+      if (event.item?.type === "web_search_call" && typeof event.item.id === "string") webCalls.add(event.item.id);
+      if (event.item?.type === "message") phases.set(event.output_index, event.item.phase);
+      if (event.item?.type === "function_call") hasToolCalls = true;
+    } else if (event.type.startsWith("response.function_call_arguments.")) {
+      hasToolCalls = true;
     } else if (event.type === "response.refusal.delta" || event.type === "response.refusal.done") {
       refusal = true;
     } else if (["response.completed", "response.incomplete", "response.failed"].includes(event.type)) {
@@ -357,61 +380,184 @@ async function consumeStream(response, { model, signal, onEvent, requestId }) {
     if (!ended) reader.cancel().catch(() => {});
     reader.releaseLock();
   }
-  const partial = contents();
+  const partial = contents(allowFunctionCalls);
+  const withStream = result => allowFunctionCalls ? { ...result, streamedText } : result;
   if (terminal) {
-    try { return resultFrom(terminal, model, requestId, { webSearchCalls: webCalls.size }); }
+    try {
+      // A provider that labels text final and then requests tools has produced
+      // an inconsistent step. Keep that visible text as incomplete; do not
+      // execute tools after publishing what it claimed was the final answer.
+      if (allowFunctionCalls && streamedText && terminal.output?.some(item => item?.type === "function_call")) throw new AtlasProviderError("openai_tool_invalid", { usage: extractUsage(terminal.usage, model, webCalls.size, terminal.service_tier) });
+      return withStream(resultFrom(terminal, model, requestId, { webSearchCalls: webCalls.size, allowFunctionCalls }));
+    }
     catch (error) {
       if (!partial.answer.trim()) throw error;
-      return { ...partial, status: "incomplete", errorCode: safeProviderError(error).code, usage: error.usage || extractUsage(terminal.usage, model, webCalls.size, terminal.service_tier), upstreamRequestId: requestId || null, responseId: safeRequestId(terminal.id) };
+      return withStream({ ...partial, status: "incomplete", errorCode: safeProviderError(error).code, usage: error.usage || extractUsage(terminal.usage, model, webCalls.size, terminal.service_tier), upstreamRequestId: requestId || null, responseId: safeRequestId(terminal.id) });
     }
   }
-  if (partial.answer.trim()) return {
+  if (partial.answer.trim()) return withStream({
     ...partial, status: signal.aborted && signal.reason?.name !== "TimeoutError" ? "cancelled" : "incomplete",
     errorCode: signal.aborted ? (signal.reason?.name === "TimeoutError" ? "openai_timeout" : "request_cancelled") : (streamError?.code || (refusal ? "openai_refused" : failure instanceof AtlasProviderError ? failure.code : "openai_stream_interrupted")),
     usage: extractUsage(null, model, webCalls.size), upstreamRequestId: requestId || null, responseId: null,
-  };
+  });
   if (streamError) throw streamError;
   if (refusal) throw new AtlasProviderError("openai_refused", { upstreamRequestId: requestId });
   if (failure) throw failure;
   throw new AtlasProviderError("openai_stream_interrupted", { upstreamRequestId: requestId });
 }
 
-export async function callOpenAI({ secret, model, input, instructions = "", webSearch = false, stream = false, maxOutputTokens = 4000, signal, onEvent, send = fetch, textFormat, timeoutMs = 90000 } = {}) {
+function aggregateUsage(rounds, model, unknown = false) {
+  if (!rounds.length && !unknown) return null;
+  const result = { ...extractUsage(null, model) };
+  const fields = ["inputTokens", "outputTokens", "cachedTokens", "estimatedCostUsd"];
+  for (const field of fields) {
+    const known = rounds.map(round => round[field]).filter(value => Number.isFinite(value));
+    const sum = known.reduce((total, value) => total + value, 0);
+    result[field] = !unknown && known.length === rounds.length ? (field === "estimatedCostUsd" ? Math.round(sum * 1e8) / 1e8 : sum) : null;
+    if (known.length && result[field] === null) result["known" + field[0].toUpperCase() + field.slice(1)] = sum;
+  }
+  result.webSearchCalls = rounds.reduce((total, round) => total + (round.webSearchCalls || 0), 0);
+  result.usageComplete = !unknown && rounds.every(round => round.inputTokens !== null && round.outputTokens !== null);
+  if (!result.usageComplete) result.estimateNote = "Some provider usage was not reported. Known totals are a lower bound; OpenAI billing is authoritative.";
+  return result;
+}
+
+function validArguments(value, schema) {
+  const types = Array.isArray(schema?.type) ? schema.type : [schema?.type];
+  if (value === null) return types.includes("null");
+  if (schema?.enum && !schema.enum.includes(value)) return false;
+  if (types.includes("object") && typeof value === "object" && !Array.isArray(value)) {
+    const properties = schema.properties || {};
+    return (schema.required || []).every(key => Object.hasOwn(value, key)) && Object.keys(value).every(key => Object.hasOwn(properties, key) && validArguments(value[key], properties[key]));
+  }
+  if (types.includes("string") && typeof value === "string") return value.length <= (schema.maxLength ?? 8192) && value.length >= (schema.minLength ?? 0);
+  if (types.includes("boolean") && typeof value === "boolean") return true;
+  if ((types.includes("integer") && Number.isSafeInteger(value)) || (types.includes("number") && typeof value === "number" && Number.isFinite(value))) return value >= (schema.minimum ?? -Infinity) && value <= (schema.maximum ?? Infinity);
+  return false;
+}
+
+function parseToolCalls(calls, definitions, seen) {
+  const parsed = [];
+  for (const call of calls) {
+    const definition = definitions.find(tool => tool.name === call.name);
+    if (!definition || typeof call.call_id !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(call.call_id) || seen.has(call.call_id) || typeof call.arguments !== "string" || call.arguments.length > 8192) throw new AtlasProviderError("openai_tool_invalid");
+    let args;
+    try { args = JSON.parse(call.arguments); } catch { throw new AtlasProviderError("openai_tool_invalid"); }
+    if (!validArguments(args, definition.parameters)) throw new AtlasProviderError("openai_tool_invalid");
+    seen.add(call.call_id); parsed.push({ call, args });
+  }
+  return parsed;
+}
+
+export async function callOpenAI({ secret, model, input, instructions = "", webSearch = false, stream = false, maxOutputTokens = 4000, signal, onEvent, send = fetch, textFormat, timeoutMs = 90000, functionTools = [], runTool, prepareTools, beforeRound } = {}) {
   if (typeof secret !== "string" || !secret || secret.length > 512) throw new AtlasProviderError("provider_key_invalid");
   if (typeof model !== "string" || !MODEL_ID.test(model)) throw new AtlasProviderError("provider_model_invalid");
   if (!(typeof input === "string" || Array.isArray(input)) || !input.length || typeof instructions !== "string" || instructions.length > 16000) throw new AtlasProviderError("openai_request_invalid");
   const tokens = Math.max(16, Math.min(16000, Number.isInteger(maxOutputTokens) ? maxOutputTokens : 4000));
-  const body = {
-    model, input, instructions, store: false, stream: !!stream, service_tier: "default", max_output_tokens: tokens,
-    ...(modelCapabilities(model).reasoning ? { reasoning: { effort: "low" } } : {}),
-    ...(webSearch ? { tools: [{ type: "web_search", search_context_size: "low" }], max_tool_calls: 3 } : {}),
-    ...(textFormat ? { text: { format: textFormat } } : {}),
-  };
-  let serialized;
-  try { serialized = JSON.stringify(body); } catch { throw new AtlasProviderError("openai_request_invalid"); }
-  if (serialized.length > 512 * 1024) throw new AtlasProviderError("openai_request_invalid");
   const wait = deadline(signal, Math.min(120000, Math.max(1000, timeoutMs)));
-  let requestId;
+  const usages = [], seenCalls = new Set();
+  let requestId, inFlight = false, callbackFailure, outputBytes = 0, forceFinal = false;
   const emit = async (type, data) => { if (typeof onEvent === "function") await abortable(Promise.resolve().then(() => onEvent(type, data)), wait.signal); };
   try {
-    await emit("status", { stage: "connecting" });
     wait.signal.throwIfAborted();
-    const response = await abortable(Promise.resolve().then(() => { wait.signal.throwIfAborted(); return send("https://api.openai.com/v1/responses", {
-      method: "POST", headers: { Authorization: "Bearer " + secret, "Content-Type": "application/json", Accept: stream ? "text/event-stream" : "application/json" },
-      body: serialized, redirect: "manual", signal: wait.signal,
-    }); }), wait.signal);
-    requestId = safeRequestId(response.headers.get("x-request-id"));
-    await checkResponse(response, wait.signal);
-    await emit("status", { stage: "responding" });
-    if (stream && response.headers.get("Content-Type")?.toLowerCase().includes("text/event-stream")) {
-      return await consumeStream(response, { model, signal: wait.signal, onEvent, requestId });
+    if (prepareTools) {
+      let prepared;
+      try { prepared = await abortable(Promise.resolve().then(() => prepareTools({ signal: wait.signal })), wait.signal); }
+      catch (error) { callbackFailure = error; throw error; }
+      input = prepared.input ?? input; instructions = prepared.instructions ?? instructions;
+      functionTools = prepared.tools; runTool = prepared.runTool;
     }
-    let value;
-    try { value = JSON.parse(await readText(response, wait.signal)); }
-    catch (error) { if (error instanceof AtlasProviderError || wait.signal.aborted) throw error; throw new AtlasProviderError("openai_invalid_response", { upstreamRequestId: requestId }); }
-    const result = resultFrom(value, model, requestId);
-    if (stream) { await emit("delta", { text: result.answer }); for (const source of result.sources) await emit("source", { source }); }
-    return result;
-  } catch (error) { throw transportError(error, signal, wait.timeout, requestId); }
+    if (!Array.isArray(functionTools) || functionTools.length > 8 || functionTools.some(tool => tool?.type !== "function" || !/^[a-zA-Z0-9_]{1,64}$/.test(tool.name)) || new Set(functionTools.map(tool => tool.name)).size !== functionTools.length || (functionTools.length && typeof runTool !== "function")) throw new AtlasProviderError("openai_tool_invalid");
+    const toolMode = functionTools.length > 0;
+    let transcript = toolMode ? (typeof input === "string" ? [{ role: "user", content: input }] : [...input]) : input;
+    for (let round = 0; round <= (toolMode ? MAX_TOOL_ROUNDS : 0); round++) {
+      wait.signal.throwIfAborted();
+      const finalRound = toolMode && (forceFinal || round === MAX_TOOL_ROUNDS);
+      const tools = [...(webSearch ? [{ type: "web_search", search_context_size: "low" }] : []), ...functionTools];
+      const body = {
+        model, input: transcript, instructions: instructions + (finalRound ? "\nThe repository reading allowance for this turn is finished. Answer using the evidence already returned. State any gaps or incomplete searches; do not imply that unread files were inspected." : ""),
+        store: false, stream: !!stream, service_tier: "default", max_output_tokens: tokens,
+        ...(modelCapabilities(model).reasoning ? { reasoning: { effort: "low" } } : {}),
+        ...(tools.length ? { tools } : {}), ...(webSearch ? { max_tool_calls: 3 } : {}),
+        ...(finalRound ? { tool_choice: "none" } : {}),
+        ...(textFormat ? { text: { format: textFormat } } : {}),
+      };
+      let serialized;
+      try { serialized = JSON.stringify(body); } catch { throw new AtlasProviderError("openai_request_invalid"); }
+      const requestBytes = encoder.encode(serialized).length;
+      if (requestBytes > 512 * 1024 || body.instructions.length > 16000) throw new AtlasProviderError("openai_request_invalid");
+      if (beforeRound) {
+        try { await abortable(Promise.resolve().then(() => beforeRound({ round, requestBytes, maxOutputTokens: tokens, usage: aggregateUsage(usages, model) })), wait.signal); }
+        catch (error) { callbackFailure = error; throw error; }
+      }
+      await emit("status", { stage: "connecting" });
+      wait.signal.throwIfAborted();
+      const response = await abortable(Promise.resolve().then(() => { wait.signal.throwIfAborted(); inFlight = true; return send("https://api.openai.com/v1/responses", {
+        method: "POST", headers: { Authorization: "Bearer " + secret, "Content-Type": "application/json", Accept: stream ? "text/event-stream" : "application/json" },
+        body: serialized, redirect: "manual", signal: wait.signal,
+      }); }), wait.signal);
+      requestId = safeRequestId(response.headers.get("x-request-id"));
+      await checkResponse(response, wait.signal);
+      await emit("status", { stage: "responding" });
+      let result, streamed = false;
+      if (stream && response.headers.get("Content-Type")?.toLowerCase().includes("text/event-stream")) {
+        streamed = true;
+        result = await consumeStream(response, { model, signal: wait.signal, onEvent, requestId, allowFunctionCalls: toolMode });
+      } else {
+        let value;
+        try { value = JSON.parse(await readText(response, wait.signal)); }
+        catch (error) { if (error instanceof AtlasProviderError || wait.signal.aborted) throw error; throw new AtlasProviderError("openai_invalid_response", { upstreamRequestId: requestId }); }
+        result = resultFrom(value, model, requestId, { allowFunctionCalls: toolMode });
+      }
+      usages.push(result.usage); inFlight = false;
+      if (!result.toolCalls) {
+        result.usage = aggregateUsage(usages, model);
+        const emitted = result.streamedText || '';
+        delete result.streamedText;
+        if (stream && (!streamed || toolMode) && !wait.signal.aborted) {
+          const remaining = result.answer.startsWith(emitted) ? result.answer.slice(emitted.length) : '';
+          if (remaining) await emit("delta", { text: remaining });
+          for (const source of result.sources) await emit("source", { source });
+        }
+        return result;
+      }
+      if (finalRound) throw new AtlasProviderError("repository_exploration_limit");
+      const parsed = parseToolCalls(result.toolCalls, functionTools, seenCalls);
+      // A single malformed/oversized batch executes nothing. The final request
+      // can still explain a normal reading-budget limit using known evidence.
+      if (seenCalls.size > MAX_FUNCTION_CALLS) forceFinal = true;
+      transcript.push(...result.continuation);
+      for (const { call, args } of parsed) {
+        wait.signal.throwIfAborted();
+        let value;
+        if (forceFinal) value = { error: "repository_exploration_limit", message: "The reading allowance is used. Answer from available evidence and explain any gaps." };
+        else {
+          await emit("status", { stage: "reading_repository", tool: call.name });
+          try { value = await abortable(Promise.resolve().then(() => { wait.signal.throwIfAborted(); return runTool(call.name, args, { signal: wait.signal }); }), wait.signal); }
+          catch (error) {
+            if (wait.signal.aborted || error?.code === "request_cancelled") throw error;
+            const known = typeof error?.code === "string" && /^[a-z][a-z0-9_]{0,95}$/.test(error.code) && Number.isInteger(error.status);
+            value = { error: known ? error.code : "repository_read_failed", message: known ? error.message : "This repository source could not be read." };
+          }
+        }
+        let toolOutput;
+        try { toolOutput = JSON.stringify(value); } catch { throw new AtlasProviderError("openai_tool_invalid"); }
+        if (typeof toolOutput !== "string") throw new AtlasProviderError("openai_tool_invalid");
+        const size = encoder.encode(toolOutput).length;
+        if (size > 32 * 1024 || outputBytes + size > MAX_TOOL_OUTPUT_BYTES) {
+          forceFinal = true;
+          toolOutput = JSON.stringify({ error: "repository_exploration_limit", message: "The result exceeds this turn's reading allowance. State that this result was not read." });
+        } else outputBytes += size;
+        transcript.push({ type: "function_call_output", call_id: call.call_id, output: toolOutput });
+      }
+    }
+    throw new AtlasProviderError("repository_exploration_limit");
+  } catch (error) {
+    const failure = callbackFailure === error && !wait.signal.aborted ? error : transportError(error, signal, wait.timeout, requestId);
+    if (error?.usage) { usages.push(error.usage); inFlight = false; }
+    const usage = aggregateUsage(usages, model, inFlight);
+    if (usage) failure.usage = usage;
+    throw failure;
+  }
   finally { wait.close(); }
 }

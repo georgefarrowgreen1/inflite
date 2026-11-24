@@ -741,6 +741,9 @@ html[data-midnight-lava] .atlas-sky canvas {
   padding: 4px 8px;
   white-space: nowrap;
 }
+.atlas-app .repository-note {
+  margin: 6px 4px 0;
+}
 .fitness-control {
   display: flex;
   gap: 5px;
