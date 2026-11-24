@@ -410,11 +410,9 @@ test('mobile Atlas keeps the draft and makes history, runs and environment actio
     assert.equal(await page.locator('#repository-display').textContent(), 'atlas');
     assert.equal(await page.locator('#environment-display').textContent(), 'Atlas development');
     await page.locator('#prompt').blur();
-    await t.screenshot('atlas-refined-mobile-conversations');
 
     await tabs.getByRole('button', { name: 'Tasks', exact: true }).click();
     await destination.getByRole('heading', { name: run.prompt }).waitFor();
-    await t.screenshot('atlas-refined-mobile-tasks');
     await destination.getByRole('button', { name: 'Timeline' }).click();
     await destination.getByRole('heading', { name: 'Run timeline' }).waitFor();
     await destination.getByRole('button', { name: 'All tasks' }).click();
@@ -425,7 +423,6 @@ test('mobile Atlas keeps the draft and makes history, runs and environment actio
     const edit = list.getByRole('button', { name: 'Edit Atlas development' });
     await edit.waitFor();
     assert.equal(await list.getByRole('button', { name: 'Archive' }).count(), 0);
-    await t.screenshot('atlas-refined-mobile-environments');
     await edit.click();
     assert.equal(await page.evaluate(() => document.activeElement.id), 'environment-form-title');
     await destination.getByRole('button', { name: 'Archive', exact: true }).click();
@@ -440,7 +437,6 @@ test('mobile Atlas keeps the draft and makes history, runs and environment actio
     await tabs.getByRole('button', { name: 'Briefs', exact: true }).click();
     const conversations = destination.getByRole('button', { name: 'Open conversations' });
     await conversations.waitFor();
-    await t.screenshot('atlas-refined-mobile-briefs');
     await conversations.click();
     assert.equal(await page.locator('#prompt').inputValue(), 'Keep my draft for the Atlas repository');
     assert.deepEqual(t.errors, []);
