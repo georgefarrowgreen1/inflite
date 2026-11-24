@@ -55,6 +55,77 @@ test("saved provider is encrypted, used for AI, and never returned by the status
  res=await atlas(request("/atlas/api/chat",true,true),e,{account,send});assert.equal(res.status,200);assert.equal((await res.json()).answer,"hello");
  res=await atlas(providerRequest("DELETE"),e,{account,send});assert.equal(res.status,200);assert.equal(row,null);
 });
+const setupSecret="sk-"+"private-provider-key".repeat(3);
+const setupKey=btoa(String.fromCharCode(...new Uint8Array(32).fill(17)));
+const setupRequest=(method="POST")=>new Request("https://inflite.ai/atlas/api/provider",{method,headers:{Cookie:"account=abcdefghijklmnopqrstuvwxyz",Origin:"https://inflite.ai","X-Inflite":"1"},...(method==="POST"?{body:JSON.stringify({key:setupSecret,model:"test-model"})}:{})});
+const setupAccount=async(_env,_request,{path})=>Response.json(path==="today/me"?admin:{fresh:true,owner:"owner"});
+async function setupFailure(response,code,...privateValues){
+ assert.equal(response.status,503);
+ assert.match(response.headers.get("Cache-Control"),/no-store/);
+ const text=await response.text(),body=JSON.parse(text);
+ assert.equal(body.code,code);
+ assert.equal(typeof body.error,"string");
+ assert.ok(body.error.length>20);
+ assert.equal(body.connected,undefined);
+ for(const value of [setupSecret,...privateValues])assert.ok(!text.includes(value),"provider errors must not expose private values");
+}
+test("provider status identifies database read errors without exposing stored data or querying OpenAI",async()=>{
+ let calls=0;const privateError="database-private-detail";
+ const e={ATLAS_ENCRYPTION_KEY:setupKey,ATLAS_DB:{prepare(){throw Error(privateError+setupSecret);}}};
+ const res=await atlas(setupRequest("GET"),e,{account:setupAccount,send:async()=>{calls++;}});
+ await setupFailure(res,"provider_database_read_failed",privateError,setupKey);
+ assert.equal(calls,0);
+});
+test("invalid encryption configuration is visible on status and blocks OpenAI validation",async()=>{
+ for(const value of ["%%%invalid-base64%%%","ab".repeat(32),btoa("x".repeat(31)),btoa("x".repeat(33))]){
+  for(const method of ["GET","POST"]){
+   let calls=0,writes=0;
+   const e={ATLAS_ENCRYPTION_KEY:value,ATLAS_DB:{prepare(){return {bind(){return {first:async()=>null,run:async()=>{writes++;return {success:true};}}}}}}};
+   const res=await atlas(setupRequest(method),e,{account:setupAccount,send:async()=>{calls++;return Response.json({});}});
+   await setupFailure(res,"provider_encryption_invalid",value);
+   assert.equal(calls,0);assert.equal(writes,0);
+  }
+ }
+});
+test("provider identity failures are distinct and fail before OpenAI or credential writes",async()=>{
+ for(const malformed of [false,true]){
+  let calls=0,writes=0;const detail="private-identity-detail";
+  const e={ATLAS_ENCRYPTION_KEY:setupKey,ATLAS_DB:{prepare(){writes++;throw Error("must not query storage");}}};
+  const account=async(_e,_r,{path})=>{if(path==="today/me")return Response.json(admin);if(malformed)return new Response(detail+setupSecret);throw Error(detail+setupSecret);};
+  const res=await atlas(setupRequest(),e,{account,send:async()=>{calls++;}});
+  await setupFailure(res,"provider_identity_unavailable",detail,setupKey);
+  assert.equal(calls,0);assert.equal(writes,0);
+ }
+});
+test("provider transport failures and ordinary OpenAI rejection remain distinct",async()=>{
+ let writes=0;const detail="private-upstream-detail";
+ const e={ATLAS_ENCRYPTION_KEY:setupKey,ATLAS_DB:{prepare(){writes++;throw Error("must not query storage");}}};
+ const res=await atlas(setupRequest(),e,{account:setupAccount,send:async()=>{throw new DOMException(detail+setupSecret,"TimeoutError");}});
+ await setupFailure(res,"provider_openai_unavailable",detail,setupKey);
+ const rejected=await atlas(setupRequest(),e,{account:setupAccount,send:async()=>new Response(detail+setupSecret,{status:401})});
+ assert.equal(rejected.status,400);
+ assert.deepEqual(await rejected.json(),{error:"OpenAI could not validate key and model"});
+ assert.equal(writes,0);
+});
+test("credential writes and deletes cannot report success after D1 failures",async()=>{
+ for(const method of ["POST","DELETE"])for(const returnsFailure of [false,true]){
+  let calls=0;const detail="private-database-detail";
+  const e={ATLAS_ENCRYPTION_KEY:setupKey,ATLAS_DB:{prepare(sql){return {bind(...args){
+   assert.equal(args[0],"owner");
+   if(method==="POST"){assert.match(sql,/INSERT INTO atlas_credentials/);assert.ok(!args.slice(1).includes(setupSecret));}
+   else assert.match(sql,/DELETE FROM atlas_credentials WHERE owner=\?/);
+   return {run:async()=>{if(returnsFailure)return {success:false,error:detail+setupSecret};throw Error(detail+setupSecret);}};
+  }}}}};
+  const res=await atlas(setupRequest(method),e,{account:setupAccount,send:async()=>{calls++;return Response.json({id:"test-model"});}});
+  await setupFailure(res,method==="POST"?"provider_database_write_failed":"provider_database_delete_failed",detail,setupKey);
+  assert.equal(calls,method==="POST"?1:0);
+ }
+});
+test("a malformed encryption key does not prevent a freshly authorized credential removal",async()=>{
+ let removed=false;
+ const res=await atlas(setupRequest("DELETE"),{ATLAS_ENCRYPTION_KEY:"not-base64",ATLAS_DB:{prepare(){return {bind(owner){assert.equal(owner,"owner");return {run:async()=>{removed=true;return {success:true};}}}}}}},{account:setupAccount,send:async()=>assert.fail("deleting a credential must not contact OpenAI")});
+ assert.equal(res.status,200);assert.deepEqual(await res.json(),{connected:false});assert.equal(removed,true);
+});
 test("Atlas page uses shared wallpaper assets and nonce protected inline code",async()=>{
  const res=await atlas(request(),env,{account:async()=>Response.json(admin)}),html=await res.text();
  assert.match(html,/<script type="module" src="\/roof\/wallpaper\.js">/);
