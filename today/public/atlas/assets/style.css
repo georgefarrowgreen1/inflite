@@ -7,17 +7,17 @@
   --atlas-line:var(--ifl-line,#ffffff1c);
   --atlas-accent:var(--ifl-accent-ink,#97e84e);
   --atlas-danger:#ff8b85;
-  --atlas-shadow:0 20px 70px #0004;
+  --atlas-shadow: var(--ifl-shadow-card, 0 20px 70px #0004);
+  --atlas-column: 820px;
   margin: 0;
   background: var(--atlas-bg);
   color: var(--atlas-text);
-  font:
-    15px/1.5 -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  font: 15px/1.5 var(--font, system-ui, sans-serif);
   isolation: isolate;
-  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
   overflow: hidden;
 }
 .atlas-app * {
@@ -175,47 +175,69 @@ html[data-midnight-lava] .atlas-sky canvas {
   display: block;
 }
 .atlas-header {
-  height: 74px;
-  padding: env(safe-area-inset-top) 24px 0;
-  box-sizing: content-box !important;
+  flex: none;
+  min-height: calc(60px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left));
   display: flex;
-  gap: 18px;
   align-items: center;
-  background: var(--atlas-bg);
+  gap: 10px;
+  background: var(--ifl-glass-strong, var(--atlas-surface));
+  -webkit-backdrop-filter: var(--ifl-chrome-blur);
+  backdrop-filter: var(--ifl-chrome-blur);
   border-bottom: 1px solid var(--atlas-line);
   position: relative;
   z-index: 20;
 }
 .atlas-brand {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -1px;
+  font-family: var(--font-d, system-ui, sans-serif);
+  font-size: 25px;
+  font-weight: 730;
+  letter-spacing: -.8px;
   text-decoration: none;
   line-height: 1.1;
 }
-.brand-caption {
-  display: block;
-  font-size: 10px;
-  color: var(--atlas-muted);
-  font-weight: 500;
-  letter-spacing: .03em;
-  margin-top: 5px;
+.atlas-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
 }
-.inflite-link {
-  font-size: 15px;
-  font-weight: 650;
+.atlas-app .chrome-button,
+.atlas-app .connection-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--atlas-line);
+  border-radius: var(--r-pill);
+  padding: 7px 13px;
+  min-height: 42px;
+  background: var(--ifl-glass-control, var(--atlas-field));
+  font-size: 13px;
+  font-weight: 620;
   text-decoration: none;
   white-space: nowrap;
 }
-.connection-status {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 12px;
-  border: 0 !important;
-  background: transparent !important;
-  max-width: 280px;
+.atlas-app .connection-status {
+  min-width: 0;
+  background: transparent;
+  border-color: transparent;
+  color: var(--atlas-muted);
+}
+.connection-status #connection-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.atlas-glyph {
+  display: inline-block;
+  vertical-align: middle;
+  flex: none;
+}
+.inflite-link .atlas-glyph {
+  width: 16px;
+  height: 16px;
 }
 .connection-status .status-dot {
   width: 7px;
@@ -235,26 +257,32 @@ html[data-midnight-lava] .atlas-sky canvas {
 }
 .atlas-layout {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
-  height: calc(100dvh - 75px - env(safe-area-inset-top));
-  max-width: 1600px;
-  margin: auto;
+  grid-template-columns: minmax(238px, 280px) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  width: 100%;
 }
 .atlas-sidebar {
   border-right: 1px solid var(--atlas-line);
-  padding: 22px 15px 14px;
+  padding: 20px 14px 12px max(14px, env(safe-area-inset-left));
   display: flex;
-  gap: 17px;
-  flex-direction: column;
   min-height: 0;
-  background: color-mix(in srgb, var(--atlas-bg) 95%, transparent);
+  background: var(--ifl-glass-window, var(--atlas-surface));
+  -webkit-backdrop-filter: var(--ifl-glass-window-blur);
+  backdrop-filter: var(--ifl-glass-window-blur);
 }
-.sidebar-top {
+.conversation-navigation {
   display: flex;
-  gap: 5px;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
 }
-.sidebar-top .primary-button {
-  flex: 1;
+#new-chat {
+  align-self: flex-start;
+  border-radius: var(--r-pill);
+  padding-inline: 16px;
 }
 .sidebar-search {
   font-size: 13px !important;
@@ -321,29 +349,32 @@ html[data-midnight-lava] .atlas-sky canvas {
   margin-top: 2px;
 }
 .workspace-tools {
-  padding-top: 12px;
-  border-top: 1px solid var(--atlas-line);
   display: grid;
-  gap: 2px;
+  overflow: hidden;
 }
-.workspace-tools button {
+.atlas-app .workspace-tools button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
   border: 0;
+  border-radius: 0;
   background: transparent;
   text-align: left;
-  font-size: 12px;
-  min-height: 35px;
-  padding: 7px 10px;
 }
-.workspace-tools button span {
-  display: inline-block;
-  width: 25px;
-  font-size: 16px;
-  color: var(--atlas-muted);
+.atlas-app .workspace-tools button + button {
+  border-top: 1px solid var(--atlas-line);
 }
-.sidebar-foot {
-  font-size: 10px;
-  color: var(--atlas-muted);
-  padding: 0 10px;
+.atlas-app .workspace-tools button:hover {
+  background: var(--ifl-press);
+}
+.atlas-app .workspace-tools button:focus-visible {
+  outline-offset: -3px;
+}
+.workspace-tools button :is(span, svg) {
+  width: 20px;
+  color: var(--atlas-accent);
 }
 .empty-small {
   font-size: 12px;
@@ -355,8 +386,8 @@ html[data-midnight-lava] .atlas-sky canvas {
   min-height: 0;
   min-width: 0;
   position: relative;
-  padding: 0 30px 18px;
-  background: color-mix(in srgb, var(--atlas-bg) 93%, transparent);
+  padding: 0 max(24px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) 24px;
+  background: var(--atlas-bg);
 }
 .conversation-toolbar {
   display: flex;
@@ -364,11 +395,12 @@ html[data-midnight-lava] .atlas-sky canvas {
   justify-content: space-between;
   gap: 14px;
   flex-shrink: 0;
-  max-width: 900px;
+  max-width: var(--atlas-column);
   width: 100%;
   margin: 0 auto;
-  padding: 20px 0 13px;
-  min-height: 78px;
+  padding: 16px 0 12px;
+  min-height: 70px;
+  border-bottom: 1px solid var(--atlas-line);
 }
 .conversation-toolbar h1 {
   font-size: 17px;
@@ -415,13 +447,11 @@ html[data-midnight-lava] .atlas-sky canvas {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 14px max(0px, calc((100% - 840px)/2)) 28px;
-  scroll-behavior: smooth;
-  scrollbar-gutter: stable;
+  padding: 22px max(0px, calc((100% - var(--atlas-column))/2)) 24px;
 }
 .older-history {
   flex-shrink: 0;
-  max-width: 840px;
+  max-width: var(--atlas-column);
   width: 100%;
   margin: 0 auto;
   text-align: center;
@@ -432,23 +462,18 @@ html[data-midnight-lava] .atlas-sky canvas {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  max-width: 660px;
+  max-width: var(--atlas-column);
   min-height: 100%;
   margin: auto;
   padding: 15px 0 40px;
 }
-.welcome-mark {
-  font-size: 45px;
-  color: var(--atlas-accent);
-  line-height: 1;
-  margin-bottom: 22px;
-}
 .welcome h2 {
+  font-family: var(--font-d, system-ui, sans-serif);
   font-size: clamp(24px, 3.4vw, 36px);
   letter-spacing: -1.1px;
-  font-weight: 600;
+  font-weight: 720;
   line-height: 1.2;
-  margin-bottom: 13px;
+  margin-bottom: 10px;
 }
 .welcome > p {
   font-size: 15px;
@@ -466,14 +491,15 @@ html[data-midnight-lava] .atlas-sky canvas {
   text-align: left;
   min-height: 98px;
   padding: 15px;
-  background: color-mix(in srgb, var(--atlas-surface) 90%, transparent);
-  font-size: 12px;
+  background: var(--atlas-surface);
+  border-radius: var(--r-card);
+  font-size: 14px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 12px;
 }
-.starter-grid span {
+.starter-grid .atlas-glyph {
   align-self: flex-end;
   font-size: 17px;
   color: var(--atlas-muted);
@@ -689,27 +715,32 @@ html[data-midnight-lava] .atlas-sky canvas {
   font-size: 11px;
   color: var(--atlas-muted);
   min-height: 18px;
-  max-width: 840px;
+  max-width: var(--atlas-column);
   margin: 0 auto 5px;
   width: 100%;
   flex-shrink: 0;
 }
 .composer {
   width: 100%;
-  max-width: 880px;
+  max-width: var(--atlas-column);
   margin: 0 auto;
   flex-shrink: 0;
   border: 1px solid var(--atlas-line);
-  border-radius: 22px;
-  padding: 12px 15px;
+  border-radius: var(--r-card);
+  padding: 10px 14px;
   background: var(--atlas-surface);
-  box-shadow: 0 8px 35px #00000010;
+  box-shadow: var(--atlas-shadow);
+  max-height: min(70%, 360px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .composer-controls {
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+  flex: 1 1 230px;
+  min-width: 0;
 }
 .composer-controls > select {
   width: auto;
@@ -877,22 +908,32 @@ html[data-midnight-lava] .atlas-sky canvas {
   gap: 10px;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--atlas-line);
+  padding-top: 6px;
 }
-.composer-bottom > p {
-  font-size: 10px;
-  color: var(--atlas-muted);
-  line-height: 1.4;
+.composer-assistance .text-button {
+  font-size: 13px;
+  color: var(--atlas-accent);
+}
+#coding-feedback:empty,
+.composer > .context-chips:empty {
+  display: none;
+}
+#coding-feedback:not(:empty) {
+  padding: 6px 0 1px;
 }
 .composer-actions {
   display: flex;
   gap: 6px;
   align-items: center;
   flex-shrink: 0;
+  margin-left: auto;
 }
 .composer-actions button {
   min-height: 35px;
   font-size: 12px;
-  border-radius: 11px;
+  border-radius: var(--r-pill);
   padding: 7px 11px;
 }
 .context-chips {
@@ -927,7 +968,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   background: transparent;
 }
 .thread-summary {
-  max-width: 840px;
+  max-width: var(--atlas-column);
   margin: 0 auto;
   width: 100%;
   font-size: 11px;
@@ -953,7 +994,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   border: 1px solid var(--atlas-line);
   border-radius: 15px;
   background: var(--atlas-surface);
-  max-width: 880px;
+  max-width: var(--atlas-column);
   margin: 14px auto 0;
   width: 100%;
   flex-shrink: 0;
@@ -990,59 +1031,59 @@ html[data-midnight-lava] .atlas-sky canvas {
 .session-check .session-notice {
   display: block;
 }
-.atlas-toast {
-  position: fixed;
-  bottom: calc(20px + env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: calc(100vw - 30px);
-  width: max-content;
-  padding: 12px 18px;
-  border-radius: 13px;
-  background: var(--atlas-surface);
-  border: 1px solid var(--atlas-line);
-  box-shadow: var(--atlas-shadow);
-  font-size: 12px;
-  z-index: 60;
-  overflow-wrap: anywhere;
+.session-check .ifl-toast {
+  visibility: hidden;
 }
-.atlas-dialog {
-  background: var(--atlas-bg);
-  color: var(--atlas-text);
-  border: 1px solid var(--atlas-line);
-  border-radius: 23px;
-  padding: 0;
-  max-height: 85dvh;
-  max-width: calc(100vw - 28px);
-  width: 560px;
-  box-shadow: var(--atlas-shadow);
-  overscroll-behavior: contain;
+.atlas-app .ifl-toast {
+  bottom: max(16px, env(safe-area-inset-bottom));
 }
-.atlas-dialog.wide-dialog {
-  width: 720px;
-}
-.atlas-dialog::backdrop {
-  background: #0008;
-  backdrop-filter: blur(7px);
-}
-.dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 15px;
-  padding: 22px 24px 18px;
-  border-bottom: 1px solid var(--atlas-line);
+.atlas-dialog > .ifl-toast {
   position: sticky;
-  top: 0;
-  background: var(--atlas-bg);
-  z-index: 2;
+  left: auto;
+  right: auto;
+  bottom: 0;
+  max-width: 100%;
+  margin-top: 12px;
+  z-index: 3;
 }
-.dialog-header h2 {
-  font-size: 21px;
-  letter-spacing: -.5px;
+.atlas-app dialog.ifl-sheet {
+  color: var(--atlas-text);
 }
-.dialog-content {
-  padding: 20px 24px 26px;
+.atlas-dialog .ifs-head h2 {
+  color: var(--atlas-text);
+}
+.atlas-app .ifs-btn {
+  background: var(--ifl-glass-control, var(--atlas-field));
+  border-radius: var(--r-pill);
+  border-color: var(--atlas-line);
+}
+.atlas-dialog .dialog-content {
+  padding-bottom: 4px;
+}
+#navigation-slot .conversation-navigation {
+  max-height: min(60dvh, 500px);
+}
+#navigation-slot .sidebar-heading h2 {
+  display: none;
+}
+#navigation-slot .sidebar-heading {
+  justify-content: flex-end;
+}
+#navigation-slot .conversation-list {
+  min-height: 0;
+}
+@media (min-width: 721px) {
+  .atlas-app dialog.atlas-dialog.wide-dialog {
+    width: min(720px, calc(100% - 48px));
+  }
+}
+.settings-group {
+  display: grid;
+  gap: 12px;
+}
+.settings-group + .settings-group {
+  padding-top: 18px;
+  border-top: 1px solid var(--atlas-line);
 }
 .dialog-content > h3 {
   font-size: 15px;
@@ -1233,9 +1274,9 @@ html[data-midnight-lava] .atlas-sky canvas {
 }
 .dialog-sticky-actions {
   position: sticky;
-  bottom: -26px;
-  padding: 16px 0 0;
-  background: var(--atlas-bg);
+  bottom: calc(0px - var(--sheet-bottom-pad));
+  padding: 12px 0 4px;
+  background: var(--atlas-surface);
   margin-top: 10px;
 }
 .notice-inline {
@@ -1287,12 +1328,6 @@ html[data-midnight-lava] .atlas-sky canvas {
   font: 11px/1.6 ui-monospace, monospace;
   white-space: pre;
 }
-.mobile-only {
-  display: none !important;
-}
-.sidebar-shade {
-  display: none;
-}
 .busy-label::after {
   content: "";
   display: inline-block;
@@ -1311,7 +1346,6 @@ html[data-midnight-lava] .atlas-sky canvas {
 }
 :root[data-theme=light] .atlas-app {
   --atlas-danger:#b72931;
-  --atlas-shadow:0 20px 70px #0002;
 }
 :root[data-theme=light] .health-pill.ok {
   color: #227c51;
@@ -1319,7 +1353,6 @@ html[data-midnight-lava] .atlas-sky canvas {
 @media (prefers-color-scheme: light) {
   :root:not([data-theme=dark]) .atlas-app {
     --atlas-danger:#b72931;
-    --atlas-shadow:0 20px 70px #0002;
   }
   :root:not([data-theme=dark]) .health-pill.ok {
     color: #227c51;
@@ -1331,9 +1364,6 @@ html[data-midnight-lava] .atlas-sky canvas {
   }
   .conversation-main {
     padding-inline: 20px;
-  }
-  .composer-bottom > p {
-    max-width: 210px;
   }
   .starter-grid {
     grid-template-columns: 1fr;
@@ -1347,69 +1377,39 @@ html[data-midnight-lava] .atlas-sky canvas {
   .welcome {
     max-width: 480px;
   }
-  .starter-grid span {
+  .starter-grid .atlas-glyph {
     align-self: auto;
   }
 }
 @media (max-width: 720px) {
   .atlas-header {
-    height: 64px;
-    padding-inline: 12px;
-    gap: 10px;
+    padding-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
+    gap: 4px;
   }
   #navigation-toggle {
-    display: block;
+    display: grid;
+    place-items: center;
   }
   .atlas-brand {
-    font-size: 23px;
+    font-size: 22px;
   }
-  .brand-caption {
-    font-size: 9px;
+  .atlas-header-actions {
+    gap: 4px;
   }
-  .inflite-link {
+  .atlas-app .chrome-button,
+  .atlas-app .connection-status {
+    padding: 7px 9px;
     font-size: 12px;
   }
-  .connection-status {
-    padding: 7px !important;
-    min-height: 44px;
-    gap: 5px;
-    font-size: 12px;
-    max-width: 145px;
-  }
-  .connection-status #connection-label {
-    max-width: 100px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .atlas-app .connection-status {
+    max-width: 140px;
   }
   .atlas-layout {
-    display: block;
-    height: calc(100dvh - 65px - env(safe-area-inset-top));
+    display: flex;
+    flex-direction: column;
   }
   .atlas-sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 100dvh;
-    width: min(310px, 85vw);
-    padding: calc(22px + env(safe-area-inset-top)) 17px calc(18px + env(safe-area-inset-bottom));
-    background: var(--atlas-bg);
-    z-index: 41;
-    transform: translateX(-105%);
-    transition: transform .2s ease;
-  }
-  .atlas-app.navigation-open .atlas-sidebar {
-    transform: translateX(0);
-  }
-  .mobile-only {
-    display: block !important;
-  }
-  .sidebar-shade {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: #0008;
-    z-index: 40;
+    display: none;
   }
   .conversation-main {
     height: 100%;
@@ -1439,10 +1439,6 @@ html[data-midnight-lava] .atlas-sky canvas {
   }
   .welcome > p {
     font-size: 15px;
-  }
-  .welcome-mark {
-    font-size: 37px;
-    margin-bottom: 17px;
   }
   .starter-grid {
     gap: 7px;
@@ -1490,11 +1486,6 @@ html[data-midnight-lava] .atlas-sky canvas {
   .composer-bottom {
     gap: 7px;
     flex-wrap: wrap;
-  }
-  .composer-bottom > p {
-    font-size: 11px;
-    flex: 1 1 110px;
-    max-width: none;
   }
   .composer-actions {
     gap: 4px;
@@ -1555,20 +1546,6 @@ html[data-midnight-lava] .atlas-sky canvas {
     padding: 7px 9px;
     white-space: normal;
   }
-  .atlas-dialog {
-    max-width: calc(100vw - 16px);
-    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    border-radius: 18px;
-  }
-  .dialog-header {
-    padding: 17px 16px 14px;
-  }
-  .dialog-header h2 {
-    font-size: 19px;
-  }
-  .dialog-content {
-    padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
-  }
   .two-fields {
     gap: 10px;
   }
@@ -1589,10 +1566,6 @@ html[data-midnight-lava] .atlas-sky canvas {
   }
   .context-chip span {
     max-width: 240px;
-  }
-  .dialog-sticky-actions {
-    bottom: calc(-20px - env(safe-area-inset-bottom));
-    padding-bottom: 6px;
   }
   .settings-section h3 {
     font-size: 14px;
@@ -1617,18 +1590,6 @@ html[data-midnight-lava] .atlas-sky canvas {
   }
 }
 @media (max-width: 370px) {
-  .inflite-link {
-    display: none;
-  }
-  .brand-caption {
-    font-size: 8px;
-  }
-  .connection-status {
-    max-width: 142px;
-  }
-  .composer-bottom > p {
-    max-width: 110px;
-  }
   .composer-actions button {
     padding-inline: 7px;
   }
@@ -1666,4 +1627,31 @@ html[data-midnight-lava] .atlas-sky canvas {
   .connection-status .status-dot {
     background: CanvasText;
   }
+}
+
+@media (max-width: 480px) {
+  .atlas-app .connection-status,
+  .atlas-app .inflite-link {
+    min-width: 42px;
+  }
+  .atlas-app .connection-status #connection-label,
+  .inflite-link > span:first-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+}
+.atlas-keyboard {
+  position: fixed;
+  inset: var(--atlas-visible-top, 0px) 0 auto;
+  max-height: var(--atlas-visible-height);
+}
+.atlas-keyboard .conversation-main {
+  padding-bottom: 4px;
+}
+.atlas-keyboard .composer textarea {
+  max-height: 74px;
 }

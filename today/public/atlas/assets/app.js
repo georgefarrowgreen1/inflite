@@ -1,5 +1,8 @@
 /* Atlas client. Private content lives only in this page's memory; server ownership
    is checked on every response, including every new streaming response. */
+import { createSheets } from "../../roof/sheet.js";
+import { toast as showToast } from "../../roof/toast.js";
+
 export function safeUrl(value) {
   try { const u = new URL(String(value)); return u.protocol === "https:" && !u.username && !u.password ? u.href : null; } catch { return null; }
 }
@@ -36,14 +39,19 @@ export async function* streamEvents(body, { signal, maxBytes = 8 * 1024 * 1024 }
 const $ = id => document.getElementById(id);
 const modeNames = { research: "Research", developer: "Developer", personal: "Personal", fitness: "Cycling & fitness", tasks: "Task planning" };
 const state = { owner: null, epoch: 0, controllers: new Set(), health: null, settings: null, conversations: [], conversation: null, messages: [], messagePage: {}, activeId: null, context: [], repositories: [], models: [], stream: null, dispatching: false, navigation: 0, contextLoad: 0, contexts: [], tasks: [], scheduleContext: [], patches: [], selectedPatch: null, codingRuns: [], codingObserver: null, codingLoading: false, codingLoadError: "", codingContinuation: null, codingReview: null, codingDispatching: false, drafts: new Map(), privateReady: false, checking: null };
-let toastTimer;
+let sheets, navigationSheet, activeToast;
+const mobileQuery = "(max-width: 720px)";
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text != null) el.textContent = String(text); return el; }
 function button(text, action, className = "") { const el = node("button", className, text); el.type = "button"; el.addEventListener("click", action); return el; }
 function timestamp(value) { if (!value) return ""; const d = new Date(typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value); return Number.isNaN(d.getTime()) ? "" : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); }
 function shortDate(value) { if (!value) return ""; return new Date(Number(value) || value).toLocaleDateString([], { month: "short", day: "numeric" }); }
 function money(value) { return typeof value === "number" && Number.isFinite(value) ? "$" + value.toFixed(value < 0.01 && value > 0 ? 4 : 2) : "Unavailable"; }
 function uuid() { return crypto.randomUUID(); }
-function toast(message) { clearTimeout(toastTimer); $("toast").textContent = message; $("toast").hidden = false; toastTimer = setTimeout(() => { $("toast").hidden = true; }, 6500); }
+function toast(message) {
+  activeToast = showToast(message);
+  const dialog = sheets.top()?.el;
+  if (dialog) dialog.append([...document.querySelectorAll(".ifl-toast")].at(-1));
+}
 function feedback(id, message, error = false) { const el = $(id); el.textContent = message || ""; el.classList.toggle("error", error); }
 function errorText(error) { return (error?.message || "Something went wrong. Try again.") + (error?.requestId ? " Reference: " + error.requestId : ""); }
 async function busy(control, action, feedbackId) {
@@ -57,10 +65,12 @@ function clearPrivateState(message = "Your session changed. Checking access…")
   for (const controller of state.controllers) controller.abort(); state.controllers.clear(); state.messagePage = {};
   for (const id of ["messages", "conversation-list", "attached-context", "provider-health", "usage-totals", "usage-requests", "briefs-list", "brief-detail", "context-list", "patches-list", "patch-detail", "schedules-list", "schedule-runs-list", "schedule-context", "thread-summary-text"]) $(id)?.replaceChildren();
   for (const id of ["prompt", "provider-key", "github-token", "memory-text", "schedule-prompt", "schedule-title", "conversation-search"]) if ($(id)) $(id).value = "";
-  for (const dialog of document.querySelectorAll("dialog[open]")) dialog.close();
-  for (const id of ["provider-feedback", "github-feedback", "preferences-feedback", "patch-feedback", "context-feedback", "schedule-feedback", "context-repository", "github-health", "conversation-status", "toast"]) if ($(id)) $(id).textContent = "";
+  sheets.closeAll();
+  activeToast?.close();
+  for (const notice of document.querySelectorAll(".ifl-toast")) notice.remove();
+  for (const id of ["provider-feedback", "github-feedback", "preferences-feedback", "patch-feedback", "context-feedback", "schedule-feedback", "context-repository", "github-health", "conversation-status", "coding-feedback", "toast"]) if ($(id)) $(id).textContent = "";
   for (const id of ["repository", "schedule-repository", "provider-model"]) if ($(id)) $(id).replaceChildren();
-  $("schedule-id").value = ""; $("fitness-consent").checked = false; $("schedule-fitness-consent").checked = false; $("memory-enabled").checked = false; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; $("schedule-form").hidden = true; $("schedule-runs").hidden = true; $("toast").hidden = true;
+  $("schedule-id").value = ""; $("fitness-consent").checked = false; $("schedule-fitness-consent").checked = false; $("memory-enabled").checked = false; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; $("schedule-form").hidden = true; $("schedule-runs").hidden = true;
   replaceConversationUrl(null); navigation(false);
   $("conversation-title").textContent = "New conversation"; $("connection-label").textContent = "Sign in required"; $("session-notice").textContent = message; document.body.classList.add("session-check"); updateComposer();
 }
@@ -98,8 +108,46 @@ async function download(path, name) {
   checkEpoch(epoch); inspectOwner(response, null); const blob = await response.blob(); checkEpoch(epoch); const url = URL.createObjectURL(blob), a = node("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function titleFilename(value) { return (String(value || "atlas").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "atlas") + ".md"; }
-function navigation(open) { const mobile = matchMedia("(max-width:720px)").matches; document.body.classList.toggle("navigation-open", open); $("sidebar-shade").hidden = !open || !mobile; $("navigation-toggle").setAttribute("aria-expanded", String(open)); $("atlas-sidebar").inert = mobile && !open; $("atlas-sidebar").setAttribute("aria-hidden", String(mobile && !open)); $("conversation-main").inert = mobile && open; document.querySelector(".atlas-header").inert = mobile && open; if (mobile && open) $("new-chat").focus(); }
-function openDialog(name) { navigation(false); const el = $(name + "-dialog"); if (!el.open) el.showModal(); }
+function placeSidebar(mobile) {
+  if (!mobile) navigation(false);
+  $(mobile ? "navigation-slot" : "sidebar-slot").append($("atlas-sidebar"));
+}
+function navigation(open) {
+  if (!open) return navigationSheet?.now();
+  if (navigationSheet || !matchMedia(mobileQuery).matches) return;
+  const toggle = $("navigation-toggle");
+  toggle.setAttribute("aria-expanded", "true");
+  toggle.focus({ preventScroll: true });
+  navigationSheet = sheets.openEl($("navigation-dialog"), { onClose: () => {
+    navigationSheet = null;
+    toggle.setAttribute("aria-expanded", "false");
+  } });
+}
+function openDialog(name, trigger) {
+  navigation(false);
+  const top = sheets.top();
+  if (top?.el.id === "workspace-dialog" && name !== "workspace") {
+    top.now();
+    trigger = $("open-workspace");
+  }
+  trigger?.focus({ preventScroll: true });
+  return sheets.openEl($(name + "-dialog"));
+}
+function fitComposerViewport() {
+  const viewport = window.visualViewport;
+  const body = document.body;
+  const height = document.documentElement.clientHeight;
+  const typing = matchMedia("(any-pointer: coarse)").matches && document.activeElement === $("prompt");
+  if ((typing || body.classList.contains("atlas-keyboard")) && viewport && Math.abs(viewport.scale - 1) < .01 && height - viewport.height > 80) {
+    body.style.setProperty("--atlas-visible-height", Math.round(viewport.height) + "px");
+    body.style.setProperty("--atlas-visible-top", Math.round(viewport.offsetTop) + "px");
+    body.classList.add("atlas-keyboard");
+  } else {
+    body.classList.remove("atlas-keyboard");
+    body.style.removeProperty("--atlas-visible-height");
+    body.style.removeProperty("--atlas-visible-top");
+  }
+}
 function currentModel() { return $("provider-model").value === "custom" ? $("provider-custom-model").value.trim() : $("provider-model").value; }
 function updateModelHelp() { const model = state.models.find(item => item.id === currentModel()); $("model-help").textContent = model?.note || (model?.available === false ? "This saved model is unavailable to the current project. Choose an available model or reconnect another project." : model?.capabilitiesVerified === false ? "Saved custom model. Its workspace capabilities are unverified; test a short response before using it." : model ? "This model is available to your project. A short test checks the selected workflow." : $("provider-model").value === "custom" ? "Enter a Responses-compatible model ID. Its availability is checked when you save; workspace capabilities may remain unverified." : "Save a connection to check models available to your OpenAI project."); }
 function fillModels(models = [], selected) {
@@ -163,7 +211,11 @@ function updateComposer() {
   const publish = $("publish-coding"), reviewedRun = state.codingRuns.find(run => run.id === state.codingReview?.id);
   if (publish && reviewedRun) publish.disabled = publish.classList.contains("busy-label") || reviewedRun.revision !== state.codingReview.revision || !reviewedRun.reviewReady || codingActive(reviewedRun) || !state.health?.github?.connected;
   $("attach-context").disabled = !$("repository").value || !state.health?.storage?.ready;
-  $("composer-hint").textContent = !state.health?.storage?.ready ? "Prepare the workspace to start a conversation." : !state.health?.provider?.keySaved ? "Connect OpenAI in Settings to start." : state.conversation?.archived ? "Restore this conversation to continue." : state.stream && state.stream.conversationId !== state.activeId ? "A response is running in another conversation." : state.activeId ? "Context stays with this conversation." : "A new conversation starts with a fresh context.";
+  const needsProvider = state.privateReady && state.health?.storage?.ready && (!state.health.provider?.keySaved || state.health.provider?.decryptable === false);
+  $("connect-provider").hidden = !needsProvider;
+  $("connect-provider").textContent = state.health?.provider?.keySaved ? "Check provider connection" : "Connect provider";
+  $("composer-hint").textContent = !state.health?.storage?.ready ? "Prepare the workspace to start a conversation." : state.conversation?.archived ? "Restore this conversation to continue." : state.stream && state.stream.conversationId !== state.activeId ? "A response is running in another conversation." : "";
+  $("composer-hint").hidden = !$("composer-hint").textContent;
 }
 function saveDraft() { state.drafts.set(state.activeId || "new", { prompt: $("prompt").value, context: [...state.context], fitness: $("fitness-consent").checked }); }
 function restoreDraft(id) { const draft = state.drafts.get(id || "new"); $("prompt").value = draft?.prompt || ""; state.context = draft?.context || []; $("fitness-consent").checked = !!draft?.fitness; renderContextChips(); resizePrompt(); }
@@ -176,7 +228,7 @@ function renderThreads() {
 async function loadThreads() { const result = await api("conversations?archived=" + ($("show-archived").checked ? "1" : "0")); state.conversations = result.conversations || []; renderThreads(); }
 function replaceConversationUrl(id) { const url = new URL(location.href); if (id) url.searchParams.set("conversation", id); else url.searchParams.delete("conversation"); history.replaceState(null, "", url.pathname + url.search); }
 async function selectConversation(id, { preserveDraft = false } = {}) {
-  if (!preserveDraft) saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingLoadError = ""; state.codingLoading = false; const generation = ++state.navigation; navigation(false); $("conversation-status").textContent = "Loading conversation…";
+  if (!preserveDraft) saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingLoadError = ""; state.codingLoading = false; const generation = ++state.navigation; navigation(false); feedback("coding-feedback", ""); $("conversation-status").textContent = "Loading conversation…";
   try {
     const result = await api("conversations/" + encodeURIComponent(id)); if (generation !== state.navigation) return;
     state.conversation = result.conversation; state.activeId = id; state.messages = result.messages || []; if (state.stream?.conversationId === id) { const at = state.messages.findIndex(m => m.id === state.stream.message.id); if (at < 0) state.messages.push(state.stream.message); else state.messages[at] = state.stream.message; } $("mode").value = state.conversation.mode; setRepository(state.conversation.repository || "");
@@ -187,7 +239,7 @@ async function selectConversation(id, { preserveDraft = false } = {}) {
     restoreDraft(id); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(id); $("conversation-status").textContent = ""; await observeCodingRuns();
   } catch (error) { if (generation === state.navigation) { $("conversation-status").textContent = errorText(error); toast(errorText(error)); } }
 }
-function newConversation(mode) { saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingLoadError = ""; state.codingLoading = false; state.navigation++; state.activeId = null; state.conversation = null; state.messages = []; state.messagePage = {}; state.context = []; $("conversation-title").textContent = "New conversation"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; if (mode && modeNames[mode]) $("mode").value = mode; restoreDraft(null); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(null); navigation(false); $("prompt").focus(); }
+function newConversation(mode) { feedback("coding-feedback", ""); saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingLoadError = ""; state.codingLoading = false; state.navigation++; state.activeId = null; state.conversation = null; state.messages = []; state.messagePage = {}; state.context = []; $("conversation-title").textContent = "New conversation"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; if (mode && modeNames[mode]) $("mode").value = mode; restoreDraft(null); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(null); navigation(false); $("prompt").focus(); }
 async function loadOlderMessages(control) { await busy(control, async () => { const id = state.activeId, generation = state.navigation, before = state.messagePage.nextBeforeId; if (!id || !state.messagePage.hasMore || !before) return; const result = await api("conversations/" + encodeURIComponent(id) + "?before=" + encodeURIComponent(before) + "&limit=100"); if (id !== state.activeId || generation !== state.navigation) return; const container = $("messages"), height = container.scrollHeight, top = container.scrollTop, known = new Set(state.messages.map(m => m.id)); state.messages = [...(result.messages || []).filter(m => !known.has(m.id)), ...state.messages]; state.messagePage = { hasMore: !!result.hasMore, nextBeforeId: result.nextBeforeId }; $("older-history").hidden = !state.messagePage.hasMore; renderMessages(); container.scrollTop = container.scrollHeight - height + top; }); }
 async function ensureConversation(snapshot = {}) {
   if (state.activeId) return state.conversation;
@@ -241,8 +293,17 @@ function sourceList(sources = []) { const list = node("ol", "source-list"); cons
 function renderMessages() {
   const container = $("messages"); container.replaceChildren();
   if (!state.messages.length && !state.codingRuns.length && !state.codingLoadError) {
-    const welcome = node("div", "welcome"), mark = node("div", "welcome-mark", "✳"); mark.setAttribute("aria-hidden", "true"); welcome.append(mark, node("h2", "", "What shall we work on?"), node("p", "", "Research a question, explore your code or make a plan. Start a new conversation for each topic."));
-    const starters = node("div", "starter-grid"); for (const [label, mode, prompt] of [["Research with sources ↗", "research", "Help me research a question and compare reliable sources."], ["Investigate a code issue ↗", "developer", "Help me investigate a failure in my repository."], ["Make a practical plan ↗", "personal", "Help me turn an idea into a practical plan."]]) starters.append(button(label, () => { if (!state.activeId) $("mode").value = mode; $("prompt").value = prompt; resizePrompt(); updateComposer(); $("prompt").focus(); })); welcome.append(starters); container.append(welcome); return;
+    const welcome = $("welcome-template").content.cloneNode(true);
+    for (const starter of welcome.querySelectorAll("[data-starter]")) starter.addEventListener("click", () => {
+      if (!state.activeId && $("mode").value !== starter.dataset.mode) {
+        $("mode").value = starter.dataset.mode;
+        $("mode").dispatchEvent(new Event("change"));
+      }
+      $("prompt").value = starter.dataset.starter;
+      resizePrompt(); updateComposer(); $("prompt").focus();
+    });
+    container.append(welcome);
+    return;
   }
   for (const message of state.messages) container.append(messageElement(message));
   renderCodingRuns();
@@ -272,14 +333,14 @@ function updateMessage(message, conversationId) {
 }
 function contextDescriptor(c) { const value = { kind: c.kind, repository: c.repository }; for (const k of ["path", "ref", "number", "id"]) if (c[k] != null) value[k] = c[k]; return value; }
 function renderContextChips() { const target = $("attached-context"); target.replaceChildren(); state.context.forEach((context, i) => { const chip = node("div", "context-chip"); const title = context.path || context.title || (context.kind === "pull" ? "PR #" + context.number : "Job " + context.id); chip.append(node("span", "", title), button("×", () => { state.context.splice(i, 1); renderContextChips(); updateComposer(); })); chip.lastChild.setAttribute("aria-label", "Remove " + title); chip.title = context.ref ? "Revision " + context.ref : title; target.append(chip); }); }
-function resizePrompt() { const el = $("prompt"); el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, matchMedia("(max-width:720px)").matches ? 140 : 180) + "px"; }
+function resizePrompt() { const el = $("prompt"); el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, matchMedia(mobileQuery).matches ? 140 : 180) + "px"; }
 async function sendMessage(event) {
   event?.preventDefault(); if (state.stream || state.dispatching || !$("prompt").value.trim()) return;
   const control = $("send"); if (control.disabled) return; control.disabled = true;
   const epoch = state.epoch, originId = state.activeId, generation = state.navigation, mode = state.conversation?.mode || $("mode").value;
-  const prompt = $("prompt").value.trim(), repository = $("repository").value, context = state.context.map(contextDescriptor), includeFitness = mode === "fitness" && $("fitness-consent").checked;
+  const draft = $("prompt").value, prompt = draft.trim(), repository = $("repository").value, context = state.context.map(contextDescriptor), includeFitness = mode === "fitness" && $("fitness-consent").checked;
   state.dispatching = true; $("prompt").value = ""; state.drafts.delete(originId || "new"); resizePrompt(); updateComposer();
-  let active;
+  let active, restorePrompt = false;
   try {
     const conversation = await ensureConversation({ prompt, mode, repository }), requestId = uuid(), controller = new AbortController(); checkEpoch(epoch);
     active = { epoch, conversationId: conversation.id, requestId, controller, stopped: false, message: { id: requestId, prompt, answer: "", status: "running", sources: [], context, includeFitness, created_at: Date.now() } };
@@ -298,14 +359,29 @@ async function sendMessage(event) {
       else if (packet.event === "delta") { active.message.answer += typeof data.text === "string" ? data.text : ""; updateMessage(active.message, active.conversationId); }
       else if (packet.event === "source") { if (data.source?.url && !active.message.sources.some(s => s.url === data.source.url && s.start_index === data.source.start_index)) { active.message.sources.push(data.source); updateMessage(active.message, active.conversationId); } }
       else if (packet.event === "done") { terminal = true; const m = data.message || {}; active.message = { ...active.message, ...m, id: active.message.id, prompt, status: m.status || "completed" }; updateMessage(active.message, active.conversationId); break; }
-      else if (packet.event === "error") { terminal = true; active.message.status = active.message.answer ? "incomplete" : "failed"; active.message.error_code = data.code; active.message.errorMessage = (data.error || "The response could not finish.") + (data.requestId ? " Reference: " + data.requestId : ""); updateMessage(active.message, active.conversationId); break; }
+      else if (packet.event === "error") { terminal = true; restorePrompt = true; active.message.status = active.message.answer ? "incomplete" : "failed"; active.message.error_code = data.code; active.message.errorMessage = (data.error || "The response could not finish.") + (data.requestId ? " Reference: " + data.requestId : ""); updateMessage(active.message, active.conversationId); break; }
     }
     if (!terminal) { active.message.status = "uncertain"; active.message.errorMessage = "The connection ended before completion was confirmed. Reload this conversation to check the saved result."; updateMessage(active.message, active.conversationId); }
   } catch (error) {
+    restorePrompt = !active || !active.stopped && error.name !== "AbortError";
     if (active && state.owner && epoch === state.epoch && !error.accountChanged) { active.message.status = active.stopped || error.name === "AbortError" ? "cancelled" : error.code ? "failed" : "uncertain"; active.message.errorMessage = active.stopped ? "Stopped. Any text already received is shown above." : errorText(error); updateMessage(active.message, active.conversationId); }
-    else if (!error.accountChanged && epoch === state.epoch) { if (generation === state.navigation && !$("prompt").value) $("prompt").value = prompt; toast(errorText(error)); }
+    else if (!error.accountChanged && epoch === state.epoch) toast(errorText(error));
   } finally {
-    if (epoch === state.epoch) { state.dispatching = false; if (state.stream === active) state.stream = null; if (active?.conversationId === state.activeId) $("conversation-status").textContent = ""; updateComposer(); }
+    if (epoch === state.epoch) {
+      if (restorePrompt) {
+        const thread = active?.conversationId || originId;
+        if (thread === state.activeId && (thread || generation === state.navigation)) {
+          if (!$("prompt").value) { $("prompt").value = draft; resizePrompt(); }
+        } else {
+          const saved = state.drafts.get(thread || "new");
+          if (saved && !saved.prompt) saved.prompt = draft;
+        }
+      }
+      state.dispatching = false;
+      if (state.stream === active) state.stream = null;
+      if (active?.conversationId === state.activeId) $("conversation-status").textContent = "";
+      updateComposer();
+    }
     if (state.privateReady && epoch === state.epoch) { await loadThreads().catch(() => {}); await refreshHealth().catch(() => {}); }
   }
 }
@@ -324,8 +400,8 @@ async function loadRepositories() {
   if (state.conversation?.repository) setRepository(state.conversation.repository); updateComposer();
 }
 function setRepository(value) { const el = $("repository"); if (value && ![...el.options].some(o => o.value === value)) { const option = node("option", "", value); option.value = value; el.append(option); } el.value = value; }
-async function showPanel(name) {
-  openDialog(name);
+async function showPanel(name, trigger) {
+  openDialog(name, trigger);
   try {
     if (name === "settings") { await refreshHealth(); if (state.health.storage?.ready) { await loadSettings(); if (state.health.provider?.keySaved) { const result = await api("models"); fillModels(result.models, result.selected); } } }
     if (name === "usage") await loadUsage();
@@ -380,7 +456,10 @@ async function attachSelectedContext(control) {
       if ($("repository").value !== repository || generation !== state.navigation) throw Error("The conversation changed. Choose context again.");
       const key = JSON.stringify(contextDescriptor(source)); if (!state.context.some(c => JSON.stringify(contextDescriptor(c)) === key)) state.context.push(source);
     }
-    renderContextChips(); updateComposer(); $("context-dialog").close(); toast("Sources added. Atlas can still explore the rest of this repository.");
+    renderContextChips(); updateComposer();
+    const sheet = sheets.top();
+    if (sheet?.el.id === "context-dialog") sheet.now();
+    toast("Sources added.");
   }, "context-feedback");
 }
 async function loadPatches({ reset = false } = {}) {
@@ -509,18 +588,22 @@ function renderCodingRuns() {
 async function startCodingTask() {
   const control = $("start-coding"); if (control.disabled || state.codingDispatching) return;
   const epoch = state.epoch, navigation = state.navigation, originId = state.activeId, prompt = $("prompt").value.trim(), repository = $("repository").value, continuation = state.codingContinuation;
-  state.codingDispatching = true; updateComposer();
+  state.codingDispatching = true; feedback("coding-feedback", "Starting task…"); updateComposer();
   try {
     const conversation = await ensureConversation({ prompt, mode: "developer", repository }); checkEpoch(epoch);
     const path = continuation ? "coding/runs/" + encodeURIComponent(continuation) + "/continue" : "coding/runs";
     const result = await api(path, "POST", { ...(continuation ? {} : { conversationId: conversation.id }), requestId: uuid(), prompt }); checkEpoch(epoch);
     if (navigation === state.navigation && state.activeId === conversation.id) {
+      feedback("coding-feedback", "");
       if ($("prompt").value.trim() === prompt) $("prompt").value = "";
       state.drafts.delete(originId || "new"); state.codingContinuation = null; resizePrompt(); acceptCodingRun(result.run); await observeCodingRuns({ restore: false });
     }
     loadThreads().catch(() => {});
   } catch (error) {
-    if (!error.accountChanged && epoch === state.epoch) { toast(errorText(error)); if (navigation === state.navigation && state.activeId) await observeCodingRuns(); }
+    if (!error.accountChanged && epoch === state.epoch && navigation === state.navigation) {
+      feedback("coding-feedback", errorText(error), true);
+      if (state.activeId) await observeCodingRuns();
+    }
   } finally { if (epoch === state.epoch) { state.codingDispatching = false; updateComposer(); } }
 }
 async function reviewCodingRun(id) {
@@ -619,14 +702,19 @@ async function verifyVisibleSession() {
   await state.checking;
 }
 function init() {
-  navigation(false); window.addEventListener("resize", () => navigation(document.body.classList.contains("navigation-open")));
-  $("navigation-toggle").addEventListener("click", () => navigation(true)); $("navigation-close").addEventListener("click", () => navigation(false)); $("sidebar-shade").addEventListener("click", () => navigation(false));
-  for (const el of document.querySelectorAll("[data-close]")) el.addEventListener("click", () => el.closest("dialog").close());
-  for (const el of document.querySelectorAll("[data-open]")) el.addEventListener("click", () => showPanel(el.dataset.open));
-  for (const dialog of document.querySelectorAll("dialog")) dialog.addEventListener("click", event => { if (event.target === dialog) { const box = dialog.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) dialog.close(); } });
+  sheets = createSheets();
+  const mobile = matchMedia(mobileQuery);
+  placeSidebar(mobile.matches);
+  mobile.addEventListener("change", event => placeSidebar(event.matches));
+  $("navigation-toggle").addEventListener("click", () => navigation(true));
+  window.visualViewport?.addEventListener("resize", fitComposerViewport);
+  window.visualViewport?.addEventListener("scroll", fitComposerViewport);
+  $("prompt").addEventListener("focus", fitComposerViewport);
+  $("prompt").addEventListener("blur", fitComposerViewport);
+  for (const el of document.querySelectorAll("[data-open]")) el.addEventListener("click", () => showPanel(el.dataset.open, el));
   $("new-chat").addEventListener("click", () => newConversation()); $("conversation-search").addEventListener("input", renderThreads); $("show-archived").addEventListener("change", () => loadThreads().catch(error => toast(errorText(error))));
   $("load-older-messages").addEventListener("click", e => loadOlderMessages(e.currentTarget));
-  $("mode").addEventListener("change", () => { state.context = []; renderContextChips(); updateComposer(); }); $("repository").addEventListener("change", () => { state.context = []; renderContextChips(); updateComposer(); });
+  $("mode").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; renderContextChips(); updateComposer(); }); $("repository").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; renderContextChips(); updateComposer(); });
   $("prompt").addEventListener("input", () => { resizePrompt(); updateComposer(); }); $("prompt").addEventListener("keydown", event => { if (event.key === "Enter" && !event.isComposing && !event.shiftKey && (event.ctrlKey || event.metaKey || !matchMedia("(pointer:coarse)").matches)) { event.preventDefault(); if (!$("send").disabled) $("composer").requestSubmit(); } });
   $("composer").addEventListener("submit", sendMessage); $("stop-response").addEventListener("click", stopResponse);
   $("upgrade-storage").addEventListener("click", e => busy(e.currentTarget, async () => { await api("setup", "POST", { confirm: true }); await bootstrap(); toast("Workspace storage is ready."); }));
@@ -638,19 +726,19 @@ function init() {
   $("github-form").addEventListener("submit", event => { event.preventDefault(); const token = $("github-token").value.trim(); $("github-token").value = ""; if (!token) return feedback("github-feedback", "Enter a GitHub token.", true); busy($("github-form").querySelector('button[type="submit"]'), async () => { await api("github", "POST", { token }); await refreshHealth(); await loadRepositories(); feedback("github-feedback", "GitHub connection saved."); }, "github-feedback"); });
   $("remove-github").addEventListener("click", e => busy(e.currentTarget, async () => { if (!confirm("Remove your saved GitHub connection?")) return; await api("github", "DELETE"); await refreshHealth(); await loadRepositories(); feedback("github-feedback", "GitHub connection removed."); }, "github-feedback"));
   $("preferences-form").addEventListener("submit", event => { event.preventDefault(); busy($("preferences-form").querySelector('button[type="submit"]'), async () => { const budget = $("daily-budget").value; await api("settings", "PATCH", { memoryEnabled: $("memory-enabled").checked, memory: $("memory-text").value, dailyRequestLimit: Number($("daily-request-limit").value), dailyBudgetUsd: budget === "" ? null : Number(budget), timezone: $("default-timezone").value.trim() }); await loadSettings(); feedback("preferences-feedback", "Preferences saved."); }, "preferences-feedback"); });
-  $("clear-memory").addEventListener("click", e => busy(e.currentTarget, async () => { await api("settings", "PATCH", { memoryEnabled: false, memory: "" }); await loadSettings(); feedback("preferences-feedback", "Saved personal context cleared."); }, "preferences-feedback"));
+  $("clear-memory").addEventListener("click", e => busy(e.currentTarget, async () => { if (!confirm("Clear your saved personal context?")) return; await api("settings", "PATCH", { memoryEnabled: false, memory: "" }); await loadSettings(); feedback("preferences-feedback", "Saved personal context cleared."); }, "preferences-feedback"));
   $("rename-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id) return; const title = window.prompt("Conversation title", state.conversation.title); if (!title?.trim()) return; await api("conversations/" + encodeURIComponent(id), "PATCH", { title: title.trim() }); await selectConversation(id); await loadThreads(); }));
   $("archive-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id) return; await api("conversations/" + encodeURIComponent(id), "PATCH", { archived: !state.conversation.archived }); newConversation(); await loadThreads(); }));
   $("delete-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id || !confirm("Delete this conversation and its saved messages?")) return; if (state.stream?.conversationId === id) await stopResponse(); await api("conversations/" + encodeURIComponent(id), "DELETE"); state.drafts.delete(id); newConversation(); await loadThreads(); }));
   $("export-conversation").addEventListener("click", e => busy(e.currentTarget, () => download("conversations/" + encodeURIComponent(state.activeId) + "/export", titleFilename(state.conversation.title))));
   $("summarize-conversation").addEventListener("click", e => busy(e.currentTarget, async () => { const id = state.activeId; if (!id) return; const result = await api("conversations/" + encodeURIComponent(id) + "/summary", "POST", { requestId: uuid() }); if (state.activeId === id) await selectConversation(id); const count = Number.isInteger(result.summarizedTurns) ? "Summarized " + result.summarizedTurns + " earlier turn" + (result.summarizedTurns === 1 ? "." : "s.") : "Earlier context summarized."; toast(count + (result.hasMore ? " More remains; summarize again when ready." : " The full conversation is retained.")); }));
-  $("attach-context").addEventListener("click", () => { openDialog("context"); $("context-search").value = ""; loadContextSources(); }); $("context-refresh").addEventListener("click", loadContextSources); $("context-kind").addEventListener("change", () => { $("context-ref-label").hidden = $("context-kind").value !== "file"; loadContextSources(); }); $("context-search").addEventListener("input", renderContextSources); $("context-attach").addEventListener("click", e => attachSelectedContext(e.currentTarget));
+  $("attach-context").addEventListener("click", event => { openDialog("context", event.currentTarget); $("context-search").value = ""; loadContextSources(); }); $("context-refresh").addEventListener("click", loadContextSources); $("context-kind").addEventListener("change", () => { $("context-ref-label").hidden = $("context-kind").value !== "file"; loadContextSources(); }); $("context-search").addEventListener("input", renderContextSources); $("context-attach").addEventListener("click", e => attachSelectedContext(e.currentTarget));
   $("start-coding").addEventListener("click", startCodingTask); $("clear-coding-continuation").addEventListener("click", () => { state.codingContinuation = null; updateComposer(); }); $("new-schedule").addEventListener("click", () => editSchedule()); $("schedule-kind").addEventListener("change", scheduleFields); $("schedule-mode").addEventListener("change", scheduleFields); $("schedule-form").addEventListener("submit", saveSchedule); $("cancel-schedule-edit").addEventListener("click", () => { $("schedule-form").hidden = true; });
   $("schedule-repository").addEventListener("change", () => { state.scheduleContext = []; scheduleFields(); }); $("schedule-use-context").addEventListener("click", () => { state.scheduleContext = state.context.filter(c => c.repository === $("schedule-repository").value).map(contextDescriptor); renderScheduleContext(); });
   $("stop-schedules").addEventListener("click", e => busy(e.currentTarget, async () => { if (!confirm("Pause all your scheduled tasks?")) return; await api("stop", "POST", {}); await loadSchedules(); toast("All scheduled tasks paused."); }));
   let zones = ["Europe/London", "UTC"]; try { if (Intl.supportedValuesOf) zones = ["UTC", ...Intl.supportedValuesOf("timeZone")]; } catch {} for (const zone of zones) { const option = node("option"); option.value = zone; $("timezones").append(option); }
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { detachCodingObserver(); document.body.classList.add("session-check"); } else verifyVisibleSession(); });
   window.addEventListener("focus", verifyVisibleSession); window.addEventListener("pagehide", () => { detachCodingObserver(); $("provider-key").value = ""; $("github-token").value = ""; document.body.classList.add("session-check"); }); window.addEventListener("pageshow", event => { if (event.persisted) verifyVisibleSession(); });
-  document.addEventListener("keydown", event => { if (event.key === "Escape") navigation(false); }); bootstrap();
+  bootstrap();
 }
 if (typeof document !== "undefined") { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true }); else init(); }

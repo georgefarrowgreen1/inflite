@@ -53,7 +53,7 @@ async function open(options = {}) {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== ORIGIN) return route.abort();
     if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: atlasPage('fixture') });
-    if (url.pathname === '/account/api/account/appearance') return route.fulfill({ json: { signedIn: true, id: fixture.owner, palette: 'inflite', appearance: options.theme || 'dark' } });
+    if (url.pathname === '/account/api/account/appearance') return route.fulfill({ json: { signedIn: true, id: fixture.owner, palette: 'inflite', appearance: options.theme || 'dark', glass: options.glass ?? true } });
     if (!url.pathname.startsWith('/atlas/api/')) {
       if (!['/theme.js', '/app.css'].includes(url.pathname) && !url.pathname.startsWith('/roof/') && !url.pathname.startsWith('/atlas/assets/')) return route.fulfill({ status: 404, body: '' });
       try { return route.fulfill({ contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(resolve(PUBLIC, '.' + url.pathname)) }); } catch { return route.fulfill({ status: 404, body: '' }); }
@@ -125,11 +125,11 @@ async function open(options = {}) {
   return { page, context, fixture, errors, security, async close() { security.push(...await page.evaluate(() => window.__atlasPolicyErrors || [])); await context.close(); }, async screenshot(name) { if (!process.env.ATLAS_UI_SCREENSHOTS) return; mkdirSync(process.env.ATLAS_UI_SCREENSHOTS, { recursive: true }); await page.screenshot({ path: join(process.env.ATLAS_UI_SCREENSHOTS, name + '.png'), fullPage: true }); } };
 }
 async function openThread(t, title) { if (await t.page.locator('#navigation-toggle').isVisible()) await t.page.locator('#navigation-toggle').click(); await t.page.locator('#conversation-list').getByRole('button', { name: new RegExp(title) }).click(); await t.page.waitForFunction(title => document.getElementById('conversation-title').textContent === title, title); }
-async function openPanel(t, name) { if (await t.page.locator('#navigation-toggle').isVisible()) await t.page.locator('#navigation-toggle').click(); await t.page.locator('.workspace-tools [data-open="' + name + '"]').click(); await t.page.locator('#' + name + '-dialog').waitFor({ state: 'visible' }); }
+async function openPanel(t, name) { await t.page.locator('#open-workspace').click(); await t.page.locator('.workspace-tools [data-open="' + name + '"]').click(); await t.page.locator('#' + name + '-dialog').waitFor({ state: 'visible' }); }
 async function eventually(check) { let last; for (let i = 0; i < 60; i++) { try { check(); return; } catch (error) { last = error; await new Promise(resolve => setTimeout(resolve, 20)); } } throw last; }
 async function emit(page, event, data) { await page.evaluate(({ event, data }) => window.__atlasEmit(event, data), { event, data }); }
 
-for (const width of [320, 390, 1280]) for (const theme of ['light', 'dark']) test('mobile-first layout fits ' + width + 'px in ' + theme + ' appearance', async () => {
+for (const width of [320, 390, 1440]) for (const theme of ['light', 'dark']) test('mobile-first layout fits ' + width + 'px in ' + theme + ' appearance', async () => {
   const t = await open({ width, theme, height: 844, mobile: width < 721 });
   try {
     await t.screenshot('atlas-' + width + '-' + theme);
@@ -423,7 +423,7 @@ test('account switching clears coding progress and drops a late task response', 
     await t.page.getByRole('button', { name: 'Stop task', exact: true }).waitFor(); await t.page.evaluate(() => window.dispatchEvent(new Event('focus'))); await eventually(() => assert.equal(held, true));
     t.fixture.owner = 'owner-b'; t.fixture.settings = { memoryEnabled: false, memory: '', dailyRequestLimit: 20, timezone: 'UTC' }; t.fixture.conversations = []; t.fixture.messages = {}; t.fixture.codingRuns = [];
     // A second owned request observes the account switch while the coding snapshot is delayed.
-    await t.page.locator('.workspace-tools [data-open="usage"]').click(); await t.page.waitForFunction(() => !document.body.classList.contains('session-check') && document.getElementById('conversation-title').textContent === 'New conversation'); release();
+    await t.page.locator('#open-workspace').click(); await t.page.locator('.workspace-tools [data-open="usage"]').click(); await t.page.waitForFunction(() => !document.body.classList.contains('session-check') && document.getElementById('conversation-title').textContent === 'New conversation'); release();
     await t.page.waitForTimeout(40); assert.equal(await t.page.locator('.coding-run').count(), 0); assert.equal(await t.page.locator('#prompt').inputValue(), '');
     assert.doesNotMatch(await t.page.locator('body').textContent(), /LATE OWNER A|Build the repository improvement|Repository task/);
     assert.equal(t.fixture.requests.some(call => /coding\/runs\/.+\/cancel$/.test(call.path)), false); assert.deepEqual(t.errors, []);
@@ -449,5 +449,123 @@ test('daily, weekly and interval tasks save paused and enable only after explici
     t.page.once('dialog', dialog => dialog.accept()); await t.page.locator('#schedules-list').getByRole('button', { name: 'Enable', exact: true }).first().click(); await eventually(() => assert.equal(t.fixture.tasks[0].enabled, true));
     await t.page.locator('#schedules-list').getByRole('button', { name: 'Run history' }).first().click(); await t.page.locator('#schedule-runs-list .source-list a').waitFor();
     t.page.once('dialog', dialog => dialog.accept()); await t.page.locator('#stop-schedules').click(); await eventually(() => assert.ok(t.fixture.tasks.every(task => !task.enabled))); assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+
+test('mobile sheets restore focus and Atlas chrome respects Glass Off', async () => {
+  const t = await open({ width: 390, mobile: true, glass: false });
+  try {
+    await t.page.waitForFunction(() => document.documentElement.dataset.glass === 'off');
+    const chrome = await t.page.locator('.atlas-header').evaluate(el => {
+      const style = getComputedStyle(el);
+      return { blur: style.backdropFilter || style.webkitBackdropFilter, background: style.backgroundColor };
+    });
+    assert.equal(chrome.blur, 'none');
+    assert.equal(chrome.background, 'rgb(27, 27, 27)');
+    const toggle = t.page.locator('#navigation-toggle');
+    await toggle.click();
+    await t.page.locator('#navigation-dialog').waitFor();
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+    await t.page.keyboard.press('Escape');
+    await t.page.locator('#navigation-dialog').waitFor({ state: 'hidden' });
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await toggle.evaluate(el => document.activeElement === el), true);
+    await openPanel(t, 'usage');
+    await t.page.locator('#usage-dialog [data-close]').click();
+    assert.equal(await t.page.locator('#open-workspace').evaluate(el => document.activeElement === el), true);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('a rejected task start keeps the goal and shows the request reference beside it', async () => {
+  const t = await open({ fixture: developerFixture() });
+  try {
+    await openThread(t, 'Repository task');
+    t.fixture.overrides.set('POST coding/runs', ({ reply }) => reply({
+      code: 'agent_access_unavailable', error: 'Enable Agents access for the saved connection.', requestId: 'fixture-start-error'
+    }, 403));
+    const goal = 'Rebuild the Atlas composer';
+    await t.page.locator('#prompt').fill(goal);
+    await t.page.locator('#start-coding').click();
+    await t.page.waitForFunction(() => document.getElementById('coding-feedback').textContent.includes('fixture-start-error'));
+    assert.match(await t.page.locator('#coding-feedback').textContent(), /Enable Agents access/);
+    assert.equal(await t.page.locator('#prompt').inputValue(), goal);
+    assert.equal(t.fixture.requests.filter(call => call.path === 'coding/runs' && call.method === 'POST').length, 1);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('the mobile composer fits the keyboard viewport and recovers a failed send with its sources', async () => {
+  const t = await open({ width: 390, mobile: true, fixture: developerFixture() });
+  try {
+    await openThread(t, 'Repository task');
+    await t.page.locator('#attach-context').click();
+    const file = t.page.locator('#context-list label').filter({ hasText: 'README.md' });
+    await file.locator('input').check();
+    await t.page.locator('#context-attach').click();
+    await t.page.locator('#context-dialog').waitFor({ state: 'hidden' });
+    const prompt = t.page.locator('#prompt');
+    const goal = 'Explain the README';
+    await prompt.fill(goal);
+    const keyboardLayout = await t.page.evaluate(() => {
+      Object.defineProperty(window.visualViewport, 'height', { configurable: true, value: 450 });
+      window.visualViewport.dispatchEvent(new Event('resize'));
+      return {
+        composerBottom: document.getElementById('composer').getBoundingClientRect().bottom,
+        viewportHeight: window.visualViewport.height,
+        fitted: document.body.classList.contains('atlas-keyboard')
+      };
+    });
+    assert.ok(keyboardLayout.fitted && keyboardLayout.composerBottom <= keyboardLayout.viewportHeight + 1, JSON.stringify(keyboardLayout));
+    await t.page.evaluate(() => {
+      delete window.visualViewport.height;
+      window.visualViewport.dispatchEvent(new Event('resize'));
+    });
+    await t.page.locator('#send').click();
+    await t.page.waitForFunction(() => !!window.__atlasStream.request);
+    await emit(t.page, 'error', { code: 'provider_timeout', error: 'The provider timed out.' });
+    await t.page.locator('#stop-response').waitFor({ state: 'hidden' });
+    assert.equal(await prompt.inputValue(), goal);
+    assert.match(await t.page.locator('#attached-context').textContent(), /README\.md/);
+    assert.equal(await t.page.getByRole('button', { name: 'Retry', exact: true }).count(), 1);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('conversation actions rename, export, archive, restore and confirm deletion', async () => {
+  const t = await open();
+  try {
+    await openThread(t, 'Alpha research');
+    const actions = () => t.page.locator('#conversation-menu summary').click();
+    await actions();
+    t.page.once('dialog', dialog => dialog.accept('Renamed research'));
+    await t.page.locator('#rename-conversation').click();
+    await t.page.waitForFunction(() => document.getElementById('conversation-title').textContent === 'Renamed research');
+    await actions();
+    const [download] = await Promise.all([
+      t.page.waitForEvent('download'),
+      t.page.locator('#export-conversation').click()
+    ]);
+    assert.equal(download.suggestedFilename(), 'Renamed-research.md');
+    await t.page.locator('#archive-conversation').click();
+    await t.page.waitForFunction(() => document.getElementById('conversation-title').textContent === 'New conversation');
+    await t.page.locator('#show-archived').check();
+    await openThread(t, 'Renamed research');
+    await actions();
+    assert.equal(await t.page.locator('#archive-conversation').textContent(), 'Restore conversation');
+    await t.page.locator('#archive-conversation').click();
+    await t.page.waitForFunction(() => document.getElementById('conversation-title').textContent === 'New conversation');
+    await t.page.locator('#show-archived').uncheck();
+    await openThread(t, 'Renamed research');
+    await actions();
+    t.page.once('dialog', dialog => dialog.dismiss());
+    await t.page.locator('#delete-conversation').click();
+    assert.equal(t.fixture.requests.filter(call => call.method === 'DELETE').length, 0);
+    t.page.once('dialog', dialog => dialog.accept());
+    await t.page.locator('#delete-conversation').click();
+    await t.page.waitForFunction(() => document.getElementById('conversation-title').textContent === 'New conversation');
+    assert.equal(t.fixture.requests.filter(call => call.method === 'DELETE').length, 1);
+    assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
 });
