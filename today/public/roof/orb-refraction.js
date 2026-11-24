@@ -2,10 +2,9 @@
 // inside its own paint layer so intervening content naturally covers the bevel.
 const root = document.documentElement;
 // Workspace panes already provide their own material to the controls inside them.
-const atlasControl = ".atlas-app:not(.ifl-in-pane) .atlas-glass--control";
-const atlasWindow = ".atlas-app:not(.ifl-in-pane) .action-menu[open] > .atlas-glass--window";
-const controlSurfaces = `.ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .m-mail .mr-qr, .m-chats .ch-composer, ${atlasControl}`;
-const windowSurfaces = `.ifm-pop, dialog.ifl-sheet[open]:not([data-sheet=workspace-apps]), ${atlasWindow}`;
+const atlas = ".atlas-app:not(.ifl-in-pane)";
+const controlSurfaces = `.ifh:not(.ifh-conversation) .ifh-acts:not(:empty), .m-mail .mr-qr, .m-chats .ch-composer, ${atlas} .atlas-glass--control`;
+const windowSurfaces = `.ifm-pop, dialog.ifl-sheet[open]:not([data-sheet=workspace-apps]), ${atlas} .action-menu[open] > .atlas-glass--window`;
 const eligible = `.ws-dock, .settings-preview-dock, .ifl-tabs, dialog.ifl-sheet[open][data-sheet=workspace-apps], ${controlSurfaces}, ${windowSurfaces}`;
 const profiles = {dock:{depth:7, bend:12}, sheet:{depth:5, bend:7}, control:{depth:3.5, bend:4}};
 let source, strength = 0, pending = 0;
