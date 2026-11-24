@@ -118,7 +118,7 @@ function renderHealth() {
   let label = "Connect OpenAI", kind = "attention";
   if (!ready) label = "Finish setup";
   else if (provider.keySaved && provider.decryptable === false) { label = "Connection needs attention"; kind = "error"; }
-  else if (provider.lastErrorCode) { label = "Connection needs attention"; kind = "error"; }
+  else if (provider.error || provider.lastErrorCode) { label = "Connection needs attention"; kind = "error"; }
   else if (provider.keySaved && provider.lastSuccessAt) { label = "Ready · " + (provider.model || "OpenAI"); kind = "ready"; }
   else if (provider.keySaved) label = "Key saved · Test connection";
   $("connection-label").textContent = label; status.dataset.state = kind;
@@ -128,7 +128,8 @@ function renderHealth() {
   pill(provider.keySaved ? "Key saved" : "No key saved", provider.keySaved);
   if (provider.keySaved) pill(provider.decryptable ? "Saved key readable" : "Saved key unavailable", provider.decryptable);
   if (provider.lastSuccessAt) summary.append(node("span", "health-pill", "Last successful response: " + timestamp(provider.lastSuccessAt)));
-  if (provider.lastErrorCode) summary.append(node("span", "health-pill error", "Last check: " + provider.lastErrorCode.replaceAll("_", " ")));
+  if (typeof provider.error === "string" && provider.error) summary.append(node("p", "field-feedback error", provider.error));
+  else if (provider.lastErrorCode) summary.append(node("span", "health-pill error", "Last check: " + provider.lastErrorCode.replaceAll("_", " ")));
   $("test-provider").disabled = !ready || !provider.keySaved || provider.decryptable === false;
   $("load-models").disabled = !provider.keySaved; $("remove-provider").disabled = !provider.keySaved;
   if (provider.model && !$("provider-form").contains(document.activeElement)) fillModels(state.models, provider.model);

@@ -9,7 +9,9 @@ const { resolve, join } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { chromium, webkit } = require('playwright');
 const PUBLIC = resolve(__dirname, '../today/public');
-const ORIGIN = 'https://atlas.fixture';
+// Shared appearance intentionally loads account preferences only on canonical
+// app hosts. Every request is still intercepted below; none reaches production.
+const ORIGIN = 'https://inflite.ai';
 let browser, atlasPage;
 before(async () => {
   ({ atlasPage } = await import(pathToFileURL(resolve(__dirname, '../today/src/atlas-page.js'))));
@@ -58,7 +60,7 @@ async function open(options = {}) {
     fixture.requests.push({ path, method, body, headers: request.headers() });
     const reply = (data, status = 200, capturedOwner = owner) => route.fulfill({ status, headers: { 'X-Atlas-Owner': capturedOwner, 'Cache-Control': 'no-store' }, json: data });
     if (fixture.overrides.has(method + ' ' + path)) return fixture.overrides.get(method + ' ' + path)({ route, reply, body, url, owner });
-    if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 6 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null }, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' } });
+    if (path === 'health') return reply({ owner, storage: { ready: fixture.ready, schemaVersion: fixture.ready ? 6 : 5 }, provider: { keySaved: fixture.connected, decryptable: fixture.connected, model: fixture.model, lastSuccessAt: fixture.tested ? now : null, ...fixture.provider }, scheduling: { available: fixture.scheduling }, github: { connected: true, login: 'fixture-owner' } });
     if (path === 'setup') { fixture.ready = true; return reply({ ready: true, schemaVersion: 6 }); }
     if (path === 'settings') { if (method === 'PATCH') Object.assign(fixture.settings, body); return reply(fixture.settings); }
     if (path === 'models') return reply({ models: fixture.models, selected: fixture.model });
@@ -102,6 +104,7 @@ async function open(options = {}) {
   const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
   await page.goto(ORIGIN + '/atlas');
   await page.waitForFunction(() => !document.body.classList.contains('session-check'));
+  await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, options.theme || 'dark');
   return { page, context, fixture, errors, security, async close() { security.push(...await page.evaluate(() => window.__atlasPolicyErrors || [])); await context.close(); }, async screenshot(name) { if (!process.env.ATLAS_UI_SCREENSHOTS) return; mkdirSync(process.env.ATLAS_UI_SCREENSHOTS, { recursive: true }); await page.screenshot({ path: join(process.env.ATLAS_UI_SCREENSHOTS, name + '.png'), fullPage: true }); } };
 }
 async function openThread(t, title) { if (await t.page.locator('#navigation-toggle').isVisible()) await t.page.locator('#navigation-toggle').click(); await t.page.locator('#conversation-list').getByRole('button', { name: new RegExp(title) }).click(); await t.page.waitForFunction(title => document.getElementById('conversation-title').textContent === title, title); }
@@ -112,11 +115,11 @@ async function emit(page, event, data) { await page.evaluate(({ event, data }) =
 for (const width of [320, 390, 1280]) for (const theme of ['light', 'dark']) test('mobile-first layout fits ' + width + 'px in ' + theme + ' appearance', async () => {
   const t = await open({ width, theme, height: 844, mobile: width < 721 });
   try {
+    await t.screenshot('atlas-' + width + '-' + theme);
     assert.equal(await t.page.locator('#upgrade-storage').isVisible(), false);
     assert.match(await t.page.locator('#connection-label').textContent(), /Ready/);
     const geometry = await t.page.evaluate(() => { const header = document.querySelector('.atlas-header').getBoundingClientRect(), composer = document.querySelector('.composer').getBoundingClientRect(), main = document.querySelector('.conversation-main').getBoundingClientRect(); return { width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, headerBottom: header.bottom, mainTop: main.top, composerBottom: composer.bottom, composerRight: composer.right, composerLeft: composer.left, theme: document.documentElement.dataset.theme }; });
     assert.ok(geometry.scrollWidth <= geometry.width + 1, JSON.stringify(geometry)); assert.ok(geometry.composerBottom <= geometry.height + 1, JSON.stringify(geometry)); assert.ok(geometry.composerLeft >= 0 && geometry.composerRight <= geometry.width + 1, JSON.stringify(geometry)); assert.ok(geometry.mainTop >= geometry.headerBottom - 1, JSON.stringify(geometry)); assert.equal(geometry.theme, theme);
-    await t.screenshot('atlas-' + width + '-' + theme);
     await openThread(t, 'Alpha research');
     assert.equal(await t.page.locator('.message-content table').count(), 1); assert.equal(await t.page.getByRole('button', { name: 'Copy code' }).count(), 1); assert.equal(await t.page.locator('.inline-citation').count(), 1);
     await t.screenshot('atlas-conversation-' + width + '-' + theme);
@@ -166,6 +169,20 @@ test('model changes reuse the saved key and real test status is separate from ke
   } finally { await t.close(); }
 });
 
+test('invalid encryption health displays its safe configuration recovery message', async () => {
+  const error = 'ATLAS_ENCRYPTION_KEY must be Base64 encoding of exactly 32 bytes.';
+  const t = await open({ width: 390, height: 844, mobile: true, fixture: { connected: false, tested: false, provider: { setupAvailable: false, lastErrorCode: 'provider_encryption_invalid', error } } });
+  try {
+    assert.match(await t.page.locator('#connection-label').textContent(), /Connection needs attention/);
+    await openPanel(t, 'settings');
+    assert.match(await t.page.locator('#provider-health').textContent(), /ATLAS_ENCRYPTION_KEY must be Base64 encoding of exactly 32 bytes\./);
+    assert.doesNotMatch(await t.page.locator('#provider-health').textContent(), /provider encryption invalid/);
+    assert.equal(await t.page.locator('#test-provider').isDisabled(), true);
+    await t.screenshot('atlas-encryption-recovery-mobile');
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
 test('saved unavailable and custom models retain their availability and verification notices', async () => {
   for (const unavailable of [true, false]) {
     const id = unavailable ? 'saved-missing' : 'saved-custom';
@@ -173,7 +190,9 @@ test('saved unavailable and custom models retain their availability and verifica
     const t = await open({ fixture: { model: id, models: [{ id: 'gpt-6.2-sol', label: 'GPT-6.2 Sol', available: true, capabilitiesVerified: true }, { id, label: id, available: !unavailable, capabilitiesVerified: false, note }] } });
     try {
       await openPanel(t, 'settings'); await t.page.waitForFunction(note => document.getElementById('model-help').textContent === note, note);
-      const option = t.page.locator('#provider-model option[value="' + id + '"]'); assert.equal(await option.isDisabled(), unavailable); assert.match(await option.textContent(), unavailable ? /unavailable/ : /capabilities unverified/);
+      // Playwright's isDisabled follows the enclosing label to its select.
+      // Inspect the option itself so availability is tested independently.
+      const option = t.page.locator('#provider-model option[value="' + id + '"]'); assert.equal(await option.evaluate(el => el.disabled), unavailable); assert.match(await option.textContent(), unavailable ? /unavailable/ : /capabilities unverified/);
       await t.page.locator('#provider-model').selectOption('gpt-6.2-sol'); assert.match(await t.page.locator('#model-help').textContent(), /available to your project/); assert.deepEqual(t.errors, []);
     } finally { await t.close(); }
   }
