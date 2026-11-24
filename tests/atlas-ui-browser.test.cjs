@@ -357,7 +357,7 @@ test('native Atlas sections keep their shared matte material and painted edges w
     const taskList = page.locator('#inbox-list').filter({ hasText: run.prompt });
     await pageCard(taskList);
     await tabs.getByRole('button', { name: 'Environments', exact: true }).click();
-    await pageCard(page.locator('.environment-card'));
+    await pageCard(page.locator('#environments-list[aria-busy="false"] .environment-card'));
     await tabs.getByRole('button', { name: 'Briefs', exact: true }).click();
     await page.getByRole('button', { name: /Research notes/ }).click();
     await pageCard(page.locator('.brief-card'));
@@ -400,7 +400,19 @@ test('the mobile native shell keeps Atlas scrollable above the dock during a cod
     }
     await page.waitForFunction(() => document.getElementById('messages').scrollTop > 50);
     assert.equal(await page.evaluate(() => scrollY), 0);
-    const readingPosition = await messages.evaluate(el => el.scrollTop);
+    // Native keyboard and wheel scrolling can finish after Playwright returns.
+    // Compare the refresh against a settled reader position.
+    const readingPosition = await messages.evaluate(async el => {
+      let previous = el.scrollTop, still = 0;
+      for (let frame = 0; frame < 60; frame++) {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const current = el.scrollTop;
+        still = current === previous ? still + 1 : 0;
+        if (still === 5) return current;
+        previous = current;
+      }
+      throw Error("The native scroll did not settle.");
+    });
     run.summary += '\n\nWorkspace progress was refreshed.';
     await messages.getByText('Workspace progress was refreshed.').waitFor();
     assert.ok(Math.abs(await messages.evaluate(el => el.scrollTop) - readingPosition) <= 2, 'task refresh must preserve the scroll position');
