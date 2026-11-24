@@ -124,7 +124,28 @@ for (const width of [320, 390, 1280]) for (const theme of ['light', 'dark']) tes
     assert.equal(await t.page.locator('.message-content table').count(), 1); assert.equal(await t.page.getByRole('button', { name: 'Copy code' }).count(), 1); assert.equal(await t.page.locator('.inline-citation').count(), 1);
     await t.screenshot('atlas-conversation-' + width + '-' + theme);
     assert.deepEqual(t.errors, []);
-  } finally { await t.close(); } assert.deepEqual(t.security, []);
+  } finally { await t.close(); }
+});
+
+// Playwright's WebKit screenshotter momentarily inserts an unnonced
+// <style>body {}</style> to synchronize animations. Keep the application CSP
+// strict, and verify its runtime separately without screenshot instrumentation.
+// These cases cover both appearances, mobile/desktop navigation, Markdown and
+// dynamic connection rendering; no style-src violations are ignored here.
+for (const [width, theme] of [[320, 'light'], [1280, 'dark']]) test('strict CSP covers the ' + width + 'px ' + theme + ' workspace without screenshot instrumentation', async () => {
+  const t = await open({ width, theme, height: 844, mobile: width < 721 });
+  try {
+    await openThread(t, 'Alpha research');
+    assert.equal(await t.page.locator('.message-content table').count(), 1);
+    assert.equal(await t.page.locator('.inline-citation').count(), 1);
+    await openPanel(t, 'settings');
+    await t.page.waitForFunction(() => document.getElementById('model-help').textContent.includes('available to your project'));
+    t.fixture.provider = { setupAvailable: false, lastErrorCode: 'provider_encryption_invalid', error: 'ATLAS_ENCRYPTION_KEY must be Base64 encoding of exactly 32 bytes.' };
+    await t.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await t.page.waitForFunction(() => document.getElementById('provider-health').textContent.includes('Base64 encoding of exactly 32 bytes'));
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+  assert.deepEqual(t.security, []);
 });
 
 test('setup runs only when storage requires it, then removes the upgrade action', async () => {
