@@ -49,7 +49,7 @@ test("saved provider is encrypted, used for AI, and never returned by the status
  const e={ATLAS_DB:db,ATLAS_ENCRYPTION_KEY:btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))};
  const account=async(_e,_r,{path})=>Response.json(path==="today/me"?admin:{fresh:true,owner:"owner"});
  const providerRequest=(method,body)=>new Request("https://inflite.ai/atlas/api/provider",{method,headers:{Cookie:"account=abcdefghijklmnopqrstuvwxyz",Origin:"https://inflite.ai","X-Inflite":"1"},...(body?{body:JSON.stringify(body)}:{})});
- const send=async(url,init)=>{assert.equal(init.headers.Authorization,"Bearer "+secret);if(url.endsWith("/models/"+model))return Response.json({id:model});assert.equal(url,"https://api.openai.com/v1/responses");assert.equal(JSON.parse(init.body).model,model);return Response.json({output:[{type:"message",content:[{type:"output_text",text:"hello"}]}]});};
+ const send=async(url,init)=>{assert.equal(init.redirect,"manual");assert.equal(init.headers.Authorization,"Bearer "+secret);if(url.endsWith("/models/"+model))return Response.json({id:model});assert.equal(url,"https://api.openai.com/v1/responses");assert.equal(JSON.parse(init.body).model,model);return Response.json({output:[{type:"message",content:[{type:"output_text",text:"hello"}]}]});};
  let res=await atlas(providerRequest("POST",{key:secret,model}),e,{account,send});assert.equal(res.status,200);assert.ok(!JSON.stringify(row).includes(secret));assert.ok(!(await res.text()).includes(secret));
  res=await atlas(providerRequest("GET"),e,{account,send});assert.deepEqual(await res.json(),{connected:true,model,setupAvailable:true});
  res=await atlas(request("/atlas/api/chat",true,true),e,{account,send});assert.equal(res.status,200);assert.equal((await res.json()).answer,"hello");
@@ -106,6 +106,36 @@ test("provider transport failures and ordinary OpenAI rejection remain distinct"
  assert.equal(rejected.status,400);
  assert.deepEqual(await rejected.json(),{error:"OpenAI could not validate key and model"});
  assert.equal(writes,0);
+});
+test("provider validation rejects redirects without saving or forwarding the key",async()=>{
+ for(const status of [301,302,303,307,308]){
+  const calls=[];let writes=0;
+  const e={ATLAS_ENCRYPTION_KEY:setupKey,ATLAS_DB:{prepare(){writes++;throw Error("must not save a redirected connection");}}};
+  const res=await atlas(setupRequest(),e,{account:setupAccount,send:async(url,init)=>{
+   calls.push(url);assert.equal(init.redirect,"manual");assert.equal(init.headers.Authorization,"Bearer "+setupSecret);
+   return new Response("redirected-provider-response",{status,headers:{Location:"https://untrusted.example/collect"}});
+  }});
+  assert.equal(res.status,400);assert.deepEqual(await res.json(),{error:"OpenAI could not validate key and model"});
+  assert.deepEqual(calls,["https://api.openai.com/v1/models/test-model"]);assert.equal(writes,0);
+ }
+});
+test("AI and repository redirects fail without following them or saving an answer",async()=>{
+ for(const repository of [false,true])for(const status of [302,307]){
+  const calls=[],writes=[];
+  const e={...env,ATLAS_DB:{prepare(sql){return {bind(){return {
+   first:async()=>sql.includes("atlas_credentials")?null:({requests:1}),all:async()=>({results:[]}),
+   run:async()=>{writes.push(sql);return {success:true};},
+  }}};}}};
+  const req=new Request("https://inflite.ai/atlas/api/chat",{method:"POST",headers:{Cookie:"account=abcdefghijklmnopqrstuvwxyz",Origin:"https://inflite.ai","X-Inflite":"1"},body:JSON.stringify({mode:repository?"developer":"research",prompt:"hello",...(repository?{githubRepo:"georgefarrowgreen1/inflite"}:{})})});
+  const res=await atlas(req,e,{account:async()=>Response.json(admin),send:async(url,init)=>{
+   calls.push(url);assert.equal(init.redirect,"manual");
+   assert.equal(init.headers.Authorization,repository?undefined:"Bearer test");
+   return new Response("redirected-upstream-response",{status,headers:{Location:"https://untrusted.example/collect"}});
+  }});
+  assert.equal(res.status,502);assert.deepEqual(await res.json(),{error:repository?"Repository unavailable":"AI request failed"});
+  assert.deepEqual(calls,[repository?"https://api.github.com/repos/georgefarrowgreen1/inflite/readme":"https://api.openai.com/v1/responses"]);
+  assert.deepEqual(writes,[]);
+ }
 });
 test("credential writes and deletes cannot report success after D1 failures",async()=>{
  for(const method of ["POST","DELETE"])for(const returnsFailure of [false,true]){
@@ -169,6 +199,8 @@ test("task activation uses the bound account Worker and fails closed when admini
   {name:"not an administrator",proof:{allowed:false},expected:403},
   {name:"non-boolean approval",proof:{allowed:"true"},expected:403},
   {name:"upstream denial",proof:{allowed:true},status:403,expected:403},
+  {name:"account redirect",proof:{allowed:true},status:302,expected:403},
+  {name:"account temporary redirect",proof:{allowed:true},status:307,expected:403},
   {name:"invalid response",invalid:true,expected:503},
   {name:"account unavailable",unavailable:true,expected:503},
  ];
@@ -181,7 +213,7 @@ test("task activation uses the bound account Worker and fails closed when admini
    verifications++;
    assert.equal(req.url,"https://account.inflite.ai/api/atlas-admin");
    assert.equal(req.method,"POST");
-   assert.equal(req.redirect,"error");
+   assert.equal(req.redirect,"manual");
    assert.equal(req.headers.get("Authorization"),"Bearer verifier-secret");
    assert.equal(req.headers.get("Content-Type"),"application/json");
    assert.equal(req.headers.get("Cookie"),null);
