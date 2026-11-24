@@ -146,7 +146,8 @@ function updateComposer() {
   const mode = state.conversation?.mode || $("mode").value;
   $("workspace-label").textContent = modeNames[mode] || mode;
   $("repository-control").hidden = mode !== "developer"; $("fitness-control").hidden = mode !== "fitness"; $("prepare-patch").hidden = mode !== "developer";
-  $("prepare-patch").disabled = !ready || !!state.stream || state.dispatching || !$("prompt").value.trim() || !state.context.some(c => c.kind === "file");
+  $("repository-note").hidden = mode !== "developer" || !$("repository").value;
+  $("prepare-patch").disabled = !ready || !!state.stream || state.dispatching || !$("prompt").value.trim() || !patchSources().length;
   $("attach-context").disabled = !$("repository").value || !state.health?.storage?.ready;
   $("composer-hint").textContent = !state.health?.storage?.ready ? "Prepare the workspace to start a conversation." : !state.health?.provider?.keySaved ? "Connect OpenAI in Settings to start." : state.conversation?.archived ? "Restore this conversation to continue." : state.stream && state.stream.conversationId !== state.activeId ? "A response is running in another conversation." : state.activeId ? "Context stays with this conversation." : "A new conversation starts with a fresh context.";
 }
@@ -243,7 +244,7 @@ function messageElement(message) {
   const actions = node("div", "message-actions");
   if (message.answer) actions.append(button("Copy answer", async () => { try { await navigator.clipboard.writeText(message.answer); toast("Answer copied."); } catch { toast("Select the answer to copy it."); } }));
   if (message.answer && message.status !== "running") actions.append(button("Save as brief", e => busy(e.currentTarget, async () => { const result = await api("briefs", "POST", { conversationId: state.activeId, messageId: message.id, title: state.conversation?.title }); toast("Saved to research briefs."); return result; })));
-  if (["failed", "cancelled", "incomplete"].includes(message.status)) actions.append(button("Retry", () => { if (state.stream) return toast("Stop the current response first."); $("prompt").value = message.prompt; state.context = (message.context || []).filter(c => ["file", "pull", "job"].includes(c.kind)).map(contextDescriptor); $("fitness-consent").checked = state.conversation?.mode === "fitness" && (!!message.includeFitness || (message.context || []).some(c => c.kind === "fitness")); renderContextChips(); resizePrompt(); updateComposer(); $("prompt").focus(); toast("Review the prompt, then Send to try again."); }));
+  if (["failed", "cancelled", "incomplete"].includes(message.status)) actions.append(button("Retry", () => { if (state.stream) return toast("Stop the current response first."); $("prompt").value = message.prompt; state.context = (message.context || []).filter(c => c.automatic !== true && ["file", "pull", "job"].includes(c.kind)).map(contextDescriptor); $("fitness-consent").checked = state.conversation?.mode === "fitness" && (!!message.includeFitness || (message.context || []).some(c => c.kind === "fitness")); renderContextChips(); resizePrompt(); updateComposer(); $("prompt").focus(); toast("Review the prompt, then Send to try again."); }));
   if (message.status === "uncertain") actions.append(button("Check saved result", () => selectConversation(state.activeId, { preserveDraft: true })));
   assistant.append(actions); group.append(assistant); return group;
 }
@@ -278,7 +279,7 @@ async function sendMessage(event) {
       checkEpoch(epoch);
       let data; try { data = JSON.parse(packet.data); } catch { throw Error("Atlas returned an unreadable stream event."); }
       if (packet.event === "meta") { if (data.conversationId && data.conversationId !== active.conversationId) throw Error("Atlas returned a response for a different conversation."); if (typeof data.messageId === "string" && data.messageId !== active.message.id) { const previous = active.message.id; active.message.id = data.messageId; if (state.activeId === active.conversationId) { const existing = [...$("messages").children].find(el => el.dataset.messageId === previous); if (existing) existing.dataset.messageId = active.message.id; } } }
-      else if (packet.event === "status") { if (state.activeId === active.conversationId) $("conversation-status").textContent = ({ connecting: "Connecting…", searching: "Searching sources…", responding: "Writing the response…", saving: "Saving the response…" })[data.stage] || "Working…"; }
+      else if (packet.event === "status") { if (state.activeId === active.conversationId) $("conversation-status").textContent = ({ connecting: "Connecting…", searching: "Searching sources…", reading_repository: "Reading repository…", responding: "Writing the response…", saving: "Saving the response…" })[data.stage] || "Working…"; }
       else if (packet.event === "delta") { active.message.answer += typeof data.text === "string" ? data.text : ""; updateMessage(active.message, active.conversationId); }
       else if (packet.event === "source") { if (data.source?.url && !active.message.sources.some(s => s.url === data.source.url && s.start_index === data.source.start_index)) { active.message.sources.push(data.source); updateMessage(active.message, active.conversationId); } }
       else if (packet.event === "done") { terminal = true; const m = data.message || {}; active.message = { ...active.message, ...m, id: active.message.id, prompt, status: m.status || "completed" }; updateMessage(active.message, active.conversationId); break; }
@@ -364,7 +365,7 @@ async function attachSelectedContext(control) {
       if ($("repository").value !== repository || generation !== state.navigation) throw Error("The conversation changed. Choose context again.");
       const key = JSON.stringify(contextDescriptor(source)); if (!state.context.some(c => JSON.stringify(contextDescriptor(c)) === key)) state.context.push(source);
     }
-    renderContextChips(); updateComposer(); $("context-dialog").close(); toast("Context attached. Atlas will identify the files or logs it uses.");
+    renderContextChips(); updateComposer(); $("context-dialog").close(); toast("Sources added. Atlas can still explore the rest of this repository.");
   }, "context-feedback");
 }
 async function loadPatches() {
@@ -385,14 +386,30 @@ async function showPatch(id, known) {
     detail.scrollIntoView({ block: "start", behavior: "smooth" });
   } catch (error) { feedback("patch-feedback", errorText(error), true); }
 }
+function patchSources() {
+  const explicit = state.context.filter(c => c.kind === "file");
+  if (explicit.length) return explicit;
+  const latest = [...state.messages].reverse().find(message => message.status === "completed");
+  const repository = state.conversation?.repository || $("repository").value, seen = new Set();
+  const references = [...(Array.isArray(latest?.context) ? latest.context : []), ...(Array.isArray(latest?.sources) ? latest.sources : [])];
+  return references.filter(source => {
+    if (source.kind !== "file" || source.repository !== repository || typeof source.path !== "string" || !source.path || source.path.startsWith(".github/workflows/") || !/^[a-f0-9]{40}$/i.test(source.ref || "") || !/^[a-f0-9]{40}$/i.test(source.blobSha || "") || !["100644", "100755"].includes(source.mode)) return false;
+    const key = source.path + "\n" + source.ref;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+}
 async function preparePatch(control) {
   await busy(control, async () => {
-    const prompt = $("prompt").value.trim(), paths = state.context.filter(c => c.kind === "file").map(c => c.path), repository = $("repository").value;
-    const refs = [...new Set(state.context.filter(c => c.kind === "file").map(c => c.ref).filter(Boolean))];
-    if (!prompt || !repository || !paths.length) throw Error("Describe the change and attach the repository files to edit.");
-    if (paths.length > 5) throw Error("Select up to five existing files for one patch.");
-    if (refs.length > 1) throw Error("Select files from the same revision before preparing changes.");
-    const conversation = await ensureConversation(); openDialog("patches"); feedback("patch-feedback", "Preparing a reviewable draft…");
+    const prompt = $("prompt").value.trim(), files = patchSources(), paths = [...new Set(files.map(c => c.path))], repository = $("repository").value;
+    const refs = [...new Set(files.map(c => c.ref).filter(Boolean))];
+    openDialog("patches");
+    $("patch-detail").replaceChildren(); $("patch-detail").hidden = true; feedback("patch-feedback", "");
+    if (!prompt || !repository || !paths.length) throw Error("Describe the change after Atlas has read the relevant files, or add specific sources.");
+    if (files.some(file => file.repository !== repository)) throw Error("The attached files belong to another repository. Remove those sources before preparing changes.");
+    if (paths.length > 5) throw Error("One draft can change up to five existing files. Ask Atlas to focus on a smaller change, or add the specific files to edit in Sources.");
+    if (refs.length > 1) throw Error("The files come from different revisions. Ask Atlas to read them at one revision, or add sources from the same revision.");
+    const conversation = await ensureConversation(); feedback("patch-feedback", "Preparing a reviewable draft…");
     const result = await api("patches/prepare", "POST", { conversationId: conversation.id, requestId: uuid(), prompt, repository, paths, ...(refs[0] ? { ref: refs[0] } : {}) });
     await loadPatches(); await showPatch(result.patch.id, result.patch); feedback("patch-feedback", "Draft prepared. Review the file changes and validation plan before publishing.");
   }, "patch-feedback");

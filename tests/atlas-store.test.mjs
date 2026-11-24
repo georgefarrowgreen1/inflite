@@ -146,6 +146,77 @@ test('dispatch is single-use, cancellation is owner-scoped and estimates include
   const usage=await store.usageSummary(env,'alice');assert.equal(usage.totals.requests,1);assert.equal(usage.totals.inputTokens,100);assert.equal(usage.totals.estimatedCostUsd,0.02);assert.equal(usage.budgetIsEstimate,true);
 });
 
+test('model rounds extend one reservation before and after dispatch without double-counting or releasing it',async t=>{
+  const env=await fixture(t),requestId=id();
+  await store.saveSettings(env,'alice',{dailyBudgetUsd:1,dailyRequestLimit:1});
+  await store.reserveRequest(env,'alice',{id:requestId,operation:'chat',model:'fixture',estimatedCostUsd:0.1});
+  const pending=await store.extendRequestReservation(env,'alice',requestId,0.6);
+  assert.equal(pending.status,'pending');assert.equal(pending.dispatched,0);assert.equal(pending.reserved_cost_usd,0.6);
+  await store.markRequestDispatched(env,'alice',requestId);
+  const running=await store.extendRequestReservation(env,'alice',requestId,0.9);
+  assert.equal(running.status,'running');assert.equal(running.dispatched,1);assert.equal(running.reserved_cost_usd,0.9);
+  assert.equal((await store.extendRequestReservation(env,'alice',requestId,0.4)).reserved_cost_usd,0.9);
+  const usage=await store.usageSummary(env,'alice');assert.equal(usage.totals.requests,1);assert.equal(usage.requests.length,1);
+  await assert.rejects(()=>store.reserveRequest(env,'alice',{id:id(),operation:'chat',model:'fixture'}),{code:'daily_request_limit'});
+  await store.saveSettings(env,'alice',{dailyBudgetUsd:0.5});
+  await assert.rejects(()=>store.extendRequestReservation(env,'alice',requestId,0.4),{code:'daily_budget_limit'});
+  assert.equal((await store.getRequest(env,'alice',requestId)).reserved_cost_usd,0.9);
+});
+
+test('concurrent model continuations cannot reserve the same remaining daily budget',async t=>{
+  const env=await fixture(t),requests=[id(),id()];
+  await store.saveSettings(env,'alice',{dailyBudgetUsd:10});
+  for(const requestId of requests){
+    await store.reserveRequest(env,'alice',{id:requestId,operation:'chat',model:'fixture',estimatedCostUsd:2});
+    await store.markRequestDispatched(env,'alice',requestId);
+  }
+  await store.reserveRequest(env,'bob',{id:id(),operation:'chat',model:'fixture',estimatedCostUsd:100});
+  const outcomes=await Promise.allSettled(requests.map(requestId=>store.extendRequestReservation(env,'alice',requestId,7)));
+  assert.equal(outcomes.filter(outcome=>outcome.status==='fulfilled').length,1);
+  assert.equal(outcomes.filter(outcome=>outcome.status==='rejected'&&outcome.reason.code==='daily_budget_limit').length,1);
+  const rows=await Promise.all(requests.map(requestId=>store.getRequest(env,'alice',requestId)));
+  assert.equal(rows.reduce((sum,row)=>sum+row.reserved_cost_usd,0),9);
+  assert.equal((await store.usageSummary(env,'alice')).totals.requests,2);
+});
+
+test('reservation extensions use settled charges and reject foreign, cancelled and finished requests',async t=>{
+  const env=await fixture(t),settled=id(),active=id();
+  await store.saveSettings(env,'alice',{dailyBudgetUsd:10});
+  await store.reserveRequest(env,'alice',{id:settled,operation:'chat',model:'fixture',estimatedCostUsd:8});
+  await store.markRequestDispatched(env,'alice',settled);
+  await store.finishRequest(env,'alice',settled,{status:'completed',estimatedCostUsd:2});
+  await store.reserveRequest(env,'alice',{id:active,operation:'chat',model:'fixture',estimatedCostUsd:1});
+  assert.equal((await store.extendRequestReservation(env,'alice',active,8)).reserved_cost_usd,8);
+  await assert.rejects(()=>store.extendRequestReservation(env,'alice',active,9),{code:'daily_budget_limit'});
+  await assert.rejects(()=>store.extendRequestReservation(env,'bob',active,1),{code:'not_found'});
+  await assert.rejects(()=>store.extendRequestReservation(env,'alice',settled,3),{code:'request_not_active'});
+  await assert.rejects(()=>store.extendRequestReservation(env,'alice',active,-1),{code:'invalid_request'});
+  await store.markRequestDispatched(env,'alice',active);await store.cancelRequest(env,'alice',active);
+  await assert.rejects(()=>store.extendRequestReservation(env,'alice',active,8),{code:'request_cancelled'});
+  assert.equal((await store.getRequest(env,'alice',active)).reserved_cost_usd,8);
+});
+
+test('dispatched requests with missing usage retain budget for later admissions and model rounds',async t=>{
+  const env=await fixture(t);
+  for(const status of ['uncertain','cancelled']){
+    const owner='owner-'+status,unknown=id(),active=id();
+    await store.saveSettings(env,owner,{dailyBudgetUsd:10});
+    await store.reserveRequest(env,owner,{id:unknown,operation:'chat',model:'fixture',estimatedCostUsd:6});
+    await store.markRequestDispatched(env,owner,unknown);
+    await store.finishRequest(env,owner,unknown,{status,estimatedCostUsd:null,errorCode:status==='uncertain'?'openai_network':'request_cancelled'});
+    await store.reserveRequest(env,owner,{id:active,operation:'chat',model:'fixture',estimatedCostUsd:3});
+    await assert.rejects(()=>store.reserveRequest(env,owner,{id:id(),operation:'chat',model:'fixture',estimatedCostUsd:2}),{code:'daily_budget_limit'});
+    await assert.rejects(()=>store.extendRequestReservation(env,owner,active,5),{code:'daily_budget_limit'});
+    assert.equal((await store.extendRequestReservation(env,owner,active,4)).reserved_cost_usd,4);
+    const usage=await store.usageSummary(env,owner);assert.equal(usage.totals.requests,2);assert.equal(usage.totals.unknownCostRequests,1);assert.equal(usage.totals.estimatedCostUsd,0);
+    if(status==='uncertain'){
+      await store.finishRequest(env,owner,unknown,{status:'completed',estimatedCostUsd:2});
+      assert.equal((await store.extendRequestReservation(env,owner,active,7)).reserved_cost_usd,7);
+      assert.equal((await store.reserveRequest(env,owner,{id:id(),operation:'chat',model:'fixture',estimatedCostUsd:1})).duplicate,false);
+    }
+  }
+});
+
 test('a pre-reservation cancellation persists without consuming allowance and wins races with later reservations',async t=>{
   const env=await fixture(t),requestId=id();
   const cancelled=await store.cancelRequest(env,'alice',requestId);assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.operation,'cancel');assert.equal(cancelled.dispatched,0);

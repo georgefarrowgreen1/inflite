@@ -175,3 +175,156 @@ test("integration ciphertext is scoped to owner and integration kind", async () 
   assert.equal(await decryptIntegration(env, "owner", "github", record), "fixture-github-token");
   for (const [owner, kind] of [["other", "github"], ["owner", "provider"]]) await assert.rejects(() => decryptIntegration(env, owner, kind, record), { code: "integration_secret_unreadable" });
 });
+
+const fileTool = { type: "function", name: "repository_read_file", strict: true, parameters: {
+  type: "object", additionalProperties: false, required: ["path"], properties: { path: { type: "string", maxLength: 500 } }
+} };
+const toolCall = (id = "call_fixture", args = { path: "src/feature.js" }) => ({ type: "function_call", id: "fc_" + id, call_id: id, name: fileTool.name, arguments: JSON.stringify(args), status: "completed" });
+const toolResponse = (...calls) => output("", { output: calls });
+
+test("repository tool rounds replay complete stateless output and aggregate usage once", async () => {
+  const reasoning = { id: "rs_fixture", type: "reasoning", encrypted_content: "opaque_fixture", summary: [] };
+  const calls = [toolCall("call_a"), toolCall("call_b", { path: "tests/feature.test.js" })];
+  const requests = [], budgets = [], executed = [];
+  const result = await callOpenAI({ ...base, functionTools: [fileTool],
+    beforeRound: async value => budgets.push(value),
+    runTool: async (name, args) => { executed.push({ name, args }); return { path: args.path, text: "fixture source" }; },
+    send: async (_url, init) => {
+      const body = JSON.parse(init.body); requests.push(body);
+      return Response.json(requests.length === 1 ? toolResponse(reasoning, ...calls) : output("Evidence-based answer"));
+    }
+  });
+  assert.equal(requests.length, 2); assert.equal(executed.length, 2);
+  assert.deepEqual(requests[1].input.slice(0, base.input.length), base.input);
+  assert.deepEqual(requests[1].input.slice(base.input.length, base.input.length + 3), [reasoning, ...calls]);
+  assert.deepEqual(requests[1].input.slice(-2).map(item => [item.type, item.call_id]), [["function_call_output", "call_a"], ["function_call_output", "call_b"]]);
+  assert.ok(requests.every(body => body.store === false && !body.previous_response_id));
+  assert.equal(budgets[0].usage, null); assert.equal(budgets[1].usage.inputTokens, 100);
+  assert.ok(budgets[1].requestBytes > budgets[0].requestBytes);
+  assert.equal(result.answer, "Evidence-based answer"); assert.equal(result.usage.inputTokens, 200); assert.equal(result.usage.outputTokens, 40);
+  assert.equal(result.usage.estimatedCostUsd, 0.000648); assert.equal(result.usage.usageComplete, true);
+  assert.ok(!JSON.stringify(result).includes("opaque_fixture")); assert.equal(result.continuation, undefined);
+});
+
+test("invalid tool batches never execute a valid prefix or escape the declared schema", async () => {
+  for (const invalid of [
+    { ...toolCall("bad_name"), name: "repository_write_file" },
+    { ...toolCall("bad_json"), arguments: "{" },
+    toolCall("bad_scope", { path: "README.md", repository: "other/private" }),
+    toolCall("bad_type", { path: 5 }),
+    toolCall("call_valid"),
+  ]) {
+    let executions = 0;
+    await assert.rejects(() => callOpenAI({ ...base, functionTools: [fileTool], runTool: async () => { executions++; }, send: async () => Response.json(toolResponse(toolCall("call_valid"), invalid)) }), error => {
+      assert.equal(error.code, "openai_tool_invalid"); assert.equal(error.usage.inputTokens, 100); return true;
+    });
+    assert.equal(executions, 0);
+  }
+});
+
+test("repository exploration has a bounded number of rounds and a final answer opportunity", async () => {
+  let requests = 0, executions = 0;
+  const result = await callOpenAI({ ...base, functionTools: [fileTool], runTool: async () => { executions++; return { text: "source" }; }, send: async (_url, init) => {
+    const body = JSON.parse(init.body); requests++;
+    if (requests === 5) { assert.equal(body.tool_choice, "none"); assert.match(body.instructions, /disclose|gaps|incomplete/); return Response.json(output("I read these files; more remain.")); }
+    return Response.json(toolResponse(toolCall("call_" + requests)));
+  } });
+  assert.equal(requests, 5); assert.equal(executions, 4); assert.equal(result.usage.inputTokens, 500);
+  requests = 0; executions = 0;
+  await assert.rejects(() => callOpenAI({ ...base, functionTools: [fileTool], runTool: async () => { executions++; return {}; }, send: async () => Response.json(toolResponse(toolCall("call_" + ++requests))) }), { code: "repository_exploration_limit" });
+  assert.equal(requests, 5); assert.equal(executions, 4);
+});
+
+test("oversized tool output is replaced by an explicit limit and cannot fill the continuation", async () => {
+  let requests = 0;
+  const result = await callOpenAI({ ...base, functionTools: [fileTool], runTool: async () => ({ text: "x".repeat(40000) }), send: async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (++requests === 1) return Response.json(toolResponse(toolCall()));
+    assert.equal(body.tool_choice, "none"); assert.ok(init.body.length < 6000);
+    assert.equal(JSON.parse(body.input.at(-1).output).error, "repository_exploration_limit");
+    return Response.json(output("That file result exceeded the reading allowance."));
+  } });
+  assert.equal(requests, 2); assert.match(result.answer, /allowance/);
+});
+
+test("a later unknown provider failure preserves known usage without claiming complete totals", async () => {
+  let requests = 0;
+  await assert.rejects(() => callOpenAI({ ...base, functionTools: [fileTool], runTool: async () => ({ text: "source" }), send: async () => {
+    if (++requests === 1) return Response.json(toolResponse(toolCall()));
+    throw Error(secret);
+  } }), error => {
+    assert.equal(error.code, "openai_network"); assert.equal(error.usage.inputTokens, null); assert.equal(error.usage.estimatedCostUsd, null);
+    assert.equal(error.usage.knownInputTokens, 100); assert.equal(error.usage.knownOutputTokens, 20);
+    assert.equal(error.usage.knownEstimatedCostUsd, 0.000324); assert.equal(error.usage.usageComplete, false);
+    assert.ok(!error.message.includes(secret)); return true;
+  });
+});
+
+test("cancellation during a tool read stops continuation and retains the completed round usage", async () => {
+  const controller = new AbortController(); let requests = 0;
+  await assert.rejects(() => callOpenAI({ ...base, signal: controller.signal, functionTools: [fileTool], runTool: async (_name, _args, { signal }) => {
+    controller.abort(); assert.equal(signal.aborted, true); throw signal.reason;
+  }, send: async () => { requests++; return Response.json(toolResponse(toolCall())); } }), error => {
+    assert.equal(error.code, "request_cancelled"); assert.equal(error.usage.inputTokens, 100); assert.equal(error.usage.estimatedCostUsd, 0.000324); return true;
+  });
+  assert.equal(requests, 1);
+});
+
+test("per-round budget rejection occurs before paid continuation and retains known charges", async () => {
+  let requests = 0;
+  await assert.rejects(() => callOpenAI({ ...base, functionTools: [fileTool], runTool: async () => ({}), beforeRound: async ({ round }) => {
+    if (round) throw Object.assign(Error("Daily budget reached."), { code: "daily_budget_limit", status: 429 });
+  }, send: async () => { requests++; return Response.json(toolResponse(toolCall())); } }), error => {
+    assert.equal(error.code, "daily_budget_limit"); assert.equal(error.usage.inputTokens, 100); assert.equal(error.usage.estimatedCostUsd, 0.000324); return true;
+  });
+  assert.equal(requests, 1);
+});
+
+test("repository setup and all tool rounds share one deadline", async () => {
+  let setupSignal, requests = 0;
+  await assert.rejects(() => callOpenAI({ ...base, timeoutMs: 1000, prepareTools: async ({ signal }) => { setupSignal = signal; return new Promise(() => {}); }, send: async () => { requests++; } }), { code: "openai_timeout" });
+  assert.equal(requests, 0); assert.equal(setupSignal.aborted, true);
+});
+
+test("streamed tool commentary is excluded from final answer text and citation offsets", async () => {
+  const events = []; let requests = 0;
+  const commentary = { type: "message", phase: "commentary", content: [{ type: "output_text", text: "I will inspect it.", annotations: [] }] };
+  const source = { type: "url_citation", url: "https://github.com/owner/repo/blob/commit/src/feature.js", title: "feature.js", start_index: 0, end_index: 6 };
+  const result = await callOpenAI({ ...base, stream: true, functionTools: [fileTool], runTool: async () => ({ text: "source" }), onEvent: (type, data) => events.push({ type, data }), send: async () => {
+    if (++requests === 1) return streamResponse(event({ type: "response.output_item.added", output_index: 0, item: commentary }) + event({ type: "response.output_text.delta", output_index: 0, delta: "I will inspect it." }) + final(toolResponse(commentary, toolCall())), 17);
+    return streamResponse(event({ type: "response.output_item.added", output_index: 0, item: { type: "message", phase: "final_answer" } }) + event({ type: "response.output_text.delta", output_index: 0, delta: "Answer" }) + final(output("Answer", { output: [{ type: "message", phase: "final_answer", content: [{ type: "output_text", text: "Answer", annotations: [source] }] }] })), 31);
+  } });
+  assert.equal(result.answer, "Answer"); assert.equal(events.filter(e => e.type === "delta").map(e => e.data.text).join(""), "Answer");
+  assert.ok(events.some(e => e.type === "status" && e.data.stage === "reading_repository"));
+  assert.equal(result.sources[0].start_index, 0); assert.equal(result.sources[0].end_index, 6);
+  assert.equal(result.usage.inputTokens, 200);
+});
+
+test("an interrupted repository answer keeps only explicitly final text", async () => {
+  for (const phase of ["commentary", "final_answer", undefined]) {
+    const request = () => callOpenAI({ ...base, stream: true, functionTools: [fileTool], runTool: async () => ({}), send: async () => streamResponse(event({ type: "response.output_item.added", output_index: 0, item: { type: "message", phase } }) + event({ type: "response.output_text.delta", output_index: 0, delta: "Partial" }), 41) });
+    if (phase === "commentary") await assert.rejects(request, { code: "openai_stream_interrupted" });
+    else { const result = await request(); assert.equal(result.status, "incomplete"); assert.equal(result.answer, "Partial"); assert.equal(result.usage.inputTokens, null); }
+  }
+});
+
+test("repository final-answer deltas stream before completion and survive Stop", async () => {
+  const controller = new AbortController(), events = [];
+  let streamCancelled = false;
+  const response = new Response(new ReadableStream({ start(stream) {
+    stream.enqueue(new TextEncoder().encode(event({ type: "response.output_item.added", output_index: 0, item: { type: "message", phase: "final_answer" } }) + event({ type: "response.output_text.delta", output_index: 0, delta: "Final answer so far" })));
+  }, cancel() { streamCancelled = true; } }), { headers: { "Content-Type": "text/event-stream" } });
+  const result = await callOpenAI({ ...base, stream: true, signal: controller.signal, functionTools: [fileTool], runTool: async () => ({}), send: async () => response, onEvent(type, data) {
+    events.push({ type, data }); if (type === "delta") controller.abort();
+  } });
+  assert.equal(events.filter(item => item.type === "delta").map(item => item.data.text).join(""), "Final answer so far");
+  assert.equal(result.answer, "Final answer so far"); assert.equal(result.status, "cancelled"); assert.equal(streamCancelled, true);
+  assert.equal(result.streamedText, undefined);
+});
+
+test("a contradictory final-answer/tool step keeps a partial answer without executing tools", async () => {
+  let executions = 0;
+  const message = { type: "message", phase: "final_answer", content: [{ type: "output_text", text: "Visible partial", annotations: [] }] };
+  const result = await callOpenAI({ ...base, stream: true, functionTools: [fileTool], runTool: async () => { executions++; return {}; }, send: async () => streamResponse(event({ type: "response.output_item.added", output_index: 0, item: message }) + event({ type: "response.output_text.delta", output_index: 0, delta: "Visible partial" }) + final(toolResponse(message, toolCall())), 29) });
+  assert.equal(executions, 0); assert.equal(result.answer, "Visible partial"); assert.equal(result.status, "incomplete"); assert.equal(result.errorCode, "openai_tool_invalid");
+});

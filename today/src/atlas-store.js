@@ -220,7 +220,7 @@ export async function reserveRequest(env,owner,{id,operation,model:chosenModel,c
   if(estimatedCostUsd==null)estimatedCostUsd=0;
   finite(estimatedCostUsd,0,10000,'cost estimate');
   row=await first(env,
-    "INSERT OR IGNORE INTO atlas_requests(owner,id,conversation_id,operation,model,day,reserved_cost_usd,created_at) SELECT ?,?,?,?,?,?,?,? WHERE COALESCE((SELECT requests FROM atlas_usage WHERE owner=? AND day=?),0)+(SELECT COUNT(*) FROM atlas_requests WHERE owner=? AND day=? AND "+counted+")<COALESCE((SELECT daily_request_limit FROM atlas_settings WHERE owner=?),20) AND ((SELECT daily_budget_usd FROM atlas_settings WHERE owner=?) IS NULL OR ((SELECT COALESCE(SUM(CASE WHEN status IN ('pending','running') THEN MAX(reserved_cost_usd,COALESCE(estimated_cost_usd,0)) ELSE COALESCE(estimated_cost_usd,0) END),0) FROM atlas_requests WHERE owner=? AND day=?)<?+(SELECT daily_budget_usd FROM atlas_settings WHERE owner=?) AND (SELECT COALESCE(SUM(CASE WHEN status IN ('pending','running') THEN MAX(reserved_cost_usd,COALESCE(estimated_cost_usd,0)) ELSE COALESCE(estimated_cost_usd,0) END),0) FROM atlas_requests WHERE owner=? AND day=?)+?<=(SELECT daily_budget_usd FROM atlas_settings WHERE owner=?))) RETURNING *",
+    "INSERT OR IGNORE INTO atlas_requests(owner,id,conversation_id,operation,model,day,reserved_cost_usd,created_at) SELECT ?,?,?,?,?,?,?,? WHERE COALESCE((SELECT requests FROM atlas_usage WHERE owner=? AND day=?),0)+(SELECT COUNT(*) FROM atlas_requests WHERE owner=? AND day=? AND "+counted+")<COALESCE((SELECT daily_request_limit FROM atlas_settings WHERE owner=?),20) AND ((SELECT daily_budget_usd FROM atlas_settings WHERE owner=?) IS NULL OR ((SELECT COALESCE(SUM(CASE WHEN status IN ('pending','running') OR (dispatched=1 AND estimated_cost_usd IS NULL) THEN MAX(reserved_cost_usd,COALESCE(estimated_cost_usd,0)) ELSE COALESCE(estimated_cost_usd,0) END),0) FROM atlas_requests WHERE owner=? AND day=?)<?+(SELECT daily_budget_usd FROM atlas_settings WHERE owner=?) AND (SELECT COALESCE(SUM(CASE WHEN status IN ('pending','running') OR (dispatched=1 AND estimated_cost_usd IS NULL) THEN MAX(reserved_cost_usd,COALESCE(estimated_cost_usd,0)) ELSE COALESCE(estimated_cost_usd,0) END),0) FROM atlas_requests WHERE owner=? AND day=?)+?<=(SELECT daily_budget_usd FROM atlas_settings WHERE owner=?))) RETURNING *",
     owner,id,conversationId,operation,chosenModel,day,estimatedCostUsd,now,
     owner,day,owner,day,owner,owner,owner,day,0,owner,owner,day,estimatedCostUsd,owner);
   if(row)return {duplicate:false,request:row};
@@ -237,6 +237,21 @@ export async function markRequestDispatched(env,owner,id,{credentialUpdatedAt}={
   if(existing.cancel_requested||existing.status==='cancelled')fail('request_cancelled','This request was cancelled.',409);
   if(guarded&&existing.status==='pending')fail('provider_connection_changed','The saved OpenAI connection changed while this request was being prepared. Try again with the current connection.',409);
   fail('request_already_dispatched','This request has already been handled.',409);
+}
+export async function extendRequestReservation(env,owner,id,estimatedCostUsd){
+  ownerId(owner);itemId(id);finite(estimatedCostUsd,0,10000,'cost estimate');
+  // Every model round shares one request. Atomically compare its new total
+  // reservation with other requests on the original billing day, so concurrent
+  // continuations cannot each spend the same remaining allowance. A dispatched
+  // request with missing final usage retains its reservation in both checks.
+  const row=await first(env,
+    "UPDATE atlas_requests SET reserved_cost_usd=MAX(reserved_cost_usd,?) WHERE owner=? AND id=? AND cancel_requested=0 AND ((status='pending' AND dispatched=0) OR (status='running' AND dispatched=1)) AND ((SELECT daily_budget_usd FROM atlas_settings WHERE owner=atlas_requests.owner) IS NULL OR (SELECT COALESCE(SUM(CASE WHEN other.status IN ('pending','running') OR (other.dispatched=1 AND other.estimated_cost_usd IS NULL) THEN MAX(other.reserved_cost_usd,COALESCE(other.estimated_cost_usd,0)) ELSE COALESCE(other.estimated_cost_usd,0) END),0) FROM atlas_requests AS other WHERE other.owner=atlas_requests.owner AND other.day=atlas_requests.day AND other.id<>atlas_requests.id)+MAX(reserved_cost_usd,COALESCE(estimated_cost_usd,0),?)<=(SELECT daily_budget_usd FROM atlas_settings WHERE owner=atlas_requests.owner)) RETURNING *",
+    estimatedCostUsd,owner,id,estimatedCostUsd);
+  if(row)return row;
+  const existing=await getRequest(env,owner,id);if(!existing)missing();
+  if(existing.cancel_requested||existing.status==='cancelled')fail('request_cancelled','This request was cancelled.',409);
+  if(!((existing.status==='pending'&&existing.dispatched===0)||(existing.status==='running'&&existing.dispatched===1)))fail('request_not_active','This request is no longer active.',409);
+  fail('daily_budget_limit','Your estimated daily Atlas budget has been reached.',429);
 }
 export async function finishRequest(env,owner,id,record={}){
   ownerId(owner);itemId(id);

@@ -89,6 +89,14 @@ async function fixture(t,{connect=true}={}){
   return {env,api};
 }
 
+function replaceRepositoryFiles(api, files) {
+  api.baseTree=api.treeFor(files);
+  api.commits.get(api.baseSha).tree={sha:api.baseTree};
+}
+
+const sourceFile=text=>({text,mode:'100644'});
+const readFile=(reader,path,position={})=>reader.runTool('repository_read_file',{path,start_line:1,line_count:100,start_column:0,...position});
+
 async function draft(env,api){
   const c=await store.createConversation(env,'alice',{title:'Code review',mode:'developer',repository:api.name});
   const inputs=await repository.patchInputs(env,'alice',{repository:api.name,paths:['src/app.js']},{send:api.send});
@@ -120,6 +128,126 @@ test('file context is pinned to a commit and rejects traversal, secrets, symlink
   const contentsCall=api.calls.find(c=>new URL(c.url).pathname.endsWith('/contents/src/app.js'));assert.equal(new URL(contentsCall.url).searchParams.get('ref'),api.baseSha);
   await assert.rejects(()=>repository.repositoryContext(env,'alice',{repository:api.name,kind:'file',path:'link.js'},{send:api.send}),{code:'file_not_text'});
   api.contentsSha=hash('unexpected blob');await assert.rejects(()=>repository.repositoryContext(env,'alice',{repository:api.name,kind:'file',path:'src/app.js'},{send:api.send}),{code:'file_revision_changed'});
+});
+
+test('automatic repository context supplies an overview and scoped read-only tools without manual selections',async t=>{
+  const {env,api}=await fixture(t);
+  const reader=await repository.createRepositoryReader(env,'alice',{repository:api.name,query:'Explain the project'},{send:api.send});
+  assert.equal(reader.repository,api.name);assert.equal(reader.ref,api.baseSha);assert.equal(reader.branch,'main');
+  assert.match(reader.overview,/# Original/);assert.ok(reader.overview.includes(api.name));assert.ok(reader.overview.includes(api.baseSha));
+  assert.ok(Buffer.byteLength(reader.overview)<=32768);assert.ok(!reader.overview.includes(TOKEN));
+  assert.deepEqual(reader.tools.map(tool=>tool.name),['repository_list_files','repository_read_file','repository_search']);
+  for(const tool of reader.tools){assert.equal(tool.type,'function');assert.equal(tool.strict,true);assert.equal(tool.parameters.additionalProperties,false);assert.deepEqual(tool.parameters.required,Object.keys(tool.parameters.properties));assert.equal(Object.hasOwn(tool.parameters.properties,'repository'),false);assert.equal(Object.hasOwn(tool.parameters.properties,'ref'),false);}
+  assert.deepEqual(reader.sources.map(source=>source.path),['README.md']);
+  assert.equal(reader.sources[0].repository,api.name);assert.equal(reader.sources[0].ref,api.baseSha);assert.equal(reader.sources[0].blobSha,blob('# Original\n'));assert.equal(reader.sources[0].mode,'100644');assert.equal(Object.hasOwn(reader.sources[0],'text'),false);
+  const before=api.calls.length;
+  await assert.rejects(()=>repository.createRepositoryReader(env,'bob',{repository:api.name},{send:api.send}),{code:'repository_not_allowed'});assert.equal(api.calls.length,before);
+  await assert.rejects(()=>readFile(reader,'src/app.js',{repository:'other/project'}),{code:'repository_tool_arguments'});
+  await assert.rejects(()=>reader.runTool('repository_read_file',{path:'src/app.js'}),{code:'repository_tool_arguments'});
+  await assert.rejects(()=>reader.runTool('repository_publish_patch',{}),{code:'repository_tool_invalid'});
+  assert.ok(api.calls.every(call=>call.method==='GET'));assert.ok(api.calls.every(call=>call.headers.get('authorization')==='Bearer '+TOKEN));
+});
+
+test('automatic reads support large source files, immutable commits and cached continuation',async t=>{
+  const {env,api}=await fixture(t),path='email/public/app.js';
+  const text=Array.from({length:10000},(_,index)=>'export const value'+index+' = "original source";').join('\n');
+  assert.ok(Buffer.byteLength(text)>256*1024);assert.ok(Buffer.byteLength(text)<512*1024);
+  replaceRepositoryFiles(api,{'README.md':sourceFile('# Large project\n'),[path]:sourceFile(text)});
+  const reader=await repository.createRepositoryReader(env,'alice',{repository:api.name},{send:api.send});
+  const changed=hash('advanced branch'),changedTree=api.treeFor({[path]:sourceFile('changed source')});api.commits.set(changed,{sha:changed,tree:{sha:changedTree}});api.branches.set('main',changed);
+  const part=await readFile(reader,path,{start_line:8000,line_count:2});assert.match(part.text,/value7999 = "original source"/);assert.match(part.text,/value8000 = "original source"/);assert.deepEqual(part.next,{start_line:8002,start_column:0});
+  const before=api.calls.length;await readFile(reader,path,{...part.next,line_count:2});assert.equal(api.calls.length,before,'further windows reuse the fetched source');
+  const contents=api.calls.filter(call=>new URL(call.url).pathname.endsWith('/contents/'+path));assert.equal(contents.length,1);assert.equal(new URL(contents[0].url).searchParams.get('ref'),api.baseSha);
+  assert.equal(reader.sources.find(source=>source.path===path).blobSha,blob(text));assert.ok(Buffer.byteLength(JSON.stringify(part))<24*1024);
+});
+
+test('repository discovery continues beyond the former 2,000-file selection limit',async t=>{
+  const {env,api}=await fixture(t),files=Object.fromEntries(Array.from({length:2105},(_,index)=>['src/file'+String(index).padStart(4,'0')+'.js',sourceFile('export const fixture = '+index+';')]));
+  replaceRepositoryFiles(api,files);const reader=await repository.createRepositoryReader(env,'alice',{repository:api.name},{send:api.send});
+  assert.match(reader.overview,/indexed: 2105/);
+  const listed=await reader.runTool('repository_list_files',{directory:'',query:'',cursor:2080,recursive:true});assert.equal(listed.items.length,25);assert.equal(listed.items.at(-1).path,'src/file2104.js');assert.equal(listed.next_cursor,null);assert.equal(listed.tree_incomplete,false);
+  const found=await reader.runTool('repository_search',{query:'file2104',path_filter:'src/',cursor:0,search_content:false});assert.equal(found.matches[0].path,'src/file2104.js');
+  assert.match((await readFile(reader,'src/file2104.js')).text,/fixture = 2104/);
+});
+
+test('truncated recursive trees can be explored through verified pinned directory trees',async t=>{
+  const {env,api}=await fixture(t),filePath='deep/nested/feature.js',text='export const hiddenFeature = true;';
+  replaceRepositoryFiles(api,{'README.md':sourceFile('# Truncated project'),[filePath]:sourceFile(text)});
+  const deepSha=hash('deep tree'),nestedSha=hash('nested tree'),nestedCalls=[],send=api.send;
+  const responses=new Map([
+    [api.baseTree+':true',{truncated:true,tree:[{path:'README.md',type:'blob',mode:'100644',size:19,sha:blob('# Truncated project')}]}],
+    [api.baseTree+':false',{truncated:false,tree:[{path:'deep',type:'tree',mode:'040000',sha:deepSha},{path:'escape',type:'blob',mode:'120000',sha:hash('symlink'),size:4},{path:'outside.js',type:'commit',mode:'160000',sha:hash('submodule')},{path:'../escape.js',type:'blob',mode:'100644',sha:blob('bad'),size:3}]}],
+    [deepSha+':false',{truncated:false,tree:[{path:'nested',type:'tree',mode:'040000',sha:nestedSha},{path:'nested/injected.js',type:'blob',mode:'100644',sha:blob('bad'),size:3}]}],
+    [nestedSha+':false',{truncated:false,tree:[{path:'feature.js',type:'blob',mode:'100644',sha:blob(text),size:Buffer.byteLength(text)}]}]
+  ]);
+  const reader=await repository.createRepositoryReader(env,'alice',{repository:api.name},{send:async(input,init)=>{
+    const url=new URL(input),sha=url.pathname.split('/git/trees/')[1];
+    if(sha){assert.equal(init.redirect,'manual');nestedCalls.push(sha+':'+url.searchParams.has('recursive'));const result=responses.get(sha+':'+url.searchParams.has('recursive'));assert.ok(result);return json(result);}
+    return send(input,init);
+  }});
+  assert.match(reader.overview,/truncated the recursive tree/);
+  const root=await reader.runTool('repository_list_files',{directory:'',query:'',cursor:0,recursive:false});assert.deepEqual(root.items,[{path:'deep',type:'directory'}]);
+  assert.match((await readFile(reader,filePath)).text,/hiddenFeature = true/);assert.deepEqual(nestedCalls,[api.baseTree+':true',api.baseTree+':false',deepSha+':false',nestedSha+':false']);
+  await assert.rejects(()=>readFile(reader,'deep/nested/injected.js'),{code:'file_not_text'});
+  await assert.rejects(()=>readFile(reader,'escape/secret.js'),{code:'repository_directory_missing'});
+  assert.ok(api.calls.filter(call=>new URL(call.url).pathname.includes('/contents/')).every(call=>new URL(call.url).searchParams.get('ref')===api.baseSha));
+});
+
+test('automatic discovery excludes secrets, binaries, symlinks and dependencies and reports oversized files',async t=>{
+  const {env,api}=await fixture(t),excluded=['.env.production','.aws/credentials','.npmrc','config/secrets.json','cert.pem','.docker/config.json','.dev.vars','terraform.tfstate','assets/logo.png','dist/generated.js','node_modules/library/index.js'];
+  const files=Object.fromEntries(excluded.map(path=>[path,sourceFile('private or generated')]));files['src/okay.js']=sourceFile('regular source');files['symlink.js']={text:'src/okay.js',mode:'120000'};files['large/source.js']=sourceFile('x'.repeat(512*1024+1));
+  replaceRepositoryFiles(api,files);const reader=await repository.createRepositoryReader(env,'alice',{repository:api.name},{send:api.send});
+  const listing=await reader.runTool('repository_list_files',{directory:'',query:'',cursor:0,recursive:true});assert.deepEqual(listing.items.map(item=>item.path),['large/source.js','src/okay.js']);assert.equal(listing.items[0].readable,false);
+  const before=api.calls.length;
+  for(const path of [...excluded,'symlink.js','../src/okay.js','src\\okay.js'])await assert.rejects(()=>readFile(reader,path));
+  await assert.rejects(()=>readFile(reader,'large/source.js'),error=>error.code==='repository_file_large'&&error.message.includes('512 KiB'));
+  assert.equal(api.calls.length,before,'blocked files are rejected before downloading any contents');
+});
+
+test('content search reports scanned coverage, continuation and bounded per-file matches',async t=>{
+  const {env,api}=await fixture(t),files=Object.fromEntries(Array.from({length:15},(_,index)=>['src/'+String(index).padStart(2,'0')+'.js',sourceFile(index===14?'literal NEEDLE\nneedle again\nneedle third\nneedle fourth\n':'no relevant match\n')]));
+  replaceRepositoryFiles(api,files);const reader=await repository.createRepositoryReader(env,'alice',{repository:api.name},{send:api.send});
+  const first=await reader.runTool('repository_search',{query:'needle',path_filter:'src/',cursor:0,search_content:true});assert.equal(first.matches.length,0);assert.equal(first.scanned_files.length,12);assert.equal(first.next_cursor,12);assert.equal(first.total_candidate_files,15);assert.match(first.coverage,/only scanned_files/);assert.equal(reader.sources.length,0);
+  const second=await reader.runTool('repository_search',{query:'needle',path_filter:'src/',cursor:first.next_cursor,search_content:true});assert.equal(second.scanned_files.length,3);assert.equal(second.matches.length,3);assert.equal(second.matches_limited,true);assert.equal(second.next_cursor,null);assert.deepEqual(reader.sources.map(source=>source.path),['src/14.js']);
+  assert.ok(second.matches.every(match=>match.path==='src/14.js'));assert.ok(Buffer.byteLength(JSON.stringify(second))<24*1024);
+});
+
+test('long Unicode source lines have lossless bounded continuation even when JSON escaping expands text',async t=>{
+  const {env,api}=await fixture(t),text=('é😀"\t'.repeat(5000))+'END';
+  replaceRepositoryFiles(api,{'src/unicode.js':sourceFile(text)});const reader=await repository.createRepositoryReader(env,'alice',{repository:api.name},{send:api.send});
+  let position={start_line:1,start_column:0},rebuilt='',windows=0;
+  do{
+    const part=await readFile(reader,'src/unicode.js',{...position,line_count:1});assert.ok(Buffer.byteLength(JSON.stringify(part))<24*1024);assert.equal(part.text.includes('\ufffd'),false);rebuilt+=part.text.replace(/^1(?::\d+)?: /,'');windows++;position=part.next;
+  }while(position);
+  assert.ok(windows>1);assert.equal(rebuilt,text);assert.equal(api.calls.filter(call=>new URL(call.url).pathname.endsWith('/contents/src/unicode.js')).length,1);
+  await assert.rejects(()=>readFile(reader,'src/unicode.js',{start_column:2}),{code:'repository_tool_arguments'});
+});
+
+test('reader cancellation and mismatched blob revisions fail without leaking partial context',async t=>{
+  const {env,api}=await fixture(t),controller=new AbortController();
+  const reader=await repository.createRepositoryReader(env,'alice',{repository:api.name},{send:api.send,signal:controller.signal});api.contentsSha=hash('wrong blob');
+  await assert.rejects(()=>readFile(reader,'src/app.js'),{code:'file_revision_changed'});assert.deepEqual(reader.sources.map(source=>source.path),['README.md']);
+  controller.abort();const before=api.calls.length;
+  await assert.rejects(()=>readFile(reader,'README.md'),{code:'request_cancelled'});await assert.rejects(()=>reader.runTool('repository_list_files',{directory:'',query:'',cursor:0,recursive:true}),{code:'request_cancelled'});assert.equal(api.calls.length,before);
+  await assert.rejects(()=>repository.createRepositoryReader(env,'alice',{repository:api.name},{send:api.send,signal:controller.signal}),{code:'request_cancelled'});assert.equal(api.calls.length,before);
+});
+
+test('repository readers enforce total request, downloaded-byte and exposed-context budgets',async t=>{
+  const {env,api}=await fixture(t),files=Object.fromEntries(Array.from({length:50},(_,index)=>['src/'+String(index).padStart(2,'0')+'.js',sourceFile('fixture '+index)]));
+  replaceRepositoryFiles(api,files);const reader=await repository.createRepositoryReader(env,'alice',{repository:api.name},{send:api.send});
+  for(let index=0;index<45;index++)await readFile(reader,'src/'+String(index).padStart(2,'0')+'.js');
+  const before=api.calls.length;await assert.rejects(()=>readFile(reader,'src/45.js'),{code:'repository_context_budget'});assert.equal(api.calls.length,before);
+  replaceRepositoryFiles(api,Object.fromEntries(Array.from({length:5},(_,index)=>['src/large'+index+'.js',sourceFile('x'.repeat(512*1024))])));
+  const large=await repository.createRepositoryReader(env,'alice',{repository:api.name},{send:api.send});
+  let returnedBytes=Buffer.byteLength(large.overview);
+  for(let index=0;index<4;index++)returnedBytes+=Buffer.byteLength(JSON.stringify(await readFile(large,'src/large'+index+'.js',{line_count:1})));
+  const beforeLarge=api.calls.length;await assert.rejects(()=>readFile(large,'src/large4.js'),{code:'repository_context_budget'});assert.equal(api.calls.length,beforeLarge);
+  let hitLimit=false;
+  for(let index=0;index<12;index++){
+    try{const part=await readFile(large,'src/large0.js',{line_count:1});returnedBytes+=Buffer.byteLength(JSON.stringify(part));}
+    catch(error){assert.equal(error.code,'repository_context_budget');hitLimit=true;break;}
+  }
+  assert.equal(hitLimit,true);assert.ok(returnedBytes<128*1024);assert.equal(api.calls.length,beforeLarge,'output limits apply to cached reads as well');
 });
 
 test('pull request context refuses a head that moves while the diff is loading',async t=>{
