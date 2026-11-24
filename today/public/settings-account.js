@@ -68,3 +68,68 @@ export class SettingsAccount extends HTMLElement {
   }
 }
 customElements.define("inflite-settings-account", SettingsAccount);
+
+// Confirm through the same Account sheet as Settings. A mounted/closed dialog
+// is never evidence of authentication: only the fresh server check can succeed.
+const confirmations = new WeakMap();
+export async function confirmIdentity(F, { parent, signal, expectedOwner, current = () => true } = {}) {
+  const owner = F.session?.view?.user?.id;
+  const live = () => !!owner && !F.signal?.aborted && !signal?.aborted && F.session?.view?.user?.id === owner && parent?.isConnected && current();
+  if (!live()) return Promise.resolve(false);
+  const marker = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('atlas-owner:' + owner))), b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+  if (!live() || expectedOwner && expectedOwner !== marker) return false;
+  const pending = confirmations.get(F);
+  if (pending) return pending.then(value => !!value && live());
+  const operation = (async () => {
+    const check = async () => {
+      if (!live()) return {confirmed:false};
+      const response = await fetch('/atlas/api/identity', { cache:'no-store', credentials:'same-origin',
+        headers:{'X-Atlas-Owner':marker}, signal:AbortSignal.any([F.signal, ...(signal ? [signal] : []), AbortSignal.timeout(10000)]) });
+      const result = await response.json().catch(() => ({}));
+      if (!live()) return {confirmed:false};
+      if (response.status >= 500) throw new Error('Your account is temporarily unavailable. Your draft is still here. Try again.');
+      return { confirmed:response.ok && result.confirmed === true && result.owner === marker && response.headers.get('X-Atlas-Owner') === marker,
+        required:response.status === 403 && result.code === 'identity_confirmation_required' };
+    };
+    const initial = await check();
+    if (initial.confirmed || !initial.required || !live()) return initial.confirmed;
+    return new Promise(resolve => {
+      const host = document.createElement('inflite-settings-account');
+      parent.append(host);
+      let done = false, sheet = null, offRoute;
+      const finish = value => {
+        if (done) return; done = true;
+        F.signal?.removeEventListener('abort', stop); signal?.removeEventListener('abort', stop); offRoute?.();
+        sheet?.now?.(); host.remove(); resolve(!!value && live());
+      };
+      const stop = () => finish(false);
+      F.signal?.addEventListener('abort', stop, {once:true}); signal?.addEventListener('abort', stop, {once:true});
+      offRoute = F.on?.('route', () => { if (!live()) stop(); });
+      if (!live()) return stop();
+      host.mount({owner:String(owner),action:'confirm',sheets:{
+        openEl(dialog, {onClose} = {}) {
+          if (!live() || done) return {closed:true,close(){},now(){}};
+          sheet = F.sheet.openEl(dialog, {onClose() {
+            try { onClose?.(); } finally {
+              if (done) return;
+              check().then(result => finish(result.confirmed), error => {
+                if (live() && error?.name !== 'AbortError') F.toast?.(error.message);
+                finish(false);
+              });
+            }
+          }});
+          return sheet;
+        }
+      }}).then(mounted => { if (!mounted && !done) stop(); }, error => {
+        if (live() && error?.name !== 'AbortError') F.toast?.('Couldn’t open account confirmation. Try again.');
+        finish(false);
+      });
+    });
+  })().catch(error => {
+    if (live() && error?.name !== 'AbortError') F.toast?.(error.message || 'Couldn’t confirm your account. Try again.');
+    return false;
+  });
+  confirmations.set(F, operation);
+  operation.finally(() => { if (confirmations.get(F) === operation) confirmations.delete(F); });
+  return operation;
+}

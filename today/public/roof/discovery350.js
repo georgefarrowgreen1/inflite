@@ -24,7 +24,7 @@ export async function searchRecords(F, app, q, lease, store) {
 export async function discover(F, { app, query, lease = {}, files, searchApp, openApp, openSource, runIntent }) {
   const owner = F.session.view?.user?.id;
   const owned = () => !!owner && !F.signal.aborted && F.session.view?.user?.id === owner &&
-    (app === 'files' || F.session.apps?.[app] && (app !== 'mail' || F.session.view.apps?.mail === true));
+    (app === 'files' || F.session.apps?.[app] && (!['mail', 'atlas'].includes(app) || F.session.view.apps?.mail === true));
   const live = () => owned() && !lease.signal?.aborted && (!lease.current || lease.current());
   const q = clean(query, 160);
   if (q.length < 2 || !live()) return [];

@@ -1,6 +1,6 @@
 // Coarse, bounded timings only: known app, device class and numbers. Never a
 // route, account, file, message, search or draft. Uses the existing vitals sink.
-const APPS = new Set(["today", "weather", "fitness", "markets", "chats", "mail", "files"]);
+const APPS = new Set(["today", "weather", "fitness", "markets", "chats", "mail", "atlas", "files"]);
 export function createShellPerformance() {
   const doc = globalThis.document, nav = globalThis.navigator, clock = globalThis.performance;
   const pending = new Map();

@@ -35,7 +35,7 @@ export function createFrame(opts = {}) {
   const emit = (ev, x) => { for (const f of [...(subs[ev] || [])]) try { f(x); } catch (e) { console.error(e); } };
   const sess0 = () => ({ view: null, hub: false, roof: false, links: {}, ...(opts.session?.() || {}) });
   // (each app's flag, ANDed with hub: a stage-1 host gives no apps, which is Weather's roof alone)
-  const appsOf = (s) => { const o = {}; if (s.hub) for (const a of Object.keys(REGISTRY)) o[a] = !!(s.apps ? s.apps[a] : a === "weather" && s.roof); return o; };
+  const appsOf = (s) => { const o = {}; if (s.hub) for (const a of Object.keys(REGISTRY)) o[a] = !!(s.apps ? s.apps[a] : a === "weather" && s.roof) && (a !== "atlas" || s.view?.apps?.mail === true); return o; };
   const sess = () => { const s = sess0(); return { ...s, apps: appsOf(s) }; };
   const isOn = (app) => !!sess().apps[app];
   // (stage 3, S3-C3: each app's service, one promise per app; B0's stub, HOST's to fill)
@@ -732,6 +732,14 @@ export function createFrame(opts = {}) {
     }
     return {
       settings: opts.settings && (options => live() && (mine() || m.host?.visible) && opts.settings(app,options)),
+      confirmIdentity: async (options = {}) => {
+        const sheet = F.sheet.top(), route = F.route;
+        const active = () => live() && (mine() || m.host?.visible || F.route === route && sheet && !sheet.closed && sheet.el?.dataset.app === app);
+        if (!active()) return false;
+        const { confirmIdentity } = await import("../settings-account.js");
+        return active() ? confirmIdentity(F, { ...options, parent: sheet?.el || m.el, signal: options.signal ? AbortSignal.any([options.signal, m.controller.signal]) : m.controller.signal,
+          current: active }) : false;
+      },
       contract: CONTRACT, app, screenEl: m.el, signal: m.controller.signal, ui,
       header: { set(spec = {}) { if (!live()) return; m.header = { ...m.header, ...spec }; if (m.host) { if (m.host.visible) T(() => m.host.header?.({ ...m.header })); } else if (mine()) F.header.set(appHead(F.route)); } },
       nav: {

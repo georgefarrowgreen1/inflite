@@ -4,7 +4,7 @@ import { match } from "./search.js";
 import { parse, REGISTRY } from "./router.js";
 import { loadStyles } from "./modules.js";
 
-const APPS = new Set(["fitness", "weather", "markets", "chats", "mail", "calendar", "notes", "people"]);
+const APPS = new Set(["fitness", "weather", "markets", "chats", "mail", "calendar", "notes", "people", "atlas"]);
 const ACTION = /^[a-z][a-z0-9-]{0,47}$/;
 const OBJECT = /^[A-Za-z0-9_-]{1,40}$/;
 const clean = (value, max = 160) => typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ").trim().slice(0, max) : "";
@@ -26,6 +26,9 @@ const SYSTEMS = {
 };
 const revisionOf = value => value == null ? null : typeof value === "string" && value.length <= 80 || Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const DEFAULTS = [
+  { app: "atlas", id: "new", label: "Ask Atlas", keywords: ["new conversation", "research", "assistant"] },
+  { app: "atlas", id: "tasks", label: "Atlas tasks", keywords: ["coding", "checks", "changes"] },
+  { app: "atlas", id: "environments", label: "Atlas environments", keywords: ["cloud", "repository", "sandbox"] },
   { app: "mail", id: "compose", label: "Compose Mail", keywords: ["new message", "write email", "new email"] },
   { app: "mail", id: "compose-attach", label: "Attach a file in Mail" },
   { app: "fitness", id: "import-drive", label: "Import a route or activity" },
@@ -45,7 +48,7 @@ export function createWorkspaceCommands(F, options = {}) {
   const running = new Map();
   const live = () => !gone && !signal?.aborted && !!owner && F.session?.view?.user?.id === owner;
   const available = app => live() && APPS.has(app) && F.session?.apps?.[app] === true
-    && (app !== "mail" || F.session?.view?.apps?.mail === true)
+    && (!["mail", "atlas"].includes(app) || F.session?.view?.apps?.mail === true)
     && list(get(options.apps, [])).some(a => a?.id === app && a.available !== false);
   const invoke = fn => {
     if (!live()) return false;
@@ -65,7 +68,7 @@ export function createWorkspaceCommands(F, options = {}) {
   function systems() {
     const result = new Map();
     for (const a of list(get(options.systemActions, [])).slice(0, 40)) {
-      const retry = typeof a?.id === "string" && /^retry-(fitness|weather|markets|chats|mail|calendar|notes|people)$/.exec(a.id);
+      const retry = typeof a?.id === "string" && /^retry-(fitness|weather|markets|chats|mail|calendar|notes|people|atlas)$/.exec(a.id);
       const app = retry ? retry[1] : null;
       if (!a || !Object.hasOwn(SYSTEMS, a.id) && !retry || a.app != null && a.app !== app || typeof a.run !== "function" || typeof a.current !== "function" || revisionOf(a.revision) === undefined) continue;
       if (a.enabled !== false && (!app || available(app)) && get(a.current, false) === true) result.set(a.id, { ...a, app });

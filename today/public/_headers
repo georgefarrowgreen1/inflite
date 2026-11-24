@@ -1,3 +1,7 @@
+/atlas/roof/*
+  Cache-Control: no-cache
+/atlas/assets/*
+  Cache-Control: no-cache
 /organise/*
   Cache-Control: no-cache
 /calendar/roof/*

@@ -9,10 +9,12 @@
   --atlas-danger:#ff8b85;
   --atlas-shadow: var(--ifl-shadow-card, 0 20px 70px #0004);
   --atlas-column: 820px;
-  margin: 0;
-  background: var(--atlas-bg);
   color: var(--atlas-text);
   font: 15px/1.5 var(--font, system-ui, sans-serif);
+}
+.atlas-app:not(.atlas-native-content) {
+  margin: 0;
+  background: var(--atlas-bg);
   isolation: isolate;
   display: flex;
   flex-direction: column;
@@ -159,22 +161,22 @@
   white-space: nowrap;
   border: 0;
 }
-.atlas-sky {
+.atlas-app .atlas-sky {
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   overflow: hidden;
 }
-.atlas-sky canvas {
+.atlas-app .atlas-sky canvas {
   display: none;
   width: 100%;
   height: 100%;
 }
-html[data-midnight-lava] .atlas-sky canvas {
+html[data-midnight-lava] .atlas-app .atlas-sky canvas {
   display: block;
 }
-.atlas-header {
+.atlas-app .atlas-header {
   flex: none;
   min-height: calc(60px + env(safe-area-inset-top));
   padding: env(safe-area-inset-top) max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left));
@@ -188,7 +190,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   position: relative;
   z-index: 20;
 }
-.atlas-brand {
+.atlas-app .atlas-brand {
   font-family: var(--font-d, system-ui, sans-serif);
   font-size: 25px;
   font-weight: 730;
@@ -196,7 +198,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   text-decoration: none;
   line-height: 1.1;
 }
-.atlas-header-actions {
+.atlas-app .atlas-header-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -226,43 +228,43 @@ html[data-midnight-lava] .atlas-sky canvas {
   border-color: transparent;
   color: var(--atlas-muted);
 }
-.connection-status #connection-label {
+.atlas-app .connection-status #connection-label {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.atlas-glyph {
+.atlas-app .atlas-glyph {
   display: inline-block;
   vertical-align: middle;
   flex: none;
 }
-.inflite-link .atlas-glyph {
+.atlas-app .inflite-link .atlas-glyph {
   width: 16px;
   height: 16px;
 }
-.connection-status .status-dot {
+.atlas-app .connection-status .status-dot {
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
   border-radius: 50%;
   background: #d6ac57;
 }
-.connection-status[data-state=ready] .status-dot {
+.atlas-app .connection-status[data-state=ready] .status-dot {
   background: #56c997;
 }
-.connection-status[data-state=error] .status-dot {
+.atlas-app .connection-status[data-state=error] .status-dot {
   background: var(--atlas-danger);
 }
-#navigation-toggle {
+.atlas-app #navigation-toggle {
   display: none;
 }
-.atlas-layout {
+.atlas-app .atlas-layout {
   display: grid;
   grid-template-columns: minmax(238px, 280px) minmax(0, 1fr);
   flex: 1;
   min-height: 0;
   width: 100%;
 }
-.atlas-sidebar {
+.atlas-app .atlas-sidebar {
   border-right: 1px solid var(--atlas-line);
   padding: 20px 14px 12px max(14px, env(safe-area-inset-left));
   display: flex;
@@ -271,7 +273,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   -webkit-backdrop-filter: var(--ifl-glass-window-blur);
   backdrop-filter: var(--ifl-glass-window-blur);
 }
-.conversation-navigation {
+.atlas-app .conversation-navigation {
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -279,40 +281,40 @@ html[data-midnight-lava] .atlas-sky canvas {
   min-height: 0;
   width: 100%;
 }
-#new-chat {
+.atlas-app #new-chat {
   align-self: flex-start;
   border-radius: var(--r-pill);
   padding-inline: 16px;
 }
-.sidebar-search {
+.atlas-app .sidebar-search {
   font-size: 13px !important;
   background: transparent !important;
   min-height: 38px !important;
 }
-.sidebar-heading {
+.atlas-app .sidebar-heading {
   display: flex;
   align-items: center;
   gap: 8px;
   justify-content: space-between;
 }
-.sidebar-heading h2 {
+.atlas-app .sidebar-heading h2 {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .08em;
   color: var(--atlas-muted);
 }
-.small-toggle {
+.atlas-app .small-toggle {
   display: flex;
   align-items: center;
   gap: 5px;
   font-size: 11px;
   color: var(--atlas-muted);
 }
-.small-toggle input {
+.atlas-app .small-toggle input {
   width: 14px !important;
   height: 14px !important;
 }
-.conversation-list {
+.atlas-app .conversation-list {
   flex: 1;
   min-height: 70px;
   overflow: auto;
@@ -322,7 +324,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   margin-right: -4px;
   padding-right: 4px;
 }
-.conversation-list button {
+.atlas-app .conversation-list button {
   text-align: left;
   display: block;
   width: 100%;
@@ -331,24 +333,24 @@ html[data-midnight-lava] .atlas-sky canvas {
   padding: 10px 11px;
   min-height: 54px;
 }
-.conversation-list button[aria-current=true] {
+.atlas-app .conversation-list button[aria-current=true] {
   background: var(--atlas-field);
   border-color: var(--atlas-line);
 }
-.conversation-list .thread-name {
+.atlas-app .conversation-list .thread-name {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
 }
-.conversation-list .thread-date {
+.atlas-app .conversation-list .thread-date {
   display: block;
   font-size: 10px;
   color: var(--atlas-muted);
   margin-top: 2px;
 }
-.workspace-tools {
+.atlas-app .workspace-tools {
   display: grid;
   overflow: hidden;
 }
@@ -372,15 +374,15 @@ html[data-midnight-lava] .atlas-sky canvas {
 .atlas-app .workspace-tools button:focus-visible {
   outline-offset: -3px;
 }
-.workspace-tools button :is(span, svg) {
+.atlas-app .workspace-tools button :is(span, svg) {
   width: 20px;
   color: var(--atlas-accent);
 }
-.empty-small {
+.atlas-app .empty-small {
   font-size: 12px;
   padding: 10px;
 }
-.conversation-main {
+.atlas-app .conversation-main {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -389,7 +391,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   padding: 0 max(24px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) 24px;
   background: var(--atlas-bg);
 }
-.conversation-toolbar {
+.atlas-app .conversation-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -402,17 +404,17 @@ html[data-midnight-lava] .atlas-sky canvas {
   min-height: 70px;
   border-bottom: 1px solid var(--atlas-line);
 }
-.conversation-toolbar h1 {
+.atlas-app .conversation-toolbar h1 {
   font-size: 17px;
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
-.action-menu {
+.atlas-app .action-menu {
   position: relative;
   flex-shrink: 0;
 }
-.action-menu summary {
+.atlas-app .action-menu summary {
   list-style: none;
   cursor: pointer;
   padding: 10px 12px;
@@ -420,10 +422,10 @@ html[data-midnight-lava] .atlas-sky canvas {
   min-width: 44px;
   text-align: center;
 }
-.action-menu summary::-webkit-details-marker {
+.atlas-app .action-menu summary::-webkit-details-marker {
   display: none;
 }
-.action-menu > div {
+.atlas-app .action-menu > div {
   position: absolute;
   right: 0;
   top: 100%;
@@ -436,20 +438,20 @@ html[data-midnight-lava] .atlas-sky canvas {
   box-shadow: var(--atlas-shadow);
   z-index: 12;
 }
-.action-menu button {
+.atlas-app .action-menu button {
   background: transparent;
   border: 0;
   text-align: left;
   font-size: 13px;
 }
-.messages {
+.atlas-app .messages {
   flex: 1;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 22px max(0px, calc((100% - var(--atlas-column))/2)) 24px;
 }
-.older-history {
+.atlas-app .older-history {
   flex-shrink: 0;
   max-width: var(--atlas-column);
   width: 100%;
@@ -458,7 +460,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   font-size: 12px;
   color: var(--atlas-muted);
 }
-.welcome {
+.atlas-app .welcome {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -467,7 +469,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   margin: auto;
   padding: 15px 0 40px;
 }
-.welcome h2 {
+.atlas-app .welcome h2 {
   font-family: var(--font-d, system-ui, sans-serif);
   font-size: clamp(24px, 3.4vw, 36px);
   letter-spacing: -1.1px;
@@ -475,19 +477,19 @@ html[data-midnight-lava] .atlas-sky canvas {
   line-height: 1.2;
   margin-bottom: 10px;
 }
-.welcome > p {
+.atlas-app .welcome > p {
   font-size: 15px;
   max-width: 470px;
   color: var(--atlas-muted);
   line-height: 1.6;
 }
-.starter-grid {
+.atlas-app .starter-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
   margin-top: 30px;
 }
-.starter-grid button {
+.atlas-app .starter-grid button {
   text-align: left;
   min-height: 98px;
   padding: 15px;
@@ -499,21 +501,21 @@ html[data-midnight-lava] .atlas-sky canvas {
   justify-content: space-between;
   gap: 12px;
 }
-.starter-grid .atlas-glyph {
+.atlas-app .starter-grid .atlas-glyph {
   align-self: flex-end;
   font-size: 17px;
   color: var(--atlas-muted);
 }
-.message {
+.atlas-app .message {
   margin-bottom: 28px;
   min-width: 0;
 }
-.message.user {
+.atlas-app .message.user {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
 }
-.message.user .message-content {
+.atlas-app .message.user .message-content {
   background: var(--atlas-field);
   border: 1px solid var(--atlas-line);
   padding: 12px 16px;
@@ -522,7 +524,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   white-space: pre-wrap;
   font-size: 14px;
 }
-.message-heading {
+.atlas-app .message-heading {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -530,75 +532,75 @@ html[data-midnight-lava] .atlas-sky canvas {
   color: var(--atlas-muted);
   margin-bottom: 9px;
 }
-.assistant-label {
+.atlas-app .assistant-label {
   font-weight: 650;
   color: var(--atlas-text);
 }
-.message-status {
+.atlas-app .message-status {
   font-size: 10px;
   border-radius: 6px;
   padding: 2px 6px;
   background: var(--atlas-field);
 }
-.message-status[data-status=failed],
-.message-status[data-status=incomplete],
-.message-status[data-status=cancelled],
-.message-status[data-status=uncertain] {
+.atlas-app .message-status[data-status=failed],
+.atlas-app .message-status[data-status=incomplete],
+.atlas-app .message-status[data-status=cancelled],
+.atlas-app .message-status[data-status=uncertain] {
   color: var(--atlas-danger);
 }
-.message.assistant .message-content {
+.atlas-app .message.assistant .message-content {
   font-size: 15px;
   line-height: 1.75;
   overflow-wrap: anywhere;
   min-height: 24px;
 }
-.message-content p {
+.atlas-app .message-content p {
   margin: 0 0 12px;
 }
-.message-content h2,
-.message-content h3,
-.message-content h4 {
+.atlas-app .message-content h2,
+.atlas-app .message-content h3,
+.atlas-app .message-content h4 {
   margin: 18px 0 9px;
   line-height: 1.4;
 }
-.message-content h2 {
+.atlas-app .message-content h2 {
   font-size: 21px;
 }
-.message-content h3 {
+.atlas-app .message-content h3 {
   font-size: 18px;
 }
-.message-content h4 {
+.atlas-app .message-content h4 {
   font-size: 16px;
 }
-.message-content ul,
-.message-content ol {
+.atlas-app .message-content ul,
+.atlas-app .message-content ol {
   padding-left: 25px;
   margin: 7px 0 16px;
 }
-.message-content li {
+.atlas-app .message-content li {
   margin: 5px 0;
 }
-.message-content blockquote {
+.atlas-app .message-content blockquote {
   border-left: 3px solid var(--atlas-accent);
   padding: 5px 15px;
   margin: 12px 0;
   color: var(--atlas-muted);
 }
-.message-content :not(pre) > code {
+.atlas-app .message-content :not(pre) > code {
   font-size: .88em;
   padding: 2px 5px;
   background: var(--atlas-field);
   border-radius: 5px;
   white-space: break-spaces;
 }
-.code-block {
+.atlas-app .code-block {
   border: 1px solid var(--atlas-line);
   border-radius: 13px;
   overflow: hidden;
   margin: 15px 0;
   background: var(--atlas-field);
 }
-.code-header {
+.atlas-app .code-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -608,13 +610,13 @@ html[data-midnight-lava] .atlas-sky canvas {
   font-size: 10px;
   color: var(--atlas-muted);
 }
-.code-header button {
+.atlas-app .code-header button {
   font-size: 10px;
   min-height: 28px;
   padding: 3px 9px;
   background: transparent;
 }
-.code-block pre {
+.atlas-app .code-block pre {
   margin: 0;
   padding: 14px;
   overflow: auto;
@@ -626,37 +628,37 @@ html[data-midnight-lava] .atlas-sky canvas {
   white-space: pre;
   tab-size: 2;
 }
-.table-scroll {
+.atlas-app .table-scroll {
   overflow: auto;
   margin: 14px 0;
   border: 1px solid var(--atlas-line);
   border-radius: 10px;
 }
-.message-content table {
+.atlas-app .message-content table {
   border-collapse: collapse;
   min-width: 100%;
   font-size: 13px;
 }
-.message-content th,
-.message-content td {
+.atlas-app .message-content th,
+.atlas-app .message-content td {
   padding: 9px 12px;
   border-bottom: 1px solid var(--atlas-line);
   text-align: left;
   vertical-align: top;
   min-width: 95px;
 }
-.message-content th {
+.atlas-app .message-content th {
   background: var(--atlas-field);
   font-weight: 600;
 }
-.message-content tr:last-child td {
+.atlas-app .message-content tr:last-child td {
   border-bottom: 0;
 }
-.message-content a {
+.atlas-app .message-content a {
   color: var(--atlas-accent);
   text-underline-offset: 3px;
 }
-.inline-citation {
+.atlas-app .inline-citation {
   font-size: 10px !important;
   vertical-align: super;
   text-decoration: none;
@@ -665,7 +667,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   background: var(--atlas-field);
   margin-left: 2px;
 }
-.source-list {
+.atlas-app .source-list {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
@@ -673,7 +675,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   padding: 0;
   list-style: none;
 }
-.source-list a {
+.atlas-app .source-list a {
   display: block;
   max-width: 250px;
   overflow: hidden;
@@ -686,13 +688,13 @@ html[data-midnight-lava] .atlas-sky canvas {
   border-radius: 9px;
   color: var(--atlas-muted);
 }
-.message-actions {
+.atlas-app .message-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
   margin-top: 11px;
 }
-.message-actions button {
+.atlas-app .message-actions button {
   font-size: 10px;
   min-height: 29px;
   padding: 4px 8px;
@@ -700,18 +702,18 @@ html[data-midnight-lava] .atlas-sky canvas {
   border-color: transparent;
   color: var(--atlas-muted);
 }
-.message-error {
+.atlas-app .message-error {
   font-size: 12px;
   color: var(--atlas-danger);
   margin-top: 7px;
 }
-.context-note {
+.atlas-app .context-note {
   font-size: 10px;
   color: var(--atlas-muted);
   margin-top: 9px;
   overflow-wrap: anywhere;
 }
-.conversation-status {
+.atlas-app .conversation-status {
   font-size: 11px;
   color: var(--atlas-muted);
   min-height: 18px;
@@ -720,7 +722,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   width: 100%;
   flex-shrink: 0;
 }
-.composer {
+.atlas-app .composer {
   width: 100%;
   max-width: var(--atlas-column);
   margin: 0 auto;
@@ -734,7 +736,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.composer-controls {
+.atlas-app .composer-controls {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -742,7 +744,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   flex: 1 1 230px;
   min-width: 0;
 }
-.composer-controls > select {
+.atlas-app .composer-controls > select {
   width: auto;
   font-size: 11px;
   min-height: 31px;
@@ -750,14 +752,14 @@ html[data-midnight-lava] .atlas-sky canvas {
   background: transparent;
   border-color: transparent;
 }
-.repository-control {
+.atlas-app .repository-control {
   display: flex;
   gap: 3px;
   align-items: center;
   flex: 1;
   min-width: 0;
 }
-.repository-control select {
+.atlas-app .repository-control select {
   width: auto;
   flex: 1;
   max-width: 350px;
@@ -766,7 +768,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   padding: 4px 8px;
   background: transparent;
 }
-.repository-control button {
+.atlas-app .repository-control button {
   font-size: 11px;
   min-height: 31px;
   padding: 4px 8px;
@@ -775,21 +777,21 @@ html[data-midnight-lava] .atlas-sky canvas {
 .atlas-app .repository-note {
   margin: 6px 4px 0;
 }
-.coding-options {
+.atlas-app .coding-options {
   margin: 6px 4px 0;
   min-width: 0;
 }
-.coding-options .field-help {
+.atlas-app .coding-options .field-help {
   margin: 4px 0;
   font-size: 11px;
   line-height: 1.45;
 }
-.coding-permissions summary {
+.atlas-app .coding-permissions summary {
   color: var(--atlas-muted);
   font-size: 11px;
   cursor: pointer;
 }
-.coding-continue-note {
+.atlas-app .coding-continue-note {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -797,15 +799,15 @@ html[data-midnight-lava] .atlas-sky canvas {
   font-size: 11px;
   overflow-wrap: anywhere;
 }
-.coding-continue-note .text-button {
+.atlas-app .coding-continue-note .text-button {
   font-size: 11px;
   padding: 2px;
 }
-.coding-runs {
+.atlas-app .coding-runs {
   padding: 8px 10px;
   min-width: 0;
 }
-.coding-run {
+.atlas-app .coding-run {
   margin: 0 0 18px;
   padding: 16px;
   border: 1px solid var(--atlas-line);
@@ -814,19 +816,19 @@ html[data-midnight-lava] .atlas-sky canvas {
   overflow-wrap: anywhere;
   min-width: 0;
 }
-.coding-run-heading {
+.atlas-app .coding-run-heading {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   justify-content: space-between;
 }
-.coding-run-heading h3,
-.coding-checks h4 {
+.atlas-app .coding-run-heading h3,
+.atlas-app .coding-checks h4 {
   margin: 0;
   font-size: 13px;
 }
-.coding-prompt {
+.atlas-app .coding-prompt {
   white-space: pre-wrap;
   font-size: 14px;
 }
@@ -836,41 +838,41 @@ html[data-midnight-lava] .atlas-sky canvas {
 .atlas-app .coding-run > .field-help {
   margin: 5px 0;
 }
-.coding-stage,
-.coding-change-count {
+.atlas-app .coding-stage,
+.atlas-app .coding-change-count {
   font-size: 12px;
 }
-.coding-activity,
-.coding-checks {
+.atlas-app .coding-activity,
+.atlas-app .coding-checks {
   margin: 12px 0;
   font-size: 12px;
 }
-.coding-activity summary,
-.coding-check summary {
+.atlas-app .coding-activity summary,
+.atlas-app .coding-check summary {
   cursor: pointer;
   overflow-wrap: anywhere;
 }
-.coding-activity ol {
+.atlas-app .coding-activity ol {
   padding-left: 20px;
   max-height: 240px;
   overflow: auto;
 }
-.coding-activity li {
+.atlas-app .coding-activity li {
   margin: 6px 0;
   white-space: pre-wrap;
 }
-.coding-check {
+.atlas-app .coding-check {
   padding: 9px 0;
   border-bottom: 1px solid var(--atlas-line);
 }
-.coding-check code {
+.atlas-app .coding-check code {
   white-space: pre-wrap;
 }
-.coding-check pre,
-.patch-file pre {
+.atlas-app .coding-check pre,
+.atlas-app .patch-file pre {
   max-height: 420px;
 }
-.coding-check pre {
+.atlas-app .coding-check pre {
   font-size: 11px;
   padding: 10px;
   overflow: auto;
@@ -878,21 +880,21 @@ html[data-midnight-lava] .atlas-sky canvas {
   overflow-wrap: anywhere;
   background: var(--atlas-surface);
 }
-.coding-actions,
-.coding-reconnect {
+.atlas-app .coding-actions,
+.atlas-app .coding-reconnect {
   flex-wrap: wrap;
 }
-.coding-actions button {
+.atlas-app .coding-actions button {
   min-height: 42px;
 }
-.fitness-control {
+.atlas-app .fitness-control {
   display: flex;
   gap: 5px;
   align-items: center;
   font-size: 11px;
   color: var(--atlas-muted);
 }
-.composer textarea {
+.atlas-app .composer textarea {
   border: 0 !important;
   background: transparent !important;
   min-height: 64px !important;
@@ -903,7 +905,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   box-shadow: none !important;
   outline-offset: -2px !important;
 }
-.composer-bottom {
+.atlas-app .composer-bottom {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -912,37 +914,37 @@ html[data-midnight-lava] .atlas-sky canvas {
   border-top: 1px solid var(--atlas-line);
   padding-top: 6px;
 }
-.composer-assistance .text-button {
+.atlas-app .composer-assistance .text-button {
   font-size: 13px;
   color: var(--atlas-accent);
 }
-#coding-feedback:empty,
-.composer > .context-chips:empty {
+.atlas-app #coding-feedback:empty,
+.atlas-app .composer > .context-chips:empty {
   display: none;
 }
-#coding-feedback:not(:empty) {
+.atlas-app #coding-feedback:not(:empty) {
   padding: 6px 0 1px;
 }
-.composer-actions {
+.atlas-app .composer-actions {
   display: flex;
   gap: 6px;
   align-items: center;
   flex-shrink: 0;
   margin-left: auto;
 }
-.composer-actions button {
+.atlas-app .composer-actions button {
   min-height: 35px;
   font-size: 12px;
   border-radius: var(--r-pill);
   padding: 7px 11px;
 }
-.context-chips {
+.atlas-app .context-chips {
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
   margin: 5px 0;
 }
-.context-chip {
+.atlas-app .context-chip {
   display: flex;
   max-width: 100%;
   gap: 5px;
@@ -953,13 +955,13 @@ html[data-midnight-lava] .atlas-sky canvas {
   font-size: 10px;
   color: var(--atlas-muted);
 }
-.context-chip span {
+.atlas-app .context-chip span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 320px;
 }
-.context-chip button {
+.atlas-app .context-chip button {
   padding: 0;
   width: 20px;
   min-height: 22px;
@@ -967,7 +969,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   border-radius: 4px;
   background: transparent;
 }
-.thread-summary {
+.atlas-app .thread-summary {
   max-width: var(--atlas-column);
   margin: 0 auto;
   width: 100%;
@@ -976,16 +978,16 @@ html[data-midnight-lava] .atlas-sky canvas {
   padding: 0 0 8px;
   flex-shrink: 0;
 }
-.thread-summary summary {
+.atlas-app .thread-summary summary {
   cursor: pointer;
 }
-.thread-summary p {
+.atlas-app .thread-summary p {
   max-height: 110px;
   overflow: auto;
   white-space: pre-wrap;
   padding-top: 6px;
 }
-.notice-card {
+.atlas-app .notice-card {
   display: flex;
   gap: 15px;
   align-items: center;
@@ -999,19 +1001,19 @@ html[data-midnight-lava] .atlas-sky canvas {
   width: 100%;
   flex-shrink: 0;
 }
-.notice-card h2 {
+.atlas-app .notice-card h2 {
   font-size: 15px;
   margin-bottom: 4px;
 }
-.notice-card p {
+.atlas-app .notice-card p {
   font-size: 12px;
   color: var(--atlas-muted);
 }
-.notice-card button {
+.atlas-app .notice-card button {
   white-space: nowrap;
   font-size: 12px;
 }
-.session-notice {
+.atlas-app .session-notice {
   display: none;
   position: fixed;
   top: 50%;
@@ -1024,20 +1026,20 @@ html[data-midnight-lava] .atlas-sky canvas {
   color: var(--atlas-muted);
   z-index: 19;
 }
-.session-check #atlas-private,
-.session-check .atlas-dialog {
+.atlas-app.session-check #atlas-private,
+.atlas-app.session-check .atlas-dialog {
   visibility: hidden !important;
 }
-.session-check .session-notice {
+.atlas-app.session-check .session-notice {
   display: block;
 }
-.session-check .ifl-toast {
+.atlas-app.session-check .ifl-toast {
   visibility: hidden;
 }
 .atlas-app .ifl-toast {
   bottom: max(16px, env(safe-area-inset-bottom));
 }
-.atlas-dialog > .ifl-toast {
+.atlas-app .atlas-dialog > .ifl-toast {
   position: sticky;
   left: auto;
   right: auto;
@@ -1049,7 +1051,7 @@ html[data-midnight-lava] .atlas-sky canvas {
 .atlas-app dialog.ifl-sheet {
   color: var(--atlas-text);
 }
-.atlas-dialog .ifs-head h2 {
+.atlas-app .atlas-dialog .ifs-head h2 {
   color: var(--atlas-text);
 }
 .atlas-app .ifs-btn {
@@ -1057,19 +1059,19 @@ html[data-midnight-lava] .atlas-sky canvas {
   border-radius: var(--r-pill);
   border-color: var(--atlas-line);
 }
-.atlas-dialog .dialog-content {
+.atlas-app .atlas-dialog .dialog-content {
   padding-bottom: 4px;
 }
-#navigation-slot .conversation-navigation {
+.atlas-app #navigation-slot .conversation-navigation {
   max-height: min(60dvh, 500px);
 }
-#navigation-slot .sidebar-heading h2 {
+.atlas-app #navigation-slot .sidebar-heading h2 {
   display: none;
 }
-#navigation-slot .sidebar-heading {
+.atlas-app #navigation-slot .sidebar-heading {
   justify-content: flex-end;
 }
-#navigation-slot .conversation-list {
+.atlas-app #navigation-slot .conversation-list {
   min-height: 0;
 }
 @media (min-width: 721px) {
@@ -1077,157 +1079,157 @@ html[data-midnight-lava] .atlas-sky canvas {
     width: min(720px, calc(100% - 48px));
   }
 }
-.settings-group {
+.atlas-app .settings-group {
   display: grid;
   gap: 12px;
 }
-.settings-group + .settings-group {
+.atlas-app .settings-group + .settings-group {
   padding-top: 18px;
   border-top: 1px solid var(--atlas-line);
 }
-.dialog-content > h3 {
+.atlas-app .dialog-content > h3 {
   font-size: 15px;
   margin: 20px 0 10px;
 }
-.dialog-content > .muted {
+.atlas-app .dialog-content > .muted {
   font-size: 12px;
   margin-bottom: 17px;
 }
-.settings-section + .settings-section {
+.atlas-app .settings-section + .settings-section {
   margin-top: 26px;
   border-top: 1px solid var(--atlas-line);
   padding-top: 24px;
 }
-.settings-section h3 {
+.atlas-app .settings-section h3 {
   font-size: 15px;
   margin-bottom: 10px;
 }
-.settings-section > p {
+.atlas-app .settings-section > p {
   font-size: 12px;
   color: var(--atlas-muted);
   margin-bottom: 12px;
 }
-.form-grid {
+.atlas-app .form-grid {
   display: grid;
   gap: 13px;
   margin: 12px 0;
 }
-.form-grid label,
-.two-fields > label {
+.atlas-app .form-grid label,
+.atlas-app .two-fields > label {
   display: grid;
   gap: 6px;
   font-size: 12px;
   color: var(--atlas-muted);
 }
-.form-grid input,
-.form-grid select,
-.form-grid textarea,
-.dialog-content .two-fields input,
-.dialog-content .two-fields select {
+.atlas-app .form-grid input,
+.atlas-app .form-grid select,
+.atlas-app .form-grid textarea,
+.atlas-app .dialog-content .two-fields input,
+.atlas-app .dialog-content .two-fields select {
   font-size: 13px;
 }
-.form-grid label.check-label {
+.atlas-app .form-grid label.check-label {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.two-fields {
+.atlas-app .two-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 13px;
 }
-.button-row {
+.atlas-app .button-row {
   display: flex;
   gap: 9px;
   align-items: center;
   flex-wrap: wrap;
   margin: 10px 0;
 }
-.button-row button {
+.atlas-app .button-row button {
   font-size: 12px;
 }
-.field-feedback {
+.atlas-app .field-feedback {
   font-size: 12px;
   min-height: 18px;
   margin: 8px 0;
   color: var(--atlas-muted);
   overflow-wrap: anywhere;
 }
-.field-feedback.error {
+.atlas-app .field-feedback.error {
   color: var(--atlas-danger);
 }
-.health-summary {
+.atlas-app .health-summary {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   margin: 11px 0;
 }
-.health-pill {
+.atlas-app .health-pill {
   font-size: 11px;
   padding: 6px 9px;
   background: var(--atlas-field);
   border-radius: 8px;
 }
-.health-pill.ok {
+.atlas-app .health-pill.ok {
   color: #65cfa0;
 }
-.health-pill.error {
+.atlas-app .health-pill.error {
   color: var(--atlas-danger);
 }
-.metric-grid {
+.atlas-app .metric-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
   margin: 16px 0;
 }
-.metric {
+.atlas-app .metric {
   padding: 16px;
   border: 1px solid var(--atlas-line);
   border-radius: 14px;
   background: var(--atlas-surface);
 }
-.metric strong {
+.atlas-app .metric strong {
   font-size: 23px;
   line-height: 1.25;
   display: block;
   margin-bottom: 5px;
   overflow-wrap: anywhere;
 }
-.metric span {
+.atlas-app .metric span {
   font-size: 10px;
   color: var(--atlas-muted);
 }
-.record-list {
+.atlas-app .record-list {
   display: grid;
   gap: 9px;
   margin: 13px 0;
 }
-.record-card {
+.atlas-app .record-card {
   border: 1px solid var(--atlas-line);
   border-radius: 14px;
   padding: 14px;
   background: var(--atlas-surface);
 }
-.record-card h3,
-.record-card h4 {
+.atlas-app .record-card h3,
+.atlas-app .record-card h4 {
   font-size: 13px;
   margin: 0 0 5px;
   overflow-wrap: anywhere;
 }
-.record-card p {
+.atlas-app .record-card p {
   font-size: 11px;
   color: var(--atlas-muted);
   overflow-wrap: anywhere;
 }
-.record-card .button-row {
+.atlas-app .record-card .button-row {
   margin-bottom: 0;
 }
-.record-card button {
+.atlas-app .record-card button {
   font-size: 11px;
   min-height: 33px;
   padding: 5px 10px;
 }
-.record-open {
+.atlas-app .record-open {
   display: block;
   width: 100%;
   text-align: left;
@@ -1236,7 +1238,7 @@ html[data-midnight-lava] .atlas-sky canvas {
   padding: 0 !important;
   min-height: 0 !important;
 }
-.record-meta {
+.atlas-app .record-meta {
   display: flex;
   gap: 10px;
   justify-content: space-between;
@@ -1245,18 +1247,18 @@ html[data-midnight-lava] .atlas-sky canvas {
   color: var(--atlas-muted);
   margin-top: 5px;
 }
-.brief-content,
-.run-content {
+.atlas-app .brief-content,
+.atlas-app .run-content {
   margin: 17px 0;
 }
-.context-list {
+.atlas-app .context-list {
   max-height: 45dvh;
   overflow: auto;
   margin-top: 12px;
   display: grid;
   gap: 5px;
 }
-.context-choice {
+.atlas-app .context-choice {
   display: flex;
   align-items: flex-start;
   gap: 9px;
@@ -1266,20 +1268,20 @@ html[data-midnight-lava] .atlas-sky canvas {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.context-choice small {
+.atlas-app .context-choice small {
   display: block;
   font-size: 10px;
   color: var(--atlas-muted);
   margin-top: 3px;
 }
-.dialog-sticky-actions {
+.atlas-app .dialog-sticky-actions {
   position: sticky;
   bottom: calc(0px - var(--sheet-bottom-pad));
   padding: 12px 0 4px;
   background: var(--atlas-surface);
   margin-top: 10px;
 }
-.notice-inline {
+.atlas-app .notice-inline {
   font-size: 12px;
   padding: 12px;
   border-radius: 11px;
@@ -1287,12 +1289,12 @@ html[data-midnight-lava] .atlas-sky canvas {
   color: var(--atlas-muted);
   margin-bottom: 15px;
 }
-.weekday-row {
+.atlas-app .weekday-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
-.weekday-row label {
+.atlas-app .weekday-row label {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1308,27 +1310,27 @@ html[data-midnight-lava] .atlas-sky canvas {
   color: var(--atlas-muted);
   padding: 0 5px;
 }
-.patch-file {
+.atlas-app .patch-file {
   border: 1px solid var(--atlas-line);
   border-radius: 12px;
   overflow: hidden;
   margin: 12px 0;
 }
-.patch-file summary {
+.atlas-app .patch-file summary {
   padding: 11px;
   font: 12px/1.5 ui-monospace, monospace;
   background: var(--atlas-field);
   cursor: pointer;
   overflow-wrap: anywhere;
 }
-.patch-file pre {
+.atlas-app .patch-file pre {
   padding: 13px;
   overflow: auto;
   margin: 0;
   font: 11px/1.6 ui-monospace, monospace;
   white-space: pre;
 }
-.busy-label::after {
+.atlas-app .busy-label::after {
   content: "";
   display: inline-block;
   width: 9px;
@@ -1347,53 +1349,53 @@ html[data-midnight-lava] .atlas-sky canvas {
 :root[data-theme=light] .atlas-app {
   --atlas-danger:#b72931;
 }
-:root[data-theme=light] .health-pill.ok {
+.atlas-app :root[data-theme=light] .health-pill.ok {
   color: #227c51;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme=dark]) .atlas-app {
     --atlas-danger:#b72931;
   }
-  :root:not([data-theme=dark]) .health-pill.ok {
+  .atlas-app :root:not([data-theme=dark]) .health-pill.ok {
     color: #227c51;
   }
 }
 @media (max-width: 1000px) {
-  .atlas-layout {
+  .atlas-app .atlas-layout {
     grid-template-columns: 220px minmax(0, 1fr);
   }
-  .conversation-main {
+  .atlas-app .conversation-main {
     padding-inline: 20px;
   }
-  .starter-grid {
+  .atlas-app .starter-grid {
     grid-template-columns: 1fr;
   }
-  .starter-grid button {
+  .atlas-app .starter-grid button {
     min-height: 48px;
     flex-direction: row;
     align-items: center;
     gap: 10px;
   }
-  .welcome {
+  .atlas-app .welcome {
     max-width: 480px;
   }
-  .starter-grid .atlas-glyph {
+  .atlas-app .starter-grid .atlas-glyph {
     align-self: auto;
   }
 }
 @media (max-width: 720px) {
-  .atlas-header {
+  .atlas-app .atlas-header {
     padding-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
     gap: 4px;
   }
-  #navigation-toggle {
+  .atlas-app #navigation-toggle {
     display: grid;
     place-items: center;
   }
-  .atlas-brand {
+  .atlas-app .atlas-brand {
     font-size: 22px;
   }
-  .atlas-header-actions {
+  .atlas-app .atlas-header-actions {
     gap: 4px;
   }
   .atlas-app .chrome-button,
@@ -1404,202 +1406,202 @@ html[data-midnight-lava] .atlas-sky canvas {
   .atlas-app .connection-status {
     max-width: 140px;
   }
-  .atlas-layout {
+  .atlas-app .atlas-layout {
     display: flex;
     flex-direction: column;
   }
-  .atlas-sidebar {
+  .atlas-app .atlas-sidebar {
     display: none;
   }
-  .conversation-main {
+  .atlas-app .conversation-main {
     height: 100%;
     padding: 0 12px calc(8px + env(safe-area-inset-bottom));
   }
-  .conversation-toolbar {
+  .atlas-app .conversation-toolbar {
     padding: 14px 4px 8px;
     min-height: 65px;
   }
-  .conversation-toolbar h1 {
+  .atlas-app .conversation-toolbar h1 {
     font-size: 15px;
   }
-  .eyebrow {
+  .atlas-app .eyebrow {
     font-size: 9px;
   }
-  .messages {
+  .atlas-app .messages {
     padding: 10px 4px 16px;
     scrollbar-gutter: auto;
   }
-  .welcome {
+  .atlas-app .welcome {
     padding: 12px 12px 22px;
     min-height: 100%;
     justify-content: center;
   }
-  .welcome h2 {
+  .atlas-app .welcome h2 {
     font-size: 28px;
   }
-  .welcome > p {
+  .atlas-app .welcome > p {
     font-size: 15px;
   }
-  .starter-grid {
+  .atlas-app .starter-grid {
     gap: 7px;
     margin-top: 20px;
   }
-  .starter-grid button {
+  .atlas-app .starter-grid button {
     font-size: 14px;
     min-height: 48px;
     padding: 11px 13px;
   }
-  .composer {
+  .atlas-app .composer {
     border-radius: 18px;
     padding: 8px 10px;
   }
-  .composer-controls {
+  .atlas-app .composer-controls {
     gap: 2px;
   }
-  .composer-controls > select {
+  .atlas-app .composer-controls > select {
     font-size: 14px;
     min-height: 38px;
   }
-  .repository-control {
+  .atlas-app .repository-control {
     width: 100%;
     flex-basis: 100%;
     padding: 3px 0;
   }
-  .repository-control select {
+  .atlas-app .repository-control select {
     max-width: unset;
     font-size: 14px;
     min-height: 38px;
   }
-  .repository-control button {
+  .atlas-app .repository-control button {
     font-size: 13px;
     min-height: 38px;
   }
-  .fitness-control {
+  .atlas-app .fitness-control {
     padding: 4px 0;
     font-size: 13px;
   }
-  .composer textarea {
+  .atlas-app .composer textarea {
     font-size: 16px !important;
     min-height: 58px !important;
     max-height: 140px;
   }
-  .composer-bottom {
+  .atlas-app .composer-bottom {
     gap: 7px;
     flex-wrap: wrap;
   }
-  .composer-actions {
+  .atlas-app .composer-actions {
     gap: 4px;
     margin-left: auto;
   }
-  .composer-actions button {
+  .atlas-app .composer-actions button {
     font-size: 13px;
     min-height: 42px;
     padding: 6px 9px;
   }
-  .message {
+  .atlas-app .message {
     margin-bottom: 23px;
   }
-  .message.user .message-content {
+  .atlas-app .message.user .message-content {
     max-width: 92%;
     font-size: 14px;
   }
-  .message.assistant .message-content {
+  .atlas-app .message.assistant .message-content {
     font-size: 15px;
     line-height: 1.75;
   }
-  .message-content h2 {
+  .atlas-app .message-content h2 {
     font-size: 19px;
   }
-  .message-content h3 {
+  .atlas-app .message-content h3 {
     font-size: 17px;
   }
-  .code-block pre {
+  .atlas-app .code-block pre {
     font-size: 11px;
   }
-  .message-content th,
-  .message-content td {
+  .atlas-app .message-content th,
+  .atlas-app .message-content td {
     font-size: 12px;
   }
-  .message-actions button {
+  .atlas-app .message-actions button {
     font-size: 12px;
     min-height: 38px;
   }
-  .source-list a {
+  .atlas-app .source-list a {
     max-width: 200px;
     font-size: 12px;
   }
-  .notice-card {
+  .atlas-app .notice-card {
     padding: 13px;
     gap: 10px;
     margin-top: 10px;
     align-items: flex-start;
   }
-  .notice-card h2 {
+  .atlas-app .notice-card h2 {
     font-size: 13px;
   }
-  .notice-card p {
+  .atlas-app .notice-card p {
     font-size: 11px;
   }
-  .notice-card button {
+  .atlas-app .notice-card button {
     font-size: 12px;
     min-height: 44px;
     padding: 7px 9px;
     white-space: normal;
   }
-  .two-fields {
+  .atlas-app .two-fields {
     gap: 10px;
   }
-  .metric-grid {
+  .atlas-app .metric-grid {
     gap: 6px;
   }
-  .metric {
+  .atlas-app .metric {
     padding: 12px 9px;
   }
-  .metric strong {
+  .atlas-app .metric strong {
     font-size: 19px;
   }
-  .metric span {
+  .atlas-app .metric span {
     font-size: 9px;
   }
-  .thread-summary {
+  .atlas-app .thread-summary {
     padding-inline: 4px;
   }
-  .context-chip span {
+  .atlas-app .context-chip span {
     max-width: 240px;
   }
-  .settings-section h3 {
+  .atlas-app .settings-section h3 {
     font-size: 14px;
   }
-  .form-grid input:not([type=checkbox]),
-  .form-grid select,
-  .form-grid textarea,
-  .dialog-content .two-fields input,
-  .dialog-content .two-fields select {
+  .atlas-app .form-grid input:not([type=checkbox]),
+  .atlas-app .form-grid select,
+  .atlas-app .form-grid textarea,
+  .atlas-app .dialog-content .two-fields input,
+  .atlas-app .dialog-content .two-fields select {
     font-size: 16px;
   }
-  .form-grid label {
+  .atlas-app .form-grid label {
     font-size: 12px;
   }
-  .button-row input[type=search] {
+  .atlas-app .button-row input[type=search] {
     flex: 1;
     min-width: 0;
   }
-  .conversation-status {
+  .atlas-app .conversation-status {
     font-size: 12px;
     padding-inline: 3px;
   }
 }
 @media (max-width: 370px) {
-  .composer-actions button {
+  .atlas-app .composer-actions button {
     padding-inline: 7px;
   }
-  .metric-grid {
+  .atlas-app .metric-grid {
     grid-template-columns: 1fr 1fr;
   }
-  .two-fields {
+  .atlas-app .two-fields {
     grid-template-columns: 1fr;
   }
-  .context-chip span {
+  .atlas-app .context-chip span {
     max-width: 210px;
   }
 }
@@ -1615,16 +1617,16 @@ html[data-midnight-lava] .atlas-sky canvas {
   .atlas-app input,
   .atlas-app textarea,
   .atlas-app select,
-  .composer,
-  .record-card,
-  .code-block {
+  .atlas-app .composer,
+  .atlas-app .record-card,
+  .atlas-app .code-block {
     border: 1px solid CanvasText;
   }
   .atlas-app .primary-button {
     color: ButtonText;
     background: ButtonFace;
   }
-  .connection-status .status-dot {
+  .atlas-app .connection-status .status-dot {
     background: CanvasText;
   }
 }
@@ -1635,7 +1637,7 @@ html[data-midnight-lava] .atlas-sky canvas {
     min-width: 42px;
   }
   .atlas-app .connection-status #connection-label,
-  .inflite-link > span:first-child {
+  .atlas-app .inflite-link > span:first-child {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1644,238 +1646,270 @@ html[data-midnight-lava] .atlas-sky canvas {
     white-space: nowrap;
   }
 }
-.atlas-keyboard {
+.atlas-app.atlas-keyboard {
   position: fixed;
   inset: var(--atlas-visible-top, 0px) 0 auto;
   max-height: var(--atlas-visible-height);
 }
-.atlas-keyboard .conversation-main {
+.atlas-app.atlas-keyboard .conversation-main {
   padding-bottom: 4px;
 }
-.atlas-keyboard .composer textarea {
+.atlas-app.atlas-keyboard .composer textarea {
   max-height: 74px;
 }
 
 /* Coding workspace: keep the conversation readable and the controls compact. */
 .atlas-app { --atlas-column: 960px; font-size: 16px; }
-.atlas-header { min-height: calc(56px + env(safe-area-inset-top)); padding-inline: max(18px, env(safe-area-inset-left)) max(18px, env(safe-area-inset-right)); }
-.atlas-brand { font-size: 24px; }
-.atlas-layout { grid-template-columns: 248px minmax(0, 1fr); }
-.atlas-sidebar { padding-top: 16px; }
-.sidebar-tools { display: grid; gap: 3px; padding-bottom: 12px; border-bottom: 1px solid var(--atlas-line); }
+.atlas-app .atlas-header { min-height: calc(56px + env(safe-area-inset-top)); padding-inline: max(18px, env(safe-area-inset-left)) max(18px, env(safe-area-inset-right)); }
+.atlas-app .atlas-brand { font-size: 24px; }
+.atlas-app .atlas-layout { grid-template-columns: 248px minmax(0, 1fr); }
+.atlas-app .atlas-sidebar { padding-top: 16px; }
+.atlas-app .sidebar-tools { display: grid; gap: 3px; padding-bottom: 12px; border-bottom: 1px solid var(--atlas-line); }
 .atlas-app .sidebar-tools button { display: flex; gap: 10px; align-items: center; background: transparent; border: 0; text-align: left; font-size: 14px; padding: 7px 10px; min-height: 40px; }
-.sidebar-tools .atlas-glyph { width: 18px; color: var(--atlas-muted); }
-.inbox-toolbar,
-.inbox-task-heading {
+.atlas-app .sidebar-tools .atlas-glyph { width: 18px; color: var(--atlas-muted); }
+.atlas-app .inbox-toolbar,
+.atlas-app .inbox-task-heading {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
 }
-.inbox-toolbar #refresh-inbox { margin-inline-start: auto; }
-.inbox-task-heading h3 {
+.atlas-app .inbox-toolbar #refresh-inbox { margin-inline-start: auto; }
+.atlas-app .inbox-task-heading h3 {
   flex: 1 1 12rem;
   min-width: 0;
   margin: 0;
 }
-.inbox-task p,
-.inbox-task h3,
-#patch-detail h3,
-.review-summary { overflow-wrap: anywhere; }
-.review-summary { white-space: pre-wrap; }
+.atlas-app .inbox-task p,
+.atlas-app .inbox-task h3,
+.atlas-app #patch-detail h3,
+.atlas-app .review-summary { overflow-wrap: anywhere; }
+.atlas-app .review-summary { white-space: pre-wrap; }
 .atlas-app #more-inbox { align-self: start; }
-.sidebar-heading h2 { font-size: 12px; text-transform: none; letter-spacing: 0; }
-.conversation-list .thread-name { font-size: 14px; }
-.conversation-list .thread-date { font-size: 12px; }
-.conversation-main { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
-.conversation-toolbar { min-height: 64px; padding-block: 12px; }
-.conversation-toolbar h1 { font-size: 18px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.eyebrow { font-size: 11px; }
-.messages { padding-top: 18px; }
+.atlas-app .sidebar-heading h2 { font-size: 12px; text-transform: none; letter-spacing: 0; }
+.atlas-app .conversation-list .thread-name { font-size: 14px; }
+.atlas-app .conversation-list .thread-date { font-size: 12px; }
+.atlas-app .conversation-main { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+.atlas-app .conversation-toolbar { min-height: 64px; padding-block: 12px; }
+.atlas-app .conversation-toolbar h1 { font-size: 18px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.atlas-app .eyebrow { font-size: 11px; }
+.atlas-app .messages { padding-top: 18px; }
 .atlas-app .field-help { font-size: 13px; line-height: 1.5; }
 .atlas-app .form-grid label, .atlas-app .two-fields > label { font-size: 14px; }
 .atlas-app .form-grid :is(input, select, textarea) { font-size: 16px; }
 .atlas-app .optional { font-size: 12px; }
 .atlas-app .composer { padding: 8px 12px; border-radius: 16px; background: var(--atlas-surface); box-shadow: 0 4px 22px #00000012; max-height: min(55%, 280px); }
 .atlas-app .composer #prompt { padding: 8px 3px; min-height: 50px; max-height: 112px; resize: none; font-size: 16px; line-height: 1.5; border: 0; border-radius: 0; background: transparent; }
-.composer #prompt:focus-visible { outline-offset: -1px; }
-.composer-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 8px; padding-top: 5px; border-top: 0; }
-.composer-controls { flex: 1 1 auto; flex-wrap: nowrap; gap: 6px; }
-.composer-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+.atlas-app .composer #prompt:focus-visible { outline-offset: -1px; }
+.atlas-app .composer-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 8px; padding-top: 5px; border-top: 0; }
+.atlas-app .composer-controls { flex: 1 1 auto; flex-wrap: nowrap; gap: 6px; }
+.atlas-app .composer-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
 .atlas-app .composer-actions button { font-size: 14px; min-height: 36px; padding: 6px 13px; border-radius: 10px; white-space: nowrap; }
 .atlas-app .composer .intent-switch { display: inline-flex; padding: 3px; border: 1px solid var(--atlas-line); border-radius: 10px; gap: 1px; }
 .atlas-app .intent-switch button { min-height: 28px; padding: 3px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--atlas-muted); font-size: 13px; }
 .atlas-app .intent-switch button[aria-pressed=true] { background: var(--atlas-field); color: var(--atlas-text); box-shadow: 0 1px 3px #0002; }
 .atlas-app .composer .composer-options { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 5px 7px; font-size: 13px; border: 0; }
-#composer-mode-label:empty { display: none; }
+.atlas-app #composer-mode-label:empty { display: none; }
 .atlas-app .composer .composer-context { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 30px; gap: 5px; margin: 0 0 4px; padding: 0; }
-.composer-context-field { display: flex; align-items: center; min-width: 0; border: 1px solid var(--atlas-line); border-radius: 8px; background: transparent; }
-.environment-context { gap: 0; }
-.environment-context > .atlas-glyph { width: 16px; height: 16px; margin-left: 8px; color: var(--atlas-muted); }
+.atlas-app .composer-context-field { display: flex; align-items: center; min-width: 0; border: 1px solid var(--atlas-line); border-radius: 8px; background: transparent; }
+.atlas-app .environment-context { gap: 0; }
+.atlas-app .environment-context > .atlas-glyph { width: 16px; height: 16px; margin-left: 8px; color: var(--atlas-muted); }
 .atlas-app .composer .composer-context select { min-height: 32px; width: 100%; max-width: none; min-width: 0; font-size: 13px; padding: 4px 23px 4px 8px; border: 0; border-radius: 8px; appearance: none; -webkit-appearance: none; background-color: transparent; background-image: linear-gradient(45deg, transparent 50%, var(--atlas-muted) 50%), linear-gradient(135deg, var(--atlas-muted) 50%, transparent 50%); background-position: calc(100% - 12px) 14px, calc(100% - 8px) 14px; background-size: 4px 4px; background-repeat: no-repeat; text-overflow: ellipsis; }
 .atlas-app .composer #manage-environments { width: 30px; min-width: 30px; min-height: 32px; padding: 6px; }
-.composer .context-chips:empty, .composer-assistance:empty, .composer-assistance p:empty { display: none; }
-.composer .context-chips { margin: 0; max-height: 64px; overflow: auto; }
-.composer-assistance { margin: 0; padding: 0; }
-.composer-assistance .field-feedback:not(:empty) { margin: 6px 2px 2px; }
-.composer-assistance .field-help { margin: 4px 2px; }
-.coding-continue-note { justify-content: space-between; flex-wrap: nowrap; padding: 4px 7px; border-radius: 8px; background: var(--atlas-field); font-size: 12px; }
+.atlas-app .composer .context-chips:empty, .atlas-app .composer-assistance:empty, .atlas-app .composer-assistance p:empty { display: none; }
+.atlas-app .composer .context-chips { margin: 0; max-height: 64px; overflow: auto; }
+.atlas-app .composer-assistance { margin: 0; padding: 0; }
+.atlas-app .composer-assistance .field-feedback:not(:empty) { margin: 6px 2px 2px; }
+.atlas-app .composer-assistance .field-help { margin: 4px 2px; }
+.atlas-app .coding-continue-note { justify-content: space-between; flex-wrap: nowrap; padding: 4px 7px; border-radius: 8px; background: var(--atlas-field); font-size: 12px; }
 .atlas-app .coding-continue-note .text-button { font-size: 12px; min-height: 28px; padding: 2px; }
-#task-options-dialog label { display: grid; gap: 8px; font-size: 14px; }
-#task-options-dialog .coding-options { margin: 18px 0 0; display: grid; gap: 14px; }
-#task-options-dialog .coding-permissions { padding-top: 14px; border-top: 1px solid var(--atlas-line); }
-#task-options-dialog .coding-permissions summary { font-size: 14px; }
-#task-options-dialog .coding-options .field-help { font-size: 13px; }
-#task-options-dialog .coding-permissions p { margin-top: 10px; }
-#task-options-dialog #attach-context { justify-self: start; font-size: 14px; }
-.task-away-note { margin-top: 8px; }
-.coding-runs { padding: 0; }
+.atlas-app #task-options-dialog label { display: grid; gap: 8px; font-size: 14px; }
+.atlas-app #task-options-dialog .coding-options { margin: 18px 0 0; display: grid; gap: 14px; }
+.atlas-app #task-options-dialog .coding-permissions { padding-top: 14px; border-top: 1px solid var(--atlas-line); }
+.atlas-app #task-options-dialog .coding-permissions summary { font-size: 14px; }
+.atlas-app #task-options-dialog .coding-options .field-help { font-size: 13px; }
+.atlas-app #task-options-dialog .coding-permissions p { margin-top: 10px; }
+.atlas-app #task-options-dialog #attach-context { justify-self: start; font-size: 14px; }
+.atlas-app .task-away-note { margin-top: 8px; }
+.atlas-app .coding-runs { padding: 0; }
 .atlas-app .coding-run { margin: 0 0 14px; padding: 0; border-radius: 13px; background: var(--atlas-surface); }
-.task-switch { display: block; cursor: pointer; list-style: none; padding: 14px 16px; position: relative; }
-.task-switch::-webkit-details-marker { display: none; }
-.task-switch::after { content: ''; display: block; position: absolute; bottom: 19px; right: 20px; height: 6px; width: 6px; border-right: 1.5px solid var(--atlas-muted); border-bottom: 1.5px solid var(--atlas-muted); transform: rotate(45deg); }
-.coding-run[open] > .task-switch::after { transform: rotate(225deg); bottom: 16px; }
-.coding-run:not([open]) .task-switch { padding-block: 12px; }
-.coding-run-heading { gap: 12px; flex-wrap: nowrap; align-items: flex-start; }
-.coding-run-heading h3 { font-size: 16px; line-height: 1.4; font-weight: 600; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.coding-run .message-status { flex: none; white-space: nowrap; font-size: 12px; line-height: 1.6; padding: 2px 7px; border-radius: 6px; }
-.coding-run .message-status[data-status=completed], .coding-run .message-status[data-status=published] { color: #62bd91; }
-.task-metadata { display: flex; gap: 8px; margin-top: 5px; padding-right: 20px; min-width: 0; color: var(--atlas-muted); font-size: 12px; }
-.task-repository, .task-branch { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.task-branch { flex: 0 1 140px; padding-left: 8px; border-left: 1px solid var(--atlas-line); }
-.task-tabs { display: flex; border-top: 1px solid var(--atlas-line); border-bottom: 1px solid var(--atlas-line); padding: 0 9px; gap: 2px; }
+.atlas-app .task-switch { display: block; cursor: pointer; list-style: none; padding: 14px 16px; position: relative; }
+.atlas-app .task-switch::-webkit-details-marker { display: none; }
+.atlas-app .task-switch::after { content: ''; display: block; position: absolute; bottom: 19px; right: 20px; height: 6px; width: 6px; border-right: 1.5px solid var(--atlas-muted); border-bottom: 1.5px solid var(--atlas-muted); transform: rotate(45deg); }
+.atlas-app .coding-run[open] > .task-switch::after { transform: rotate(225deg); bottom: 16px; }
+.atlas-app .coding-run:not([open]) .task-switch { padding-block: 12px; }
+.atlas-app .coding-run-heading { gap: 12px; flex-wrap: nowrap; align-items: flex-start; }
+.atlas-app .coding-run-heading h3 { font-size: 16px; line-height: 1.4; font-weight: 600; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.atlas-app .coding-run .message-status { flex: none; white-space: nowrap; font-size: 12px; line-height: 1.6; padding: 2px 7px; border-radius: 6px; }
+.atlas-app .coding-run .message-status[data-status=completed], .atlas-app .coding-run .message-status[data-status=published] { color: #62bd91; }
+.atlas-app .task-metadata { display: flex; gap: 8px; margin-top: 5px; padding-right: 20px; min-width: 0; color: var(--atlas-muted); font-size: 12px; }
+.atlas-app .task-repository, .atlas-app .task-branch { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.atlas-app .task-branch { flex: 0 1 140px; padding-left: 8px; border-left: 1px solid var(--atlas-line); }
+.atlas-app .task-tabs { display: flex; border-top: 1px solid var(--atlas-line); border-bottom: 1px solid var(--atlas-line); padding: 0 9px; gap: 2px; }
 .atlas-app .task-tabs button { white-space: nowrap; min-width: 0; min-height: 40px; padding: 8px 12px; font-size: 14px; border: 0; border-radius: 0; background: transparent; color: var(--atlas-muted); position: relative; }
 .atlas-app .task-tabs button[aria-selected=true] { color: var(--atlas-text); }
-.task-tabs button[aria-selected=true]::after { content: ''; height: 2px; position: absolute; bottom: -1px; inset-inline: 10px; background: var(--atlas-accent); }
-.task-panels { padding: 14px 16px 0; }
-.task-panel { min-height: 58px; }
-.task-panel .message-content { margin-top: 12px; font-size: 15px; line-height: 1.65; }
-.task-panel .message-content p:last-child { margin-bottom: 0; }
+.atlas-app .task-tabs button[aria-selected=true]::after { content: ''; height: 2px; position: absolute; bottom: -1px; inset-inline: 10px; background: var(--atlas-accent); }
+.atlas-app .task-panels { padding: 14px 16px 0; }
+.atlas-app .task-panel { min-height: 58px; }
+.atlas-app .task-panel .message-content { margin-top: 12px; font-size: 15px; line-height: 1.65; }
+.atlas-app .task-panel .message-content p:last-child { margin-bottom: 0; }
 .atlas-app .task-cloud-state { font-size: 12px; color: var(--atlas-muted); margin: 0 0 10px; }
-.task-progress { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
-.task-progress-indicator { height: 12px; width: 12px; border: 2px solid var(--atlas-line); border-top-color: var(--atlas-accent); border-radius: 50%; animation: atlas-progress-spin 1s linear infinite; flex: none; }
+.atlas-app .task-progress { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+.atlas-app .task-progress-indicator { height: 12px; width: 12px; border: 2px solid var(--atlas-line); border-top-color: var(--atlas-accent); border-radius: 50%; animation: atlas-progress-spin 1s linear infinite; flex: none; }
 @keyframes atlas-progress-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .task-progress-indicator { animation: none; } }
-.coding-stage { font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { .atlas-app .task-progress-indicator { animation: none; } }
+.atlas-app .coding-stage { font-size: 14px; }
 .atlas-app .task-recovery { font-size: 14px; line-height: 1.55; margin: 8px 0 12px; }
 .atlas-app .task-latest { font-size: 14px; line-height: 1.5; color: var(--atlas-muted); margin: 8px 0 12px; }
-.task-workspace-details, .task-instructions { margin: 12px 0; font-size: 13px; }
-.task-workspace-details > summary, .task-instructions > summary { font-size: 12px; color: var(--atlas-muted); cursor: pointer; }
-.task-workspace-details .field-help, .task-instructions .coding-prompt { margin-top: 8px; font-size: 13px; }
-.task-workspace-details pre { font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.task-activity-list { list-style: none; margin: 0; padding: 0; }
-.task-activity-list li { position: relative; padding: 0 0 18px 17px; border-left: 1px solid var(--atlas-line); font-size: 14px; }
-.task-activity-list li:last-child { padding-bottom: 2px; }
-.task-activity-list li::before { content: ''; position: absolute; height: 5px; width: 5px; left: -3px; top: 8px; border-radius: 50%; background: var(--atlas-muted); }
-.task-activity-list strong { font-size: 13px; font-weight: 550; }
-.task-activity-list p { color: var(--atlas-muted); font-size: 13px; margin-top: 4px; white-space: pre-wrap; }
-.coding-checks { margin: 0; }
-.coding-checks h4 { font-size: 14px; }
+.atlas-app .task-workspace-details, .atlas-app .task-instructions { margin: 12px 0; font-size: 13px; }
+.atlas-app .task-workspace-details > summary, .atlas-app .task-instructions > summary { font-size: 12px; color: var(--atlas-muted); cursor: pointer; }
+.atlas-app .task-workspace-details .field-help, .atlas-app .task-instructions .coding-prompt { margin-top: 8px; font-size: 13px; }
+.atlas-app .task-workspace-details pre { font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.atlas-app .task-activity-list { list-style: none; margin: 0; padding: 0; }
+.atlas-app .task-activity-list li { position: relative; padding: 0 0 18px 17px; border-left: 1px solid var(--atlas-line); font-size: 14px; }
+.atlas-app .task-activity-list li:last-child { padding-bottom: 2px; }
+.atlas-app .task-activity-list li::before { content: ''; position: absolute; height: 5px; width: 5px; left: -3px; top: 8px; border-radius: 50%; background: var(--atlas-muted); }
+.atlas-app .task-activity-list strong { font-size: 13px; font-weight: 550; }
+.atlas-app .task-activity-list p { color: var(--atlas-muted); font-size: 13px; margin-top: 4px; white-space: pre-wrap; }
+.atlas-app .coding-checks { margin: 0; }
+.atlas-app .coding-checks h4 { font-size: 14px; }
 .atlas-app .checks-totals { font-size: 12px; color: var(--atlas-muted); margin: 4px 0 10px; }
-.coding-check { border: 1px solid var(--atlas-line); border-radius: 9px; margin: 7px 0; overflow: hidden; }
-.coding-check summary { display: flex; align-items: center; gap: 10px; padding: 9px; list-style: none; }
-.coding-check summary::-webkit-details-marker { display: none; }
-.coding-check summary code { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.coding-check .check-result { flex: none; font-size: 12px; white-space: nowrap; color: var(--atlas-muted); }
-.coding-check[data-outcome=failed] .check-result { color: var(--atlas-danger); }
-.coding-check[data-outcome=success] .check-result { color: #62bd91; }
-.coding-check .command-full { display: block; margin: 0 10px; padding-top: 10px; border-top: 1px solid var(--atlas-line); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.coding-check pre { padding: 10px; margin: 0; font-size: 12px; max-height: 300px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.atlas-app .coding-check { border: 1px solid var(--atlas-line); border-radius: 9px; margin: 7px 0; overflow: hidden; }
+.atlas-app .coding-check summary { display: flex; align-items: center; gap: 10px; padding: 9px; list-style: none; }
+.atlas-app .coding-check summary::-webkit-details-marker { display: none; }
+.atlas-app .coding-check summary code { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.atlas-app .coding-check .check-result { flex: none; font-size: 12px; white-space: nowrap; color: var(--atlas-muted); }
+.atlas-app .coding-check[data-outcome=failed] .check-result { color: var(--atlas-danger); }
+.atlas-app .coding-check[data-outcome=success] .check-result { color: #62bd91; }
+.atlas-app .coding-check .command-full { display: block; margin: 0 10px; padding-top: 10px; border-top: 1px solid var(--atlas-line); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.atlas-app .coding-check pre { padding: 10px; margin: 0; font-size: 12px; max-height: 300px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .atlas-app .coding-actions { padding: 0 16px; margin: 12px 0 0; gap: 8px; }
-.coding-actions:empty { display: none; }
-.atlas-app .coding-actions button, .coding-actions a { font-size: 13px; min-height: 36px; padding: 6px 10px; border-radius: 9px; }
-.coding-run > .message-error { margin: 0 16px 14px; font-size: 14px; }
+.atlas-app .coding-actions:empty { display: none; }
+.atlas-app .coding-actions button, .atlas-app .coding-actions a { font-size: 13px; min-height: 36px; padding: 6px 10px; border-radius: 9px; }
+.atlas-app .coding-run > .message-error { margin: 0 16px 14px; font-size: 14px; }
 .atlas-app .coding-run > .task-away-note { padding: 0 16px; margin-top: 10px; font-size: 12px; }
 .atlas-app .task-updated { margin: 10px 16px 12px; font-size: 12px; color: var(--atlas-muted); }
-.task-file summary { display: flex; gap: 9px; align-items: baseline; font-size: 13px; }
-.file-operation { color: var(--atlas-muted); font-size: 12px; flex: none; }
-.file-path { overflow-wrap: anywhere; min-width: 0; }
-.environment-intro { color: var(--atlas-muted); font-size: 14px; margin-bottom: 20px !important; }
-.environments-layout { display: grid; grid-template-columns: minmax(190px, .75fr) minmax(0, 1.4fr); gap: 24px; }
-.section-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.section-toolbar h3 { font-size: 15px; font-weight: 600; }
-.section-toolbar button { font-size: 13px; min-height: 34px; padding: 5px 9px; }
-.environment-directory { min-width: 0; padding-right: 20px; border-right: 1px solid var(--atlas-line); }
-.environment-directory > .field-help { margin-top: 20px; font-size: 12px; }
-.environment-list { display: grid; gap: 10px; }
-.environment-card { border: 1px solid var(--atlas-line); border-radius: 12px; background: var(--atlas-field); overflow: hidden; }
+.atlas-app .task-file summary { display: flex; gap: 9px; align-items: baseline; font-size: 13px; }
+.atlas-app .file-operation { color: var(--atlas-muted); font-size: 12px; flex: none; }
+.atlas-app .file-path { overflow-wrap: anywhere; min-width: 0; }
+.atlas-app .environment-intro { color: var(--atlas-muted); font-size: 14px; margin-bottom: 20px !important; }
+.atlas-app .environments-layout { display: grid; grid-template-columns: minmax(190px, .75fr) minmax(0, 1.4fr); gap: 24px; }
+.atlas-app .section-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.atlas-app .section-toolbar h3 { font-size: 15px; font-weight: 600; }
+.atlas-app .section-toolbar button { font-size: 13px; min-height: 34px; padding: 5px 9px; }
+.atlas-app .environment-directory { min-width: 0; padding-right: 20px; border-right: 1px solid var(--atlas-line); }
+.atlas-app .environment-directory > .field-help { margin-top: 20px; font-size: 12px; }
+.atlas-app .environment-list { display: grid; gap: 10px; }
+.atlas-app .environment-card { border: 1px solid var(--atlas-line); border-radius: 12px; background: var(--atlas-field); overflow: hidden; }
 .atlas-app .environment-open { display: grid; gap: 4px; width: 100%; text-align: left; padding: 12px; border: 0; background: transparent; }
-.environment-open strong { font-size: 14px; font-weight: 600; }
-.environment-repository, .environment-config { font-size: 12px; color: var(--atlas-muted); overflow-wrap: anywhere; }
-.environment-card-actions { display: flex; gap: 12px; padding: 0 12px 8px; }
+.atlas-app .environment-open strong { font-size: 14px; font-weight: 600; }
+.atlas-app .environment-repository, .atlas-app .environment-config { font-size: 12px; color: var(--atlas-muted); overflow-wrap: anywhere; }
+.atlas-app .environment-card-actions { display: flex; gap: 12px; padding: 0 12px 8px; }
 .atlas-app .environment-card-actions button { min-height: 28px; padding: 1px; font-size: 12px; }
-.environment-list-empty { color: var(--atlas-muted); font-size: 14px; padding: 20px 0; }
-.environment-detail { min-width: 0; }
-.environment-empty { min-height: 260px; display: flex; align-items: flex-start; justify-content: center; flex-direction: column; gap: 16px; }
-.environment-empty h3 { font-size: 23px; letter-spacing: -.6px; }
-.environment-empty p { font-size: 15px; line-height: 1.6; color: var(--atlas-muted); }
-.environment-empty button { font-size: 14px; }
-.environment-illustration { width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid var(--atlas-line); border-radius: 14px; }
-.environment-illustration svg { width: 28px; height: 28px; }
-.environment-advanced { margin-top: 4px; }
-.environment-advanced summary { font-size: 14px; cursor: pointer; padding: 8px 0; }
-.environment-advanced .two-fields { margin: 8px 0 12px; }
-.environment-advanced .field-help { font-size: 12px; }
-.environment-save-actions button { font-size: 14px; }
-#environment-form { margin-top: 0; gap: 16px; }
-#environment-form .section-toolbar { margin-bottom: 0; }
-#environment-form textarea { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 14px; }
-.identity-recovery { display: inline-block; text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
-.conversation-status:has(button) { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 0; }
-@media (min-width: 1000px) { .environments-dialog { width: min(940px, calc(100vw - 80px)) !important; } }
+.atlas-app .environment-list-empty { color: var(--atlas-muted); font-size: 14px; padding: 20px 0; }
+.atlas-app .environment-detail { min-width: 0; }
+.atlas-app .environment-empty { min-height: 260px; display: flex; align-items: flex-start; justify-content: center; flex-direction: column; gap: 16px; }
+.atlas-app .environment-empty h3 { font-size: 23px; letter-spacing: -.6px; }
+.atlas-app .environment-empty p { font-size: 15px; line-height: 1.6; color: var(--atlas-muted); }
+.atlas-app .environment-empty button { font-size: 14px; }
+.atlas-app .environment-illustration { width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid var(--atlas-line); border-radius: 14px; }
+.atlas-app .environment-illustration svg { width: 28px; height: 28px; }
+.atlas-app .environment-advanced { margin-top: 4px; }
+.atlas-app .environment-advanced summary { font-size: 14px; cursor: pointer; padding: 8px 0; }
+.atlas-app .environment-advanced .two-fields { margin: 8px 0 12px; }
+.atlas-app .environment-advanced .field-help { font-size: 12px; }
+.atlas-app .environment-save-actions button { font-size: 14px; }
+.atlas-app #environment-form { margin-top: 0; gap: 16px; }
+.atlas-app #environment-form .section-toolbar { margin-bottom: 0; }
+.atlas-app #environment-form textarea { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 14px; }
+.atlas-app .identity-recovery { display: inline-block; text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.atlas-app .conversation-status:has(button) { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 0; }
+@media (min-width: 1000px) { .atlas-app .environments-dialog { width: min(940px, calc(100vw - 80px)) !important; } }
 @media (max-width: 720px) {
-  .atlas-header { min-height: calc(52px + env(safe-area-inset-top)); padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right)); gap: 6px; }
-  .atlas-brand { font-size: 22px; }
-  .atlas-header-actions { gap: 4px; }
-  .atlas-header .environment-nav, .atlas-header #open-workspace { min-width: 36px; width: 36px; min-height: 36px; padding: 7px; border: 0; }
-  .environment-nav > span, #open-workspace > span { display: none; }
-  .atlas-header .inflite-link { display: none; }
-  .atlas-layout { display: flex; }
-  .conversation-main { padding: 0 10px max(10px, env(safe-area-inset-bottom)); }
-  .conversation-toolbar { min-height: 60px; padding: 10px 3px; gap: 8px; }
-  .conversation-toolbar h1 { font-size: 17px; }
-  .messages { padding-top: 12px; padding-bottom: 14px; }
+  .atlas-app .atlas-header { min-height: calc(52px + env(safe-area-inset-top)); padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right)); gap: 6px; }
+  .atlas-app .atlas-brand { font-size: 22px; }
+  .atlas-app .atlas-header-actions { gap: 4px; }
+  .atlas-app .atlas-header .environment-nav, .atlas-app .atlas-header #open-workspace { min-width: 36px; width: 36px; min-height: 36px; padding: 7px; border: 0; }
+  .atlas-app .environment-nav > span, .atlas-app #open-workspace > span { display: none; }
+  .atlas-app .atlas-header .inflite-link { display: none; }
+  .atlas-app .atlas-layout { display: flex; }
+  .atlas-app .conversation-main { padding: 0 10px max(10px, env(safe-area-inset-bottom)); }
+  .atlas-app .conversation-toolbar { min-height: 60px; padding: 10px 3px; gap: 8px; }
+  .atlas-app .conversation-toolbar h1 { font-size: 17px; }
+  .atlas-app .messages { padding-top: 12px; padding-bottom: 14px; }
   .atlas-app .composer { padding: 7px 9px; border-radius: 14px; max-height: min(55%, 265px); }
   .atlas-app .composer #prompt { min-height: 48px; padding-block: 6px; max-height: 96px; }
   .atlas-app .composer .composer-context select { font-size: 16px; min-height: 34px; padding-top: 4px; padding-bottom: 4px; }
   .atlas-app .composer .composer-context { grid-template-columns: minmax(0, 1fr) minmax(0, .9fr) 28px; gap: 4px; }
-  .environment-context > .atlas-glyph { display: none; }
+  .atlas-app .environment-context > .atlas-glyph { display: none; }
   .atlas-app .composer-actions button { min-height: 36px; padding-inline: 10px; font-size: 14px; }
   .atlas-app .composer .composer-options { padding-inline: 5px; }
-  .task-switch { padding: 12px; }
-  .coding-run-heading { gap: 8px; }
-  .coding-run-heading h3 { font-size: 15px; }
-  .coding-run .message-status { font-size: 12px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
-  .task-metadata { gap: 5px; }
-  .task-repository { flex: 1; }
-  .task-branch { flex: 0 1 94px; padding-left: 5px; }
-  .task-switch::after { right: 16px; }
-  .task-tabs { gap: 0; padding-inline: 3px; }
+  .atlas-app .task-switch { padding: 12px; }
+  .atlas-app .coding-run-heading { gap: 8px; }
+  .atlas-app .coding-run-heading h3 { font-size: 15px; }
+  .atlas-app .coding-run .message-status { font-size: 12px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+  .atlas-app .task-metadata { gap: 5px; }
+  .atlas-app .task-repository { flex: 1; }
+  .atlas-app .task-branch { flex: 0 1 94px; padding-left: 5px; }
+  .atlas-app .task-switch::after { right: 16px; }
+  .atlas-app .task-tabs { gap: 0; padding-inline: 3px; }
   .atlas-app .task-tabs button { flex: 1; font-size: 13px; padding: 9px 5px; min-height: 40px; }
-  .task-panels { padding: 12px 12px 0; }
-  .task-panel .message-content { font-size: 15px; }
+  .atlas-app .task-panels { padding: 12px 12px 0; }
+  .atlas-app .task-panel .message-content { font-size: 15px; }
   .atlas-app .coding-actions { padding-inline: 12px; }
   .atlas-app .coding-run > .task-away-note { padding-inline: 12px; }
   .atlas-app .task-updated { margin-inline: 12px; }
-  .coding-run > .message-error { margin-inline: 12px; }
-  .coding-check summary { gap: 6px; }
-  .coding-check .check-result { font-size: 11px; }
-  .environments-layout { grid-template-columns: 1fr; gap: 18px; }
-  .environment-directory { padding-right: 0; border-right: 0; }
-  .environment-directory > .field-help { display: none; }
-  .environment-list { max-height: 220px; overflow: auto; }
-  .environment-empty { min-height: 210px; gap: 13px; padding: 12px 0; }
-  .environment-empty h3 { font-size: 22px; }
-  .environment-detail { border-top: 1px solid var(--atlas-line); padding-top: 18px; }
-  .environment-intro { margin-bottom: 18px !important; }
-  .environment-advanced .two-fields, #environment-form > .two-fields { grid-template-columns: 1fr; gap: 14px; }
-  .task-panel .coding-checks .field-help { font-size: 13px; }
+  .atlas-app .coding-run > .message-error { margin-inline: 12px; }
+  .atlas-app .coding-check summary { gap: 6px; }
+  .atlas-app .coding-check .check-result { font-size: 11px; }
+  .atlas-app .environments-layout { grid-template-columns: 1fr; gap: 18px; }
+  .atlas-app .environment-directory { padding-right: 0; border-right: 0; }
+  .atlas-app .environment-directory > .field-help { display: none; }
+  .atlas-app .environment-list { max-height: 220px; overflow: auto; }
+  .atlas-app .environment-empty { min-height: 210px; gap: 13px; padding: 12px 0; }
+  .atlas-app .environment-empty h3 { font-size: 22px; }
+  .atlas-app .environment-detail { border-top: 1px solid var(--atlas-line); padding-top: 18px; }
+  .atlas-app .environment-intro { margin-bottom: 18px !important; }
+  .atlas-app .environment-advanced .two-fields, .atlas-app #environment-form > .two-fields { grid-template-columns: 1fr; gap: 14px; }
+  .atlas-app .task-panel .coding-checks .field-help { font-size: 13px; }
 }
 @media (max-width: 360px) {
   .atlas-app .intent-switch button { padding-inline: 8px; }
   .atlas-app .composer .composer-context select { padding-left: 5px; }
   .atlas-app .composer .composer-context { grid-template-columns: minmax(0, 1fr) minmax(0, .85fr) 28px; }
-  .task-branch { flex-basis: 60px; }
+  .atlas-app .task-branch { flex-basis: 60px; }
 }
 
 .atlas-app .composer .composer-context[data-intent=ask] { grid-template-columns: minmax(0, 1fr); }
+
+/* Native InFlite mount: the roof owns the screen, header, wallpaper and sheets. */
+.atlas-app.atlas-native {
+  height: 100%; min-height: 0; flex: 1; width: 100%; max-width: none;
+  background: transparent; isolation: auto; padding: 0; margin: 0;
+}
+.atlas-app.atlas-native > .atlas-header { display: none; }
+.atlas-app.atlas-native .atlas-layout { flex: 1; min-height: 0; }
+.atlas-app.atlas-native .conversation-main { padding-top: 0; }
+.atlas-app.atlas-native .conversation-toolbar { min-height: 56px; }
+.atlas-app.atlas-native .composer { margin-bottom: 0; }
+.atlas-app.atlas-native .conversation-navigation { padding-top: 14px; }
+.atlas-app.atlas-native.session-degraded .session-notice { display: block; flex: 0 0 auto; position: static; transform: none; width: auto; max-width: none; padding: 10px 16px; text-align: left; background: var(--atlas-surface); border-bottom: 1px solid var(--atlas-line); font-size: 13px; }
+/* The shared dialog owns its surface and geometry. Only its content is Atlas. */
+.atlas-app.atlas-native-content { display: block; width: 100%; min-width: 0; height: auto; min-height: 0; margin: 0; padding: 0; background: transparent; overflow: visible; }
+dialog.ifl-sheet.atlas-native-sheet > .ifs-head > div:first-child { flex: 1; min-width: 0; }
+dialog.ifl-sheet.atlas-native-sheet > .ifs-head > [data-close] { margin-left: auto; }
+dialog.ifl-sheet.atlas-native-sheet > .ifs-head .eyebrow { margin: 0 0 3px; font-size: 11px; line-height: 1.3; letter-spacing: .1em; text-transform: uppercase; color: var(--ifl-muted); }
+dialog.ifl-sheet.atlas-native-sheet .workspace-tools { padding: 0; }
+dialog.ifl-sheet.atlas-native-sheet .conversation-navigation { padding: 0; }
+@media (min-width: 721px) {
+  dialog.ifl-sheet.atlas-native-sheet.wide-dialog:not([data-sheet="atlas-settings"]) { width: min(940px, calc(100vw - 64px)); }
+}
+.atlas-app .workspace-context-chip { background: color-mix(in srgb, var(--atlas-accent) 9%, var(--atlas-surface)); }
+.atlas-app .workspace-context-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(58vw, 360px); }
+@media (max-width: 720px) {
+  .atlas-app.atlas-native .conversation-main { padding: 0 12px max(10px, env(safe-area-inset-bottom)); }
+  .atlas-app.atlas-native .conversation-toolbar { min-height: 52px; padding-block: 10px; }
+  .atlas-app.atlas-native .messages { padding-top: 10px; }
+  .atlas-app.atlas-native .welcome { padding-top: 20px; }
+  .atlas-app.atlas-native .message-actions { gap: 6px; }
+}

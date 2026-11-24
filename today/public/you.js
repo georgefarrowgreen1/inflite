@@ -33,8 +33,8 @@ const ABOUT_PAGES = [
 ];
 const aboutPage = section => ABOUT_PAGES.find(([id]) => (section || "").replace(/^settings-/, "") === "about-" + id);
 // (each app's version as its server says it now: asked as About opens, at most once a minute)
-const NATIVE_VERSIONS = [["calendar","Calendar"],["notes","Notes"],["people","People"]];
-const LIVE = {}, LIVE_PATH = { calendar:"/calendar/", notes:"/notes/", people:"/people/", chat: "/chats/", weather: "/weather/", fitness: "/fitness/", markets: "/markets/", mail: "/mail/" };
+const NATIVE_VERSIONS = [["atlas","Atlas"],["calendar","Calendar"],["notes","Notes"],["people","People"]];
+const LIVE = {}, LIVE_PATH = { atlas:"/atlas/", calendar:"/calendar/", notes:"/notes/", people:"/people/", chat: "/chats/", weather: "/weather/", fitness: "/fitness/", markets: "/markets/", mail: "/mail/" };
 let liveAt = 0;
 function liveVersions(root, ctx) {
   if (Date.now() - liveAt < 60e3) return;
@@ -205,7 +205,7 @@ function paint(root, ctx) {
   const list = Array.isArray(Y.devices?.devices) ? Y.devices.devices : [];
   if (ctx.hub && Y.devices && list.length) sections.youDevices = sec("youDevices", "Other Devices", list.map(deviceRow).join(""));
   // About: each app's version as it is now (asked of each app as About opens), else as it last said it here
-  const ver = [...APPS, ...NATIVE_VERSIONS].filter(([k]) => k !== "mail" || admin).map(([k, name]) => {
+  const ver = [...APPS, ...NATIVE_VERSIONS].filter(([k]) => !["mail","atlas"].includes(k) || admin).map(([k, name]) => {
     let b = k === "today" ? ctx.BUILD : LIVE[k] || null;
     try { b ||= localStorage.getItem(`ifl-build:${k}`); } catch {}
     return row(`v-${k}`, name, null, `<span class="val">${b ? `V${esc(b)}` : "—"}</span>`);
@@ -220,12 +220,13 @@ function paint(root, ctx) {
   const link = (action, title, description, lead = "") => go(`data-setting="${action}"`, title, description, "", lead);
   const options = ctx.frame?.session?.apps || {};
   const appSettings = [
+    ["atlas", "Atlas", "AI connection, allowances, memory and cloud environments"],
     ["weather", "Weather", "Units, forecasts, commute and solar"],
     ["fitness", "Fitness", "Training zones, units, devices and providers"],
     ["markets", "Markets", "Live prices and portfolio notifications"],
     ["chats", "Chats", "Delivery, location and privacy"],
     ["mail", "Mail", "Addresses, signature and incoming mail"],
-  ].filter(([app]) => app !== "mail" || admin)
+  ].filter(([app]) => !["mail","atlas"].includes(app) || admin)
    .map(([app, name, description]) => link(app, name, description, appIc(app === "chats" ? "chat" : app))).join("");
   const shortcuts = [
     ["weather","forecast","Forecast detail"], ["weather","solar","Solar panels"], ["weather","commute","Commute"],
@@ -234,7 +235,7 @@ function paint(root, ctx) {
     ["fitness","nights","Sleep and daily check-in"], ["fitness","devices","Fitness devices, Garmin and Strava"],
     ["chats","location","Chat location sharing"], ["mail","signature","Email signature"],
     ["mail","unknown","Unknown email addresses"]
-  ].filter(([app]) => options[app] && (app !== "mail" || admin)).map(([app,page,title]) =>
+  ].filter(([app]) => options[app] && (!["mail","atlas"].includes(app) || admin)).map(([app,page,title]) =>
     go(`data-editor="${app}" data-page="${page}"`,title,({chats:"Chats",mail:"Mail",weather:"Weather",fitness:"Fitness"})[app])
   ).join("");
   const groups = [
@@ -358,7 +359,7 @@ function paint(root, ctx) {
     if (key === 'emails') return emailPreferences(root,ctx);
     if (key === 'appearance') return appearance(ctx);
     if (key === 'units' && options.weather) return ctx.editApp('weather',b,'units');
-    if (["weather","fitness","markets","chats","mail"].includes(key)) return ctx.editApp(key,b);
+    if (["weather","fitness","markets","chats","mail","atlas"].includes(key)) return ctx.editApp(key,b);
     ctx.openAccount(key);
   });
 }
@@ -396,7 +397,7 @@ function categoryFor(section) {
   if (aboutPage(section)) return "about";
   if (["notifications","account","about","devices","apps","personalise"].includes(key)) return key;
   if (["quiet","phone","notify","notify-weather","notify-mail","markets-alerts","emails"].includes(key)) return "notifications";
-  if (["weather","fitness","chats","mail","markets","calendars","sharing"].includes(key)) return "apps";
+  if (["weather","fitness","chats","mail","markets","atlas","calendars","sharing"].includes(key)) return "apps";
   if (["appearance","customise","rules","units"].includes(key)) return "personalise";
   if (key === "versions") return "about";
   if (key === "signout" || key === "module") return "account";
@@ -765,7 +766,7 @@ export async function goTo(root, ctx, id, drawn) {
   if (key === "emails") return emailPreferences(root,ctx);
   if (["module","account-security"].includes(key)) return ctx.security?.();
   if (key === "notify-mail") return openMailNotifyFrom(ctx);
-  if (["weather","fitness","chats","markets","mail"].includes(key)) return ctx.editApp(key);
+  if (["weather","fitness","chats","markets","mail","atlas"].includes(key)) return ctx.editApp(key);
   if (key === "appearance") return appearance(ctx);
   if (key === "units") return ctx.frame.session.apps.weather ? ctx.editApp("weather",null,"units") : ctx.openAccount("units");
   if (key === "about" || key === "versions") liveVersions(root,ctx);

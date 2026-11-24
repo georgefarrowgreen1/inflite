@@ -207,3 +207,52 @@ test('Mail dock handoff resolves only its opaque token and does not open a secon
  t.fw.workspace.files={open:async()=>{throw Error('unexpected picker');},fromDrop:async(transfer,options)=>{calls.push({token:transfer.getData('application/x-inflite-files-token'),current:options.current()});return[file];}};
  const result=await t.workspace.run('compose-attach','drop:'+token);assert.equal(result.ok,true);assert.deepEqual(calls,[{token,current:true}]);assert.equal(t.opened[0].args[0].files[0],file);assert.deepEqual(t.calls,[]);
 });
+
+test('Mail Ask Atlas rechecks the selected conversation and sends only its reference',async()=>{
+ const t=fixture(),sent=[];
+ t.ctx.api.thread=async id=>{t.calls.push(['thread',id]);return{thread:{id,subject:'Trip planning',body:'private'},messages:[{id:'msg-a',folder:'inbox',snippet:'private'}]}};
+ t.fw.workspace.handoffs={can:(app,kind)=>app==='atlas'&&kind==='mail-context',send:async(...args)=>{sent.push(args);return{ok:true}}};
+ assert.equal(t.workspace.snapshot().actions.find(a=>a.id==='ask-atlas').enabled,false);
+ t.store.set({threadId:'thread-a'});assert.equal(t.workspace.snapshot().actions.find(a=>a.id==='ask-atlas').enabled,true);
+ assert.equal((await t.workspace.run('ask-atlas','thread-b')).ok,false);assert.deepEqual(t.calls,[]);
+ assert.equal((await t.workspace.run('ask-atlas','thread-a')).ok,true);
+ assert.deepEqual(sent,[['atlas','mail-context',{threadId:'thread-a',subject:'Trip planning'}]]);assert.deepEqual(t.calls,[['thread','thread-a']]);assert.deepEqual(t.opened,[]);
+});
+
+test('Mail Ask Atlas cannot share a changed selection, stale account or unavailable thread',async()=>{
+ for(const change of ['selected','owner','caller','access','abort','thread','deleted','empty']){
+  const gate=deferred(),sent=[],t=fixture({api:{thread:()=>gate.promise}});let current=true;
+  t.store.set({threadId:'thread-a'});t.fw.workspace.handoffs={can:()=>true,send:async(...args)=>{sent.push(args);return{ok:true}}};
+  const pending=t.workspace.run('ask-atlas','thread-a',{current:()=>current});await tick();await tick();
+  if(change==='selected')t.store.set({threadId:'thread-b'});if(change==='owner')t.fw.session.user.id='bea';if(change==='caller')current=false;if(change==='access')t.store.set({access:'reauth'});if(change==='abort')t.controller.abort();
+  gate.resolve({thread:{id:change==='thread'?'thread-b':'thread-a',trashed:change==='deleted',subject:'Trip'},messages:change==='empty'?[]:[{id:'msg-a',folder:'inbox'}]});
+  assert.equal((await pending).ok,false,change);assert.deepEqual(sent,[],change);
+ }
+});
+
+test('Atlas reply text enters the native unsent Mail draft using current Mail recipients and headers',async()=>{
+ const t=fixture(),taken=[];
+ t.fw.workspace.handoffs={take:token=>{taken.push(token);return{kind:'mail-reply',threadId:'thread-a',messageId:'msg-a',text:'Thanks for the update.',to:[{email:'wrong@example.test'}],subject:'Wrong subject',inReplyTo:'<wrong>',html:'<img src=x>'}}};
+ assert.equal((await t.workspace.run('handoff','opaque')).ok,true);assert.deepEqual(taken,['opaque']);assert.deepEqual(t.calls,[['thread','thread-a'],['meta','msg-a']]);
+ const draft=t.opened[0].args[0];assert.deepEqual(draft.to,[{name:'Maya',email:'maya@example.test'}]);assert.equal(draft.subject,'Re: Trip');assert.equal(draft.inReplyTo,'<a@example.test>');assert.equal(draft.text,'Thanks for the update.');assert.deepEqual(draft.quote,{of:'msg-a',mode:'reply'});assert.equal('html' in draft,false);
+ assert.equal(t.opened.length,1);assert.equal(t.opened[0].kind,'compose');
+});
+
+test('Atlas Mail reply revalidates membership and retires late results at every native boundary',async()=>{
+ for(const stage of ['thread','meta','lazy'])for(const change of ['owner','caller','access','abort','active']){
+  const gate=deferred(),t=fixture({api:stage==='thread'?{thread:()=>gate.promise}:stage==='meta'?{meta:()=>gate.promise}:{}});let current=true;
+  t.fw.workspace.handoffs={take:()=>({kind:'mail-reply',threadId:'thread-a',messageId:'msg-a',text:'Reply'})};if(stage==='lazy')t.state.lazy=gate;
+  const pending=t.workspace.run('handoff','opaque',{current:()=>current});await tick();await tick();await tick();
+  if(change==='owner')t.fw.session.user.id='bea';if(change==='caller')current=false;if(change==='access')t.store.set({access:'reauth'});if(change==='abort')t.controller.abort();if(change==='active')t.state.active=false;
+  gate.resolve(stage==='thread'?{thread:{id:'thread-a'},messages:[{id:'msg-a',folder:'inbox'}]}:{id:'msg-a',threadId:'thread-a',folder:'inbox',from:{email:'maya@example.test'}});
+  assert.equal((await pending).ok,false,stage+'/'+change);assert.deepEqual(t.opened,[],stage+'/'+change);
+ }
+ for(const mode of ['thread','member','meta','trash']){
+  const t=fixture();t.fw.workspace.handoffs={take:()=>({kind:'mail-reply',threadId:'thread-a',messageId:'msg-a',text:'Reply'})};
+  if(mode==='thread')t.ctx.api.thread=async()=>({id:'thread-b',messages:[{id:'msg-a'}]});
+  if(mode==='member')t.ctx.api.thread=async()=>({id:'thread-a',messages:[{id:'other'}]});
+  if(mode==='meta')t.ctx.api.meta=async()=>({id:'msg-a',threadId:'thread-b',folder:'inbox'});
+  if(mode==='trash')t.ctx.api.meta=async()=>({id:'msg-a',threadId:'thread-a',folder:'trash'});
+  assert.equal((await t.workspace.run('handoff','opaque')).ok,false,mode);assert.deepEqual(t.opened,[],mode);
+ }
+});

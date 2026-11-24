@@ -47,9 +47,15 @@ jobs:
         run: npx wrangler d1 migrations apply ATLAS_DB --remote --env next
       - name: Deploy staging with autonomy disabled
         run: npx wrangler deploy --env next
-      - name: Verify anonymous access is denied
+      - name: Verify native shell and private API boundaries
         run: |
-          for path in /atlas /atlas/api/chat /atlas/api/provider /atlas/api/history /atlas/api/tasks; do
+          status=$(curl -sS --connect-timeout 5 --max-time 15 -D "$RUNNER_TEMP/atlas-redirect.headers" -o /dev/null -w '%{http_code}' "https://next.inflite.ai/atlas")
+          test "$status" = 302
+          test "$(tr -d '\r' < "$RUNNER_TEMP/atlas-redirect.headers" | awk 'tolower($1) == "location:" { print $2 }')" = /atlas/
+          status=$(curl -sS --connect-timeout 5 --max-time 15 -D "$RUNNER_TEMP/atlas-shell.headers" -o /dev/null -w '%{http_code}' "https://next.inflite.ai/atlas/")
+          test "$status" = 200
+          test "$(tr -d '\r' < "$RUNNER_TEMP/atlas-shell.headers" | awk 'tolower($1) == "x-inflite-shell:" { print $2 }')" = 1
+          for path in /atlas/api/chat /atlas/api/provider /atlas/api/history /atlas/api/tasks /atlas/api/session /atlas/api/identity /atlas/api/activity /atlas/api/conversations/anonymous/workspace-context; do
             status=$(curl -sS --connect-timeout 5 --max-time 15 -o /dev/null -w '%{http_code}' "https://next.inflite.ai$path")
             test "$status" = 401 || test "$status" = 403 || exit 1
           done

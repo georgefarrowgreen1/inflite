@@ -173,3 +173,4 @@
 .ifl-sheet[data-app=mail] .mr-review p:empty { display:none; }
 
 .m-mail .mr-envelope > summary { padding: 10px 4px; min-height: 44px; cursor: pointer; font-size: 14px; color: var(--text-2); }
+.m-mail .mr-context-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .65rem; }

@@ -340,9 +340,11 @@ export function view(el, ctx) {
     const mailbox = !pad() && !el.closest(".ifl-in-pane") ? logic.viewTitle(store.get()) : null;
     const status = t.trashed ? "In Trash" : t.done ? "Done" : "";
     const showStatus = status && mailbox !== (t.trashed ? "Trash" : "Done");
-    if (cur.headFor === t && cur.showStatus === showStatus) return;
+    const canAskAtlas = !t.trashed && !!fw.workspace?.handoffs?.can("atlas", "mail-context");
+    if (cur.headFor === t && cur.showStatus === showStatus && cur.canAskAtlas === canAskAtlas) return;
     cur.headFor = t;
     cur.showStatus = showStatus;
+    cur.canAskAtlas = canAskAtlas;
     const lead = logic.leadAction(t);
     const leadButton = control(lead.act === "done" ? "done" : "inbox", {
       label: lead.label, act: lead.act, run: () => ctx.actions.act([t.id], lead.act),
@@ -360,6 +362,10 @@ export function view(el, ctx) {
           E("h2", { class: "mr-subject", text: t.subject || "(No Subject)" }),
           showStatus ? E("p", { class: "mr-meta", text: status }) : null),
         E("div", { class: "mr-bar", role: "group", "aria-label": "File conversation" }, leadButton, later, more)),
+      canAskAtlas ? E("div", { class: "mr-context-actions" }, ui.btn("Ask Atlas about this conversation", { small: true, act: "ask-atlas", run: async () => {
+        const selected = cur;
+        try { await ctx.open.atlas?.(t); } catch (error) { if (cur === selected && ctx.canRead?.() !== false) fw.toast(error.message || "Atlas could not open. Try again."); }
+      } })) : null,
       t.reminder ? E("div",{class:"mr-later"}, E("span",{text:"Follow up if unanswered · "+logic.fmtWhen(t.reminder.due)}),
         ui.btn("Clear",{small:true,run:async()=>{
           try { await api.batch({ids:[t.id],action:"cancel-followup",messageId:t.reminder.message_id}); if(cur?.id===t.id) await load(t.id); ctx.actions.load({quiet:true}); }

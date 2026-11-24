@@ -1,11 +1,11 @@
 import { loadStyles } from "./modules.js";
-export { createActivityRegistry } from "./workspace-activity-state.js";
+export { createActivityRegistry, createAtlasActivityReader } from "./workspace-activity-state.js";
 
 const LABELS = Object.freeze({ queued: "Waiting to start", running: "In progress", waiting: "Needs attention", succeeded: "Completed", failed: "Couldn’t finish", cancelled: "Cancelled", "handed-off": "Opened download" });
 const ACTIVE = new Set(["queued", "running"]), FINISHED = new Set(["succeeded", "failed", "cancelled", "handed-off"]);
 const GLYPHS = Object.freeze({ succeeded: "check", failed: "warn", waiting: "warn", cancelled: "x", "handed-off": "download" });
 
-export function createWorkspaceActivity(F, { registry } = {}) {
+export function createWorkspaceActivity(F, { registry, onOpen } = {}) {
   if (!registry?.snapshot || !registry?.invoke) throw new TypeError("Activity requires its account registry.");
   const ui = F.ui, rows = new Map();
   let dead = false, handle = null, styles = null, epoch = 0, list, summary, clear, error;
@@ -75,7 +75,11 @@ export function createWorkspaceActivity(F, { registry } = {}) {
     clear.classList.add("wsa-clear");
     list = ui.el("div", { class: "wsa-list", role: "list", "aria-label": "Background activity" });
     const body = ui.el("div", { class: "wsa" }, ui.el("div", { class: "wsa-top" }, summary, clear), error, list);
-    handle = F.sheet.open({ sheet: "workspace-activity", title: "Activity", body, onClose: cleanSheet }); draw(); return handle;
+    handle = F.sheet.open({ sheet: "workspace-activity", title: "Activity", body, onClose: cleanSheet }); draw();
+    if (onOpen) Promise.resolve().then(onOpen).then(result => {
+      if (current() && handle && error && result?.error) { error.textContent = result.error; error.hidden = false; }
+    }).catch(() => {});
+    return handle;
   }
   const off = registry.subscribe(draw);
   function destroy() { if (dead) return; dead = true; off(); close(); F.signal?.removeEventListener("abort", destroy); registry.signal?.removeEventListener("abort", destroy); }

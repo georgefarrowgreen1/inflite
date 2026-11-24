@@ -110,7 +110,7 @@ function failed(app, F, root, n) {
   const again = n > 1
     ? { label: "Reload", act: "reload", primary: true, run: () => location.reload() }
     : { label: "Try Again", act: "retry", primary: true, run: () => F.nav.go(location.pathname + location.search + location.hash, { replace: true }) };
-  if(['calendar','notes','people'].includes(app)){root.replaceChildren(ui.error({title:`${R.name} didn’t open`,body:'Try again to reopen this InFlite app.',acts:[again]}));return}
+  if(['calendar','notes','people','atlas'].includes(app)){root.replaceChildren(ui.error({title:`${R.name} didn’t open`,body:'Try again to reopen this InFlite app.',acts:[again]}));return}
   root.replaceChildren(ui.error({ title: `${R.name} didn’t open`, body: `Try again, or open ${R.name} on its own.`, acts: [again, { label: `Open ${R.name} on Its Own`, act: "own", run: own }] }));
 }
 

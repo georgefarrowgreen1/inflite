@@ -1,5 +1,5 @@
 // Only application IDs are stored. Account content and app searches stay in memory.
-export const LAUNCHER_APPS = Object.freeze(['calendar','notes','people','files','fitness','weather','markets','chats','mail']);
+export const LAUNCHER_APPS = Object.freeze(['calendar','notes','people','files','fitness','weather','markets','chats','mail','atlas']);
 export const DEFAULT_FAVOURITES = Object.freeze(['calendar','files','chats','mail']);
 export function normaliseFavourites(value) {
   if (!Array.isArray(value)) return null;

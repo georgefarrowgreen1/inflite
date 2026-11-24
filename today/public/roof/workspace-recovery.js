@@ -1,6 +1,6 @@
 // Account-owned OS recovery. A retry resumes the existing module; this service
 // never destroys an editor, replays a write, or treats online as proof of sync.
-const NAMES = Object.freeze({ calendar:"Calendar",notes:"Notes",people:"People",fitness: "Fitness", weather: "Weather", markets: "Markets", chats: "Chats", mail: "Mail" });
+const NAMES = Object.freeze({ atlas:"Atlas",calendar:"Calendar",notes:"Notes",people:"People",fitness: "Fitness", weather: "Weather", markets: "Markets", chats: "Chats", mail: "Mail" });
 const PHASES = new Set(["ready", "error", "loading", "signin", "locked", "offline"]);
 const aborted = () => new DOMException("This recovery request was released", "AbortError");
 const reason = value => typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, " ").trim().slice(0, 240) : "";
@@ -27,7 +27,7 @@ export function createWorkspaceRecovery(F, options = {}) {
   const events = options.events || globalThis, network = options.network || globalThis.navigator || {};
   let dead = false, online = network.onLine !== false, generation = 0;
   const live = () => !dead && !!owner && !F.signal.aborted && F.session.view?.user?.id === owner;
-  const enabled = app => live() && Object.hasOwn(NAMES, app) && !!F.session.apps?.[app] && (app !== "mail" || F.session.view?.apps?.mail === true);
+  const enabled = app => live() && Object.hasOwn(NAMES, app) && !!F.session.apps?.[app] && (!["mail", "atlas"].includes(app) || F.session.view?.apps?.mail === true);
   const valid = (app, lease = {}) => enabled(app) && !lease.signal?.aborted && permits(lease.current);
   const state = app => { if (!records.has(app)) records.set(app, { phase: "idle", provider: null, loaded: false, epoch: 0, pending: null }); return records.get(app); };
   const handleLive = app => { try { return !options.getHandle?.(app)?.signal?.aborted; } catch (_) { return false; } };

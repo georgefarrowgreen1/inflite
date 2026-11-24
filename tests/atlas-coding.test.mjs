@@ -544,6 +544,18 @@ test('hosted coding orchestration uses persistent owner-scoped state and real pr
     assert.equal((await state.requireCodingRun(isolated, OWNER, denied.run.id)).status, 'cancelled');
   });
 
+  await t.test('background account outages preserve a running task without polling or cancelling its provider', async subtest => {
+    const isolated = await fixture(subtest), f = await newRun(isolated), remote = remoteFixture(f);
+    await seedRemote(isolated, f, remote);
+    const before = await state.requireCodingRun(isolated, OWNER, f.run.id);
+    for (const verifyAdmin of [async () => null, async () => { throw Error('account unavailable'); }]) {
+      assert.deepEqual(await coding.reconcileCodingBackground(isolated, { limit: 1, verifyAdmin, send: remote.send }), { observed: 0 });
+      const after = await state.requireCodingRun(isolated, OWNER, f.run.id);
+      assert.deepEqual(after, before);
+      assert.equal(remote.calls.length, 0); assert.equal(remote.cancelCalls, 0);
+    }
+  });
+
   await t.test('selected environment commands and machine settings are frozen for a run and its continuation', async () => {
     const profile = await createEnvironment(env, OWNER, { name: 'Atlas focused checks', repository: REPOSITORY, branch: 'feature/cloud', machine: 'small', network: 'off', setupCommand: 'printf ready', testCommand: 'node --test tests/fixture.test.mjs' });
     const f = await newRun(env, { base_branch: 'feature/cloud' }, { environmentId: profile.id });

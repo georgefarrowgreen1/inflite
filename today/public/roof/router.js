@@ -2,9 +2,16 @@
 const fz = (o) => Object.freeze(o);
 const secs = (l) => fz(l.map((s) => fz(s)));
 export const REGISTRY = fz({
-  calendar: Object.freeze({app:"calendar", name: "Calendar", path: "/calendar/", entry: "/calendar/roof/releases/4.32.4/calendar.js", connector: "/calendar/roof/releases/4.32.4/connector.js", css: fz(["/organise/releases/4.32.4/organise.css"]), sections: secs([["week", "Week"], ["agenda", "Month"]]), aliases: fz({item:"week",new:"week",date:"week"}), stay:fz(["item","date"])}),
-  notes: Object.freeze({app:"notes", name: "Notes", path: "/notes/", entry: "/notes/roof/releases/4.32.4/notes.js", connector: "/notes/roof/releases/4.32.4/connector.js", css: fz(["/organise/releases/4.32.4/organise.css"]), sections: secs([["all", "All notes"]]), aliases: fz({item:"all",new:"all"}), stay:fz(["item"])}),
-  people: Object.freeze({app:"people", name: "People", path: "/people/", entry: "/people/roof/releases/4.32.4/people.js", connector: "/people/roof/releases/4.32.4/connector.js", css: fz(["/organise/releases/4.32.4/organise.css"]), sections: secs([["contacts", "Contacts"]]), aliases: fz({item:"contacts",new:"contacts",friend:"contacts"}), stay:fz(["item","friend"])}),
+  atlas: fz({
+    app: "atlas", name: "Atlas", path: "/atlas/",
+    entry: "/atlas/roof/module.js", connector: "/atlas/roof/connector.js",
+    css: fz(["/atlas/assets/style.css"]),
+    sections: secs([["conversations", "Conversations"], ["tasks", "Tasks"], ["environments", "Environments"], ["briefs", "Briefs"], ["settings", "Settings"]]),
+    aliases: fz({new: "conversations"}), stay: fz(["conversations", "tasks", "briefs"]),
+  }),
+  calendar: Object.freeze({app:"calendar", name: "Calendar", path: "/calendar/", entry: "/calendar/roof/releases/4.33.1/calendar.js", connector: "/calendar/roof/releases/4.33.1/connector.js", css: fz(["/organise/releases/4.33.1/organise.css"]), sections: secs([["week", "Week"], ["agenda", "Month"]]), aliases: fz({item:"week",new:"week",date:"week"}), stay:fz(["item","date"])}),
+  notes: Object.freeze({app:"notes", name: "Notes", path: "/notes/", entry: "/notes/roof/releases/4.33.1/notes.js", connector: "/notes/roof/releases/4.33.1/connector.js", css: fz(["/organise/releases/4.33.1/organise.css"]), sections: secs([["all", "All notes"]]), aliases: fz({item:"all",new:"all"}), stay:fz(["item"])}),
+  people: Object.freeze({app:"people", name: "People", path: "/people/", entry: "/people/roof/releases/4.33.1/people.js", connector: "/people/roof/releases/4.33.1/connector.js", css: fz(["/organise/releases/4.33.1/organise.css"]), sections: secs([["contacts", "Contacts"]]), aliases: fz({item:"contacts",new:"contacts",friend:"contacts"}), stay:fz(["item","friend"])}),
   weather: fz({
     app: "weather",
     name: "Weather",
@@ -86,11 +93,16 @@ const HREF_MAX = 2048;
 const RAW_MAX = 7000;
 const BASE = "https://router.invalid";
 const argOf = (s) => (typeof s === "string" && ARG.test(s) ? s : null);
+// Migration 6 names imported conversations with the owner's UTF-8 bytes in
+// lowercase hex. Keep that exact form bounded to the existing 160-char workspace
+// route limit; other apps and Atlas task/brief identifiers retain their limits.
+export const atlasReference = (value) => typeof value === "string" && /^(?:[A-Za-z0-9_-]{1,40}|legacy-(?:[a-f0-9]{2}){1,60}-(?:research|developer|personal|fitness|tasks))$/.test(value) ? value : null;
 // (You's arg and Weather's, as stage 1 had them: [\w-] only, never decoded)
 const arg1 = (s) => (typeof s === "string" && /^[\w-]{1,40}$/.test(s) ? s : null);
 const filesFolder = (s) => typeof s === "string" && /^[A-Za-z0-9_-]{32}$/.test(s) ? s : null;
 // (an arg as the address writes it: decoded once; a bad % → null)
 const argIn = (s) => { try { return argOf(decodeURIComponent(s)); } catch (_) { return null; } };
+const atlasArgIn = (s) => { try { return atlasReference(decodeURIComponent(s)); } catch (_) { return null; } };
 // (whether an app's routes are ours: roof true (every app) or a map with the app's flag true)
 const isOn = (roof, app) => roof === true || (!!roof && typeof roof === "object" && roof[app] === true);
 
@@ -147,7 +159,7 @@ export function parse(href, { roof = false, origin, workspace = false } = {}) {
     const ids = r.sections.map((s) => s[0]);
     const section = ids.includes(raw) ? raw : Object.hasOwn(r.aliases, raw) ? r.aliases[raw] : null;
     const key = section ? raw : ids[0];
-    const arg = section && eq >= 0 ? (r.app === "weather" ? arg1 : argIn)(hash.slice(eq + 1)) : null;
+    const arg = section && eq >= 0 ? (r.app === "weather" ? arg1 : r.app === "atlas" && key === "conversations" ? atlasArgIn : argIn)(hash.slice(eq + 1)) : null;
     const query = u.search.length <= QUERY_MAX ? u.search : "";
     const raws = !!section && !!r.raw?.includes(raw);
     if (long && !raws) return null;
@@ -192,7 +204,7 @@ export function format(route) {
   const hasKey = route.key != null;
   const fits = hasKey && sectionOf(route.key) === section;
   const key = fits ? route.key : section;
-  const a = fits || !hasKey ? (r.app === "weather" ? arg1 : argOf)(route.arg) : null;
+  const a = fits || !hasKey ? (r.app === "weather" ? arg1 : r.app === "atlas" && key === "conversations" ? atlasReference : argOf)(route.arg) : null;
   if (a) return `${r.path}#${key}=${a}`;
   return key === ids[0] ? r.path : `${r.path}#${key}`;
 }

@@ -54,6 +54,24 @@ test('current administrator denial creates an explainable skipped run and pauses
   assert.equal((await store.getTask(env,'alice',task.id)).enabled,false);assert.equal((await store.usageSummary(env,'alice')).totals.requests,0);
 });
 
+test('temporary account verification failures skip paid work without disabling recurring tasks',async t=>{
+  for(const unavailable of [async()=>null,async()=>{throw Error('account temporarily offline');}]){
+    await t.test('transient verifier',async tt=>{
+      const {env,task,now}=await fixture(tt);let called=false;
+      assert.deepEqual(await runAtlasScheduled(env,{now,verifyAdmin:unavailable,execute:async()=>{called=true;return answer;}}),{ran:0,skipped:1});
+      assert.equal(called,false);
+      const run=(await store.taskRuns(env,'alice',task.id))[0];assert.equal(run.error_code,'account_unavailable');assert.equal(run.status,'skipped');
+      const saved=await store.getTask(env,'alice',task.id);assert.equal(saved.enabled,true);assert.ok(saved.next_run>now);assert.equal(saved.lease_id,null);
+    });
+  }
+});
+
+test('an account outage immediately before dispatch leaves future occurrences enabled',async t=>{
+  const {env,task,now}=await fixture(t);let checks=0,dispatched=false;
+  await runAtlasScheduled(env,{now,verifyAdmin:async()=>++checks<3?true:null,execute:async spec=>{await spec.beforeDispatch();dispatched=true;return answer;}});
+  assert.equal(dispatched,false);assert.equal((await store.taskRuns(env,'alice',task.id))[0].error_code,'account_unavailable');assert.equal((await store.getTask(env,'alice',task.id)).enabled,true);
+});
+
 test('revocation and stop during preparation prevent provider dispatch',async t=>{
   for(const reason of ['revoked','stopped']){
     await t.test(reason,async tt=>{

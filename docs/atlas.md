@@ -1,6 +1,22 @@
 # Atlas workspace and deployment
 
-Atlas is served by the existing root Worker at `/atlas` and `/atlas/api/*`. Every request checks the account service's existing admin-only Mail entitlement. It uses the existing InFlite sign-in and `APPS` service binding.
+Atlas opens at `/atlas/` inside the existing InFlite app shell, using its navigation, workspace, account settings, sheets, appearance and lifecycle. `/atlas` redirects to that native route. The shell document and static module code are public; private Atlas API requests at `/atlas/api/*` check the account service's existing admin-only Mail entitlement on every request. Atlas uses the existing InFlite sign-in and `APPS` service binding.
+
+## Native InFlite integration — November 2026
+
+Conversations, coding tasks, cloud environments, saved briefs and settings are sections of the native Atlas module. It mounts when opened, and its private content is scoped to the current InFlite account. Switching apps detaches local observers without cancelling accepted cloud work. Native routes carry opaque item identifiers; message bodies, prompts and handoff payloads are not placed in URLs.
+
+The integration adds selected Mail context and reviewed output handoffs. **Ask Atlas** in a Mail conversation opens Atlas with that conversation explicitly attached. Atlas answers can open a reply or new-message draft in Mail, a draft in Notes, or an event editor in Calendar. The receiving app retains its normal editing and save/send controls. These actions do not automatically send email, save a note or create a calendar event, and they do not import the user's Notes or Calendar account into Atlas.
+
+InFlite's shared **Activity** surface can show saved Atlas coding progress, briefs and recent conversations with native destinations. Its reader uses `GET /atlas/api/activity`, a bounded, owner-scoped projection of durable database records. Refreshing shared Activity does not poll an OpenAI session, advance coding phases, start work or make a paid provider call. Opening the task itself retains the existing explicit task-observation behavior.
+
+### Shared account and recovery
+
+`GET /atlas/api/session` returns an opaque owner marker and availability after account verification, without querying Atlas storage or a provider. `GET /atlas/api/identity` returns `{confirmed:true,owner}` only after the account service confirms fresh authentication for that same owner. The embedded InFlite Account sheet handles confirmation; merely opening or closing it does not establish success.
+
+Account transport failures, malformed account responses and service outages return `503 account_unavailable`. The client retains the conversation and in-memory draft while offering recovery. Authoritative sign-out returns `401 sign_in_required`; an explicit missing entitlement returns `403 access_denied`; a mismatching owner returns `409 session_changed`. Valid account cookie renewals are forwarded on Atlas responses. Malformed or unavailable account responses cannot clear the browser's valid session cookie.
+
+Background verification also distinguishes an unknown result from revoked access. A shared `ATLAS_VERIFY_KEY` rejection, timeout, unavailable account service or malformed verification result leaves a running coding task intact and prevents new dispatch until access can be checked. Only an explicit valid `{allowed:false}` verification result revokes that background authorization. Temporary failures skip a scheduled occurrence without disabling its future recurrence; explicit revocation pauses future recurring work.
 
 ## Credentials and storage
 
@@ -19,6 +35,8 @@ Interactive and scheduled Atlas requests use only the requesting owner's encrypt
 Schema version 7 adds `atlas_coding_runs` and `atlas_coding_changes` without changing existing encrypted credentials or history. Apply all migrations in `atlas/migrations` with Wrangler, or select **Prepare workspace** / **Enable coding tasks** in Atlas. The authenticated setup action sends an explicit confirmation and requires the existing fresh administrator proof. Reads never apply DDL. A version 6 database remains ready for chat while `health.coding.storageReady` reports that coding tasks need the version 7 upgrade. Existing history imports into named conversations, existing task drafts import paused, and incomplete legacy runs become uncertain. Import markers prevent deleted imported history from reappearing after a repeated upgrade.
 
 Schema version 8 adds owner-scoped cloud environment configurations and immutable configuration snapshots on coding tasks. Existing version 7 coding tasks and version 6 conversations remain available while environment setup is pending. `health.environments.ready` reports this separately. The upgrade is additive and repeatable, including after a partial migration; it retains credentials, conversations, stored changes and spending preferences.
+
+Schema version 9 adds `atlas_workspace_contexts`, keyed by owner and conversation. It stores the selected source reference and bounded display metadata, not a copy of Mail message bodies. `health.workspaceContext.ready` reports this capability separately, so an existing version 8 database continues serving chat and coding tasks before the context upgrade. Apply `atlas/migrations/0009.sql` through the normal migration command, or use Atlas's explicit setup action, `POST /atlas/api/setup` with `{confirm:true}`, after fresh account confirmation. Setup verifies the new table and remains safe to repeat. Reads never apply a migration or change the encryption secret.
 
 ## Cloud environments
 
@@ -46,7 +64,17 @@ The assistant receives a bounded set of recent turns, earlier excerpts, and an o
 
 Research output preserves provider citation URLs, titles and offsets, and renders them as safe links. A completed answer can be saved as a brief with a snapshot of its sources and exported as Markdown. Incomplete, cancelled and uncertain output retain distinct statuses and cannot silently become completed briefs. Repository source references include the selected commit or PR/job revision; attached source text is treated as untrusted input.
 
-The mobile page has a persistent header and composer, a conversation drawer, streamed text, Stop, explicit Retry, code copy and safe Markdown/table rendering. Private content stays in page memory and D1, without browser local storage. Every API response carries an opaque owner marker; the client checks it and sends it back on requests. A mismatching account marker is rejected before a mutation, and delayed old-account responses cannot repopulate the UI. Returning to the tab rechecks the session before revealing private content.
+The native mobile surface uses the InFlite header, shared navigation and sheets, with a persistent composer, streamed text, Stop, explicit Retry, code copy and safe Markdown/table rendering. Private content stays in page memory and D1, without browser local storage. Authenticated API responses carry an opaque owner marker; the client checks it and sends it back on requests. A mismatching account marker is rejected before a mutation, and delayed old-account responses cannot repopulate the UI. Returning to the tab rechecks the session before revealing private content.
+
+### Selected Mail context
+
+Mail-to-Atlas handoffs carry only a thread identifier, an optional message identifier and a display subject. The one-use handoff stays in the account's memory and expires; it is not a message-body channel. Atlas reauthorizes the Mail session through the existing `MAIL` binding, checks that its owner matches the Atlas owner, and reads only the selected thread. It does not enumerate the inbox, search the whole account or fetch attachments. Existing Mail hub rules that keep raw bodies outside InFlite JavaScript remain in place.
+
+`POST /atlas/api/conversations/:id/workspace-context` accepts `{source:{app:"mail",kind:"thread",threadId,messageId?}}`. `GET` on that route returns saved context metadata, and `DELETE` removes it. All three routes enforce conversation ownership; changing context on an archived conversation is refused. This release supports one selected Mail source per conversation. Whole-thread context includes at most the six newest messages; an explicit message must belong to the selected thread. Long text and omitted older messages or attachments are marked as partial context.
+
+The response's `context` array contains `kind`, `app`, `threadId`, a resolved reply `messageId`, `selection`, `title`, `url`, `capturedAt` and `truncated`. No endpoint returns a raw Mail body to the Atlas browser client. Saved context is reread on the server for each subsequent interactive chat request, with source authorization checked again. The model receives it as untrusted source material, and each answer retains the source metadata it actually used. A source outage prevents the request from silently continuing without its selected context.
+
+**Review reply in Mail** uses that answer's recorded source reference. Mail fetches its own message metadata and constructs the recipients, threading and quoted content through its native reply logic; Atlas-provided email addresses are not trusted. The user reviews and sends from Mail. Opening Notes or Calendar similarly prepares an editable draft without silently saving it. Scheduled requests cannot reuse interactive Mail context without a browser-authorized source read; use a separate schedule conversation instead.
 
 ## Repository investigation and coding tasks
 
@@ -124,7 +152,7 @@ The GitHub environment `atlas-staging` supplies `CLOUDFLARE_API_TOKEN` and `CLOU
 
 `.github/workflows/atlas-staging.yml` is manual and restricted to the canonical default branch, `claude/inflite`. It checks out that default-branch commit and cannot deploy `atlas-integration` or another feature branch. GitHub also requires the workflow definition on the default branch before manual dispatch. This preserves the repository's default-branch restriction for jobs with deployment secrets.
 
-The workflow runs the Atlas tests, verifies deployment credentials and existing Worker secret names, binds the staging D1 database, applies migrations, and deploys with `ATLAS_AUTONOMY="0"` from the Wrangler configuration. It then checks anonymous requests to the page and private APIs are denied. It leaves the existing encryption secret unchanged.
+The workflow runs the Atlas tests, verifies deployment credentials and existing Worker secret names, binds the staging D1 database, applies migrations, and deploys with `ATLAS_AUTONOMY="0"` from the Wrangler configuration. Anonymous smoke checks require `/atlas` to redirect to `/atlas/`, the native shell at `/atlas/` to return `200` with `X-InFlite-Shell: 1`, and all checked private API routes to remain `401` or `403`. Public shell code is not private account data. The workflow leaves the existing encryption secret unchanged.
 
 ## Staging a tested feature commit before merge
 
@@ -142,9 +170,18 @@ Record the tested commit and deployed Worker version, then complete the authenti
 
 ## Release verification
 
-Run `npm ci --ignore-scripts --no-audit --no-fund`, `npm run test:atlas` and the existing CI suite before deployment. On staging, verify signed-out and standard-user denial, administrator access, fresh-authentication enforcement, credential connect and removal, an actual AI request, owner-scoped history, and existing site routes. The authenticated credential round trip must verify the encryption secret is usable; the anonymous smoke check alone is insufficient. Only release to production after these checks pass, the production database migrations are applied, and the production Worker secret is configured. Existing Workers Builds handles production deployment after merge.
+Run `npm ci --ignore-scripts --no-audit --no-fund`, `npm run test:atlas` and the existing CI suite before deployment. On staging, verify private API denial for signed-out and standard users, the public native shell, administrator access, fresh-authentication enforcement, credential connect and removal, an explicitly authorized AI request, owner-scoped history, and existing site routes. The authenticated credential round trip must verify the encryption secret is usable; the anonymous smoke check alone is insufficient. Only release to production after these checks pass, the production database migrations are applied, and the production Worker secret is configured. Existing Workers Builds handles production deployment after merge.
 
 `npm run test:atlas` exercises the provider, router, scheduler and storage in real workerd/Miniflare and D1 with fixture outbound services. It includes redirects, credential revision changes, partial streams, duplicate paid requests, account boundaries, more than1000 exported turns, source/brief persistence, cost reservations, timezone transitions and scheduler recovery. `npm run test:atlas:browser` runs fixture-only mobile/desktop flows; use `WEB_UI_BROWSER=webkit` for WebKit. The dedicated Atlas CI workflow installs both browsers and stores screenshots. No real keys, paid OpenAI requests or GitHub writes are used by CI. These checks establish application behavior; they do not prove the currently deployed live account, encryption secret or provider balance is valid.
+
+### Native integration smoke checks
+
+1. Open `/atlas/` from InFlite and from a cold link on mobile and desktop. Confirm the existing shell navigation, appearance and Account sheet remain in use, with Conversations, Tasks, Cloud environments, Briefs and Settings available. Private APIs must still reject a signed-out session even though shell code can load.
+2. Verify `health.storage.schemaVersion` is at least 9 and `health.workspaceContext.ready` is true. An older database must retain working chat/coding and offer the explicit context upgrade rather than silently changing schema on a read. Complete the fresh-account setup action when needed and recheck readiness.
+3. From an explicitly chosen Mail thread, select **Ask Atlas**. Verify its source chip, the correct thread reference and any partial-context indication. Inspect the network boundary with fixture data: handoffs and browser context responses contain references, not raw mail bodies. With explicit provider-usage authorization, ask a question and verify that the answer records the source it used.
+4. Open **Review reply in Mail** from that answer. Confirm the native draft has recipients derived from the selected Mail message, and that no send occurs until the user chooses Mail's send action. Open **Save to Notes** and **Plan in Calendar** only as reviewed drafts; check that no persistent item is created before the destination's normal save action.
+5. Open shared Activity and confirm durable Atlas records link to their native task, brief or conversation. Refreshing this surface must not invoke provider status APIs, start a task, cancel one or submit a prompt.
+6. With fixture faults, make the account service temporarily unavailable during initial load and identity confirmation. Confirm the session and unsent draft survive, and retry only after availability returns. Confirm an old account's delayed response cannot repopulate the UI after an account switch. Background verification outages must leave valid running cloud tasks intact and recurring schedules enabled.
 
 ### Coding task smoke checks
 
