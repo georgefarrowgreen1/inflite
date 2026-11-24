@@ -94,8 +94,10 @@ const modeNames = { research: "Research", developer: "Developer", personal: "Per
 const state = { owner: null, epoch: 0, controllers: new Set(), health: null, settings: null, conversations: [], conversation: null, messages: [], messagePage: {}, activeId: null, context: [], repositories: [], models: [], stream: null, dispatching: false, navigation: 0, contextLoad: 0, contexts: [], tasks: [], scheduleContext: [], patches: [], selectedPatch: null, codingRuns: [], codingObserver: null, codingLoading: false, codingLoadError: "", codingContinuation: null, codingRestart: null, codingReview: null, codingDispatching: false, intent: "code", environments: [], environmentsReady: null, environmentsLoading: false, environmentId: "", environmentEditingRevision: null, environmentEditorSession: 0, environmentEditorVersion: 0, environmentsRequest: 0, taskTabs: new Map(), taskExpanded: new Map(), taskChanges: new Map(), drafts: new Map(), privateReady: false, checking: null, workspaceContext: [], contextPending: false, briefs: [] };
 let sheets, navigationSheet, activeToast;
 let codingInbox;
+let threadsRequest = null, threadsArchived = null, threadsError = "", threadSelection = null;
 const mobileQuery = "(max-width: 720px)";
 const dirtyForms = new Set();
+const codingSnapshots = new WeakMap();
 let providerOff = null, routeSyncSuppressed = 0, nativeSettings = null, paintFrame = 0, queuedMessage = null;
 const identityHost = () => nativeSettings?.current() ? nativeSettings.fw : fw;
 function renderAnswer(target, value, sources) { return renderMarkdown(target, value, sources, toast); }
@@ -143,6 +145,8 @@ async function busy(control, action, feedbackId) {
   } finally { control.disabled = false; control.classList.remove("busy-label"); if (!disposed) updateComposer(); }
 }
 function clearPrivateState(message = "Your session changed. Checking access…") {
+  threadsRequest?.abort(); threadsRequest = null; threadsArchived = null; threadsError = "";
+  cancelThreadSelection();
   detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingReview = null; state.codingLoading = false; state.codingLoadError = ""; state.codingDispatching = false;
   state.environments = []; state.environmentsReady = null; state.environmentsLoading = false; state.environmentId = ""; state.environmentEditingRevision = null; state.environmentEditorSession++; state.environmentEditorVersion++; state.environmentsRequest++; state.intent = "code"; state.taskTabs.clear(); state.taskExpanded.clear(); state.taskChanges.clear();
   state.epoch++; state.stream?.controller.abort(); state.stream = null; state.dispatching = false; state.owner = null; state.health = null; state.conversation = null; state.conversations = []; state.messages = []; state.activeId = null; state.context = []; state.contexts = []; state.repositories = []; state.models = []; state.tasks = []; state.scheduleContext = []; state.patches = []; state.selectedPatch = null; state.settings = null; state.privateReady = false; state.drafts.clear(); state.workspaceContext = []; state.contextPending = false; state.briefs = []; dirtyForms.clear(); state.navigation++; state.contextLoad++;
@@ -280,7 +284,7 @@ function renderHealth() {
   updateComposer();
 }
 function updateComposer() {
-  const ready = state.privateReady && state.health?.storage?.ready && state.health?.provider?.keySaved && state.health?.provider?.decryptable !== false && !state.conversation?.archived;
+  const ready = state.privateReady && !threadSelection && state.health?.storage?.ready && state.health?.provider?.keySaved && state.health?.provider?.decryptable !== false && !state.conversation?.archived;
   $("send").disabled = !ready || !!state.stream || state.dispatching || state.codingDispatching || !$("prompt").value.trim();
   $("stop-response").hidden = !state.stream;
   $("mode").disabled = !!state.activeId || state.dispatching || state.codingDispatching; $("repository").disabled = !!state.activeId || state.dispatching || state.codingDispatching;
@@ -326,32 +330,95 @@ function updateComposer() {
 function saveDraft() { state.drafts.set(state.activeId || "new", { prompt: $("prompt").value, context: [...state.context], fitness: $("fitness-consent").checked, environmentId: state.environmentId, intent: state.intent }); }
 function restoreDraft(id) { const draft = state.drafts.get(id || "new"); $("prompt").value = draft?.prompt || ""; state.context = draft?.context || []; state.environmentId = draft?.environmentId || ""; state.intent = draft?.intent || "code"; $("fitness-consent").checked = !!draft?.fitness; renderContextChips(); fillEnvironmentChoices(); resizePrompt(); }
 function renderThreads() {
-  const list = $("conversation-list"), query = $("conversation-search").value.trim().toLowerCase(); list.replaceChildren();
-  const rows = state.conversations.filter(c => !query || String(c.title).toLowerCase().includes(query));
-  for (const c of rows) { const b = button("", () => selectConversation(c.id)); b.setAttribute("aria-current", String(c.id === state.activeId)); b.append(node("span", "thread-name", c.title || "Untitled conversation"), node("span", "thread-date", (modeNames[c.mode] || c.mode) + " · " + shortDate(c.updated_at || c.created_at))); list.append(b); }
-  if (!rows.length) list.append(node("p", "muted empty-small", query ? "No matching conversations." : $("show-archived").checked ? "No archived conversations." : "Your conversations will appear here."));
+  const list = $("conversation-list"), archived = $("show-archived").checked;
+  const words = $("conversation-search").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const rows = threadsArchived === archived ? state.conversations.filter(c => {
+    const searchable = [c.title, c.repository, modeNames[c.mode] || c.mode].join(" ").toLowerCase();
+    return words.every(word => searchable.includes(word));
+  }) : [];
+  const content = [];
+  for (const c of rows) {
+    const b = button("", () => selectConversation(c.id));
+    b.setAttribute("aria-current", String(c.id === state.activeId));
+    b.append(node("span", "thread-name", c.title || "Untitled conversation"), node("span", "thread-date", [modeNames[c.mode] || c.mode, c.repository, shortDate(c.updated_at || c.created_at)].filter(Boolean).join(" · ")));
+    content.push(b);
+  }
+  if (!rows.length && !threadsError) content.push(node("p", "muted empty-small", threadsRequest ? "Loading conversations…" :
+    words.length ? "No matching conversations." : archived ? "No archived conversations." : "Your conversations will appear here."));
+  if (threadsError) {
+    const retry = node("div", "thread-retry");
+    retry.append(node("p", "field-help", threadsError), button("Retry history", loadThreads, "text-button"));
+    content.push(retry);
+  }
+  list.setAttribute("aria-busy", String(!!threadsRequest)); list.replaceChildren(...content);
 }
-async function loadThreads() { const result = await api("conversations?archived=" + ($("show-archived").checked ? "1" : "0")); state.conversations = result.conversations || []; renderThreads(); fw?.workspace?.changed(); }
+async function loadThreads() {
+  threadsRequest?.abort();
+  const request = new AbortController(), archived = $("show-archived").checked;
+  threadsRequest = request; threadsError = ""; renderThreads();
+  try {
+    const result = await api("conversations?archived=" + (archived ? "1" : "0"), "GET", undefined, { signal: request.signal, timeout: 20000 });
+    if (threadsRequest !== request || disposed) return;
+    state.conversations = result.conversations || []; threadsArchived = archived;
+    fw?.workspace?.changed();
+  } catch (error) {
+    if (threadsRequest === request && !error.accountChanged) threadsError = "Conversation history could not load. " + errorText(error);
+  } finally {
+    if (threadsRequest === request) { threadsRequest = null; renderThreads(); }
+  }
+}
+function cancelThreadSelection() {
+  const request = threadSelection; threadSelection = null; request?.abort();
+  $("messages").removeAttribute("aria-busy");
+}
 function replaceConversationUrl(id) { if (fw) { if (!routing && !routeSyncSuppressed && shown) fw.nav.go(fw.nav.href("conversations", id || null), { replace: true }); return; } const url = new URL(location.href); if (id) url.searchParams.set("conversation", id); else url.searchParams.delete("conversation"); history.replaceState(null, "", url.pathname + url.search); }
 async function selectConversation(id, { preserveDraft = false } = {}) {
-  if (!preserveDraft) saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingLoadError = ""; state.codingLoading = false; const generation = ++state.navigation; navigation(false); feedback("coding-feedback", ""); $("conversation-status").textContent = "Loading conversation…";
+  cancelThreadSelection();
+  const request = new AbortController(), generation = ++state.navigation;
+  threadSelection = request; detachCodingObserver(); navigation(false);
+  $("messages").setAttribute("aria-busy", "true"); $("conversation-status").textContent = "Loading conversation…"; updateComposer();
   try {
-    const result = await api("conversations/" + encodeURIComponent(id)); if (generation !== state.navigation) return;
+    const result = await api("conversations/" + encodeURIComponent(id), "GET", undefined, { signal: request.signal, timeout: 20000 });
+    if (threadSelection !== request || generation !== state.navigation) return;
+    if (!preserveDraft) saveDraft();
+    threadSelection = null; $("messages").removeAttribute("aria-busy"); feedback("coding-feedback", "");
+    state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingLoadError = "";
     state.conversation = result.conversation; state.activeId = id; state.messages = result.messages || []; if (state.stream?.conversationId === id) { const at = state.messages.findIndex(m => m.id === state.stream.message.id); if (at < 0) state.messages.push(state.stream.message); else state.messages[at] = state.stream.message; } $("mode").value = state.conversation.mode; setRepository(state.conversation.repository || "");
     $("conversation-title").textContent = state.conversation.title || "Untitled conversation"; $("conversation-menu").hidden = false; $("conversation-menu").open = false;
     $("archive-conversation").textContent = state.conversation.archived ? "Restore conversation" : "Archive";
     $("thread-summary").hidden = !state.conversation.summary; $("thread-summary-text").textContent = state.conversation.summary || "";
     state.messagePage = { hasMore: !!result.hasMore, nextBeforeId: result.nextBeforeId }; $("older-history").hidden = !state.messagePage.hasMore;
     state.workspaceContext = []; restoreDraft(id); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(id); $("conversation-status").textContent = ""; await Promise.allSettled([observeCodingRuns(), loadWorkspaceContext(id, generation)]);
-  } catch (error) { if (generation === state.navigation) {
-    if (error.accountChanged) return;
+  } catch (error) { if (threadSelection === request && generation === state.navigation && !error.accountChanged) {
+    threadSelection = null; $("messages").removeAttribute("aria-busy");
     $("conversation-status").replaceChildren(node("span", "", errorText(error)));
-    if (error.status === 404) { state.activeId = null; state.conversation = null; state.messages = []; state.codingRuns = []; $("conversation-title").textContent = "Conversation unavailable"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; renderMessages(); updateComposer(); $("conversation-status").append(button("Start a new conversation", () => { newConversation(); $("conversation-status").replaceChildren(); }, "text-button")); }
-    else toast(errorText(error));
+    if (error.status === 404 && !state.activeId) {
+      $("conversation-title").textContent = "Conversation unavailable"; renderMessages();
+      $("conversation-status").append(button("Start a new conversation", () => newConversation(), "text-button"));
+    } else if (error.status !== 404) $("conversation-status").append(button("Retry opening", () => selectConversation(id, { preserveDraft }), "text-button"));
+    updateComposer();
+    if (state.activeId) await observeCodingRuns({ restore: false });
   } }
 }
-function newConversation(mode) { feedback("coding-feedback", ""); saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingLoadError = ""; state.codingLoading = false; state.navigation++; state.activeId = null; state.conversation = null; state.messages = []; state.messagePage = {}; state.context = []; state.workspaceContext = []; $("conversation-title").textContent = "New conversation"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; if (mode && modeNames[mode]) $("mode").value = mode; restoreDraft(null); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(null); navigation(false); $("prompt").focus(); }
-async function loadOlderMessages(control) { await busy(control, async () => { const id = state.activeId, generation = state.navigation, before = state.messagePage.nextBeforeId; if (!id || !state.messagePage.hasMore || !before) return; const result = await api("conversations/" + encodeURIComponent(id) + "?before=" + encodeURIComponent(before) + "&limit=100"); if (id !== state.activeId || generation !== state.navigation) return; const container = $("messages"), height = container.scrollHeight, top = container.scrollTop, known = new Set(state.messages.map(m => m.id)); state.messages = [...(result.messages || []).filter(m => !known.has(m.id)), ...state.messages]; state.messagePage = { hasMore: !!result.hasMore, nextBeforeId: result.nextBeforeId }; $("older-history").hidden = !state.messagePage.hasMore; renderMessages(); container.scrollTop = container.scrollHeight - height + top; }); }
+function newConversation(mode) { cancelThreadSelection(); $("conversation-status").replaceChildren(); feedback("coding-feedback", ""); saveDraft(); detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingLoadError = ""; state.codingLoading = false; state.navigation++; state.activeId = null; state.conversation = null; state.messages = []; state.messagePage = {}; state.context = []; state.workspaceContext = []; $("conversation-title").textContent = "New conversation"; $("conversation-menu").hidden = true; $("thread-summary").hidden = true; $("older-history").hidden = true; if (mode && modeNames[mode]) $("mode").value = mode; restoreDraft(null); renderMessages(); renderThreads(); updateComposer(); replaceConversationUrl(null); navigation(false); $("prompt").focus(); }
+async function loadOlderMessages(control) {
+  await busy(control, async () => {
+    const id = state.activeId, generation = state.navigation, before = state.messagePage.nextBeforeId;
+    if (!id || threadSelection || !state.messagePage.hasMore || !before) return;
+    const result = await api("conversations/" + encodeURIComponent(id) + "?before=" + encodeURIComponent(before) + "&limit=100");
+    if (id !== state.activeId || generation !== state.navigation) return;
+    const container = $("messages"), anchor = container.querySelector(".turn"), top = anchor?.getBoundingClientRect().top;
+    const known = new Set(state.messages.map(message => message.id));
+    const older = (result.messages || []).filter(message => !known.has(message.id));
+    state.messages = [...older, ...state.messages];
+    state.messagePage = { hasMore: !!result.hasMore, nextBeforeId: result.nextBeforeId };
+    container.prepend(...older.map(messageElement));
+    $("older-history").hidden = !state.messagePage.hasMore;
+    if (anchor) container.scrollTop += anchor.getBoundingClientRect().top - top;
+    if (document.activeElement === control && control.parentElement.hidden) container.focus({ preventScroll: true });
+    updateLatestControl();
+  });
+}
 async function ensureConversation(snapshot = {}, lease = {}) {
   const current = () => !lease.signal?.aborted && (!lease.current || lease.current());
   if (!current()) throw new DOMException("Action ended", "AbortError");
@@ -363,6 +430,20 @@ async function ensureConversation(snapshot = {}, lease = {}) {
   loadThreads().catch(() => {}); return result.conversation;
 }
 function sourceList(sources = []) { const list = node("ol", "source-list"); const seen = new Set(); sources.forEach((source, i) => { const url = safeUrl(source.url); if (!url || seen.has(url)) return; seen.add(url); const li = node("li"), a = node("a", "", (i + 1) + ". " + (source.title || new URL(url).hostname)); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = source.title || url; li.append(a); list.append(li); }); return list; }
+function isAtLatest(container) {
+  return container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+}
+function updateLatestControl() {
+  const control = $("jump-to-latest");
+  const hidden = !(state.messages.length || state.codingRuns.length) || isAtLatest($("messages"));
+  if (control.hidden !== hidden) control.hidden = hidden;
+}
+function jumpToLatest({ focus = false } = {}) {
+  const container = $("messages");
+  if (focus) container.focus({ preventScroll: true });
+  container.scrollTop = container.scrollHeight;
+  updateLatestControl();
+}
 function renderMessages() {
   const container = $("messages"); container.replaceChildren();
   if (!state.messages.length && !state.codingRuns.length && !state.codingLoadError) {
@@ -376,22 +457,28 @@ function renderMessages() {
       resizePrompt(); updateComposer(); $("prompt").focus();
     });
     container.append(welcome);
+    updateLatestControl();
     return;
   }
   for (const message of state.messages) container.append(messageElement(message));
   renderCodingRuns();
-  container.scrollTop = container.scrollHeight;
+  jumpToLatest();
 }
 function messageElement(message) {
   const group = node("section", "turn"); group.dataset.messageId = message.id;
   const user = node("article", "message user"), userBody = node("div", "message-content", message.prompt); user.append(userBody); group.append(user);
   const assistant = node("article", "message assistant"), heading = node("div", "message-heading"); heading.append(node("span", "assistant-label", "Atlas"));
   const status = node("span", "message-status", message.status === "running" ? "Responding…" : message.status === "completed" ? "" : message.status || ""); status.dataset.status = message.status; status.hidden = message.status === "completed"; heading.append(status); assistant.append(heading);
-  const body = node("div", "message-content"); renderAnswer(body, message.answer || "", message.sources || []); assistant.append(body, sourceList(message.sources));
+  const running = message.status === "running";
+  const body = node("div", running ? "message-content streaming-text" : "message-content");
+  if (running) body.append(document.createTextNode(message.answer || ""));
+  else renderAnswer(body, message.answer || "", message.sources || []);
+  assistant.append(body);
+  if (!running) assistant.append(sourceList(message.sources));
   if (message.error_code || message.errorMessage) assistant.append(node("p", "message-error", message.errorMessage || "This response is " + (message.status || "unavailable") + ". " + String(message.error_code || "").replaceAll("_", " ")));
   if (message.context?.length) { const used = node("div", "context-note context-chips"); used.setAttribute("aria-label", "Context used for this response"); for (const c of message.context) used.append(node("span", "context-chip", (c.path || c.title || c.repository || c.kind) + (c.ref ? " · " + String(c.ref).slice(0, 12) : "") + (c.kind === "mail" && c.truncated ? " · Partial context" : ""))); assistant.append(used); }
   const actions = node("div", "message-actions");
-  if (message.answer) actions.append(button("Copy answer", async () => { try { await navigator.clipboard.writeText(message.answer); toast("Answer copied."); } catch { toast("Select the answer to copy it."); } }));
+  if (!running && message.answer) actions.append(button("Copy answer", async () => { try { await navigator.clipboard.writeText(message.answer); toast("Answer copied."); } catch { toast("Select the answer to copy it."); } }));
   if (message.answer && message.status !== "running") actions.append(button("Save as brief", e => busy(e.currentTarget, async () => { const result = await api("briefs", "POST", { conversationId: state.activeId, messageId: message.id, title: state.conversation?.title }); toast("Saved to research briefs."); return result; })));
   if (message.answer && message.status !== "running" && fw?.workspace?.handoffs) {
     const context = (message.context || []).find(item => item.kind === "mail");
@@ -418,9 +505,14 @@ function updateMessage(message, conversationId) {
   if (queuedMessage?.message.id === message.id) { cancelAnimationFrame(paintFrame); paintFrame = 0; queuedMessage = null; }
   if (state.activeId !== conversationId) return;
   const index = state.messages.findIndex(m => m.id === message.id); if (index < 0) state.messages.push(message); else state.messages[index] = message;
-  const container = $("messages"), nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
-  const old = [...container.children].find(el => el.dataset.messageId === message.id); const fresh = messageElement(message); if (old) old.replaceWith(fresh); else { container.querySelector(".welcome")?.remove(); container.insertBefore(fresh, $("coding-runs")); }
-  if (nearBottom) container.scrollTop = container.scrollHeight;
+  const container = $("messages"), nearBottom = isAtLatest(container);
+  const old = container.querySelector('[data-message-id="' + CSS.escape(String(message.id)) + '"]');
+  const liveText = message.status === "running" && old?.querySelector(".streaming-text")?.firstChild;
+  if (liveText) liveText.data = message.answer || "";
+  else if (old) old.replaceWith(messageElement(message));
+  else { container.querySelector(".welcome")?.remove(); container.insertBefore(messageElement(message), $("coding-runs")); }
+  if (nearBottom) jumpToLatest();
+  else updateLatestControl();
 }
 function contextDescriptor(c) { const value = { kind: c.kind, repository: c.repository }; for (const k of ["path", "ref", "number", "id"]) if (c[k] != null) value[k] = c[k]; return value; }
 function renderContextChips() { const target = $("attached-context"); target.replaceChildren(); state.context.forEach((context, i) => { const chip = node("div", "context-chip"); const title = context.path || context.title || (context.kind === "pull" ? "PR #" + context.number : "Job " + context.id); chip.append(node("span", "", title), button("×", () => { state.context.splice(i, 1); renderContextChips(); updateComposer(); })); chip.lastChild.setAttribute("aria-label", "Remove " + title); chip.title = context.ref ? "Revision " + context.ref : title; target.append(chip); }); renderWorkspaceContext(target); }
@@ -497,7 +589,7 @@ async function sendMessage(event) {
       if (packet.event === "meta") { if (data.conversationId && data.conversationId !== active.conversationId) throw Error("Atlas returned a response for a different conversation."); if (typeof data.messageId === "string" && data.messageId !== active.message.id) { const previous = active.message.id; active.message.id = data.messageId; if (state.activeId === active.conversationId) { const existing = [...$("messages").children].find(el => el.dataset.messageId === previous); if (existing) existing.dataset.messageId = active.message.id; } } }
       else if (packet.event === "status") { if (state.activeId === active.conversationId) $("conversation-status").textContent = ({ connecting: "Connecting…", searching: "Searching sources…", reading_repository: "Reading repository…", responding: "Writing the response…", saving: "Saving the response…" })[data.stage] || "Working…"; }
       else if (packet.event === "delta") { active.message.answer += typeof data.text === "string" ? data.text : ""; queueMessage(active.message, active.conversationId); }
-      else if (packet.event === "source") { if (data.source?.url && !active.message.sources.some(s => s.url === data.source.url && s.start_index === data.source.start_index)) { active.message.sources.push(data.source); updateMessage(active.message, active.conversationId); } }
+      else if (packet.event === "source") { if (data.source?.url && !active.message.sources.some(s => s.url === data.source.url && s.start_index === data.source.start_index)) active.message.sources.push(data.source); }
       else if (packet.event === "done") { terminal = true; const m = data.message || {}; active.message = { ...active.message, ...m, id: active.message.id, prompt, status: m.status || "completed" }; updateMessage(active.message, active.conversationId); break; }
       else if (packet.event === "error") { terminal = true; restorePrompt = true; active.message.status = active.message.answer ? "incomplete" : "failed"; active.message.error_code = data.code; active.message.errorMessage = (data.error || "The response could not finish.") + (data.requestId ? " Reference: " + data.requestId : ""); updateMessage(active.message, active.conversationId); break; }
     }
@@ -912,17 +1004,22 @@ async function loadTaskChanges(run, panel) {
   } catch (error) { if (!error.accountChanged && panel.isConnected && epoch === state.epoch) { panel.dataset.loaded = ""; panel.replaceChildren(node("p", "message-error", errorText(error)), button("Retry loading changes", () => loadTaskChanges(run, panel), "text-button")); } }
 }
 function renderCodingRuns() {
-  const container = $("messages"), previous = $("coding-runs"), nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
-  if (!state.codingRuns.length && !state.codingLoadError) { previous?.remove(); if (!state.messages.length && !container.querySelector(".welcome")) renderMessages(); return; }
-  const signature = JSON.stringify([state.codingRuns, state.codingLoadError, state.health?.coding?.ready, state.health?.coding?.backgroundAvailable, state.conversation?.archived]);
-  if (previous?.dataset.snapshot === signature) return;
+  const container = $("messages"), previous = $("coding-runs"), nearBottom = isAtLatest(container);
+  if (!state.codingRuns.length && !state.codingLoadError) { previous?.remove(); if (!state.messages.length && !container.querySelector(".welcome")) renderMessages(); else updateLatestControl(); return; }
+  const flags = [state.health?.coding?.ready, state.health?.coding?.backgroundAvailable, state.conversation?.archived];
+  const signature = JSON.stringify([state.codingRuns, state.codingLoadError, flags]);
+  if (codingSnapshots.get(previous) === signature) return;
+  const previousCards = new Map([...previous?.children || []].filter(el => el.dataset.runId).map(el => [el.dataset.runId, el]));
   const opened = new Set([...previous?.querySelectorAll("details[open]") || []].map(el => el.dataset.disclosure).filter(Boolean));
   const focused = previous?.contains(document.activeElement) ? { id: document.activeElement.id, runId: document.activeElement.closest("[data-run-id]")?.dataset.runId, role: document.activeElement.getAttribute("role"), text: document.activeElement.textContent } : null;
-  const list = node("section", "coding-runs"); list.id = "coding-runs"; list.setAttribute("aria-label", "Coding tasks"); list.dataset.snapshot = signature;
+  const list = node("section", "coding-runs"); list.id = "coding-runs"; list.setAttribute("aria-label", "Coding tasks"); codingSnapshots.set(list, signature);
   if (state.codingLoadError) { const notice = node("div", "notice-inline coding-reconnect"); notice.append(node("p", "", state.codingLoadError), button("Reconnect", () => observeCodingRuns())); list.append(notice); }
   const runs = [...state.codingRuns].sort((a, b) => Number(a.createdAt) - Number(b.createdAt) || String(a.id).localeCompare(String(b.id)));
   for (const run of runs) {
+    const snapshot = JSON.stringify([run, flags]), old = previousCards.get(run.id);
+    if (codingSnapshots.get(old) === snapshot) { list.append(old); continue; }
     const card = node("details", "coding-run"), heading = node("div", "coding-run-heading"); card.dataset.runId = run.id; card.dataset.disclosure = run.id + ":task"; card.open = state.taskExpanded.has(run.id) ? state.taskExpanded.get(run.id) : run === runs[runs.length - 1]; card.addEventListener("toggle", () => { if (card.isConnected) state.taskExpanded.set(run.id, card.open); });
+    codingSnapshots.set(card, snapshot);
     const status = node("span", "message-status", codingStatus(run)); status.dataset.status = run.status; status.setAttribute("role", "status"); heading.append(node("h3", "", run.prompt?.split("\n")[0].slice(0, 140) || "Coding task"), status);
     const cloudState = run.cloud?.label || ({ preparing: "Preparing cloud workspace", running: "Cloud workspace running", waiting: "Cloud workspace waiting", completed: run.canContinue ? "Cloud workspace available" : "Cloud task completed", cancelled: run.canContinue ? "Cloud workspace available" : "Cloud task stopped", failed: "Cloud task needs attention", published: "Changes published" })[run.status] || "Cloud workspace";
     const metadata = node("div", "task-metadata"); metadata.append(node("span", "task-repository", run.repository), node("span", "task-branch", run.baseBranch || run.environment?.branch || "Default branch"));
@@ -968,7 +1065,9 @@ function renderCodingRuns() {
     card.append(node("p", "task-updated", "Updated " + timestamp(run.updatedAt || run.createdAt))); list.append(card);
     if (chosen === "changes") queueMicrotask(() => loadTaskChanges(run, parts.get("changes")));
   }
-  container.querySelector(".welcome")?.remove(); if (previous) previous.replaceWith(list); else container.append(list); if (nearBottom) container.scrollTop = container.scrollHeight;
+  container.querySelector(".welcome")?.remove(); if (previous) previous.replaceWith(list); else container.append(list);
+  if (nearBottom) jumpToLatest();
+  else updateLatestControl();
   if (focused) {
     const candidate = focused.id ? $(focused.id) : [...list.querySelectorAll("[data-run-id]")].find(item => item.dataset.runId === focused.runId)?.querySelectorAll("button, summary, a");
     const control = candidate instanceof Element ? candidate : [...candidate || []].find(item => item.textContent === focused.text && item.getAttribute("role") === focused.role);
@@ -1135,11 +1234,15 @@ async function bootstrap() {
   $("session-notice").textContent = "Checking your session…"; root.classList.add("session-check");
   try {
     const health = await refreshHealth(); if (!health.storage?.ready) { state.privateReady = true; fw?.workspace?.changed(); root.classList.remove("session-check"); renderMessages(); updateComposer(); return; }
-    const results = await Promise.allSettled([loadThreads(), loadSettings(), loadRepositories(), loadEnvironments()]); checkEpoch(epoch);
-    const failed = results.find(result => result.status === "rejected"); if (failed && !state.owner) return;
+    const history = loadThreads();
+    void Promise.allSettled([loadSettings(), loadRepositories(), loadEnvironments()]).then(results => {
+      if (disposed || epoch !== state.epoch) return;
+      const failed = results.find(result => result.status === "rejected" && !result.reason.accountChanged);
+      if (failed) toast(errorText(failed.reason));
+    });
     state.privateReady = true; fw?.workspace?.changed(); root.classList.remove("session-check"); renderHealth();
     const id = fw ? null : new URL(location.href).searchParams.get("conversation"); if (id) await selectConversation(id); else renderMessages();
-    if (failed) toast(errorText(failed.reason));
+    await history;
   } catch (error) { if (!error.accountChanged) { $("session-notice").textContent = errorText(error); const retry = button("Try again", () => bootstrap()); $("session-notice").append(node("br"), retry); } }
 }
 async function verifyVisibleSession() {
@@ -1149,7 +1252,7 @@ async function verifyVisibleSession() {
     try {
       await (fw ? api("session", "GET", undefined, { timeout: 15000 }) : refreshHealth());
       root.classList.remove("session-degraded");
-      if (state.privateReady && state.owner) { root.classList.remove("session-check"); await observeCodingRuns(); }
+      if (state.privateReady && state.owner) { root.classList.remove("session-check"); if (!state.codingObserver && !threadSelection) await observeCodingRuns(); }
       else if (state.owner) await bootstrap();
     } catch (error) {
       if (!error.accountChanged) {
@@ -1180,7 +1283,9 @@ function init() {
     const review = state.codingReview;
     if (review) reviewCodingRun(review.id, { inboxTrigger: review.inboxTrigger });
   });
-  $("new-chat").addEventListener("click", () => newConversation()); $("conversation-search").addEventListener("input", renderThreads); $("show-archived").addEventListener("change", () => loadThreads().catch(error => toast(errorText(error))));
+  $("new-chat").addEventListener("click", () => newConversation()); $("conversation-search").addEventListener("input", renderThreads); $("show-archived").addEventListener("change", loadThreads);
+  listen($("messages"), "scroll", updateLatestControl, { passive: true });
+  $("jump-to-latest").addEventListener("click", () => jumpToLatest({ focus: true }));
   $("load-older-messages").addEventListener("click", e => loadOlderMessages(e.currentTarget));
   $("mode").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; state.intent = "code"; state.codingContinuation = null; state.codingRestart = null; fillEnvironmentChoices(); renderContextChips(); updateComposer(); }); $("repository").addEventListener("change", () => { feedback("coding-feedback", ""); state.context = []; state.environmentId = ""; state.codingContinuation = null; state.codingRestart = null; renderContextChips(); fillEnvironmentChoices(); updateComposer(); });
   $("prompt").addEventListener("input", () => { saveDraft(); resizePrompt(); updateComposer(); }); $("prompt").addEventListener("keydown", event => { if (event.key === "Enter" && !event.isComposing && !event.shiftKey && (event.ctrlKey || event.metaKey || !matchMedia("(pointer:coarse)").matches)) { event.preventDefault(); const submit = $("start-coding").hidden ? $("send") : $("start-coding"); if (!submit.disabled) $("composer").requestSubmit(); } });
@@ -1296,11 +1401,11 @@ return {
         } else await showPanel("inbox");
       } else if (key === "briefs") { await showPanel("briefs"); if (id && generation === routeEpoch) await showBrief(id); }
       else if (["environments", "settings"].includes(key)) await showPanel(key);
-      if (generation === routeEpoch) { resizePrompt(); updateComposer(); if (state.privateReady) await observeCodingRuns(); }
+      if (generation === routeEpoch) { resizePrompt(); updateComposer(); if (state.privateReady && !state.codingObserver && !threadSelection) await observeCodingRuns(); }
     } catch (error) { if (!error.accountChanged) toast(errorText(error)); }
     finally { if (generation === routeEpoch) routing = false; }
   },
-  hide() { if (disposed) return; shown = false; ++routeEpoch; routing = false; saveDraft(); detachCodingObserver(); sheets.closeAll(); $("provider-key").value = ""; $("github-token").value = ""; },
+  hide() { if (disposed) return; shown = false; ++routeEpoch; routing = false; saveDraft(); if (threadSelection) { cancelThreadSelection(); $("conversation-status").replaceChildren(); } detachCodingObserver(); sheets.closeAll(); $("provider-key").value = ""; $("github-token").value = ""; },
   back() { const top = sheets.top(); if (top) { top.now(); return true; } return false; },
   async settingsPanel(host, current = () => true) {
     await ready; if (disposed || !current()) return;

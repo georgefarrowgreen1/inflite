@@ -55,8 +55,9 @@ async function open(options = {}) {
     if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: atlasPage('fixture') });
     if (url.pathname === '/account/api/account/appearance') return route.fulfill({ json: { signedIn: true, id: fixture.owner, palette: 'inflite', appearance: options.theme || 'dark', glass: options.glass ?? true } });
     if (!url.pathname.startsWith('/atlas/api/')) {
-      if (!['/theme.js', '/app.css'].includes(url.pathname) && !url.pathname.startsWith('/roof/') && !url.pathname.startsWith('/atlas/assets/') && !url.pathname.startsWith('/atlas/roof/')) return route.fulfill({ status: 404, body: '' });
-      try { return route.fulfill({ contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(resolve(PUBLIC, '.' + url.pathname)) }); } catch { return route.fulfill({ status: 404, body: '' }); }
+      if (!['/theme.js', '/app.css', '/apps/atlas.svg'].includes(url.pathname) && !url.pathname.startsWith('/roof/') && !url.pathname.startsWith('/atlas/assets/') && !url.pathname.startsWith('/atlas/roof/')) return route.fulfill({ status: 404, body: '' });
+      const type = url.pathname.endsWith('.css') ? 'text/css' : url.pathname.endsWith('.svg') ? 'image/svg+xml' : 'text/javascript';
+      try { return route.fulfill({ contentType: type, body: readFileSync(resolve(PUBLIC, '.' + url.pathname)) }); } catch { return route.fulfill({ status: 404, body: '' }); }
     }
     const path = url.pathname.slice('/atlas/api/'.length), method = request.method(), owner = fixture.owner;
     let body; try { body = request.postDataJSON(); } catch {}
@@ -195,6 +196,94 @@ for (const [width, theme] of [[320, 'light'], [1280, 'dark']]) test('strict CSP 
 
 test('setup runs only when storage requires it, then removes the upgrade action', async () => {
   const t = await open({ fixture: { ready: false } }); try { assert.equal(await t.page.locator('#upgrade-storage').isVisible(), true); await t.page.locator('#upgrade-storage').click(); await t.page.locator('#setup-banner').waitFor({ state: 'hidden' }); assert.equal(t.fixture.requests.filter(r => r.path === 'setup').length, 1); assert.deepEqual(t.errors, []); } finally { await t.close(); }
+});
+
+test('Atlas opens a conversation while the secondary workspace requests are pending', async () => {
+  let releaseRepositories;
+  const gate = new Promise(resolve => { releaseRepositories = resolve; });
+  const overrides = new Map([['GET repositories', async ({ reply }) => {
+    await gate; return reply({ repositories: [{ full_name: 'fixture/atlas' }] });
+  }]]);
+  const t = await open({ fixture: { overrides } });
+  try {
+    await eventually(() => assert.ok(t.fixture.requests.some(call => call.path === 'repositories')));
+    await openThread(t, 'Alpha research');
+    await t.page.locator('#prompt').fill('Work while repositories load');
+    assert.equal(await t.page.locator('#send').isEnabled(), true);
+  } finally { releaseRepositories(); await t.close(); }
+});
+
+test('a superseded conversation cannot replace a newer selection or its in-progress draft', async () => {
+  const t = await open();
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  try {
+    await openThread(t, 'Alpha research');
+    t.fixture.overrides.set('GET conversations/beta', async ({ reply }) => {
+      await gate;
+      return reply({ conversation: t.fixture.conversations.find(c => c.id === 'beta'), messages: t.fixture.messages.beta });
+    });
+    await t.page.locator('#conversation-list').getByRole('button', { name: /Beta planning/ }).click();
+    await t.page.getByText('Loading conversation…', { exact: true }).waitFor();
+    await t.page.locator('#prompt').fill('A draft edited during navigation');
+    assert.equal(await t.page.locator('#send').isDisabled(), true);
+    await openThread(t, 'Alpha research');
+    release();
+    await t.page.waitForFunction(() => document.getElementById('messages').getAttribute('aria-busy') !== 'true');
+    assert.equal(await t.page.locator('#prompt').inputValue(), 'A draft edited during navigation');
+    assert.match(await t.page.locator('#messages').textContent(), /Evidence here/);
+    assert.equal(await t.page.locator('#send').isEnabled(), true);
+    assert.deepEqual(t.errors, []);
+  } finally { release(); await t.close(); }
+});
+
+test('conversation search includes repositories and mode while archive navigation ignores stale results', async () => {
+  const t = await open({ fixture: developerFixture() });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const task = t.fixture.conversations[0];
+  try {
+    await t.page.locator('#conversation-search').fill('developer fixture/atlas');
+    await t.page.locator('#conversation-list').getByRole('button', { name: /Repository task/ }).waitFor();
+    t.fixture.overrides.set('GET conversations', async ({ reply, url }) => {
+      if (url.searchParams.get('archived') === '1') {
+        await gate;
+        return reply({ conversations: [{ ...task, id: 'archived', title: 'Stale archive', archived: true }] });
+      }
+      return reply({ conversations: [task] });
+    });
+    await t.page.locator('#show-archived').check();
+    await t.page.getByText('Loading conversations…', { exact: true }).waitFor();
+    await t.page.locator('#show-archived').uncheck();
+    release();
+    await t.page.locator('#conversation-list').getByRole('button', { name: /Repository task/ }).waitFor();
+    assert.doesNotMatch(await t.page.locator('#conversation-list').textContent(), /Stale archive/);
+  } finally { release(); await t.close(); }
+});
+
+test('live replies keep their text node, respect reading position and format once completed', async () => {
+  const t = await open({ width: 390, height: 720, mobile: true });
+  try {
+    await openThread(t, 'Alpha research');
+    await t.page.locator('#prompt').fill('A long response');
+    await t.page.locator('#send').click();
+    await t.page.waitForFunction(() => !!window.__atlasStream.request);
+    await emit(t.page, 'delta', { text: 'A long response line.\n'.repeat(80) });
+    await t.page.waitForFunction(() => document.querySelector('.streaming-text')?.textContent.length > 1000);
+    await t.page.locator('.streaming-text').evaluate(el => { window.__firstStreamNode = el.firstChild; });
+    await t.page.locator('#messages').evaluate(el => { el.scrollTop = 0; });
+    await t.page.getByRole('button', { name: 'Jump to latest' }).waitFor();
+    await emit(t.page, 'delta', { text: 'Another update.' });
+    await t.page.waitForFunction(() => document.querySelector('.streaming-text')?.textContent.endsWith('Another update.'));
+    assert.equal(await t.page.locator('.streaming-text').evaluate(el => el.firstChild === window.__firstStreamNode), true);
+    assert.equal(await t.page.locator('#messages').evaluate(el => el.scrollTop), 0);
+    await t.page.getByRole('button', { name: 'Jump to latest' }).click();
+    assert.ok(await t.page.locator('#messages').evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop < 3));
+    await emit(t.page, 'done', { message: { answer: '**Formatted** answer.', status: 'completed', sources: [] } });
+    await t.page.getByText('Formatted', { exact: true }).waitFor();
+    assert.equal(await t.page.locator('.streaming-text').count(), 0);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
 });
 
 test('stream identity stays with the outgoing conversation after switching threads', async () => {
@@ -490,8 +579,9 @@ test('account switching clears coding progress and drops a late task response', 
   const t = await open({ fixture: developerFixture({ codingRuns: [codingRun()] }) }); let release; try {
     await openThread(t, 'Repository task'); await t.page.locator('.coding-run').waitFor();
     const delayed = new Promise(resolve => { release = resolve; }); let held = false;
-    t.fixture.overrides.set('GET coding/runs', async ({ reply, owner }) => { held = true; await delayed; try { return await reply({ runs: [codingRun({ summary: 'LATE OWNER A CODING CONTENT' })] }, 200, owner); } catch {} });
-    await t.page.getByRole('button', { name: 'Stop task', exact: true }).waitFor(); await t.page.evaluate(() => window.dispatchEvent(new Event('focus'))); await eventually(() => assert.equal(held, true));
+    t.fixture.overrides.set('GET coding/runs/coding-1', async ({ reply, owner }) => { held = true; await delayed; try { return await reply({ run: codingRun({ summary: 'LATE OWNER A CODING CONTENT' }) }, 200, owner); } catch {} });
+    await t.page.waitForRequest(request => new URL(request.url()).pathname === '/atlas/api/coding/runs/coding-1', { timeout: 10000 });
+    await eventually(() => assert.equal(held, true));
     t.fixture.owner = 'owner-b'; t.fixture.settings = { memoryEnabled: false, memory: '', dailyRequestLimit: 20, timezone: 'UTC' }; t.fixture.conversations = []; t.fixture.messages = {}; t.fixture.codingRuns = [];
     // A second owned request observes the account switch while the coding snapshot is delayed.
     await t.page.locator('#open-workspace').click(); await t.page.locator('.workspace-tools [data-open="usage"]').click(); await t.page.waitForFunction(() => !document.body.classList.contains('session-check') && document.getElementById('conversation-title').textContent === 'New conversation'); release();
@@ -767,6 +857,27 @@ test('task tabs preserve keyboard focus during progress and expose real command 
     await t.page.waitForFunction(() => document.querySelector('#task-coding-1-changes .task-file pre').textContent.includes('+ after'));
     assert.equal(t.fixture.requests.filter(r => /\/publish$/.test(r.path)).length, 0);
     assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('refreshing one task keeps a different task’s open diff and avoids fetching it again', async () => {
+  const saved = codingRun({ id: 'coding-saved', createdAt: now - 60000, status: 'completed', stage: 'completed',
+    reviewReady: true, summary: 'Earlier result.' });
+  const active = codingRun();
+  const t = await open({ fixture: developerFixture({ codingRuns: [saved, active],
+    codingFiles: { 'coding-saved': [{ path: 'src/app.js', operation: 'modify' }] } }) });
+  try {
+    await openThread(t, 'Repository task');
+    const card = t.page.locator('[data-run-id="coding-saved"]');
+    await card.locator('.task-switch').click();
+    await card.getByRole('tab', { name: 'Changes' }).click();
+    await card.locator('.task-file summary').click();
+    await t.page.waitForFunction(() => document.querySelector('[data-run-id="coding-saved"] .task-file pre')?.textContent.includes('+ after'));
+    await card.locator('.task-file').evaluate(el => { window.__atlasSavedDiff = el; });
+    active.summary = 'The active task progressed.'; active.updatedAt++;
+    await t.page.getByText(active.summary, { exact: true }).waitFor({ timeout: 10000 });
+    assert.equal(await card.locator('.task-file').evaluate(el => el.open && el === window.__atlasSavedDiff), true);
+    assert.equal(t.fixture.requests.filter(call => call.path === 'coding/runs/coding-saved/diff').length, 1);
   } finally { await t.close(); }
 });
 
