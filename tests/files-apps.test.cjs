@@ -84,8 +84,10 @@ test('locks, source removal and later re-addition permanently revoke previously 
  }finally{t.index.destroy();}
 });
 
-test('explicit disabled Mail entitlement cannot be overridden by a ready source descriptor',async()=>{
- const t=await setup();try{t.F.session.view.apps.mail=false;assert.deepEqual(await t.index.read(),{sources:[],files:[]});assert.equal(t.calls.length,0);assert.equal(t.index.gate('mail'),false);}finally{t.index.destroy();}
+test('missing or disabled Mail entitlement cannot be overridden by a ready source descriptor',async()=>{
+ for(const allowed of [false,undefined]){
+  const t=await setup();try{t.F.session.view.apps.mail=allowed;assert.deepEqual(await t.index.read(),{sources:[],files:[]});assert.equal(t.calls.length,0);assert.equal(t.index.gate('mail'),false);}finally{t.index.destroy();}
+ }
 });
 
 test('read results are detached and frozen while invalid native intents cannot be forged',async()=>{

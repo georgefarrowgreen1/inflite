@@ -30,9 +30,13 @@ test('favourites edit the real fixed dock; search keeps its input and tiles stab
     assert.equal((await search.boundingBox()).y,y);
     assert.ok((await menu.locator('.wsl-apps').boundingBox()).height < 100);
     await button('Back').click();
-    assert.equal(await menu.locator('.wsl-app:visible').count(),9);
+    assert.equal(await menu.locator('.wsl-app:visible').count(),10);
+    assert.equal(await button('Atlas').isVisible(),true);
+    assert.equal(await button('Atlas').locator('img').getAttribute('src'),'/atlas.svg');
+    assert.equal(await button('Atlas').isDisabled(),true,'Atlas needs the account entitlement before it can open');
     await button('Actions').click();
     await button('Edit dock').click();
+    assert.equal(await button('Pin Atlas').isDisabled(),true,'an unavailable Atlas cannot be added to the dock');
     await button('Unpin Weather').click();
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('ifl:launcher:v1:ann')).includes('weather')),false);
     await button('Pin Weather').click();

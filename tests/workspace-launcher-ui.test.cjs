@@ -11,18 +11,22 @@ for(const [width,height] of[[320,760],[390,760],[844,390],[1440,900]])test(`app 
    dock:document.querySelector('.ws-dock').getBoundingClientRect().bottom
  }));
  assert.ok(Math.abs(edges.drawer-edges.dock)<=1,JSON.stringify(edges));
- const grid=t.menu.getByRole('group',{name:'Apps',exact:true});assert.equal(await grid.locator('.wsl-app').count(),9);assert.equal(await grid.locator('img').count(),9);
- for (const name of ['Calendar', 'Notes', 'People', 'Files']) {
+ const grid=t.menu.getByRole('group',{name:'Apps',exact:true});assert.equal(await grid.locator('.wsl-app').count(),10);assert.equal(await grid.locator('img').count(),10);
+ for (const name of ['Atlas', 'Calendar', 'Notes', 'People', 'Files']) {
    const icon = grid.getByRole('button', {name, exact:true}).locator('img');
-   assert.equal(await icon.getAttribute('src'), `/apps/${name.toLowerCase()}.svg`);
+   assert.equal(await icon.getAttribute('src'), name === 'Atlas' ? '/atlas.svg' : `/apps/${name.toLowerCase()}.svg`);
  }
  await t.page.waitForFunction(()=>[...document.querySelectorAll('.wsl-app img')].every(n=>n.complete&&n.naturalWidth>0));
- const cols=await grid.evaluate(n=>getComputedStyle(n).gridTemplateColumns.split(' ').length);assert.equal(cols,3);
+ const cols=await grid.evaluate(n=>getComputedStyle(n).gridTemplateColumns.split(' ').length);assert.equal(cols,4);
  for(const button of await t.menu.locator('.ws-launcher button').all()){const b=await button.boundingBox();if(b&&await button.isVisible())assert.ok(b.height>=44,JSON.stringify({name:await button.getAttribute("aria-label"),box:b}));}
  for(const node of await grid.locator('img').all()){const b=await node.boundingBox();assert.deepEqual([b.width,b.height],[52,52]);}
  assert.equal(await t.menu.evaluate(n=>n.scrollWidth>n.clientWidth+1),false);assert.ok((await t.menu.boundingBox()).height<=height);
  assert.ok(await t.menu.getByRole('button',{name:'Actions',exact:true}).isVisible());await t.menu.getByRole('button',{name:'Settings',exact:true}).scrollIntoViewIfNeeded(); const footer=await t.menu.getByRole('button',{name:'Settings',exact:true}).boundingBox(), bounds=await t.menu.boundingBox();assert.ok(footer.y>=bounds.y&&footer.y+footer.height<=bounds.y+bounds.height+1);
  assert.equal(await t.menu.getByRole('button',{name:'Mail',exact:true}).isDisabled(),true);
+ const atlas=grid.getByRole('button',{name:'Atlas',exact:true});
+ assert.equal(await atlas.isVisible(),true);
+ assert.equal(await atlas.locator('span').last().textContent(),'Atlas');
+ assert.equal(await atlas.isDisabled(),true,'Atlas stays unavailable without the account entitlement');
  await t.menu.getByRole('button',{name:'Files',exact:true}).focus();assert.equal(await t.menu.getByRole('button',{name:'Files',exact:true}).evaluate(n=>n===document.activeElement),true);
  if(process.env.LAUNCHER_SCREENSHOTS&&process.env.WEB_UI_BROWSER!=='webkit'){mkdirSync(process.env.LAUNCHER_SCREENSHOTS,{recursive:true});await t.page.screenshot({path:resolve(process.env.LAUNCHER_SCREENSHOTS,`launcher-${width}.png`),caret:'initial'});}
  await t.page.keyboard.press('Escape');await t.menu.waitFor({state:'detached'});await t.page.waitForFunction(()=>getComputedStyle(document.querySelector('.ws-dock')).opacity==='1');assert.equal(await t.page.getByRole('button',{name:'All apps',exact:true}).evaluate(n=>n===document.activeElement),true);await t.clean();
