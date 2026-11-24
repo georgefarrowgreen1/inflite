@@ -111,6 +111,7 @@ const destinationRoutes = { inbox: "tasks", environments: "environments", briefs
 let destination = null, briefRequest = null, briefListRequest = null;
 let runsRequest = null;
 let runTimeline = null, answerSubmission = null;
+let runDraft = null;
 let threadsRequest = null, threadsArchived = null, threadsError = "", threadSelection = null;
 const mobileQuery = "(max-width: 720px)";
 const dirtyForms = new Set();
@@ -1055,9 +1056,10 @@ function pauseRunTimeline() {
 function clearRunTimeline() {
   pauseRunTimeline();
   runTimeline = null;
+  runDraft?.sheet.now();
   for (const id of ["run-heading", "run-state", "run-checkpoint", "run-events", "run-updated", "run-subtask-list"]) $(id).replaceChildren();
   $("run-subtasks").hidden = true;
-  for (const id of ["run-open-result", "run-resume", "run-stop", "run-more", "run-copy-link"]) $(id).hidden = true;
+  for (const id of ["run-open-result", "run-prepare-draft", "run-resume", "run-stop", "run-more", "run-copy-link"]) $(id).hidden = true;
   feedback("run-feedback", "");
 }
 function openRunTimeline(run, trigger, { page = false } = {}) {
@@ -1093,6 +1095,7 @@ function renderRunTimeline(run, events, hasMore) {
   $("run-checkpoint").textContent = [checkpoint, run.kind === "background" && run.status !== "completed" && run.hasDraft ? "A partial answer is saved." : ""].filter(Boolean).join(" ");
   $("run-open-result").hidden = !run.conversationId && !run.scheduleId;
   $("run-open-result").textContent = run.kind === "scheduled" ? "Open scheduled work" : run.kind === "coding" && run.reviewReady && !codingActive(run) ? "Review changes" : "Open conversation";
+  $("run-prepare-draft").hidden = !run.draftAvailable || !fw?.workspace?.handoffs;
   $("run-resume").hidden = !run.canResume; $("run-resume").textContent = run.hasDraft ? "Resume from checkpoint" : "Retry run";
   $("run-stop").hidden = !run.canStop;
   $("run-more").hidden = !hasMore;
@@ -1153,7 +1156,7 @@ async function loadRunTimeline() {
     if (runTimeline !== timeline || timeline.request !== request || error.accountChanged) return;
     feedback("run-feedback", errorText(error), true);
     if (!timeline.run) $("run-state").textContent = "Timeline unavailable";
-    if (error.status === 404) for (const id of ["run-open-result", "run-resume", "run-stop"]) $(id).hidden = true;
+    if (error.status === 404) for (const id of ["run-open-result", "run-prepare-draft", "run-resume", "run-stop"]) $(id).hidden = true;
     timeline.retry++;
     follow = !error.status || error.status >= 500;
   } finally {
@@ -1177,6 +1180,68 @@ async function changeRun(event, action) {
       }
     }
   }, "run-feedback");
+}
+function clearRunDraft() {
+  runDraft?.controller.abort();
+  runDraft = null;
+  for (const id of ["run-draft-heading", "run-draft-note", "run-draft-preview"]) $(id).replaceChildren();
+  $("run-draft-reading").hidden = true;
+  $("run-draft-open").disabled = true;
+  $("run-draft-target").value = "notes";
+  feedback("run-draft-feedback", "");
+}
+
+function renderRunDraft() {
+  if (!runDraft?.format) return;
+  const target = $("run-draft-target").value;
+  const preview = runDraft.format(runDraft.result, target);
+  $("run-draft-reading").hidden = !preview;
+  $("run-draft-open").disabled = !preview;
+  if (!preview) return feedback("run-draft-feedback", "A draft could not be prepared for this app.", true);
+  $("run-draft-heading").textContent = preview.title;
+  $("run-draft-preview").textContent = preview.preview;
+  $("run-draft-note").textContent = [preview.kind === "mail-reply" && "This opens a reply to the original message.", preview.excerpt && "This draft contains an excerpt of the run result."].filter(Boolean).join(" ");
+  $("run-draft-open").textContent = preview.kind === "mail-reply" ? "Open reply in Mail" : ({ notes: "Open Notes draft", calendar: "Open Calendar draft", mail: "Open Mail draft" })[target];
+  feedback("run-draft-feedback", "");
+}
+
+async function previewRunDraft(trigger) {
+  const run = runTimeline?.run;
+  if (!run?.draftAvailable || !fw?.workspace?.handoffs || runDraft) return;
+  const sheet = openDialog("run-draft", trigger, { onClose: clearRunDraft });
+  if (sheet.closed) return;
+  const pending = { sheet, controller: new AbortController(), path: runPath(run) + "/draft?revision=" + run.revision };
+  runDraft = pending;
+  feedback("run-draft-feedback", "Loading saved result…");
+  try {
+    const [{ draft }, { runDraftForApp }] = await Promise.all([
+      api(pending.path, "GET", undefined, { signal: pending.controller.signal }), import("../roof/handoffs.js"),
+    ]);
+    if (runDraft !== pending) return;
+    pending.result = draft;
+    pending.format = runDraftForApp;
+    renderRunDraft();
+  } catch (error) { if (runDraft === pending && !error.accountChanged) actionableError(error, "run-draft-feedback"); }
+}
+
+async function openPreparedDraft(control) {
+  const pending = runDraft;
+  const target = $("run-draft-target").value;
+  const preview = pending?.format?.(pending.result, target);
+  if (!preview) return;
+  await busy(control, async () => {
+    const { draft } = await api(pending.path, "GET", undefined, { signal: pending.controller.signal });
+    if (runDraft !== pending || $("run-draft-target").value !== target) return;
+    if (JSON.stringify(draft) !== JSON.stringify(pending.result)) {
+      pending.result = draft;
+      renderRunDraft();
+      return feedback("run-draft-feedback", "The saved result changed. Review this updated draft.");
+    }
+    const opened = await fw.workspace.handoffs.send(preview.app, preview.kind, preview.payload);
+    if (runDraft !== pending) return;
+    if (opened === false || opened?.ok === false) return feedback("run-draft-feedback", "The destination app could not open. Try again from this preview.", true);
+    pending.sheet.now();
+  }, "run-draft-feedback");
 }
 async function loadUsage() {
   const data = await api("usage"), totals = data.totals || {}, limits = data.limits || {};
@@ -1838,6 +1903,9 @@ function init() {
   $("run-open-result").addEventListener("click", event => {
     if (runTimeline?.run) void openRunResult(runTimeline.run, event.currentTarget);
   });
+  $("run-prepare-draft").addEventListener("click", event => previewRunDraft(event.currentTarget));
+  $("run-draft-target").addEventListener("change", renderRunDraft);
+  $("run-draft-open").addEventListener("click", event => openPreparedDraft(event.currentTarget));
   $("run-copy-link").addEventListener("click", async () => {
     if (!runTimeline?.reference) return;
     try {

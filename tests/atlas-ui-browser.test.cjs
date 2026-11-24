@@ -33,7 +33,7 @@ function defaultFixture() {
     environments: [], environmentsReady: true, tasks: [], briefs: [], patches: [], coding: { ready: true, storageReady: true, message: '' }, codingRuns: [], codingFiles: {}, codingDiffs: {}, requests: [], overrides: new Map(), next: 1, older: null
   };
 }
-function nativeAtlasPage(withWallpaper, shellLayout, toolsAction) {
+function nativeAtlasPage(withWallpaper, shellLayout, toolsAction, withHandoffs) {
   const optics = withWallpaper ? readFileSync(join(PUBLIC, 'index.html'), 'utf8').match(/<svg class="ifl-optics"[\s\S]*?<\/svg>/)?.[0] : '';
   if (withWallpaper) assert.ok(optics, 'the shell supplies the refractor SVG');
   const tabs = '<nav id="fixture-nav" class="ifl-segs" aria-label="Atlas sections"></nav>';
@@ -67,6 +67,8 @@ function nativeAtlasPage(withWallpaper, shellLayout, toolsAction) {
         nav: { section: key => show(key), href: (key, arg) => '#' + key + (arg ? '=' + encodeURIComponent(arg) : ''),
           go: path => show(...path.slice(1).split('=').map(decodeURIComponent)) } };
       fw.sheet = createSheets(fw);
+      ${withHandoffs ? `window.__runHandoffs = [];
+        fw.workspace = { active: () => true, changed() {}, provide: () => () => {}, handoffs: { send: async (app, kind, payload) => { window.__runHandoffs.push({ app, kind, payload }); return { ok: true }; } } };` : ''}
       const atlas = mount(root, fw);
       async function show(key, arg) {
         fw.sheet.closeAll();
@@ -115,7 +117,7 @@ async function open(options = {}) {
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== ORIGIN) return route.abort();
-    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: options.native ? nativeAtlasPage(options.wallpaper, options.shellLayout, options.toolsAction) : atlasPage('fixture') });
+    if (url.pathname === '/atlas') return route.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self' 'nonce-fixture'; style-src 'self' 'nonce-fixture'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }, body: options.native ? nativeAtlasPage(options.wallpaper, options.shellLayout, options.toolsAction, options.handoffs) : atlasPage('fixture') });
     if (url.pathname === '/account/api/account/appearance') return route.fulfill({ json: { signedIn: true, id: fixture.owner, palette: 'inflite', appearance: options.theme || 'dark', glass: options.glass ?? true } });
     if (!url.pathname.startsWith('/atlas/api/')) {
       if (!['/theme.js', '/app.css', '/atlas.svg'].includes(url.pathname) && !url.pathname.startsWith('/roof/') && !url.pathname.startsWith('/atlas/assets/') && !url.pathname.startsWith('/atlas/roof/')) return route.fulfill({ status: 404, body: '' });
@@ -1032,6 +1034,49 @@ test('parallel research confirms its allowance and shows independent evidence in
     assert.equal(t.fixture.requests.filter(call => call.method === 'POST' && call.path === 'runs').length, 1);
     assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
+});
+
+test('completed runs preview cited drafts before opening Mail, Notes and Calendar', async () => {
+  const run = { id: 'alpha-first', kind: 'answer', title: 'Alpha research', status: 'completed', revision: 1, conversationId: 'alpha', draftAvailable: true };
+  const t = await open({ native: true, width: 390, mobile: true, handoffs: true, conversation: 'alpha' });
+  try {
+    let draft = { title: run.title, text: 'Summary for review.', sources: [source], mail: { threadId: 'thread-one', messageId: 'message-one' } };
+    t.fixture.overrides.set('GET runs/answer/alpha-first', ({ reply }) => reply({ run, events: [], nextAfter: 0, hasMore: false }));
+    t.fixture.overrides.set('GET runs/answer/alpha-first/draft', ({ url, reply }) => {
+      assert.equal(url.searchParams.get('revision'), '1');
+      return reply({ draft });
+    });
+    await t.page.goto(ORIGIN + '/atlas#tasks=a_alpha-first');
+    const prepare = t.page.getByRole('button', { name: 'Prepare draft', exact: true });
+    const sheet = t.page.getByRole('dialog', { name: 'Draft from this run' });
+    await prepare.click();
+    await sheet.getByText('Summary for review.', { exact: false }).waitFor();
+    assert.equal(await t.page.evaluate(() => window.__runHandoffs.length), 0);
+    assert.match(await sheet.locator('#run-draft-preview').textContent(), /Sources/);
+    draft = { ...draft, text: 'Updated summary for review.' };
+    await sheet.getByRole('button', { name: 'Open Notes draft' }).click();
+    await sheet.getByText('The saved result changed. Review this updated draft.').waitFor();
+    assert.equal(await t.page.evaluate(() => window.__runHandoffs.length), 0);
+    await sheet.getByRole('button', { name: 'Open Notes draft' }).click();
+    await sheet.waitFor({ state: 'hidden' });
+
+    await prepare.click();
+    await sheet.getByLabel('Destination').selectOption('mail');
+    await sheet.getByRole('button', { name: 'Open reply in Mail' }).click();
+    await sheet.waitFor({ state: 'hidden' });
+
+    await prepare.click();
+    await sheet.getByLabel('Destination').selectOption('calendar');
+    await sheet.getByRole('button', { name: 'Open Calendar draft' }).click();
+    await sheet.waitFor({ state: 'hidden' });
+    const handoffs = await t.page.evaluate(() => window.__runHandoffs);
+    assert.deepEqual(handoffs.map(item => [item.app, item.kind]), [['notes', 'note-draft'], ['mail', 'mail-reply'], ['calendar', 'event-draft']]);
+    for (const { payload } of handoffs) assert.match(payload.text || payload.description, /Updated summary for review\.[\s\S]*Sources[\s\S]*https:/);
+    assert.deepEqual({ thread: handoffs[1].payload.threadId, message: handoffs[1].payload.messageId }, { thread: 'thread-one', message: 'message-one' });
+    assert.equal(t.fixture.requests.some(call => call.method !== 'GET'), false);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+  assert.deepEqual(t.security, []);
 });
 
 test('the mobile Tasks inbox opens other conversations and reviews saved changes by revision', async () => {

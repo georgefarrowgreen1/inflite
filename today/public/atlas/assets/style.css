@@ -2031,6 +2031,15 @@ dialog.ifl-sheet.atlas-native-sheet .conversation-navigation { padding: 0; }
 .atlas-app .run-subtask + .run-subtask { border-top: 1px solid var(--atlas-border); }
 .atlas-app .run-subtask summary { cursor: pointer; font-weight: 600; }
 .atlas-app .run-subtask .message-content { margin-top: 10px; }
+.atlas-app .run-draft-reading { margin-block: 14px; }
+.atlas-app .run-draft-reading h3 { font-size: 17px; }
+.atlas-app .run-draft-reading .field-help { margin-block: 5px 12px; font-size: 13px; }
+.atlas-app .run-draft-reading .field-help:empty { display: none; }
+.atlas-app .run-draft-preview { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.atlas-app .run-draft-actions { display: grid; padding: 8px; border-radius: var(--atlas-group-radius); }
+.atlas-app .atlas-run-state h3 { font-size: 17px; }
+.atlas-app .atlas-run-state p { font-size: 13px; }
+.atlas-app .atlas-run-state .button-row button { font-size: 13px; min-height: 44px; }
 .atlas-app :is(#background-answer, #parallel-research) { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
 .atlas-app #background-answer .atlas-glyph { width: 16px; height: 16px; }
 .atlas-app .conversation-toolbar { border-bottom: 0; }

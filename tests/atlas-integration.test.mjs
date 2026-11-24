@@ -430,6 +430,44 @@ test('recovery holds an interrupted parallel subtask for review and reuses compl
   assert.equal((await call(path)).data.run.status, 'completed');
 });
 
+test('completed run revisions expose reviewable drafts with sources and only owned Mail references', async t => {
+  const { env, conversation, model, call } = await runFixture(t);
+  const sources = [{ title: 'Evidence', url: 'https://example.org/evidence' }];
+  await store.createMessage(env, 'alice', conversation.id, { id: 'draft-answer', prompt: 'Prepare a reply', context: [{ kind: 'mail', threadId: 'thread-1', messageId: 'message-1', text: 'Private original body' }] });
+  assert.equal((await call('/answer/draft-answer/draft?revision=1')).status, 409);
+  await store.finishMessage(env, 'alice', 'draft-answer', { status: 'completed', answer: 'A reply for review.', sources });
+  const reply = await call('/answer/draft-answer/draft?revision=1');
+  assert.equal(reply.status, 200);
+  assert.deepEqual(reply.data.draft.mail, { threadId: 'thread-1', messageId: 'message-1' });
+  assert.deepEqual(reply.data.draft.sources, sources);
+  assert.doesNotMatch(JSON.stringify(reply.data), /Private original body/);
+  assert.equal((await call('/answer/draft-answer')).data.run.draftAvailable, true);
+  assert.equal((await call('/answer/draft-answer/draft')).status, 400);
+  assert.equal((await call('/answer/draft-answer/draft?revision=2')).status, 409);
+  const foreign = await atlas(request('/atlas/api/runs/answer/draft-answer/draft?revision=1'), env, { account: async () => Response.json({ signedIn: true, user: { id: 'bob' }, apps: { mail: true } }) });
+  assert.equal(foreign.status, 404);
+
+  const { data: { run: background } } = await call('', { conversationId: conversation.id, requestId: crypto.randomUUID(), prompt: 'Background result' });
+  await store.createMessage(env, 'alice', conversation.id, { id: background.messageId, prompt: 'Background result' });
+  await store.finishMessage(env, 'alice', background.messageId, { status: 'completed', answer: 'Background evidence.', sources });
+  await env.ATLAS_DB.prepare("UPDATE atlas_answer_runs SET status='completed' WHERE owner='alice' AND id=?").bind(background.id).run();
+  assert.equal((await call('/background/' + background.id + '/draft?revision=1')).data.draft.text, 'Background evidence.');
+
+  const developer = await store.createConversation(env, 'alice', { title: 'Repository review', mode: 'developer', repository: 'owner/project' });
+  await coding.createCodingRun(env, 'alice', { id: 'coding-draft', conversationId: developer.id, requestId: crypto.randomUUID(), prompt: 'Review release changes', model, credentialUpdatedAt: 1, repository: 'owner/project' });
+  const sha = 'a'.repeat(40);
+  await env.ATLAS_DB.prepare("UPDATE atlas_coding_runs SET status='completed',summary='Saved summary.',revision=2,base_sha=? WHERE owner='alice' AND id='coding-draft'").bind(sha).run();
+  assert.equal((await call('/coding/coding-draft/draft?revision=1')).status, 409);
+  assert.deepEqual((await call('/coding/coding-draft/draft?revision=2')).data.draft.sources, [{ title: 'Repository revision', url: 'https://github.com/owner/project/tree/' + sha }]);
+
+  const task = await store.createTask(env, 'alice', { title: 'Research schedule', prompt: 'Collect public evidence.', schedule_kind: 'interval', interval_minutes: 360 });
+  await env.ATLAS_DB.prepare("INSERT INTO atlas_schedule_runs(owner,id,task_id,request_id,occurrence_key,status,started_at,finished_at,result,sources_json) VALUES('alice','scheduled-draft',?,?,?,'completed',1,2,'Scheduled result.',?)")
+    .bind(task.id, crypto.randomUUID(), 'manual:fixture', JSON.stringify([...sources, { url: 'javascript:alert(1)' }, { url: 'https://name:secret@example.org' }])).run();
+  const scheduled = (await call('/scheduled/scheduled-draft/draft?revision=1')).data.draft;
+  assert.equal(scheduled.text, 'Scheduled result.');
+  assert.deepEqual(scheduled.sources, sources);
+});
+
 test('schema eight keeps chat available, context requires explicit setup, and schema nine verifies its table', async t => {
   const { env, conversation } = await fixture(t, { version: 8 });
   assert.equal((await store.storageStatus(env)).ready, true);

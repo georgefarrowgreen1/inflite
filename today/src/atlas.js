@@ -15,6 +15,7 @@ import { atlasActivity, atlasRuns } from './atlas-activity.js';
 import { enqueueAtlasAnswer, resumeAtlasAnswer, stopAtlasAnswer } from './atlas-run-coordinator.js';
 import { publicAnswerRun, readAtlasRunTimeline, runTimelineStorage } from './atlas-run-timeline.js';
 import { parallelResearchStorage } from './atlas-parallel-research.js';
+import { readAtlasRunDraft } from './atlas-run-drafts.js';
 
 const PRIVATE = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', 'Referrer-Policy': 'no-referrer' };
 const API_CSP = "default-src 'none'; frame-ancestors 'none'";
@@ -193,7 +194,7 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
         filter: url.searchParams.get('filter') ?? undefined, before: url.searchParams.get('before'), schemaVersion: storage.schemaVersion, timeline,
       }));
     }
-    const runRoute = /^\/runs\/(answer|background|coding|scheduled)\/([^/]+)(?:\/(stop|resume))?$/.exec(path);
+    const runRoute = /^\/runs\/(answer|background|coding|scheduled)\/([^/]+)(?:\/(stop|resume|draft))?$/.exec(path);
     if ((path === '/runs' && method === 'POST') || runRoute) {
       if (!await runTimelineStorage(env, storage.schemaVersion)) fail('runs_storage_upgrade_required', 'Upgrade Atlas storage to use run timelines and background answers.', 409);
       if (!runRoute) {
@@ -206,6 +207,7 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
         after: Number(url.searchParams.get('after') ?? 0),
         limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
       }));
+      if (action === 'draft' && method === 'GET') return json(await readAtlasRunDraft(env, owner, kind, id, Number(url.searchParams.get('revision'))));
       if (kind === 'background' && method === 'POST') {
         if (action === 'stop') return json({ run: publicAnswerRun(await stopAtlasAnswer(env, owner, id, await input(request, 1024))) });
         if (action === 'resume') {
