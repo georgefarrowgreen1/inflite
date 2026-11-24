@@ -1,5 +1,6 @@
 import { runAtlasScheduled } from "./atlas-scheduler.js";
 import { executeScheduledAtlas } from "./atlas-chat.js";
+import { reconcileCodingBackground } from "./atlas-coding.js";
 import { atlas } from "./atlas.js";
 // InFlite Today, at inflite.ai: its page and files come from today/public (the assets); only /api/* and /version run
 // this Worker. It keeps nothing of its own: every /api/* request is checked here, then passed on with the account's
@@ -267,14 +268,15 @@ async function version(env, request) {
 
 export default {
   async scheduled(controller, env, ctx) {
-    if (!env.ATLAS_VERIFY_KEY || env.ATLAS_AUTONOMY !== "1") return;
+    if (!env.ATLAS_VERIFY_KEY) return;
     const verifyAdmin = async owner => {
       try {
         const r = await appFetch(env, "https://account.inflite.ai/api/atlas-admin", {method:"POST",headers:{Authorization:"Bearer "+env.ATLAS_VERIFY_KEY,"Content-Type":"application/json"},body:JSON.stringify({owner}),redirect:"manual",signal:AbortSignal.timeout(8000)});
         return r.ok && (await r.json()).allowed === true;
       } catch { return false; }
     };
-    ctx.waitUntil(runAtlasScheduled(env,{verifyAdmin,execute:args=>executeScheduledAtlas(env,args)}));
+    ctx.waitUntil(reconcileCodingBackground(env,{verifyAdmin}));
+    if (env.ATLAS_AUTONOMY === "1") ctx.waitUntil(runAtlasScheduled(env,{verifyAdmin,execute:args=>executeScheduledAtlas(env,args)}));
   },
   async fetch(request, env, ctx) {
     return withLocalNotFound(request, env, await worker.fetch(request, env, ctx));

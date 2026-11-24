@@ -744,6 +744,116 @@ html[data-midnight-lava] .atlas-sky canvas {
 .atlas-app .repository-note {
   margin: 6px 4px 0;
 }
+.coding-options {
+  margin: 6px 4px 0;
+  min-width: 0;
+}
+.coding-options .field-help {
+  margin: 4px 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.coding-permissions summary {
+  color: var(--atlas-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.coding-continue-note {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.coding-continue-note .text-button {
+  font-size: 11px;
+  padding: 2px;
+}
+.coding-runs {
+  padding: 8px 10px;
+  min-width: 0;
+}
+.coding-run {
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid var(--atlas-line);
+  border-radius: 16px;
+  background: var(--atlas-surface);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.coding-run-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.coding-run-heading h3,
+.coding-checks h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.coding-prompt {
+  white-space: pre-wrap;
+  font-size: 14px;
+}
+.atlas-app .coding-prompt {
+  margin: 8px 0;
+}
+.atlas-app .coding-run > .field-help {
+  margin: 5px 0;
+}
+.coding-stage,
+.coding-change-count {
+  font-size: 12px;
+}
+.coding-activity,
+.coding-checks {
+  margin: 12px 0;
+  font-size: 12px;
+}
+.coding-activity summary,
+.coding-check summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.coding-activity ol {
+  padding-left: 20px;
+  max-height: 240px;
+  overflow: auto;
+}
+.coding-activity li {
+  margin: 6px 0;
+  white-space: pre-wrap;
+}
+.coding-check {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--atlas-line);
+}
+.coding-check code {
+  white-space: pre-wrap;
+}
+.coding-check pre,
+.patch-file pre {
+  max-height: 420px;
+}
+.coding-check pre {
+  font-size: 11px;
+  padding: 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--atlas-surface);
+}
+.coding-actions,
+.coding-reconnect {
+  flex-wrap: wrap;
+}
+.coding-actions button {
+  min-height: 42px;
+}
 .fitness-control {
   display: flex;
   gap: 5px;

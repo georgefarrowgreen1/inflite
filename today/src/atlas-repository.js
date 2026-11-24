@@ -25,6 +25,58 @@ export function safeRepositoryPath(value) {
   return value;
 }
 
+// Coding workspaces retain tracked build inputs, including vendor bundles,
+// images, fonts and dist assets. Only secrets and actual dependency/cache
+// directories are excluded; the read-only excerpt browser has tighter rules.
+export function safeCodingPath(value) {
+  safeRepositoryPath(value);
+  if (/(?:^|\/)(?:node_modules|\.venv|venv|__pycache__|\.cache|\.next|\.turbo|\.aws|\.ssh|\.gnupg)(?:\/|$)/i.test(value) ||
+      /(?:^|\/)(?:\.npmrc|\.pypirc|\.netrc|\.git-credentials|\.dev\.vars(?:\..*)?|[^/]*\.tfstate(?:\.backup)?|service[-_]account[^/]*\.json)$/i.test(value) ||
+      /(?:^|\/)\.(?:docker|kube)\/config(?:\.json)?$/i.test(value)) {
+    throw failure('workspace_path_excluded', 'This secret, dependency or cache path is excluded from the coding workspace.');
+  }
+  return value;
+}
+
+export async function repositoryBlobSha(bytes) {
+  const header = encoder.encode('blob ' + bytes.byteLength + '\0');
+  const value = new Uint8Array(header.length + bytes.byteLength);
+  value.set(header); value.set(bytes, header.length);
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-1', value))].map(n => n.toString(16).padStart(2, '0')).join('');
+}
+
+/** Server-only transport. The saved GitHub token is never returned or sent to codeload. */
+export async function repositoryWorkspaceArchive(env, owner, { repository, baseBranch }, options = {}) {
+  const { repo, opts } = await repositoryAccess(env, owner, repository, options);
+  const branch = baseBranch || repo.default_branch;
+  if (typeof branch !== 'string' || !branch || branch.length > 200 || /[\x00-\x20~^:?*\[\\]/.test(branch) || branch.includes('..') || branch.startsWith('/') || branch.endsWith('/') || branch.includes('//')) throw failure('repository_ref_invalid', 'Choose a valid repository branch.');
+  const branchRef = await githubFetch(baseURL(repository) + '/git/ref/heads/' + pathURL(branch), opts);
+  const sha = branchRef.object?.sha;
+  if (!shaPattern.test(sha || '') || branchRef.object?.type && branchRef.object.type !== 'commit') throw failure('github_response_invalid', 'GitHub could not identify this branch.', 502);
+  const commit = await githubFetch(baseURL(repository) + '/git/commits/' + sha, opts);
+  if (!shaPattern.test(commit.tree?.sha || '')) throw failure('github_response_invalid', 'GitHub could not identify the repository tree.', 502);
+  const tree = await githubFetch(baseURL(repository) + '/git/trees/' + commit.tree.sha + '?recursive=1', { ...opts, limit: 8 * 1024 * 1024 });
+  if (!Array.isArray(tree.tree) || tree.truncated === true) throw failure('workspace_tree_incomplete', 'GitHub could not provide the complete pinned tree for this workspace.', 413);
+  if (tree.tree.length > 12000) throw failure('workspace_repository_large', 'This repository exceeds the coding workspace file limit.', 413);
+  const entries = tree.tree.map(entry => ({ path: entry.path, sha: entry.sha, mode: entry.mode, type: entry.type, ...(entry.size !== undefined ? { size: entry.size } : {}) }));
+  let response = await githubFetch(baseURL(repository) + '/tarball/' + sha, { ...opts, raw: true });
+  if (response.status === 302 || response.status === 301 || response.status === 307) {
+    let location;
+    try { location = new URL(response.headers.get('Location')); } catch { throw failure('workspace_archive_redirect', 'GitHub returned an invalid repository archive location.', 502); }
+    const expected = '/' + repository;
+    if (location.protocol !== 'https:' || location.hostname !== 'codeload.github.com' || location.username || location.password || location.port || ![expected + '/legacy.tar.gz/' + sha, expected + '/tar.gz/' + sha].some(path => location.pathname.toLowerCase() === path.toLowerCase())) throw failure('workspace_archive_redirect', 'GitHub returned an unexpected repository archive location.', 502);
+    response.body?.cancel().catch(() => {});
+    try {
+      response = await (options.send || fetch)(location.href, { method: 'GET', redirect: 'manual', credentials: 'omit', headers: { Accept: 'application/gzip', 'User-Agent': 'InFlite-Atlas' }, signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000) });
+    } catch {
+      if (options.signal?.aborted) throw failure('request_cancelled', 'The request was stopped.', 499);
+      throw failure('workspace_archive_unavailable', 'The pinned repository archive could not be downloaded.', 502);
+    }
+  }
+  if (!response.ok || !response.body) throw failure('workspace_archive_unavailable', 'The pinned repository archive is unavailable to this connection.', 502);
+  return { repository, baseBranch: branch, baseSha: sha, baseTreeSha: commit.tree.sha, entries, response };
+}
+
 function pathURL(path) { return path.split('/').map(encodeURIComponent).join('/'); }
 function baseURL(repository) { return '/repos/' + repository; }
 function contextURL(repository, ref, path) { return 'https://github.com/' + repository + '/blob/' + ref + '/' + pathURL(path); }
@@ -667,4 +719,105 @@ export async function publishPatch(env, owner, id, options = {}) {
     await env.ATLAS_DB.prepare("UPDATE atlas_patches SET status='failed',updated_at=? WHERE owner=? AND id=? AND status='publishing' AND updated_at=?").bind(Date.now(), owner, id, now).run();
     throw error;
   }
+}
+
+// The coding runtime produces an immutable review revision. The caller owns
+// the publication lease and invokes this only after that revision is approved.
+// Every write checks the lease again so cancellation/cleanup can stop a publish
+// between GitHub mutations. A retry can recover the same branch and draft PR.
+export async function publishCodingChanges(env, owner, candidate, options = {}) {
+  if (!candidate || !idPattern.test(candidate.id || '') || !Number.isSafeInteger(candidate.revision) || candidate.revision < 1 || candidate.revision > 1000000 || !shaPattern.test(candidate.baseSha || '') || !shaPattern.test(candidate.baseTreeSha || '') || typeof candidate.baseBranch !== 'string' || !candidate.baseBranch || candidate.baseBranch.length > 200 || /[\x00-\x20~^:?*\[\\]/.test(candidate.baseBranch) || candidate.baseBranch.includes('..') || candidate.baseBranch.startsWith('/') || candidate.baseBranch.endsWith('/') || candidate.baseBranch.includes('//') || typeof candidate.title !== 'string' || !candidate.title.trim() || candidate.title.length > 160 || typeof candidate.summary !== 'string' || candidate.summary.length > 30000 || !Array.isArray(candidate.files) || !candidate.files.length || candidate.files.length > 512) throw failure('coding_publish_invalid', 'Review a complete coding revision before publishing.', 409);
+  safeRepository(candidate.repository);
+  const seen = new Set(); let afterBytes = 0;
+  for (const file of candidate.files) {
+    safeCodingPath(file?.path);
+    if (seen.has(file.path) || !['add', 'modify', 'delete'].includes(file.operation)) throw failure('coding_publish_invalid', 'The reviewed file operations are invalid.', 409);
+    seen.add(file.path);
+    if (file.path.startsWith('.github/workflows/')) throw failure('coding_workflow_permission', 'This GitHub connection does not authorize Atlas to publish workflow changes. Review the prepared workflow diff and publish it through a connection with Workflows write permission.', 403);
+    if (file.operation === 'add' ? file.beforeSha !== null || file.beforeMode !== null : !shaPattern.test(file.beforeSha || '') || !['100644', '100755'].includes(file.beforeMode)) throw failure('coding_publish_invalid', 'The reviewed original file metadata is invalid.', 409);
+    if (file.operation === 'delete') {
+      if (file.contentBase64 !== null || file.afterSha !== null || file.afterMode !== null) throw failure('coding_publish_invalid', 'A deleted file contains unexpected replacement data.', 409);
+      continue;
+    }
+    if (!['100644', '100755'].includes(file.afterMode) || !shaPattern.test(file.afterSha || '') || typeof file.contentBase64 !== 'string' || file.contentBase64.length > 1398104 || file.contentBase64.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(file.contentBase64)) throw failure('coding_publish_invalid', 'The reviewed replacement file is invalid or exceeds its resource limit.', 409);
+    let bytes;
+    try { const raw = atob(file.contentBase64); if (btoa(raw) !== file.contentBase64) throw Error(); bytes = Uint8Array.from(raw, character => character.charCodeAt(0)); } catch { throw failure('coding_publish_invalid', 'The reviewed replacement file has invalid Base64 encoding.', 409); }
+    afterBytes += bytes.length;
+    if (bytes.length > 1024 * 1024 || afterBytes > 16 * 1024 * 1024 || await repositoryBlobSha(bytes) !== file.afterSha.toLowerCase() || file.operation === 'modify' && file.beforeSha.toLowerCase() === file.afterSha.toLowerCase() && file.beforeMode === file.afterMode) throw failure('coding_publish_invalid', 'The reviewed replacement file no longer matches its verified content.', 409);
+  }
+  const deadline = AbortSignal.timeout(90000);
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
+  const { repo, opts, saved } = await repositoryAccess(env, owner, candidate.repository, { ...options, signal });
+  if (!saved || repo.permissions?.push !== true) throw failure('github_write_required', 'Connect a GitHub token with Contents and Pull requests write access to publish this draft.', 403);
+  const route = baseURL(candidate.repository), baseSha = candidate.baseSha.toLowerCase(), baseTreeSha = candidate.baseTreeSha.toLowerCase();
+  const currentBase = async () => {
+    const ref = await githubFetch(route + '/git/ref/heads/' + pathURL(candidate.baseBranch), opts);
+    if (ref.object?.sha?.toLowerCase() !== baseSha) throw failure('coding_base_changed', 'The repository branch has changed. Refresh this coding task against the latest base before publishing.', 409);
+  };
+  await currentBase();
+  const base = await githubFetch(route + '/git/commits/' + baseSha, opts);
+  if (base.sha?.toLowerCase() !== baseSha || base.tree?.sha?.toLowerCase() !== baseTreeSha) throw failure('coding_base_changed', 'The pinned base commit and repository tree could not be verified.', 409);
+  const tree = await githubFetch(route + '/git/trees/' + baseTreeSha + '?recursive=1', { ...opts, limit: 8 * 1024 * 1024 });
+  if (tree.truncated === true || !Array.isArray(tree.tree) || tree.tree.length > 12000 || tree.sha?.toLowerCase() !== baseTreeSha) throw failure('coding_tree_incomplete', 'GitHub could not provide the complete original tree for publication.', 409);
+  const entries = new Map();
+  for (const entry of tree.tree) {
+    if (typeof entry?.path !== 'string' || entries.has(entry.path) || !shaPattern.test(entry.sha || '')) throw failure('github_response_invalid', 'GitHub returned an invalid original tree.', 502);
+    entries.set(entry.path, entry);
+  }
+  for (const file of candidate.files) {
+    const prior = entries.get(file.path);
+    if (file.operation === 'add' ? !!prior : !prior || prior.type !== 'blob' || prior.sha.toLowerCase() !== file.beforeSha.toLowerCase() || prior.mode !== file.beforeMode) throw failure('coding_original_changed', 'The reviewed file metadata does not match the pinned repository tree.', 409);
+  }
+  const finalPaths = new Set(tree.tree.filter(entry => entry.type !== 'tree').map(entry => entry.path));
+  for (const file of candidate.files) { if (file.operation === 'delete') finalPaths.delete(file.path); else finalPaths.add(file.path); }
+  for (const path of finalPaths) {
+    const parts = path.split('/');
+    for (let index = 1; index < parts.length; index++) if (finalPaths.has(parts.slice(0, index).join('/'))) throw failure('coding_path_conflict', 'The reviewed files overlap an existing repository file or submodule.', 409);
+  }
+  const post = async (path, body) => {
+    await options.beforeWrite?.();
+    if (signal.aborted) throw failure('request_cancelled', 'The publication was stopped.', 499);
+    return githubFetch(route + path, { ...opts, method: 'POST', body });
+  };
+  // Git's content-addressed blobs and tree are idempotent, including binaries.
+  // GitHub calculates the complete tree from base_tree plus only reviewed edits.
+  const updates = [];
+  for (const file of candidate.files) {
+    if (file.operation === 'delete') { updates.push({ path: file.path, mode: file.beforeMode, type: 'blob', sha: null }); continue; }
+    const blob = await post('/git/blobs', { encoding: 'base64', content: file.contentBase64 });
+    if (blob.sha?.toLowerCase() !== file.afterSha.toLowerCase()) throw failure('github_response_invalid', 'GitHub did not verify a reviewed file blob.', 502);
+    updates.push({ path: file.path, mode: file.afterMode, type: 'blob', sha: file.afterSha.toLowerCase() });
+  }
+  const expectedTree = await post('/git/trees', { base_tree: baseTreeSha, tree: updates });
+  if (!shaPattern.test(expectedTree.sha || '')) throw failure('github_response_invalid', 'GitHub did not return the reviewed repository tree.', 502);
+  const branch = 'atlas/coding-' + candidate.id + '-r' + candidate.revision;
+  const message = 'Atlas coding ' + candidate.id + ' revision ' + candidate.revision + '\n\n' + candidate.title.trim();
+  let branchCommit;
+  const existing = await githubFetch(route + '/git/ref/heads/' + pathURL(branch), { ...opts, raw: true });
+  if (existing.ok) {
+    const ref = parse(await bodyUpTo(existing, 20000)); branchCommit = ref?.object?.sha;
+    if (!shaPattern.test(branchCommit || '')) throw failure('coding_branch_conflict', 'The coding draft branch could not be verified.', 409);
+    const commit = await githubFetch(route + '/git/commits/' + branchCommit, opts);
+    if (commit.sha !== branchCommit || commit.parents?.length !== 1 || commit.parents[0].sha?.toLowerCase() !== baseSha || commit.message !== message || commit.tree?.sha !== expectedTree.sha) throw failure('coding_branch_conflict', 'The draft branch contains changes outside this reviewed revision. Prepare a new revision before publishing.', 409);
+  } else {
+    existing.body?.cancel().catch(() => {});
+    if (existing.status !== 404) throw failure('github_request_failed', 'GitHub could not inspect the coding draft branch.', 502);
+    const commit = await post('/git/commits', { message, tree: expectedTree.sha, parents: [baseSha] }); branchCommit = commit.sha;
+    if (!shaPattern.test(branchCommit || '') || commit.tree?.sha !== expectedTree.sha || commit.parents?.length !== 1 || commit.parents[0].sha?.toLowerCase() !== baseSha || commit.message !== message) throw failure('github_response_invalid', 'GitHub did not verify the reviewed commit.', 502);
+    const ref = await post('/git/refs', { ref: 'refs/heads/' + branch, sha: branchCommit });
+    if (ref.object?.sha !== branchCommit || ref.ref !== 'refs/heads/' + branch) throw failure('github_response_invalid', 'GitHub did not verify the coding draft branch.', 502);
+  }
+  await currentBase();
+  const verifiedBranch = await githubFetch(route + '/git/ref/heads/' + pathURL(branch), opts);
+  if (verifiedBranch.object?.sha !== branchCommit) throw failure('coding_branch_conflict', 'The coding draft branch changed during publication.', 409);
+  const ownerName = candidate.repository.split('/')[0];
+  const matching = await githubFetch(route + '/pulls?state=open&head=' + encodeURIComponent(ownerName + ':' + branch) + '&base=' + encodeURIComponent(candidate.baseBranch), opts);
+  if (!Array.isArray(matching)) throw failure('github_response_invalid', 'GitHub could not verify existing coding pull requests.', 502);
+  let pr = matching.find(pull => pull.head?.ref === branch);
+  if (!pr) {
+    const checks = (Array.isArray(candidate.checks) ? candidate.checks : []).filter(check => check?.source === 'provider_command_execution' && typeof check.command === 'string').slice(-40);
+    const evidence = checks.length ? checks.map(check => '- `' + check.command.replace(/[\r\n]+/g, ' ').replace(/`/g, "'").slice(0, 500) + '` — ' + (Number.isSafeInteger(check.exitCode) ? 'exit ' + check.exitCode : 'completion not verified')).join('\n') : 'No completed command evidence was captured for this revision.';
+    pr = await post('/pulls', { title: candidate.title.trim(), head: branch, base: candidate.baseBranch, draft: true, body: candidate.summary + '\n\n## Command evidence\n\n' + evidence + '\n\nPrepared in Atlas against ' + baseSha + ', review revision ' + candidate.revision + '. Command results report process exits; review and repository CI are required before merging.' });
+  }
+  return verifiedPull(pr, { repository: candidate.repository, branch, branchCommit, baseBranch: candidate.baseBranch, baseSha });
 }

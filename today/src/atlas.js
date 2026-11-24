@@ -8,6 +8,7 @@ import { testProvider, summarizeConversation, preparePatch, runAtlasPrompt, stre
 import * as repository from './atlas-repository.js';
 import { runAtlasTask } from './atlas-scheduler.js';
 import { evolution } from './atlas-evolution.js';
+import * as coding from './atlas-coding.js';
 
 const PRIVATE = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', 'Referrer-Policy': 'no-referrer' };
 const API_CSP = "default-src 'none'; frame-ancestors 'none'";
@@ -120,7 +121,7 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
         try { github = await repository.githubStatus(env, owner); }
         catch (error) { const safe = safeFailure(error); github = { connected: false, error: safe.error, code: safe.code }; }
       }
-      return json({ owner: ownerMarker, storage, provider, scheduling: scheduleAvailability(env), github });
+      return json({ owner: ownerMarker, storage, provider, scheduling: scheduleAvailability(env), github, coding: await coding.codingHealth(env, provider) });
     }
     if (path === '/setup' && method === 'POST') {
       const body = await input(request);
@@ -132,6 +133,7 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
     // encryption configuration failure.
     if (path === '/provider' && method === 'DELETE') {
       await fresh();
+      await coding.closeCodingSessions(env, owner, { send });
       if (storage.ready) await cancelOwnerRequests(env, owner);
       return json(await disconnectProvider(env, owner));
     }
@@ -140,7 +142,7 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
 
     if (path === '/provider') {
       if (method === 'GET') return json(await providerStatus(env, owner));
-      if (method === 'POST') { const body = await input(request, 8192); await fresh(); return json(await connectProvider(env, owner, body, options)); }
+      if (method === 'POST') { const body = await input(request, 8192); await fresh(); await coding.closeCodingSessions(env, owner, { send }); return json(await connectProvider(env, owner, body, options)); }
     }
     if (path === '/models' && method === 'GET') return json(await availableModels(env, owner, options));
     if (path === '/provider/test' && method === 'POST') return json(await testProvider(env, owner, await input(request), options));
@@ -163,12 +165,33 @@ export async function atlas(request, env, { account = ask, send = fetch, ctx } =
         if (!action) return json({ conversation, ...await store.getMessagePage(env, owner, id, { limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 100, beforeId: url.searchParams.get('before') }) });
       }
       if (!action && method === 'PATCH') return json({ conversation: await store.updateConversation(env, owner, id, await input(request)) });
-      if (!action && method === 'DELETE') return json(await store.deleteConversation(env, owner, id));
+      if (!action && method === 'DELETE') { await coding.closeCodingSessions(env, owner, { conversationId: id, send }); return json(await store.deleteConversation(env, owner, id)); }
     }
     if (path === '/chat' && method === 'POST') {
       const body = await input(request);
       const operation = { ...options, owner, request, account, conversationId: body.conversationId, requestId: body.requestId, prompt: body.prompt, includeFitness: body.includeFitness === true, context: body.context || [] };
       return body.stream === true ? await streamAtlasPrompt(env, operation, { headers, ctx }) : json(await runAtlasPrompt(env, operation));
+    }
+    // The browser observes these sessions; its lifetime does not own them.
+    // Do not pass request.signal into the hosted execution lifecycle.
+    const kickCoding = id => {
+      if (ctx?.waitUntil) ctx.waitUntil(coding.progressCodingSetup(env, owner, id, { send }).catch(error => {
+        console.warn(JSON.stringify({ event: 'atlas_coding_observation_failed', code: safeFailure(error).code }));
+      }));
+    };
+    if (path === '/coding/runs') {
+      if (method === 'GET') return json({ runs: await coding.getCodingRuns(env, owner, url.searchParams.get('conversationId')) });
+      if (method === 'POST') { const run = await coding.startCodingRun(env, owner, await input(request)); kickCoding(run.id); return json({ run }, 202); }
+    }
+    match = /^\/coding\/runs\/([^/]+)(?:\/(cancel|continue|changes|diff|publish))?$/.exec(path);
+    if (match) {
+      const id = match[1], action = match[2];
+      if (!action && method === 'GET') return json({ run: await coding.advanceCodingRun(env, owner, id, { send }) });
+      if (action === 'cancel' && method === 'POST') return json({ run: await coding.cancelCodingRun(env, owner, id, { send }) });
+      if (action === 'continue' && method === 'POST') { const run = await coding.continueCodingRun(env, owner, id, await input(request), { send }); kickCoding(id); return json({ run }, 202); }
+      if (action === 'changes' && method === 'GET') return json(await coding.codingReview(env, owner, id));
+      if (action === 'diff' && method === 'GET') return json(await coding.codingDiff(env, owner, id, url.searchParams.get('path')));
+      if (action === 'publish' && method === 'POST') { const body = await input(request); await fresh(); return json(await coding.publishCodingRun(env, owner, id, body, { send })); }
     }
     match = /^\/requests\/([^/]+)\/cancel$/.exec(path);
     if (match && method === 'POST') { await cancelAtlasRequest(env, owner, match[1]); return json({ cancelled: true }); }
