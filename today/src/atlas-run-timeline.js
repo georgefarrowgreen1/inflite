@@ -1,5 +1,6 @@
 import { AtlasStoreError } from './atlas-store.js';
 import { PARALLEL_RESEARCH, readParallelResearch } from './atlas-parallel-research.js';
+import { runDraftAvailable } from './atlas-run-drafts.js';
 
 const TIMELINE_SCHEMA_VERSION = 10;
 const ID = /^[A-Za-z0-9._:-]{1,600}$/;
@@ -31,14 +32,15 @@ export function publicAnswerRun(row) {
 
 const snapshotQueries = {
   answer: `
-    SELECT t.conversation_id,t.status,t.created_at,t.updated_at,t.error_code,c.title
+    SELECT t.conversation_id,t.status,t.created_at,t.updated_at,t.error_code,c.title,LENGTH(TRIM(t.answer))>0 AS has_output
     FROM atlas_turns t JOIN atlas_conversations c ON c.owner=t.owner AND c.id=t.conversation_id
     WHERE t.owner=? AND t.id=?
   `,
   background: `
     SELECT a.conversation_id, a.request_id, a.revision, a.status, a.checkpoint, a.error_code, a.updated_at, c.title, c.archived,
       json_extract(a.input_json,'$.plan') AS plan,
-      LENGTH(COALESCE(t.answer,'')) AS saved_chars, LENGTH(COALESCE(p.answer,'')) AS prior_chars
+      LENGTH(COALESCE(t.answer,'')) AS saved_chars, LENGTH(COALESCE(p.answer,'')) AS prior_chars,
+      t.status='completed' AND LENGTH(TRIM(t.answer))>0 AS has_output
     FROM atlas_answer_runs a
     JOIN atlas_conversations c ON c.owner=a.owner AND c.id=a.conversation_id
     LEFT JOIN atlas_turns t ON t.owner=a.owner AND t.conversation_id=a.conversation_id AND t.id=a.request_id
@@ -46,13 +48,14 @@ const snapshotQueries = {
     WHERE a.owner=? AND a.id=?
   `,
   coding: `
-    SELECT r.conversation_id, r.revision, r.status, r.phase AS checkpoint, r.stage, r.error_code, r.updated_at, r.cancel_requested, r.review_ready, substr(r.prompt,1,140) AS title
+    SELECT r.conversation_id, r.revision, r.status, r.phase AS checkpoint, r.stage, r.error_code, r.updated_at, r.cancel_requested, r.review_ready,
+      substr(r.prompt,1,140) AS title,LENGTH(TRIM(r.summary))>0 AS has_output
     FROM atlas_coding_runs r JOIN atlas_conversations c ON c.owner=r.owner AND c.id=r.conversation_id
     WHERE r.owner=? AND r.id=?
   `,
   scheduled: `
     SELECT r.task_id AS schedule_id, r.status, r.status AS checkpoint, r.error_code, r.cancel_requested,
-      COALESCE(r.finished_at,r.started_at) AS updated_at, s.title
+      COALESCE(r.finished_at,r.started_at) AS updated_at, s.title,LENGTH(TRIM(r.result))>0 AS has_output
     FROM atlas_schedule_runs r JOIN atlas_schedules s ON s.owner=r.owner AND s.id=r.task_id
     WHERE r.owner=? AND r.id=?
   `,
@@ -77,6 +80,7 @@ export async function readAtlasRunTimeline(env, owner, kind, id, { after = 0, li
     ...(kind === 'coding' ? { reviewReady: row.review_ready === 1 } : {}),
     ...(kind === 'scheduled' ? { scheduleId: row.schedule_id } : {}),
     active: kind === 'coding' ? codingActive.has(row.status) : ['queued', 'running', 'stopping'].includes(row.status),
+    ...(runDraftAvailable(kind, row.status, row.has_output) ? { draftAvailable: true } : {}),
     ...(row.cancel_requested ? { stopRequested: true } : {}),
   };
   if (kind === 'background') {

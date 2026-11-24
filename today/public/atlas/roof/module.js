@@ -2,8 +2,8 @@ import { atlasMarkup } from "./template.js";
 import { createAtlasClient } from "../assets/app.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.2.1";
-export const NEWS = "Run independent research and verification in parallel, with saved evidence for each subtask.";
+export const BUILD = "2.3.1";
+export const NEWS = "Preview cited drafts from completed runs, then open them in Mail, Notes or Calendar.";
 export const SECTIONS = [["conversations", "Conversations"], ["tasks", "Tasks"], ["environments", "Environments"], ["briefs", "Briefs"], ["settings", "Settings"]];
 
 export function mount(root, fw) {

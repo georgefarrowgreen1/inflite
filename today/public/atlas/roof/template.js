@@ -131,6 +131,7 @@ export function atlasMarkup() {
       <div id="run-updated"></div>
       <div class="button-row">
         <button id="run-open-result" class="quiet-button" type="button" hidden>Open conversation</button>
+        <button id="run-prepare-draft" class="quiet-button" type="button" aria-haspopup="dialog" hidden>Prepare draft</button>
         <button id="run-resume" class="primary-button" type="button" hidden>Resume from checkpoint</button>
         <button id="run-stop" class="danger-text" type="button" hidden>Stop run</button>
       </div>
@@ -146,6 +147,20 @@ export function atlasMarkup() {
       <button id="run-refresh" class="quiet-button" type="button">Refresh timeline</button>
       <button id="run-copy-link" class="text-button" type="button" hidden>Copy run link</button>
     </div>
+  </div>
+</dialog>
+<dialog id="run-draft-dialog" class="atlas-dialog ifl-sheet wide-dialog" aria-labelledby="run-draft-title">
+  <div class="ifs-grab" aria-hidden="true"></div>
+  <header class="ifs-head"><h2 id="run-draft-title" tabindex="-1">Draft from this run</h2><button class="ifs-btn icon-button" type="button" data-close aria-label="Close draft preview">${glyph("x")}</button></header>
+  <div class="ifs-body dialog-content">
+    <div class="form-grid"><label>Destination<select id="run-draft-target"><option value="notes">Notes</option><option value="mail">Mail</option><option value="calendar">Calendar</option></select></label></div>
+    <article id="run-draft-reading" class="record-card run-draft-reading" hidden aria-labelledby="run-draft-heading">
+      <h3 id="run-draft-heading"></h3>
+      <p id="run-draft-note" class="field-help"></p>
+      <div id="run-draft-preview" class="run-draft-preview"></div>
+    </article>
+    <p id="run-draft-feedback" class="field-feedback" role="status"></p>
+    <div class="dialog-sticky-actions run-draft-actions"><button id="run-draft-open" type="button" class="primary-button" disabled>Open draft</button></div>
   </div>
 </dialog>
 <dialog id="inbox-dialog" class="atlas-dialog ifl-sheet wide-dialog" aria-labelledby="inbox-title">

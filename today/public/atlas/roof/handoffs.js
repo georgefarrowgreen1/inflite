@@ -35,3 +35,40 @@ export function handoffPayload(source, target, kind, value) {
   }
   return null;
 }
+
+// The preview is generated from the same payload the destination receives.
+// Keep complete source links within each app's existing field limits.
+export function runDraftForApp(value, app) {
+  const limits = { mail: 16000, notes: 64000, calendar: 4000 };
+  if (!Object.hasOwn(limits, app)) return null;
+  const title = clean(value?.title, 160) || "Atlas run";
+  const text = bodyText(value?.text, 64000)?.trim();
+  if (!text) return null;
+  const limit = limits[app];
+  let appendix = "";
+  for (const source of Array.isArray(value.sources) ? value.sources : []) {
+    let url;
+    try { url = new URL(source.url); } catch { continue; }
+    if (url.protocol !== "https:" || url.username || url.password) continue;
+    const heading = appendix ? "" : "\n\nSources";
+    const line = heading + "\n- " + (clean(source.title, 160) || url.hostname) + " — " + url.href;
+    if (appendix.length + line.length <= Math.floor(limit / 2)) appendix += line;
+  }
+  const available = limit - appendix.length;
+  const clipped = text.length > available;
+  const preview = (clipped ? text.slice(0, available - 1).trimEnd() + "…" : text) + appendix;
+  const mail = value.mail;
+  const source = ID.test(mail?.threadId || "") ? { app: "mail", threadId: mail.threadId } : undefined;
+  let kind, payload;
+  if (app === "mail" && source && ID.test(mail.messageId || "")) {
+    kind = "mail-reply"; payload = { threadId: source.threadId, messageId: mail.messageId, text: preview };
+  } else if (app === "mail") {
+    kind = "text"; payload = { subject: title, text: preview };
+  } else if (app === "notes") {
+    kind = "note-draft"; payload = { title, text: preview, ...(source ? { source } : {}) };
+  } else {
+    kind = "event-draft"; payload = { title, description: preview, ...(source ? { source } : {}) };
+  }
+  const checked = handoffPayload("atlas", app, kind, payload);
+  return checked && { app, kind, payload: checked, title, preview, excerpt: clipped || value.truncated === true };
+}
