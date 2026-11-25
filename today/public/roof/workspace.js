@@ -85,6 +85,13 @@ export async function createWorkspace(F, options = {}) {
     return live()&&!lease.signal?.aborted&&guarded(()=>!lease.current||lease.current(),false)?instance:null;
   };
   const appOn = (app) => !!F.session.apps?.[app] && (!["mail", "atlas"].includes(app) || F.session.view?.apps?.mail === true);
+  let atlasAlerts, atlasAlertsLoad;
+  function startAtlasAlerts() {
+    if (!live() || !appOn("atlas") || atlasAlerts) return;
+    atlasAlertsLoad ||= import("../atlas/roof/activity.js").then(module => {
+      if (live() && appOn("atlas")) atlasAlerts = module.createAtlasAlerts(F);
+    }).catch(() => {}).finally(() => { atlasAlertsLoad = null; });
+  }
   const favouriteKey='ifl:launcher:v1:'+owner;
   const readFavourites = () => initialFavourites(guarded(() => JSON.parse(localStorage.getItem(favouriteKey))), id => id === "files" || appOn(id));
   let favourites = readFavourites(), favouriteNotice = null;
@@ -497,7 +504,7 @@ export async function createWorkspace(F, options = {}) {
     if (gone) return;
     gone = true; appsMenu?.now();appsMenu=null;++scene;
     for (const off of offs.splice(0)) off();
-    explorer?.destroy(); dialogs?.destroy(); handoffs.destroy(); connection.destroy(); recoveryView?.destroy(); recovery?.destroy(); atlasActivity.destroy(); activityView.destroy(); activity.destroy(); pendingFilesQuery = null;
+    explorer?.destroy(); dialogs?.destroy(); handoffs.destroy(); connection.destroy(); recoveryView?.destroy(); recovery?.destroy(); atlasActivity.destroy(); atlasAlerts?.destroy(); activityView.destroy(); activity.destroy(); pendingFilesQuery = null;
     providers.clear(); snapshots.clear(); recentApps.clear(); files?.destroy(); commands?.destroy(); background.remove();
     restoreToday(); anchor.remove(); view.destroy(); html.classList.remove("ifl-os", "os-workspace"); html.removeAttribute("data-os-dock-away"); document.title = originalTitle;
     if (F.tabs.away === dockAway) F.tabs.away = nativeAway;
@@ -511,6 +518,7 @@ export async function createWorkspace(F, options = {}) {
     await loadApp(r.app, handles.get(r.app), { current: () => live() && F.route === r });
   };
   offs.push(F.on("apps", () => {
+    startAtlasAlerts();
     if (atlasActivity.observed || !appOn("atlas")) atlasActivity.refresh();
     for (const app of handles.keys()) {
       if (appOn(app)) { acquire(app); queueProvider(app); }
@@ -521,6 +529,7 @@ export async function createWorkspace(F, options = {}) {
     if (r.kind === "app") { document.title = `${REGISTRY[r.app].name} — InFlite`; recentApps.delete(r.app); recentApps.set(r.app, safeWorkspaceRoute(r.app, format(r)) || getWorkspaceApp(r.app)?.href); }
     paint(); activate(r).catch(() => {});
   }));
+  startAtlasAlerts();
   files = createFilesService(F, {
     authoriseTransfer:async(app,item,lease)=>{const m=await import('./security-client.js');if(!live())throw new DOMException('This account was released','AbortError');return m.approveFileTransfer(F,app,item,lease)},
     activity: fileActivity,share:source=>lifeTools().then(v=>live()&&v?.share(source)),remind:source=>system().then(s=>live()&&s?.capture(source)),

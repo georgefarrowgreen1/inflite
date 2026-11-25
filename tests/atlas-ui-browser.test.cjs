@@ -938,7 +938,7 @@ test('Atlas alerts open the exact run at 320px and preserve the layout while the
     await t.page.evaluate(() => window.resizeAtlasViewport(440));
     await t.page.locator('#in[data-atlas-keyboard]').waitFor();
     await t.page.evaluate(async owner => {
-      const [{ createAtlasAlerts }, { toast }] = await Promise.all([import('/atlas/roof/alerts.js'), import('/roof/toast.js')]);
+      const [{ createAtlasAlerts }, { toast }] = await Promise.all([import('/atlas/roof/activity.js'), import('/roof/toast.js')]);
       const controller = new AbortController();
       window.fixtureAlerts = createAtlasAlerts({ signal: controller.signal, session: { view: { user: { id: owner }, apps: { mail: true } }, apps: { atlas: true } }, nav: window.fixtureAtlasNav, toast, on: () => () => {} });
     }, t.fixture.owner);

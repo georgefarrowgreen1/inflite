@@ -2065,18 +2065,6 @@ function frame() {
     $('#edList').addEventListener('change',e=>{if(e.target.matches('[data-today-density]')){S.prefs={...S.prefs,density:e.target.checked?'compact':'comfortable'};prefsChanged()}else if(e.target.matches('[data-today-section]')){S.prefs={...S.prefs,sections:{...S.prefs.sections,[e.target.dataset.todaySection]:e.target.checked}};prefsChanged()}},{signal:f.signal});
   }
   if(OS_MODE)import('/roof/continuity.js').then(m=>{if(F===f&&!f.signal.aborted)m.connectContinuity(f,{owner:S.view.user.id,root:$('#today')})}).catch(()=>{});
-  if (OS_MODE) {
-    let atlasAlerts;
-    const startAtlasAlerts = () => {
-      if (F === f && !f.signal.aborted && f.session.apps?.atlas === true && f.session.view?.apps?.mail === true) {
-        atlasAlerts ||= import("/atlas/roof/alerts.js").then(module => {
-          if (F === f && !f.signal.aborted) return module.createAtlasAlerts(f);
-        }).catch(() => { atlasAlerts = null; });
-      }
-    };
-    f.on("apps", startAtlasAlerts);
-    startAtlasAlerts();
-  }
   bellReady = import("/bell.js").then((m) => {
     if (F !== f || bell) return;
     bell = m.createBell(f, { count: (n) => { if (F !== f || f.signal.aborted) return; notificationCount = n; f.header.count?.("bell", n); workspaceHost?.update(); }, go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); }, settings: () => go("/#settings=phone"), actions: OS_MODE ? (note) => F === f && !f.signal.aborted ? workspaceHost?.notificationActions(note) || [] : [] : undefined });
