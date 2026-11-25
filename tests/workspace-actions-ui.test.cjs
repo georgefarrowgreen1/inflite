@@ -19,7 +19,7 @@ async function open(width = 390) {
     const u = new URL(r.request().url()), p = u.pathname;
     if (u.protocol === 'blob:' && u.origin === ORIGIN) return r.continue();
     if (u.origin !== ORIGIN) { unknown.push(u.href); return r.abort(); }
-    if (p === '/') return r.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': csp }, body: '<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/roof/roof.css"><script src="/shared.js" defer></script></head><body><main><h1>Actions fixture</h1><button type="button" id="bell">Notifications</button><button type="button" id="search">Search</button></main></body></html>' });
+    if (p === '/') return r.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': csp }, body: '<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/roof/roof.css"><link rel="stylesheet" href="/roof/workspace-commands.css"><script src="/shared.js" defer></script></head><body><main><h1>Actions fixture</h1><button type="button" id="bell">Notifications</button><button type="button" id="search">Search</button></main></body></html>' });
     if (p === '/shared.js') return r.fulfill({ contentType: 'text/javascript', body: shared });
     if (p === '/api/vitals') return r.fulfill({ status: 204, body: '' });
     if (p === '/api/status-banner') return r.fulfill({ json: { banner: null } });
@@ -58,7 +58,15 @@ async function open(width = 390) {
     };
     s.commands = createWorkspaceCommands(F, { apps: () => Object.keys(F.session.apps).map(id => ({ id })), actions: () => [], files: () => [], systemActions: () => s.systems, fileDialogsAvailable: () => s.fileDialogs, runIntent, openFiles(q) { s.calls.push(['files', q]); }, openWorkspace(id) { s.calls.push(['workspace', id]); } });
     await s.commands.ready;
-    s.bell = createBell(F, { count(n) { s.counts.push(n); }, actions: note => notificationActions(note, { origin: location.origin, enabled: app => F.session.apps[app] === true, current: () => !ac.signal.aborted && F.session.view.user.id === 'owner-a', runIntent, openWorkspace(app, path) { s.calls.push(['workspace', app, path]); } }) });
+    s.bell = createBell(F, {
+      count(n) { s.counts.push(n); },
+      actions: note => notificationActions(note, {
+        origin: location.origin, enabled: app => F.session.apps[app] === true,
+        current: () => !ac.signal.aborted && F.session.view.user.id === 'owner-a',
+        runIntent,
+        async openApp(app, path) { s.calls.push(['app', app, path]); return { app }; },
+      }),
+    });
     document.getElementById('bell').onclick = () => s.bell.open(); document.getElementById('search').onclick = () => F.search.open();
   });
   await page.waitForFunction(() => actions.counts.includes(2));
@@ -84,7 +92,7 @@ test('notification actions are accessible siblings and Reply closes the log befo
   } finally { await ctx.close(); }
 });
 
-test('a failed notification action keeps its unread alert available', async () => {
+test('a failed notification reply stays unread and its row still opens the source app', async () => {
   const { ctx, page, clean } = await open(320);
   try {
     await page.evaluate(() => { actions.failAction = true; });
@@ -97,6 +105,11 @@ test('a failed notification action keeps its unread alert available', async () =
     await sheet.getByRole('radio', { name: 'Unread · 2', exact: true }).click();
     await sheet.getByRole('button', { name: 'Reply · Message from Reuben', exact: true }).waitFor();
     assert.equal(await page.evaluate(() => actions.requests.some(r => r.ifl === 'notes-seen' || r.ifl === 'notes-clear')), false);
+    assert.equal(await sheet.getByRole('button', { name: /^Open app/ }).count(), 0);
+    await sheet.getByRole('button', { name: /^New\. Message from Reuben/ }).click();
+    await page.waitForFunction(() => actions.notes.find(n => n.id === 'chat-note')?.seen);
+    assert.deepEqual(await page.evaluate(() => actions.calls.at(-1)), ['app', 'chats', '/chats/#open=friend-8']);
+    assert.equal(await page.evaluate(() => actions.notes.length), 2);
     await clean();
   } finally { await ctx.close(); }
 });
