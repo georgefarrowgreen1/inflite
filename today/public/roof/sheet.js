@@ -146,7 +146,9 @@ export function createSheets(F, { beforeOpen } = {}) {
       while (stack.length) pop(true);
       if (built) d.remove();
       sync();
-      if (current && was?.isConnected && !document.querySelector("dialog[open]")) was.focus?.({ preventScroll: true });
+      const parent = open.at(-1);
+      const returnsToOpener = parent ? parent.el.contains(was) : !document.querySelector("dialog[open]");
+      if (current && was?.isConnected && returnsToOpener) was.focus?.({ preventScroll: true });
       // WebKit can scroll after native dialog close, despite preventScroll. A newer sheet, route or frame owns its
       // own position; it must never inherit this close's deferred restoration.
       cancelAnimationFrame(restoreFrame);
@@ -272,6 +274,7 @@ export function createSheets(F, { beforeOpen } = {}) {
     d.classList.remove("closing");
     if (!d.isConnected) document.body.append(d);
     try { d.showModal(); } catch (_) { d.setAttribute("open", ""); }
+    d.scrollTop = body.scrollTop = 0;
     open.push(h);
     sync();
     (focus || h2)?.focus?.({ preventScroll: true });

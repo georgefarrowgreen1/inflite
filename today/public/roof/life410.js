@@ -54,7 +54,7 @@ export async function createLifeTools(F,{system,files,organiseStore,planEvent,to
    if (kind !== 'file' && text.value.trim()) persist();
   }, {label:'Capture type'});
   const action = button('', () => kind === 'file' ? fileInput.click() : commit(), {primary:true});
-  const body = el('div', {class:'life life-capture'}, modes, editor, action, fileInput);
+  const body = el('div', {class:'life life-capture'}, modes, editor, fileInput);
 
   function report(message) {
    if (status.textContent !== message) status.textContent = message;
@@ -158,7 +158,12 @@ export async function createLifeTools(F,{system,files,organiseStore,planEvent,to
    }
   });
   render();
-  h = captureSheet = F.sheet.open({sheet:'quick-capture', title:'Quick Capture', body, focus:text, onClose(){captureSheet = null;}});
+  h = captureSheet = F.sheet.open({sheet:'quick-capture', title:'Quick Capture', focus:text,
+   body(region, handle) {
+    region.append(body);
+    handle.el.append(el('footer', {class:'ifs-acts'}, action));
+   },
+   onClose(){captureSheet = null;}});
   return h;
  }
  async function share(ref){

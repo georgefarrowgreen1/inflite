@@ -186,12 +186,30 @@ export async function createWorkspace(F, options = {}) {
   // Chrome has one account-owned home outside animated page containers.
   // Keep the dock mounted here through Today, Files and native app navigation.
   (options.dockRoot || root.ownerDocument.body).append(view.dock);
+  const dock = view.dock.querySelector(".ws-dock");
+  let dockHeight = 0;
+  const measureDock = () => {
+    const height = dock.offsetHeight;
+    if (gone || !height || height === dockHeight) return;
+    dockHeight = height;
+    html.style.setProperty("--ifl-dock-height", `${height}px`);
+  };
+  const dockResize = globalThis.ResizeObserver ? new ResizeObserver(measureDock) : null;
+  dockResize?.observe(dock, { box: "border-box" });
+  if (!dockResize) addEventListener("resize", measureDock);
+  measureDock();
+  offs.push(() => {
+    dockResize?.disconnect();
+    if (!dockResize) removeEventListener("resize", measureDock);
+    html.style.removeProperty("--ifl-dock-height");
+  });
   // Full-screen composers and keyboards retain the native app's chrome policy.
   const nativeAway = F.tabs.away;
   const dockAway = (value) => {
     nativeAway?.(value);
-    view.dock.querySelector(".ws-dock").hidden = !!value;
+    dock.hidden = !!value;
     html.toggleAttribute("data-os-dock-away", !!value);
+    if (!value) measureDock();
   };
   F.tabs.away = dockAway;
   dockAway(F.tabs.isAway);

@@ -266,15 +266,15 @@ for (const width of [390, 1440]) test(`motion: nested sheet Back restores its sc
       const body = el('div', {}, ...Array.from({ length: 30 }, (_, i) => el('p', { text: `Settings row ${i}` })));
       const button = el('button', { type: 'button', text: 'Open details' }); body.append(button);
       window.__nested = createSheets({}).open({ title: 'Settings', body });
-      __nested.el.scrollTop = 280; button.focus({ preventScroll: true });
-      window.__parentPosition = __nested.el.scrollTop;
+      __nested.body.scrollTop = 280; button.focus({ preventScroll: true });
+      window.__parentPosition = __nested.body.scrollTop;
       __nested.push({ page: 'details', title: 'Details', body: el('p', { text: 'Details content' }) });
     });
     const sheet = page.getByRole('dialog', { name: 'Details', exact: true });
     assert.equal(await sheet.evaluate(d => d.scrollTop), 0, 'a nested page starts at its heading');
     await sheet.locator('[data-back]').click();
     await page.waitForFunction(() => document.activeElement?.textContent === 'Open details');
-    assert.ok(await page.evaluate(() => Math.abs(__nested.el.scrollTop - __parentPosition) < 2), 'Back restores the original settings position');
+    assert.ok(await page.evaluate(() => __parentPosition > 0 && Math.abs(__nested.body.scrollTop - __parentPosition) < 2), 'Back restores the original settings position');
     await page.keyboard.press('Escape'); await sheet.waitFor({ state: 'detached' });
     assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
   } finally { await ctx.close(); }
@@ -1651,7 +1651,7 @@ test('Quick Capture stays against the mobile keyboard as the viewport changes', 
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const { top, bottom } = dialog.getBoundingClientRect();
       const viewport = visualViewport;
-      const save = dialog.querySelector('.life-capture > button').getBoundingClientRect();
+      const save = dialog.querySelector('.ifs-acts > button').getBoundingClientRect();
       return { top, bottom, visibleTop: viewport.offsetTop, visibleBottom: viewport.offsetTop + viewport.height,
         saveBottom: save.bottom, keyboard: dialog.classList.contains('ifs-kb') };
     });
@@ -1681,14 +1681,38 @@ test('Quick Capture stays against the mobile keyboard as the viewport changes', 
 
     const compact = await moveKeyboard(270);
     assert.ok(compact.top > 0 && Math.abs(compact.bottom - compact.visibleBottom) <= 1, JSON.stringify(compact));
-    await capture.getByRole('button', { name: 'Save note' }).scrollIntoViewIfNeeded();
-    const scrolled = await placement();
-    assert.ok(scrolled.saveBottom <= scrolled.visibleBottom, 'Save remains reachable on a short viewport');
+    assert.ok(compact.saveBottom <= compact.visibleBottom, 'Save stays visible when the content has to scroll');
     const restored = await moveKeyboard(844);
     assert.equal(restored.keyboard, false);
     assert.ok(Math.abs(restored.bottom - restored.visibleBottom) <= 1);
     await capture.getByRole('button', { name: 'Close', exact: true }).tap();
     await capture.waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('Today leaves the last card above the dock when its height changes on a narrow phone', async () => {
+  const { ctx, page, errors } = await open({ initialPath: '/?os=1', width: 320 });
+  try {
+    const dock = page.locator('.ws-dock');
+    await dock.waitFor();
+    for (const padding of [null, '22px']) {
+      if (padding) await dock.evaluate((el, value) => { el.style.paddingBlock = value; }, padding);
+      await page.waitForFunction(() => {
+        const dock = document.querySelector('.ws-dock');
+        return parseInt(document.documentElement.style.getPropertyValue('--ifl-dock-height'), 10) === dock.offsetHeight;
+      });
+      const geometry = await page.evaluate(() => {
+        scrollTo(0, document.scrollingElement.scrollHeight);
+        const today = document.getElementById('today');
+        const last = [...today.querySelectorAll('.tcard')].filter(el => el.getClientRects().length).at(-1);
+        const dock = document.querySelector('.ws-dock');
+        return { lastBottom: last?.getBoundingClientRect().bottom, dockTop: dock.getBoundingClientRect().top,
+          overflow: document.documentElement.scrollWidth - innerWidth };
+      });
+      assert.ok(geometry.lastBottom <= geometry.dockTop - 12, JSON.stringify(geometry));
+      assert.ok(geometry.overflow <= 1, JSON.stringify(geometry));
+    }
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
@@ -1849,7 +1873,7 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
     assert.equal((await placed('pinch zoom')).keyboard, false, 'zoom is not a keyboard');
     await page.evaluate(() => { visualViewport.scale = 1; __viewport(844); });
     const before = await page.evaluate(() => scrollY);
-    if (process.env.WEB_UI_BROWSER === 'webkit') await page.locator('dialog[open]').evaluate(d => d.scrollBy(0, 500));
+    if (process.env.WEB_UI_BROWSER === 'webkit') await page.locator('dialog[open] > .ifs-body').evaluate(body => body.scrollBy(0, 500));
     else { await page.mouse.move(190, 300); await page.mouse.wheel(0, 500); }
     assert.equal(await page.evaluate(() => scrollY), before, 'scrolling sheet content never scrolls the page behind it');
     await page.evaluate(() => __sheet.close());
@@ -1863,21 +1887,27 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Search', 'focus returns to the opener');
     const parentScroll = await page.evaluate(async () => {
       const { el } = await import('/roof/ui.js');
-      window.__parent = __sheets.open({ title: 'Parent', body: el('div', {},
+      const opener = el('button', { type: 'button', text: 'Open child' });
+      window.__parent = __sheets.open({ title: 'Parent', body: el('div', {}, opener,
         ...Array.from({ length: 40 }, (_, i) => el('p', { text: `Parent content ${i}` }))) });
-      __parent.el.scrollTop = 360;
-      const before = __parent.el.scrollTop;
+      const head = __parent.el.querySelector('.ifs-head');
+      const headTop = head.getBoundingClientRect().top;
+      __parent.body.scrollTop = 360;
+      opener.focus({ preventScroll: true });
+      const before = __parent.body.scrollTop;
+      const headerStayed = headTop === head.getBoundingClientRect().top && __parent.el.scrollTop === 0;
       const field = el('input', { 'aria-label': 'Child field' });
       const child = __sheets.open({ title: 'Child', body: field, focus: field });
       __viewport(480);
-      const during = __parent.el.scrollTop;
+      const during = __parent.body.scrollTop;
       child.now();
-      const after = __parent.el.scrollTop;
+      const after = __parent.body.scrollTop;
+      const focusReturned = document.activeElement === opener;
       __viewport(844);
-      return { before, during, after };
+      return { before, during, after, headerStayed, focusReturned };
     });
     assert.ok(parentScroll.before > 0);
-    assert.deepEqual(parentScroll, { before: parentScroll.before, during: parentScroll.before, after: parentScroll.before });
+    assert.deepEqual(parentScroll, { before: parentScroll.before, during: parentScroll.before, after: parentScroll.before, headerStayed: true, focusReturned: true });
     await page.getByRole('dialog', { name: 'Child', exact: true }).waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => document.body.classList.contains('sheet-up')), true, 'closing one sheet leaves the other modal');
     await page.evaluate(() => __parent.close());
