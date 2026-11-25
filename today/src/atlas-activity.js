@@ -27,7 +27,7 @@ export async function atlasActivity(env, owner, { limit = 12, schemaVersion = 6 
 }
 
 const inProgress = "status IN ('queued','preparing','running','waiting','publishing','stopping')";
-const needsReview = "(status IN ('failed','incomplete','uncertain') OR (review_ready=1 AND status<>'published' AND NOT (" + inProgress + ")))";
+const needsReview = "(status IN ('waiting','failed','incomplete','uncertain') OR (review_ready=1 AND status<>'published' AND NOT (" + inProgress + ")))";
 const runFilters = {
   all: '1', active: inProgress, review: needsReview,
   finished: 'NOT (' + inProgress + ') AND NOT (' + needsReview + ')',
@@ -76,4 +76,29 @@ export async function atlasRuns(env, owner, { limit = 24, schemaVersion = 6, tim
     ...(workspace && row.stage ? { stage: text(row.stage, 120) } : {}),
   }));
   return { items, ...(workspace ? { next: rows.length > count ? last.updated_at + ':' + last.kind + ':' + last.id : null } : {}) };
+}
+
+export async function atlasRunAlerts(env, owner, { timeline, now = Date.now() } = {}) {
+  if (!timeline) return { alerts: [] };
+  const since = now - 7 * 86400000;
+  const rows = await projectionRows(env, `
+    SELECT * FROM (
+      SELECT 'c' AS prefix,r.id,r.revision,r.status,r.updated_at,substr(r.prompt,1,140) AS title
+      FROM atlas_coding_runs r JOIN atlas_conversations c ON c.owner=r.owner AND c.id=r.conversation_id
+      WHERE r.owner=? AND c.archived=0 AND r.updated_at>=? AND (
+        r.status IN ('waiting','failed','uncertain') OR (r.status='completed' AND r.review_ready=1 AND EXISTS(
+          SELECT 1 FROM atlas_coding_changes f WHERE f.owner=r.owner AND f.run_id=r.id AND f.revision=r.revision)))
+      UNION ALL
+      SELECT 'b',r.id,r.revision,r.status,r.updated_at,c.title
+      FROM atlas_answer_runs r JOIN atlas_conversations c ON c.owner=r.owner AND c.id=r.conversation_id
+      WHERE r.owner=? AND c.archived=0 AND r.updated_at>=? AND r.status IN ('completed','incomplete','failed','uncertain')
+      UNION ALL
+      SELECT 's',r.id,1,r.status,COALESCE(r.finished_at,r.started_at),s.title
+      FROM atlas_schedule_runs r JOIN atlas_schedules s ON s.owner=r.owner AND s.id=r.task_id
+      WHERE r.owner=? AND COALESCE(r.finished_at,r.started_at)>=? AND r.status IN ('failed','incomplete','uncertain')
+    ) ORDER BY updated_at DESC,prefix,id LIMIT 20`, owner, since, owner, since, owner, since);
+  return { alerts: rows.filter(row => /^[A-Za-z0-9_-]{1,38}$/.test(row.id)).map(row => ({
+    reference: `${row.prefix}_${row.id}`, revision: row.revision, status: row.status,
+    title: text(row.title, 140).split('\n')[0], updatedAt: row.updated_at,
+  })) };
 }

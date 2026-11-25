@@ -1995,6 +1995,7 @@ dialog.ifl-sheet.atlas-native-sheet .conversation-navigation { padding: 0; }
   min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  scroll-padding-block: 12px;
   padding: 14px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left));
 }
 .atlas-app .atlas-destination-column { max-width: var(--atlas-column); margin-inline: auto; }
@@ -2219,7 +2220,11 @@ dialog.ifl-sheet.atlas-native-sheet .conversation-navigation { padding: 0; }
 .atlas-app .inbox-filter-segments button[aria-pressed=true],
 .atlas-app .task-tabs button[aria-selected=true] { background: var(--ifl-raised, var(--atlas-panel)); color: var(--atlas-text); box-shadow: var(--atlas-inset-shadow), 0 0 0 1px var(--atlas-border); }
 .atlas-app .task-tabs button[aria-selected=true]::after { content: none; }
-.atlas-app .inbox-filter-segments button { min-width: max-content; white-space: nowrap; }
+.atlas-app .inbox-filter-segments button { min-width: 0; }
+.atlas-app .run-actions > button { min-height: 44px; }
+@media (max-width: 375px) {
+  .atlas-app .run-actions > button { flex: 1 1 auto; }
+}
 .atlas-app .task-tabs { margin-inline: 12px; }
 .atlas-app .atlas-record-group { display: block; }
 .atlas-app .atlas-record-group .inbox-task { border: 0; border-radius: 0; background: transparent; box-shadow: none; padding: 14px 14px 8px; }

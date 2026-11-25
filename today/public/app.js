@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.58.1";
+const BUILD = "4.59.1";
 // (what's new in it, said once it's in)
-const NEWS = "Restore saved Atlas coding changes to their original commit.";
+const NEWS = "Open Atlas task alerts directly and keep mobile actions above the dock.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.33.1/store.js","/os.webmanifest"];
@@ -2065,6 +2065,18 @@ function frame() {
     $('#edList').addEventListener('change',e=>{if(e.target.matches('[data-today-density]')){S.prefs={...S.prefs,density:e.target.checked?'compact':'comfortable'};prefsChanged()}else if(e.target.matches('[data-today-section]')){S.prefs={...S.prefs,sections:{...S.prefs.sections,[e.target.dataset.todaySection]:e.target.checked}};prefsChanged()}},{signal:f.signal});
   }
   if(OS_MODE)import('/roof/continuity.js').then(m=>{if(F===f&&!f.signal.aborted)m.connectContinuity(f,{owner:S.view.user.id,root:$('#today')})}).catch(()=>{});
+  if (OS_MODE) {
+    let atlasAlerts;
+    const startAtlasAlerts = () => {
+      if (F === f && !f.signal.aborted && f.session.apps?.atlas === true && f.session.view?.apps?.mail === true) {
+        atlasAlerts ||= import("/atlas/roof/alerts.js").then(module => {
+          if (F === f && !f.signal.aborted) return module.createAtlasAlerts(f);
+        }).catch(() => { atlasAlerts = null; });
+      }
+    };
+    f.on("apps", startAtlasAlerts);
+    startAtlasAlerts();
+  }
   bellReady = import("/bell.js").then((m) => {
     if (F !== f || bell) return;
     bell = m.createBell(f, { count: (n) => { if (F !== f || f.signal.aborted) return; notificationCount = n; f.header.count?.("bell", n); workspaceHost?.update(); }, go: (url) => { if (!here(url)) f.nav.go(url, { from: "notification" }); }, settings: () => go("/#settings=phone"), actions: OS_MODE ? (note) => F === f && !f.signal.aborted ? workspaceHost?.notificationActions(note) || [] : [] : undefined });

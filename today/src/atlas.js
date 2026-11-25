@@ -11,7 +11,7 @@ import { evolution } from './atlas-evolution.js';
 import * as coding from './atlas-coding.js';
 import * as environments from './atlas-environments.js';
 import { workspaceContextStorageStatus, getWorkspaceContext, setWorkspaceContext, clearWorkspaceContext } from './atlas-workspace-context.js';
-import { atlasActivity, atlasRuns } from './atlas-activity.js';
+import { atlasActivity, atlasRunAlerts, atlasRuns } from './atlas-activity.js';
 import { enqueueAtlasAnswer, resumeAtlasAnswer, stopAtlasAnswer } from './atlas-run-coordinator.js';
 import { publicAnswerRun, readAtlasRunTimeline, runTimelineStorage } from './atlas-run-timeline.js';
 import { parallelResearchStorage } from './atlas-parallel-research.js';
@@ -187,6 +187,7 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
     if (!storage.ready) fail(storage.code || 'storage_upgrade_required', env.ATLAS_DB ? 'Finish Atlas storage setup to use this feature.' : 'The Atlas database is not configured.', env.ATLAS_DB ? 409 : 503);
     const options = { send, signal: request.signal };
     if (path === '/activity' && method === 'GET') return json(await atlasActivity(env, owner, { limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 12, schemaVersion: storage.schemaVersion }));
+    if (path === '/alerts' && method === 'GET') return json(await atlasRunAlerts(env, owner, { timeline: await runTimelineStorage(env, storage.schemaVersion) }));
     if (path === '/runs' && method === 'GET') {
       const timeline = await runTimelineStorage(env, storage.schemaVersion);
       return json(await atlasRuns(env, owner, {

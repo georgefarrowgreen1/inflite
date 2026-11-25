@@ -129,7 +129,7 @@ export function atlasMarkup() {
       <p id="run-state" role="status"></p>
       <p id="run-checkpoint" class="field-help"></p>
       <div id="run-updated"></div>
-      <div class="button-row">
+      <div class="button-row run-actions">
         <button id="run-open-result" class="quiet-button" type="button" hidden>Open conversation</button>
         <button id="run-prepare-draft" class="quiet-button" type="button" aria-haspopup="dialog" hidden>Prepare draft</button>
         <button id="run-resume" class="primary-button" type="button" hidden>Resume from checkpoint</button>
@@ -171,11 +171,11 @@ export function atlasMarkup() {
       <div class="inbox-filter-segments ifl-segs" role="group" aria-label="Filter tasks">
         <button type="button" data-inbox-filter="all" aria-pressed="true">All</button>
         <button type="button" data-inbox-filter="active" aria-pressed="false">In progress</button>
-        <button type="button" data-inbox-filter="review" aria-pressed="false">Review</button>
+        <button type="button" data-inbox-filter="review" aria-pressed="false">Attention</button>
         <button type="button" data-inbox-filter="finished" aria-pressed="false">Finished</button>
       </div>
       <label class="sr-only" for="inbox-filter">Status</label>
-      <select id="inbox-filter"><option value="all">All tasks</option><option value="active">In progress</option><option value="review">Ready to review</option><option value="finished">Finished</option></select>
+      <select id="inbox-filter"><option value="all">All tasks</option><option value="active">In progress</option><option value="review">Needs attention</option><option value="finished">Finished</option></select>
       <button id="refresh-inbox" class="icon-button ifl-icon-btn" type="button" aria-label="Refresh tasks" title="Refresh tasks">${glyph("refresh")}</button>
     </div>
     <p id="inbox-feedback" class="field-feedback" role="status"></p>

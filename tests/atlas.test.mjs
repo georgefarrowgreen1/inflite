@@ -10,7 +10,7 @@ const request = (path = '/atlas', { method = 'GET', cookie = true, headers = {},
 for (const [name, view] of [['standard', { signedIn: true, user: { id: 'other' }, apps: { mail: false } }], ['signed out', { signedIn: false }], ['missing entitlement', { signedIn: true, user: { id: 'owner' } }]]) {
   test(name + ' cannot access any Atlas surface or contact a provider', async () => {
     let calls = 0;
-    for (const path of ['/atlas', '/atlas/assets/app.js', '/atlas/api/health', '/atlas/api/conversations', '/atlas/api/provider', '/atlas/api/tasks', '/atlas/api/briefs', '/atlas/api/github', '/atlas/api/patches']) {
+    for (const path of ['/atlas', '/atlas/assets/app.js', '/atlas/api/health', '/atlas/api/conversations', '/atlas/api/provider', '/atlas/api/tasks', '/atlas/api/briefs', '/atlas/api/github', '/atlas/api/patches', '/atlas/api/alerts']) {
       const response = await atlas(request(path), {}, { account: async () => Response.json(view), send: async () => { calls++; } });
       assert.equal(response.status, view.signedIn === false ? 401 : 403); assert.equal((await response.json()).code, view.signedIn === false ? 'sign_in_required' : 'access_denied');
       assert.match(response.headers.get('Cache-Control'), /no-store/);

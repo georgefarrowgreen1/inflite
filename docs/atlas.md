@@ -48,6 +48,8 @@ Open **Atlas tools → Recent runs** or a saved run link to see the same timelin
 
 If an expired worker lease can be fenced before dispatch, Atlas queues a fresh attempt on the same run. After a provider dispatch, Atlas recovers any recorded outcome or marks it unconfirmed and retains saved text. **Resume from checkpoint** explicitly schedules a new attempt using that text as context. It preserves the original attempt and is charged under the usual allowance. Coding uses its saved hosted workspace phases and existing continuation controls. Completed answers open in their conversations with the existing review actions for Notes, Calendar and Mail.
 
+While InFlite is visible, signed-in administrators receive an in-app alert for recent runs that need attention or are ready for review. **Open run** opens that run's timeline. **Tasks → Attention** provides a place to return to waiting, failed or reviewable tasks. The alert reader uses saved metadata and remembers displayed alerts on this browser for each account.
+
 ## Cloud environments
 
 Open **Cloud environments** to save a repository setup, then select it in the Developer composer. Each configuration includes a name, repository, optional branch, machine size, setup command, check command and network policy. Leaving the branch blank uses the repository's current default branch. Atlas pins the selected branch to an immutable commit before preparing the workspace.
