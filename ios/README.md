@@ -4,7 +4,7 @@ Beta **0.1.0**, build **1**, targets iOS 17 and later. It opens the production I
 
 ## Run on a Mac
 
-Open [InFlite.xcodeproj](InFlite.xcodeproj) in Xcode 26, choose the **InFlite** scheme and an iPhone simulator, then choose **Run**. The shared scheme includes navigation and recovery tests and a smoke test of the production sign-in screen. The iOS beta workflow builds and tests on macOS and packages the simulator app.
+Open [InFlite.xcodeproj](InFlite.xcodeproj) in Xcode 26, choose the **InFlite** scheme and an iPhone simulator, then choose **Run**. The shared scheme includes navigation and recovery tests and a smoke test of the production sign-in screen. The iOS beta workflow builds and tests on macOS and packages the simulator app. Unzip the package and drag `InFlite.app` into a booted iPhone simulator to install it.
 
 For route testing, use a supported link such as `inflite://weather` or `inflite://mail`. The first launch opens Today at `https://inflite.ai/`.
 

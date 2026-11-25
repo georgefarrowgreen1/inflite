@@ -40,7 +40,7 @@ final class BrowserSession: NSObject, ObservableObject {
     let webView: WKWebView
 
     private var started = false
-    private var route: InFliteRoute = .today
+    private var retryURL = InFliteRoute.today.url
     private var navigation: WKNavigation?
     private var destinations: [ObjectIdentifier: SharedDownload] = [:]
     private var finishedDownloads: [SharedDownload] = []
@@ -53,6 +53,8 @@ final class BrowserSession: NSObject, ObservableObject {
     override init() {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
+        // Keep the production web apps' service-worker cache available inside the app.
+        configuration.limitsNavigationsToAppBoundDomains = true
         configuration.allowsInlineMediaPlayback = true
         configuration.defaultWebpagePreferences.preferredContentMode = .mobile
         webView = WKWebView(frame: .zero, configuration: configuration)
@@ -71,20 +73,20 @@ final class BrowserSession: NSObject, ObservableObject {
             return
         }
         #endif
-        loadRoute()
+        load(retryURL)
     }
 
     func open(_ destination: InFliteRoute) {
         started = true
-        route = destination
-        loadRoute()
+        load(destination.url)
     }
 
     func retry() {
-        loadRoute(showOpening: true)
+        load(retryURL, showOpening: true)
     }
 
-    private func loadRoute(showOpening: Bool = false) {
+    private func load(_ url: URL, showOpening: Bool = false) {
+        retryURL = url
         if showOpening || phase != .ready { phase = .opening }
         #if DEBUG
         if recoveryFixture {
@@ -95,7 +97,7 @@ final class BrowserSession: NSObject, ObservableObject {
             return
         }
         #endif
-        navigation = webView.load(URLRequest(url: route.url))
+        navigation = webView.load(URLRequest(url: url))
     }
 
     func clearSharedDownload() {
@@ -154,6 +156,7 @@ extension BrowserSession: WKNavigationDelegate {
                 decisionHandler(.cancel)
                 navigation = webView.load(action.request)
             } else {
+                if topLevel && NavigationPolicy.owns(url) { retryURL = url }
                 decisionHandler(.allow)
             }
         case .system:
@@ -198,7 +201,7 @@ extension BrowserSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish current: WKNavigation!) {
         guard current === navigation else { return }
         phase = .ready
-        if let url = webView.url, let destination = InFliteRoute(link: url) { route = destination }
+        if let url = webView.url, NavigationPolicy.owns(url) { retryURL = url }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation current: WKNavigation!, withError error: Error) {
@@ -210,6 +213,7 @@ extension BrowserSession: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        if let url = webView.url, NavigationPolicy.owns(url) { retryURL = url }
         phase = .unavailable(.interrupted)
     }
 
