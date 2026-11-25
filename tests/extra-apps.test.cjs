@@ -30,3 +30,21 @@ test('malformed Status manifest responses degrade to a private gateway error', a
   const redirect = await extraApp(req('/api/status'),env(()=>new Response(null,{status:302,headers:{Location:'/api/status/day'}})));
   assert.equal(redirect.headers.get('location'),'/api/status/day');
 });
+
+test('the London weather preview uses its fixed provider and returns unavailable when the provider fails', async t => {
+  const { default: worker } = await import('../today/src/index.js');
+  let failing = false;
+  t.mock.method(globalThis, 'fetch', async (address, options) => {
+    const url = new URL(address);
+    assert.equal(url.origin + url.pathname, 'https://api.open-meteo.com/v1/forecast');
+    assert.equal(new Headers(options.headers).get('Cookie'), null);
+    if (failing) return new Response('Provider unavailable', { status: 503 });
+    return Response.json({ current: { time: Math.floor(Date.now() / 1000), temperature_2m: 11, weather_code: 3, is_day: 1 } });
+  });
+  const request = req('/api/about/weather', { headers: { Cookie: 'private=1' } });
+  const ready = await worker.fetch(request, {});
+  assert.equal(ready.status, 200);
+  assert.equal((await ready.json()).temperature, 11);
+  failing = true;
+  assert.equal((await worker.fetch(request, {})).status, 503);
+});

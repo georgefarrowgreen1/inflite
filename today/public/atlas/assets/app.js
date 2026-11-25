@@ -1719,7 +1719,7 @@ function renderCodingRuns() {
     const actions = node("div", "button-row coding-actions");
     if (run.reviewReady) actions.append(button("Review changes", e => busy(e.currentTarget, () => reviewCodingRun(run.id)), "primary-button"));
     if (run.canContinue && !state.conversation?.archived) actions.append(button("Continue task", () => prepareTaskRecovery(run, true), "quiet-button"));
-    if ((run.recovery?.action === "restart" || ["failed", "cancelled"].includes(run.status)) && !codingActive(run) && !state.conversation?.archived) {
+    if (!run.incident && (run.recovery?.action === "restart" || ["failed", "cancelled"].includes(run.status)) && !codingActive(run) && !state.conversation?.archived) {
       if (run.savedCheckpoint) actions.append(button("Restore saved changes", () => prepareTaskRecovery(run, false, run.savedCheckpoint.revision), "quiet-button"));
       actions.append(button("Start again", () => prepareTaskRecovery(run, false), run.canContinue || run.savedCheckpoint ? "text-button" : "primary-button"));
     }
@@ -1788,7 +1788,7 @@ function addDraftChecks(detail, review, run, current, focusChecks = false) {
       const rows = (result.checks || []).map(check => {
         const row = node("li", "github-check-row");
         row.append(node("strong", "", check.name), node("span", "message-status", githubCheckLabels[check.conclusion || check.status] || "Status unavailable"));
-        if (check.canInvestigate) row.append(button("Investigate failed check", async () => {
+        if (!run.incident && check.canInvestigate) row.append(button("Investigate failed check", async () => {
           if (!current()) return;
           const epoch = state.epoch;
           review.sheet.now();

@@ -11,6 +11,8 @@ import { atlas } from '../today/src/atlas.js';
 import { createEnvironment, updateEnvironment, archiveEnvironment } from '../today/src/atlas-environments.js';
 import { githubFixture, manifestFor, source } from './helpers/atlas-coding-fixtures.mjs';
 import { validateCodingArtifact } from '../today/src/atlas-coding-results.js';
+import { atlasIncidentDesk, requireOpenAtlasIncident, runAtlasIncidentRepairs } from '../today/src/atlas-incidents.js';
+import { assertRepairCandidate } from '../today/src/atlas-repair-policy.js';
 
 const OWNER = 'coding-owner';
 const SECRET = 'sk-' + 'coding-fixture'.repeat(5);
@@ -41,6 +43,235 @@ async function patchRun(env, id, patch) {
   try { return await state.updateCodingRun(env, OWNER, id, claimed.lease, patch); }
   finally { await state.releaseCodingRun(env, OWNER, id, claimed.lease); }
 }
+
+function statusFixture(env, services = ['today']) {
+  const at = Date.now();
+  const reports = [{ id: 'itodayfixture', kind: 'auto', started: at, checks: services.map(service => ({ service, status: 'down', httpStatus: 502, failures: 2, at })), deploys: [{ at, version: '4.62.5' }] }];
+  env.ATLAS_INCIDENT_REPAIR = '1';
+  env.ATLAS_VERIFY_KEY = 'fixture-verifier-'.repeat(3);
+  env.APPS = { async fetch(request) {
+    const url = new URL(request.url);
+    assert.equal(url.origin, 'https://account.inflite.ai');
+    assert.equal(url.pathname, '/api/atlas-incidents');
+    assert.equal(request.headers.get('authorization'), 'Bearer ' + env.ATLAS_VERIFY_KEY);
+    const id = url.searchParams.get('incident');
+    return json({ owner: OWNER, incidents: reports.filter(report => !id || report.id === id) });
+  } };
+  return reports;
+}
+
+async function incidentDesk(env, owner = OWNER, authorized = true) {
+  const response = await atlasIncidentDesk(new Request('https://inflite.ai/atlas/api/internal/incidents', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(authorized ? { Authorization: 'Bearer ' + env.ATLAS_VERIFY_KEY } : {}) },
+    body: JSON.stringify({ owner, ids: ['itodayfixture'] }),
+  }), env);
+  return { status: response.status, ...await response.json() };
+}
+
+test('confirmed Status incidents reserve their available allowance, pin the production branch and create one run', async t => {
+  const env = await fixture(t);
+  const reports = statusFixture(env);
+  reports[0].kind = 'burst';
+  reports[0].comments = ['fixture-report-comment'];
+  await runAtlasIncidentRepairs(env);
+  assert.deepEqual((await incidentDesk(env)).repairs, []);
+  reports[0].kind = 'auto';
+  reports[0].checks[0].reason = 'fixture-report-comment';
+  await store.saveSettings(env, OWNER, { dailyBudgetUsd: 0.41 });
+  await Promise.all([runAtlasIncidentRepairs(env), runAtlasIncidentRepairs(env)]);
+  const desk = await incidentDesk(env);
+  assert.equal(desk.status, 200);
+  assert.equal(desk.repairs.length, 1);
+  const run = await state.getCodingRun(env, OWNER, desk.repairs[0].runId);
+  assert.equal(run.repository, 'georgefarrowgreen1/inflite');
+  assert.equal(run.environment.branch, 'claude/inflite');
+  assert.equal(run.environment.incident, reports[0].id);
+  assert.equal(run.environment.network, 'off');
+  assert.equal(run.budget_cents, 41);
+  assert.match(run.prompt, /"httpStatus":502/);
+  assert.doesNotMatch(run.prompt, /fixture-report-comment/);
+  assert.equal((await store.usageSummary(env, OWNER)).totals.requests, 1);
+  assert.equal((await incidentDesk(env, OWNER, false)).status, 403);
+  assert.deepEqual((await incidentDesk(env, 'different-owner')).repairs, []);
+
+  let published = 0;
+  const send = async () => { published++; throw new Error('Unexpected publication request'); };
+  await patchRun(env, run.id, { status: 'completed', phase: 'done', review_ready: 1 });
+  assert.equal((await incidentDesk(env)).repairs[0].reviewReady, false, 'a diagnosis with no changed files opens the timeline');
+  await assert.rejects(coding.publishCodingRun(env, OWNER, run.id, { revision: 1 }, { send }), { code: 'coding_review_changed' });
+  reports.length = 0;
+  const verifyIncident = (owner, id, repository, services) => requireOpenAtlasIncident(env, owner, id, repository, services);
+  await assert.rejects(coding.publishCodingRun(env, OWNER, run.id, { revision: 1, confirm: true }, { send, verifyIncident }), { code: 'incident_changed' });
+  assert.equal(published, 0);
+});
+
+test('incident repairs require a complete permitted diff and a real successful existing test', () => {
+  const check = {
+    command: 'node --test tests/mail-intelligence.test.cjs', cwd: '/workspace/repo',
+    source: 'provider_command_execution', status: 'completed', exitCode: 0, output: '# pass 3',
+  };
+  const run = {
+    repository: 'georgefarrowgreen1/inflite', base_branch: 'claude/inflite',
+    environment: { incident: 'itodayfixture', incidentServices: ['mail'], network: 'off' }, checks: [check],
+  };
+  const file = { path: 'email/src/threads.js', operation: 'modify', beforeMode: '100644', afterMode: '100644', addedLines: 2, removedLines: 1 };
+  assert.doesNotThrow(() => assertRepairCandidate(run, [file]));
+  assert.throws(() => assertRepairCandidate({ ...run, environment: { ...run.environment, network: 'dependencies' } }, [file]), { code: 'repair_scope_blocked' });
+  for (const path of ['email/src/auth.js', 'tests/mail-intelligence.test.cjs', '.github/workflows/check.yml', 'wrangler.toml', 'today/src/atlas-coding.js']) {
+    assert.throws(() => assertRepairCandidate(run, [{ ...file, path }]), { code: 'repair_scope_blocked' });
+  }
+  assert.throws(() => assertRepairCandidate(run, [{ ...file, operation: 'delete' }]), { code: 'repair_scope_blocked' });
+  assert.throws(() => assertRepairCandidate(run, [{ ...file, addedLines: 301 }]), { code: 'repair_scope_blocked' });
+  assert.throws(() => assertRepairCandidate(run, [{ ...file, diffTruncated: true }]), { code: 'repair_diff_unavailable' });
+  for (const checks of [
+    [{ ...check, source: 'model_summary' }],
+    [{ ...check, command: check.command + ' || true' }],
+    [{ ...check, output: '# pass 0' }],
+    [check, { ...check, exitCode: 1 }],
+  ]) assert.throws(() => assertRepairCandidate({ ...run, checks }, [file]), { code: 'repair_checks_required' });
+});
+
+test('incident approval rejects a protected file before any GitHub request', async t => {
+  const env = await fixture(t);
+  statusFixture(env, ['mail']);
+  await runAtlasIncidentRepairs(env);
+  const id = (await incidentDesk(env)).repairs[0].runId;
+  await patchRun(env, id, { status: 'completed', phase: 'done', base_branch: 'claude/inflite' });
+  const { run, lease } = await state.claimCodingRun(env, OWNER, id);
+  try {
+    await state.saveCodingChanges(env, OWNER, run, lease, [{
+      path: 'email/src/auth.js', operation: 'modify', beforeMode: '100644', afterMode: '100644', addedLines: 1, removedLines: 1,
+    }]);
+  } finally { await state.releaseCodingRun(env, OWNER, id, lease); }
+  let gitCalls = 0;
+  const verifyIncident = (...args) => requireOpenAtlasIncident(env, ...args);
+  await assert.rejects(coding.publishCodingRun(env, OWNER, id, { revision: 1, confirm: true }, {
+    verifyIncident, send: async () => { gitCalls++; throw Error('Unexpected GitHub request'); },
+  }), { code: 'repair_scope_blocked' });
+  assert.equal(gitCalls, 0);
+  assert.equal((await state.getCodingRun(env, OWNER, id)).status, 'completed');
+});
+
+test('only the structured repair evidence and fixed task reach the provider turn', async t => {
+  const env = await fixture(t);
+  const reports = statusFixture(env);
+  reports[0].checks[0].reason = 'fixture-report-comment';
+  await runAtlasIncidentRepairs(env);
+  const id = (await incidentDesk(env)).repairs[0].runId;
+  const run = await patchRun(env, id, { phase: 'submit', base_branch: 'claude/inflite', base_sha: BASE, session_id: 'sess_repair' });
+  const now = Date.now();
+  await env.ATLAS_DB.prepare("INSERT INTO atlas_turns(owner,id,conversation_id,prompt,answer,status,created_at,updated_at) VALUES(?,?,?,?,?,'completed',?,?)")
+    .bind(OWNER, uid(), run.conversation_id, 'fixture-conversation-only', 'fixture-conversation-answer', now, now).run();
+  let submitted = false;
+  const result = await coding.advanceCodingRun(env, OWNER, id, {
+    send: async (url, init) => {
+      const path = new URL(url).pathname;
+      if (path === '/v1/agents/sessions/sess_repair') return json({ spend_control: { limit: 200, consumed: 0 } });
+      assert.equal(path, '/v1/agents/sessions/sess_repair/events');
+      const text = JSON.parse(init.body).events[0].input[0].content[0].text;
+      assert.match(text, /"httpStatus":502/);
+      assert.match(text, /claude\/inflite/);
+      assert.doesNotMatch(text, /fixture-report-comment|fixture-conversation-/);
+      submitted = true;
+      return json({ accepted: true });
+    },
+  });
+  assert.equal(submitted, true);
+  assert.equal(result.status, 'running');
+});
+
+test('a confirmed incident with no remaining daily budget stops without creating a coding run and stays stopped', async t => {
+  const env = await fixture(t);
+  statusFixture(env);
+  const used = uid();
+  await store.saveSettings(env, OWNER, { dailyBudgetUsd: 0.01 });
+  await store.reserveRequest(env, OWNER, { id: used, operation: 'coding', model: MODEL, estimatedCostUsd: 0.01 });
+  await store.markRequestDispatched(env, OWNER, used);
+  await store.finishRequest(env, OWNER, used, { status: 'completed', estimatedCostUsd: 0.01 });
+  await runAtlasIncidentRepairs(env);
+  let repair = (await incidentDesk(env)).repairs[0];
+  assert.equal(repair.status, 'stopped');
+  assert.match(repair.message, /daily API budget/);
+  assert.equal(repair.runId, null);
+  await store.saveSettings(env, OWNER, { dailyBudgetUsd: 100 });
+  await runAtlasIncidentRepairs(env);
+  repair = (await incidentDesk(env)).repairs[0];
+  assert.equal(repair.status, 'stopped');
+  assert.equal(repair.runId, null);
+  assert.equal((await store.listConversations(env, OWNER)).length, 0);
+});
+
+test('dependency incidents produce an Incident Desk diagnosis without reserving model work', async t => {
+  const env = await fixture(t);
+  statusFixture(env, ['weather', 'dep-weather']);
+  await runAtlasIncidentRepairs(env);
+  const repair = (await incidentDesk(env)).repairs[0];
+  assert.equal(repair.status, 'attention');
+  assert.match(repair.message, /Weather API/);
+  assert.equal(repair.runId, null);
+  assert.equal((await store.usageSummary(env, OWNER)).totals.requests, 0);
+});
+
+test('OpenAI reporting zero available tokens quits a queued incident before repository or workspace preparation', async t => {
+  const env = await fixture(t);
+  statusFixture(env);
+  await runAtlasIncidentRepairs(env);
+  const id = (await incidentDesk(env)).repairs[0].runId;
+  const paths = [];
+  const stopped = await coding.advanceCodingRun(env, OWNER, id, { async send(url) {
+    paths.push(new URL(url).pathname);
+    return Response.json(list([]), { headers: { 'x-ratelimit-remaining-tokens': '32000', 'x-ratelimit-remaining-project-tokens': '0' } });
+  } });
+  assert.equal(stopped.status, 'failed');
+  assert.equal(stopped.error.code, 'agent_tokens_exhausted');
+  assert.equal(stopped.reviewReady, false);
+  assert.deepEqual(paths, ['/v1/agents/sessions']);
+  assert.equal((await store.usageSummary(env, OWNER)).totals.requests, 0);
+});
+
+test('a running incident repair stops without collecting or publishing changes when its allowance is exhausted', async t => {
+  const env = await fixture(t);
+  statusFixture(env);
+  await runAtlasIncidentRepairs(env);
+  const id = (await incidentDesk(env)).repairs[0].runId;
+  const current = await state.getCodingRun(env, OWNER, id);
+  await store.markRequestDispatched(env, OWNER, current.request_id);
+  await patchRun(env, id, { status: 'running', phase: 'observe', session_id: 'sess_repair', turn_id: 'turn_repair', dispatched_at: Date.now() });
+  const actions = [];
+  let deleting = 0;
+  const send = async (url, init) => {
+    const path = new URL(url).pathname;
+    actions.push([init.method, path]);
+    if (path === '/v1/agents/sessions/sess_repair' && init.method === 'DELETE') {
+      return ++deleting === 1 ? new Response(null, { status: 409 }) : new Response(null, { status: 204 });
+    }
+    if (path === '/v1/agents/sessions/sess_repair') return json({ status: 'in_progress', spend_control: { limit: 200, consumed: 200 } });
+    if (path === '/v1/agents/sessions/sess_repair/events') {
+      assert.equal(JSON.parse(init.body).events[0].type, 'agent.session.input.cancel');
+      return json({ accepted: true });
+    }
+    throw new Error('Unexpected call after allowance exhaustion');
+  };
+  const stopping = await coding.advanceCodingRun(env, OWNER, id, { send });
+  assert.equal(stopping.stage, 'Stopping repair');
+  assert.equal(stopping.reviewReady, false);
+  const stopped = await coding.advanceCodingRun(env, OWNER, id, { send });
+  assert.equal(stopped.status, 'failed');
+  assert.equal(stopped.error.code, 'coding_budget_reached');
+  assert.equal(stopped.reviewReady, false);
+  assert.equal(stopped.canContinue, false);
+  assert.equal((await store.getRequest(env, OWNER, current.request_id)).status, 'failed');
+  await coding.advanceCodingRun(env, OWNER, id, { send });
+  await runAtlasIncidentRepairs(env);
+  assert.equal((await incidentDesk(env)).repairs[0].runId, id);
+  assert.deepEqual(actions, [
+    ['GET', '/v1/agents/sessions/sess_repair'],
+    ['POST', '/v1/agents/sessions/sess_repair/events'],
+    ['DELETE', '/v1/agents/sessions/sess_repair'],
+    ['DELETE', '/v1/agents/sessions/sess_repair'],
+  ]);
+});
 
 async function newRun(env, patch = {}, options = {}) {
   const conversation = await store.createConversation(env, OWNER, { title: 'Coding fixture', mode: 'developer', repository: REPOSITORY });

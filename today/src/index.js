@@ -1,6 +1,7 @@
 import { runAtlasScheduled } from "./atlas-scheduler.js";
 import { executeScheduledAtlas } from "./atlas-chat.js";
 import { reconcileCodingBackground } from "./atlas-coding.js";
+import { atlasIncidentDesk, runAtlasIncidentRepairs } from "./atlas-incidents.js";
 import { runDueAtlasAnswers } from "./atlas-run-coordinator.js";
 import { runTimelineStorage } from "./atlas-run-timeline.js";
 import { parallelResearchStorage } from "./atlas-parallel-research.js";
@@ -95,6 +96,7 @@ const refuse = (status, error) => json({ error }, status);
 const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/atlas/api/internal/incidents") return atlasIncidentDesk(request, env);
     if (url.pathname === "/atlas" || url.pathname.startsWith("/atlas/")) {
       if (["GET", "HEAD"].includes(request.method)) {
         if (url.pathname === "/atlas" || ["/atlas/", "/atlas/index.html"].includes(url.pathname) && url.searchParams.has("conversation")) {
@@ -308,6 +310,7 @@ export default {
       } catch { return null; }
     };
     ctx.waitUntil(reconcileCodingBackground(env,{verifyAdmin}));
+    ctx.waitUntil(runAtlasIncidentRepairs(env).catch(() => console.warn(JSON.stringify({ event: "atlas_incident_queue_unavailable" }))));
     ctx.waitUntil(runDueAtlasAnswers(env,{verifyAdmin}));
     if (env.ATLAS_AUTONOMY === "1") ctx.waitUntil(runAtlasScheduled(env,{verifyAdmin,execute:args=>executeScheduledAtlas(env,args)}));
   },

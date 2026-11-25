@@ -29,8 +29,9 @@ crons = ["* * * * *"]
 
 [vars]
 ATLAS_AUTONOMY = "0"
+ATLAS_INCIDENT_REPAIR = "1"
 # The production cron upgrades the existing Atlas database after this Worker is live.
-ATLAS_RELEASE_SCHEMA = "11"
+ATLAS_RELEASE_SCHEMA = "12"
 ACCOUNT_ORIGIN = "https://account.inflite.ai"
 # After each host's own same-origin write checks, use the established Today identity at the account service.
 TODAY_AS = "https://inflite.ai"

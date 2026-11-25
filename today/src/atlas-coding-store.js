@@ -47,13 +47,14 @@ export async function findCodingCheckpoint(env, owner, run) {
 }
 
 function workspaceState(run) {
+  const incident = !!run.environment?.incident;
   const connected = !!run.environment_id && !!run.session_id;
   const expired = run.cloud_status === 'expired' || ['coding_workspace_expired', 'agent_resource_missing'].includes(run.error_code);
-  const canContinue = connected && !expired && !!run.can_continue && !ACTIVE.has(run.status) && !run.publish_url;
+  const canContinue = !incident && connected && !expired && !!run.can_continue && !ACTIVE.has(run.status) && !run.publish_url;
   const connectionUnknown = run.cloud_status === 'unknown' || ['coding_workspace_check_pending', 'coding_workspace_not_ready'].includes(run.error_code);
-  const restart = !run.publish_url && !ACTIVE.has(run.status) && (expired || ['failed', 'cancelled'].includes(run.status) || !!run.error_code);
+  const restart = !incident && !run.publish_url && !ACTIVE.has(run.status) && (expired || ['failed', 'cancelled'].includes(run.status) || !!run.error_code);
   const state = expired ? 'expired' : run.status === 'preparing' ? 'preparing' : ['running', 'waiting', 'uncertain', 'publishing'].includes(run.status) ? 'running' : canContinue && connectionUnknown ? 'unknown' : canContinue ? 'available' : run.status === 'cancelled' ? 'stopped' : 'unavailable';
-  const reason = expired ? 'The cloud workspace is no longer available. Saved changes are still available for review.'
+  const reason = incident ? null : expired ? 'The cloud workspace is no longer available. Saved changes are still available for review.'
     : canContinue && connectionUnknown ? 'The task has finished, but Atlas could not confirm its cloud connection. Continue checks the workspace before starting or reserving another allowance.'
     : canContinue ? 'Continue in the same cloud workspace with its existing files. Atlas checks the connection before starting.'
     : run.status === 'cancelled' ? connected ? 'The task was stopped. Start again in a fresh cloud workspace.' : 'The task was stopped before its cloud workspace was ready. Start again to prepare a new workspace.'
@@ -82,6 +83,7 @@ export function publicCodingRun(run) {
     changes: run.changes,
     createdAt: run.created_at, updatedAt: run.updated_at, finishedAt: run.finished_at,
     canContinue: workspace.canContinue,
+    ...(configuration.incident ? { incident: configuration.incident } : {}),
     environment: { profileId: run.environment_profile_id || null, name: configuration.name || 'Default cloud environment', repository: run.repository, branch: configuration.branch || run.base_branch || '', machine: configuration.machine || 'medium', network: configuration.network || 'dependencies', setupCommand: configuration.setupCommand || '', testCommand: configuration.testCommand || '', revision: configuration.revision || 1 },
     cloud: workspace.cloud, recovery: workspace.recovery,
     ...(checkpoint?.fileCount > 0 ? { savedCheckpoint: checkpoint } : {}),
@@ -152,7 +154,7 @@ export async function ownerCodingRuns(env, owner, conversationId = null) {
   return result.map(row);
 }
 
-export async function createCodingRun(env, owner, { id, conversationId, requestId, prompt, model, credentialUpdatedAt, repository, environment = {}, retryFromRunId = null }) {
+export async function createCodingRun(env, owner, { id, conversationId, requestId, prompt, model, credentialUpdatedAt, repository, environment = {}, retryFromRunId = null, budgetCents = 200 }) {
   for (const value of [id, requestId]) checkId(value);
   const conversation = await getConversation(env, owner, conversationId);
   if (!conversation) missing();
@@ -162,10 +164,10 @@ export async function createCodingRun(env, owner, { id, conversationId, requestI
   // A migration can have recorded its version before every additive column is
   // available. Default tasks still use the schema-seven insert in that case.
   const profileStorage = (await environmentStorageStatus(env)).ready;
-  if (!profileStorage && (environment.id || retryFromRunId)) throw new AtlasStoreError('environments_storage_upgrade_required', 'Upgrade Atlas storage to use saved cloud environments and task retries.', 409);
+  if (!profileStorage && (environment.id || environment.incident || retryFromRunId)) throw new AtlasStoreError('environments_storage_upgrade_required', 'Upgrade Atlas storage to use saved cloud environments and task retries.', 409);
   try {
-    const fields = 'owner,id,conversation_id,request_id,prompt,model,credential_updated_at,repository,input_key,created_at,updated_at' + (profileStorage ? ',environment_profile_id,environment_config_json,retry_from_run_id' : '');
-    const args = [owner, id, conversationId, requestId, prompt, model, credentialUpdatedAt, repository, 'atlas-' + requestId, now, now, ...(profileStorage ? [environment.id || null, json(environment, 65536), retryFromRunId] : [])];
+    const fields = 'owner,id,conversation_id,request_id,prompt,model,credential_updated_at,repository,input_key,created_at,updated_at,budget_cents,total_budget_cents' + (profileStorage ? ',environment_profile_id,environment_config_json,retry_from_run_id' : '');
+    const args = [owner, id, conversationId, requestId, prompt, model, credentialUpdatedAt, repository, 'atlas-' + requestId, now, now, budgetCents, budgetCents, ...(profileStorage ? [environment.id || null, json(environment, 65536), retryFromRunId] : [])];
     const value = await query(env, 'INSERT INTO atlas_coding_runs(' + fields + ') SELECT ' + args.map(() => '?').join(',') + ' WHERE (SELECT COUNT(*) FROM atlas_coding_runs WHERE owner=? AND conversation_id=?)<50 RETURNING *', ...args, owner, conversationId).first();
     if (!value) throw new AtlasStoreError('coding_run_limit', 'Start a new conversation to keep working on this repository.', 409);
     return row(value);
