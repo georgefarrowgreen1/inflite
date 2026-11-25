@@ -42,7 +42,7 @@ async function open(width = 390) {
     sw.getRegistration = async () => ({ active: { postMessage(msg, ports) {
       s.requests.push(msg);
       const answer = () => {
-        if (msg.ifl === 'notes-seen') for (const n of notes) n.seen = true;
+        if (msg.ifl === 'notes-seen') for (const n of notes) { if (msg.ids?.includes(n.id)) n.seen = true; }
         if (msg.ifl === 'notes-clear') for (let i = notes.length - 1; i >= 0; i--) if (msg.all || msg.ids?.includes(notes[i].id)) notes.splice(i, 1);
         ports[0].postMessage({ ifl: 'notes', list: notes.slice(), unread: notes.filter(n => !n.seen).length });
       };
@@ -53,6 +53,7 @@ async function open(width = 390) {
     F.sheet = createSheets(F); F.search = createSearch(F);
     const runIntent = (app, intent, objectId) => {
       s.calls.push(['intent', app, intent, objectId, document.querySelector('dialog[data-sheet=notifications][open]') !== null]);
+      if (s.failAction) return false;
       F.sheet.open({ sheet: 'intent-target', title: intent === 'reply' ? 'Reply editor' : 'App editor', body: ui.el('textarea', { 'aria-label': 'Draft' }) });
     };
     s.commands = createWorkspaceCommands(F, { apps: () => Object.keys(F.session.apps).map(id => ({ id })), actions: () => [], files: () => [], systemActions: () => s.systems, fileDialogsAvailable: () => s.fileDialogs, runIntent, openFiles(q) { s.calls.push(['files', q]); }, openWorkspace(id) { s.calls.push(['workspace', id]); } });
@@ -76,8 +77,26 @@ test('notification actions are accessible siblings and Reply closes the log befo
     await sheet.getByRole('button', { name: 'Reply · Message from Reuben', exact: true }).click();
     await page.getByRole('dialog', { name: 'Reply editor' }).waitFor();
     assert.deepEqual(await page.evaluate(() => actions.calls), [['intent', 'chats', 'reply', 'friend-8', false]]);
-    assert.equal(await page.evaluate(() => actions.requests.some(r => r.ifl === 'notes-clear' && r.ids.includes('chat-note'))), true);
+    await page.waitForFunction(() => actions.requests.some(r => r.ifl === 'notes-seen' && r.ids.join() === 'chat-note'));
+    assert.equal(await page.evaluate(() => actions.notes.length), 2);
     assert.equal(await page.getByRole('textbox', { name: 'Draft' }).count(), 1, 'the notification action opens an editor without sending');
+    await clean();
+  } finally { await ctx.close(); }
+});
+
+test('a failed notification action keeps its unread alert available', async () => {
+  const { ctx, page, clean } = await open(320);
+  try {
+    await page.evaluate(() => { actions.failAction = true; });
+    const bell = page.getByRole('button', { name: 'Notifications', exact: true });
+    await bell.click();
+    await page.getByRole('button', { name: 'Reply · Message from Reuben', exact: true }).click();
+    await page.waitForFunction(() => actions.toasts.some(t => t.text === 'That action couldn’t open. Try again.'));
+    await bell.click();
+    const sheet = page.getByRole('dialog', { name: 'Notifications', exact: true });
+    await sheet.getByRole('radio', { name: 'Unread · 2', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Reply · Message from Reuben', exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => actions.requests.some(r => r.ifl === 'notes-seen' || r.ifl === 'notes-clear')), false);
     await clean();
   } finally { await ctx.close(); }
 });

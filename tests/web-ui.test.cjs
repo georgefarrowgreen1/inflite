@@ -1890,21 +1890,33 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
   } finally { await ctx.close(); }
 });
 
-test('Today account menu opens Notifications and updates its unread badge while open', async () => {
+test('Today opens the notification inbox with a live unread badge and keeps read history', async () => {
   const { ctx, page, errors } = await open({ initialPath: '/?os=1', beforeNavigate: page => page.addInitScript(() => {
     const worker = navigator.serviceWorker;
     const getRegistration = worker.getRegistration.bind(worker);
     const notes = [];
-    const add = (id, title) => notes.unshift({ id, title, app: 'today', url: '/', at: Date.now(), seen: false });
+    const add = (id, title, url = '/') => notes.unshift({ id, title, app: 'today', url, at: Date.now(), seen: false });
     const snapshot = () => ({ ifl: 'notes', list: notes, unread: notes.filter(note => !note.seen).length });
     add('first', 'Reminder due');
     add('second', 'Morning briefing');
     worker.getRegistration = scope => scope === '/' ? Promise.resolve({ active: { postMessage(message, ports = []) {
-      if (message.ifl === 'notes-seen') notes.forEach(note => { note.seen = true; });
+      if (message.ifl === 'notes-seen') notes.forEach(note => { if (message.ids?.includes(note.id)) note.seen = true; });
+      if (message.ifl === 'notes-clear') {
+        window.__finishNotificationClear = () => {
+          const index = notes.findIndex(note => message.ids.includes(note.id));
+          if (index >= 0) notes.splice(index, 1);
+          ports[0]?.postMessage(snapshot());
+        };
+        return;
+      }
+      if (message.ifl === 'notes-back') {
+        notes.push(...message.list);
+        window.__restoredNotification = message.list[0];
+      }
       ports[0]?.postMessage(snapshot());
     } } }) : getRegistration(scope);
     window.__newNotification = () => {
-      add('third', 'Transfer ready');
+      add('third', 'Transfer ready', '/index.html');
       worker.dispatchEvent(new MessageEvent('message', { data: snapshot() }));
     };
   }) });
@@ -1924,6 +1936,28 @@ test('Today account menu opens Notifications and updates its unread badge while 
     await updated.click();
     const sheet = page.getByRole('dialog', { name: 'Notifications', exact: true });
     await sheet.getByText('Transfer ready', { exact: true }).waitFor();
+    await sheet.getByRole('radio', { name: 'Unread · 3', exact: true }).waitFor();
+    await save(page, 'notification-inbox');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await sheet.evaluate(dialog => {
+      dialog.querySelector('[data-id="third"] .ifl-nt-x').click();
+      dialog.querySelector('.ifl-toast-act').click();
+    });
+    await page.waitForFunction(() => window.__finishNotificationClear);
+    assert.equal(await page.evaluate(() => window.__restoredNotification), undefined, 'Undo waits for the pending clear');
+    await page.evaluate(() => __finishNotificationClear());
+    await page.waitForFunction(() => window.__restoredNotification?.id === 'third');
+    assert.equal(await page.evaluate(() => __restoredNotification.seen), false, 'Undo restores the original unread state');
+    await sheet.getByRole('radio', { name: 'Unread · 3', exact: true }).waitFor();
+    await sheet.getByRole('button', { name: /New\. Transfer ready/ }).click();
+    await sheet.waitFor({ state: 'detached' });
+    await opener.click();
+    await menu.getByRole('button', { name: 'Notifications, 2 unread', exact: true }).click();
+    await sheet.getByText('Transfer ready', { exact: true }).waitFor();
+    await sheet.getByRole('radio', { name: 'Unread · 2', exact: true }).click();
+    assert.equal(await sheet.getByText('Transfer ready', { exact: true }).count(), 0);
+    await sheet.getByRole('button', { name: 'Mark all read', exact: true }).click();
+    await sheet.getByText('No unread notifications', { exact: true }).waitFor();
     await sheet.getByRole('button', { name: 'Close', exact: true }).click();
     await sheet.waitFor({ state: 'detached' });
     await opener.click();
