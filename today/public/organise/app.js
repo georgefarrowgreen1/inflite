@@ -1,61 +1,12 @@
 import {createStore} from './store.js';
 import {operationId} from '/roof/system-client.js';
-import {localDay,addDays,eventDay,overlaps,localInput,parseLocal,zone} from './model.js';
+import {localDay,addDays,eventDay,overlaps} from './model.js';
 const NAMES={calendar:'Calendar',notes:'Notes',people:'People'},SECTIONS={calendar:[['week','Week'],['agenda','Month']],notes:[['all','All notes']],people:[['contacts','Contacts']]};
-// The handoff is consumed before opening this review. Its delivery lease ends
-// when the app opens; the review belongs to this account and native app episode.
-export function openAtlasDraft(F,kind,value,{current,create}){
- if(!['notes','calendar'].includes(kind)||value?.kind!==(kind==='notes'?'note-draft':'event-draft')||!current())return null;
- const {el,btn}=F.ui,owner=F.session.view?.user?.id||F.session.user?.id;
- if(!owner||F.signal.aborted)return null;
- let sheet,closed=false,saving=false;
- const active=()=>!closed&&!F.signal.aborted&&(F.session.view?.user?.id||F.session.user?.id)===owner&&current()&&!sheet?.closed&&!sheet?.el?.classList?.contains('closing');
- const form=el('form',{class:'org-form'}),message=el('p',{class:'org-status',role:'status'});
- const field=(label,type,initial,max,required=false)=>{
-  const input=el(type==='textarea'?'textarea':'input',{...(type==='textarea'?{rows:kind==='notes'?10:4}:{type}),maxlength:max,required,'aria-label':label});
-  input.value=initial??'';form.append(el('label',{class:'org-field'},el('span',{text:label}),input));return input;
- };
- const title=field('Title','text',value.title,160,true);
- const content=field(kind==='notes'?'Note':'Description','textarea',kind==='notes'?value.text:value.description,kind==='notes'?64000:4000);
- let start,end;
- if(kind==='calendar'){
-  start=field('Starts','datetime-local',Number.isFinite(value.start)?localInput(value.start):'',null,true);
-  end=field('Ends','datetime-local',Number.isFinite(value.end)?localInput(value.end):'',null,true);
-  form.append(el('p',{class:'org-muted',text:'Times shown in '+zone()+'. Choose the date and time before creating this event.'}));
- }
- const links=value.source?.app==='mail'&&/^[A-Za-z0-9_-]{1,64}$/.test(value.source.threadId||'')?[{app:'mail',id:value.source.threadId}]:[];
- if(links.length)form.append(el('p',{class:'org-muted',text:'The original Mail conversation will be linked to this '+(kind==='notes'?'note.':'event.')}));
- const cancel=btn('Cancel',{run:()=>{closed=true;sheet?.now()}});
- const confirm=btn(kind==='notes'?'Create note':'Create event',{primary:true,run:submit});
- async function submit(){
-  if(!active()||saving)return;
-  message.textContent='';
-  try{
-   if(!form.checkValidity()||!title.value.trim()||title.value.length>160||content.value.length>(kind==='notes'?64000:4000)){
-    form.reportValidity();throw Error('Check the required fields before creating this '+(kind==='notes'?'note.':'event.'));
-   }
-   const initial={title:title.value.trim(),links:structuredClone(links)};
-   if(kind==='notes')Object.assign(initial,{text:content.value,checklist:[]});
-   else{
-    const starts=Number.isFinite(value.start)&&start.value===localInput(value.start)?value.start:parseLocal(start.value);
-    const ends=Number.isFinite(value.end)&&end.value===localInput(value.end)?value.end:parseLocal(end.value);
-    if(ends<=starts||ends-starts>366*864e5)throw Error('Choose an end time after the start, within one year.');
-    Object.assign(initial,{description:content.value,allDay:false,start:starts,end:ends,timezone:starts===value.start&&ends===value.end?value.timezone||zone():zone()});
-   }
-   saving=true;confirm.disabled=cancel.disabled=true;sheet?.setBusy(true);
-   const created=await create(initial,active);
-   if(created&&active()){closed=true;sheet.now()}
-  }catch(error){if(active())message.textContent=error.message}
-  finally{saving=false;confirm.disabled=cancel.disabled=false;if(active())sheet?.setBusy(false)}
- }
- form.addEventListener('submit',event=>{event.preventDefault();submit()});
- const body=el('section',{class:'org'},el('p',{class:'org-muted',text:kind==='notes'?'Review the Atlas draft. Creating it adds it to your Notes.':'Review the Atlas draft. Creating it adds an event to your Calendar.'}),form,message,el('div',{class:'org-toolbar'},cancel,confirm));
- sheet=F.sheet.open({sheet:'atlas-'+kind+'-draft',title:kind==='notes'?'Create a note from Atlas':'Create an event from Atlas',body,focus:title,onClose:()=>{closed=true}});
- return sheet;
-}
 export async function mountApp(root,F,kind){
  const ui=F.ui,el=ui.el,store=await(F.workspace?.organiseStore?.(kind)||createStore(F,kind)),life=F.signal,owner=F.session.view?.user?.id||F.session.user?.id,live=()=>!life.aborted&&(F.session.view?.user?.id||F.session.user?.id)===owner;let libraryY=null,libraryFocus=null,datesKey='',route=null,shown=false,loaded=false,reading=0,query='',cursor=null,ids=new Set(),editor=null,editorId=null,editorLoad=0,loading=false,error='',date=localDay(),section=SECTIONS[kind][0][0],searchTimer=0,external=[],noteFilter='all',noteView='list',feedRefreshedAt=0;
  const friends=new Map();
+ const datePages=new Map();
+ let listRead=null,listStamp='';
  let watchFriends=null,friendState='',friendsLoaded=false,friendView=null,editorSeed=null;
  root.classList.add('org');root.dataset.organise=kind;root.dataset.notesView=noteView;
  const safe=fn=>()=>{try{Promise.resolve(fn()).catch(e=>{if(live())F.toast(e.message)})}catch(e){if(live())F.toast(e.message)}};
@@ -124,6 +75,11 @@ export async function mountApp(root,F,kind){
   const allRows=currentRows();let rows=allRows;if(kind==='calendar'){paintDates(allRows);const monthEnd=localDay(new Date(Number(date.slice(0,4)),Number(date.slice(5,7)),1));rows=allRows.filter(v=>overlaps(v,date,section==='week'?addDays(date,1):monthEnd));caption.firstChild.textContent=section==='week'?dateLabel(date,{weekday:'long',day:'numeric',month:'short'}):'Upcoming';}
   count.textContent=rows.length?(rows.length+(cursor?'+':'')+' '+(kind==='notes'?(rows.length===1?'note':'notes'):kind==='people'?(rows.length===1?'person':'people'):(rows.length===1?'item':'items'))):'';
   const isEmpty=loaded&&!loading&&!query&&!friends.size&&!store.snapshot().some(v=>!v.deleted)&&!store.localForms().length;const quiet=kind!=='calendar'&&!rows.length&&(isEmpty||!loaded&&loading);actions.hidden=quiet;searchBox.hidden=quiet;if(noteTools)noteTools.hidden=quiet;
+  if(kind!=='calendar'){
+   const stamp=JSON.stringify([query,editorId,noteView,noteFilter,loading,loaded,rows.map(v=>[v.id,v.version,v.title,v.updatedAt,v.pending,v.state,v.formDraft,v.matchPreview,v.preview,v.checkCount,v.doneCount,v.text,v.checklist,v.organisation,v.email,v.phone,v.chatFriend,v.chatOnly])]);
+   if(stamp===listStamp)return;
+   listStamp=stamp;
+  }
   const nextList=list.cloneNode(false);let group='',groupBox=nextList;
   if(!rows.length&&!loading){
    const first=!query&&kind!=='calendar'&&(kind!=='notes'||noteFilter==='all'),empty=el('section',{class:first?'org-welcome':'org-empty'});
@@ -208,19 +164,29 @@ export async function mountApp(root,F,kind){
  }
  async function importContacts(){const [m]=await Promise.all([import('./import.js'),import('/roof/modules.js').then(m=>m.loadStyles(new URL('./editor.css',import.meta.url).pathname))]);if(live()&&shown)m.openImport({F,store,onImported:()=>load()})}
  async function load(append=false){
-  if(!live())return;const mine=++reading;loading=true;error='';paint();
-  try{const result=await store.list({q:query,cursor:append?cursor:null,...(kind==='calendar'?{range:range()}: {})});if(!live()||mine!==reading||!result)return;if(!append)ids=new Set();for(const v of result.records)ids.add(v.id);cursor=result.cursor;loaded=true;
-   if(kind==='calendar'){
-    const current=()=>live()&&shown&&mine===reading;
-    const {calendarSources}=await import('./connected.js');
+  if(!live())return;const mine=++reading,bounds=kind==='calendar'?range():null,key=bounds&&JSON.stringify([query,bounds]);
+  listRead?.abort();
+  const controller=listRead=new AbortController(),current=()=>live()&&!controller.signal.aborted&&mine===reading;
+  const kept=!append&&datePages.get(key);
+  if(kept&&Date.now()-kept.at<60000){ids=new Set(kept.ids);cursor=kept.cursor;external=kept.external;loaded=true}
+  loading=true;error='';paint();
+  const sources=bounds?import('./connected.js').then(({calendarSources})=>{
+   if(!current()||!shown)return null;
+   const refresh=Date.now()-feedRefreshedAt>15*60000;
+   feedRefreshedAt=Date.now();
+   return calendarSources(F,bounds,{current:()=>shown&&current(),refresh,onRefresh:()=>{if(current())load()}});
+  }).then(rows=>({rows}),error=>({error})):null;
+  try{const result=await store.list({q:query,cursor:append?cursor:null,range:bounds,signal:controller.signal});if(!current()||!result)return;if(!append)ids=new Set();for(const v of result.records)ids.add(v.id);cursor=result.cursor;loaded=true;loading=false;paint();
+   if(sources){
+    const connected=await sources;
     if(!current())return;
-    const refresh=Date.now()-feedRefreshedAt>15*60000;
-    feedRefreshedAt=Date.now();
-    const rows=await calendarSources(F,range(),{current,refresh,onRefresh:()=>load()});
-    if(current())external=rows;
+    if(connected.error)throw connected.error;
+    if(connected.rows)external=connected.rows;
+    datePages.delete(key);datePages.set(key,{ids:[...ids],cursor,external,at:Date.now()});
+    if(datePages.size>4)datePages.delete(datePages.keys().next().value);
    }
-  }catch(e){if(live()&&mine===reading)error=navigator.onLine===false?'Offline · your pending changes are kept on this device.':e.message}
-  finally{if(live()&&mine===reading){loading=false;paint()}}
+  }catch(e){if(current())error=navigator.onLine===false?'Offline · your pending changes are kept on this device.':e.message}
+  finally{if(current()){loading=false;paint()}}
  }
  async function openEditor(id,{initial,chat}={}){
   const mine=++editorLoad;if(editorId===id&&editor&&!chat)return;
@@ -249,7 +215,7 @@ export async function mountApp(root,F,kind){
    if(intent==='handoff'){
     const value=F.workspace.handoffs?.take(object);
     if(!value||!['notes','calendar'].includes(kind)||value.kind!==(kind==='notes'?'note-draft':'event-draft'))return{ok:false};
-    await editorModule();
+    const {openAtlasDraft}=await editorModule();
     if(!permitted())return{ok:false,cancelled:true};
     const targetRoute=route,current=()=>live()&&shown&&route===targetRoute&&F.workspace.active();
     const review=openAtlasDraft(F,kind,value,{current,create:async(initial,approved)=>{await editor?.flush();if(!approved())return false;return create(initial,{persist:true,current:approved})}});
@@ -263,9 +229,9 @@ export async function mountApp(root,F,kind){
   async search(q,lease={}){const result=await store.list({q});return live()&&!lease.signal?.aborted&&(!lease.current||lease.current())?{status:'ready',entries:result.records.slice(0,8).map(v=>({title:v.title,sub:v.matchPreview||v.preview||NAMES[kind],path:'/'+kind+'/#item='+v.id}))}:{status:'error',entries:[]}},
   async files({query:q='',current=()=>true}={}){const r=await store.list({q});return live()&&current()?{status:'ready',more:!!r.cursor,files:r.records.map(fileMeta)}:{status:'error',files:[]}}
  });
- const incoming=e=>{if(live()&&shown&&e.detail?.owner===(F.session.view?.user?.id||F.session.user?.id)&&e.detail?.kind===kind)load()};window.addEventListener('inflite:organise-change',incoming,{signal:life});
+ const incoming=e=>{if(live()&&e.detail?.owner===(F.session.view?.user?.id||F.session.user?.id)&&e.detail?.kind===kind){datePages.clear();if(shown)load()}};window.addEventListener('inflite:organise-change',incoming,{signal:life});
  const visibility=()=>{if(shown&&document.visibilityState==='visible')load()};document.addEventListener('visibilitychange',visibility,{signal:life});
- const clear=()=>{clearTimeout(searchTimer);stopFriends();editor?.destroy();unregister?.();root.replaceChildren()};life.addEventListener('abort',clear,{once:true});
+ const clear=()=>{listRead?.abort();datePages.clear();clearTimeout(searchTimer);stopFriends();editor?.destroy();unregister?.();root.replaceChildren()};life.addEventListener('abort',clear,{once:true});
  return{
   show(r){
    const wasDetail=!!root.dataset.detail;
@@ -286,7 +252,7 @@ export async function mountApp(root,F,kind){
     if(wasDetail&&libraryY!==null){scrollTo(0,libraryY);if(libraryFocus)list.querySelector('[data-record="'+CSS.escape(libraryFocus)+'"]')?.focus({preventScroll:true})}
    }).catch(e=>{if(live())F.toast(e.message)});
   },
-  hide(){shown=false;stopFriends();if(kind==='people')paint();editor?.flush().catch(error=>{if(live())F.toast(error.message)})},
+  hide(){shown=false;listRead?.abort();loading=false;stopFriends();if(kind==='people')paint();editor?.flush().catch(error=>{if(live())F.toast(error.message)})},
   back(){if(editor){editor.close();return true}if(route?.key==='friend'){home();return true}return false},
   busy:()=>!!editor?.dirty()||store.busy(),
   flush:async()=>{await editor?.flush();return store.flush()},

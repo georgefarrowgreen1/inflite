@@ -18,12 +18,12 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.62.4";
+const BUILD = "4.62.5";
 // (what's new in it, said once it's in)
-const NEWS = "Improve tab legibility, sheet motion and scrolling, and keep your place as Today refreshes.";
+const NEWS = "Open InFlite faster and keep your place as apps refresh.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.33.1/store.js","/os.webmanifest"];
+const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.33.2/store.js","/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -1275,6 +1275,7 @@ async function call(path, { method = "GET", body, signal, timeoutMs, fresh, late
     if (scope.aborted) throw scope.reason;
     // Only the session endpoint confirms expiry. An app-specific 401 asks it
     // first, without dropping the current screen, drafts or cached account data.
+    path = path.split("?")[0];
     if (r.status === 401 && S.view && path !== "/api/logout") signedOutNow(path === "/api/session");
     throw r;
   }
@@ -1481,6 +1482,12 @@ function preloadSoon() {
   const signal = requests.signal;
   preloader = createPreloader({ signal, eligible: app => S.hub && !!S.apps[app] && !signal.aborted,
     idle: fn => accountTasks.idle(fn), load: (app, options) => import("/roof/modules.js").then(m => m.preload(app, options)) });
+  const recentKey = `ifl:last-app:${S.view.user.id}`;
+  const recent = ss.get(recentKey);
+  if (recent && Object.hasOwn(REGISTRY, recent)) preloader.request(recent);
+  F?.on("route", (route) => {
+    if (!signal.aborted && route.kind === "app" && S.apps[route.app]) ss.set(recentKey, route.app);
+  });
   for (const app of Object.keys(REGISTRY)) {
     let used = false;
     try { used = !!USED[app] && localStorage.getItem(USED[app]) != null; } catch (_) {}
@@ -2501,13 +2508,15 @@ function minute() {
 }
 // the same answer again (with the morning, worked out from the same cards), or one card's alone (Try Again)
 let dayRequest = 0, dayPending = false, dayError = false;
-async function refresh(only = null) {
+async function refresh(only = null, { launch } = {}) {
   if (!S.view) return;
   const scope = requests.generation, user = S.view.user.id, ticket = ++dayRequest;
   dayPending = true; dayError = false; drawKept();
+  const base = S.answer;
   const q = new URLSearchParams();
   if (only) q.set("only", only);
-  else { q.set("v", "2"); q.set("with", "morning"); }
+  else { q.set("v", "2"); q.set("with", "morning"); q.set("cardRev", base?.cardRevision || "1"); }
+  if (launch && !only) q.set("launch", launch);
   if (S.device) q.set("device", S.device);
   if (!only) S.loadedAt = Date.now();
   try {
@@ -2516,13 +2525,20 @@ async function refresh(only = null) {
     if (!a?.cards || typeof a.cards !== "object" || Array.isArray(a.cards)) {
       throw new Error("Today couldn’t read the latest update. Try again in a moment.");
     }
-    if (!only) return gotCards(a);
+    if (!only) {
+      if (a.cardBase) {
+        if (!base?.cards || base.cardRevision !== a.cardBase) throw Error("Today couldn’t read the latest update. Try again in a moment.");
+        const apps = a.cardRevision.split(",").filter(Boolean).map(stamp => stamp.split(".")[0]);
+        a.cards = Object.fromEntries(apps.map(app => [app, a.cards[app] ?? base.cards[app]]));
+      }
+      return gotCards(a);
+    }
     if (!S.answer) return;
     const updated = a.cards[only];
     if (!updated || typeof updated !== "object" || Array.isArray(updated)) {
       throw new Error("This card couldn’t update. Try again in a moment.");
     }
-    S.answer = { ...S.answer, cards: { ...S.answer.cards, [only]: updated } };
+    S.answer = { ...S.answer, cardRevision: null, cards: { ...S.answer.cards, [only]: updated } };
     keepCards(S.answer);
     drawCards();
     if (only === "weather") drawLine();
@@ -3244,7 +3260,8 @@ async function load({ fresh = false } = {}) {
   }
   // Session confirmation is the only account request on the opening path.
   // Device lookup and day generation must never delay access to the shell.
-  sessionAsked = view ? Promise.resolve(view) : call("/api/session", { fresh });
+  const launch = !view && !BOOT_APP && !fresh ? globalThis.crypto?.randomUUID?.() : null;
+  sessionAsked = view ? Promise.resolve(view) : call(launch ? `/api/session?launch=${launch}` : "/api/session", { fresh });
   try {
     view = await sessionAsked;
   } catch (e) {
@@ -3274,8 +3291,16 @@ async function load({ fresh = false } = {}) {
   const owner = view.user.id;
   const devP = findDevice();
   wireLinks();
-  devP.then(() => {
-    if (current() && S.view?.user?.id === owner) return refresh();
+  const firstDay = refresh(null, { launch });
+  const firstTicket = dayRequest;
+  Promise.all([devP, firstDay]).then(async ([device]) => {
+    if (!device || !current() || S.view?.user?.id !== owner || firstTicket !== dayRequest || S.morning?.thisDevice !== null) return;
+    const morning = S.morning;
+    const status = await call(`/api/morning?device=${encodeURIComponent(device)}`);
+    if (current() && firstTicket === dayRequest && S.morning === morning && typeof status?.thisDevice === "boolean") {
+      S.morning = { ...morning, thisDevice: status.thisDevice };
+      drawMorning();
+    }
   }).catch(() => {});
   fromHash();
   devP.then(() => current() && deviceMoved()).then(() => current() && syncPush({ force: true })).catch(() => {});

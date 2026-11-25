@@ -13,7 +13,7 @@ import * as environments from './atlas-environments.js';
 import { workspaceContextStorageStatus, getWorkspaceContext, setWorkspaceContext, clearWorkspaceContext } from './atlas-workspace-context.js';
 import { atlasActivity, atlasRunAlerts, atlasRuns } from './atlas-activity.js';
 import { enqueueAtlasAnswer, resumeAtlasAnswer, stopAtlasAnswer } from './atlas-run-coordinator.js';
-import { publicAnswerRun, readAtlasRunTimeline, runTimelineStorage } from './atlas-run-timeline.js';
+import { publicAnswerRun, readAtlasRunTimeline, runTimelineStorage, streamRunTimeline } from './atlas-run-timeline.js';
 import { parallelResearchStorage } from './atlas-parallel-research.js';
 import { readAtlasRunDraft } from './atlas-run-drafts.js';
 
@@ -204,10 +204,19 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
         return json({ run: publicAnswerRun(await enqueueAtlasAnswer(env, owner, body)) }, 202);
       }
       const [, kind, id, action] = runRoute;
-      if (!action && method === 'GET') return json(await readAtlasRunTimeline(env, owner, kind, id, {
-        after: Number(url.searchParams.get('after') ?? 0),
-        limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
-      }));
+      if (!action && method === 'GET') {
+        const read = after => readAtlasRunTimeline(env, owner, kind, id, { after, limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined });
+        const initial = await read(Number(url.searchParams.get('after') ?? 0));
+        if (url.searchParams.get('stream') !== '1') return json(initial);
+        const allowed = async () => {
+          const response = await account(env, request, { path: 'today/me', timeout: 8000 });
+          if (response?.status === 401 || response?.status === 403) return false;
+          if (!response?.ok) return null;
+          const current = await accountData(response, 65536);
+          return current?.signedIn === true && current?.apps?.mail === true && String(current?.user?.id) === owner;
+        };
+        return streamRunTimeline(initial, { request, read, allowed, headers: { ...headers, 'Content-Security-Policy': API_CSP } });
+      }
       if (action === 'draft' && method === 'GET') return json(await readAtlasRunDraft(env, owner, kind, id, Number(url.searchParams.get('revision'))));
       if (kind === 'background' && method === 'POST') {
         if (action === 'stop') return json({ run: publicAnswerRun(await stopAtlasAnswer(env, owner, id, await input(request, 1024))) });

@@ -10,6 +10,27 @@ import { safeWorkspaceRoute } from '../today/public/roof/workspace-catalog.js';
 import { resumeTarget } from '../today/public/roof/restore.js';
 import { createActivityRegistry } from '../today/public/roof/workspace-activity-state.js';
 import { createAtlasActivityReader } from '../today/public/atlas/roof/activity.js';
+import { streamRunTimeline } from '../today/src/atlas-run-timeline.js';
+
+test('a run stream follows its saved cursor and withholds new events after access is revoked', async () => {
+  const initial = { run: { active: true }, events: [{ seq: 8 }], nextAfter: 8, hasMore: false };
+  for (const permitted of [true, false]) {
+    const response = streamRunTimeline(initial, {
+      request: new Request('https://inflite.ai/atlas/api/runs/background/r'),
+      headers: { 'Cache-Control': 'private, no-store' },
+      read: async after => {
+        assert.equal(after, 8);
+        return { run: { active: false }, events: [{ seq: 9 }], nextAfter: 9, hasMore: false };
+      },
+      allowed: async () => permitted,
+    });
+    assert.match(response.headers.get('Content-Type'), /^text\/event-stream/);
+    const text = await response.text();
+    assert.match(text, /"seq":8/);
+    if (permitted) assert.match(text, /"seq":9/);
+    else { assert.match(text, /event: access_denied/); assert.doesNotMatch(text, /"seq":9/); }
+  }
+});
 
 const marker = owner => createHash('sha256').update('atlas-owner:' + owner).digest('hex').slice(0,32);
 const deferred = () => { let resolve; const promise = new Promise(done => resolve = done); return {resolve,promise}; };

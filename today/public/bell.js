@@ -10,7 +10,12 @@
 // its own.
 
 const DAY = 864e5;
-const fmt = (o) => new Intl.DateTimeFormat(undefined, o);
+const formats = new Map();
+function fmt(options) {
+  const key = JSON.stringify(options);
+  if (!formats.has(key)) formats.set(key, new Intl.DateTimeFormat(undefined, options));
+  return formats.get(key);
+}
 const startOf = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const daysAgo = (at, now) => Math.round((startOf(now) - startOf(at)) / DAY);
 const NAME = { chat: "Chat", chats: "Chat", weather: "Weather", markets: "Markets", fitness: "Fitness", mail: "Mail", today: "Today", account: "Account" };
@@ -28,15 +33,19 @@ export function when(at, now = Date.now(), spoken = false) {
 // the list (newest first) by day, and in each day those of one app that open in the same place as one stack
 const LABEL = { today: "Today", yesterday: "Yesterday", earlier: "Earlier" };
 export function group(list, now = Date.now()) {
-  const secs = [];
+  const secs = [], sections = new Map(), stacks = new Map();
   for (const n of list) {
     const d = daysAgo(n.at, now), k = d <= 0 ? "today" : d === 1 ? "yesterday" : "earlier";
-    let s = secs.find((x) => x.key === k);
-    if (!s) secs.push(s = { key: k, label: LABEL[k], stacks: [] });
+    let s = sections.get(k);
+    if (!s) { s = { key: k, label: LABEL[k], stacks: [] }; sections.set(k, s); secs.push(s); }
     const by = n.url ? `${n.app}|${n.url}|${startOf(n.at)}` : "";
-    const st = by && s.stacks.find((x) => x.key === by);
+    const st = by && stacks.get(by);
     if (st) st.rest.push(n);
-    else s.stacks.push({ key: by || `id|${n.id}`, head: n, rest: [] });
+    else {
+      const stack = { key: by || `id|${n.id}`, head: n, rest: [] };
+      s.stacks.push(stack);
+      if (by) stacks.set(by, stack);
+    }
   }
   return secs;
 }

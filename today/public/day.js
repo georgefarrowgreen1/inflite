@@ -530,6 +530,49 @@ function paint(root, st, phase, now) {
   const restoreRow = keepDayRow(root, st);
   try { draw(root, st, phase, now); } finally { refocus(root, key); restoreRow?.(); }
 }
+function markup(st, section, html) {
+  if (st.markup.get(section) === html) return;
+  section.innerHTML = html;
+  st.markup.set(section, html);
+}
+const cardMarkup = new WeakMap();
+function updateRest(box, shown, cards, ctx) {
+  const doc = box.ownerDocument;
+  if (!doc) {
+    box.innerHTML = shown.length ? `<h2 class="slabel">${LABELS.rest}</h2>${shown.map(app => cardHTML(app, cards[app], ctx)).join("")}` : "";
+    applyVars(box);
+    return;
+  }
+  const current = new Map([...box.querySelectorAll(":scope > [data-app]")].map(node => [node.dataset.app, node]));
+  const nodes = [];
+  if (shown.length) {
+    let heading = box.querySelector(":scope > h2.slabel");
+    if (!heading) {
+      heading = doc.createElement("h2");
+      heading.className = "slabel";
+      heading.textContent = LABELS.rest;
+    }
+    nodes.push(heading);
+  }
+  let changed = false;
+  for (const app of shown) {
+    let node = current.get(app);
+    const html = cardHTML(app, cards[app], ctx);
+    if (!html) continue;
+    if (!node || cardMarkup.get(node) !== html) {
+      const template = doc.createElement("template");
+      template.innerHTML = html;
+      node = template.content.firstElementChild;
+      cardMarkup.set(node, html);
+      changed = true;
+    }
+    nodes.push(node);
+  }
+  const wanted = new Set(nodes);
+  for (const node of [...box.children]) if (!wanted.has(node)) node.remove();
+  nodes.forEach((node, index) => { if (box.children[index] !== node) box.insertBefore(node, box.children[index] || null); });
+  if (changed) applyVars(box);
+}
 function draw(root, st, phase, now) {
   const a = st.answer, s = sections(root);
   st.phase = phase;
@@ -538,14 +581,14 @@ function draw(root, st, phase, now) {
   const shows = !top && RIDE.includes(phase) ? NO_TOP : BELOW[phase] || BELOW.midday;
   const w = shows.includes("waiting") ? waitingRows(a) : [];
   const owed = shows.includes("waiting") ? owedOf(a) : [], paid = shows.includes("waiting") ? paidOf(a) : null;
-  s.waiting.innerHTML = w.length || owed.length || paid ? waitingHtml(w, st, now, owed, paid) : "";
+  markup(st, s.waiting, w.length || owed.length || paid ? waitingHtml(w, st, now, owed, paid) : "");
   s.waiting.hidden = !(w.length || owed.length || paid);
   const rows = shows.includes("coming") ? shownRows(comingAt(a.upcoming, now, phase, { dawn: dawnAfter(a, now), tz: str(a.tz) || undefined })) : [];
-  s.coming.innerHTML = rows.length ? comingHtml(rows, st, now) : "";
+  markup(st, s.coming, rows.length ? comingHtml(rows, st, now) : "");
   s.coming.hidden = !rows.length;
   // (Mail's trip, wherever Coming Up shows: above Waiting for You)
   const trip = shows.includes("coming") ? tripOf(a) : null;
-  s.trip.innerHTML = trip ? tripCardHtml(trip, { now, tz: str(a.tz) || undefined }) : "";
+  markup(st, s.trip, trip ? tripCardHtml(trip, { now, tz: str(a.tz) || undefined }) : "");
   s.trip.hidden = !trip;
   if (!s.rest.dataset.kept) {
     const prefs = st.ctx.prefs && typeof st.ctx.prefs === "object" ? st.ctx.prefs : {};
@@ -553,8 +596,7 @@ function draw(root, st, phase, now) {
     const hidden = Array.isArray(prefs.hidden) ? prefs.hidden : [];
     const cards = a.cards && typeof a.cards === "object" ? a.cards : {};
     const shown = order.filter((k) => !hidden.includes(k) && cards[k]);
-    s.rest.innerHTML = shown.length ? `<h2 class="slabel">${LABELS.rest}</h2>${shown.map((k) => cardHTML(k, cards[k], { links: linksOf(st.ctx), tz: str(a.tz) || undefined, now, hub: hubOf(st.ctx) })).join("")}` : "";
-    applyVars(s.rest);
+    updateRest(s.rest, shown, cards, { links: linksOf(st.ctx), tz: str(a.tz) || undefined, now, hub: hubOf(st.ctx) });
   }
   s.rest.hidden = !shows.includes("rest") || !s.rest.children.length;
   for(const name of ['waiting','coming','rest'])if(st.ctx.prefs?.sections?.[name]===false)s[name].hidden=true;
@@ -584,7 +626,7 @@ function drawTop(root, st, phase, now, s = sections(root)) {
   let top = topFor(st.answer, phase, now);
   if (top && onlyWeather(top, st.answer, st)) top = null;
   st.wrote = top ? list(top.wrote).filter((w) => ID.test(str(w.id)) && str(w.first) && num(w.at) != null) : [];
-  s.top.innerHTML = top ? topHtml(top, phase, st, now) : "";
+  markup(st, s.top, top ? topHtml(top, phase, st, now) : "");
   s.top.hidden = !top;
   return top;
 }
@@ -605,7 +647,7 @@ export function drawDay(root, answer, ctx) {
   if (prev?.own && prev.answer !== answer && num(prev.answer.at) != null && num(answer.at) != null && answer.at < prev.answer.at) return;
   ensureCss();
   prev?.off?.();
-  const st = { answer, ctx: ctx && typeof ctx === "object" ? ctx : {}, base: Date.now(), timer: prev?.timer || 0, wrote: [], own: false };
+  const st = { answer, ctx: ctx && typeof ctx === "object" ? ctx : {}, base: Date.now(), timer: prev?.timer || 0, wrote: [], own: false, markup: prev?.markup || new WeakMap() };
   live.set(root, st);
   wire(root);
   paint(root, st, phaseAt(answer, nowOf(st)), nowOf(st));

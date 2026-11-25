@@ -199,8 +199,10 @@ async function threadsFrom(env, groups, where, now) {
     if (!byThread.has(r.thread_id)) byThread.set(r.thread_id, []);
     byThread.get(r.thread_id).push(r);
   }
-  return groups.map((g) => {
-    const msgs = byThread.get(g.thread_id) || [];
+  return groups.map(g => summarizeThread(g, byThread.get(g.thread_id) || [], now));
+}
+
+function summarizeThread(g, msgs, now) {
     const latest = msgs[0];
     const incoming = msgs.find((m) => m.folder !== "sent") || latest;
     const people = [];
@@ -230,25 +232,47 @@ async function threadsFrom(env, groups, where, now) {
       date: g.latest ?? g.last,
       sort: g.last,
     };
-  });
 }
 
-export async function getThread(env, id) {
-  let { results } = await env.DB.prepare(
-    `SELECT * FROM messages WHERE thread_id = ?1 AND folder NOT IN ('trash', 'drafts') ORDER BY date DESC`
-  )
-    .bind(id)
-    .all();
+const THREAD_PAGE = 24;
+const activeThread = "folder NOT IN ('trash', 'drafts')";
+const trashedThread = "folder = 'trash'";
+const threadOrder = "ORDER BY date DESC, id DESC";
+
+function pageMessages(rows, trashed) {
+  const page = rows.slice(0, THREAD_PAGE);
+  const last = page.at(-1);
+  return {
+    messages: page.map(rowToSummary),
+    nextAfter: rows.length > THREAD_PAGE && last ? `${+trashed}:${last.date}:${last.id}` : null,
+  };
+}
+
+export async function getThreadPage(env, id, cursor) {
+  const match = /^([01]):(\d{1,16}):([\w-]{1,128})$/.exec(cursor);
+  if (!match || !Number.isSafeInteger(Number(match[2]))) return null;
+  const trashed = match[1] === "1";
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM messages WHERE thread_id = ?1 AND ${trashed ? trashedThread : activeThread}
+     AND (date < ?2 OR (date = ?2 AND id < ?3)) ${threadOrder} LIMIT ?4`
+  ).bind(id, Number(match[2]), match[3], THREAD_PAGE + 1).all();
+  return pageMessages(results, trashed);
+}
+
+export async function getThread(env, id, { paged = false } = {}) {
+  const [active, reminder] = await Promise.all([
+    env.DB.prepare(`SELECT * FROM messages WHERE thread_id = ?1 AND ${activeThread} ${threadOrder}`).bind(id).all(),
+    env.DB.prepare("SELECT due,message_id FROM mail_followups WHERE thread_id=?").bind(id).first(),
+  ]);
+  let { results } = active;
   // (a conversation that's all in the trash is shown from there)
   if (!results.length) {
-    ({ results } = await env.DB.prepare(`SELECT * FROM messages WHERE thread_id = ?1 AND folder = 'trash' ORDER BY date DESC`)
+    ({ results } = await env.DB.prepare(`SELECT * FROM messages WHERE thread_id = ?1 AND ${trashedThread} ${threadOrder}`)
       .bind(id)
       .all());
   }
   if (!results.length) return null;
-  const [t] = await threadsFrom(
-    env,
-    [
+  const t = summarizeThread(
       {
         thread_id: id,
         last: results[0].date,
@@ -260,13 +284,11 @@ export async function getThread(env, id) {
         inbox: results.filter((r) => r.folder === "inbox").length,
         category: results.some((r) => (r.category || "people") === "people") ? "people" : "updates",
         snooze: Math.max(0, ...results.map((r) => r.snooze_until || 0)),
-      },
-    ],
-    results[0].folder === "trash" ? `folder = 'trash'` : `folder NOT IN ('trash', 'drafts')`,
+      }, results,
     Date.now()
   );
-  const reminder = await env.DB.prepare("SELECT due,message_id FROM mail_followups WHERE thread_id=?").bind(id).first();
-  return { ...t, reminder, timeChange: results[0].dismissed_time ? null : proposedTime(results[0]), messages: results.map(rowToSummary) };
+  const messages = paged ? pageMessages(results, t.trashed) : { messages: results.map(rowToSummary) };
+  return { ...t, reminder, timeChange: results[0].dismissed_time ? null : proposedTime(results[0]), ...messages };
 }
 
 // What can be done to a whole conversation.

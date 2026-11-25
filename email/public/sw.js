@@ -9,6 +9,7 @@
 // (mail-app-2: the copies of "/" kept before this, which a message frame at /body/ may have taken the place of, dropped as
 // this one takes over: below)
 const SHELL = "mail-app-2";
+const ENTRY_ASSET = /^\/assets\/[a-f0-9]{24}-app\.(?:css|js)$/;
 const FILES = ["/", "/app.js", "/app.css", "/theme.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/roof/contact-card.js", "/roof/mailsheets.css"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();
@@ -32,6 +33,10 @@ self.addEventListener("fetch", (e) => {
   if (r.method !== "GET" || u.origin !== self.location.origin || u.pathname.startsWith("/api/")) return;
   // (a part of Mail's page, asked for as its Mail's: below)
   if (PART.test(u.pathname) && u.searchParams.get("b")) return e.respondWith(part(e, u));
+  if (!u.search && ENTRY_ASSET.test(u.pathname)) {
+    return e.respondWith(caches.open(SHELL).then(c => c.match(u.pathname)).catch(() => null)
+      .then(kept => kept || fresh(e, u.pathname)));
+  }
   // (Mail's one page, at / or /index.html, is kept as "/"; any other page opened here, a message's frame at /body/ (on
   // InFlite's page, One roof) or a file at /api/, is the network's alone: never kept in its place, never answered with it)
   const key = r.mode === "navigate" ? (u.pathname === "/" || u.pathname === "/index.html" ? "/" : null) : FILES.includes(u.pathname) && !u.search ? u.pathname : null;

@@ -98,9 +98,10 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
       const state = ['ready', 'error', 'loading'].includes(answer?.status) ? answer.status : 'ready';
       const nextItems = Array.isArray(answer?.items) ? answer.items : [];
       listing = { ...answer, status: state, items: nextItems.slice(0, 500), capabilities: answer?.capabilities || {} };
-      for(const [key,version] of multi)if(!items().some(item=>item.key===key&&item.version===version))multi.delete(key);
-      if (selection && !items().some(item => item.key === selection)) { selection = null; releasePreview(); }
-      if (preview && items().find(item => item.key === preview.key)?.version !== preview.version) releasePreview();
+      const byKey = new Map(items().map(item => [item.key, item]));
+      for (const [key, version] of multi) if (byKey.get(key)?.version !== version) multi.delete(key);
+      if (selection && !byKey.has(selection)) { selection = null; releasePreview(); }
+      if (preview && byKey.get(preview.key)?.version !== preview.version) releasePreview();
       paint();if(pendingMenu){const key=pendingMenu;pendingMenu=null;const item=items().find(x=>x.key===key);if(item)menu(item)}return true;
     } catch (error) {
       if (!current()) return false;
@@ -169,6 +170,12 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   async function previewFile(item) {
     const currentItem = resource(item);
     if (!currentItem) return;
+    if (preview?.key === item.key && preview.version === item.version && (preview.state === "ready" || preview.state === "loading")) {
+      details = true;
+      if (view.isCompact() && !detailsSheet) showDetails(item);
+      paint();
+      return;
+    }
     releasePreview(); selection = item.key;
     const controller = previewRead = new AbortController(), mine = episode;
     const current = () => active() && mine === episode && !controller.signal.aborted && previewRead === controller && selection === item.key && !!resource(item);
@@ -187,7 +194,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
         if (!current()) return;
         preview = { key: item.key, version: item.version, state: 'ready', kind: 'text', text };
       } else if (/^image\/(png|jpeg|gif|webp|avif)$/.test(type) || /^audio\/(mpeg|mp4|ogg|wav|webm|aac|flac)$/.test(type)) {
-        previewURL = URL.createObjectURL(new Blob([blob], { type }));
+        previewURL = URL.createObjectURL(blob.type === type ? blob : blob.slice(0, blob.size, type));
         preview = { key: item.key, version: item.version, state: 'ready', kind: type.startsWith('image/') ? 'image' : 'audio', url: previewURL };
       } else throw new Error('Preview isn’t supported for this file. Download it to open it.');
       paint();

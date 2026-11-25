@@ -9,6 +9,7 @@ const eligible = `.ws-dock, .settings-preview-dock, .ifl-tabs, dialog.ifl-sheet[
 const profiles = {dock:{depth:7, bend:12}, sheet:{depth:5, bend:7}, control:{depth:3.5, bend:4}};
 let source, strength = 0, pending = 0;
 const crops = new Map();
+const bevels = new Map();
 const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : null;
 
 // A rounded, antialiased band for each physical pixel of the bevel. Geometry
@@ -39,7 +40,14 @@ function paint(crop) {
   if (canvas.width !== w || canvas.height !== h || !crop.bands) {
     canvas.width = w; canvas.height = h;
     ctx.setTransform(w/cssWidth, 0, 0, h/cssHeight, 0, 0);
-    crop.bands = bevel(cssWidth, cssHeight, crop.radii, crop.profile, Math.max(w/cssWidth,h/cssHeight));
+    const density = Math.max(w/cssWidth,h/cssHeight);
+    const { depth, bend } = crop.profile;
+    const key = [cssWidth, cssHeight, ...crop.radii, depth, bend, density, strength].join(",");
+    if (!bevels.has(key)) {
+      bevels.set(key, bevel(cssWidth, cssHeight, crop.radii, crop.profile, density));
+      if (bevels.size > 24) bevels.delete(bevels.keys().next().value);
+    }
+    crop.bands = bevels.get(key);
   }
   ctx.clearRect(0, 0, cssWidth, cssHeight);
   for (const {path, insetX, insetY} of crop.bands) {
@@ -73,6 +81,7 @@ function align() {
   if (!source || !strength || !root.hasAttribute("data-midnight-lava") || document.hidden) { removeCrops(); return; }
   const seen = new Set();
   const boxes = [];
+  const sceneRects = new Map();
   let animating = false;
   for (const node of document.querySelectorAll(eligible)) {
     const box = node.getBoundingClientRect();
@@ -84,7 +93,8 @@ function align() {
     const preview = node.matches(".settings-preview-dock");
     const host = preview ? node.parentElement : source.parentElement;
     const art = preview ? host.querySelector(":scope > canvas") : source;
-    const scene = art?.getBoundingClientRect();
+    if (art && !sceneRects.has(art)) sceneRects.set(art, art.getBoundingClientRect());
+    const scene = sceneRects.get(art);
     if (!scene?.width || !scene.height) continue;
     const origin = preview ? host.getBoundingClientRect() : scene;
     const round = Math.min(box.width, box.height)/2;

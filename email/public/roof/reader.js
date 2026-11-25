@@ -79,7 +79,12 @@ export function view(el, ctx) {
     cur.msgs = E("div", { class: "mr-msgs" });
     cur.historyLabel = E("h3");
     cur.older = E("div", { class: "mr-older" });
-    cur.history = E("section", { class: "mr-history", hidden: true }, cur.historyLabel, cur.older);
+    cur.more = E("div", { class: "mr-more", "aria-hidden": "true", hidden: true });
+    cur.history = E("section", { class: "mr-history", hidden: true }, cur.historyLabel, cur.older, cur.more);
+    const view = cur;
+    if (typeof IntersectionObserver === "function") view.olderObserver = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) void olderPage(view);
+    }, { rootMargin: "160px" });
     cur.change = E("div", { class:"mr-change", role:"group", "aria-label":"Calendar change" });
     cur.foot = E("footer", { class: "mr-foot", hidden: true, "aria-label": "Quick reply" });
     const content = E("div", { class: "mr-content" }, cur.msgs, cur.change, cur.spots, cur.history);
@@ -97,12 +102,39 @@ export function view(el, ctx) {
     const view = cur, current = () => cur === view && ctx.canRead?.() !== false;
     store.set({ thread: { t: null, metas: {}, loading: true, err: null } }, "reader");
     let t;
-    try { t = thr(await api.thread(id)); }
+    try { t = thr(await api.thread(id, { paged: true })); }
     catch (e) { if (current()) store.set({ thread: { t: null, metas: {}, loading: false, err: e?.message || "Couldn’t open it." } }, "reader"); return; }
     if (!current()) return;
     store.set({ thread: { t, metas: {}, loading: false, err: null } }, "reader");
     loaded(t);
     if (t.unread) ctx.actions.act([id], "read", { undo: false }).catch?.(() => {});
+  }
+  async function olderPage(view) {
+    const t = store.get().thread?.t;
+    if (cur !== view || t?.id !== view.id || !t.nextAfter || view.page || ctx.canRead?.() === false) return;
+    const controller = new AbortController();
+    view.page = controller;
+    view.olderObserver?.unobserve(view.more);
+    try {
+      const next = await api.thread(t.id, { after: t.nextAfter, signal: controller.signal });
+      const th = store.get().thread;
+      if (cur !== view || th?.t?.nextAfter !== t.nextAfter || ctx.canRead?.() === false) return;
+      const known = new Set(t.messages.map(message => message.id));
+      const messages = [...t.messages, ...next.messages.filter(message => !known.has(message.id))];
+      view.more.replaceChildren();
+      store.set({ thread: { ...th, t: { ...th.t, messages, nextAfter: next.nextAfter } } }, "reader");
+    } catch (_) {
+      if (cur === view && !controller.signal.aborted) view.more.append(ui.btn("Try Again", { run: () => olderPage(view) }));
+    } finally {
+      view.page = null;
+      if (cur === view) watchOlder(view, store.get().thread?.t);
+    }
+  }
+  function watchOlder(view, thread) {
+    view.more.hidden = !thread?.nextAfter;
+    if (view.more.hidden || view.page || view.more.firstChild) return;
+    if (view.olderObserver) view.olderObserver.observe(view.more);
+    else void olderPage(view);
   }
   function loaded(t) {
     const msgs = t.messages || [];
@@ -567,11 +599,13 @@ export function view(el, ctx) {
     paintHead(t);
     paintSpots(t);
     // The newest body leads. Older messages stay folded until opened in place.
-    const earlier = Math.max(0, (t.messages?.length || 0) - 1);
+    const earlier = Math.max(0, (t.count || t.messages?.length || 0) - 1);
     cur.history.hidden = !earlier;
     cur.historyLabel.textContent = earlier + (earlier === 1 ? " earlier message" : " earlier messages");
     let prev = null;
+    const active = new Set();
     for (const m of t.messages || []) {
+      active.add(m.id);
       const meta = th.metas?.[m.id], full = meta ? { ...m, ...meta } : m;
       let c = cur.cards.get(m.id);
       if (!c) { card(full); c = cur.cards.get(m.id); }
@@ -580,12 +614,15 @@ export function view(el, ctx) {
       if (c.el.parentNode !== group || (group === cur.older && c.el.previousElementSibling !== prev)) { if (group === cur.older && prev) prev.after(c.el); else group.prepend(c.el); }
       if (group === cur.older) prev = c.el;
     }
-    for (const [id, c] of cur.cards) if (!(t.messages || []).some((m) => m.id === id)) { dropFrame(id); c.el.remove(); cur.cards.delete(id); }
+    for (const [id, c] of cur.cards) if (!active.has(id)) { dropFrame(id); c.el.remove(); cur.cards.delete(id); }
+    watchOlder(cur, t);
     paintFoot(t);
     paintChange(t);
   }
   function shut() {
     if (!cur) return;
+    cur.olderObserver?.disconnect();
+    cur.page?.abort();
     cur.releaseViewport?.();
     for (const f of cur.frames.values()) f?.destroy?.();
     for (const u of cur.urls) URL.revokeObjectURL(u);

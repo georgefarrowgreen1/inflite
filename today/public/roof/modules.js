@@ -22,6 +22,23 @@ function dispose(instance) {
   try { instance.unmount?.()?.catch?.((e) => console.error(e)); } catch (e) { console.error(e); }
 }
 const abs = (p) => new URL(p, location.origin).pathname;
+const radarStyles = "/weather/roof/radar.css";
+const openingStyles = route => route.css.filter(path => path !== radarStyles);
+
+function hint(path, rel) {
+  const href = abs(path);
+  if (document.querySelector(`link[rel="${rel}"][href="${href}"]`)) return;
+  const link = document.createElement("link");
+  link.rel = rel;
+  if (rel === "preload") link.as = "style";
+  link.href = href;
+  document.head.append(link);
+}
+
+function hintEntry(route) {
+  hint(route.entry, "modulepreload");
+  for (const path of openingStyles(route)) hint(path, "preload");
+}
 
 function css(href) {
   if (styles.has(href)) return styles.get(href);
@@ -54,6 +71,7 @@ export async function loadModule(app, F) {
   let instance = null;
   try {
     check(fw.signal);
+    if (n === 0 && F.session.apps?.[app] === true) hint(R.entry, "modulepreload");
     await until(F.hubAgain?.(), 2000, "the hub", fw.signal, true);
     check(fw.signal);
     const s = F.session;
@@ -62,8 +80,10 @@ export async function loadModule(app, F) {
     // them together; mounting still waits for both and the same lifetime checks.
     const [m] = await Promise.all([
       until(import(n ? `${R.entry}?retry=${n}` : R.entry), 12e3, "the module", fw.signal),
-      until(Promise.all(R.css.map(css)), 0, "the stylesheets", fw.signal),
+      until(Promise.all(openingStyles(R).map(css)), 0, "the stylesheets", fw.signal),
     ]);
+    // Older Weather modules still expect the framework to install this sheet.
+    if (R.css.includes(radarStyles) && m?.deferRadarStyles !== true) await until(css(radarStyles), 0, "Radar’s stylesheet", fw.signal);
     check(fw.signal);
     if (m?.CONTRACT !== 1 || typeof m.mount !== "function") throw new Error(`${app}: contract ${m?.CONTRACT} isn't 1`);
     root.replaceChildren();
@@ -132,20 +152,15 @@ export async function loadService(app, F, { signal = F.signal } = {}) {
 }
 
 export function preload(app, { signal, current = () => true } = {}) {
-  if (signal?.aborted || !current() || !REGISTRY[app]) return Promise.resolve(null);
+  const route = REGISTRY[app];
+  if (signal?.aborted || !current() || !route) return Promise.resolve(null);
+  hintEntry(route);
   return loadConnector(app).then((c) => {
     if (signal?.aborted || !current()) return null;
     // Only the entry and a few first-view helpers; never an entire app's lazy
     // graph, editors, maps or data. Real navigation owns the rest.
-    const files = [REGISTRY[app].entry, ...(c.preload || c.files || [])].filter(f => /\.js$/.test(f));
-    for (const f of [...new Set(files)].slice(0, 4)) {
-      if (!/\.js$/.test(f)) continue;
-      const href = abs(f);
-      if (document.querySelector(`link[rel=modulepreload][href="${href}"]`)) continue;
-      const l = document.createElement("link");
-      l.rel = "modulepreload"; l.href = href;
-      document.head.append(l);
-    }
+    const files = (c.preload || c.files || []).filter(f => f !== route.entry && /\.js$/.test(f));
+    for (const path of [...new Set(files)].slice(0, 3)) hint(path, "modulepreload");
     return c;
   }, () => null);
 }

@@ -1051,7 +1051,9 @@ function pauseRunTimeline() {
   if (!runTimeline) return;
   clearTimeout(runTimeline.timer);
   runTimeline.request?.abort();
+  runTimeline.stream?.abort();
   runTimeline.request = null;
+  runTimeline.stream = null;
 }
 function clearRunTimeline() {
   pauseRunTimeline();
@@ -1135,23 +1137,72 @@ function renderRunSubtasks(subtasks) {
     return row;
   }));
 }
+function applyTimeline(timeline, result) {
+  const events = result.events.filter(event => event.seq > timeline.after);
+  const stamp = JSON.stringify([result.run, result.hasMore]);
+  if (events.length || timeline.stamp !== stamp) {
+    timeline.stamp = stamp;
+    timeline.run = result.run;
+    renderRunTimeline(result.run, events, result.hasMore);
+  }
+  timeline.after = Math.max(timeline.after, result.nextAfter);
+  timeline.retry = 0;
+  if (result.run.status !== "failed") feedback("run-feedback", timeline.after ? "" : "No timeline events have been saved for this run.");
+  else feedback("run-feedback", "This run could not finish.", true);
+  return result.run.active && !result.hasMore;
+}
+async function followRunTimeline(timeline) {
+  if (runTimeline !== timeline || timeline.request || timeline.stream || !visible()) return;
+  const controller = new AbortController(), epoch = state.epoch;
+  timeline.stream = controller;
+  const live = () => runTimeline === timeline && timeline.stream === controller && !controller.signal.aborted;
+  let follow = true;
+  try {
+    const path = runPath(timeline.ref) + "?stream=1&after=" + timeline.after;
+    const response = await fetch("/atlas/api/" + path, {
+      credentials: "same-origin", cache: "no-store", signal: controller.signal,
+      headers: { Accept: "text/event-stream", "X-Inflite": "1", "X-Atlas-Owner": state.owner },
+    });
+    checkEpoch(epoch);
+    if (!live()) return;
+    if (!response.ok || !response.headers.get("Content-Type")?.includes("text/event-stream")) {
+      const data = await response.json().catch(() => ({}));
+      checkEpoch(epoch); inspectOwner(response, data);
+      throw Error("The run stream is unavailable.");
+    }
+    inspectOwner(response, null);
+    for await (const packet of streamEvents(response.body, { signal: controller.signal })) {
+      checkEpoch(epoch);
+      if (!live()) return;
+      if (packet.event === "access_denied") { clearPrivateState("Atlas is available to InFlite administrators."); return; }
+      if (packet.event === "unavailable") throw Error("The run stream is unavailable.");
+      if (packet.event === "timeline") {
+        follow = applyTimeline(timeline, JSON.parse(packet.data));
+        if (!follow) break;
+      }
+    }
+  } catch (_) {
+    if (live()) timeline.poll = true;
+  } finally {
+    if (live()) {
+      timeline.stream = null;
+      if (follow && visible()) timeline.timer = setTimeout(() => timeline.poll ? loadRunTimeline() : followRunTimeline(timeline), timeline.poll ? 5000 : 400);
+    }
+  }
+}
 async function loadRunTimeline() {
   const timeline = runTimeline;
   if (!timeline || timeline.request || !visible()) return;
   clearTimeout(timeline.timer);
+  timeline.stream?.abort();
+  timeline.stream = null;
   const request = new AbortController();
   timeline.request = request;
   let follow = false;
   try {
     const result = await api(runPath(timeline.ref) + "?after=" + timeline.after, "GET", undefined, { signal: request.signal, timeout: 15000 });
     if (runTimeline !== timeline || timeline.request !== request) return;
-    timeline.run = result.run;
-    renderRunTimeline(result.run, result.events.filter(event => event.seq > timeline.after), result.hasMore);
-    timeline.after = result.nextAfter;
-    timeline.retry = 0;
-    if (result.run.status !== "failed") feedback("run-feedback", timeline.after ? "" : "No timeline events have been saved for this run.");
-    else feedback("run-feedback", "This run could not finish.", true);
-    follow = result.run.active && !result.hasMore;
+    follow = applyTimeline(timeline, result);
   } catch (error) {
     if (runTimeline !== timeline || timeline.request !== request || error.accountChanged) return;
     feedback("run-feedback", errorText(error), true);
@@ -1162,7 +1213,10 @@ async function loadRunTimeline() {
   } finally {
     if (runTimeline === timeline && timeline.request === request) {
       timeline.request = null;
-      if (follow && visible()) timeline.timer = setTimeout(loadRunTimeline, timeline.retry ? Math.min(30000, 5000 * (timeline.retry + 1)) : 5000);
+      if (follow && visible()) {
+        if (!timeline.retry && !timeline.poll) void followRunTimeline(timeline);
+        else timeline.timer = setTimeout(loadRunTimeline, timeline.retry ? Math.min(30000, 5000 * (timeline.retry + 1)) : 5000);
+      }
     }
   }
 }

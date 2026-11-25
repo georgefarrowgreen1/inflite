@@ -108,7 +108,7 @@ async function readForecast() {
 }
 
 async function refreshWeather() {
-  if (document.hidden || inFlight || Date.now() - requestedAt < refreshEvery) return;
+  if (document.hidden || !preview.hasAttribute("data-weather-in-view") || inFlight || Date.now() - requestedAt < refreshEvery) return;
   inFlight = true;
   requestedAt = Date.now();
   showLondonTime();
@@ -124,6 +124,7 @@ async function refreshWeather() {
 if ("IntersectionObserver" in window) {
   new IntersectionObserver(([entry]) => {
     preview.toggleAttribute("data-weather-in-view", entry.isIntersecting);
+    if (entry.isIntersecting) void refreshWeather();
   }).observe(preview);
 } else {
   preview.dataset.weatherInView = "";

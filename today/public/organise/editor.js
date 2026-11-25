@@ -1,6 +1,58 @@
 import {createSystemClient,operationId} from '/roof/system-client.js';
 import {addDays,localDay,localInput,parseLocal,zone,pathOf} from './model.js';
 
+// The handoff is consumed before opening this review. Its delivery lease ends
+// when the app opens; the review belongs to this account and native app episode.
+export function openAtlasDraft(F,kind,value,{current,create}){
+ if(!['notes','calendar'].includes(kind)||value?.kind!==(kind==='notes'?'note-draft':'event-draft')||!current())return null;
+ const {el,btn}=F.ui,owner=F.session.view?.user?.id||F.session.user?.id;
+ if(!owner||F.signal.aborted)return null;
+ let sheet,closed=false,saving=false;
+ const active=()=>!closed&&!F.signal.aborted&&(F.session.view?.user?.id||F.session.user?.id)===owner&&current()&&!sheet?.closed&&!sheet?.el?.classList?.contains('closing');
+ const form=el('form',{class:'org-form'}),message=el('p',{class:'org-status',role:'status'});
+ const field=(label,type,initial,max,required=false)=>{
+  const input=el(type==='textarea'?'textarea':'input',{...(type==='textarea'?{rows:kind==='notes'?10:4}:{type}),maxlength:max,required,'aria-label':label});
+  input.value=initial??'';form.append(el('label',{class:'org-field'},el('span',{text:label}),input));return input;
+ };
+ const title=field('Title','text',value.title,160,true);
+ const content=field(kind==='notes'?'Note':'Description','textarea',kind==='notes'?value.text:value.description,kind==='notes'?64000:4000);
+ let start,end;
+ if(kind==='calendar'){
+  start=field('Starts','datetime-local',Number.isFinite(value.start)?localInput(value.start):'',null,true);
+  end=field('Ends','datetime-local',Number.isFinite(value.end)?localInput(value.end):'',null,true);
+  form.append(el('p',{class:'org-muted',text:'Times shown in '+zone()+'. Choose the date and time before creating this event.'}));
+ }
+ const links=value.source?.app==='mail'&&/^[A-Za-z0-9_-]{1,64}$/.test(value.source.threadId||'')?[{app:'mail',id:value.source.threadId}]:[];
+ if(links.length)form.append(el('p',{class:'org-muted',text:'The original Mail conversation will be linked to this '+(kind==='notes'?'note.':'event.')}));
+ const cancel=btn('Cancel',{run:()=>{closed=true;sheet?.now()}});
+ const confirm=btn(kind==='notes'?'Create note':'Create event',{primary:true,run:submit});
+ async function submit(){
+  if(!active()||saving)return;
+  message.textContent='';
+  try{
+   if(!form.checkValidity()||!title.value.trim()||title.value.length>160||content.value.length>(kind==='notes'?64000:4000)){
+    form.reportValidity();throw Error('Check the required fields before creating this '+(kind==='notes'?'note.':'event.'));
+   }
+   const initial={title:title.value.trim(),links:structuredClone(links)};
+   if(kind==='notes')Object.assign(initial,{text:content.value,checklist:[]});
+   else{
+    const starts=Number.isFinite(value.start)&&start.value===localInput(value.start)?value.start:parseLocal(start.value);
+    const ends=Number.isFinite(value.end)&&end.value===localInput(value.end)?value.end:parseLocal(end.value);
+    if(ends<=starts||ends-starts>366*864e5)throw Error('Choose an end time after the start, within one year.');
+    Object.assign(initial,{description:content.value,allDay:false,start:starts,end:ends,timezone:starts===value.start&&ends===value.end?value.timezone||zone():zone()});
+   }
+   saving=true;confirm.disabled=cancel.disabled=true;sheet?.setBusy(true);
+   const created=await create(initial,active);
+   if(created&&active()){closed=true;sheet.now()}
+  }catch(error){if(active())message.textContent=error.message}
+  finally{saving=false;confirm.disabled=cancel.disabled=false;if(active())sheet?.setBusy(false)}
+ }
+ form.addEventListener('submit',event=>{event.preventDefault();submit()});
+ const body=el('section',{class:'org'},el('p',{class:'org-muted',text:kind==='notes'?'Review the Atlas draft. Creating it adds it to your Notes.':'Review the Atlas draft. Creating it adds an event to your Calendar.'}),form,message,el('div',{class:'org-toolbar'},cancel,confirm));
+ sheet=F.sheet.open({sheet:'atlas-'+kind+'-draft',title:kind==='notes'?'Create a note from Atlas':'Create an event from Atlas',body,focus:title,onClose:()=>{closed=true}});
+ return sheet;
+}
+
 export function renderPersonProfile(profile, F, {value, handle, chat, edit, saveState}) {
  const {avatar, btn, el} = F.ui;
  profile.classList.add('org-person');
