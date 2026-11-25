@@ -1,0 +1,536 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		00000000000000000000001A /* InFliteApp.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 000000000000000000000009 /* InFliteApp.swift */;
+		};
+		00000000000000000000001B /* BrowserSession.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 00000000000000000000000A /* BrowserSession.swift */;
+		};
+		00000000000000000000001C /* NavigationPolicy.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 00000000000000000000000B /* NavigationPolicy.swift */;
+		};
+		00000000000000000000001F /* Assets.xcassets in Resources */ = {
+			isa = PBXBuildFile;
+			fileRef = 000000000000000000000008 /* Assets.xcassets */;
+		};
+		000000000000000000000024 /* NavigationPolicyTests.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 00000000000000000000000F /* NavigationPolicyTests.swift */;
+		};
+		00000000000000000000002D /* BetaSmokeTests.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 000000000000000000000010 /* BetaSmokeTests.swift */;
+		};
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		00000000000000000000002B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000000000004;
+			remoteInfo = InFlite;
+		};
+		000000000000000000000034 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000000000004;
+			remoteInfo = InFlite;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		000000000000000000000008 /* Assets.xcassets */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = folder.assetcatalog;
+			path = Assets.xcassets;
+			sourceTree = "<group>";
+		};
+		000000000000000000000009 /* InFliteApp.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = InFliteApp.swift;
+			sourceTree = "<group>";
+		};
+		00000000000000000000000A /* BrowserSession.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = BrowserSession.swift;
+			sourceTree = "<group>";
+		};
+		00000000000000000000000B /* NavigationPolicy.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NavigationPolicy.swift;
+			sourceTree = "<group>";
+		};
+		00000000000000000000000C /* Info.plist */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.xml;
+			path = Info.plist;
+			sourceTree = "<group>";
+		};
+		00000000000000000000000D /* InFlite.entitlements */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.entitlements;
+			path = InFlite.entitlements;
+			sourceTree = "<group>";
+		};
+		00000000000000000000000F /* NavigationPolicyTests.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NavigationPolicyTests.swift;
+			sourceTree = "<group>";
+		};
+		000000000000000000000010 /* BetaSmokeTests.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = BetaSmokeTests.swift;
+			sourceTree = "<group>";
+		};
+		000000000000000000000013 /* Beta.xcconfig */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.xcconfig;
+			path = Beta.xcconfig;
+			sourceTree = "<group>";
+		};
+		000000000000000000000015 /* InFlite.app */ = {
+			isa = PBXFileReference;
+			explicitFileType = wrapper.application;
+			path = InFlite.app;
+			sourceTree = BUILT_PRODUCTS_DIR;
+			includeInIndex = 0;
+		};
+		000000000000000000000016 /* InFliteTests.xctest */ = {
+			isa = PBXFileReference;
+			explicitFileType = wrapper.cfbundle;
+			path = InFliteTests.xctest;
+			sourceTree = BUILT_PRODUCTS_DIR;
+			includeInIndex = 0;
+		};
+		000000000000000000000017 /* InFliteUITests.xctest */ = {
+			isa = PBXFileReference;
+			explicitFileType = wrapper.cfbundle;
+			path = InFliteUITests.xctest;
+			sourceTree = BUILT_PRODUCTS_DIR;
+			includeInIndex = 0;
+		};
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		00000000000000000000001E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000026 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		00000000000000000000002F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		00000000000000000000000E /* InFlite */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000009 /* InFliteApp.swift */,
+				00000000000000000000000A /* BrowserSession.swift */,
+				00000000000000000000000B /* NavigationPolicy.swift */,
+				000000000000000000000008 /* Assets.xcassets */,
+				00000000000000000000000C /* Info.plist */,
+				00000000000000000000000D /* InFlite.entitlements */,
+			);
+			path = InFlite;
+			sourceTree = "<group>";
+		};
+		000000000000000000000011 /* InFliteTests */ = {
+			isa = PBXGroup;
+			children = (
+				00000000000000000000000F /* NavigationPolicyTests.swift */,
+			);
+			path = InFliteTests;
+			sourceTree = "<group>";
+		};
+		000000000000000000000012 /* InFliteUITests */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000010 /* BetaSmokeTests.swift */,
+			);
+			path = InFliteUITests;
+			sourceTree = "<group>";
+		};
+		000000000000000000000014 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000013 /* Beta.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		000000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000015 /* InFlite.app */,
+				000000000000000000000016 /* InFliteTests.xctest */,
+				000000000000000000000017 /* InFliteUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		000000000000000000000002 /* Main group */ = {
+			isa = PBXGroup;
+			children = (
+				00000000000000000000000E /* InFlite */,
+				000000000000000000000011 /* InFliteTests */,
+				000000000000000000000012 /* InFliteUITests */,
+				000000000000000000000014 /* Config */,
+				000000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		000000000000000000000004 /* InFlite */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000000000021 /* Build configuration list for PBXNativeTarget "InFlite" */;
+			buildPhases = (
+				00000000000000000000001D /* Sources */,
+				00000000000000000000001E /* Frameworks */,
+				000000000000000000000020 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = InFlite;
+			productName = InFlite;
+			productReference = 000000000000000000000015 /* InFlite.app */;
+			productType = "com.apple.product-type.application";
+		};
+		000000000000000000000005 /* InFliteTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000000000028 /* Build configuration list for PBXNativeTarget "InFliteTests" */;
+			buildPhases = (
+				000000000000000000000025 /* Sources */,
+				000000000000000000000026 /* Frameworks */,
+				000000000000000000000027 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = (
+				00000000000000000000002C /* PBXTargetDependency */,
+			);
+			name = InFliteTests;
+			productName = InFliteTests;
+			productReference = 000000000000000000000016 /* InFliteTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		000000000000000000000006 /* InFliteUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000000000031 /* Build configuration list for PBXNativeTarget "InFliteUITests" */;
+			buildPhases = (
+				00000000000000000000002E /* Sources */,
+				00000000000000000000002F /* Frameworks */,
+				000000000000000000000030 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = (
+				000000000000000000000035 /* PBXTargetDependency */,
+			);
+			name = InFliteUITests;
+			productName = InFliteUITests;
+			productReference = 000000000000000000000017 /* InFliteUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		000000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					000000000000000000000004 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					000000000000000000000005 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 000000000000000000000004;
+					};
+					000000000000000000000006 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 000000000000000000000004;
+					};
+				};
+			};
+			buildConfigurationList = 000000000000000000000007 /* Build configuration list for PBXProject "InFlite" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 000000000000000000000002 /* Main group */;
+			productRefGroup = 000000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				000000000000000000000004 /* InFlite */,
+				000000000000000000000005 /* InFliteTests */,
+				000000000000000000000006 /* InFliteUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		000000000000000000000020 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00000000000000000000001F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000027 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000030 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		00000000000000000000001D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00000000000000000000001A /* InFliteApp.swift in Sources */,
+				00000000000000000000001B /* BrowserSession.swift in Sources */,
+				00000000000000000000001C /* NavigationPolicy.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000025 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				000000000000000000000024 /* NavigationPolicyTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		00000000000000000000002E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00000000000000000000002D /* BetaSmokeTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		00000000000000000000002C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000000000004 /* InFlite */;
+			targetProxy = 00000000000000000000002B /* PBXContainerItemProxy */;
+		};
+		000000000000000000000035 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000000000004 /* InFlite */;
+			targetProxy = 000000000000000000000034 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		000000000000000000000018 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		000000000000000000000019 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		000000000000000000000022 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 000000000000000000000013 /* Beta.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = InFlite/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		000000000000000000000023 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 000000000000000000000013 /* Beta.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = InFlite/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		000000000000000000000029 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				PRODUCT_BUNDLE_IDENTIFIER = ai.inflite.ios.tests;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/InFlite.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/InFlite";
+			};
+			name = Debug;
+		};
+		00000000000000000000002A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				PRODUCT_BUNDLE_IDENTIFIER = ai.inflite.ios.tests;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/InFlite.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/InFlite";
+			};
+			name = Release;
+		};
+		000000000000000000000032 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = ai.inflite.ios.uitests;
+				TEST_TARGET_NAME = InFlite;
+			};
+			name = Debug;
+		};
+		000000000000000000000033 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = ai.inflite.ios.uitests;
+				TEST_TARGET_NAME = InFlite;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		000000000000000000000007 /* Build configuration list for PBXProject "InFlite" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000000018 /* Debug */,
+				000000000000000000000019 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000000000000000000021 /* Build configuration list for PBXNativeTarget "InFlite" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000000022 /* Debug */,
+				000000000000000000000023 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000000000000000000028 /* Build configuration list for PBXNativeTarget "InFliteTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000000029 /* Debug */,
+				00000000000000000000002A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000000000000000000031 /* Build configuration list for PBXNativeTarget "InFliteUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000000032 /* Debug */,
+				000000000000000000000033 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 000000000000000000000001 /* Project object */;
+}

@@ -1,0 +1,83 @@
+name: iOS beta
+
+on:
+  push:
+    paths: [ios/**, .github/workflows/ios-beta.yml]
+  pull_request:
+    paths: [ios/**, .github/workflows/ios-beta.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Find an installed iPhone simulator
+        id: device
+        run: |
+          xcodebuild -version
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/iphones.json"
+          python3 - "$RUNNER_TEMP/iphones.json" <<'PY'
+          import json
+          import os
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as devices:
+              runtimes = json.load(devices)["devices"]
+          for runtime in sorted(runtimes, reverse=True):
+              if ".iOS-" not in runtime:
+                  continue
+              phone = next((device for device in runtimes[runtime]
+                            if device["isAvailable"] and device["name"].startswith("iPhone")), None)
+              if phone:
+                  print(f"{phone['name']} on {runtime}")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                      print("id=" + phone["udid"], file=output)
+                  break
+          else:
+              sys.exit("No iPhone simulator is available.")
+          PY
+      - name: Build and test on iPhone Simulator
+        env:
+          SIMULATOR_ID: ${{ steps.device.outputs.id }}
+        run: |
+          xcodebuild -project ios/InFlite.xcodeproj -scheme InFlite -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath "$RUNNER_TEMP/inflite-ios" \
+            -resultBundlePath "$RUNNER_TEMP/InFliteTests.xcresult" \
+            -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
+      - name: Package the release simulator app
+        id: package
+        env:
+          SIMULATOR_ID: ${{ steps.device.outputs.id }}
+        run: |
+          xcodebuild -project ios/InFlite.xcodeproj -scheme InFlite -configuration Release \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath "$RUNNER_TEMP/inflite-ios" CODE_SIGNING_ALLOWED=NO build
+          app="$RUNNER_TEMP/inflite-ios/Build/Products/Release-iphonesimulator/InFlite.app"
+          version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Info.plist")"
+          build="$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app/Info.plist")"
+          test "$version" = "$(awk '$1 == "MARKETING_VERSION" { print $3 }' ios/Config/Beta.xcconfig)"
+          test "$build" = "$(awk '$1 == "CURRENT_PROJECT_VERSION" { print $3 }' ios/Config/Beta.xcconfig)"
+          echo "Built InFlite $version ($build)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/InFlite-Simulator.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: InFlite-${{ steps.package.outputs.version }}-Simulator
+          path: ${{ runner.temp }}/InFlite-Simulator.zip
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: InFlite-simulator-test-results
+          path: ${{ runner.temp }}/InFliteTests.xcresult/
+          if-no-files-found: ignore
+          retention-days: 14
