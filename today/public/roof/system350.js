@@ -18,7 +18,7 @@ export async function createSystem350(F,options){
   const answer=options.day?.(),cards=answer?.cards||{},out=[],now=Date.now(),fresh=Number.isFinite(answer?.at)&&Math.abs(now-answer.at)<30*60000;
   if(!fresh)return out;
   const fitness=cards.fitness,best=fitness?.best,day=fitness?.day||new Date().toISOString().slice(0,10);
-  if(hasRideOverview(fitness)&&best?.said){const id='ride:'+day;out.push({id,title:best.poor?'Review your ride conditions':'A weather window for your ride',why:[best.said,best.sub].filter(Boolean).join(' · '),label:'Review ride',run:()=>import('./ride-overview.js').then(m=>live()&&m.openRideOverview(F,options.day?.()?.cards||{}))})}
+  if(hasRideOverview(fitness)&&best?.said){const id='ride:'+day;out.push({id,title:best.poor?'Review your ride conditions':'A weather window for your ride',why:[best.said,best.sub].filter(Boolean).join(' · '),label:'Review ride',run:()=>import('./ride-overview.js').then(m=>live()&&m.openRideOverview(F,options.day?.()?.cards||{},{planEvent:options.planEvent}))})}
   const dividend=cards.markets?.dividend;if(Number.isFinite(dividend?.at)&&dividend.at>=now-864e5&&dividend.at<=now+7*864e5)out.push({id:'income:'+new Date(dividend.at).toISOString().slice(0,10),title:'Income coming up',why:dividend.name+' · expected around '+new Date(dividend.at).toLocaleDateString(),label:'Review in Markets',run:()=>options.openSource({app:'markets'})});
   const mail=options.snapshots?.().get('mail');if(mail?.status==='ready'&&(mail.availability?.draft||mail.drafts>0))out.push({id:'draft:mail',title:'Finish your draft in Mail',why:'Mail has unfinished work ready for review.',label:'Open Mail',run:()=>options.openSource({app:'mail',id:mail.draftId||null})});
   return out.filter(x=>!dismissed.has(x.id)).slice(0,2);
@@ -38,7 +38,7 @@ export async function createSystem350(F,options){
  }
  async function refresh(){if(!live()||refreshing)return;refreshing=true;try{await store.load({view:'today'});if(!live())return;readError='';if(!focusLoaded){try{const r=await client.request('focus');if(live()){dismissed=new Set(r.dismissed||[]);focusLoaded=true}}catch(_){}}}catch(e){if(live())readError=navigator.onLine===false?'Reminders are kept on this device. Connect to refresh.':'Reminders could not refresh.'}finally{refreshing=false;paint()}}
  const timer=setInterval(()=>{if(live()&&document.visibilityState==='visible'&&F.route?.tab==='today')refresh()},60000);timer.unref?.();
- let lastRead=Date.now();const offStore=store.subscribe(paint),offVisible=F.on('visible',()=>{if(Date.now()-lastRead>30000){lastRead=Date.now();refresh()}});
+ let lastRead=Date.now();const offStore=store.subscribe(()=>{paint();options.onChange?.()}),offVisible=F.on('visible',()=>{if(Date.now()-lastRead>30000){lastRead=Date.now();refresh()}});
  const route=r=>{if(!live()||r?.kind!=='tab'||r.tab!=='you')return;if(r.arg==='reminders')openList();else if(r.arg==='remembered')devices();else if(/^action-[\w-]{32}$/.test(r.arg||''))openTask(r.arg.slice(7))};const offRoute=F.on('route',route);
  const searchProvider={id:'reminders350',group:'Reminders',order:12,search:async(q,lease={})=>{
   const text=q.trim();if(text.length<2||!live())return [];

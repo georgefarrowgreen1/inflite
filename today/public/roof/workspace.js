@@ -36,12 +36,23 @@ export async function createWorkspace(F, options = {}) {
   options.dockRoot?.append(background);
   const organiseStores=new Map();
   const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.33.1/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
+  async function planEvent({ title, description = '', start = Date.now() + 3600000, end = start + 3600000, timezone, links = [] }, current = live) {
+    if (!live() || !current()) return false;
+    const [{ operationId }, calendar] = await Promise.all([import('./system-client.js'), organiseStore('calendar')]);
+    if (!live() || !current()) return false;
+    const id = operationId();
+    await calendar.keepForm(id, { title, description, allDay: false, start, end,
+      timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', links }, 0);
+    if (!live() || !current()) return false;
+    F.nav.go('/calendar/#item=' + id);
+    return true;
+  }
   let securityLoad=null;
   const security=()=>securityLoad||=(import('./security-module.js').then(m=>live()?m.createSecurityModule(F,{remembered:()=>system().then(s=>s?.devices()),calendars:()=>lifeTools().then(s=>s?.calendars())}):null).catch(e=>{securityLoad=null;throw e}));
-  let lifeLoad=null;
-  const lifeTools=()=>lifeLoad||=(Promise.all([import('./life410.js'),system()]).then(([m,s])=>live()?m.createLifeTools(F,{system:s,files,organiseStore,today,editToday:options.onEditToday}):null).catch(e=>{lifeLoad=null;throw e}));
+  let lifeLoad=null,captureMode=null,upcoming=null;
+  const lifeTools=()=>lifeLoad||=(Promise.all([import('./life410.js'),system()]).then(([m,s])=>live()?m.createLifeTools(F,{system:s,files,organiseStore,planEvent,today,editToday:options.onEditToday,onChange:mode=>{captureMode=mode;paint()}}):null).catch(e=>{lifeLoad=null;throw e}));
   let files = null, commands = null, dialogs = null, recovery = null, recoveryView = null,systemInstance=null,systemLoad=null;
-  const system=()=>systemLoad||=(import('./system350.js').then(m=>live()?m.createSystem350(F,{today,files,day:options.day,snapshots:()=>snapshots,activity:activity.source('reminders',{current:live,signal:F.signal}),openSource}):null).then(s=>{if(live())systemInstance=s;return s}).catch(error=>{systemLoad=null;throw error}));
+  const system=()=>systemLoad||=(import('./system350.js').then(m=>live()?m.createSystem350(F,{today,files,day:options.day,snapshots:()=>snapshots,activity:activity.source('reminders',{current:live,signal:F.signal}),openSource,planEvent,onChange:paint}):null).then(s=>{if(live()){systemInstance=s;paint()}return s}).catch(error=>{systemLoad=null;throw error}));
   let dialogInstance = null, dialogLoad = null;
   let explorer = null, explorerLoad = null, filesLocation = safeFilesLocation({ kind: "drive" }), pendingFilesQuery = null;
   let shown = false, gone = false, route = null, scene = 0, paintPending = false;
@@ -50,7 +61,7 @@ export async function createWorkspace(F, options = {}) {
   F.nav.launchMotion=launchMotion;
   offs.push(()=>{stopLaunch?.();if(F.nav.launchMotion===launchMotion)F.nav.launchMotion=null});
   const live = () => !gone && !F.signal.aborted && F.session.view?.user?.id === owner;
-  const organiseTimer=setTimeout(()=>{if(live())import('/organise/today.js').then(m=>{if(live())m.connectToday(F,today)}).catch(()=>{})},1500);F.signal.addEventListener('abort',()=>clearTimeout(organiseTimer),{once:true});
+  const organiseTimer=setTimeout(()=>{if(live())import('/organise/today.js').then(m=>{if(live())m.connectToday(F,today,{onUpcoming:value=>{upcoming=value;paint()}})}).catch(()=>{})},1500);F.signal.addEventListener('abort',()=>clearTimeout(organiseTimer),{once:true});
   const activity = createActivityRegistry(F);
   let atlasReader = null, atlasLoading = null, atlasObserved = false;
   const atlasActivity = {
@@ -160,10 +171,12 @@ export async function createWorkspace(F, options = {}) {
   }
   for (const app of WORKSPACE_APPS.filter((a) => a.pane)) acquire(app.id);
   const view = createWorkspaceView(root, {
+    todayLead: () => today.querySelector("#top"),
     onToday: opener => {const origin=captureLauncherOrigin(opener);F.nav.go("/",{resume:true,...(origin?{kind:'launch-return',launch:origin}:{})})}, onApp: (app,launch) => openApp(app,null,{launch}),
     onFavourites: saveFavourites, onReplaceFavourite: chooseReplacement,
     onAppMenu:openAppMenu,
     onRecent: app => { if (live() && appOn(app)) openApp(app); },
+    onResume: key => { if (live()) resumeItems().find(item=>item.key===key)?.open(); },
     onAppDrop: (app, token) => { if (live() && ["mail", "fitness"].includes(app) && /^[a-f0-9]{32}$/.test(token)) return runIntent(app, app === "mail" ? "compose-attach" : "import-drive", "drop:" + token); },
     onSecurity:()=>security().then(s=>live()&&s?.open({app:F.route?.app||null})),onCapture:()=>lifeTools().then(v=>live()&&v?.capture()),onSearch: query => F.search.open(typeof query === "string" && query ? { query } : undefined), onApps: opener => openApps(opener),
     onNotifications: options.onNotifications, onAccount: options.onAccount, onSettings: options.onSettings,
@@ -211,9 +224,27 @@ export async function createWorkspace(F, options = {}) {
         apps: WORKSPACE_APPS.map((a) => ({ ...a, available: appOn(a.id),indicator:appOn(a.id)?launcherStatus(snapshots.get(a.id)):null })), fileIndicator:fileIndicator(), user: { name: user.name || "", photo: user.photoAt && /^[\w-]{8,64}$/.test(owner) ? `/api/avatar?id=${encodeURIComponent(owner)}&v=${encodeURIComponent(String(user.photoAt))}` : null }, notifications: options.notifications?.() || 0,
         unifiedHome: true, connectionManaged: true, activityCount: activityView.count(),
         greeting: `${new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}${F.session.view?.user?.name ? ", " + String(F.session.view.user.name).trim().split(/\s+/)[0] : ""}`,
-        recentApps: [...recentApps.keys()].reverse().filter(appOn).map(app => ({ app })), recentActivity: activity.snapshot().slice(0, 3),
+        resumeItems: resumeItems(), recentApps: [...recentApps.keys()].reverse().filter(appOn).map(app => ({ app })), recentActivity: activity.snapshot().slice(0, 3),
         subtitle: guarded(() => new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(new Date()), ""), title: "Today" });
     });
+  }
+  function resumeItems(){
+    const time=Date.now(),items=[];
+    if(captureMode)items.push({key:'quick-capture',app:'notes',title:'Resume Quick Capture',detail:captureMode==='reminder'?'Reminder draft':'Note draft',open:()=>lifeTools().then(tools=>live()&&tools?.capture())});
+    else if(appOn('mail')&&snapshots.get('mail')?.drafts>0)items.push({key:'mail-draft',app:'mail',title:'Resume email draft',detail:'Mail',open:()=>runIntent('mail','resume-draft')});
+    const due=systemInstance?.store.snapshot().filter(value=>value.status==='open'&&Number.isFinite(value.dueAt)&&value.dueAt<=time+864e5).sort((a,b)=>a.dueAt-b.dueAt)[0];
+    if(due)items.push({key:'reminder:'+due.id,app:'today',title:due.title,detail:due.dueAt<time?'Reminder · Due':'Reminder · '+new Date(due.dueAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),open:()=>systemInstance?.openTask(due.id)});
+    if(upcoming&&upcoming.ends>time&&appOn('calendar')&&!html.hasAttribute('data-life-hide-calendar'))items.push({key:'event:'+upcoming.id,app:'calendar',title:upcoming.title,detail:upcoming.detail,open:()=>openSource({app:'calendar',id:upcoming.id})});
+    const transfers=files?.transfers()||[],upload=transfers.find(row=>row.status==='failed')||transfers.find(row=>row.cancelable);
+    if(upload)items.push({key:'upload:'+upload.id,app:'files',title:upload.name,detail:upload.label,open:()=>openUpload(upload.id)});
+    return items;
+  }
+  async function openUpload(id) {
+    const sheet = await activityView.open();
+    if (!live() || !sheet || sheet.closed) return;
+    const row = sheet.el.querySelector(`[data-activity="${CSS.escape('files:' + id)}"]`);
+    row?.scrollIntoView({ block: 'nearest' });
+    row?.querySelector('button')?.focus({ preventScroll: true });
   }
   function fileIndicator(){
     const rows=files?.transfers?.()||[],active=rows.filter(r=>['queued','reserving','uploading'].includes(r.status));
@@ -588,7 +619,7 @@ export async function createWorkspace(F, options = {}) {
     ],
   });
   paint(); activate(F.route).catch(() => {});
-  return { show, hide, update: paint, destroy, openFiles,security:()=>security(),life:()=>lifeTools(),remembered:()=>system().then(s=>live()&&s?.devices()),
+  return { show, hide, update: paint, destroy, openFiles,planEvent,security:()=>security(),life:()=>lifeTools(),remembered:()=>system().then(s=>live()&&s?.devices()),
     notificationActions: note => notificationActions(note, { origin: location.origin, enabled: appOn, openApp, runIntent, current: live }),
     focus: () => { if (shown && route?.tool === "files") { const target = explorer?.focus(); if (target) return target; } const heading = root.querySelector("h1") || root; heading.tabIndex = -1; return heading; } };
 }

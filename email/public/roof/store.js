@@ -11,6 +11,23 @@
 
 export const KEYS = ["access", "me", "counts", "version", "offline", "updatedAt", "lens", "filter", "address", "box", "query", "list", "threadId", "thread", "layout", "compose", "sending", "outbox"];
 export const STORAGE = { replies: "mail:replies:v1", unsent: "mail:unsent:v1", outbox: "mail:outbox:v1", owner: "mail:owner", remoteImages: "mail:remote-images", lens: "mail:lens" };
+
+export function workspaceSummary(state, canRead, localDraft) {
+  const counts = canRead ? state.counts : null;
+  const outbox = state.outbox || [];
+  return {
+    unread: counts ? Math.max(0, counts.people || 0) + Math.max(0, counts.updates || 0) : null,
+    drafts: counts?.drafts || (canRead && localDraft ? 1 : 0),
+    availability: {
+      local: canRead && !!state.list.rows.length,
+      pending: outbox.length,
+      saving: state.sending > 0,
+      draft: !!state.compose,
+      error: outbox.some(item => item.state === "failed"),
+      updatedAt: state.updatedAt,
+    },
+  };
+}
 const LEGACY = new Set(["mail:replies", "mail:unsent", "mail:outbox"]);
 export const SESSION = { verifier: "mail:signin-verifier" };
 export const CAP = 262144;

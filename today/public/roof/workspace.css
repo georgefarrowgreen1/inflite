@@ -303,6 +303,8 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 .ifl-workspace .ws-resume-rows, .ifl-workspace .ws-home-activity-rows { display: grid; gap: 8px; }
 .ifl-workspace .ws-resume-row, .ifl-workspace .ws-home-activity-row { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 56px; padding: 12px; border: 0; border-radius: 18px; background: var(--ws-well); color: var(--ws-text); font: inherit; font-size: 14px; text-align: left; }
 .ifl-workspace .ws-resume-row > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ifl-workspace .ws-resume-copy { display: grid; gap: 4px; }
+.ifl-workspace .ws-resume-copy small { color: var(--ws-muted); line-height: 1.35; }
 .ifl-workspace .ws-resume-row > .ifl-glyph:last-child { margin-left: auto; }
 .ifl-workspace .ws-home-activity-row > div { display: grid; gap: 4px; min-width: 0; }
 .ifl-workspace .ws-home-activity-row strong, .ifl-workspace .ws-home-activity-row span { overflow-wrap: anywhere; }
@@ -314,6 +316,7 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace[data-unified=true][data-mode=today] .ws-home-overview:not(:has(.ws-workspace-card:not([hidden]))) { display: none; }
   .ifl-workspace[data-unified=true][data-mode=today] .ws-home-title { display: none; }
   .ifl-workspace[data-unified=true][data-mode=today] .ws-home-body { display: block; }
+  .ifl-workspace .ws-today-slot .ws-resume-panel { margin: 16px 0 20px; padding: 16px; gap: 10px; }
   .ifl-workspace .ws-home-side { margin-top: 20px; }
   .ifl-workspace[data-unified=true][data-mode=today] .ws-heading-line { display: block; font-size: 12px; }
 }

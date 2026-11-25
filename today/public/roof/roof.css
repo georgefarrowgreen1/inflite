@@ -538,6 +538,10 @@ dialog.ifl-sheet {
     -webkit-backdrop-filter: var(--ifl-glass-window-blur, none); backdrop-filter: var(--ifl-glass-window-blur, none);
   }
 }
+dialog.ifl-sheet[data-sheet="quick-capture"].ifs-kb {
+  background: var(--ifl-surface);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
 @media (hover: hover) {
   :is(.ifl-card.tappable, a.ifl-card, a.ifl-tile):hover { background-color: var(--ifl-surface-2); }
   :is(.ifl-icon-btn, .ifl-chip.action):not(.filled):not(:disabled):hover { background: var(--ifl-raised, var(--ifl-surface-2)); }

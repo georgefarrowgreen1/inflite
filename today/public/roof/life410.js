@@ -7,11 +7,13 @@ import {loadStyles} from './modules.js';
 const captureFields=raw=>{const title=raw.split('\n')[0].slice(0,160);return{title,text:raw.slice(title.length).replace(/^\n/,'')}};
 const NAME={notes:'Notes',calendar:'Calendar',people:'People',files:'Files'};
 const cleanValue=(kind,v)=>Object.fromEntries(['title','links',...(kind==='notes'?['text','checklist']:kind==='people'?['email','phone','organisation','details']:['description','allDay','timezone',...(v.allDay?['startDate','endDate']:['start','end'])])].map(k=>[k,v[k]??(k==='links'?[]:'')]));
-export async function createLifeTools(F,{system,files,organiseStore,today,editToday}={}){
+export async function createLifeTools(F,{system,files,organiseStore,planEvent,today,editToday,onChange}={}){
  const client=createSystemClient(F,{prefix:'/api/organise/'}),live=client.live,ui=F.ui,el=ui.el;await loadStyles('/roof/life410.css');if(!live())return null;
  let journal=null,prefs={hidden:[],version:0},savedDraft=null,captureSheet=null,write=Promise.resolve(),settingsSheet=null;
  try{journal=await openOfflineStore(client.owner,{signal:F.signal});savedDraft=(await journal.list('capture')).find(v=>v.id==='quick-capture')||null;const cached=(await journal.list('life-preferences')).find(v=>v.id==='life-preferences');if(cached)prefs=cached.value}catch(_){}
  if(!live())return null;
+ const publishDraft=value=>onChange?.(value?.text?(value.mode||'note'):null);
+ publishDraft(savedDraft);
  const button=(label,fn,{primary=false,icon,destructive=false}={})=>ui.btn(label,{primary,icon,destructive,run:()=>{try{Promise.resolve(fn()).catch(e=>{if(live()&&e.name!=='AbortError')F.toast(e.message||'That could not finish.')})}catch(e){if(live())F.toast(e.message)}}});
  const field=(label,input)=>el('label',{class:'life-field'},el('span',{text:label}),input);
  const intro=(icon,title,copy)=>el('div',{class:'life-intro'},el('span',{class:'life-emblem','aria-hidden':true},ui.icon(icon)),el('h2',{text:title}),el('p',{text:copy}));
@@ -21,9 +23,10 @@ export async function createLifeTools(F,{system,files,organiseStore,today,editTo
  readPrefs();
  function keepDraft(value) {
   savedDraft = value;
-  write = write.catch(() => {}).then(() => {
+  write = write.catch(() => {}).then(async () => {
    if (!journal) throw Error('Private device storage is unavailable. Keep this page open.');
-   return value ? journal.put(value) : journal.remove('quick-capture');
+   await (value ? journal.put(value) : journal.remove('quick-capture'));
+   if (live()) publishDraft(value);
   });
   return write;
  }
@@ -167,7 +170,7 @@ export async function createLifeTools(F,{system,files,organiseStore,today,editTo
   const choose=(label,icon,copy,fn)=>body.append(el('button',{type:'button',class:'life-action',on:{click:()=>{if(!live()||h.closed)return;h.now();Promise.resolve(fn()).catch(e=>{if(live())F.toast(e.message)})}}},el('span',{class:'life-action-icon'},ui.icon(icon)),el('span',{class:'life-action-copy'},el('strong',{text:label}),el('small',{text:copy})),ui.icon('chev')));
   choose('Remind me','bell','Follow up with a date and repeat schedule',()=>system.capture(source));
   if(kind!=='notes')choose('Create a linked note','file','Keep your thoughts beside this item',async()=>{const notes=await organiseStore('notes'),id=operationId();if(!live())return;await notes.save(id,{title:v.title||v.name,text:'',checklist:[],links:[source]},{version:0});if(live())F.nav.go('/notes/#item='+id)});
-  if(kind!=='calendar')choose('Plan an event','calendar','Choose a time before saving to Calendar',async()=>{const calendar=await organiseStore('calendar'),id=operationId(),start=Date.now()+3600000;if(!live())return;await calendar.keepForm(id,{title:v.title||v.name,description:(v.text||'').slice(0,4000),allDay:false,start,end:start+3600000,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC',links:[source]},0);if(live())F.nav.go('/calendar/#item='+id)});
+  if(kind!=='calendar')choose('Plan an event','calendar','Choose a time before saving to Calendar',()=>planEvent({title:v.title||v.name,description:(v.text||'').slice(0,4000),links:[source]}));
   if(kind!=='files')choose('Link an item','link','Attach a file, person, note or event',async()=>{const m=await import('/organise/releases/4.33.1/links.js');if(!live())return;const selected=await m.chooseLink(F,kind);if(!live()||!selected)return;const {title,...link}=selected,current=await store.get(ref.id);if(!live())return;if(current.pending)throw Error('Wait for the current save before linking another item.');const value=cleanValue(kind,current);if(value.links.length>=12)throw Error('Link up to twelve items.');if(value.links.some(r=>r.app===link.app&&r.id===link.id))return;value.links.push(link);await store.save(ref.id,value,{version:current.version});if(live())F.toast('Linked item saved for syncing')});
   if(kind==='notes')choose(v.text.length+v.title.length>490?'Share excerpt in Chats':'Share in Chats','send','Review up to 500 characters and the recipient before sending',()=>F.send.send({words:(v.title+'\n\n'+v.text).slice(0,500),what:'note'}));
   if(kind==='files')choose('Attach in Chats','send','Choose a conversation and review the attachment',()=>files.run('drive:'+v.id,'attach-chats',{input:{version:v.version}}).then(r=>{if(r?.ok===false)throw Error(r.error||'Chats could not open.')}));

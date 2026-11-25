@@ -122,11 +122,17 @@ export function view(el, ctx) {
   }
   function drawOutbox(s) {
     const inline = s.outbox.filter(it => !it.undoInToast);
+    const offline = s.offline || globalThis.navigator?.onLine === false;
     box.replaceChildren(...inline.map((it) => {
       const subj = it.draft?.subject || "(No Subject)";
+      const retryable = (it.state === "failed" || it.state === "queued") && !it.checking && !offline;
       const act = it.state === "waiting" ? ui.btn("Undo", { small: true, act: "undo", run: () => ctx.outbox.undo(it.key) })
-        : it.state === "failed" || it.state === "queued" ? ui.btn("Try Again", { small: true, act: "retry", run: () => ctx.outbox.retry(it.key) }) : null;
-      const say = { waiting: "Sending…", sending: "Sending…", queued: "Waiting for a connection", failed: "Didn’t send" }[it.state] || "";
+        : retryable ? ui.btn("Try Again", { small: true, act: "retry", run: () => ctx.outbox.retry(it.key) }) : null;
+      const say = it.checking ? "Checking whether it was sent…" : {
+        waiting: "Sending soon", sending: "Sending to Mail…",
+        queued: offline ? "Queued · Sends when you’re back online" : "Queued · Waiting to send",
+        failed: offline ? "Send unconfirmed · Try again when online" : "Send unconfirmed · Safe to retry",
+      }[it.state] || "";
       return ui.el("div", { class: "ifl-row ml-sending", data: { key: it.key, state: it.state } }, ui.el("span", { class: "ifl-tx" }, ui.el("b", { text: subj }), ui.el("small", { text: say })), act ? ui.el("span", { class: "ifl-trail" }, act) : null);
     }));
     box.hidden = !inline.length;
@@ -202,7 +208,7 @@ export function view(el, ctx) {
     drawOutbox(s);
     drawRows(s);
   }
-  const offs = ["list", "query", "lens", "filter", "address", "box", "counts", "outbox", "layout", "threadId", "access"].map((k) => store.on(k, () => draw()));
+  const offs = ["list", "query", "lens", "filter", "address", "box", "counts", "outbox", "offline", "layout", "threadId", "access"].map((k) => store.on(k, () => draw()));
 
   function clear() {
     offSwipe.reset();

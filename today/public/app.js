@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.60.1";
+const BUILD = "4.61.1";
 // (what's new in it, said once it's in)
-const NEWS = "See GitHub checks for the exact Atlas draft commit and follow up on a failed check.";
+const NEWS = "Resume drafts and unfinished work on Today, compare route forecasts, and see clearer send and quote states.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.33.1/store.js","/os.webmanifest"];
@@ -2061,7 +2061,7 @@ function frame() {
   const f = F;
   if(OS_MODE){
     prefsRecoveryLoad=import('/roof/offline-prefs.js').then(m=>F===f&&!f.signal.aborted?m.createOfflinePrefs(f,{owner:S.view.user.id,root:$('#today'),cloud:()=>cleanPrefs(S.view.prefs),apply:p=>{if(F!==f||f.signal.aborted)return;S.prefs=cleanPrefs(p);drawCards();if(sheetId==='sh-edit')drawEdit()},ack:p=>{if(F===f){S.view.prefs=cleanPrefs(p);keepSession(S.view)}}}):null).then(c=>{if(F===f&&!f.signal.aborted)prefsRecovery=c;return c}).catch(()=>null);
-    $('#today').addEventListener('click',e=>{if(e.target.closest('[data-ride-overview]')){import('/roof/ride-overview.js').then(m=>{if(F===f&&!f.signal.aborted)m.openRideOverview(f,S.answer?.cards||{})}).catch(()=>{})}},{signal:f.signal});
+    $('#today').addEventListener('click',e=>{if(e.target.closest('[data-ride-overview]')){import('/roof/ride-overview.js').then(m=>{if(F===f&&!f.signal.aborted)m.openRideOverview(f,S.answer?.cards||{},{planEvent:(spec,current)=>installWorkspace().then(host=>F===f&&current()&&host?.planEvent(spec,current))})}).catch(()=>{})}},{signal:f.signal});
     $('#edList').addEventListener('change',e=>{if(e.target.matches('[data-today-density]')){S.prefs={...S.prefs,density:e.target.checked?'compact':'comfortable'};prefsChanged()}else if(e.target.matches('[data-today-section]')){S.prefs={...S.prefs,sections:{...S.prefs.sections,[e.target.dataset.todaySection]:e.target.checked}};prefsChanged()}},{signal:f.signal});
   }
   if(OS_MODE)import('/roof/continuity.js').then(m=>{if(F===f&&!f.signal.aborted)m.connectContinuity(f,{owner:S.view.user.id,root:$('#today')})}).catch(()=>{});

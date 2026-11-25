@@ -1,5 +1,7 @@
 // Optional Mail integration. Only authorised metadata enters the OS; message
 // bodies, attachment bytes and authentication remain with Mail's existing UI.
+import { workspaceSummary } from "./store.js";
+
 const ID = /^[\w-]{1,64}$/;
 const PICTURE = /^image\/(png|jpeg|gif|webp|avif|heic|bmp)$/i;
 export const FILE_LIMITS = Object.freeze({ threads: 40, messages: 80, files: 100 });
@@ -48,7 +50,7 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
   function snapshot() {
     if (!live()) return { status: "signin", actions: [], files: [] };
     const s = store.get(), status = blocked(s), canUse = s.access === "ok";
-    return {unread:canUse&&s.counts?Math.max(0,s.counts.people||0)+Math.max(0,s.counts.updates||0):null,drafts:canUse?(s.counts?.drafts||0):0, status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(), availability: { local: canUse && !!s.list.rows.length, pending: (s.outbox || []).length, saving: s.sending > 0, draft: !!s.compose, error: (s.outbox || []).some(item => item.state === "failed"), updatedAt: s.updatedAt },
+    return { ...workspaceSummary(s, canUse, canUse && ctx.hasLocalDraft?.()), status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(),
       actions: [
         { id: "compose", label: "Compose a message", keywords: ["write", "email", "new mail"], enabled: canUse },
         ...(sdk.files?.open ? [{ id: "compose-attach", label: "Attach a Drive file to a new message", keywords: ["attach", "file", "drive", "email"], enabled: canUse }] : []),
@@ -151,6 +153,7 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
     }
     if(intent==='reveal-source'){const node=ID.test(object||'')&&root.querySelector('[data-message="'+CSS.escape(object)+'"],[data-mid="'+CSS.escape(object)+'"]');if(node){node.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});return {ok:true}}return {ok:true,pending:true}}
     if (intent === "compose") return { ok: !!(await ctx.open.compose({}, permitted)), pending: true };
+    if (intent === "resume-draft") return ctx.open.resumeDraft(permitted);
     if (intent === "reply") {
       const id = typeof object === "string" ? object : store.get().threadId;
       if (!ID.test(id || "")) return { ok: false, error: "Choose a conversation in Mail first." };

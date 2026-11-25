@@ -1775,6 +1775,12 @@ dialog.ifl-sheet[data-sheet="notifications"] .ifl-toast { bottom: calc(16px + en
 .continuation-card h2{font-size:16px;margin:0 0 10px}.continuation-row{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;padding:14px 16px;margin-top:8px;border:0;border-radius:20px;background:var(--inset,#8881);color:inherit;text-align:start;font:inherit;min-height:56px}.continuation-row span:first-child{min-width:0}.continuation-row strong,.continuation-row small{display:block;overflow-wrap:anywhere}.continuation-row small{font-size:12px;color:var(--text-2,#777);margin-top:4px}.continuation-row:focus-visible{outline:2px solid var(--acc-ink);outline-offset:3px}
 
 #today[data-density="compact"] .tcard{padding:18px}#today[data-density="compact"] .tc-h{margin-block:10px}#today[data-density="compact"] .ft-why{display:none}.ride-overview{display:grid;gap:16px}.ride-overview section{padding:18px;border-radius:24px;background:var(--inset,#8881);min-width:0}.ride-overview h3{margin:0 0 10px;font-size:20px}.ride-overview p{overflow-wrap:anywhere;line-height:1.5}.ride-overview .ifl-btn{margin:6px 8px 0 0}@media(min-width:680px){.ride-overview{grid-template-columns:1fr 1fr}}
+.ride-overview .ride-departures{grid-column:1/-1}.ride-times{display:grid;gap:8px;margin:0;padding:0;min-width:0;border:0}
+.ride-time{display:flex;align-items:start;gap:12px;padding:12px;border:1px solid var(--ifl-line,#8884);border-radius:16px;cursor:pointer}
+.ride-time:has(input:checked){background:var(--ifl-surface-2);border-color:var(--acc-ink,#3870cc)}
+.ride-time input{flex:none;margin-top:.23em;accent-color:var(--acc-ink,#3870cc)}
+.ride-time span{min-width:0}.ride-time strong,.ride-time small{display:block}
+.ride-time small,.ride-warning-summary{font-size:13px;line-height:1.45}.ride-warning{font-weight:650;margin-top:3px}
 
 /* Calendar's lazy summary shares the existing Today surface. */
 .org-today{padding:20px;margin-block:16px;grid-column:1/-1;border-radius:30px;min-width:0}.org-today-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}.org-today-head h2{font-size:20px;min-width:0;flex:1;margin:0}.org-today .ifl-row{min-width:0}.org-today .ifl-row-t{overflow-wrap:anywhere}

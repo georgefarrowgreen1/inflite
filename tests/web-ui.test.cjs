@@ -1664,6 +1664,7 @@ test('Quick Capture stays against the mobile keyboard as the viewport changes', 
       }, null, { timeout: 1500 });
       return placement();
     };
+    assert.equal((await moveKeyboard(790)).keyboard, false, 'a browser toolbar does not activate the keyboard layout');
     for (const [height, offset, event] of [[500, 0, 'resize'], [450, 36, 'scroll']]) {
       const geometry = await moveKeyboard(height, offset, event);
       const { top, bottom, visibleTop, saveBottom, keyboard } = geometry;
@@ -1671,6 +1672,9 @@ test('Quick Capture stays against the mobile keyboard as the viewport changes', 
       assert.ok(top >= visibleTop, JSON.stringify(geometry));
       assert.ok(saveBottom <= bottom, 'Save is above the keyboard');
     }
+    await capture.getByRole('button', { name: 'Close', exact: true }).focus();
+    assert.equal((await placement()).keyboard, true, 'a focus change does not drop the sheet into the open keyboard');
+    await field.focus();
     await page.setViewportSize({ width: 390, height: 480 });
     assert.equal((await moveKeyboard(480)).keyboard, true, 'the keyboard can resize the layout as well');
     await page.setViewportSize({ width: 390, height: 844 });
@@ -1685,6 +1689,104 @@ test('Quick Capture stays against the mobile keyboard as the viewport changes', 
     assert.ok(Math.abs(restored.bottom - restored.visibleBottom) <= 1);
     await capture.getByRole('button', { name: 'Close', exact: true }).tap();
     await capture.waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('Today resumes the saved capture, due reminder, exact event and unfinished upload', async () => {
+  const name = 'Pick up where you left off', eventId = 'a'.repeat(32), reminderId = 'b'.repeat(32);
+  const event = { id: eventId, version: 1, title: 'Route planning call', allDay: false, start: day.at + 7200000, end: day.at + 9000000, timezone: 'Europe/London', links: [] };
+  const reminder = { id: reminderId, version: 1, title: 'Charge bike lights', status: 'open', dueAt: day.at - 1000, createdAt: day.at - 3600000, files: [] };
+  const { ctx, page, errors } = await open({ initialPath: '/?os=1', user: { photoAt: null }, viewApps: { mail: true },
+    hubApps: { calendar: true, weather: true, fitness: true, markets: true, mail: true }, intercept: async (route, { url }) => {
+    const result = {
+      '/api/organise/preferences': { prefs: { hidden: [], version: 0 } },
+      '/api/organise/calendar-events': { events: [] },
+      '/api/organise/list': { records: [event] },
+      '/api/organise/get': { record: event },
+      '/api/system/actions': { actions: [reminder] },
+      '/api/system/action': { action: reminder },
+      '/api/system/focus': { dismissed: [] },
+    }[url.pathname];
+    if (result) { await route.fulfill({ json: result }); return true; }
+    if (url.pathname.startsWith('/api/files/')) { await route.fulfill({ status: 503, json: { error: 'Upload paused. Try again.' } }); return true; }
+  } });
+  try {
+    const capture = page.getByRole('dialog', { name: 'Quick Capture', exact: true });
+    const captureButton = page.getByRole('button', { name: 'Quick Capture', exact: true });
+    await captureButton.tap();
+    await capture.getByRole('textbox', { name: 'Capture text' }).fill('Weekend route notes\nCheck the return leg.');
+    await capture.getByText('Draft kept on this device').waitFor();
+    await capture.getByRole('button', { name: 'Close', exact: true }).tap();
+    await capture.waitFor({ state: 'detached' });
+    await captureButton.tap();
+    await capture.getByRole('radio', { name: 'File', exact: true }).tap();
+    await capture.locator('input[type=file]').setInputFiles({ name: 'Norfolk coast.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from('<gpx/>') });
+    await capture.waitFor({ state: 'detached' });
+    const panel = page.getByRole('region', { name, exact: true });
+    const resume = panel.getByRole('button', { name: /Resume Quick Capture/ });
+    const upload = panel.getByRole('button', { name: /Norfolk coast\.gpx/ });
+    await upload.waitFor();
+    await panel.getByRole('button', { name: /Route planning call/ }).waitFor();
+    assert.equal(await panel.getByRole('button').count(), 4);
+    await resume.click();
+    assert.equal(await capture.getByRole('textbox').inputValue(), 'Weekend route notes\nCheck the return leg.');
+    await capture.getByRole('button', { name: 'Close', exact: true }).tap();
+    await capture.waitFor({ state: 'detached' });
+    await page.getByLabel('Notification', { exact: true }).getByText('File added to upload queue', { exact: true }).waitFor({ state: 'hidden' });
+    await panel.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    await save(page, 'today-continue');
+    await upload.click();
+    const activity = page.getByRole('dialog', { name: 'Activity', exact: true });
+    const row = activity.getByRole('listitem').filter({ hasText: 'Norfolk coast.gpx' });
+    await row.waitFor();
+    assert.equal(await row.evaluate(el => el.contains(document.activeElement)), true);
+    await activity.getByRole('button', { name: 'Close', exact: true }).click();
+    await activity.waitFor({ state: 'detached' });
+    await panel.getByRole('button', { name: /Charge bike lights/ }).click();
+    const task = page.locator('dialog[open]');
+    await task.getByText('Charge bike lights', { exact: true }).waitFor();
+    await task.getByRole('button', { name: 'Close', exact: true }).click();
+    await task.waitFor({ state: 'detached' });
+    await panel.getByRole('button', { name: /Route planning call/ }).click();
+    await page.waitForURL(url => url.pathname === '/calendar/' && url.hash === '#item=' + eventId);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('Ride Overview compares a route and opens the chosen departure as an unsaved event', async () => {
+  const start = day.at + 4 * 3600000, duration = 75;
+  const choices = [0, 1.5, 3].map((offset, i) => ({ start: start + offset * 3600000,
+    end: start + offset * 3600000 + duration * 60000, rainChance: [55, 15, 25][i], gust: [47, 23, 31][i], daylight: true, planned: i === 1,
+    warnings: i === 0 ? [{ event: 'Yellow wind warning', issuer: 'Met Office' }] : [] }));
+  const { ctx, page, requests, errors } = await open({ initialPath: '/?os=1', hubApps: { fitness: true, calendar: true }, intercept: async (route, { url, request }) => {
+    if (url.pathname === '/api/fitness/routes/departures') {
+      assert.equal(url.searchParams.get('minutes'), '75');
+      assert.equal(request.headers()['x-inflite-route-owner'], fixture('session').user.id);
+      await route.fulfill({ json: { state: 'ready', route: 'Norfolk coast loop', timezone: 'Europe/London', duration, warningCoverage: 'complete', departures: choices } });
+      return true;
+    }
+    if (url.pathname === '/api/organise/list') { await route.fulfill({ json: { records: [] } }); return true; }
+    if (url.pathname === '/api/organise/calendar-events') { await route.fulfill({ json: { events: [] } }); return true; }
+  } });
+  try {
+    await page.locator('[data-ride-overview]').first().click();
+    const ride = page.getByRole('dialog', { name: 'Your ride and forecast', exact: true });
+    await ride.getByText('Yellow wind warning · Met Office').waitFor();
+    const radio = ride.getByRole('radio');
+    assert.equal(await radio.nth(1).isChecked(), true);
+    assert.equal(await radio.count(), 3);
+    await radio.nth(2).check();
+    await ride.evaluate(async node => { node.scrollTop = 0; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); });
+    await save(page, 'ride-departures');
+    await ride.getByRole('button', { name: 'Review in Calendar' }).click();
+    await page.waitForURL(url => url.pathname === '/calendar/' && /^#item=[a-f0-9]{32}$/.test(url.hash));
+    const title = page.getByRole('textbox', { name: 'Title', exact: true });
+    await title.waitFor();
+    assert.equal(await title.inputValue(), 'Endurance 75');
+    assert.equal(await page.locator('.org-form input[type="datetime-local"]').first().inputValue(), new Date(choices[2].start).toISOString().slice(0,16));
+    await save(page, 'ride-calendar');
+    assert.deepEqual(requests.filter(r => r.path === '/api/organise/create'), [], 'reviewing the event does not publish it');
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
