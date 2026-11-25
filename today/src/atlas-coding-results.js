@@ -4,7 +4,7 @@ const encoder = new TextEncoder();
 const fail = (code, message, status = 422) => { throw Object.assign(new Error(message), { code, status }); };
 export const CODING_RESULT_LIMITS = Object.freeze({ artifactBytes: 32 * 1024 * 1024, files: 512, afterFileBytes: 1024 * 1024, beforeFileBytes: 8 * 1024 * 1024, afterBytes: 16 * 1024 * 1024, combinedBytes: 20 * 1024 * 1024, diffBytes: 256 * 1024, diffTextBytes: 2 * 1024 * 1024, diffLines: 30000 });
 
-function bytesFromBase64(value, maximum) {
+export function bytesFromBase64(value, maximum) {
   if (typeof value !== 'string' || value.length > Math.ceil(maximum / 3) * 4 || value.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) fail('coding_result_encoding', 'A changed file has invalid or oversized Base64 content.');
   let raw;
   try { raw = atob(value); } catch { fail('coding_result_encoding', 'A changed file has invalid Base64 content.'); }

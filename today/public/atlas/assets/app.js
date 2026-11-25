@@ -422,11 +422,11 @@ function updateComposer() {
   $("repository-note").hidden = mode !== "developer" || !$("repository").value;
   const continuation = state.codingRuns.find(run => run.id === state.codingContinuation && run.canContinue);
   if (!continuation) state.codingContinuation = null;
-  const restart = state.codingRuns.find(run => run.id === state.codingRestart && !codingActive(run));
+  const restart = state.codingRuns.find(run => run.id === state.codingRestart?.id && !codingActive(run));
   if (!restart) state.codingRestart = null;
   const recovery = continuation || restart;
   const activeTask = state.codingRuns.some(run => codingActive(run) && run.id !== continuation?.id);
-  $("start-coding").textContent = continuation ? "Continue task" : restart ? "Start again" : "Work on task";
+  $("start-coding").textContent = continuation ? "Continue task" : state.codingRestart?.restoreRevision ? "Restore and continue" : restart ? "Start again" : "Work on task";
   $("start-coding").disabled = !ready || state.health?.coding?.ready !== true || state.health?.coding?.storageReady !== true || !$("repository").value || !!state.stream || state.dispatching || state.codingDispatching || state.codingLoading || !!state.codingLoadError || activeTask || !hasPrompt;
   $("coding-environment").disabled = !!recovery || activeTask || state.environmentsLoading || state.codingDispatching;
   $("coding-environment").title = recovery ? "This task keeps its original cloud environment." : "Choose reusable cloud setup for the next task.";
@@ -434,7 +434,7 @@ function updateComposer() {
   $("coding-health").textContent = state.health?.coding?.ready ? "" : state.health?.coding?.message || "Coding tasks are unavailable. You can still ask Atlas about this repository with Send.";
   $("coding-health").hidden = !$("coding-health").textContent;
   $("coding-continue-note").hidden = !code || !recovery;
-  $("coding-continue-label").textContent = continuation ? "Continuing this cloud workspace" : restart ? "Fresh workspace · original environment settings" : "";
+  $("coding-continue-label").textContent = continuation ? "Continuing this cloud workspace" : state.codingRestart?.restoreRevision ? `Restoring saved revision ${state.codingRestart.restoreRevision} at its original commit` : restart ? "Fresh workspace · original environment settings" : "";
   const publish = $("publish-coding"), review = state.codingReview;
   if (publish && review?.run) publish.disabled = publish.classList.contains("busy-label") || review.stale || !review.hasFiles || !review.run.reviewReady || codingActive(review.run) || !state.health?.github?.connected;
   $("attach-context").disabled = !$("repository").value || !state.health?.storage?.ready;
@@ -803,7 +803,7 @@ async function loadRepositories() {
 function setRepository(value) { const el = $("repository"); if (value && ![...el.options].some(o => o.value === value)) { const option = node("option", "", value); option.value = value; el.append(option); } el.value = value; }
 function fillEnvironmentChoices() {
   const select = $("coding-environment"), repository = $("repository").value;
-  const recovery = state.codingRuns.find(run => run.id === (state.codingContinuation || state.codingRestart));
+  const recovery = state.codingRuns.find(run => run.id === (state.codingContinuation || state.codingRestart?.id));
   if (recovery) { const option = node("option", "", (recovery.environment?.name || "Original environment") + " · " + (recovery.environment?.branch || recovery.baseBranch || "default branch")); option.value = "task:" + recovery.id; select.replaceChildren(option); return; }
   select.replaceChildren(); const defaultOption = node("option", "", "Default environment"); defaultOption.value = ""; select.append(defaultOption);
   const compatible = state.environments.filter(environment => environment.repository === repository);
@@ -1554,12 +1554,12 @@ function pullRequestLink(pullRequest) {
   const href = safeUrl(pullRequest?.url); if (!href) return null;
   const link = node("a", "", "Open draft pull request"); link.href = href; link.target = "_blank"; link.rel = "noopener noreferrer"; return link;
 }
-function prepareTaskRecovery(run, continuing) {
-  state.intent = "code"; state.codingContinuation = continuing ? run.id : null; state.codingRestart = continuing ? null : run.id;
+function prepareTaskRecovery(run, continuing, restoreRevision = null) {
+  state.intent = "code"; state.codingContinuation = continuing ? run.id : null; state.codingRestart = continuing ? null : { id: run.id, restoreRevision };
   if (!continuing) $("prompt").value = run.prompt || "";
   fillEnvironmentChoices();
   resizePrompt(); updateComposer(); $("prompt").focus();
-  toast(continuing ? "Add the next instruction to continue this workspace." : "Review the task, then start again in a fresh workspace.");
+  toast(continuing ? "Add the next instruction to continue this workspace." : restoreRevision ? "Review the instruction before restoring your saved changes." : "Review the task, then start again in a fresh workspace.");
 }
 function taskRecoveryText(run) {
   if (run.recovery?.reason) return run.recovery.reason;
@@ -1646,7 +1646,9 @@ function renderCodingRuns() {
     if (run.baseSha) details.append(node("p", "field-help", "Source commit " + run.baseSha));
     if (run.environment?.setupCommand) details.append(node("pre", "", "Setup: " + run.environment.setupCommand));
     if (run.environment?.testCommand) details.append(node("pre", "", "Verification: " + run.environment.testCommand));
-    details.append(node("p", "field-help", "Workspace reuse lasts while the cloud session is available. A new task starts from its repository branch.")); overview.append(details);
+    details.append(node("p", "field-help", "Workspace reuse lasts while the cloud session is available."));
+    if (run.savedCheckpoint) details.append(node("p", "field-help", "Saved revision " + run.savedCheckpoint.revision + " · " + timestamp(run.savedCheckpoint.savedAt)));
+    overview.append(details);
     if (run.prompt?.includes("\n") || run.prompt?.length > 140) { const instruction = node("details", "task-instructions"); instruction.append(node("summary", "", "Task instructions"), node("p", "coding-prompt", run.prompt)); overview.append(instruction); }
     const activity = parts.get("activity"), entries = node("ol", "task-activity-list");
     for (const entry of run.activity || []) { const item = node("li"); item.append(node("strong", "", entry.label || entry.type || "Activity")); if (entry.detail || entry.text) item.append(node("p", "", (entry.detail || entry.text) + (entry.truncated ? " (truncated)" : ""))); entries.append(item); }
@@ -1657,7 +1659,10 @@ function renderCodingRuns() {
     const actions = node("div", "button-row coding-actions");
     if (run.reviewReady) actions.append(button("Review changes", e => busy(e.currentTarget, () => reviewCodingRun(run.id)), "primary-button"));
     if (run.canContinue && !state.conversation?.archived) actions.append(button("Continue task", () => prepareTaskRecovery(run, true), "quiet-button"));
-    if ((run.recovery?.action === "restart" || ["failed", "cancelled"].includes(run.status)) && !codingActive(run) && !state.conversation?.archived) actions.append(button("Start again", () => prepareTaskRecovery(run, false), run.canContinue ? "text-button" : "primary-button"));
+    if ((run.recovery?.action === "restart" || ["failed", "cancelled"].includes(run.status)) && !codingActive(run) && !state.conversation?.archived) {
+      if (run.savedCheckpoint) actions.append(button("Restore saved changes", () => prepareTaskRecovery(run, false, run.savedCheckpoint.revision), "quiet-button"));
+      actions.append(button("Start again", () => prepareTaskRecovery(run, false), run.canContinue || run.savedCheckpoint ? "text-button" : "primary-button"));
+    }
     if (run.status === "failed" && /access|permission|provider|credential/.test(run.error?.code || "")) actions.append(button("Connection settings", event => showPanel("settings", event.currentTarget), "text-button"));
     if (["preparing", "running", "waiting", "uncertain"].includes(run.status)) actions.append(button("Stop task", e => busy(e.currentTarget, async () => { detachCodingObserver(); try { const result = await api("coding/runs/" + encodeURIComponent(run.id) + "/cancel", "POST", {}); acceptCodingRun(result.run); } finally { await observeCodingRuns({ restore: false }); } }), "danger-text"));
     const link = pullRequestLink(run.pullRequest); if (link) actions.append(link); card.append(actions);
@@ -1681,7 +1686,8 @@ async function startCodingTask() {
   try {
     const conversation = await ensureConversation({ prompt, mode: "developer", repository }); checkEpoch(epoch);
     const path = continuation ? "coding/runs/" + encodeURIComponent(continuation) + "/continue" : "coding/runs";
-    const result = await api(path, "POST", { ...(continuation ? {} : { conversationId: conversation.id, ...(restart ? { retryFromRunId: restart } : environmentId ? { environmentId } : {}) }), requestId: uuid(), prompt }); checkEpoch(epoch);
+    if (restart && restart.submission?.prompt !== prompt) restart.submission = { prompt, id: uuid() };
+    const result = await api(path, "POST", { ...(continuation ? {} : { conversationId: conversation.id, ...(restart ? { retryFromRunId: restart.id, ...(restart.restoreRevision ? { restoreRevision: restart.restoreRevision } : {}) } : environmentId ? { environmentId } : {}) }), requestId: restart?.submission.id || uuid(), prompt }); checkEpoch(epoch);
     if (navigation === state.navigation && state.activeId === conversation.id) {
       feedback("coding-feedback", "");
       if ($("prompt").value.trim() === prompt) $("prompt").value = "";

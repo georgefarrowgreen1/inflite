@@ -27,6 +27,25 @@ function row(value) {
   return { ...value, environment: parse(value.environment_config_json, {}), manifest: parse(value.manifest_json, {}), priorTurns: parse(value.prior_turns_json, []), checks: parse(value.checks_json, []), activity: parse(value.activity_json, []), changes: parse(value.changes_json, { added: 0, modified: 0, deleted: 0 }) };
 }
 
+export function savedCodingCheckpoint(run) {
+  if (!/^[a-f0-9]{40}$/i.test(run.base_sha || '') || !/^[a-f0-9]{40}$/i.test(run.base_tree_sha || '') || !run.base_branch) return null;
+  if (run.review_ready) return { revision: run.revision, fileCount: run.changes.added + run.changes.modified + run.changes.deleted, savedAt: run.finished_at || run.updated_at };
+  return run.manifest.savedCheckpoint || run.legacyCheckpoint || null;
+}
+
+export async function findCodingCheckpoint(env, owner, run) {
+  const saved = savedCodingCheckpoint(run);
+  if (saved || run.revision <= 1 || !run.base_sha || ACTIVE.has(run.status)) return saved;
+  const version = await query(env, 'SELECT version FROM atlas_schema WHERE id=1').first();
+  if (!(version?.version >= 10)) return null;
+  // Older runs recorded completed artifact reviews in the timeline. Partial
+  // file batches from a failed collection do not qualify as checkpoints.
+  return query(env, `SELECT e.revision, MAX(e.recorded_at) AS savedAt,
+    (SELECT COUNT(*) FROM atlas_coding_changes f WHERE f.owner=e.owner AND f.run_id=e.run_id AND f.revision=e.revision) AS fileCount
+    FROM atlas_run_events e WHERE e.owner=? AND e.kind='coding' AND e.run_id=? AND e.revision<?
+    AND e.stage IN ('Ready to review','Task complete') GROUP BY e.revision ORDER BY e.revision DESC LIMIT 1`, owner, run.id, run.revision).first();
+}
+
 function workspaceState(run) {
   const connected = !!run.environment_id && !!run.session_id;
   const expired = run.cloud_status === 'expired' || ['coding_workspace_expired', 'agent_resource_missing'].includes(run.error_code);
@@ -52,6 +71,7 @@ function workspaceState(run) {
 export function publicCodingRun(run) {
   if (!run) return null;
   const workspace = workspaceState(run), configuration = run.environment || {};
+  const checkpoint = savedCodingCheckpoint(run);
   return {
     id: run.id, conversationId: run.conversation_id, requestId: run.request_id, retryFromRunId: run.retry_from_run_id || null,
     repository: run.repository, baseBranch: run.base_branch, baseSha: run.base_sha,
@@ -64,6 +84,7 @@ export function publicCodingRun(run) {
     canContinue: workspace.canContinue,
     environment: { profileId: run.environment_profile_id || null, name: configuration.name || 'Default cloud environment', repository: run.repository, branch: configuration.branch || run.base_branch || '', machine: configuration.machine || 'medium', network: configuration.network || 'dependencies', setupCommand: configuration.setupCommand || '', testCommand: configuration.testCommand || '', revision: configuration.revision || 1 },
     cloud: workspace.cloud, recovery: workspace.recovery,
+    ...(checkpoint?.fileCount > 0 ? { savedCheckpoint: checkpoint } : {}),
     reviewReady: !!run.review_ready && !!(run.changes.added + run.changes.modified + run.changes.deleted),
     budgetUsd: run.budget_cents / 100,
     providerRecordedSpendUsd: Number.isInteger(run.consumed_after) ? Math.max(0, run.consumed_after - run.consumed_before) / 100 : null,
@@ -86,7 +107,8 @@ export async function codingRunByRequest(env, owner, requestId) {
 
 export async function listCodingRuns(env, owner, conversationId) {
   if (!await getConversation(env, owner, conversationId)) missing();
-  return (await list(query(env, 'SELECT * FROM atlas_coding_runs WHERE owner=? AND conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 50', owner, conversationId))).map(row);
+  const runs = (await list(query(env, 'SELECT * FROM atlas_coding_runs WHERE owner=? AND conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 50', owner, conversationId))).map(row);
+  return Promise.all(runs.map(async run => ({ ...run, legacyCheckpoint: await findCodingCheckpoint(env, owner, run) })));
 }
 
 export async function listCodingInbox(env, owner, { filter = 'all', before = null } = {}) {
@@ -149,7 +171,7 @@ export async function createCodingRun(env, owner, { id, conversationId, requestI
   } catch (error) {
     const duplicate = await codingRunByRequest(env, owner, requestId);
     if (duplicate) {
-      if (duplicate.conversation_id !== conversationId || duplicate.prompt !== prompt || (duplicate.environment_profile_id || null) !== (environment.id || null) || (duplicate.retry_from_run_id || null) !== retryFromRunId) throw new AtlasStoreError('request_id_reused', 'This task identifier belongs to another request.', 409);
+      if (duplicate.conversation_id !== conversationId || duplicate.prompt !== prompt || (duplicate.environment_profile_id || null) !== (environment.id || null) || (duplicate.retry_from_run_id || null) !== retryFromRunId || (duplicate.environment.restoreCheckpoint?.revision ?? null) !== (environment.restoreCheckpoint?.revision ?? null)) throw new AtlasStoreError('request_id_reused', 'This task identifier belongs to another request.', 409);
       return duplicate;
     }
     const active = await query(env, "SELECT id FROM atlas_coding_runs WHERE owner=? AND conversation_id=? AND status IN ('preparing','running','waiting','uncertain','publishing')", owner, conversationId).first();
@@ -206,15 +228,17 @@ export async function saveCodingChanges(env, owner, run, lease, files) {
   }
   const changes = { added: 0, modified: 0, deleted: 0 };
   for (const file of files) changes[{ add: 'added', modify: 'modified', delete: 'deleted' }[file.operation]]++;
-  return updateCodingRun(env, owner, run.id, lease, { changes_json: json(changes), review_ready: 1 });
+  const manifest = { ...run.manifest, savedCheckpoint: { revision: run.revision, fileCount: files.length, savedAt: Date.now() } };
+  return updateCodingRun(env, owner, run.id, lease, { changes_json: json(changes), manifest_json: json(manifest), review_ready: 1 });
 }
 
 function fileRow(file, full = false) {
   return { path: file.path, operation: file.operation, beforeSha: file.before_sha, beforeMode: file.before_mode, afterSha: file.after_sha, afterMode: file.after_mode, bytes: file.bytes, binary: !!file.binary, diffTruncated: !!file.diff_truncated, addedLines: file.added_lines, removedLines: file.removed_lines, ...(full ? { contentBase64: file.content_base64, diff: file.diff } : {}) };
 }
 
-export async function codingChanges(env, owner, run, { full = false } = {}) {
-  const columns = full ? '*' : 'path,operation,before_sha,before_mode,after_sha,after_mode,bytes,binary,diff_truncated,added_lines,removed_lines';
+export async function codingChanges(env, owner, run, { full = false, forRecovery = false } = {}) {
+  const metadata = 'path,operation,before_sha,before_mode,after_sha,after_mode,bytes,binary,diff_truncated,added_lines,removed_lines';
+  const columns = full ? metadata + ',content_base64' + (forRecovery ? '' : ',diff') : metadata;
   return (await list(query(env, 'SELECT ' + columns + ' FROM atlas_coding_changes WHERE owner=? AND run_id=? AND revision=? ORDER BY path LIMIT 512', owner, run.id, run.revision))).map(file => fileRow(file, full));
 }
 
