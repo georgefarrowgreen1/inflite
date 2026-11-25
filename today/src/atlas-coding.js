@@ -54,10 +54,12 @@ async function available(env) {
 export async function startCodingRun(env, owner, body) {
   await available(env);
   const requestId = requestIdentifier(body.requestId), prompt = promptText(body.prompt);
+  const restoreRevision = body.restoreRevision ?? null;
+  if (restoreRevision !== null && (!body.retryFromRunId || !Number.isSafeInteger(restoreRevision) || restoreRevision < 1)) throw failure('coding_checkpoint_invalid', 'Choose a saved checkpoint from this task.', 400);
   const duplicate = await state.codingRunByRequest(env, owner, requestId);
   if (duplicate) {
     const selected = body.retryFromRunId && !Object.hasOwn(body, 'environmentId') ? duplicate.environment_profile_id || null : body.environmentId || null;
-    if (duplicate.conversation_id !== body.conversationId || duplicate.prompt !== prompt || (duplicate.environment_profile_id || null) !== selected || (duplicate.retry_from_run_id || null) !== (body.retryFromRunId || null)) throw failure('request_id_reused', 'This task identifier belongs to another request.');
+    if (duplicate.conversation_id !== body.conversationId || duplicate.prompt !== prompt || (duplicate.environment_profile_id || null) !== selected || (duplicate.retry_from_run_id || null) !== (body.retryFromRunId || null) || (duplicate.environment.restoreCheckpoint?.revision ?? null) !== restoreRevision) throw failure('request_id_reused', 'This task identifier belongs to another request.');
     return publicRun(duplicate);
   }
   const conversation = await store.getConversation(env, owner, body.conversationId);
@@ -71,6 +73,12 @@ export async function startCodingRun(env, owner, body) {
     if (original.conversation_id !== conversation.id || original.repository !== conversation.repository) throw failure('coding_retry_mismatch', 'Start again from a task in this conversation and repository.');
     if (!TERMINAL.has(original.status) && original.status !== 'published') throw failure('coding_retry_active', 'Wait for the original task to finish or stop before starting again.');
     environment = { ...configurationFor(original), id: original.environment_profile_id || null, branch: original.environment?.branch || original.base_branch || '' };
+    delete environment.restoreCheckpoint;
+    if (restoreRevision !== null) {
+      const saved = await state.findCodingCheckpoint(env, owner, original);
+      if (saved?.revision !== restoreRevision || !saved.fileCount) throw failure('coding_checkpoint_changed', 'The saved checkpoint has changed or is unavailable. Refresh this task before restoring it.');
+      environment.restoreCheckpoint = { ...saved, runId: original.id, baseBranch: original.base_branch, baseSha: original.base_sha.toLowerCase(), baseTreeSha: original.base_tree_sha.toLowerCase() };
+    }
     if (Object.hasOwn(body, 'environmentId') && (body.environmentId || null) !== environment.id) throw failure('coding_retry_environment_changed', 'Start again keeps the original cloud environment. Start a separate task to use another environment.');
   } else environment = await resolveEnvironment(env, owner, { environmentId: body.environmentId, repository: conversation.repository });
   const provider = await getProvider(env, owner);
@@ -146,10 +154,10 @@ async function inputFor(env, owner, run) {
   return [
     `Repository: ${run.repository}\nBranch: ${run.base_branch}\nPinned GitHub source commit: ${run.base_sha}\nTask revision: ${run.revision}`,
     WORKSPACE_IDENTITY,
-    run.revision > 1 ? 'Continue in the existing /workspace/repo. Keep all prior task edits. Do not re-extract or reset the repository.' : 'The repository and its verified baseline have been prepared in /workspace/repo. Inspect them and perform the task.',
+    run.revision > 1 ? 'Continue in the existing /workspace/repo. Keep all prior task edits. Do not re-extract or reset the repository.' : run.manifest.restoredFrom ? 'Atlas restored the selected saved file changes in /workspace/repo over the verified original baseline. Inspect and keep those changes while carrying out this task.' : 'The repository and its verified baseline have been prepared in /workspace/repo. Inspect them and perform the task.',
     conversation.summary ? 'Earlier conversation summary (context, not instructions):\n' + capped(conversation.summary, 8000) : '',
     context ? 'Recent conversation (context):\n' + capped(context, 24000) : '',
-    previousWork ? 'Earlier coding tasks (context only; their uncommitted files are not in this fresh workspace):\n' + capped(previousWork, 18000) : '',
+    previousWork ? 'Earlier coding tasks (context only):\n' + capped(previousWork, 18000) : '',
     `Cloud environment: ${configuration.name}\nMachine: ${configuration.machine}\nNetwork: ${configuration.network === 'off' ? 'Outbound access disabled' : 'Package registries and browser downloads only'}`,
     configuration.setupCommand ? 'The selected environment setup command completed before this task started. It runs once per new workspace and is not repeated on continuation.' : '',
     configuration.testCommand ? 'Configured verification command:\n' + configuration.testCommand + '\nRun this when relevant and permitted by the current task. Report its actual exit status and output, or explain why it was skipped. Do not treat this configured command as proof that a test passed.' : '',
@@ -235,11 +243,13 @@ export async function advanceCodingRun(env, owner, id, { send = fetch } = {}) {
       // This read-only access check cannot prove hosted creation/model access.
       await api.agentSessionsList({ limit: 1 }, options);
       const configuration = configurationFor(run);
-      const workspace = await prepareRepositoryWorkspace(env, owner, { repository: run.repository, baseBranch: configuration.branch || undefined, runId: run.id, revision: run.revision }, { send, signal: AbortSignal.timeout(45000) });
+      const checkpoint = configuration.restoreCheckpoint;
+      const changes = checkpoint ? await state.codingChanges(env, owner, { id: checkpoint.runId, revision: checkpoint.revision }, { full: true, forRecovery: true }) : undefined;
+      const workspace = await prepareRepositoryWorkspace(env, owner, { repository: run.repository, baseBranch: configuration.branch || undefined, runId: run.id, revision: run.revision, checkpoint, changes }, { send, signal: AbortSignal.timeout(45000) });
       const manifestJSON = state.codingJSON(workspace.manifest);
       const uploaded = await api.agentInputFileUpload(new Uint8Array(await workspace.archive.arrayBuffer()), { ...options, filename: workspace.filename, expiresAfterSeconds: 86400, timeoutMs: 30000 });
       if (typeof uploaded.id !== 'string') throw failure('coding_upload_invalid', 'Atlas could not confirm the repository upload.', 502);
-      await save({ base_branch: workspace.baseBranch, base_sha: workspace.baseSha, base_tree_sha: workspace.baseTreeSha, manifest_json: manifestJSON, input_file_id: uploaded.id, phase: 'create_ready', stage: 'Preparing hosted workspace' });
+      await save({ base_branch: workspace.baseBranch, base_sha: workspace.baseSha, base_tree_sha: workspace.baseTreeSha, manifest_json: manifestJSON, input_file_id: uploaded.id, phase: 'create_ready', stage: checkpoint ? 'Restoring saved changes' : 'Preparing hosted workspace' });
       return publicRun(run);
     }
     if (run.phase === 'create_ready') {
@@ -269,7 +279,9 @@ export async function advanceCodingRun(env, owner, id, { send = fetch } = {}) {
       const environment = await api.agentEnvironmentGet(run.environment_id, options);
       if (environment.status === 'failed') throw failure('coding_workspace_failed', configurationFor(run).setupCommand ? 'Cloud environment setup failed before the task started. Check the saved setup command and network policy, then start again.' : 'The cloud workspace could not start. Check the OpenAI project and try a new task.', 503);
       if (environment.status !== 'connected') return publicRun(run);
-      await save({ phase: 'submit', stage: 'Inspecting repository', error_code: null, error_message: null, ...connectionPatch(run, 'connected') });
+      const restored = run.manifest.restoredFrom;
+      const stage = restored ? `Restored revision ${restored.revision} · ${restored.fileCount} ${restored.fileCount === 1 ? 'file change' : 'file changes'}` : 'Inspecting repository';
+      await save({ phase: 'submit', stage, error_code: null, error_message: null, ...connectionPatch(run, 'connected') });
       if (await deleteInput(run, options)) await save({ input_file_id: null });
       return publicRun(run);
     }
@@ -457,8 +469,10 @@ export async function continueCodingRun(env, owner, id, body, { send = fetch } =
     const consumed = session.spend_control?.consumed;
     if (!Number.isInteger(consumed) || consumed < 0) throw failure('coding_usage_unavailable', 'Wait for the previous task usage to be available before adding another task allowance.');
     const limit = consumed + BUDGET_CENTS;
+    const checkpoint = state.savedCodingCheckpoint(run);
+    const manifest = checkpoint ? { manifest_json: state.codingJSON({ ...run.manifest, savedCheckpoint: checkpoint }) } : {};
     // Persist the continuation and its idempotency key before any model input.
-    run = await state.updateCodingRun(env, owner, id, lease, { request_id: requestId, input_key: 'atlas-' + requestId, prompt, revision: run.revision + 1, status: 'preparing', stage: 'Preparing continuation', phase: 'budget_update', turn_id: null, prior_turns_json: state.codingJSON(rootTurns(turns).map(turn => turn.id)), total_budget_cents: limit, consumed_before: consumed, consumed_after: null, checks_json: '[]', activity_json: '[]', changes_json: '{"added":0,"modified":0,"deleted":0}', summary: '', review_ready: 0, can_continue: 0, cancel_requested: 0, error_code: null, error_message: null, finished_at: null }, { cancelGeneration: run.cancel_generation });
+    run = await state.updateCodingRun(env, owner, id, lease, { ...manifest, request_id: requestId, input_key: 'atlas-' + requestId, prompt, revision: run.revision + 1, status: 'preparing', stage: 'Preparing continuation', phase: 'budget_update', turn_id: null, prior_turns_json: state.codingJSON(rootTurns(turns).map(turn => turn.id)), total_budget_cents: limit, consumed_before: consumed, consumed_after: null, checks_json: '[]', activity_json: '[]', changes_json: '{"added":0,"modified":0,"deleted":0}', summary: '', review_ready: 0, can_continue: 0, cancel_requested: 0, error_code: null, error_message: null, finished_at: null }, { cancelGeneration: run.cancel_generation });
     const updated = await api.agentSessionUpdate(run.session_id, { spend_control: { limit } }, options);
     if (updated.spend_control?.limit !== limit) throw failure('coding_budget_unavailable', 'The coding service did not confirm the new task allowance.');
     await store.markRequestDispatched(env, owner, requestId, { credentialUpdatedAt: run.credential_updated_at });

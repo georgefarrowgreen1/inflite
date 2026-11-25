@@ -112,7 +112,9 @@ The initial request also advances setup within a bounded Worker background opera
 
 **Stop task** is the explicit remote cancellation action. The UI waits for the returned task status and keeps observing if cancellation is still in progress. A cancelled turn is not represented as a completed change bundle. **Continue task** retains workspace edits, creates a new task revision and reserves another task allowance after checking that the provider session is idle and its workspace is connected. A transient connection check is labelled as needing verification instead of permanently removing continuation. Confirmed missing or expired workspaces lose the continuation action; busy and published workspaces cannot be continued.
 
-**Start again** opens a fresh workspace using the original task's frozen environment configuration, even when its saved environment has since been edited or archived. It checks out the latest commit of the original branch and allows a revised prompt. It does not recover uncommitted files from an expired workspace. Prior task summaries remain bounded conversation context, and already saved changes remain available for review. Removing/replacing the OpenAI connection or deleting the owning conversation closes its hosted sessions through the existing owner-scoped API.
+**Restore saved changes** creates a fresh workspace at the original pinned GitHub commit and applies the last verified saved revision. Atlas verifies the tree and file contents, preserves the baseline for review, and records the restored revision and file count in the new timeline. The original task remains available. Work after the last saved revision requires the original hosted workspace. Restoring is a new coding run with its own normal allowance.
+
+**Start again** uses the frozen environment and the latest commit of the original branch. Both actions allow a revised prompt and retain the configuration even if its environment has been edited or archived. Removing/replacing the OpenAI connection or deleting the owning conversation closes its hosted sessions through the existing owner-scoped API.
 
 ### Reviewing and publishing
 

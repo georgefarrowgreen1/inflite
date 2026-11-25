@@ -9,7 +9,8 @@ import { getProvider } from '../today/src/atlas-provider.js';
 import { repositoryBlobSha, connectGithub } from '../today/src/atlas-repository.js';
 import { atlas } from '../today/src/atlas.js';
 import { createEnvironment, updateEnvironment, archiveEnvironment } from '../today/src/atlas-environments.js';
-import { githubFixture } from './helpers/atlas-coding-fixtures.mjs';
+import { githubFixture, manifestFor, source } from './helpers/atlas-coding-fixtures.mjs';
+import { validateCodingArtifact } from '../today/src/atlas-coding-results.js';
 
 const OWNER = 'coding-owner';
 const SECRET = 'sk-' + 'coding-fixture'.repeat(5);
@@ -170,6 +171,47 @@ async function route(env, path, { method = 'GET', body, owner = OWNER, signedIn 
   assert.ok(!JSON.stringify(value).includes(SECRET), 'public coding responses exclude the saved key');
   return { status: response.status, value, headers: response.headers };
 }
+
+test('recovering an expired coding workspace restores the saved revision once across reconnects', async t => {
+  const env = await fixture(t), original = 'export const value = 1;\n';
+  const files = { 'src/value.js': source(original) };
+  const { api: github } = await githubFixture(files);
+  const f = await newRun(env, { status: 'failed', phase: 'done', base_sha: github.baseSha, base_tree_sha: github.baseTreeSha, cloud_status: 'expired' });
+  const manifest = manifestFor(files, { runId: f.run.id, baseSha: github.baseSha, baseTreeSha: github.baseTreeSha });
+  const claimed = await state.claimCodingRun(env, OWNER, f.run.id);
+  try {
+    const patch = await validateCodingArtifact({ ...manifest, changes: [{ path: 'src/value.js', operation: 'modify', beforeBase64: btoa(original), contentBase64: btoa('export const value = 4;\n'), afterMode: '100644' }] }, manifest);
+    await state.saveCodingChanges(env, OWNER, { ...claimed.run, manifest }, claimed.lease, patch.files);
+  } finally { await state.releaseCodingRun(env, OWNER, f.run.id, claimed.lease); }
+  await patchRun(env, f.run.id, { revision: 2, review_ready: 0, changes_json: '{"added":0,"modified":0,"deleted":0}' });
+  assert.equal((await coding.getCodingRuns(env, OWNER, f.conversation.id))[0].savedCheckpoint.revision, 1);
+  const body = { conversationId: f.conversation.id, requestId: uid(), prompt: 'Finish the change in the recovered workspace.', retryFromRunId: f.run.id, restoreRevision: 1 };
+  assert.equal((await route(env, '/coding/runs', { method: 'POST', body, admin: false })).status, 403);
+  await assert.rejects(coding.startCodingRun(env, OWNER, { ...body, restoreRevision: 2 }), { code: 'coding_checkpoint_changed' });
+  assert.equal(await store.getRequest(env, OWNER, body.requestId), null);
+  const started = await coding.startCodingRun(env, OWNER, body);
+  assert.equal((await coding.startCodingRun(env, OWNER, body)).id, started.id);
+  await assert.rejects(coding.startCodingRun(env, OWNER, { ...body, restoreRevision: null }), { code: 'request_id_reused' });
+
+  const remote = remoteFixture({ ...f, run: started });
+  github.branches.set('main', 'f'.repeat(40));
+  remote.loseCreateResponse = true;
+  let uploads = 0;
+  const send = async (url, init) => {
+    const endpoint = new URL(url);
+    if (endpoint.hostname !== 'api.openai.com') return github.send(url, init);
+    if (endpoint.pathname === '/v1/files' && init.method === 'POST') { uploads++; return json({ id: 'file_fixture' }); }
+    return remote.send(url, init);
+  };
+  for (let i = 0; i < 6; i++) await coding.advanceCodingRun(env, OWNER, started.id, { send });
+  assert.equal(uploads, 1);
+  assert.equal(remote.createCalls, 1);
+  assert.equal(remote.inputs.length, 1);
+  assert.match(remote.inputs[0].input[0].content[0].text, /restored the selected saved file changes/);
+  const result = await route(env, '/runs/coding/' + started.id);
+  assert.equal(result.status, 200);
+  assert.ok(result.value.events.some(event => event.stage === 'Restored revision 1 · 1 file change'));
+});
 
 test('the coding inbox filters and pages across the signed-in owner’s conversations', async t => {
   const env = await fixture(t);

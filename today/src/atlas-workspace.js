@@ -1,4 +1,5 @@
 import { repositoryWorkspaceArchive, safeCodingPath, repositoryBlobSha } from './atlas-repository.js';
+import { bytesFromBase64, CODING_RESULT_LIMITS } from './atlas-coding-results.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -212,6 +213,27 @@ subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True
 subprocess.run(['git', '-C', str(repo), '-c', 'core.hooksPath=/dev/null', 'add', '--force', '--all'], check=True, capture_output=True)
 subprocess.run(['git', '-C', str(repo), '-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Atlas', '-c', 'user.email=atlas@inflite.ai', 'commit', '--no-gpg-sign', '--allow-empty', '-m', 'Atlas pinned workspace baseline'], check=True, capture_output=True)
 commit = subprocess.run(['git', '-C', str(repo), 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()
+if 'restoredFrom' in manifest:
+    changes = json.loads((meta / 'recovery.json').read_text())
+    for change in changes:
+        if change['operation'] != 'delete':
+            continue
+        target = repo / change['path']
+        target.unlink()
+        for parent in target.parents:
+            if parent == repo or any(parent.iterdir()):
+                break
+            parent.rmdir()
+    for change in changes:
+        if change['operation'] == 'delete':
+            continue
+        source = meta / 'recovery' / change['path']
+        target = repo / change['path']
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    added = [change['path'] for change in changes if change['operation'] == 'add']
+    if added:
+        subprocess.run(['git', '-C', str(repo), 'add', '--intent-to-add', '--force', '--', *added], check=True, capture_output=True)
 marker.write_text(json.dumps({'runId': manifest['runId'], 'baseSha': manifest['baseSha'], 'workspaceCommit': commit}))
 print(json.dumps({'ready': True, 'repository': manifest['repository'], 'baseSha': manifest['baseSha'], 'files': len(manifest['files'])}))
 `;
@@ -289,12 +311,52 @@ temporary.replace(output / 'atlas-changes.json')
 print(json.dumps({'artifact': '/workspace/outputs/atlas-changes.json', 'revision': revision, 'changedFiles': len(changes), 'afterBytes': after_total}))
 `;
 
-export async function prepareRepositoryWorkspace(env, owner, { repository, baseBranch, runId, revision = 1 }, options = {}) {
+async function checkpointOverlay(snapshot, entries, checkpoint, changes, signal) {
+  const invalid = () => fail('coding_checkpoint_invalid', 'The saved checkpoint does not match the original source. Review the original task before starting again.', 409);
+  if (!Array.isArray(changes) || !changes.length || changes.length !== checkpoint.fileCount || changes.length > CODING_RESULT_LIMITS.files) invalid();
+  const originals = new Map(entries.map(entry => [entry.path, entry]));
+  const pinnedPaths = new Set(snapshot.entries.filter(entry => entry.type !== 'tree').map(entry => entry.path));
+  const paths = new Set(pinnedPaths);
+  const seen = new Set(), operations = [], files = [];
+  let total = 0;
+  for (const change of changes) {
+    check(signal);
+    const { path, operation, beforeSha, beforeMode, afterSha, afterMode, contentBase64 } = change;
+    safeCodingPath(path);
+    if (seen.has(path) || !['add', 'modify', 'delete'].includes(operation)) invalid();
+    seen.add(path);
+    const original = originals.get(path);
+    if (operation === 'add' ? pinnedPaths.has(path) || beforeSha !== null || beforeMode !== null : !original || original.sha !== beforeSha || original.mode !== beforeMode) invalid();
+    operations.push({ path, operation });
+    if (operation === 'delete') {
+      if (contentBase64 !== null || afterSha !== null || afterMode !== null) invalid();
+      paths.delete(path);
+      continue;
+    }
+    const bytes = bytesFromBase64(contentBase64, CODING_RESULT_LIMITS.afterFileBytes);
+    total += bytes.length;
+    if (total > CODING_RESULT_LIMITS.afterBytes || !['100644', '100755'].includes(afterMode) || await repositoryBlobSha(bytes) !== afterSha) invalid();
+    paths.add(path);
+    files.push({ path: 'atlas/recovery/' + path, mode: afterMode, bytes });
+  }
+  for (const path of paths) {
+    const parts = path.split('/');
+    for (let index = 1; index < parts.length; index++) if (paths.has(parts.slice(0, index).join('/'))) invalid();
+  }
+  files.push({ path: 'atlas/recovery.json', mode: '100644', bytes: encoder.encode(JSON.stringify(operations)) });
+  return files;
+}
+
+export async function prepareRepositoryWorkspace(env, owner, { repository, baseBranch, runId, revision = 1, checkpoint, changes }, options = {}) {
   if (typeof runId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(runId) || !Number.isSafeInteger(revision) || revision < 1 || revision > 1000000) fail('workspace_task_invalid', 'The coding task identifier is invalid.');
-  const snapshot = await repositoryWorkspaceArchive(env, owner, { repository, baseBranch }, options);
+  const snapshot = await repositoryWorkspaceArchive(env, owner, { repository, baseBranch: checkpoint?.baseBranch || baseBranch, checkpoint }, options);
   const sanitized = await sanitizeRepositoryArchive(snapshot.response, snapshot, options);
   const manifest = { version: 1, runId, revision, repository, baseBranch: snapshot.baseBranch, baseSha: snapshot.baseSha, baseTreeSha: snapshot.baseTreeSha, files: sanitized.entries, excluded: sanitized.excluded };
   const files = sanitized.files.map(file => ({ ...file, path: 'repo/' + file.path }));
+  if (checkpoint) {
+    files.push(...await checkpointOverlay(snapshot, sanitized.entries, checkpoint, changes, options.signal));
+    manifest.restoredFrom = { runId: checkpoint.runId, revision: checkpoint.revision, fileCount: checkpoint.fileCount, savedAt: checkpoint.savedAt };
+  }
   files.push({ path: 'atlas/manifest.json', mode: '100644', bytes: encoder.encode(JSON.stringify(manifest)) }, { path: 'atlas/bootstrap.py', mode: '100644', bytes: encoder.encode(WORKSPACE_BOOTSTRAP) }, { path: 'atlas/export_changes.py', mode: '100644', bytes: encoder.encode(WORKSPACE_EXPORTER) });
   check(options.signal);
   const archive = await createWorkspaceTar(files);

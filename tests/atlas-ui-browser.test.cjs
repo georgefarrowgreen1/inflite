@@ -1408,10 +1408,10 @@ test('a stale cloud profile edit preserves the draft and displays the conflict',
   } finally { await t.close(); }
 });
 
-test('completed expired work restarts only on explicit submit with its frozen environment snapshot', async () => {
+test('completed expired work can restore a saved revision and preserves retry identity on mobile', async () => {
   const frozen = { ...cloudEnvironment({ id: 'archived-profile', branch: 'release/atlas', setupCommand: 'npm ci --ignore-scripts' }), profileId: 'archived-profile' };
-  const run = codingRun({ id: 'prior-task', status: 'completed', stage: 'completed', canContinue: false, environment: frozen, cloud: { state: 'expired', label: 'Cloud workspace expired' }, recovery: { action: 'restart', reason: 'The original workspace expired. Start again with the same environment settings.' } });
-  const t = await open({ fixture: developerFixture({ codingRuns: [run], environments: [cloudEnvironment({ id: 'archived-profile', branch: 'changed-branch', setupCommand: 'changed setup' })] }) });
+  const run = codingRun({ id: 'prior-task', status: 'completed', stage: 'completed', canContinue: false, environment: frozen, cloud: { state: 'expired', label: 'Cloud workspace expired' }, recovery: { action: 'restart', reason: 'The original workspace expired.' }, savedCheckpoint: { revision: 1, fileCount: 3, savedAt: now } });
+  const t = await open({ width: 390, height: 844, mobile: true, fixture: developerFixture({ codingRuns: [run], environments: [cloudEnvironment({ id: 'archived-profile', branch: 'changed-branch', setupCommand: 'changed setup' })] }) });
   try {
     await openThread(t, 'Repository task'); await t.page.locator('.coding-run').getByRole('button', { name: 'Start again', exact: true }).click();
     assert.equal(await t.page.locator('#prompt').inputValue(), run.prompt);
@@ -1421,12 +1421,22 @@ test('completed expired work restarts only on explicit submit with its frozen en
     assert.equal(t.fixture.requests.filter(r => r.path === 'coding/runs' && r.method === 'POST').length, 0);
     await t.page.locator('#intent-ask').click(); await t.page.locator('#intent-code').click();
     assert.equal(await t.page.locator('#start-coding').textContent(), 'Work on task');
-    await t.page.locator('.coding-run').getByRole('button', { name: 'Start again', exact: true }).click();
+    await t.page.locator('.coding-run').getByRole('button', { name: 'Restore saved changes' }).click();
+    assert.equal(await t.page.locator('#start-coding').textContent(), 'Restore and continue');
+    assert.match(await t.page.locator('#coding-continue-label').textContent(), /saved revision 1 at its original commit/);
     t.fixture.environments = [];
+    t.fixture.overrides.set('POST coding/runs', ({ reply }) => {
+      t.fixture.overrides.delete('POST coding/runs');
+      return reply({ error: 'The connection could not confirm the request.' }, 502);
+    });
     await t.page.locator('#prompt').fill('Retry the original task and verify it'); await t.page.locator('#start-coding').click();
-    await eventually(() => assert.equal(t.fixture.requests.filter(r => r.path === 'coding/runs' && r.method === 'POST').length, 1));
-    const call = t.fixture.requests.find(r => r.path === 'coding/runs' && r.method === 'POST');
-    assert.equal(call.body.retryFromRunId, 'prior-task'); assert.equal(Object.hasOwn(call.body, 'environmentId'), false);
+    await t.page.getByText('The connection could not confirm the request.', { exact: true }).waitFor();
+    await t.page.locator('#start-coding').click();
+    await eventually(() => assert.equal(t.fixture.requests.filter(r => r.path === 'coding/runs' && r.method === 'POST').length, 2));
+    const [failed, call] = t.fixture.requests.filter(r => r.path === 'coding/runs' && r.method === 'POST');
+    assert.equal(call.body.requestId, failed.body.requestId);
+    assert.equal(call.body.retryFromRunId, 'prior-task'); assert.equal(call.body.restoreRevision, 1);
+    assert.equal(Object.hasOwn(call.body, 'environmentId'), false);
     assert.equal(t.fixture.codingRuns[1].environment.branch, 'release/atlas'); assert.equal(t.fixture.codingRuns[1].environment.setupCommand, 'npm ci --ignore-scripts');
     assert.deepEqual(t.errors, []);
   } finally { await t.close(); }

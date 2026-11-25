@@ -46,15 +46,16 @@ export async function repositoryBlobSha(bytes) {
 }
 
 /** Server-only transport. The saved GitHub token is never returned or sent to codeload. */
-export async function repositoryWorkspaceArchive(env, owner, { repository, baseBranch }, options = {}) {
+export async function repositoryWorkspaceArchive(env, owner, { repository, baseBranch, checkpoint }, options = {}) {
   const { repo, opts } = await repositoryAccess(env, owner, repository, options);
   const branch = baseBranch || repo.default_branch;
   if (typeof branch !== 'string' || !branch || branch.length > 200 || /[\x00-\x20~^:?*\[\\]/.test(branch) || branch.includes('..') || branch.startsWith('/') || branch.endsWith('/') || branch.includes('//')) throw failure('repository_ref_invalid', 'Choose a valid repository branch.');
-  const branchRef = await githubFetch(baseURL(repository) + '/git/ref/heads/' + pathURL(branch), opts);
-  const sha = branchRef.object?.sha;
-  if (!shaPattern.test(sha || '') || branchRef.object?.type && branchRef.object.type !== 'commit') throw failure('github_response_invalid', 'GitHub could not identify this branch.', 502);
+  const source = checkpoint ? { sha: checkpoint.baseSha, type: 'commit' } : (await githubFetch(baseURL(repository) + '/git/ref/heads/' + pathURL(branch), opts)).object;
+  const sha = source?.sha;
+  if (!shaPattern.test(sha || '') || source.type && source.type !== 'commit') throw failure('github_response_invalid', 'GitHub could not identify the source commit.', 502);
   const commit = await githubFetch(baseURL(repository) + '/git/commits/' + sha, opts);
   if (!shaPattern.test(commit.tree?.sha || '')) throw failure('github_response_invalid', 'GitHub could not identify the repository tree.', 502);
+  if (checkpoint && (commit.sha?.toLowerCase() !== sha.toLowerCase() || commit.tree.sha.toLowerCase() !== checkpoint.baseTreeSha)) throw failure('coding_checkpoint_base_changed', 'GitHub could not verify the original checkpoint commit and tree.', 409);
   const tree = await githubFetch(baseURL(repository) + '/git/trees/' + commit.tree.sha + '?recursive=1', { ...opts, limit: 8 * 1024 * 1024 });
   if (!Array.isArray(tree.tree) || tree.truncated === true) throw failure('workspace_tree_incomplete', 'GitHub could not provide the complete pinned tree for this workspace.', 413);
   if (tree.tree.length > 12000) throw failure('workspace_repository_large', 'This repository exceeds the coding workspace file limit.', 413);

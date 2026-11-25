@@ -8,7 +8,7 @@ import { gunzipSync } from 'node:zlib';
 import { prepareRepositoryWorkspace, sanitizeRepositoryArchive, createWorkspaceTar, WORKSPACE_BOOTSTRAP, WORKSPACE_EXPORTER, WORKSPACE_LIMITS } from '../today/src/atlas-workspace.js';
 import { repositoryWorkspaceArchive } from '../today/src/atlas-repository.js';
 import { validateCodingArtifact } from '../today/src/atlas-coding-results.js';
-import { source, b64, blob, tar, archiveOf, treeEntries, githubFixture, manifestFor, TOKEN } from './helpers/atlas-coding-fixtures.mjs';
+import { source, b64, blob, tar, archiveOf, treeEntries, githubFixture, manifestFor, artifactFor, TOKEN } from './helpers/atlas-coding-fixtures.mjs';
 
 const sanitize = (files, archive = archiveOf(files), options) => sanitizeRepositoryArchive(new Response(archive), { entries: treeEntries(files) }, options);
 
@@ -78,6 +78,38 @@ test('repository transport rejects redirects outside exact codeload repository/c
   const { env, api } = await githubFixture(); api.treeTruncated = true;
   await assert.rejects(repositoryWorkspaceArchive(env, 'alice', { repository: api.name }, { send: api.send }), { code: 'workspace_tree_incomplete' });
   assert.ok(!api.calls.some(call => call.url.pathname.includes('/tarball/')));
+});
+
+test('a recovered workspace replays verified content over its pinned Git baseline after the branch moves', async t => {
+  const original = { 'app.js': source('original\n'), 'old/remove.txt': source('delete\n'), '.gitignore': source('generated.bin\n') };
+  const { env, api } = await githubFixture(original);
+  api.branches.set('main', 'f'.repeat(40));
+  const checkpoint = { runId: 'original-task', revision: 4, baseSha: api.baseSha, baseTreeSha: api.baseTreeSha, baseBranch: 'main', savedAt: 123, fileCount: 3 };
+  const originalManifest = manifestFor(original, { ...checkpoint, repository: api.name });
+  const { files: changes } = await validateCodingArtifact(artifactFor(originalManifest, [
+    { path: 'app.js', operation: 'modify', beforeBase64: b64('original\n'), contentBase64: b64('edited\n'), afterMode: '100755' },
+    { path: 'old/remove.txt', operation: 'delete', beforeBase64: b64('delete\n'), contentBase64: null, afterMode: null },
+    { path: 'generated.bin', operation: 'add', beforeBase64: null, contentBase64: b64(Buffer.from([0, 255])), afterMode: '100644' },
+  ]), originalManifest);
+  const input = { repository: api.name, runId: 'recovered-task', checkpoint, changes };
+  const options = { send: api.send };
+  const bundle = await prepareRepositoryWorkspace(env, 'alice', input, options);
+  assert.equal(bundle.baseSha, api.baseSha);
+  assert.ok(api.calls.every(call => !call.url.pathname.includes('/git/ref/heads/')));
+  await assert.rejects(prepareRepositoryWorkspace(env, 'alice', { ...input, changes: changes.slice(1) }, options), { code: 'coding_checkpoint_invalid' });
+  await assert.rejects(prepareRepositoryWorkspace(env, 'alice', { ...input, checkpoint: { ...checkpoint, baseTreeSha: '0'.repeat(40) } }, options), { code: 'coding_checkpoint_base_changed' });
+  const root = await mkdtemp(join(tmpdir(), 'atlas-recovery-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const meta = join(root, 'atlas'), repo = join(root, 'repo');
+  execFileSync('tar', ['-xzf', '-', '-C', root], { input: Buffer.from(await bundle.archive.arrayBuffer()) });
+  for (const [name, script] of [['bootstrap.py', WORKSPACE_BOOTSTRAP], ['export_changes.py', WORKSPACE_EXPORTER]]) await writeFile(join(meta, name), script.replaceAll('/workspace', root));
+  const run = name => execFileSync('python3', [join(meta, name)], { encoding: 'utf8', stdio: 'pipe' });
+  run('bootstrap.py'); run('bootstrap.py');
+  assert.equal(execFileSync('git', ['show', 'HEAD:app.js'], { cwd: repo, encoding: 'utf8' }), 'original\n');
+  assert.equal(await readFile(join(repo, 'app.js'), 'utf8'), 'edited\n');
+  await assert.rejects(readFile(join(repo, 'old/remove.txt')), { code: 'ENOENT' });
+  run('export_changes.py');
+  const exported = JSON.parse(await readFile(join(root, 'outputs/atlas-changes.json'), 'utf8'));
+  assert.deepEqual((await validateCodingArtifact(exported, bundle.manifest)).files, changes.toSorted((a, b) => a.path.localeCompare(b.path)));
 });
 
 test('bootstrap/export runs real Git and Python, retains ignored tracked inputs and derives continued filesystem changes', async t => {
