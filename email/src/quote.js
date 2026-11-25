@@ -9,6 +9,8 @@ const ID_RE = /^[\w-]{1,64}$/;
 const LEGACY_MESSAGE = '<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45;color:#1c1c1e">';
 const LEGACY_ATTRIBUTION = '<br><div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#6e6e73;font-size:14px">';
 const LEGACY_QUOTE = '<blockquote type="cite" style="margin:10px 0 0;padding:0 0 0 12px;border-left:2px solid #c7c7cc">';
+const PERSONAL_DARK = `--ifl-personal-bg:#171b24; --ifl-personal-text:#edf2fa; --ifl-personal-muted:#b3bfd1;
+      --ifl-personal-divider:#364151; --ifl-personal-quote-rule:#506079; --ifl-personal-link:#accbff;`;
 
 // A draft's or a send's quote as it may be kept: { of, mode } (InFlite's), or Mail on its own's whole quote (strings,
 // with of when 1.49 saved it); anything else none.
@@ -130,17 +132,18 @@ function personalDocument(body) {
   <meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">
   <style>
     :root { color-scheme:light dark; supported-color-schemes:light dark; }
-    .ifl-personal-gutter a { color:#224fae; }
+    :root[data-ifl-mail-theme="dark"] { ${PERSONAL_DARK} }
+    @media (prefers-color-scheme:dark) {
+      :root:not([data-ifl-mail-theme]) { ${PERSONAL_DARK} }
+    }
+    .ifl-personal-surface { background:var(--ifl-personal-bg,#ffffff) !important; color:var(--ifl-personal-text,#182235) !important; }
+    .ifl-personal-secondary, .ifl-personal-quote { color:var(--ifl-personal-muted,#526174) !important; }
+    .ifl-personal-rule { border-color:var(--ifl-personal-divider,#dce2eb) !important; }
+    .ifl-personal-quote { border-color:var(--ifl-personal-quote-rule,#c6d0e0) !important; }
+    .ifl-personal-gutter a { color:var(--ifl-personal-link,#224fae); }
     .ifl-personal-quote > .ifl-personal-column { background:transparent !important; color:inherit !important; margin:0; }
     .ifl-personal-quote .ifl-personal-gutter { padding:0 !important; }
     @media (max-width:460px) { .ifl-personal-gutter { padding:27px 24px 28px !important; } }
-    @media (prefers-color-scheme:dark) {
-      .ifl-personal-surface { background:#171b24 !important; color:#edf2fa !important; }
-      .ifl-personal-secondary, .ifl-personal-quote { color:#b3bfd1 !important; }
-      .ifl-personal-rule { border-color:#364151 !important; }
-      .ifl-personal-quote { border-color:#506079 !important; }
-      .ifl-personal-gutter a { color:#accbff !important; }
-    }
   </style></head><body data-ifl-personal class="ifl-personal-surface" style="margin:0;padding:0;background:#ffffff;color:#182235;-webkit-text-size-adjust:100%">
   <table class="ifl-personal-column ifl-personal-surface" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:580px;margin:0 auto;background:#ffffff;color:#182235"><tr><td class="ifl-personal-gutter" align="left" style="padding:35px 34px;font:16px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;overflow-wrap:anywhere">${body}</td></tr></table>
   </body></html>`;

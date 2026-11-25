@@ -4011,7 +4011,7 @@ a{color:${v("--mail-link")}}
 ${dark ? `body *{color:inherit!important;background-color:transparent!important}
 blockquote{border-left-color:${v("--mail-rule")}!important;color:${v("--mail-quote")}!important}
 a,a *{color:${v("--mail-link")}!important}` : ""}`;
-    const doc = `<!doctype html><html><head><meta charset="utf-8">
+    const doc = `<!doctype html><html${adaptive ? ` data-ifl-mail-theme="${scheme}"` : ""}><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="x-dns-prefetch-control" content="off">

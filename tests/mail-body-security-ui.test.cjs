@@ -22,9 +22,13 @@ test('hostile Mail HTML cannot execute, navigate, submit or fetch remote resourc
    <div style="background:url(${evil.origin}/css.png)">Background</div><img src="${evil.origin}/pic.png">
    <a id="mailto" href="mailto:friend@example.com?subject=Hello">Write</a>`;
   const {serveBody}=await import('../email/src/body.js');
+  const {personalMessage}=await import('../email/src/quote.js');
+  const personal=personalMessage('A quick reply.\n\nSent from iPhone',
+   {name:'Fixture Sender',from:'sender@example.com',signature:'Sent from iPhone'},
+   {quote:{header:'Alex wrote:',text:'See you soon.'}});
   const env={ASSETS:{fetch:async req=>{const p=new URL(req.url).pathname,file=p==='/body/'?'body/index.html':p.slice(1);return new Response(readFileSync(resolve(PUBLIC,file)),{headers:{'Content-Type':p.endsWith('.js')?'text/javascript':p.endsWith('.css')?'text/css':'text/html'}});}}};
   mail=await listen(async(req,res)=>{
-   if(req.url.startsWith('/api/messages/')){res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({html:hostile,text:''}));return;}
+   if(req.url.startsWith('/api/messages/')){res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(req.url.endsWith('/personal')?personal:{html:hostile,text:''}));return;}
    const out=await serveBody(new Request(mail.origin+req.url),env,[hub.origin]);res.writeHead(out.status,Object.fromEntries(out.headers));res.end(Buffer.from(await out.arrayBuffer()));
   });
   hub=await listen((req,res)=>{res.writeHead(200,{'Content-Type':'text/html'});res.end('<!doctype html><title>Private hub</title><iframe id="mail" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>');});
@@ -54,5 +58,28 @@ test('hostile Mail HTML cannot execute, navigate, submit or fetch remote resourc
   await page.waitForTimeout(300);
   assert.ok(hits.includes('/pic.png'));assert.ok(hits.includes('/css.png'));assert.ok(hits.every(p=>p==='/pic.png'||p==='/css.png'),JSON.stringify(hits));
   assert.equal(await page.evaluate(()=>window.__pwned),0);
+
+  // A personal message uses Mail's selected appearance, even when the system differs.
+  await page.emulateMedia({colorScheme:'dark'});
+  await page.locator('#mail').evaluate(el=>{
+   const url=new URL(el.src);
+   const params=new URLSearchParams(url.hash.slice(1));
+   params.set('m','personal');params.set('t','light');params.set('img','0');
+   url.hash=params;el.src=url.href;
+  });
+  const surface=inner.locator('.ifl-personal-column');
+  await surface.waitFor();
+  assert.equal(await surface.evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(255, 255, 255)');
+  await page.emulateMedia({colorScheme:'light'});
+  await page.locator('#mail').evaluate((el,origin)=>el.contentWindow.postMessage({ifl:'mailbody',v:1,t:'dark'},origin),mail.origin);
+  await inner.locator('html[data-ifl-mail-theme="dark"] .ifl-personal-column').waitFor();
+  assert.equal(await surface.evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(23, 27, 36)');
+  assert.equal(await surface.locator('img').evaluate(img=>img.naturalWidth),0);
+  await surface.getByText('Fixture Sender',{exact:true}).waitFor();
+  await surface.getByText('Sent with InFlite',{exact:true}).waitFor();
+  await surface.getByText('Sent from iPhone',{exact:true}).waitFor();
+  await inner.locator('blockquote').waitFor({state:'hidden'});
+  await shell.getByRole('button',{name:'Show Quoted Text'}).click();
+  await inner.locator('blockquote').getByText('Alex wrote:',{exact:true}).waitFor();
  }finally{await browser?.close();await hub?.close();await mail?.close();await evil.close();}
 });
