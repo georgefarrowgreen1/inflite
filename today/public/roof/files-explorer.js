@@ -21,8 +21,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   let pendingMenu=null;let page = 0, pageCursors = [null], pageMemory = new Map();
   const live = () => !gone && !!owner && !signal?.aborted && F.session?.view?.user?.id === owner;
   const active = () => live() && visible;
-  const items = () => (Array.isArray(listing.items) ? listing.items : []).filter(item => item && typeof item.key === 'string' && typeof item.name === 'string').slice(0, 500);
-  const resource = item => active() && listing.status === 'ready' ? items().find(next => next.key === item?.key && next.id === item.id && (item.version == null || next.version === item.version)) : null;
+  const resource = item => active() && listing.status === 'ready' ? listing.items.find(next => next.key === item?.key && next.id === item.id && (item.version == null || next.version === item.version)) : null;
   const transfers = () => { try { return (service.transfers?.() || []).map(transfer => ({ ...transfer, cancelable: transfer.cancelable === true && typeof service.cancelTransfer === 'function' })); } catch (_) { return []; } };
   const locations = () => { try { return service.locations?.(location) || []; } catch (_) { return []; } };
   function stopMedia(container) {
@@ -43,7 +42,10 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     popups.add(handle);
     return handle;
   }
-  const primary = item => activeActions(item).find(action => action.id === item.primaryAction) || activeActions(item).find(action => action.id === 'open' || action.primary) || activeActions(item).find(action => action.id === 'preview');
+  function primary(item) {
+    const actions = activeActions(item);
+    return actions.find(action => action.id === item.primaryAction) || actions.find(action => action.id === 'open' || action.primary) || actions.find(action => action.id === 'preview');
+  }
   function breadcrumbs() {
     if (Array.isArray(listing.breadcrumbs)) return listing.breadcrumbs;
     if (location.kind === 'apps') return [{ name: 'From apps', location: filesLocation({ kind: 'apps' }) }, ...(location.app ? [{ name: listing.name || location.app, location }] : [])];
@@ -56,8 +58,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     return crumbs.length > 1 ? crumbs[crumbs.length - 2].location : null;
   }
   function model() {
-    const values = items();
-    return { ...listing, items: values, selecting, selectedKeys:[...multi.keys()],bulkActions:bulkActions(),view: mode, query, sort, selection, details, preview, locations: locations(), breadcrumbs: breadcrumbs(), parentLocation: parentLocation(), transfers: transfers(),
+    return { ...listing, selecting, selectedKeys:[...multi.keys()],bulkActions:bulkActions(),view: mode, query, sort, selection, details, preview, locations: locations(), breadcrumbs: breadcrumbs(), parentLocation: parentLocation(), transfers: transfers(),
       page: page + 1, focusKey: pageMemory.get(page)?.focusKey,
       locationName: listing.folder?.name || listing.name || (location.kind === 'apps' ? 'From apps' : ({recent:'Recent',trash:'Trash',favourites:'Favourites'})[location.view] || 'My Drive'),
       capabilities: listing.status === 'ready' ? { ...listing.capabilities, upload: listing.capabilities?.upload === true && typeof service.upload === 'function' } : {} };
@@ -66,7 +67,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     if (!active()) return;
     view.update(model());
     if (detailsSheet && !detailsSheet.closed) {
-      const selected = items().find(item => item.key === selection);
+      const selected = listing.items.find(item => item.key === selection);
       if (!selected) return detailsSheet.now();
       const signature = fileDetailsSignature(selected);
       if (detailsState?.sheet === detailsSheet && detailsState.signature === signature && detailsState.preview === preview) return;
@@ -96,13 +97,19 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
       const answer = await service.browse(currentLocation, { query: typed, sort: sorted, cursor, signal: controller.signal, current });
       if (!current()) return false;
       const state = ['ready', 'error', 'loading'].includes(answer?.status) ? answer.status : 'ready';
-      const nextItems = Array.isArray(answer?.items) ? answer.items : [];
-      listing = { ...answer, status: state, items: nextItems.slice(0, 500), capabilities: answer?.capabilities || {} };
-      const byKey = new Map(items().map(item => [item.key, item]));
+      const valid = Array.isArray(answer?.items) ? answer.items.slice(0, 500).filter(item => typeof item?.key === 'string' && typeof item.name === 'string') : [];
+      listing = { ...answer, status: state, items: valid, capabilities: answer?.capabilities || {} };
+      const byKey = new Map(valid.map(item => [item.key, item]));
       for (const [key, version] of multi) if (byKey.get(key)?.version !== version) multi.delete(key);
       if (selection && !byKey.has(selection)) { selection = null; releasePreview(); }
       if (preview && byKey.get(preview.key)?.version !== preview.version) releasePreview();
-      paint();if(pendingMenu){const key=pendingMenu;pendingMenu=null;const item=items().find(x=>x.key===key);if(item)menu(item)}return true;
+      paint();
+      if (pendingMenu) {
+        const item = byKey.get(pendingMenu);
+        pendingMenu = null;
+        if (item) menu(item);
+      }
+      return true;
     } catch (error) {
       if (!current()) return false;
       if (error?.status === 409 && page > 0) { resetPages({ clearSelection: true }); listing = { items: [], status: 'loading', capabilities: {} }; return refresh(); }
@@ -116,7 +123,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     else page--;
     actionGen++; episode++; releasePreview(); closePopups(); selection = pageMemory.get(page)?.selection || null;
     listing = { ...listing, items: [], cursor: null, status: 'loading' };
-    if (await refresh()) view.focusResource(pageMemory.get(page)?.focusKey || selection || items()[0]?.key);
+    if (await refresh()) view.focusResource(pageMemory.get(page)?.focusKey || selection || listing.items[0]?.key);
   }
   function navigate(next) {
     next = filesLocation(next);
@@ -127,7 +134,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   function select(item, {multiple=false,range=false}={}) {
     const current = resource(item);
     if (!current) return;
-    if((selecting||multiple)&&current.source?.kind==='drive'){selecting=true;const rows=items(),anchor=[...multi.keys()].at(-1)||selection,a=rows.findIndex(value=>value.key===anchor),b=rows.findIndex(value=>value.key===current.key);if(range&&a>=0&&b>=0){for(const value of rows.slice(Math.min(a,b),Math.max(a,b)+1))if(value.source?.kind==='drive'&&multi.size<100)multi.set(value.key,value.version);}else if(multi.has(current.key))multi.delete(current.key);else if(multi.size<100)multi.set(current.key,current.version);paint();return;}
+    if((selecting||multiple)&&current.source?.kind==='drive'){selecting=true;const rows=listing.items,anchor=[...multi.keys()].at(-1)||selection,a=rows.findIndex(value=>value.key===anchor),b=rows.findIndex(value=>value.key===current.key);if(range&&a>=0&&b>=0){for(const value of rows.slice(Math.min(a,b),Math.max(a,b)+1))if(value.source?.kind==='drive'&&multi.size<100)multi.set(value.key,value.version);}else if(multi.has(current.key))multi.delete(current.key);else if(multi.size<100)multi.set(current.key,current.version);paint();return;}
     if (view.isCompact() && folderLocation(current)) return navigate(folderLocation(current));
     if (selection !== current.key) releasePreview();
     selection = current.key; paint();
@@ -165,17 +172,9 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   function previewError(key) {
     if (!active() || preview?.key !== key) return;
     if (previewURL) URL.revokeObjectURL(previewURL);
-    previewURL = null; preview = { key, version: items().find(item => item.key === key)?.version, state: 'error', error: 'This preview isn’t supported. Download the file to open it.' }; paint();
+    previewURL = null; preview = { key, version: listing.items.find(item => item.key === key)?.version, state: 'error', error: 'This preview isn’t supported. Download the file to open it.' }; paint();
   }
   async function previewFile(item) {
-    const currentItem = resource(item);
-    if (!currentItem) return;
-    if (preview?.key === item.key && preview.version === item.version && (preview.state === "ready" || preview.state === "loading")) {
-      details = true;
-      if (view.isCompact() && !detailsSheet) showDetails(item);
-      paint();
-      return;
-    }
     releasePreview(); selection = item.key;
     const controller = previewRead = new AbortController(), mine = episode;
     const current = () => active() && mine === episode && !controller.signal.aborted && previewRead === controller && selection === item.key && !!resource(item);
@@ -194,7 +193,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
         if (!current()) return;
         preview = { key: item.key, version: item.version, state: 'ready', kind: 'text', text };
       } else if (/^image\/(png|jpeg|gif|webp|avif)$/.test(type) || /^audio\/(mpeg|mp4|ogg|wav|webm|aac|flac)$/.test(type)) {
-        previewURL = URL.createObjectURL(blob.type === type ? blob : blob.slice(0, blob.size, type));
+        previewURL = URL.createObjectURL(blob.slice(0, blob.size, type));
         preview = { key: item.key, version: item.version, state: 'ready', kind: type.startsWith('image/') ? 'image' : 'audio', url: previewURL };
       } else throw new Error('Preview isn’t supported for this file. Download it to open it.');
       paint();
@@ -296,7 +295,7 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
   async function dispatch(item, id) {
     // History reads the server's latest version. A refresh after replacement
     // must not silently consume an action selected in the already-open menu.
-    if(id==='history'&&active()&&item.source?.kind==='drive'&&items().some(value=>value.id===item.id))return import('./files-history.js').then(m=>active()&&m.history({F,ui,service,active,live,sheet,refresh,root,resource,errorText},item));
+    if(id==='history'&&active()&&item.source?.kind==='drive'&&listing.items.some(value=>value.id===item.id))return import('./files-history.js').then(m=>active()&&m.history({F,ui,service,active,live,sheet,refresh,root,resource,errorText},item));
     const current = resource(item);
     if (!current || !activeActions(current).some(action => action.id === id)) return;
     if (id === 'open' && folderLocation(current)) return navigate(folderLocation(current));
@@ -308,14 +307,14 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     if (id === 'preview' && current.source?.kind === 'drive') {
       if(current.mime==='application/pdf'||current.mime?.startsWith('image/')){
         const mine=episode,m=await import('./files-viewer350.js');if(!active()||mine!==episode||!resource(current))return;
-        return m.openViewer(F,{item:current,items:items().filter(x=>x.source?.kind==='drive'&&x.mime?.startsWith('image/')&&!x.trashedAt),service,sheet,current:()=>active()&&mine===episode});
+        return m.openViewer(F,{item:current,items:listing.items.filter(x=>x.source?.kind==='drive'&&x.mime?.startsWith('image/')&&!x.trashedAt),service,sheet,current:()=>active()&&mine===episode});
       }return previewFile(current);
     }
     const answer = await execute(current, id,{input:{version:current.version}});
     if(active()&&answer?.ok!==false&&current.source?.kind==='drive'&&['restore','favourite'].includes(id))refresh({reset:true});
     if (active() && answer?.error) F.toast(clean(answer.error, 240));
   }
-  const selectedItems=()=>items().filter(item=>multi.get(item.key)===item.version&&item.source?.kind==='drive');
+  const selectedItems=()=>listing.items.filter(item=>multi.get(item.key)===item.version&&item.source?.kind==='drive');
   function bulkActions(){
     const values=selectedItems();if(!values.length)return[];
     const common=id=>values.every(item=>activeActions(item).some(action=>action.id===id));
@@ -380,8 +379,8 @@ export function createFilesExplorer(root, F, { service, onNavigate = () => false
     onSearch(value) { if (!active()) return; query = clean(value, 160); resetPages({ clearSelection: true }); clearTimeout(queryTimer); queryTimer = setTimeout(refresh, 250); },
     onSort(value) { if (['name', 'modified', 'size'].includes(value)) { sort = value; resetPages({ clearSelection: true }); refresh(); } },
     onView(value) { if (['list', 'grid'].includes(value)) { mode = value; paint(); } },
-    onToggleDetails() { const selected = items().find(item => item.key === selection); if (!selected) return; if (view.isCompact()) showDetails(selected); else { details = !details; paint(); } },
-    onSelectionMode(){selecting=!selecting;multi.clear();paint();},onSelectAll(){if(!active()||listing.status!=='ready')return;selecting=true;for(const item of items())if(item.source?.kind==='drive'&&multi.size<100)multi.set(item.key,item.version);paint();},onClearSelection(){multi.clear();paint();},onBulk:bulkAction,onDragStart:startDrag,onFolderDrop:folderDrop,
+    onToggleDetails() { const selected = listing.items.find(item => item.key === selection); if (!selected) return; if (view.isCompact()) showDetails(selected); else { details = !details; paint(); } },
+    onSelectionMode(){selecting=!selecting;multi.clear();paint();},onSelectAll(){if(!active()||listing.status!=='ready')return;selecting=true;for(const item of listing.items)if(item.source?.kind==='drive'&&multi.size<100)multi.set(item.key,item.version);paint();},onClearSelection(){multi.clear();paint();},onBulk:bulkAction,onDragStart:startDrag,onFolderDrop:folderDrop,
     onNewFolder: () => nameForm(), onUpload: chooseUpload, onDrop: drop, onRetry: () => refresh({ reset: true }), onMore: () => changePage(1), onPrevious: () => changePage(-1), onPreviewError: previewError,
     onCancelTransfer: id => { if (live()) service.cancelTransfer?.(id); },
     onNotice: async (notice, id) => {
