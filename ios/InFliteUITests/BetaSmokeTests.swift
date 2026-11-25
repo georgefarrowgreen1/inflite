@@ -6,8 +6,8 @@ final class BetaSmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        let entry = app.webViews.staticTexts["Sign in to InFlite"]
-        XCTAssertTrue(entry.waitForExistence(timeout: 45))
+        let entry = app.webViews.links["Sign in"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 30))
     }
 
     @MainActor
