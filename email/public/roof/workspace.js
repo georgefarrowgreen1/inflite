@@ -22,6 +22,10 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
   const active = () => live() && sdk.active() !== false;
   const cachedFiles = () => blocked(store.get()) ? [] : cached?.files || Object.values(store.get().thread?.metas || {}).flatMap(refs).slice(0, FILE_LIMITS.files);
   const gone = () => ({ status: "signin", files: [] });
+  const hasLocalDraft = () => {
+    const draft = ctx.outbox?.unsent?.();
+    return !!(draft && (draft.subject || draft.text || draft.to?.length || draft.cc?.length || draft.bcc?.length));
+  };
   root.classList.add("ml-workspace");
   // The slot is the viewport; Mail's reader/list content must not resize itself
   // during observer delivery. Reparenting always retires the previous target.
@@ -48,7 +52,8 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
   function snapshot() {
     if (!live()) return { status: "signin", actions: [], files: [] };
     const s = store.get(), status = blocked(s), canUse = s.access === "ok";
-    return {unread:canUse&&s.counts?Math.max(0,s.counts.people||0)+Math.max(0,s.counts.updates||0):null,drafts:canUse?(s.counts?.drafts||0):0, status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(), availability: { local: canUse && !!s.list.rows.length, pending: (s.outbox || []).length, saving: s.sending > 0, draft: !!s.compose, error: (s.outbox || []).some(item => item.state === "failed"), updatedAt: s.updatedAt },
+    const resumeDraft = canUse && (hasLocalDraft() || s.counts?.drafts > 0);
+    return {unread:canUse&&s.counts?Math.max(0,s.counts.people||0)+Math.max(0,s.counts.updates||0):null,drafts:canUse?(s.counts?.drafts||0):0, resumeDraft, status: status || (s.list.err && !s.list.rows.length ? "error" : "ready"), files: cachedFiles(), availability: { local: canUse && !!s.list.rows.length, pending: (s.outbox || []).length, saving: s.sending > 0, draft: !!s.compose, error: (s.outbox || []).some(item => item.state === "failed"), updatedAt: s.updatedAt },
       actions: [
         { id: "compose", label: "Compose a message", keywords: ["write", "email", "new mail"], enabled: canUse },
         ...(sdk.files?.open ? [{ id: "compose-attach", label: "Attach a Drive file to a new message", keywords: ["attach", "file", "drive", "email"], enabled: canUse }] : []),
@@ -151,6 +156,15 @@ export function createWorkspace(root, ctx, { current = () => true, ready = async
     }
     if(intent==='reveal-source'){const node=ID.test(object||'')&&root.querySelector('[data-message="'+CSS.escape(object)+'"],[data-mid="'+CSS.escape(object)+'"]');if(node){node.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});return {ok:true}}return {ok:true,pending:true}}
     if (intent === "compose") return { ok: !!(await ctx.open.compose({}, permitted)), pending: true };
+    if (intent === "resume-draft") {
+      if (hasLocalDraft()) return { ok: !!(await ctx.open.compose({ restoreLocal: true }, permitted)), pending: true };
+      const { drafts = [] } = await api.threads({ view: "drafts" });
+      if (!permitted()) return { ok: false, cancelled: true };
+      const sending = new Set((store.get().outbox || []).map(item => item.draft?.draftId));
+      const draft = drafts.find(item => ID.test(item?.id || "") && !sending.has(item.id));
+      if (!draft) return { ok: false, error: "There are no drafts to resume." };
+      return { ok: !!(await ctx.open.compose({ draftId: draft.id }, permitted)), pending: true };
+    }
     if (intent === "reply") {
       const id = typeof object === "string" ? object : store.get().threadId;
       if (!ID.test(id || "")) return { ok: false, error: "Choose a conversation in Mail first." };

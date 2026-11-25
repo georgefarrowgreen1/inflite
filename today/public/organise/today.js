@@ -1,12 +1,19 @@
 import {createSystemClient} from '/roof/system-client.js';
 import {localDay,addDays,when} from './model.js';
 // A small, lazy Today summary. Its private read never blocks shell startup.
-export function connectToday(F,root){
+export function connectToday(F,root,{onUpcoming}={}){
  const client=createSystemClient(F,{prefix:'/api/organise/'}),ui=F.ui,panel=ui.el('section',{class:'ifl-card org-today','aria-label':'Your calendar'});let last=0,running=false,dead=false;
  const live=()=>!dead&&client.live();
  async function refresh(force=false){if(!live()||running||!force&&Date.now()-last<30000)return;running=true;
-  try{const a=localDay(),b=addDays(a,7),answers=await Promise.all([client.request('list',{method:'POST',body:{kind:'calendar',fromDate:a,toDate:b,from:new Date(a+'T00:00:00').getTime(),to:new Date(b+'T00:00:00').getTime(),limit:3}}),client.request('calendar-events',{method:'POST',body:{from:new Date(a+'T00:00:00').getTime(),to:new Date(b+'T00:00:00').getTime()}}).catch(()=>({events:[]}))]),r={records:[...(answers[0].records||[]),...(answers[1].events||[])]};if(!live())return;last=Date.now();if(!r.records.length){panel.remove();return}r.records.sort((a,b)=>(a.start||Date.parse(a.startDate))-(b.start||Date.parse(b.startDate)));panel.replaceChildren(ui.el('div',{class:'org-today-head'},ui.icon(null,{app:'calendar',size:32}),ui.el('h2',{text:'Coming up'}),ui.btn('Calendar',{small:true,run:()=>F.nav.go('/calendar/')})));
-   for(const v of r.records.slice(0,3))panel.append(ui.row({title:v.title,sub:new Date((v.startDate||localDay(v.start))+'T12:00:00').toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'})+' · '+when(v),href:v.readOnly?'/calendar/#date='+(v.startDate||localDay(v.start)):'/calendar/#item='+v.id,trail:'chevron'}));if(!panel.isConnected)root.append(panel);
+  try{const a=localDay(),b=addDays(a,7),answers=await Promise.all([client.request('list',{method:'POST',body:{kind:'calendar',fromDate:a,toDate:b,from:new Date(a+'T00:00:00').getTime(),to:new Date(b+'T00:00:00').getTime(),limit:3}}),client.request('calendar-events',{method:'POST',body:{from:new Date(a+'T00:00:00').getTime(),to:new Date(b+'T00:00:00').getTime()}}).catch(()=>({events:[]}))]);if(!live())return;last=Date.now();
+   const records=[...(answers[0].records||[]),...(answers[1].events||[])].sort((x,y)=>(x.start||Date.parse(x.startDate))-(y.start||Date.parse(y.startDate)));
+   const subtitle=v=>new Date((v.startDate||localDay(v.start))+'T12:00:00').toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'})+' · '+when(v);
+   const ends=v=>v.allDay?Date.parse(v.endDate+'T00:00:00'):v.end;
+   const next=records.find(v=>!v.readOnly&&/^[a-f0-9]{32}$/.test(v.id)&&ends(v)>last);
+   onUpcoming?.(next?{id:next.id,title:next.title,detail:subtitle(next),ends:ends(next)}:null);
+   if(!records.length){panel.remove();return}
+   panel.replaceChildren(ui.el('div',{class:'org-today-head'},ui.icon(null,{app:'calendar',size:32}),ui.el('h2',{text:'Coming up'}),ui.btn('Calendar',{small:true,run:()=>F.nav.go('/calendar/')})));
+   for(const v of records.slice(0,3))panel.append(ui.row({title:v.title,sub:subtitle(v),href:v.readOnly?'/calendar/#date='+(v.startDate||localDay(v.start)):'/calendar/#item='+v.id,trail:'chevron'}));if(!panel.isConnected)root.append(panel);
   }catch(_){/* Existing day stays stable during a transient private read failure. */}finally{running=false}
  }
  const off=F.on('route',r=>{if(r?.tab==='today')refresh()}),offVisible=F.on('visible',()=>{if(F.route?.tab==='today')refresh()});

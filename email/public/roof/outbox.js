@@ -63,7 +63,9 @@ export function createOutbox(ctx) {
   const toast = (text, o) => { try { return fw.toast(text, o) || null; } catch { return null; } };
   const mirror = () => {
     if (retired()) return;
-    const list = canRecover() ? [...items.values()].map(({ key, at, draft, state, handle }) => ({ key, at, draft, state, undoInToast: state === "waiting" && !!handle?.close })) : [];
+    const list = canRecover() ? [...items.values()].map(({ key, at, draft, state, handle, retrying }) => ({
+      key, at, draft, state, checking: state === "failed" && !!retrying, undoInToast: state === "waiting" && !!handle?.close,
+    })) : [];
     store.set({ outbox: list, sending: list.filter((x) => x.state === "waiting" || x.state === "sending").length });
   };
   function storedQueue() {
@@ -109,10 +111,13 @@ export function createOutbox(ctx) {
   async function go(it, { keepalive = false } = {}) {
     if (retired() || it.state === "sending" || !items.has(it.key)) return;
     clearTimeout(it.timer);
-    it.state = canDrain() ? "sending" : "failed";
+    // The server has the draft. Keep the same send key across a lost response or a reload.
+    it.saved = it.stored = true;
+    it.state = canDrain() && online() ? "sending" : "queued";
+    keepQueue();
     try { it.handle?.close?.(); } catch {}
     mirror();
-    if (it.state === "failed") { keepQueue(); return; }
+    if (it.state === "queued") return;
     try {
       await api.sendDraft(it.draft.draftId, it.key, { keepalive });
       items.delete(it.key);
@@ -122,9 +127,9 @@ export function createOutbox(ctx) {
       // (Mail refused it, 4xx: it's still in Drafts, to change there; no answer: Try Again asks whether it went first)
       const refused = e.status >= 400 && e.status < 500 && ![401, 408, 429].includes(e.status);
       if (refused) items.delete(it.key);
-      else it.state = "failed";
+      else it.state = online() ? "failed" : "queued";
       mirror();
-      if (canDrain()) toast(refused ? "Couldn’t send. It’s in Drafts" : e.message || "Couldn’t send", refused ? undefined : { action: { label: "Try Again", run: () => retry(it.key) } });
+      if (canDrain() && it.state !== "queued") toast(refused ? "Couldn’t send. It’s in Drafts" : "Send unconfirmed", refused ? undefined : { action: { label: "Try Again", run: () => retry(it.key) } });
     } finally {
       keepQueue();
     }
@@ -191,7 +196,11 @@ export function createOutbox(ctx) {
       if (sent.includes(key)) { items.delete(key); keepQueue(); mirror(); toast("Message Sent"); after(); return; }
       await go(it);
     };
-    return it.retrying ||= (it.stored ? serialized(resend) : resend()).finally(() => { it.retrying = null; });
+    if (!it.retrying) {
+      it.retrying = (it.stored ? serialized(resend) : resend()).finally(() => { it.retrying = null; mirror(); });
+      mirror();
+    }
+    return it.retrying;
   }
 
   async function saveQueued(it, keepalive = false) {
@@ -220,10 +229,11 @@ export function createOutbox(ctx) {
       let went;
       try { went = (await api.sent(q.map((x) => x.key)))?.sent; } catch {}
       if (!Array.isArray(went)) return;
+      let confirmed = 0;
       for (const it of q) {
         if (!canDrain()) break;
         if (items.get(it.key) !== it || it.state !== "queued") continue;
-        if (went.includes(it.key)) { items.delete(it.key); continue; }
+        if (went.includes(it.key)) { items.delete(it.key); confirmed++; continue; }
         try {
           await saveQueued(it);
           if (!canDrain()) break;
@@ -232,6 +242,7 @@ export function createOutbox(ctx) {
       }
       keepQueue();
       mirror();
+      if (confirmed && canDrain()) { toast(confirmed === 1 ? "Message Sent" : "Messages sent"); after(); }
     }).finally(() => { draining = null; });
     return draining;
   }
@@ -352,7 +363,8 @@ export function createOutbox(ctx) {
   const on = (t, ev, fn) => { t?.addEventListener?.(ev, fn); offs.push(() => t?.removeEventListener?.(ev, fn)); };
   const refresh = () => { mirror(); return drain(); };
   if (store.on) offs.push(store.on("access", refresh));
-  on(globalThis, "online", () => drain());
+  on(globalThis, "offline", mirror);
+  on(globalThis, "online", refresh);
   offs.push(fw.on?.("visible", () => drain()) || (() => {}));
   // (put away during the undo window: it goes at once, as app.js's sendNow)
   on(globalThis, "pagehide", () => { for (const it of items.values()) if (it.state === "waiting") go(it, { keepalive: true }); });

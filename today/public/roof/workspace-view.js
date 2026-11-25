@@ -163,7 +163,7 @@ export function createWorkspaceView(root, callbacks = {}) {
   const overview = el("section", { class: "ws-home-overview", "aria-label": hasSavedWorkspaces ? "Your workspaces" : "Today" }, homeTitle, phoneChips, summaryCard?.card);
   const todaySlot = el("div", { class: "ws-today-slot", data: { workspaceSlot: "today" } });
   const recentRows = el("div", { class: "ws-resume-rows" }), recentRecords = new Map();
-  const recentPanel = el("section", { class: "ws-home-panel", "aria-label": "Pick up where you left off", hidden: true }, el("h2", { text: "Pick up where you left off" }), recentRows);
+  const recentPanel = el("section", { class: "ws-home-panel ws-resume-panel", "aria-label": "Pick up where you left off", hidden: true }, el("h2", { text: "Pick up where you left off" }), recentRows);
   const activityRows = el("div", { class: "ws-home-activity-rows" }), activityRecords = new Map();
   const activityOpen = callable(callbacks.onActivity) ? bindButton("Open Activity", "chev", "home-activity", () => invoke("onActivity"), "ws-home-panel-open") : null;
   activityOpen?.prepend(el("span", { text: "Activity" }));
@@ -171,6 +171,17 @@ export function createWorkspaceView(root, callbacks = {}) {
   const homeSide = el("aside", { class: "ws-home-side", "aria-label": "Continue and activity", hidden: true }, recentPanel, activityPanel);
   const homeBody = el("div", { class: "ws-home-body" }, todaySlot, homeSide);
   const todayView = el("div", { class: "ws-home" }, overview, homeBody);
+  function placeResumePanel() {
+    const lead = model.resumeItems?.length && globalThis.matchMedia?.("(max-width: 959px)").matches && callbacks.todayLead?.();
+    const inline = !!lead && todaySlot.contains(lead);
+    if (inline ? lead.nextElementSibling !== recentPanel : recentPanel.parentNode !== homeSide) {
+      const focus = recentPanel.contains(document.activeElement) ? document.activeElement : null;
+      if (inline) lead.after(recentPanel); else homeSide.prepend(recentPanel);
+      focus?.focus({ preventScroll: true });
+    }
+    homeSide.hidden = (inline || recentPanel.hidden) && activityPanel.hidden;
+    homeBody.dataset.side = String(!homeSide.hidden);
+  }
 
   const foregroundTabs = el("div", { class: "ws-pane-tabs", role: "tablist", "aria-label": "Ride workspace apps" });
   const foregroundButtons = new Map();
@@ -575,12 +586,21 @@ export function createWorkspaceView(root, callbacks = {}) {
     root.dataset.mode = mode;
     root.dataset.unified = model.unifiedHome ? "true" : "false";
     words(homeTitle, model.unifiedHome ? model.greeting || "Your day, together" : "Your day, together");
-    const recents = (Array.isArray(model.recentApps) ? model.recentApps : []).filter(item => APP_NAMES[item?.app] && callable(callbacks.onRecent)).slice(0, 4);
+    const items = (Array.isArray(model.resumeItems) ? model.resumeItems : []).filter(item => item?.key && item.title && callable(callbacks.onResume));
+    const recent = (Array.isArray(model.recentApps) ? model.recentApps : []).filter(item => APP_NAMES[item?.app] && callable(callbacks.onRecent));
+    const recents = (items.length ? items : recent).slice(0, 4);
     recentPanel.hidden = !model.unifiedHome || !recents.length;
-    reconcile(recentRows, recentRecords, recents, item => item.app, item => {
-      const node = bindButton(`Continue in ${APP_NAMES[item.app]}`, null, `recent:${item.app}`, () => invoke("onRecent", item.app), "ws-resume-row");
-      node.append(appSymbol(item.app), el("span", { text: APP_NAMES[item.app] }), icon("chev")); return node;
-    }, () => {});
+    reconcile(recentRows, recentRecords, recents, item => item.key || item.app, item => {
+      const key = item.key || item.app;
+      const node = bindButton(item.title || `Continue in ${APP_NAMES[item.app]}`, null, `recent:${key}`, () => item.key ? invoke("onResume", key) : invoke("onRecent", key), "ws-resume-row");
+      node.append(appSymbol(item.app), el("span", {class:"ws-resume-copy"}, el("b"), el("small")), icon("chev"));
+      return node;
+    }, (node, item) => {
+      const title=item.title||APP_NAMES[item.app],detail=node.querySelector("small");
+      node.setAttribute("aria-label",item.key?[title,item.detail].filter(Boolean).join(" · "):`Continue in ${title}`);
+      words(node.querySelector("b"),title);
+      words(detail,item.detail||"");detail.hidden=!item.detail;
+    });
     const jobs = (Array.isArray(model.recentActivity) ? model.recentActivity : []).filter(item => item?.key && item?.title).slice(0, 3);
     activityPanel.hidden = !model.unifiedHome || !jobs.length;
     reconcile(activityRows, activityRecords, jobs, item => item.key, () => el("div", { class: "ws-home-activity-row" }, el("span", { class: "ws-home-job-icon", "aria-hidden": "true" }), el("div", {}, el("strong"), el("span"))), (node, item) => {
@@ -588,7 +608,7 @@ export function createWorkspaceView(root, callbacks = {}) {
       if (node.dataset.status !== item.status) { node.dataset.status = item.status; node.firstChild.replaceChildren(icon(glyph)); }
       words(node.querySelector("strong"), item.title); words(node.lastElementChild.lastElementChild, item.detail || item.status);
     });
-    homeSide.hidden = recentPanel.hidden && activityPanel.hidden; homeBody.dataset.side = String(!homeSide.hidden);
+    placeResumePanel();
     homeMode?.setAttribute("aria-pressed", String(mode === "today"));
     workspaceMode?.setAttribute("aria-pressed", String(mode === "workspace"));
     offline.hidden = model.connectionManaged || model.online !== false;
@@ -859,11 +879,12 @@ export function createWorkspaceView(root, callbacks = {}) {
     finishGesture(false); closeWindowMenu();
     gone = true; stopOrder(dockApps); stopMotion(); cancelAnimationFrame(frame); for (const off of cleanups.splice(0)) off(); actions.clear();
     dockHost.remove();
+    recentPanel.remove();
     root.replaceChildren(); root.classList.remove("ifl-workspace");
     for (const key of ["mode", "foregroundApp", "focusedApp", "paneCount", "layout", "windowCount"]) delete root.dataset[key];
   }
   if (callbacks.signal) { const abort = () => destroy(); callbacks.signal.addEventListener("abort", abort, { once: true }); cleanups.push(() => callbacks.signal.removeEventListener("abort", abort)); }
-  listen(globalThis,"resize",()=>selectDock(false));
+  listen(globalThis,"resize",()=>{ selectDock(false); placeResumePanel(); });
   const slots = { today: todaySlot, files: filesSlot, ...Object.fromEntries(WINDOW_APPS.map(app => [app, panes.get(app).slot])), app: panes.get("app").slot, dockAnchor, sidebarAnchor };
   update();
   if (callbacks.signal?.aborted) destroy();

@@ -34,14 +34,17 @@ export function createSheets(F, { beforeOpen } = {}) {
   // page, not the page above the keyboard, so a sheet fixed to the page's foot sat under it, its field out of sight: it's
   // taken up by how much of the page the keyboard covers, the page's height less what's in sight and where that starts)
   const v = globalThis.visualViewport;
-  let lateT = 0, fitFrame = 0, observedBody = null;
+  let lateT = 0, fitFrame = 0, observedBody = null, keyboard = false;
   function revealField() {
     const sheet = open.at(-1), field = focused();
     if (!sheet?.el.classList.contains("ifs-kb-body") || !sheet.body?.contains(field)) return;
     const { el, body } = sheet;
     if (el.scrollTop) el.scrollTop = 0;
     const bounds = body.getBoundingClientRect(), target = field.getBoundingClientRect();
-    if (target.height > bounds.height) return;
+    if (target.height > bounds.height) {
+      if (target.bottom <= bounds.top || target.top >= bounds.bottom) body.scrollTop += Math.round(target.top - bounds.top);
+      return;
+    }
     if (target.bottom > bounds.bottom) body.scrollTop += Math.ceil(target.bottom - bounds.bottom);
     else if (target.top < bounds.top) body.scrollTop += Math.floor(target.top - bounds.top);
   }
@@ -53,14 +56,21 @@ export function createSheets(F, { beforeOpen } = {}) {
     if (body) bodyResize?.observe(body);
   }
   const fit = () => {
-    const height = v?.height || document.documentElement.clientHeight, top = v?.offsetTop || 0;
-    const foot = Math.max(0, Math.round(document.documentElement.clientHeight - height - top));
+    const layoutHeight = document.documentElement.clientHeight;
+    const height = v?.height || layoutHeight, top = Math.max(0, v?.offsetTop || 0);
+    const covered = Math.max(0, Math.round(layoutHeight - height));
+    const foot = Math.max(0, covered - Math.round(top));
     const s = globalThis.screen, portrait = matchMedia("(orientation: portrait)").matches;
     const tall = s ? (portrait ? Math.max(s.width, s.height) : Math.min(s.width, s.height)) : height;
     const field = focused();
     const editing = field?.matches("input,textarea,[contenteditable]");
     const typing = editing && matchMedia("(any-pointer: coarse)").matches;
-    const up = Math.abs((v?.scale || 1) - 1) < 0.01 && (foot > 40 || (typing && tall - height > 260));
+    // Browser chrome can change the viewport without opening a keyboard. Keep
+    // the keyboard layout during focus changes until the viewport grows again.
+    const fitted = Math.abs((v?.scale || 1) - 1) < 0.01;
+    const keyboardCovers = covered > (editing || keyboard ? 80 : 160);
+    keyboard = fitted && (keyboardCovers || (typing && tall - height > 260));
+    const up = keyboard;
     const sheet = open.at(-1);
     if (sheet) {
       const { el, body } = sheet;
@@ -99,7 +109,7 @@ export function createSheets(F, { beforeOpen } = {}) {
   const sync = () => {
     const up = open.length > 0;
     document.body.classList.toggle("sheet-up", up);
-    if (!up) document.body.classList.remove("kb-up");
+    if (!up) { keyboard = false; document.body.classList.remove("kb-up"); }
     // (and again a moment after, and after a field's chosen or typed in: iOS raises its row of word suggestions after
     // the keyboard, and doesn't always say so)
     if (v) for (const [t, e] of [[v, "resize"], [v, "scroll"], [document, "focusin"], [document, "focusout"], [document, "input"], [document, "visibilitychange"], [globalThis, "pageshow"], [globalThis, "resize"]]) t[up ? "addEventListener" : "removeEventListener"](e, later);

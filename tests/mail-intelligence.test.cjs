@@ -329,6 +329,23 @@ test('an interrupted offline Mail send keeps its retry key and saved draft throu
   assert.equal(reloaded.pending()[0]?.key, awaitingCheck.key);
   assert.equal(saves.filter(draft => draft.id === awaitingCheck.key).length, 0);
   assert.equal(sends.filter(send => send.key === awaitingCheck.key).length, 0);
+
+  reloaded.destroy();
+  data.clear();
+  api.sent = async keys => ({ sent: keys.filter(key => delivered.has(key)) });
+  api.sendDraft = async (id, key) => { sends.push({ id, key }); delivered.add(key); throw Error('Response lost after send'); };
+  const onlineBox = createOutbox(ctx);
+  t.after(() => onlineBox.destroy());
+  const pendingSend = await onlineBox.send({ subject: 'Send after the undo period' });
+  await onlineBox.flush();
+  assert.equal(onlineBox.pending()[0]?.state, 'failed');
+  onlineBox.destroy();
+  const afterReload = createOutbox(ctx);
+  t.after(() => afterReload.destroy());
+  assert.equal(afterReload.pending()[0]?.key, pendingSend.key);
+  await afterReload.retry(pendingSend.key);
+  assert.equal(sends.filter(send => send.key === pendingSend.key).length, 1, 'a confirmed send is not replayed after reload');
+  assert.deepEqual(afterReload.pending(), []);
 });
 
 test('switching Mail owners cannot expose or send previous drafts, queued mail, or quick replies', async t => {
