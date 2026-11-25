@@ -133,6 +133,21 @@ export async function mount(root, fw) {
   ctx.actions = createActions(ctx);
   ctx.outbox = createOutbox(ctx);
   const { actions } = ctx;
+  const hasLocalDraft = () => {
+    const draft = ctx.outbox.unsent();
+    return !!(draft && (draft.subject || draft.text || draft.to?.length || draft.cc?.length || draft.bcc?.length));
+  };
+  ctx.hasLocalDraft = hasLocalDraft;
+  ctx.open.resumeDraft = async current => {
+    if (!canDraft() || !current()) return { ok: false, cancelled: true };
+    if (hasLocalDraft()) return { ok: !!(await ctx.open.compose({ restoreLocal: true }, current)), pending: true };
+    const { drafts = [] } = await api.threads({ view: "drafts" });
+    if (!canDraft() || !current()) return { ok: false, cancelled: true };
+    const sending = new Set(store.get().outbox.map(item => item.draft?.draftId));
+    const draft = drafts.find(item => logic.idOk(item?.id) && !sending.has(item.id));
+    if (!draft) return { ok: false, error: "There are no drafts to resume." };
+    return { ok: !!(await ctx.open.compose({ draftId: draft.id }, current)), pending: true };
+  };
 
   const make = (tag, cls, label) => { const el = doc.createElement(tag); el.className = cls; if (label) el.setAttribute("aria-label", label); root.append(el); return el; };
   const stateEl = make("div", "ml-state");
@@ -152,8 +167,8 @@ export async function mount(root, fw) {
     if (next !== owner && (previous === owner || next)) lock("signin");
   });
   const drawResume = () => {
-    const s = store.get(), draft = ctx.outbox.unsent();
-    resumeDraft.hidden = !alive || !onScreen || s.access !== "ok" || s.compose || !draft || !(draft.subject || draft.text || draft.to?.length || draft.cc?.length || draft.bcc?.length);
+    const s = store.get();
+    resumeDraft.hidden = !alive || !onScreen || s.access !== "ok" || s.compose || !hasLocalDraft();
   };
   offs.push(...["access", "compose", "outbox", "offline"].map(key => store.on(key, drawResume)));
 

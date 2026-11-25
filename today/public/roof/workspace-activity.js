@@ -63,7 +63,7 @@ export function createWorkspaceActivity(F, { registry, onOpen } = {}) {
     if (focused === clear && clear.hidden) summary.focus({ preventScroll: true });
     else if (focused?.isConnected && document.activeElement === document.body) focused.focus?.({ preventScroll: true });
   }
-  async function open({focusKey} = {}) {
+  async function open() {
     if (!live()) return;
     close(); const at = epoch, route = F.route;
     const current = () => live() && epoch === at && F.route === route;
@@ -76,11 +76,6 @@ export function createWorkspaceActivity(F, { registry, onOpen } = {}) {
     list = ui.el("div", { class: "wsa-list", role: "list", "aria-label": "Background activity" });
     const body = ui.el("div", { class: "wsa" }, ui.el("div", { class: "wsa-top" }, summary, clear), error, list);
     handle = F.sheet.open({ sheet: "workspace-activity", title: "Activity", body, onClose: cleanSheet }); draw();
-    if (focusKey) {
-      const row = rows.get(focusKey)?.node;
-      row?.scrollIntoView({block:"nearest"});
-      row?.querySelector("button")?.focus({preventScroll:true});
-    }
     if (onOpen) Promise.resolve().then(onOpen).then(result => {
       if (current() && handle && error && result?.error) { error.textContent = result.error; error.hidden = false; }
     }).catch(() => {});

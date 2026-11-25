@@ -36,12 +36,22 @@ export async function createWorkspace(F, options = {}) {
   options.dockRoot?.append(background);
   const organiseStores=new Map();
   const organiseStore=kind=>{if(!['notes','people','calendar'].includes(kind)||!live())return Promise.reject(new Error('This account was released'));if(!organiseStores.has(kind))organiseStores.set(kind,import('/organise/releases/4.33.1/store.js').then(m=>live()?m.createStore(F,kind):null).then(store=>{if(store&&live())F.systemTasks?.register?.(store,{signal:F.signal});return store}));return organiseStores.get(kind)};
+  async function planEvent({ title, description = '', start = Date.now() + 3600000, end = start + 3600000, timezone, links = [] }, current = live) {
+    if (!live() || !current()) return false;
+    const [{ operationId }, calendar] = await Promise.all([import('./system-client.js'), organiseStore('calendar')]);
+    if (!live() || !current()) return false;
+    const id = operationId();
+    await calendar.keepForm(id, { title, description, allDay: false, start, end,
+      timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', links }, 0);
+    if (!live() || !current()) return false;
+    F.nav.go('/calendar/#item=' + id);
+    return true;
+  }
   let securityLoad=null;
   const security=()=>securityLoad||=(import('./security-module.js').then(m=>live()?m.createSecurityModule(F,{remembered:()=>system().then(s=>s?.devices()),calendars:()=>lifeTools().then(s=>s?.calendars())}):null).catch(e=>{securityLoad=null;throw e}));
-  let lifeLoad=null,lifeInstance=null,upcoming=null;
-  const lifeTools=()=>lifeLoad||=(Promise.all([import('./life410.js'),system()]).then(([m,s])=>live()?m.createLifeTools(F,{system:s,files,organiseStore,today,editToday:options.onEditToday,onChange:paint}):null).then(tools=>{if(live()){lifeInstance=tools;paint()}return tools}).catch(e=>{lifeLoad=null;throw e}));
+  let lifeLoad=null,captureMode=null,upcoming=null;
+  const lifeTools=()=>lifeLoad||=(Promise.all([import('./life410.js'),system()]).then(([m,s])=>live()?m.createLifeTools(F,{system:s,files,organiseStore,planEvent,today,editToday:options.onEditToday,onChange:mode=>{captureMode=mode;paint()}}):null).catch(e=>{lifeLoad=null;throw e}));
   let files = null, commands = null, dialogs = null, recovery = null, recoveryView = null,systemInstance=null,systemLoad=null;
-  const planEvent=(spec,current)=>lifeTools().then(tools=>live()&&tools?.planEvent(spec,current));
   const system=()=>systemLoad||=(import('./system350.js').then(m=>live()?m.createSystem350(F,{today,files,day:options.day,snapshots:()=>snapshots,activity:activity.source('reminders',{current:live,signal:F.signal}),openSource,planEvent,onChange:paint}):null).then(s=>{if(live()){systemInstance=s;paint()}return s}).catch(error=>{systemLoad=null;throw error}));
   let dialogInstance = null, dialogLoad = null;
   let explorer = null, explorerLoad = null, filesLocation = safeFilesLocation({ kind: "drive" }), pendingFilesQuery = null;
@@ -220,15 +230,21 @@ export async function createWorkspace(F, options = {}) {
   }
   function resumeItems(){
     const time=Date.now(),items=[];
-    const draft=lifeInstance?.captureDraft();
-    if(draft)items.push({key:'capture:'+draft.key,app:'notes',title:'Resume Quick Capture',detail:draft.mode==='reminder'?'Reminder draft':'Note draft',open:()=>lifeInstance?.capture()});
-    else if(appOn('mail')&&snapshots.get('mail')?.resumeDraft)items.push({key:'mail-draft',app:'mail',title:'Resume email draft',detail:'Mail',open:()=>runIntent('mail','resume-draft')});
+    if(captureMode)items.push({key:'quick-capture',app:'notes',title:'Resume Quick Capture',detail:captureMode==='reminder'?'Reminder draft':'Note draft',open:()=>lifeTools().then(tools=>live()&&tools?.capture())});
+    else if(appOn('mail')&&snapshots.get('mail')?.drafts>0)items.push({key:'mail-draft',app:'mail',title:'Resume email draft',detail:'Mail',open:()=>runIntent('mail','resume-draft')});
     const due=systemInstance?.store.snapshot().filter(value=>value.status==='open'&&Number.isFinite(value.dueAt)&&value.dueAt<=time+864e5).sort((a,b)=>a.dueAt-b.dueAt)[0];
     if(due)items.push({key:'reminder:'+due.id,app:'today',title:due.title,detail:due.dueAt<time?'Reminder · Due':'Reminder · '+new Date(due.dueAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),open:()=>systemInstance?.openTask(due.id)});
     if(upcoming&&upcoming.ends>time&&appOn('calendar')&&!html.hasAttribute('data-life-hide-calendar'))items.push({key:'event:'+upcoming.id,app:'calendar',title:upcoming.title,detail:upcoming.detail,open:()=>openSource({app:'calendar',id:upcoming.id})});
     const transfers=files?.transfers()||[],upload=transfers.find(row=>row.status==='failed')||transfers.find(row=>row.cancelable);
-    if(upload)items.push({key:'upload:'+upload.id,app:'files',title:upload.name,detail:upload.label,open:()=>activityView.open({focusKey:'files:'+upload.id})});
+    if(upload)items.push({key:'upload:'+upload.id,app:'files',title:upload.name,detail:upload.label,open:()=>openUpload(upload.id)});
     return items;
+  }
+  async function openUpload(id) {
+    const sheet = await activityView.open();
+    if (!live() || !sheet || sheet.closed) return;
+    const row = sheet.el.querySelector(`[data-activity="${CSS.escape('files:' + id)}"]`);
+    row?.scrollIntoView({ block: 'nearest' });
+    row?.querySelector('button')?.focus({ preventScroll: true });
   }
   function fileIndicator(){
     const rows=files?.transfers?.()||[],active=rows.filter(r=>['queued','reserving','uploading'].includes(r.status));

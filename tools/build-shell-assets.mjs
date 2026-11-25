@@ -14,9 +14,11 @@ export function buildShellAssets(destination, transform) {
     cpSync(source, next, { recursive: true });
     writeFileSync(join(next, "settings-documents.js"), settingsDocuments(pathToFileURL(join(next, "index.html"))));
     const roof = join(next, 'roof');
-    for (const entry of readdirSync(roof, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith('.js')) continue;
-      const path = join(roof, entry.name);
+    const modules = readdirSync(roof, { withFileTypes: true })
+      .filter(entry => entry.isFile() && entry.name.endsWith('.js'))
+      .map(entry => join(roof, entry.name));
+    modules.push(join(next, 'ride-departures.js'));
+    for (const path of modules) {
       const { code } = transform(readFileSync(path, 'utf8'), {
         sourcefile: basename(path), format: 'esm', target: 'esnext', charset: 'utf8',
         legalComments: 'none', minify: true,
