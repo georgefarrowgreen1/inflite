@@ -19,7 +19,7 @@ import {
 } from "./db.js";
 import { receiveEmail, retryPending, snippet } from "./receive.js";
 import { settings, updateSettings, listAddresses, createAddress, updateAddress, deleteAddress, addressOf, defaultAddress, localProblem } from "./addresses.js";
-import { listThreads, getThread, threadAction, counts, wakeSnoozed, unsubInfo, readAll } from "./threads.js";
+import { listThreads, getThread, getThreadPage, threadAction, counts, wakeSnoozed, unsubInfo, readAll } from "./threads.js";
 import { vapid, pushAll, pushEndpointOk, peopleUnread, noticeInflite } from "./push.js";
 import { listedOrigins, hubOf, hubHeaders, preflight, hubRefusal, hubNavigation, RASTER } from "./hubgate.js";
 import { cleanQuote, personalMessage, quoteFrom } from "./quote.js";
@@ -345,10 +345,17 @@ async function route(request, env, ctx, url, view, hub = null) {
   }
   if ((m = pathname.match(/^\/api\/threads\/([\w-]+)$/))) {
     if (method === "GET") {
-      const t = await getThread(env, m[1]);
+      if (url.searchParams.has("after")) {
+        const page = await getThreadPage(env, m[1], url.searchParams.get("after"));
+        if (!page) throw new HttpError(400, "Refresh the conversation.");
+        return json(page);
+      }
+      const [t, spots] = await Promise.all([
+        getThread(env, m[1], { paged: url.searchParams.get("paged") === "1" }),
+        threadSpots(env, m[1]).catch(() => (console.error("mail spots failed"), null)),
+      ]);
       if (!t) throw new HttpError(404, "Conversation not found");
       // (the bookings, parcels and bills spotted in it, for the strip at its top, while their switches are on)
-      const spots = await threadSpots(env, m[1]).catch(() => (console.error("mail spots failed"), null));
       return json(spots?.length ? { ...t, spots } : t);
     }
     if (method === "POST") {

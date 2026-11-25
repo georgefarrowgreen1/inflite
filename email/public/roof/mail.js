@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.25.5";
-export const NEWS = "Personal emails, quoted replies and signatures have a new light and dark design.";
+export const BUILD = "2.25.6";
+export const NEWS = "Mail opens long conversations faster and keeps earlier messages as you scroll.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

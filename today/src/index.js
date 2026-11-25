@@ -233,6 +233,10 @@ async function api(request, env, url) {
   }
   const query = new URLSearchParams();
   for (const k of QUERY) for (const v of url.searchParams.getAll(k)) query.append(k, v);
+  const launch = url.searchParams.get("launch");
+  if ((route.path === "today/me" || route.path === "today/cards") && /^[a-f0-9-]{36}$/.test(launch || "")) query.set("launch", launch);
+  const cardRev = url.searchParams.get("cardRev");
+  if (route.path === "today/cards" && cardRev && cardRev.length <= 240) query.set("cardRev", cardRev);
 
   // (tests only: the moment of the day to work it out at, passed on where this Worker's TEST_AT says so, never in production)
   const at = env.TEST_AT === "1" ? request.headers.get("X-Today-At") : null;

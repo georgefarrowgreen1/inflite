@@ -15,6 +15,7 @@ if (context) {
   const setMotion = bubbleMotion(canvas, paint);
   let suspended = false;
   let inView = true;
+  let width = canvas.clientWidth, height = canvas.clientHeight;
   // The opening is opaque while the ribbons turn. A skipped opening cancels this animation.
   let formingLogo = document.querySelector(".entrance-weave")?.getAnimations?.()[0];
   if (formingLogo) {
@@ -23,7 +24,6 @@ if (context) {
   }
 
   function paint(dt, pointer, live, frameMs) {
-    const width = canvas.clientWidth, height = canvas.clientHeight;
     if (!width || !height) return;
     const aspect = width/height;
     // Compose the first frame beside the copy. The motion solver never sees these bounds.
@@ -47,7 +47,11 @@ if (context) {
   }
 
   for (const media of [light, reduce, solid]) media.addEventListener("change", sync);
-  new ResizeObserver(sync).observe(canvas.parentElement);
+  new ResizeObserver(() => {
+    width = canvas.clientWidth;
+    height = canvas.clientHeight;
+    sync();
+  }).observe(canvas.parentElement);
   if (stage && "IntersectionObserver" in window) {
     new IntersectionObserver(([entry]) => {
       inView = entry.isIntersecting;

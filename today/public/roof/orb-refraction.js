@@ -33,6 +33,7 @@ function bevel(width, height, radii, profile, density) {
 
 function paint(crop) {
   const {art, canvas, ctx, x, y, width, height, cssWidth, cssHeight} = crop;
+  const sx = x * art.width, sy = y * art.height;
   const sw = width * art.width, sh = height * art.height;
   const w = Math.max(1, Math.round(sw)), h = Math.max(1, Math.round(sh));
   // Match the backing store of the artwork, including display-density changes.
@@ -45,7 +46,7 @@ function paint(crop) {
   for (const {path, insetX, insetY} of crop.bands) {
     ctx.save();
     ctx.clip(path, "evenodd");
-    ctx.drawImage(art, x*art.width + insetX*sw, y*art.height + insetY*sh,
+    ctx.drawImage(art, sx + insetX*sw, sy + insetY*sh,
       sw*(1-2*insetX), sh*(1-2*insetY), 0, 0, cssWidth, cssHeight);
     ctx.restore();
   }
@@ -71,8 +72,8 @@ function removeCrops() {
 function align() {
   pending = 0;
   if (!source || !strength || !root.hasAttribute("data-midnight-lava") || document.hidden) { removeCrops(); return; }
-  const seen = new Set();
-  const boxes = [];
+  const boxes = new Map();
+  const sceneRect = source.getBoundingClientRect();
   let animating = false;
   for (const node of document.querySelectorAll(eligible)) {
     const box = node.getBoundingClientRect();
@@ -84,7 +85,7 @@ function align() {
     const preview = node.matches(".settings-preview-dock");
     const host = preview ? node.parentElement : source.parentElement;
     const art = preview ? host.querySelector(":scope > canvas") : source;
-    const scene = art?.getBoundingClientRect();
+    const scene = preview ? art?.getBoundingClientRect() : sceneRect;
     if (!scene?.width || !scene.height) continue;
     const origin = preview ? host.getBoundingClientRect() : scene;
     const round = Math.min(box.width, box.height)/2;
@@ -92,9 +93,9 @@ function align() {
       .map(radius => radius.endsWith("%") ? Math.min(1,parseFloat(radius)/50)*round : Math.min(round,parseFloat(radius) || 0));
     const profile = node.matches(controlSurfaces) ? profiles.control :
       node.matches(windowSurfaces) ? profiles.sheet : profiles.dock;
-    boxes.push({node, host, art, box, scene, origin, radius:style.borderRadius, radii, profile});
+    boxes.set(node, {host, art, box, scene, origin, radius:style.borderRadius, radii, profile});
   }
-  for (const {node, host, art, box, scene, origin, radius, radii, profile} of boxes) {
+  for (const [node, {host, art, box, scene, origin, radius, radii, profile}] of boxes) {
     let crop = crops.get(node);
     if (!crop) {
       const layer = document.createElement("div"), canvas = document.createElement("canvas");
@@ -111,7 +112,6 @@ function align() {
       crops.set(node, crop);
       sizes?.observe(node);
     }
-    seen.add(node);
     const x = (box.left - scene.left) / scene.width, y = (box.top - scene.top) / scene.height;
     const width = box.width / scene.width, height = box.height / scene.height;
     if (crop.cssWidth !== box.width || crop.cssHeight !== box.height || crop.radius !== radius || crop.profile !== profile || crop.strength !== strength) {
@@ -128,7 +128,7 @@ function align() {
       Object.assign(crop.layer.style, {left:left+"px", top:top+"px"});
     }
   }
-  for (const [node, crop] of crops) if (!seen.has(node)) { sizes?.unobserve(node); crop.layer.remove(); crops.delete(node); }
+  for (const [node, crop] of crops) if (!boxes.has(node)) { sizes?.unobserve(node); crop.layer.remove(); crops.delete(node); }
   if (animating) schedule();
 }
 

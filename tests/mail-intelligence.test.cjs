@@ -2,6 +2,32 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { DatabaseSync } = require('node:sqlite');
 
+test('conversation history paginates same-date messages exactly once while keeping the full count', async () => {
+  const sql = new DatabaseSync(':memory:');
+  const query = (text, args = []) => ({
+    bind: (...values) => query(text, values),
+    first: async () => sql.prepare(text).get(...args) || null,
+    all: async () => ({ results: sql.prepare(text).all(...args) }),
+    run: async () => ({ meta: { changes: sql.prepare(text).run(...args).changes } }),
+  });
+  const env = { DB: { prepare: query, batch: async statements => Promise.all(statements.map(statement => statement.all())) } };
+  try {
+    const { ensureSchema } = await import('../email/src/db.js?history-pagination');
+    const { getThread, getThreadPage } = await import('../email/src/threads.js');
+    await ensureSchema(env);
+    const insert = sql.prepare("INSERT INTO messages(id, folder, thread_id, date, subject) VALUES(?, 'inbox', 'test-thread', 1800000000000, 'Fixture')");
+    for (let n = 0; n < 30; n++) insert.run('msg-' + String(n).padStart(2, '0'));
+    const first = await getThread(env, 'test-thread', { paged: true });
+    assert.equal(first.count, 30);
+    assert.equal(first.messages.length, 24);
+    const rest = await getThreadPage(env, 'test-thread', first.nextAfter);
+    assert.equal(rest.nextAfter, null);
+    assert.equal(rest.messages.length, 6);
+    const full = await getThread(env, 'test-thread');
+    assert.deepEqual([...first.messages, ...rest.messages], full.messages);
+  } finally { sql.close(); }
+});
+
 test('time suggestions need an explicit, unambiguous request and preserve wall time and duration', async () => {
   const { proposedTime } = await import('../email/src/time-change.js');
   const { moveTime } = await import('../today/public/organise/mail-calendar.js');

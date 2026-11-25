@@ -3,6 +3,7 @@ import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { sealShellWorker } from './shell-integrity.mjs';
 import { settingsDocuments } from './settings-documents.mjs';
+import { compileEntries } from './entry-assets.mjs';
 
 const source = fileURLToPath(new URL('../today/public/', import.meta.url));
 
@@ -25,6 +26,7 @@ export function buildShellAssets(destination, transform) {
       });
       writeFileSync(path, code);
     }
+    compileEntries(next, transform, 'esm');
     const worker = pathToFileURL(join(next, 'sw.js'));
     writeFileSync(worker, sealShellWorker(readFileSync(worker, 'utf8'), worker));
     if (existsSync(destination)) renameSync(destination, previous);

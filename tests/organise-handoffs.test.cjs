@@ -4,10 +4,9 @@ const {test,before}=require('node:test'),assert=require('node:assert/strict');
 const {readFile}=require('node:fs/promises'),{resolve}=require('node:path'),{pathToFileURL}=require('node:url');
 let openAtlasDraft;
 before(async()=>{
- const filename=resolve(__dirname,'../today/public/organise/app.js');
+ const filename=resolve(__dirname,'../today/public/organise/editor.js');
  const source=(await readFile(filename,'utf8'))
-  .replace("import {createStore} from './store.js';","const createStore=()=>{throw Error('No account access in review tests')};")
-  .replace("import {operationId} from '/roof/system-client.js';","const operationId=()=>{throw Error('No record creation before approval')};")
+  .replace("import {createSystemClient,operationId} from '/roof/system-client.js';","const createSystemClient=()=>{throw Error('No account access in review tests')};const operationId=()=>{throw Error('No record creation before approval')};")
   .replace("from './model.js'","from "+JSON.stringify(pathToFileURL(resolve(__dirname,'../today/public/organise/model.js')).href));
  ({openAtlasDraft}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64')));
 });

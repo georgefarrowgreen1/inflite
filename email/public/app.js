@@ -284,9 +284,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.25.5";
+  const BUILD = "2.25.6";
   // (what's new in it, said once it's in)
-  const NEWS = "Personal emails, quoted replies and signatures have a new light and dark design.";
+  const NEWS = "Mail opens long conversations faster and keeps earlier messages as you scroll.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.

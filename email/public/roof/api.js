@@ -58,11 +58,13 @@ export function createApi({ base = MAIL, onLost = null, onRefused = null, draftO
     // (kept going as the page goes only if it's small enough for the browser to: 64 KB at most)
     const keepalive = !!opts.keepalive && new Blob([text || ""]).size < 64000;
     const url = base + path;
+    const timeout = AbortSignal.timeout?.(opts.timeout || 20000);
+    const signal = opts.signal && timeout ? AbortSignal.any?.([opts.signal, timeout]) || opts.signal : opts.signal || timeout;
     const res = await (opts.upload && !keepalive
       ? upload(method, url, headers, text, opts.onProgress)
       : fetch(url, {
           method,
-          signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(opts.timeout || 20000) : undefined,
+          signal,
           credentials: "include",
           mode: "cors",
           keepalive,
@@ -70,6 +72,7 @@ export function createApi({ base = MAIL, onLost = null, onRefused = null, draftO
           body: text,
         })
     ).catch(() => {
+      if (opts.signal?.aborted) throw opts.signal.reason;
       if (!offline()) try { onRefused?.(); } catch {}
       throw new ApiError(0, offline() ? OFFLINE : AWAY);
     });
@@ -102,7 +105,10 @@ export function createApi({ base = MAIL, onLost = null, onRefused = null, draftO
     // (never q: a search is search(), by POST)
     threads: ({ view, category, address, before } = {}) => req("GET", `/api/threads?${qs({ view, category, address, before })}`),
     search: ({ q, view, category, address, before, count } = {}) => req("POST", "/api/threads/search", { q, view, category, address, before, count: count ? 1 : undefined }),
-    thread: (id) => req("GET", `/api/threads/${enc(id)}`),
+    thread: (id, { paged, after, signal } = {}) => {
+      const query = qs({ paged: paged ? 1 : null, after });
+      return req("GET", `/api/threads/${enc(id)}${query ? "?" + query : ""}`, undefined, { signal });
+    },
     meta: (id) => req("GET", `/api/messages/${enc(id)}/meta`),
     draft: (id) => req("GET", `/api/drafts/${enc(id)}`),
     batch: (body, opts) => req("POST", "/api/threads/batch", body, opts),

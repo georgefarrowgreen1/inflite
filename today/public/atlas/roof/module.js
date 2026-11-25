@@ -2,8 +2,8 @@ import { atlasMarkup } from "./template.js";
 import { createAtlasClient } from "../assets/app.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.6.1";
-export const NEWS = "See GitHub checks for a reviewed draft commit and follow up on a failed check in Atlas.";
+export const BUILD = "2.6.2";
+export const NEWS = "Atlas shows run progress as it happens and catches up when you reconnect.";
 export const SECTIONS = [["conversations", "Conversations"], ["tasks", "Tasks"], ["environments", "Environments"], ["briefs", "Briefs"], ["settings", "Settings"]];
 
 export function mount(root, fw) {

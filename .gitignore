@@ -4,3 +4,5 @@ node_modules/
 test-results/
 today/.assets/
 today/.assets-stage-*/
+email/.assets/
+email/.assets-stage-*/

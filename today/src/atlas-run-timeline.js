@@ -105,3 +105,51 @@ export async function readAtlasRunTimeline(env, owner, kind, id, { after = 0, li
   }));
   return { run, events, nextAfter: events.at(-1)?.seq ?? after, hasMore: rows.length > size };
 }
+
+// Follow the same durable cursor as the JSON reader. Each connection is
+// bounded and closes once the run stops or there is history to page through.
+export function streamRunTimeline(initial, { request, read, allowed, headers }) {
+  const encoder = new TextEncoder(), abort = new AbortController();
+  const signal = AbortSignal.any([request.signal, abort.signal]);
+  const wait = () => new Promise(resolve => {
+    const finish = () => { clearTimeout(timer); signal.removeEventListener("abort", finish); resolve(); };
+    const timer = setTimeout(finish, 1000);
+    signal.addEventListener("abort", finish, { once: true });
+    if (signal.aborted) finish();
+  });
+  const stream = new ReadableStream({
+    start(controller) {
+      const send = (event, data) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      async function follow() {
+        const expires = Date.now() + 20000;
+        let current = initial, stamp = JSON.stringify(initial.run);
+        try {
+          if (signal.aborted) return;
+          send("timeline", current);
+          while (current.run.active && !current.hasMore && Date.now() < expires) {
+            await wait();
+            if (signal.aborted || Date.now() >= expires) break;
+            const next = await read(current.nextAfter);
+            const changed = JSON.stringify(next.run);
+            if (next.events.length || changed !== stamp || next.hasMore) {
+              if (signal.aborted) break;
+              const access = await allowed();
+              if (signal.aborted) break;
+              if (access !== true) { send(access === false ? "access_denied" : "unavailable", {}); break; }
+              send("timeline", next);
+              stamp = changed;
+            }
+            current = next;
+          }
+        } catch (_) {
+          if (!signal.aborted) send("unavailable", {});
+        } finally {
+          if (!abort.signal.aborted) controller.close();
+        }
+      }
+      void follow();
+    },
+    cancel() { abort.abort(); },
+  });
+  return new Response(stream, { headers: { ...headers, "Content-Type": "text/event-stream; charset=utf-8", "X-Accel-Buffering": "no" } });
+}

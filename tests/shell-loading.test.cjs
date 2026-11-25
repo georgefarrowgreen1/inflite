@@ -114,9 +114,17 @@ test('the staged shell exposes one build to /version and the offline installer',
   const version = await worker.fetch(new Request(origin + '/version'), env, {});
   assert.equal((await version.json()).build, release);
   assert.ok(asset('/app.js').includes('const BUILD = "' + release + '";'));
-  assert.deepEqual(asset('/index.html'), readFileSync(resolve(__dirname, '../today/public/index.html')));
+  const html = asset('/index.html').toString();
+  const entries = [...html.matchAll(/"([^"]*\/assets\/[a-f0-9]{24}-app\.(?:js|css))"/g)].map(([, path]) => path);
+  assert.equal(entries.length, 2);
   const integrity = JSON.parse(/^const INTEGRITY = (.*);$/m.exec(sw)[1]);
   assert.ok(integrity['/'], 'the entry document is verified along with its scripts');
+  for (const path of entries) {
+    const name = path.split('-').at(-1);
+    assert.equal(path, '/assets/' + createHash('sha256').update(asset(path)).digest('hex').slice(0, 24) + '-' + name);
+    assert.deepEqual(asset(path), asset('/' + name));
+    assert.ok(integrity[path]);
+  }
   for (const [path, hash] of Object.entries(integrity)) {
     assert.equal('sha256-' + createHash('sha256').update(asset(path)).digest('base64'), hash, path);
   }

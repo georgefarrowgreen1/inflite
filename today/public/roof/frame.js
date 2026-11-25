@@ -791,6 +791,13 @@ export function createFrame(opts = {}) {
       motion: () => (reduced() ? "reduced" : "full"),
       zoomTarget: () => dropClone(m),
       fill(v) { if (live() && m.host) { if (m.host.visible) m.host.fill?.(!!v); } else if (mine()) F.fill(v); },
+      loadStyle(path) {
+        if (!live() || !REGISTRY[app].css.includes(path)) return Promise.reject(released());
+        return import("./modules.js").then(({ loadStyles }) => {
+          if (!live()) throw released();
+          return loadStyles(path);
+        });
+      },
       lazy(fn) {
         if (!live()) return Promise.reject(released());
         if (stale && !F.busy()) { reloadStale(); return new Promise(() => {}); }
