@@ -1,17 +1,11 @@
-// Today's bell: the notifications this phone's been shown, in a sheet from the header's pill (beside Search and Edit).
-// The list is the root worker's (sw.js: its log, with those still in Notification Centre merged in), asked for by
-// message ({ ifl: "notes" }, answered on a port) and told again by the worker as one comes or goes. The bell's count and
-// the Home Screen badge are one number: the unseen ones. Opening the sheet marks every one seen (those that weren't
-// keep a dot while it's open); a row stays until it's cleared (swiped either way, its Clear button, Delete, or Clear
-// All: the toast's Undo puts it back), or tapped: then it's cleared and opens where it came from, through the frame's
-// own navigation, as a tap in Notification Centre does.
+// The root worker owns this device's notification history and unread count. The inbox opens that history
+// without changing it. Opening a notification marks its row read, and clearing a row removes it with Undo.
 // The rows by day (Today, Yesterday, Earlier); several from one app that open in the same place (a conversation, a
-// share, a place's weather) on the same day are one row, the newest, with "+2" to show the rest; cleared or tapped, a
-// stack goes as one.
+// share, a place's weather) on the same day are one row, the newest, with "+2" to show the rest.
 //   createBell(F, { count(n), go(url), settings(), actions(note) → [{ id, label, icon?, run() }] }) → { open(), refresh(), destroy() }
 //   when(at, now, spoken) → "Now" | "5m" | "11:02" | "Yesterday" | "Mon" | "7 Nov"
 //   group(list, now) → [{ key: "today" | "yesterday" | "earlier", label, stacks: [{ key, head, rest }] }]
-//   draw(box, list, { ui, now, fresh, shown, open(ns), clear(ns, row, dir), more(key) })
+//   draw(box, list, { ui, now, fresh, shown, open(ns, row, destination), clear(ns, row, dir), more(key) })
 // Nothing here but builders through F.ui (data as text only) and custom properties set by setProperty; no storage of
 // its own.
 
@@ -47,39 +41,49 @@ export function group(list, now = Date.now()) {
   return secs;
 }
 
-// the list into box: a section a day, a row a stack (or, with the stack shown, a row each), or the bell and "No
-// notifications"; fresh: the ids unseen as the sheet opened (a dot); shown: the stacks opened out
-export function draw(box, list, { ui, now = Date.now(), fresh = new Set(), shown = new Set(), open, clear, more = () => {}, actions = () => [], act = (_n, action) => action.run() }) {
-  if (!list.length) return box.replaceChildren(ui.el("div", { class: "ifl-nt-none", role: "status" }, ui.icon("bell"), ui.el("p", { text: "No notifications" })));
+// Render one row per stack, or each notification when its stack is expanded.
+export function draw(box, list, { ui, now = Date.now(), fresh = new Set(), shown = new Set(), empty = "No notifications", open, clear, more = () => {}, actions = () => [], act = (_n, action) => action.run() }) {
+  if (!list.length) return box.replaceChildren(ui.el("div", { class: "ifl-nt-none", role: "status" }, ui.icon("bell"), ui.el("p", { text: empty })));
   const row = (n, ns, st, sub) => {
     const k = ns.length - 1, isNew = ns.some((x) => fresh.has(x.id)), app = NAME[n.app] || "";
     const say = [isNew ? "New" : "", n.title, n.body, [app, when(n.at, now, true)].filter(Boolean).join(", "), k ? `${k} more` : ""].filter(Boolean).join(". ");
+    const moreCount = sub ? 0 : st?.rest.length || 0;
+    let offered = [];
+    try {
+      const value = actions(n);
+      if (Array.isArray(value)) offered = value.filter(a => a && typeof a.id === "string" && /^[a-z][a-z0-9-]{0,47}$/.test(a.id) && typeof a.label === "string" && a.label.trim() && typeof a.run === "function").slice(0, 3);
+    } catch (_) {}
+    const destination = offered.find(a => a.id === "app");
+    const shortcuts = offered.filter(a => a !== destination);
+    const navigates = !!destination || (typeof n.url === "string" && n.url.startsWith("/") && !n.url.startsWith("//"));
     const main = ui.el("button", { class: "ifl-nt-main", type: "button", "aria-label": say },
       ui.icon(null, { app: n.app === "chats" ? "chat" : n.app, size: 40 }),
       ui.el("span", { class: "ifl-nt-tx" },
-        ui.el("span", { class: "ifl-nt-top" }, ui.el("b", { class: "ifl-nt-t", text: n.title || "" }),
-          ui.el("span", { class: "ifl-nt-meta" }, app ? ui.el("span", { class: "ifl-nt-app", text: app }) : null, ui.el("time", { class: "ifl-nt-when", datetime: new Date(n.at).toISOString(), text: when(n.at, now) }))),
-        n.body ? ui.el("span", { class: "ifl-nt-b", text: n.body }) : null));
+        ui.el("span", { class: "ifl-nt-meta" }, app ? ui.el("span", { class: "ifl-nt-app", text: app }) : null,
+          ui.el("time", { class: "ifl-nt-when", datetime: new Date(n.at).toISOString(), text: when(n.at, now) })),
+        ui.el("b", { class: "ifl-nt-t", text: n.title || "" }),
+        n.body ? ui.el("span", { class: "ifl-nt-b", text: n.body }) : null),
+      navigates && !moreCount ? ui.el("span", { class: "ifl-nt-arrow" }, ui.icon("chev")) : null);
     const x = ui.el("button", { class: "ifl-nt-x", type: "button", "aria-label": "Clear", title: "Clear" }, ui.icon("x"));
-    const plus = st && st.rest.length && !sub
-      ? ui.el("button", { class: "ifl-nt-more", type: "button", "aria-expanded": String(shown.has(st.key)), "aria-label": `${st.rest.length} more`, title: `${st.rest.length} more` },
-        shown.has(st.key) ? ui.icon("chev") : ui.el("span", { text: `+${st.rest.length}` }))
+    const expanded = moreCount > 0 && shown.has(st.key);
+    const stackLabel = expanded ? "Collapse notifications" : `${moreCount} more notification${moreCount === 1 ? "" : "s"}`;
+    const plus = moreCount
+      ? ui.el("button", { class: "ifl-nt-more", type: "button", "aria-expanded": String(expanded), "aria-label": stackLabel, title: stackLabel },
+        ui.el("span", { class: "ifl-nt-more-label" }, expanded ? null : `+${moreCount}`, ui.icon("chev")))
       : null;
     const card = ui.el("div", { class: "ifl-nt-card" }, main, plus, x);
-    let offered = [];
-    try { const value = actions(n); if (Array.isArray(value)) offered = value.filter(a => a && typeof a.id === "string" && /^[a-z][a-z0-9-]{0,47}$/.test(a.id) && typeof a.label === "string" && a.label.trim() && typeof a.run === "function").slice(0, 3); } catch (_) {}
-    if (offered.length) {
+    if (shortcuts.length) {
       card.classList.add("has-actions");
-      card.append(ui.el("div", { class: "ifl-nt-actions", role: "group", "aria-label": "Notification actions" }, ...offered.map(a => {
-        const button = ui.el("button", { class: "ifl-nt-action", type: "button", "aria-label": `${a.label.slice(0, 80)} · ${String(n.title || app).slice(0, 120)}` }, a.icon ? ui.icon(a.icon) : null, ui.el("span", { text: a.label.slice(0, 80) }));
+      card.append(ui.el("div", { class: "ifl-nt-actions", role: "group", "aria-label": "Notification actions" }, ...shortcuts.map(a => {
+        const button = ui.el("button", { class: "ifl-nt-action", type: "button", data: { action: a.id }, "aria-label": `${a.label.slice(0, 80)} · ${String(n.title || app).slice(0, 120)}` }, a.icon ? ui.icon(a.icon) : null, ui.el("span", { text: a.label.slice(0, 80) }));
         button.addEventListener("click", () => { if (!li.dataset.dragged && !li.classList.contains("gone")) act(ns, a, li); });
         return button;
       })));
     }
     const side = () => ui.el("span", {}, ui.icon("trash"), ui.el("span", { text: "Clear" }));
-    const li = ui.el("li", { class: `ifl-nt-row${k ? " stack" : ""}${sub ? " sub" : ""}`, data: { id: n.id, stack: st?.key || null, fresh: isNew ? "1" : null } },
+    const li = ui.el("li", { class: `ifl-nt-row${sub ? " sub" : ""}`, data: { id: n.id, stack: st?.key || null, fresh: isNew ? "1" : null } },
       ui.el("div", { class: "ifl-nt-back", "aria-hidden": "true" }, side(), side()), card);
-    main.addEventListener("click", () => { if (!li.dataset.dragged) open(ns, li); });
+    main.addEventListener("click", () => { if (!li.dataset.dragged) open(ns, li, destination); });
     main.addEventListener("keydown", (e) => { if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); clear(ns, li); } });
     x.addEventListener("click", () => clear(ns, li));
     plus?.addEventListener("click", () => more(st.key));
@@ -149,9 +153,8 @@ function swipe(row, card, done) {
 
 export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from: "notification" }), settings = () => go("/#you=phone"), actions = () => [] } = {}) {
   const owner = F.session?.view?.user?.id;
-  let list = [], unread = 0, h = null, box = null, all = null, said = null, gone = false, busy = 0, tick = 0;
-  // (for this sheet's showing only: those unseen as it opened, the stacks opened out, the rows just put back)
-  let fresh = new Set(), shown = new Set(), back = new Set();
+  let list = [], unread = 0, h = null, box = null, all = null, mark = null, filters = null, said = null, gone = false, busy = 0, tick = 0;
+  let filter = "all", shown = new Set(), back = new Set();
   // (the last clearing, for the toast's Undo: what's cleared within its few seconds joins it)
   let undo = null, toasted = null;
   const pending = new Set();
@@ -178,40 +181,70 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
     });
   }
   function take(d) {
-    if (!owned() || !d || !Array.isArray(d.list)) return;
-    list = d.list.filter((n) => n && typeof n.id === "string").sort(newest);
+    if (!owned() || d?.kept === false || !Array.isArray(d?.list)) return;
+    list = d.list.filter((n) => n && typeof n.id === "string" && Number.isFinite(n.at)).sort(newest);
     unread = Math.max(0, Number(d.unread) || 0);
-    if (h) {
-      for (const n of list) if (!n.seen) fresh.add(n.id);
-      if (Array.isArray(d.fresh)) for (const id of d.fresh) fresh.add(id);
-    }
-    if (h && unread) ask({ ifl: "notes-seen" }).then(take);
-    count(h ? 0 : unread);
+    count(unread);
     // (not while a row's going: it's drawn again once it's gone)
     if (h && !busy) paint();
   }
   const refresh = () => ask({ ifl: "notes" }).then(take);
+  function markRead(notes) {
+    const ids = notes.filter(n => !n.seen).map(n => n.id);
+    if (ids.length) return ask({ ifl: "notes-seen", ids }).then(take);
+  }
+  async function launch(notes, run) {
+    unlift();
+    h?.now();
+    try {
+      const result = await run();
+      if (!owned() || result?.cancelled) return;
+      if (result === false || result === null || result?.ok === false) {
+        if (!result?.error) F.toast("That action couldn’t open. Try again.");
+        return;
+      }
+      await markRead(notes);
+    } catch (_) { if (owned()) F.toast("That action couldn’t open. Try again."); }
+  }
   // (drawn again; focus: what to put the focus on after, a selector or the first of several found; else, where it was
   // in the list, the same again)
   function paint(focus = null) {
     if (!box) return;
     const a = document.activeElement, r = box.contains(a) && a.closest(".ifl-nt-row");
-    if (!focus && r) focus = [`.ifl-nt-row[data-id="${CSS.escape(r.dataset.id)}"] .${a.classList[0]}`, ".ifl-nt-main"];
+    if (!focus && r) {
+      const target = a.dataset.action ? `[data-action="${CSS.escape(a.dataset.action)}"]` : `.${a.classList[0]}`;
+      focus = [`.ifl-nt-row[data-id="${CSS.escape(r.dataset.id)}"] ${target}`, ".ifl-nt-main"];
+    }
     const sheet = h;
+    const scroller = sheet.body;
+    const top = scroller.scrollTop;
+    const viewportTop = top > 0 ? scroller.getBoundingClientRect().top : 0;
+    const anchor = top > 0 && [...box.querySelectorAll(".ifl-nt-row:not(.gone)")].find(row => row.getBoundingClientRect().bottom > viewportTop);
+    const anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
+    const fresh = new Set(list.filter(n => !n.seen).map(n => n.id));
     const activeRow = (ns, row) => owned() && h === sheet && !!sheet && !sheet.closed && row?.isConnected && !row.classList.contains("gone") && sheet.el.contains(row) && list.some(n => n.id === ns[0]?.id);
-    draw(box, list, { ui: F.ui, fresh, shown, open: (ns, row) => { if (activeRow(ns, row)) tapped(ns); }, clear: (ns, row, dir) => { if (activeRow(ns, row)) clear(ns, row, dir); }, more: key => { if (owned() && h === sheet && !sheet?.closed) more(key); }, actions: n => owned() ? actions(n) : [], act: (ns, action, row) => {
-      if (!activeRow(ns, row)) return;
-      const ids = ns.map(n => n.id);
-      ask({ ifl: "notes-clear", ids }).then(take);
-      list = list.filter(n => !ids.includes(n.id));
-      unlift(); sheet.now();
-      try { Promise.resolve(action.run()).catch(() => { if (owned()) F.toast("That action couldn’t open. Try again."); }); }
-      catch (_) { if (owned()) F.toast("That action couldn’t open. Try again."); }
-    } });
+    const onlyUnread = filter === "unread";
+    draw(box, onlyUnread ? list.filter(n => !n.seen) : list, {
+      ui: F.ui, fresh, shown, empty: onlyUnread ? "No unread notifications" : "No notifications",
+      open: (ns, row, destination) => { if (activeRow(ns, row)) tapped(ns, destination); },
+      clear: (ns, row, dir) => { if (activeRow(ns, row)) clear(ns, row, dir); },
+      more: key => { if (owned() && h === sheet && !sheet.closed) more(key); },
+      actions: n => owned() ? actions(n) : [],
+      act: (ns, action, row) => { if (activeRow(ns, row)) void launch([ns[0]], () => action.run()); },
+    });
     for (const id of back) box.querySelector(`.ifl-nt-row[data-id="${CSS.escape(id)}"]`)?.classList.add("back");
     back = new Set();
-    if (all) all.hidden = !list.length;
-    if (focus) ([].concat(focus).map((q) => box.querySelector(q)).find(Boolean) || h?.el.querySelector("h2"))?.focus({ preventScroll: true });
+    all.hidden = onlyUnread || !list.length;
+    mark.hidden = !unread;
+    const unreadFilter = filters.querySelector('[data-value="unread"]');
+    const unreadCount = unreadFilter.querySelector(".ifl-nt-count");
+    unreadCount.hidden = !unread;
+    unreadCount.textContent = unread;
+    unreadFilter.setAttribute("aria-label", unread ? `Unread · ${unread}` : "Unread");
+    if ((a === mark && mark.hidden) || (a === all && all.hidden)) filters.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
+    else if (focus) ([].concat(focus).map((q) => box.querySelector(q)).find(Boolean) || sheet.el.querySelector("h2"))?.focus({ preventScroll: true });
+    const restored = anchor && box.querySelector(`.ifl-nt-row[data-id="${CSS.escape(anchor.dataset.id)}"]`);
+    scroller.scrollTop = restored ? scroller.scrollTop + restored.getBoundingClientRect().top - anchorTop : top;
   }
   // (the times kept true while it's open: "Now" becomes "1m")
   function retime() {
@@ -226,16 +259,16 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
   // notifications too; the toast offers them back)
   function clear(ns, row, dir = "left") {
     if (!owned()) return;
+    const sheet = h;
     const ids = ns.map((n) => n.id);
     const next = row?.nextElementSibling || row?.closest(".ifl-nt-sec")?.nextElementSibling?.querySelector(".ifl-nt-row");
     const to = next?.dataset.id ? `.ifl-nt-row[data-id="${CSS.escape(next.dataset.id)}"] .ifl-nt-main` : ".ifl-nt-main";
     const out = () => {
-      if (!owned()) return;
-      list = list.filter((x) => !ids.includes(x.id));
-      paint(to);
+      if (owned() && !busy) paint(h === sheet && !list.some(n => ids.includes(n.id)) ? to : null);
     };
-    offer(ns);
-    ask({ ifl: "notes-clear", ids }).then(take);
+    list = list.filter(n => !ids.includes(n.id));
+    const cleared = ask({ ifl: "notes-clear", ids }).then(take);
+    offer(ns, cleared);
     if (!row || reduced()) return out();
     busy++;
     row.classList.add("gone", dir === "right" ? "to-right" : "to-left");
@@ -248,72 +281,88 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
     setTimeout(() => { busy--; out(); }, 340);
   }
   // (the toast: "Cleared", with Undo; in the sheet while it's open, the page behind being inert)
-  function offer(ns) {
-    const t = Date.now(), had = undo && t - undo.t < 6000 ? undo.list : [];
-    const b = undo = { list: [...had, ...ns], t };
+  function offer(ns, cleared) {
+    const t = Date.now(), had = undo && t - undo.t < 6000 ? undo : null;
+    const b = undo = { list: [...(had?.list || []), ...ns], ready: Promise.all([had?.ready, cleared]), t };
     const n = b.list.length, text = n > 1 ? `${n} cleared` : "Cleared";
     F.toast(text, { action: { label: "Undo", run: () => putBack(b) } });
     toasted = [...document.querySelectorAll(".ifl-toast")].at(-1) || null;
     if (h && toasted) { h.el.append(toasted); if (said) { said.textContent = ""; requestAnimationFrame(() => { if (said) said.textContent = text; }); } }
   }
-  function putBack(b) {
+  async function putBack(b) {
     if (!owned()) return;
     if (undo === b) undo = null;
+    await b.ready;
+    if (!owned()) return;
     const have = new Set(list.map((n) => n.id)), add = b.list.filter((n) => !have.has(n.id));
     if (!add.length) return;
     list = [...list, ...add].sort(newest);
     for (const n of add) back.add(n.id);
     if (reduced()) back = new Set();
+    box?.classList.remove("out");
     paint(`.ifl-nt-row[data-id="${CSS.escape(add.sort(newest)[0].id)}"] .ifl-nt-main`);
-    ask({ ifl: "notes-back", list: add.map(({ id, app, title, body, url, tag, at }) => ({ id, app, title, body, url, tag, at })) }).then(take);
+    ask({ ifl: "notes-back", list: add.map(({ id, app, title, body, url, tag, at, seen }) => ({ id, app, title, body, url, tag, at, seen: !!seen })) }).then(take);
   }
   // (the toast let go of the sheet as it shuts, so it's still there to Undo with, if it's still up)
   function unlift() { if (toasted?.classList.contains("on") && h?.el.contains(toasted)) document.body.append(toasted); }
-  function tapped(ns) {
+  function tapped(ns, destination) {
     if (!owned()) return;
-    const n = ns[0], ids = ns.map((x) => x.id);
-    ask({ ifl: "notes-clear", ids }).then(take);
-    list = list.filter((x) => !ids.includes(x.id));
-    unlift();
-    h?.now();
-    if (typeof n.url === "string" && n.url.startsWith("/") && !n.url.startsWith("//")) go(n.url);
+    if (destination) return void launch(ns, () => destination.run());
+    const { url } = ns[0];
+    if (typeof url === "string" && url.startsWith("/") && !url.startsWith("//")) void launch(ns, () => go(url));
+    else void markRead(ns);
   }
   function clearAll() {
     if (!owned()) return;
+    const sheet = h;
     const was = list.slice();
     if (!was.length) return;
     list = [];
-    offer(was);
-    ask({ ifl: "notes-clear", all: true, ids: was.map((n) => n.id) }).then(take);
+    const cleared = ask({ ifl: "notes-clear", ids: was.map((n) => n.id) }).then(take);
+    offer(was, cleared);
     if (reduced() || !box) return paint("h2");
     busy++;
     box.classList.add("out");
-    setTimeout(() => { busy--; box?.classList.remove("out"); paint("h2"); }, 200);
+    setTimeout(() => {
+      busy--;
+      if (h === sheet) box?.classList.remove("out");
+      if (!busy) paint(h === sheet && !list.length ? "h2" : null);
+    }, 200);
   }
   function open() {
     if (!owned()) return null;
     if (h) return h;
-    fresh = new Set(list.filter((n) => !n.seen).map((n) => n.id));
     shown = new Set();
+    filter = "all";
     box = F.ui.el("div", { class: "ifl-nts" });
-    const set = F.ui.el("button", { class: "ifl-nt-set", type: "button", text: "Notification Settings" });
+    const set = F.ui.el("button", { class: "ifs-btn ifl-nt-set", type: "button", "aria-label": "Notification Settings", title: "Notification Settings" }, F.ui.icon("settings"), F.ui.el("span", { class: "vh", text: "Notification Settings" }));
+    filters = F.ui.seg([["all", "All"], ["unread", "Unread"]], filter, value => {
+      if (!active()) return;
+      filter = value;
+      sheet.body.scrollTop = 0;
+      paint();
+    }, { label: "Show notifications" });
+    filters.querySelector('[data-value="unread"]').append(F.ui.el("span", { class: "ifl-nt-count", "aria-hidden": "true", hidden: true }));
+    mark = F.ui.el("button", { class: "ifl-nt-mark", type: "button" }, "Mark all read");
+    all = F.ui.el("button", { class: "ifl-nt-all", type: "button", "aria-label": "Clear All", title: "Clear All" }, F.ui.icon("trash"));
     said = F.ui.el("p", { class: "vh", role: "status" });
-    const body = F.ui.el("div", { class: "ifl-nts-wrap" }, box, F.ui.el("div", { class: "ifl-nt-foot" }, set), said);
+    const controls = F.ui.el("div", { class: "ifl-nt-controls" }, filters, F.ui.el("div", { class: "ifl-nt-tools" }, mark, all));
+    const body = F.ui.el("div", {}, box, said);
     h = F.sheet.open({ sheet: "notifications", title: "Notifications", body, onClose: () => {
       unlift();
       clearInterval(tick);
-      h = null; box = null; all = null; said = null; fresh = new Set(); shown = new Set(); count(unread);
+      h = box = all = mark = filters = said = null;
     } });
     const sheet = h;
     const active = () => owned() && h === sheet && !sheet.closed;
     set.addEventListener("click", () => { if (!active()) return; unlift(); sheet.now(); settings(); });
-    all = F.ui.el("button", { class: "ifl-nt-all", type: "button", text: "Clear All" });
-    all.addEventListener("click", () => { if (active()) clearAll(); });
-    h.el.querySelector(".ifs-head [data-close]")?.before(all);
+    mark.addEventListener("click", () => { if (active()) void markRead(list); });
+    all.addEventListener("click", () => { if (active() && filter === "all") clearAll(); });
+    h.el.querySelector(".ifs-head [data-close]")?.before(set);
+    h.body.before(controls);
     paint();
-    count(0);
     tick = setInterval(retime, 30e3);
-    ask({ ifl: "notes-seen" }).then(take);
+    refresh();
     return h;
   }
   const heard = (e) => { if (e.data?.ifl === "notes") take(e.data); };

@@ -49,6 +49,47 @@ test('the offline worker orders three-part builds numerically after the old seri
   assert.equal(keepList({ app: 'notes', build: '4.6.1.beta', files }), null);
 });
 
+test('notification reads, system taps, and Undo keep the worker history and unread count in step', async () => {
+  const source = readFileSync(require.resolve('../today/public/sw.js'), 'utf8');
+  const listeners = new Map();
+  const navigations = [];
+  const now = Date.now();
+  const notifications = ['mail', 'weather', 'fitness'].map((app, index) => ({ id: app, app, title: app, at: now - index, seen: false }));
+  let state = { list: notifications, gone: [] };
+  const self = {
+    location: new URL('https://inflite.ai/'),
+    addEventListener: (event, run) => listeners.set(event, run),
+    registration: { getNotifications: async () => [] },
+    clients: { matchAll: async () => [] },
+  };
+  const { notesAsked } = vm.runInNewContext(source + `
+    notesDo = async change => transact(change);
+    openIn = async path => navigations.push(path);
+    ({ notesAsked });`, { URL, self, navigations, transact: change => state = change(state, now) });
+  const send = async (ifl, values) => {
+    let reply;
+    await notesAsked({ ifl, ...values }, { postMessage: data => { reply = structuredClone(data); } });
+    return reply;
+  };
+  const first = await send('notes-seen', { ids: ['mail'] });
+  assert.equal(first.unread, 2);
+  assert.deepEqual(first.list.map(note => [note.id, note.seen]), [['mail', true], ['weather', false], ['fitness', false]]);
+
+  let opening, closed = false;
+  listeners.get('notificationclick')({
+    notification: { data: { id: 'weather', app: 'weather', url: '/weather/#warnings' }, close: () => { closed = true; } },
+    waitUntil: work => { opening = work; },
+  });
+  await opening;
+  assert.equal(closed, true);
+  assert.deepEqual(navigations, ['/weather/#warnings']);
+  assert.deepEqual((await send('notes')).list.map(note => [note.id, note.seen]), [['mail', true], ['weather', true], ['fitness', false]]);
+
+  assert.equal((await send('notes-clear', { ids: ['fitness'] })).unread, 0);
+  assert.equal((await send('notes-back', { list: [notifications[2]] })).unread, 1);
+  assert.equal((await send('notes-seen')).unread, 0, 'older pages can still mark every notification read');
+});
+
 test('the staged shell exposes one build to /version and the offline installer', async t => {
   const { mkdtempSync, rmSync } = require('node:fs');
   const { tmpdir } = require('node:os');

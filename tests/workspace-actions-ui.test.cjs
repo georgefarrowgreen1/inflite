@@ -19,7 +19,7 @@ async function open(width = 390) {
     const u = new URL(r.request().url()), p = u.pathname;
     if (u.protocol === 'blob:' && u.origin === ORIGIN) return r.continue();
     if (u.origin !== ORIGIN) { unknown.push(u.href); return r.abort(); }
-    if (p === '/') return r.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': csp }, body: '<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/roof/roof.css"><script src="/shared.js" defer></script></head><body><main><h1>Actions fixture</h1><button type="button" id="bell">Notifications</button><button type="button" id="search">Search</button></main></body></html>' });
+    if (p === '/') return r.fulfill({ contentType: 'text/html', headers: { 'Content-Security-Policy': csp }, body: '<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/roof/roof.css"><link rel="stylesheet" href="/roof/workspace-commands.css"><script src="/shared.js" defer></script></head><body><main><h1>Actions fixture</h1><button type="button" id="bell">Notifications</button><button type="button" id="search">Search</button></main></body></html>' });
     if (p === '/shared.js') return r.fulfill({ contentType: 'text/javascript', body: shared });
     if (p === '/api/vitals') return r.fulfill({ status: 204, body: '' });
     if (p === '/api/status-banner') return r.fulfill({ json: { banner: null } });
@@ -42,7 +42,7 @@ async function open(width = 390) {
     sw.getRegistration = async () => ({ active: { postMessage(msg, ports) {
       s.requests.push(msg);
       const answer = () => {
-        if (msg.ifl === 'notes-seen') for (const n of notes) n.seen = true;
+        if (msg.ifl === 'notes-seen') for (const n of notes) { if (msg.ids?.includes(n.id)) n.seen = true; }
         if (msg.ifl === 'notes-clear') for (let i = notes.length - 1; i >= 0; i--) if (msg.all || msg.ids?.includes(notes[i].id)) notes.splice(i, 1);
         ports[0].postMessage({ ifl: 'notes', list: notes.slice(), unread: notes.filter(n => !n.seen).length });
       };
@@ -53,11 +53,20 @@ async function open(width = 390) {
     F.sheet = createSheets(F); F.search = createSearch(F);
     const runIntent = (app, intent, objectId) => {
       s.calls.push(['intent', app, intent, objectId, document.querySelector('dialog[data-sheet=notifications][open]') !== null]);
+      if (s.failAction) return false;
       F.sheet.open({ sheet: 'intent-target', title: intent === 'reply' ? 'Reply editor' : 'App editor', body: ui.el('textarea', { 'aria-label': 'Draft' }) });
     };
     s.commands = createWorkspaceCommands(F, { apps: () => Object.keys(F.session.apps).map(id => ({ id })), actions: () => [], files: () => [], systemActions: () => s.systems, fileDialogsAvailable: () => s.fileDialogs, runIntent, openFiles(q) { s.calls.push(['files', q]); }, openWorkspace(id) { s.calls.push(['workspace', id]); } });
     await s.commands.ready;
-    s.bell = createBell(F, { count(n) { s.counts.push(n); }, actions: note => notificationActions(note, { origin: location.origin, enabled: app => F.session.apps[app] === true, current: () => !ac.signal.aborted && F.session.view.user.id === 'owner-a', runIntent, openWorkspace(app, path) { s.calls.push(['workspace', app, path]); } }) });
+    s.bell = createBell(F, {
+      count(n) { s.counts.push(n); },
+      actions: note => notificationActions(note, {
+        origin: location.origin, enabled: app => F.session.apps[app] === true,
+        current: () => !ac.signal.aborted && F.session.view.user.id === 'owner-a',
+        runIntent,
+        async openApp(app, path) { s.calls.push(['app', app, path]); return { app }; },
+      }),
+    });
     document.getElementById('bell').onclick = () => s.bell.open(); document.getElementById('search').onclick = () => F.search.open();
   });
   await page.waitForFunction(() => actions.counts.includes(2));
@@ -76,8 +85,31 @@ test('notification actions are accessible siblings and Reply closes the log befo
     await sheet.getByRole('button', { name: 'Reply · Message from Reuben', exact: true }).click();
     await page.getByRole('dialog', { name: 'Reply editor' }).waitFor();
     assert.deepEqual(await page.evaluate(() => actions.calls), [['intent', 'chats', 'reply', 'friend-8', false]]);
-    assert.equal(await page.evaluate(() => actions.requests.some(r => r.ifl === 'notes-clear' && r.ids.includes('chat-note'))), true);
+    await page.waitForFunction(() => actions.requests.some(r => r.ifl === 'notes-seen' && r.ids.join() === 'chat-note'));
+    assert.equal(await page.evaluate(() => actions.notes.length), 2);
     assert.equal(await page.getByRole('textbox', { name: 'Draft' }).count(), 1, 'the notification action opens an editor without sending');
+    await clean();
+  } finally { await ctx.close(); }
+});
+
+test('a failed notification reply stays unread and its row still opens the source app', async () => {
+  const { ctx, page, clean } = await open(320);
+  try {
+    await page.evaluate(() => { actions.failAction = true; });
+    const bell = page.getByRole('button', { name: 'Notifications', exact: true });
+    await bell.click();
+    await page.getByRole('button', { name: 'Reply · Message from Reuben', exact: true }).click();
+    await page.waitForFunction(() => actions.toasts.some(t => t.text === 'That action couldn’t open. Try again.'));
+    await bell.click();
+    const sheet = page.getByRole('dialog', { name: 'Notifications', exact: true });
+    await sheet.getByRole('radio', { name: 'Unread · 2', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Reply · Message from Reuben', exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => actions.requests.some(r => r.ifl === 'notes-seen' || r.ifl === 'notes-clear')), false);
+    assert.equal(await sheet.getByRole('button', { name: /^Open app/ }).count(), 0);
+    await sheet.getByRole('button', { name: /^New\. Message from Reuben/ }).click();
+    await page.waitForFunction(() => actions.notes.find(n => n.id === 'chat-note')?.seen);
+    assert.deepEqual(await page.evaluate(() => actions.calls.at(-1)), ['app', 'chats', '/chats/#open=friend-8']);
+    assert.equal(await page.evaluate(() => actions.notes.length), 2);
     await clean();
   } finally { await ctx.close(); }
 });
