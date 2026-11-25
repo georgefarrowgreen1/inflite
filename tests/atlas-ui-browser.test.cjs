@@ -65,7 +65,8 @@ function nativeAtlasPage(withWallpaper, shellLayout, toolsAction, withHandoffs) 
       } },
         tabs: { away(hide) { html.toggleAttribute('data-os-dock-away', hide); document.querySelector('.ws-dock').hidden = hide; } },
         nav: { section: key => show(key), href: (key, arg) => '#' + key + (arg ? '=' + encodeURIComponent(arg) : ''),
-          go: path => show(...path.slice(1).split('=').map(decodeURIComponent)) } };
+          go: path => show(...path.split('#').at(-1).split('=').map(decodeURIComponent)) } };
+      window.fixtureAtlasNav = fw.nav;
       fw.sheet = createSheets(fw);
       ${withHandoffs ? `window.__runHandoffs = [];
         fw.workspace = { active: () => true, changed() {}, provide: () => () => {}, handoffs: { send: async (app, kind, payload) => { window.__runHandoffs.push({ app, kind, payload }); return { ok: true }; } } };` : ''}
@@ -529,13 +530,13 @@ for (const [width, theme] of [[320, 'dark'], [1440, 'light']]) test('native Atla
     await t.screenshot('atlas-native-tasks-' + width);
     await destination.getByRole('button', { name: 'In progress' }).click();
     await destination.getByText('No tasks match this status').waitFor();
-    await destination.getByRole('button', { name: 'Review', exact: true }).click();
+    await destination.getByRole('button', { name: 'Attention', exact: true }).click();
     await destination.getByRole('button', { name: 'Review changes' }).click();
     const review = t.page.getByRole('dialog', { name: 'Review changes' });
     await review.getByText('0 changed files').waitFor();
     await review.getByRole('button', { name: 'Back to tasks' }).click();
     await review.waitFor({ state: 'hidden' });
-    assert.equal(await destination.getByRole('button', { name: 'Review', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await destination.getByRole('button', { name: 'Attention', exact: true }).getAttribute('aria-pressed'), 'true');
     await tabs.getByRole('button', { name: 'Environments' }).click();
     await destination.getByRole('button', { name: 'Edit Atlas development' }).click();
     assert.equal(await destination.getByText('No environments yet').isVisible(), false);
@@ -924,6 +925,37 @@ test('native Tasks brings answers, coding and scheduled runs into one mobile lis
     await t.page.getByRole('dialog', { name: 'Scheduled tasks' }).getByText('A scheduled result with evidence.').waitFor();
     assert.ok(t.fixture.requests.filter(call => call.path === 'runs').every(call => new URLSearchParams(call.search).has('filter')));
     assert.equal(t.fixture.requests.some(call => call.method !== 'GET'), false);
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('Atlas alerts open the exact run at 320px and preserve the layout while the keyboard closes', async () => {
+  const run = codingRun({ id: 'attention-1', prompt: 'Investigate workspace setup', status: 'waiting', reviewReady: false });
+  const t = await open({ native: true, shellLayout: true, width: 320, height: 750, mobile: true, conversation: 'repo', fixture: developerFixture({ codingRuns: [run] }) });
+  try {
+    t.fixture.overrides.set('GET alerts', ({ reply, route }) => reply({ alerts: [{ reference: 'c_attention-1', revision: 1, status: 'waiting', title: run.prompt }] }, 200, route.request().headers()['x-atlas-owner']));
+    await t.page.locator('#prompt').fill('A draft to keep');
+    await t.page.evaluate(() => window.resizeAtlasViewport(440));
+    await t.page.locator('#in[data-atlas-keyboard]').waitFor();
+    await t.page.evaluate(async owner => {
+      const [{ createAtlasAlerts }, { toast }] = await Promise.all([import('/atlas/roof/activity.js'), import('/roof/toast.js')]);
+      const controller = new AbortController();
+      window.fixtureAlerts = createAtlasAlerts({ signal: controller.signal, session: { view: { user: { id: owner }, apps: { mail: true } }, apps: { atlas: true } }, nav: window.fixtureAtlasNav, toast, on: () => () => {} });
+    }, t.fixture.owner);
+    const alert = t.page.locator('.ifl-toast');
+    await alert.getByRole('button', { name: 'Open run' }).click();
+    await t.page.getByRole('heading', { name: run.prompt }).waitFor();
+    assert.ok(t.fixture.requests.some(entry => entry.method === 'GET' && entry.path === 'runs/coding/' + run.id));
+    const action = t.page.getByRole('button', { name: 'Open conversation' });
+    await action.scrollIntoViewIfNeeded();
+    assert.ok((await action.boundingBox()).y + (await action.boundingBox()).height <= 440);
+    await t.page.evaluate(() => window.resizeAtlasViewport(750));
+    await t.page.getByRole('navigation', { name: 'Dock' }).waitFor();
+    await t.page.evaluate(() => window.fixtureAlerts.refresh());
+    await alert.waitFor({ state: 'detached' });
+    assert.ok(t.fixture.requests.filter(entry => entry.path === 'alerts').length >= 2);
+    await t.page.evaluate(() => window.fixtureAlerts.destroy());
+    assert.equal(t.fixture.requests.some(entry => entry.path === 'coding/runs' && entry.method === 'POST'), false);
     assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
 });

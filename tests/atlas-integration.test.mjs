@@ -220,6 +220,27 @@ async function runFixture(t) {
   };
 }
 
+test('Atlas alerts report only current owner attention and ready runs without starting work', async t => {
+  const { env, conversation, call } = await runFixture(t);
+  const started = await call('', { conversationId: conversation.id, requestId: crypto.randomUUID(), prompt: 'Private research prompt' });
+  const background = started.data.run;
+  await env.ATLAS_DB.prepare("UPDATE atlas_answer_runs SET status='completed' WHERE owner='alice' AND id=?").bind(background.id).run();
+  for (const [owner, id, status] of [['alice', 'waiting', 'waiting'], ['bob', 'foreign', 'failed'], ['alice', 'resolved', 'cancelled']]) {
+    const dev = await store.createConversation(env, owner, { title: id, mode: 'developer', repository: 'owner/project' });
+    await coding.createCodingRun(env, owner, { id, conversationId: dev.id, requestId: crypto.randomUUID(), prompt: id, model: 'fixture', credentialUpdatedAt: 42, repository: 'owner/project' });
+    await env.ATLAS_DB.prepare('UPDATE atlas_coding_runs SET status=? WHERE owner=? AND id=?').bind(status, owner, id).run();
+  }
+  const alerts = () => atlas(request('/atlas/api/alerts'), env, { account, send: async () => assert.fail('Alerts must only read saved state') });
+  const response = await alerts();
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('Cache-Control'), /no-store/);
+  const { alerts: rows } = await response.json();
+  assert.deepEqual(rows.map(row => [row.reference, row.revision, row.status]).sort(), [['b_' + background.id, 1, 'completed'], ['c_waiting', 1, 'waiting']]);
+  assert.doesNotMatch(JSON.stringify(rows), /Private research prompt|foreign|resolved/);
+  await store.updateConversation(env, 'alice', conversation.id, { archived: true });
+  assert.deepEqual((await (await alerts()).json()).alerts.map(row => row.reference), ['c_waiting']);
+});
+
 test('an expired pre-dispatch lease is fenced and recovered once without reusing its ledger', async t => {
   const { env, conversation, model, call } = await runFixture(t);
   const requestId = crypto.randomUUID(), path = '/background/' + requestId;

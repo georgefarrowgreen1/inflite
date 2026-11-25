@@ -321,7 +321,7 @@ function fitComposerViewport() {
   const keyboardUp = viewport && Math.abs(viewport.scale - 1) < .01 && height - viewport.height > 80;
   if (fw) {
     const shell = fw.screenEl?.closest("#in");
-    if (!typing || !keyboardUp || !visible() || !shell || root.classList.contains("ifl-in-pane")) return clearNativeKeyboard();
+    if ((!typing && !keyboardShell) || !keyboardUp || !visible() || !shell || root.classList.contains("ifl-in-pane")) return clearNativeKeyboard();
     if (shell !== keyboardShell) {
       clearNativeKeyboard();
       keyboardShell = shell;
@@ -1415,6 +1415,7 @@ async function openTaskConversation(run) {
 function inboxTask(run) {
   const card = node("article", "record-card inbox-task"), heading = node("div", "inbox-task-heading");
   const status = node("span", "message-status", run.kind ? runStatus(run) : codingStatus(run));
+  if (run.kind === "coding" && run.status === "waiting") status.textContent = "Needs attention";
   status.dataset.status = run.status;
   heading.append(node("h3", "", run.title || runKinds[run.kind] || "Coding task"), status);
   const meta = node("div", "record-meta");
