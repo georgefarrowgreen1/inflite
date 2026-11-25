@@ -126,6 +126,8 @@ After a completed turn, Atlas retrieves the change artifact for that exact turn 
 
 **Create draft pull request** remains a separate explicit action using the existing fresh administrator proof. It publishes the reviewed revision to a new branch and draft PR after validating the pinned base and changed file contents. A stale revision cannot be silently published. Retry/reconciliation uses the saved publication identity. Atlas does not merge or deploy the generated changes. Older prepared patch drafts remain accessible in **Draft changes**, with their original validation plans clearly identified as plans.
 
+**GitHub checks** in the coding review reports the checks for the exact published draft commit. Older Atlas drafts verify that the GitHub commit contains the saved file changes before loading its checks. If the current draft still points at the reviewed commit, **Investigate failed check** opens a follow-up with the original changes restored. Starting the follow-up adds the check summary and available annotations to the coding context. The new run stays linked to the original task and prepares changes for review.
+
 This implements repository work, command execution, continuation and reviewed publication. It does not claim complete Codex parity: workspace networking, input/output resources, hosted project access, session lifetime and automatic review remain concrete execution limits. A blocked command or review step is reported; it is not counted as successful execution.
 
 ### Resource and spending allowances

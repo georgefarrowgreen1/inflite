@@ -426,7 +426,7 @@ function updateComposer() {
   if (!restart) state.codingRestart = null;
   const recovery = continuation || restart;
   const activeTask = state.codingRuns.some(run => codingActive(run) && run.id !== continuation?.id);
-  $("start-coding").textContent = continuation ? "Continue task" : state.codingRestart?.restoreRevision ? "Restore and continue" : restart ? "Start again" : "Work on task";
+  $("start-coding").textContent = continuation ? "Continue task" : state.codingRestart?.checkId ? "Work on follow-up" : state.codingRestart?.restoreRevision ? "Restore and continue" : restart ? "Start again" : "Work on task";
   $("start-coding").disabled = !ready || state.health?.coding?.ready !== true || state.health?.coding?.storageReady !== true || !$("repository").value || !!state.stream || state.dispatching || state.codingDispatching || state.codingLoading || !!state.codingLoadError || activeTask || !hasPrompt;
   $("coding-environment").disabled = !!recovery || activeTask || state.environmentsLoading || state.codingDispatching;
   $("coding-environment").title = recovery ? "This task keeps its original cloud environment." : "Choose reusable cloud setup for the next task.";
@@ -434,7 +434,7 @@ function updateComposer() {
   $("coding-health").textContent = state.health?.coding?.ready ? "" : state.health?.coding?.message || "Coding tasks are unavailable. You can still ask Atlas about this repository with Send.";
   $("coding-health").hidden = !$("coding-health").textContent;
   $("coding-continue-note").hidden = !code || !recovery;
-  $("coding-continue-label").textContent = continuation ? "Continuing this cloud workspace" : state.codingRestart?.restoreRevision ? `Restoring saved revision ${state.codingRestart.restoreRevision} at its original commit` : restart ? "Fresh workspace · original environment settings" : "";
+  $("coding-continue-label").textContent = continuation ? "Continuing this cloud workspace" : state.codingRestart?.checkId ? "Following up on a failed GitHub check" : state.codingRestart?.restoreRevision ? `Restoring saved revision ${state.codingRestart.restoreRevision} at its original commit` : restart ? "Fresh workspace · original environment settings" : "";
   const publish = $("publish-coding"), review = state.codingReview;
   if (publish && review?.run) publish.disabled = publish.classList.contains("busy-label") || review.stale || !review.hasFiles || !review.run.reviewReady || codingActive(review.run) || !state.health?.github?.connected;
   $("attach-context").disabled = !$("repository").value || !state.health?.storage?.ready;
@@ -1555,12 +1555,15 @@ function pullRequestLink(pullRequest) {
   const href = safeUrl(pullRequest?.url); if (!href) return null;
   const link = node("a", "", "Open draft pull request"); link.href = href; link.target = "_blank"; link.rel = "noopener noreferrer"; return link;
 }
-function prepareTaskRecovery(run, continuing, restoreRevision = null) {
-  state.intent = "code"; state.codingContinuation = continuing ? run.id : null; state.codingRestart = continuing ? null : { id: run.id, restoreRevision };
-  if (!continuing) $("prompt").value = run.prompt || "";
+function prepareTaskRecovery(run, continuing, restoreRevision = null, check = null) {
+  state.intent = "code"; state.codingContinuation = continuing ? run.id : null; state.codingRestart = continuing ? null : { id: run.id, restoreRevision, checkId: check?.id };
+  if (check) {
+    const instruction = "Investigate and fix the failed GitHub check. Run the relevant checks and prepare the changes for review.";
+    $("prompt").value = [instruction, $("prompt").value.trim()].filter(Boolean).join("\n\n");
+  } else if (!continuing) $("prompt").value = run.prompt || "";
   fillEnvironmentChoices();
   resizePrompt(); updateComposer(); $("prompt").focus();
-  toast(continuing ? "Add the next instruction to continue this workspace." : restoreRevision ? "Review the instruction before restoring your saved changes." : "Review the task, then start again in a fresh workspace.");
+  toast(continuing ? "Add the next instruction to continue this workspace." : check ? "Review the instruction, then start the follow-up." : restoreRevision ? "Review the instruction before restoring your saved changes." : "Review the task, then start again in a fresh workspace.");
 }
 function taskRecoveryText(run) {
   if (run.recovery?.reason) return run.recovery.reason;
@@ -1649,12 +1652,14 @@ function renderCodingRuns() {
     if (run.environment?.testCommand) details.append(node("pre", "", "Verification: " + run.environment.testCommand));
     details.append(node("p", "field-help", "Workspace reuse lasts while the cloud session is available."));
     if (run.savedCheckpoint) details.append(node("p", "field-help", "Saved revision " + run.savedCheckpoint.revision + " · " + timestamp(run.savedCheckpoint.savedAt)));
+    if (run.checkFollowUp) details.append(node("p", "field-help", `Follow-up for ${run.checkFollowUp.name} · ${run.checkFollowUp.headSha.slice(0, 12)}`));
     overview.append(details);
     if (run.prompt?.includes("\n") || run.prompt?.length > 140) { const instruction = node("details", "task-instructions"); instruction.append(node("summary", "", "Task instructions"), node("p", "coding-prompt", run.prompt)); overview.append(instruction); }
     const activity = parts.get("activity"), entries = node("ol", "task-activity-list");
     for (const entry of run.activity || []) { const item = node("li"); item.append(node("strong", "", entry.label || entry.type || "Activity")); if (entry.detail || entry.text) item.append(node("p", "", (entry.detail || entry.text) + (entry.truncated ? " (truncated)" : ""))); entries.append(item); }
     activity.append(entries); if (!entries.children.length) activity.append(node("p", "field-help", codingActive(run) ? "Activity will appear as Atlas prepares and works in the cloud workspace." : "No activity was reported for this task."));
     parts.get("checks").append(codingChecks(run.checks, { prefix: run.id, opened }));
+    if (run.pullRequest) parts.get("checks").append(button("View GitHub checks", event => busy(event.currentTarget, () => reviewCodingRun(run.id, { focusChecks: true })), "quiet-button"));
     parts.get("changes").append(node("p", "field-help", codingActive(run) ? "File changes become available when Atlas finishes this task." : "This task has no saved file changes to review."));
     card.append(tabs, panels);
     const actions = node("div", "button-row coding-actions");
@@ -1688,7 +1693,8 @@ async function startCodingTask() {
     const conversation = await ensureConversation({ prompt, mode: "developer", repository }); checkEpoch(epoch);
     const path = continuation ? "coding/runs/" + encodeURIComponent(continuation) + "/continue" : "coding/runs";
     if (restart && restart.submission?.prompt !== prompt) restart.submission = { prompt, id: uuid() };
-    const result = await api(path, "POST", { ...(continuation ? {} : { conversationId: conversation.id, ...(restart ? { retryFromRunId: restart.id, ...(restart.restoreRevision ? { restoreRevision: restart.restoreRevision } : {}) } : environmentId ? { environmentId } : {}) }), requestId: restart?.submission.id || uuid(), prompt }); checkEpoch(epoch);
+    const recovery = restart ? { retryFromRunId: restart.id, ...(restart.restoreRevision ? { restoreRevision: restart.restoreRevision } : {}), ...(restart.checkId ? { checkId: restart.checkId } : {}) } : environmentId ? { environmentId } : {};
+    const result = await api(path, "POST", { ...(continuation ? {} : { conversationId: conversation.id, ...recovery }), requestId: restart?.submission.id || uuid(), prompt }); checkEpoch(epoch);
     if (navigation === state.navigation && state.activeId === conversation.id) {
       feedback("coding-feedback", "");
       if ($("prompt").value.trim() === prompt) $("prompt").value = "";
@@ -1705,7 +1711,57 @@ async function startCodingTask() {
 function codingDiffPath(run, file) {
   return "coding/runs/" + encodeURIComponent(run.id) + "/diff?" + new URLSearchParams({ path: file.path, revision: run.revision });
 }
-async function reviewCodingRun(id, { inboxTrigger } = {}) {
+const githubCheckLabels = { success: "Passed", failure: "Failed", timed_out: "Timed out", startup_failure: "Could not start", action_required: "Action required", cancelled: "Cancelled", skipped: "Skipped", neutral: "Neutral", stale: "Stale", in_progress: "Running", queued: "Queued", pending: "Pending", completed: "Completed" };
+
+function addDraftChecks(detail, review, run, current, focusChecks = false) {
+  const section = node("section", "coding-checks github-checks"), header = node("div", "github-check-header"), title = node("h4", "", "GitHub checks");
+  const message = node("p", "field-help"), entries = node("ul", "ifl-list github-check-list"), link = node("a", "quiet-button", "Open checks on GitHub");
+  message.setAttribute("role", "status");
+  link.hidden = true; link.target = "_blank"; link.rel = "noopener noreferrer";
+  const refresh = button("Refresh checks", () => void load(), "text-button");
+  header.append(title, refresh); section.append(header, message, entries, link); detail.append(section);
+
+  async function load() {
+    review.checkRequest?.abort();
+    const controller = review.checkRequest = new AbortController();
+    const live = () => current() && review.checkRequest === controller;
+    refresh.disabled = true;
+    section.setAttribute("aria-busy", "true");
+    message.textContent = "Loading GitHub checks…";
+    try {
+      const result = await api("coding/runs/" + encodeURIComponent(run.id) + "/checks?revision=" + run.revision, "GET", undefined, { signal: controller.signal, timeout: 30000 });
+      if (!live()) return;
+      const rows = (result.checks || []).map(check => {
+        const row = node("li", "github-check-row");
+        row.append(node("strong", "", check.name), node("span", "message-status", githubCheckLabels[check.conclusion || check.status] || "Status unavailable"));
+        if (check.canInvestigate) row.append(button("Investigate failed check", async () => {
+          if (!current()) return;
+          const epoch = state.epoch;
+          review.sheet.now();
+          await openTaskConversation(run);
+          if (state.epoch === epoch && state.activeId === run.conversationId && !state.conversation?.archived && state.codingRuns.some(item => item.id === run.id && item.revision === run.revision)) prepareTaskRecovery(run, false, run.revision, check);
+        }, "quiet-button"));
+        return row;
+      });
+      entries.replaceChildren(...rows);
+      const reference = "Commit " + result.headSha.slice(0, 12);
+      message.textContent = reference + (result.headChanged ? " · The draft has moved to a newer commit." : result.truncated ? " · Showing the first 100 checks." : !rows.length ? " · GitHub has not reported any checks yet." : "");
+      const href = safeUrl(result.url);
+      if (href) { link.href = href; link.hidden = false; }
+    } catch (error) {
+      if (live() && !error.accountChanged) {
+        entries.replaceChildren();
+        message.textContent = errorText(error);
+      }
+    } finally {
+      if (live()) { refresh.disabled = false; section.removeAttribute("aria-busy"); }
+    }
+  }
+  if (focusChecks) { title.tabIndex = -1; title.focus(); }
+  void load();
+}
+
+async function reviewCodingRun(id, { inboxTrigger, focusChecks = false } = {}) {
   const inbox = inboxTrigger ? codingInbox : null;
   const review = { id, inboxTrigger };
   state.codingReview = review;
@@ -1715,6 +1771,7 @@ async function reviewCodingRun(id, { inboxTrigger } = {}) {
   $("review-toolbar").hidden = false;
   $("back-to-tasks").hidden = !inbox;
   review.sheet = openDialog("patches", inboxTrigger, { onClose: () => {
+    review.checkRequest?.abort();
     state.codingReview = null;
     $("patch-detail").replaceChildren();
     if (codingInbox === inbox && inbox && state.privateReady) {
@@ -1766,7 +1823,7 @@ async function reviewCodingRun(id, { inboxTrigger } = {}) {
     }
     detail.append(codingChecks(data.checks || run.checks));
     const link = pullRequestLink(run.pullRequest);
-    if (link) detail.append(link);
+    if (link) { detail.append(link); addDraftChecks(detail, review, run, current, focusChecks); }
     else if (run.status === "publishing") detail.append(node("p", "field-help", "Draft pull request creation is in progress. Refresh the review to check its status."));
     else if (run.reviewReady && files.length && !codingActive(run)) {
       detail.append(node("p", "field-help", "This creates a draft pull request from the reviewed revision. Deployment happens through the reviewed release process."));
@@ -1785,6 +1842,7 @@ async function reviewCodingRun(id, { inboxTrigger } = {}) {
         if (published) {
           if (inbox) inbox.refreshAfterReview = true;
           publish.replaceWith(published);
+          addDraftChecks(detail, review, result.run, current);
           published.focus();
           feedback("patch-feedback", "Draft pull request created.");
         } else {

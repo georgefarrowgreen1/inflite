@@ -195,12 +195,13 @@ async function open(options = {}) {
       if (method === 'POST') { const run = codingRun({ id: 'coding-' + fixture.next++, conversationId: body.conversationId, requestId: body.requestId, prompt: body.prompt, status: 'preparing', stage: 'preparing_workspace', ...(body.retryFromRunId ? { retryFromRunId: body.retryFromRunId, environment: { ...fixture.codingRuns.find(item => item.id === body.retryFromRunId)?.environment } } : body.environmentId ? { environment: { ...fixture.environments.find(item => item.id === body.environmentId), profileId: body.environmentId } } : {}) }); fixture.codingRuns.push(run); return reply({ run }, 202); }
       return reply({ runs: fixture.codingRuns.filter(run => run.conversationId === url.searchParams.get('conversationId')) });
     }
-    match = /^coding\/runs\/([^/]+)(?:\/(cancel|continue|changes|diff|publish))?$/.exec(path);
+    match = /^coding\/runs\/([^/]+)(?:\/(cancel|continue|changes|checks|diff|publish))?$/.exec(path);
     if (match) {
       const run = fixture.codingRuns.find(item => item.id === match[1]); if (!run) return reply({ code: 'not_found', error: 'Task missing.' }, 404);
       if (match[2] === 'cancel') Object.assign(run, { status: 'cancelled', stage: 'cancelled', canContinue: true, finishedAt: now + 100 });
       if (match[2] === 'continue') Object.assign(run, { status: 'running', stage: 'working', prompt: body.prompt, requestId: body.requestId, revision: run.revision + 1, canContinue: false, reviewReady: false, checks: [] });
       if (match[2] === 'changes') return reply({ run, files: fixture.codingFiles[run.id] || [], checks: run.checks });
+      if (match[2] === 'checks') return reply({ headSha: run.pullRequest?.headSha || 'a'.repeat(40), headChanged: false, checks: [], url: run.pullRequest?.url + '/checks' });
       if (match[2] === 'diff') {
         if (url.searchParams.get('revision') !== String(run.revision)) return reply({ code: 'coding_review_changed', error: 'This task has a newer revision. Refresh the review to see its changes.' }, 409);
         const path = url.searchParams.get('path');
@@ -1470,6 +1471,39 @@ test('completed expired work can restore a saved revision and preserves retry id
     assert.equal(call.body.retryFromRunId, 'prior-task'); assert.equal(call.body.restoreRevision, 1);
     assert.equal(Object.hasOwn(call.body, 'environmentId'), false);
     assert.equal(t.fixture.codingRuns[1].environment.branch, 'release/atlas'); assert.equal(t.fixture.codingRuns[1].environment.setupCommand, 'npm ci --ignore-scripts');
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
+test('published coding review shows exact GitHub checks and prepares a follow-up only on explicit submit', async () => {
+  const head = 'd'.repeat(40);
+  const run = codingRun({ status: 'published', stage: 'Draft pull request created', canContinue: false, reviewReady: true, pullRequest: { url: 'https://github.com/fixture/atlas/pull/42', number: 42, headSha: head } });
+  const overrides = new Map([['GET coding/runs/' + run.id + '/checks', ({ reply, url }) => {
+    assert.equal(url.searchParams.get('revision'), String(run.revision));
+    return reply({ headSha: head, headChanged: false, url: run.pullRequest.url + '/checks', checks: [
+      { id: 11, name: 'Lint', status: 'completed', conclusion: 'success', canInvestigate: false },
+      { id: 22, name: 'Unit tests', status: 'completed', conclusion: 'failure', canInvestigate: true },
+    ] });
+  }]]);
+  const t = await open({ width: 320, height: 750, mobile: true, fixture: developerFixture({ codingRuns: [run], codingFiles: { [run.id]: [{ path: 'src/app.js', operation: 'modify' }] }, overrides }) });
+  try {
+    await openThread(t, 'Repository task');
+    await t.page.getByRole('button', { name: 'Review changes', exact: true }).click();
+    const review = t.page.getByRole('dialog', { name: 'Review changes', exact: true });
+    await review.getByRole('heading', { name: 'GitHub checks' }).waitFor();
+    await review.getByText('Commit ' + head.slice(0, 12), { exact: true }).waitFor();
+    await review.getByText('Passed', { exact: true }).waitFor();
+    const failure = review.getByRole('listitem').filter({ hasText: 'Unit tests' });
+    await failure.getByRole('button', { name: 'Investigate failed check' }).click();
+    await t.page.getByRole('button', { name: 'Work on follow-up' }).waitFor();
+    assert.equal(t.fixture.requests.filter(entry => entry.path === 'coding/runs' && entry.method === 'POST').length, 0);
+    assert.match(await t.page.locator('#prompt').inputValue(), /fix the failed GitHub check/);
+    await t.page.getByRole('button', { name: 'Work on follow-up' }).click();
+    await eventually(() => assert.equal(t.fixture.requests.filter(entry => entry.path === 'coding/runs' && entry.method === 'POST').length, 1));
+    const { body } = t.fixture.requests.find(entry => entry.path === 'coding/runs' && entry.method === 'POST');
+    assert.equal(body.retryFromRunId, run.id);
+    assert.equal(body.restoreRevision, run.revision);
+    assert.equal(body.checkId, 22);
     assert.deepEqual(t.errors, []);
   } finally { await t.close(); }
 });

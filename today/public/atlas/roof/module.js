@@ -2,8 +2,8 @@ import { atlasMarkup } from "./template.js";
 import { createAtlasClient } from "../assets/app.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.5.1";
-export const NEWS = "Open tasks that need attention from live Atlas alerts, with room for the dock and keyboard.";
+export const BUILD = "2.6.1";
+export const NEWS = "See GitHub checks for a reviewed draft commit and follow up on a failed check in Atlas.";
 export const SECTIONS = [["conversations", "Conversations"], ["tasks", "Tasks"], ["environments", "Environments"], ["briefs", "Briefs"], ["settings", "Settings"]];
 
 export function mount(root, fw) {

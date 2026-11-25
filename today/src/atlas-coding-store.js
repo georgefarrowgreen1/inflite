@@ -89,7 +89,8 @@ export function publicCodingRun(run) {
     budgetUsd: run.budget_cents / 100,
     providerRecordedSpendUsd: Number.isInteger(run.consumed_after) ? Math.max(0, run.consumed_after - run.consumed_before) / 100 : null,
     ...(run.error_code ? { error: { code: run.error_code, message: run.error_message || 'The coding task needs attention.' } } : {}),
-    ...(run.publish_url ? { pullRequest: { url: run.publish_url, number: run.publish_number } } : {}),
+    ...(run.publish_url ? { pullRequest: { url: run.publish_url, number: run.publish_number, ...(run.manifest.publication?.headSha ? { headSha: run.manifest.publication.headSha } : {}) } } : {}),
+    ...(configuration.checkFailure ? { checkFollowUp: { id: configuration.checkFailure.id, name: configuration.checkFailure.name, headSha: configuration.checkFailure.headSha } } : {}),
   };
 }
 
@@ -171,7 +172,7 @@ export async function createCodingRun(env, owner, { id, conversationId, requestI
   } catch (error) {
     const duplicate = await codingRunByRequest(env, owner, requestId);
     if (duplicate) {
-      if (duplicate.conversation_id !== conversationId || duplicate.prompt !== prompt || (duplicate.environment_profile_id || null) !== (environment.id || null) || (duplicate.retry_from_run_id || null) !== retryFromRunId || (duplicate.environment.restoreCheckpoint?.revision ?? null) !== (environment.restoreCheckpoint?.revision ?? null)) throw new AtlasStoreError('request_id_reused', 'This task identifier belongs to another request.', 409);
+      if (duplicate.conversation_id !== conversationId || duplicate.prompt !== prompt || (duplicate.environment_profile_id || null) !== (environment.id || null) || (duplicate.retry_from_run_id || null) !== retryFromRunId || (duplicate.environment.restoreCheckpoint?.revision ?? null) !== (environment.restoreCheckpoint?.revision ?? null) || (duplicate.environment.checkFailure?.id ?? null) !== (environment.checkFailure?.id ?? null)) throw new AtlasStoreError('request_id_reused', 'This task identifier belongs to another request.', 409);
       return duplicate;
     }
     const active = await query(env, "SELECT id FROM atlas_coding_runs WHERE owner=? AND conversation_id=? AND status IN ('preparing','running','waiting','uncertain','publishing')", owner, conversationId).first();

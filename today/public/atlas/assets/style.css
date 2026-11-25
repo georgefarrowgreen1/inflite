@@ -1818,6 +1818,15 @@ html[data-midnight-lava] .atlas-app .atlas-sky canvas {
 .atlas-app .task-activity-list p { color: var(--atlas-muted); font-size: 13px; margin-top: 4px; white-space: pre-wrap; }
 .atlas-app .coding-checks { margin: 0; }
 .atlas-app .coding-checks h4 { font-size: 14px; }
+.atlas-app .github-checks { display: grid; gap: 8px; margin-top: 12px; }
+.atlas-app .github-check-header,
+.atlas-app .github-check-row { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.atlas-app .github-check-list { margin: 0; padding: 0; list-style: none; }
+.atlas-app .github-check-list:empty { display: none; }
+.atlas-app .github-check-row { padding: 10px 12px; }
+.atlas-app .github-check-row + .github-check-row { border-top: 1px solid var(--atlas-border); }
+.atlas-app .github-check-row strong { min-width: 0; overflow-wrap: anywhere; }
+.atlas-app .github-checks .quiet-button { justify-self: start; min-height: 44px; }
 .atlas-app .checks-totals { font-size: 12px; color: var(--atlas-muted); margin: 4px 0 10px; }
 .atlas-app .coding-check { border: 1px solid var(--atlas-line); border-radius: 9px; margin: 7px 0; overflow: hidden; }
 .atlas-app .coding-check summary { display: flex; align-items: center; gap: 10px; padding: 9px; list-style: none; }

@@ -42,7 +42,7 @@ export async function githubFixture(initial = { 'src/app.js': source('export con
   const encrypted = await encryptIntegration(env, 'alice', 'github', TOKEN);
   env.ATLAS_DB = { prepare(sql) { assertSelect(sql); return { bind(owner, kind) { return { async first() { return owner === 'alice' && kind === 'github' ? { ...encrypted, metadata: '{"login":"alice"}' } : null; } }; } }; } };
   function assertSelect(sql) { if (!sql.startsWith('SELECT iv,ciphertext,metadata FROM atlas_integrations')) throw Error('Unexpected fixture database access: ' + sql); }
-  const api = { name, calls, trees, commits, branches, blobs, pulls, baseSha, baseTreeSha, treeFor, initial, archive: archiveOf(initial), redirect: 'https://codeload.github.com/' + name + '/legacy.tar.gz/' + baseSha, failAfterPull: false, treeTruncated: false };
+  const api = { name, calls, trees, commits, branches, blobs, pulls, baseSha, baseTreeSha, treeFor, initial, archive: archiveOf(initial), redirect: 'https://codeload.github.com/' + name + '/legacy.tar.gz/' + baseSha, failAfterPull: false, treeTruncated: false, checks: new Map(), annotations: new Map() };
   api.send = async (input, init = {}) => {
     const url = new URL(input), headers = new Headers(init.headers), method = init.method || 'GET', body = init.body ? JSON.parse(init.body) : null;
     calls.push({ url, headers, method, body, redirect: init.redirect, credentials: init.credentials });
@@ -64,6 +64,17 @@ export async function githubFixture(initial = { 'src/app.js': source('export con
     if (path === '/git/commits' && method === 'POST') { const sha = hash(JSON.stringify(body)), commit = { sha, tree: { sha: body.tree }, parents: body.parents.map(sha => ({ sha })), message: body.message }; commits.set(sha, commit); return json(commit, 201); }
     if (path === '/git/refs' && method === 'POST') { const branch = body.ref.slice('refs/heads/'.length); if (branches.has(branch)) return json({}, 422); branches.set(branch, body.sha); return json({ ref: body.ref, object: { sha: body.sha } }, 201); }
     if (path === '/pulls' && method === 'GET') { const head = url.searchParams.get('head')?.split(':').slice(1).join(':'); return json(pulls.filter(pull => pull.state === 'open' && (!head || head === pull.head.ref))); }
+    if (/^\/pulls\/\d+$/.test(path) && method === 'GET') {
+      const pull = pulls.find(item => item.number === Number(path.split('/').at(-1)));
+      return json(pull || {}, pull ? 200 : 404);
+    }
+    const checkCommit = /^\/commits\/([a-f0-9]{40})\/check-runs$/.exec(path);
+    if (checkCommit && method === 'GET') {
+      const checks = api.checks.get(checkCommit[1]) || [];
+      return json({ total_count: checks.length, check_runs: checks });
+    }
+    const annotation = /^\/check-runs\/(\d+)\/annotations$/.exec(path);
+    if (annotation && method === 'GET') return json(api.annotations.get(Number(annotation[1])) || []);
     if (path === '/pulls' && method === 'POST') {
       const pull = { number: pulls.length + 1, html_url: 'https://github.com/' + name + '/pull/' + (pulls.length + 1), state: 'open', draft: body.draft, title: body.title, body: body.body, head: { ref: body.head, sha: branches.get(body.head) }, base: { ref: body.base, sha: branches.get(body.base) } };
       pulls.push(pull); if (api.failAfterPull) { api.failAfterPull = false; throw Error('Lost fixture response'); } return json(pull, 201);
