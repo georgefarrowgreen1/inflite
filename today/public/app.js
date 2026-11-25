@@ -2009,6 +2009,24 @@ function frame() {
       if (F !== ownerFrame || ownerFrame.signal.aborted) { host.destroy(); return null; }
       workspace = host;
       workspaceHost = host;
+      // Today and the native app screens share clearance for the same dock.
+      const dock = $("#in .ws-dock");
+      if (dock) {
+        const signal = ownerFrame.signal, style = document.documentElement.style;
+        const measureDock = () => {
+          if (signal.aborted) return;
+          const height = dock.offsetHeight;
+          if (height) style.setProperty("--ifl-dock-height", `${height}px`);
+        };
+        const resize = globalThis.ResizeObserver ? new ResizeObserver(measureDock) : null;
+        if (resize) resize.observe(dock, { box: "border-box" });
+        else addEventListener("resize", measureDock, { signal });
+        signal.addEventListener("abort", () => {
+          resize?.disconnect();
+          style.removeProperty("--ifl-dock-height");
+        }, { once: true });
+        measureDock();
+      }
       if (workspaceRoute && F.route === workspaceRoute) host.show(workspaceRoute).catch((e) => console.error(e));
       else host.hide();
       return host;

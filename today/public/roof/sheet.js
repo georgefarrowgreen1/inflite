@@ -300,7 +300,7 @@ export function createSheets(F, { beforeOpen } = {}) {
   }
   function setActs(d, acts) {
     d.querySelector(".ifs-acts")?.remove();
-    if (acts?.length) d.append(el("footer", { class: "ifs-acts" }, acts.map((a) => btn(a.label, a))));
+    if (acts?.length) d.append(el("footer", { class: "ifs-acts" }, acts.map((a) => a.nodeType === 1 ? a : btn(a.label, a))));
   }
 
   return {

@@ -132,17 +132,15 @@ export function createHeader(host, F, { me, onMe } = {}) {
     lens(reveal);
   }
   function updateSectionEdges() {
-    const left = segs.scrollLeft, moreLeft = left > 1;
-    const moreRight = left + segs.clientWidth < segs.scrollWidth - 1;
-    segs.classList.toggle("over", moreLeft || moreRight);
-    segs.classList.toggle("more-left", moreLeft);
-    segs.classList.toggle("more-right", moreRight);
+    const { scrollLeft, clientWidth, scrollWidth } = segs;
+    segs.classList.toggle("more-left", scrollLeft > 1);
+    segs.classList.toggle("more-right", scrollLeft + clientWidth < scrollWidth - 1);
   }
   function revealSection(tab) {
-    const left = segs.scrollLeft, width = segs.clientWidth, end = segs.scrollWidth - width;
-    const start = tab.offsetLeft, finish = start + tab.offsetWidth;
-    if (start < left + (left > 1 ? 12 : 0)) segs.scrollLeft = Math.max(0, start - 12);
-    else if (finish > left + width - (left < end - 1 ? 12 : 0)) segs.scrollLeft = Math.min(end, finish - width + 12);
+    // Leave room for the edge fade where there are more tabs to scroll to.
+    const start = tab.offsetLeft - 12;
+    const end = tab.offsetLeft + tab.offsetWidth + 12 - segs.clientWidth;
+    segs.scrollLeft = Math.min(start, Math.max(segs.scrollLeft, end));
   }
   segs.addEventListener("scroll", updateSectionEdges, { passive: true });
   function lens(reveal = true) {

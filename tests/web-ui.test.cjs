@@ -78,13 +78,15 @@ for (const width of [390, 1440]) {
       const sheet = page.locator('dialog[open]');
       await sheet.evaluate(async d => { await Promise.allSettled(d.getAnimations().map(a => a.finished)); });
       const before = await sheet.boundingBox();
+      const waitForRest = () => page.waitForFunction(y => {
+        const sheet = document.querySelector('dialog[open]');
+        return sheet && Math.abs(sheet.getBoundingClientRect().y - y) < 1;
+      }, before.y, { timeout: 3000 });
       const head = await sheet.locator('.ifs-head').boundingBox();
       const x = head.x + head.width / 2, y = head.y + 18;
       await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y + 24, { steps: 4 });
       await page.waitForTimeout(150); await page.mouse.up();
-      await page.waitForTimeout(450);
-      const after = await sheet.boundingBox();
-      assert.ok(Math.abs(before.y - after.y) < 1, 'short drag springs back to its original position');
+      await waitForRest();
       await page.evaluate(() => {
         const d = __motionSheet.el, head = d.querySelector('.ifs-head');
         head.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 71, clientY: 100, isPrimary: true }));
@@ -107,7 +109,7 @@ for (const width of [390, 1440]) {
       });
       assert.ok(regrab.dragged > 100 && regrab.springing > 20, JSON.stringify(regrab));
       assert.ok(Math.abs(regrab.grabbedAgain - regrab.springing - 8) <= 1, 'a new drag continues from the current position');
-      await page.waitForTimeout(450);
+      await waitForRest();
       assert.equal(await sheet.count(), 1, 'pointer cancellation returns the sheet without dismissing it');
       await page.evaluate(() => __motionSheet.push({ page: 'details', title: 'Details', body: document.createTextNode('Nested content') }));
       await page.locator('dialog [data-back]').click();
@@ -1709,13 +1711,13 @@ test('Today leaves the last card above the dock when its height changes on a nar
   answer.tops.morning.stats[0] = { label: 'Chance of rain', value: 'From 5:00 PM' };
   const { ctx, page, errors } = await open({ initialPath: '/?os=1', width: 320, answer });
   try {
-    const stats = await page.locator('#top .dt-time').evaluateAll(values => values.map(value => {
+    const stats = await page.locator('#top .dt-time dd').evaluateAll(values => values.map(value => {
       const range = document.createRange();
       range.selectNodeContents(value);
       const { y, right } = value.getBoundingClientRect();
       return { text: value.textContent, y, fits: range.getClientRects().length === 1 && range.getBoundingClientRect().right <= right + 1 };
     }));
-    assert.deepEqual(stats.map(({ text }) => text), ['5:00 PM', '16:45', '18:30']);
+    assert.deepEqual(stats.map(({ text }) => text), ['From 5:00 PM', '16:45', '18:30']);
     assert.ok(stats.every(({ y, fits }) => y === stats[0].y && fits), JSON.stringify(stats));
     const dock = page.locator('.ws-dock');
     await dock.waitFor();

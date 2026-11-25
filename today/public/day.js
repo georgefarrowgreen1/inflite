@@ -266,9 +266,9 @@ function planLines(lines, stats) {
   return { main: lead.length ? lead : folded.slice(0, 1), more: lead.length ? folded.filter(routine) : folded.slice(1) };
 }
 function statHtml({ label, value, tone }) {
-  const time = /^(?:(from|until|by)\s+)?(\d{1,2}:\d{2}(?:\s*[ap]m)?)$/i.exec(String(value).trim());
-  const caption = time?.[1] ? `${label} ${time[1].toLowerCase()}` : label;
-  return `<div${TONES.includes(tone) ? ` class="dt-${tone}"` : ""}><dt>${esc(caption)}</dt><dd${time ? ' class="dt-time"' : ""}>${esc(time?.[2] ?? value)}</dd></div>`;
+  const time = /^(?:(?:from|until|by)\s+)?\d{1,2}:\d{2}(?:\s*[ap]m)?$/i.test(str(value).trim());
+  const classes = [TONES.includes(tone) ? `dt-${tone}` : "", time ? "dt-time" : ""].filter(Boolean).join(" ");
+  return `<div${classes ? ` class="${classes}"` : ""}><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
 }
 function topHtml(t, phase, st, now) {
   const kind = KINDS.includes(t.kind) ? t.kind : "plan", lines = texts(t.lines);

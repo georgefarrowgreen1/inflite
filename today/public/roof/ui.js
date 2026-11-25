@@ -224,37 +224,30 @@ export function empty({ title, body, acts } = {}) {
 // Keep an existing row in place when a feed redraws above it. Call the returned
 // function after updating the DOM, while the same view is still visible.
 export function rememberVisibleRow(root, selector, key) {
-  if (!root?.isConnected || !root.getClientRects().length) return null;
-  const doc = root.ownerDocument, view = doc.defaultView, page = doc.scrollingElement;
-  let scroller = page;
-  for (let node = root; node && node !== page; node = node.parentElement) {
-    if (node.scrollTop > 1 && /^(auto|scroll)$/.test(view.getComputedStyle(node).overflowY)) {
-      scroller = node;
-      break;
-    }
-  }
-  if (!(scroller?.scrollTop > 1)) return null;
-  const bounds = scroller === page ? null : scroller.getBoundingClientRect();
-  const headingBottom = doc.querySelector("#hd .ifl-hd")?.getBoundingClientRect().bottom ?? 0;
-  const top = Math.max(0, bounds?.top ?? headingBottom);
-  const bottom = Math.min(view.innerHeight, bounds?.bottom ?? view.innerHeight);
+  if (!root?.isConnected) return;
+  let scroller = root;
+  while (scroller && !scroller.scrollTop) scroller = scroller.parentElement;
+  if (!scroller) return;
+  const doc = root.ownerDocument, pane = scroller !== doc.scrollingElement;
+  const bounds = (pane ? scroller : doc.querySelector("#hd .ifl-hd"))?.getBoundingClientRect();
+  const top = Math.max(0, (pane ? bounds.top : bounds?.bottom) || 0);
+  const bottom = pane ? Math.min(innerHeight, bounds.bottom) : innerHeight;
+  const rows = () => [...root.querySelectorAll(selector)];
   const positions = [];
-  for (const row of root.querySelectorAll(selector)) {
+  for (const row of rows()) {
     const id = key(row);
     if (!id) continue;
     const rect = row.getBoundingClientRect();
     if (rect.height > 0 && rect.bottom > top && rect.top < bottom) positions.push([id, rect.top]);
     if (positions.length === 3) break;
   }
-  if (!positions.length) return null;
+  if (!positions.length) return;
   return () => {
-    if (!root.isConnected || !scroller.isConnected || !root.getClientRects().length) return;
-    const rows = [...root.querySelectorAll(selector)];
+    const current = rows();
     for (const [id, y] of positions) {
-      const row = rows.find(node => key(node) === id && node.getClientRects().length);
+      const row = current.find(node => key(node) === id && node.getClientRects().length);
       if (!row) continue;
-      const delta = row.getBoundingClientRect().top - y;
-      if (Math.abs(delta) > 1) scroller.scrollTop += delta;
+      scroller.scrollTop += row.getBoundingClientRect().top - y;
       break;
     }
   };

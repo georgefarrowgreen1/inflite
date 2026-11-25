@@ -535,9 +535,11 @@ export function createFrame(opts = {}) {
       if (!m.root.firstChild || (previous?.classList.contains("ifl-app-loading") && previous.dataset.layout !== layout)) {
         const rows = ui.skeleton("rows", summary ? 3 : 5);
         const detail = summary && m.app === "weather" ? ui.el("div", { class: "ifl-loading-details" }, rows, ui.skeleton("rows", 3)) : rows;
+        const loading = ui.el("div", { class: "ifl-app-loading", data: { layout }, role: "status", "aria-label": `Loading ${REGISTRY[m.app].name}` });
+        if (summary) loading.append(ui.skeleton("hero"));
+        loading.append(detail);
         previous?.remove();
-        m.root.append(ui.el("div", { class: "ifl-app-loading", data: { layout }, role: "status", "aria-label": `Loading ${REGISTRY[m.app].name}` },
-          summary ? ui.skeleton("hero") : null, detail));
+        m.root.append(loading);
       }
     }
     if (!m.instance && !m.loading) {

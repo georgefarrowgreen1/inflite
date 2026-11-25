@@ -84,7 +84,7 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 /* the section switcher: a track, the sections, a lens that slides to the chosen one (manual activation: header.js) */
 .ifl-segs { position: relative; display: flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: var(--glass-ctl); overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; }
 .ifl-segs::-webkit-scrollbar { display: none; }
-.ifl-segs.over { --section-edges: linear-gradient(to right, var(--section-left, #000), #000 12px, #000 calc(100% - 12px), var(--section-right, #000)); -webkit-mask-image: var(--section-edges); mask-image: var(--section-edges); }
+.ifl-segs:is(.more-left, .more-right) { --section-edges: linear-gradient(to right, var(--section-left, #000), #000 12px, #000 calc(100% - 12px), var(--section-right, #000)); -webkit-mask-image: var(--section-edges); mask-image: var(--section-edges); }
 .ifl-segs.more-left { --section-left: transparent; }
 .ifl-segs.more-right { --section-right: transparent; }
 .ifl-sec { position: relative; z-index: 1; flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 44px; height: 44px; padding: 0 clamp(8px, 2.45vw, 14px); border-radius: var(--r-pill);
