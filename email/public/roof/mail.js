@@ -43,8 +43,8 @@ import { icon } from "./icons.js";
 import { createOutbox } from "./outbox.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.25.3";
-export const NEWS = "Queued mail shows when it can send, and retry checks whether the message was already sent.";
+export const BUILD = "2.25.4";
+export const NEWS = "Mail keeps your place in the conversation list as it refreshes in InFlite.";
 export const SECTIONS = [["people", "People"], ["updates", "Updates"], ["later", "Later"], ["done", "Done"]];
 
 const LENS_IDS = SECTIONS.map((s) => s[0]);

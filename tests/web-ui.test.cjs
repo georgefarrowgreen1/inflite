@@ -78,24 +78,38 @@ for (const width of [390, 1440]) {
       const sheet = page.locator('dialog[open]');
       await sheet.evaluate(async d => { await Promise.allSettled(d.getAnimations().map(a => a.finished)); });
       const before = await sheet.boundingBox();
+      const waitForRest = () => page.waitForFunction(y => {
+        const sheet = document.querySelector('dialog[open]');
+        return sheet && Math.abs(sheet.getBoundingClientRect().y - y) < 1;
+      }, before.y, { timeout: 3000 });
       const head = await sheet.locator('.ifs-head').boundingBox();
       const x = head.x + head.width / 2, y = head.y + 18;
       await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y + 24, { steps: 4 });
       await page.waitForTimeout(150); await page.mouse.up();
-      await page.waitForTimeout(450);
-      const after = await sheet.boundingBox();
-      assert.ok(Math.abs(before.y - after.y) < 1, 'short drag springs back to its original position');
+      await waitForRest();
       await page.evaluate(() => {
         const d = __motionSheet.el, head = d.querySelector('.ifs-head');
         head.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 71, clientY: 100, isPrimary: true }));
         dispatchEvent(new PointerEvent('pointermove', { pointerId: 72, clientY: 300 }));
       });
       assert.equal(await sheet.evaluate(d => d.style.getPropertyValue('--drag')), '', 'another pointer cannot move the sheet');
-      await page.evaluate(() => {
+      const regrab = await page.evaluate(async () => {
+        const d = __motionSheet.el, head = d.querySelector('.ifs-head');
+        const offset = () => new DOMMatrixReadOnly(getComputedStyle(d).transform).m42;
         dispatchEvent(new PointerEvent('pointermove', { pointerId: 71, clientY: 280 }));
+        const dragged = offset();
         dispatchEvent(new PointerEvent('pointercancel', { pointerId: 71 }));
+        await new Promise(requestAnimationFrame);
+        const springing = offset();
+        head.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 73, clientY: 100, isPrimary: true }));
+        dispatchEvent(new PointerEvent('pointermove', { pointerId: 73, clientY: 108 }));
+        const grabbedAgain = offset();
+        dispatchEvent(new PointerEvent('pointerup', { pointerId: 73, clientY: 108 }));
+        return { dragged, springing, grabbedAgain };
       });
-      await page.waitForTimeout(450);
+      assert.ok(regrab.dragged > 100 && regrab.springing > 20, JSON.stringify(regrab));
+      assert.ok(Math.abs(regrab.grabbedAgain - regrab.springing - 8) <= 1, 'a new drag continues from the current position');
+      await waitForRest();
       assert.equal(await sheet.count(), 1, 'pointer cancellation returns the sheet without dismissing it');
       await page.evaluate(() => __motionSheet.push({ page: 'details', title: 'Details', body: document.createTextNode('Nested content') }));
       await page.locator('dialog [data-back]').click();
@@ -266,15 +280,15 @@ for (const width of [390, 1440]) test(`motion: nested sheet Back restores its sc
       const body = el('div', {}, ...Array.from({ length: 30 }, (_, i) => el('p', { text: `Settings row ${i}` })));
       const button = el('button', { type: 'button', text: 'Open details' }); body.append(button);
       window.__nested = createSheets({}).open({ title: 'Settings', body });
-      __nested.el.scrollTop = 280; button.focus({ preventScroll: true });
-      window.__parentPosition = __nested.el.scrollTop;
+      __nested.body.scrollTop = 280; button.focus({ preventScroll: true });
+      window.__parentPosition = __nested.body.scrollTop;
       __nested.push({ page: 'details', title: 'Details', body: el('p', { text: 'Details content' }) });
     });
     const sheet = page.getByRole('dialog', { name: 'Details', exact: true });
     assert.equal(await sheet.evaluate(d => d.scrollTop), 0, 'a nested page starts at its heading');
     await sheet.locator('[data-back]').click();
     await page.waitForFunction(() => document.activeElement?.textContent === 'Open details');
-    assert.ok(await page.evaluate(() => Math.abs(__nested.el.scrollTop - __parentPosition) < 2), 'Back restores the original settings position');
+    assert.ok(await page.evaluate(() => __parentPosition > 0 && Math.abs(__nested.body.scrollTop - __parentPosition) < 2), 'Back restores the original settings position');
     await page.keyboard.press('Escape'); await sheet.waitFor({ state: 'detached' });
     assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
   } finally { await ctx.close(); }
@@ -1651,7 +1665,7 @@ test('Quick Capture stays against the mobile keyboard as the viewport changes', 
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const { top, bottom } = dialog.getBoundingClientRect();
       const viewport = visualViewport;
-      const save = dialog.querySelector('.life-capture > button').getBoundingClientRect();
+      const save = dialog.querySelector('.ifs-acts > button').getBoundingClientRect();
       return { top, bottom, visibleTop: viewport.offsetTop, visibleBottom: viewport.offsetTop + viewport.height,
         saveBottom: save.bottom, keyboard: dialog.classList.contains('ifs-kb') };
     });
@@ -1665,12 +1679,13 @@ test('Quick Capture stays against the mobile keyboard as the viewport changes', 
       return placement();
     };
     assert.equal((await moveKeyboard(790)).keyboard, false, 'a browser toolbar does not activate the keyboard layout');
-    for (const [height, offset, event] of [[500, 0, 'resize'], [450, 36, 'scroll']]) {
+    for (const [height, offset, event] of [[500, 0, 'resize'], [456, 0, 'resize'], [500, 0, 'resize'], [450, 36, 'scroll']]) {
       const geometry = await moveKeyboard(height, offset, event);
       const { top, bottom, visibleTop, saveBottom, keyboard } = geometry;
       assert.equal(keyboard, true);
       assert.ok(top >= visibleTop, JSON.stringify(geometry));
       assert.ok(saveBottom <= bottom, 'Save is above the keyboard');
+      assert.equal(await field.evaluate(node => node === document.activeElement), true, 'changing the suggestions bar keeps typing focus');
     }
     await capture.getByRole('button', { name: 'Close', exact: true }).focus();
     assert.equal((await placement()).keyboard, true, 'a focus change does not drop the sheet into the open keyboard');
@@ -1681,14 +1696,74 @@ test('Quick Capture stays against the mobile keyboard as the viewport changes', 
 
     const compact = await moveKeyboard(270);
     assert.ok(compact.top > 0 && Math.abs(compact.bottom - compact.visibleBottom) <= 1, JSON.stringify(compact));
-    await capture.getByRole('button', { name: 'Save note' }).scrollIntoViewIfNeeded();
-    const scrolled = await placement();
-    assert.ok(scrolled.saveBottom <= scrolled.visibleBottom, 'Save remains reachable on a short viewport');
+    assert.ok(compact.saveBottom <= compact.visibleBottom, 'Save stays visible when the content has to scroll');
     const restored = await moveKeyboard(844);
     assert.equal(restored.keyboard, false);
     assert.ok(Math.abs(restored.bottom - restored.visibleBottom) <= 1);
     await capture.getByRole('button', { name: 'Close', exact: true }).tap();
     await capture.waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('Today leaves the last card above the dock when its height changes on a narrow phone', async () => {
+  const answer = structuredClone(day);
+  answer.tops.morning.stats[0] = { label: 'Chance of rain', value: 'From 5:00 PM' };
+  const { ctx, page, errors } = await open({ initialPath: '/?os=1', width: 320, answer });
+  try {
+    const stats = await page.locator('#top .dt-time dd').evaluateAll(values => values.map(value => {
+      const range = document.createRange();
+      range.selectNodeContents(value);
+      const { y, right } = value.getBoundingClientRect();
+      return { text: value.textContent, y, fits: range.getClientRects().length === 1 && range.getBoundingClientRect().right <= right + 1 };
+    }));
+    assert.deepEqual(stats.map(({ text }) => text), ['From 5:00 PM', '16:45', '18:30']);
+    assert.ok(stats.every(({ y, fits }) => y === stats[0].y && fits), JSON.stringify(stats));
+    const dock = page.locator('.ws-dock');
+    await dock.waitFor();
+    for (const padding of [null, '22px']) {
+      if (padding) await dock.evaluate((el, value) => { el.style.paddingBlock = value; }, padding);
+      await page.waitForFunction(() => {
+        const dock = document.querySelector('.ws-dock');
+        return parseInt(document.documentElement.style.getPropertyValue('--ifl-dock-height'), 10) === dock.offsetHeight;
+      });
+      const geometry = await page.evaluate(() => {
+        scrollTo(0, document.scrollingElement.scrollHeight);
+        const today = document.getElementById('today');
+        const last = [...today.querySelectorAll('.tcard')].filter(el => el.getClientRects().length).at(-1);
+        const dock = document.querySelector('.ws-dock');
+        return { lastBottom: last?.getBoundingClientRect().bottom, dockTop: dock.getBoundingClientRect().top,
+          overflow: document.documentElement.scrollWidth - innerWidth };
+      });
+      assert.ok(geometry.lastBottom <= geometry.dockTop - 12, JSON.stringify(geometry));
+      assert.ok(geometry.overflow <= 1, JSON.stringify(geometry));
+    }
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('Today keeps the visible row in place as earlier content grows on refresh', async () => {
+  const { ctx, page, errors } = await open({ initialPath: '/?os=1' });
+  try {
+    await page.locator('#coming .dc-row').first().waitFor();
+    const geometry = await page.evaluate(async answer => {
+      const { drawDay } = await import('/day.js');
+      const { rememberVisibleRow } = await import('/roof/ui.js');
+      const root = document.querySelector('#today');
+      const upcoming = root.querySelector('#coming .dc-row');
+      document.scrollingElement.style.overflowAnchor = 'none';
+      const stickyHeader = document.querySelector('#hd .ifl-hd');
+      scrollTo(0, upcoming.getBoundingClientRect().top + scrollY - stickyHeader.getBoundingClientRect().bottom - 24);
+      const first = [...root.querySelectorAll('[data-wid], .dc-row')].find(row => row.getBoundingClientRect().bottom > stickyHeader.getBoundingClientRect().bottom);
+      const key = first.dataset.wid ? 'wid' : 'rowId';
+      const id = first.dataset[key], before = first.getBoundingClientRect().top, oldScroll = scrollY;
+      answer.tops[root.dataset.phase].title = 'A considerably longer summary with the forecast, the next ride and the plans for later today';
+      drawDay(root, answer, { now: () => answer.at, timers: false, rememberVisibleRow });
+      const again = [...root.querySelectorAll('[data-wid], .dc-row')].find(row => row.dataset[key] === id);
+      return { before, after: again.getBoundingClientRect().top, oldScroll, newScroll: scrollY };
+    }, day);
+    assert.ok(geometry.newScroll > geometry.oldScroll + 24, JSON.stringify(geometry));
+    assert.ok(Math.abs(geometry.before - geometry.after) <= 1, JSON.stringify(geometry));
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
@@ -1849,7 +1924,7 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
     assert.equal((await placed('pinch zoom')).keyboard, false, 'zoom is not a keyboard');
     await page.evaluate(() => { visualViewport.scale = 1; __viewport(844); });
     const before = await page.evaluate(() => scrollY);
-    if (process.env.WEB_UI_BROWSER === 'webkit') await page.locator('dialog[open]').evaluate(d => d.scrollBy(0, 500));
+    if (process.env.WEB_UI_BROWSER === 'webkit') await page.locator('dialog[open] > .ifs-body').evaluate(body => body.scrollBy(0, 500));
     else { await page.mouse.move(190, 300); await page.mouse.wheel(0, 500); }
     assert.equal(await page.evaluate(() => scrollY), before, 'scrolling sheet content never scrolls the page behind it');
     await page.evaluate(() => __sheet.close());
@@ -1863,22 +1938,31 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Search', 'focus returns to the opener');
     const parentScroll = await page.evaluate(async () => {
       const { el } = await import('/roof/ui.js');
-      window.__parent = __sheets.open({ title: 'Parent', body: el('div', {},
+      const opener = el('button', { type: 'button', text: 'Open child' });
+      window.__parent = __sheets.open({ title: 'Parent', body: el('div', {}, opener,
         ...Array.from({ length: 40 }, (_, i) => el('p', { text: `Parent content ${i}` }))) });
-      __parent.el.scrollTop = 360;
-      const before = __parent.el.scrollTop;
+      const head = __parent.el.querySelector('.ifs-head');
+      const headTop = head.getBoundingClientRect().top;
+      __parent.body.scrollTop = 360;
+      opener.focus({ preventScroll: true });
+      const before = __parent.body.scrollTop;
+      const headerStayed = headTop === head.getBoundingClientRect().top && __parent.el.scrollTop === 0;
       const field = el('input', { 'aria-label': 'Child field' });
       const child = __sheets.open({ title: 'Child', body: field, focus: field });
       __viewport(480);
-      const during = __parent.el.scrollTop;
+      const during = __parent.body.scrollTop;
       child.now();
-      const after = __parent.el.scrollTop;
+      const after = __parent.body.scrollTop;
+      const focusReturned = document.activeElement === opener;
       __viewport(844);
-      return { before, during, after };
+      return { before, during, after, headerStayed, focusReturned };
     });
     assert.ok(parentScroll.before > 0);
-    assert.deepEqual(parentScroll, { before: parentScroll.before, during: parentScroll.before, after: parentScroll.before });
+    assert.deepEqual(parentScroll, { before: parentScroll.before, during: parentScroll.before, after: parentScroll.before, headerStayed: true, focusReturned: true });
     await page.getByRole('dialog', { name: 'Child', exact: true }).waitFor({ state: 'detached' });
+    await page.locator('dialog[open][data-body-scrolled]').waitFor();
+    await page.evaluate(() => { __parent.body.scrollTop = 0; });
+    await page.locator('dialog[open][data-body-scrolled]').waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => document.body.classList.contains('sheet-up')), true, 'closing one sheet leaves the other modal');
     await page.evaluate(() => __parent.close());
     await page.locator('dialog[open]').waitFor({ state: 'detached' });

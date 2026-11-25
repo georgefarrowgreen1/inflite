@@ -284,9 +284,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.25.3";
+  const BUILD = "2.25.4";
   // (what's new in it, said once it's in)
-  const NEWS = "Queued mail shows when it can send, and retry checks whether the message was already sent.";
+  const NEWS = "Mail keeps your place in the conversation list as it refreshes in InFlite.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.

@@ -1,9 +1,13 @@
 /* Lazy OS presentation only. Every rule stays inside the workspace root. */
 html.ifl-os .today-in { padding-left: 0; }
-html.ifl-os { --tabs-h: 96px; }
-html.ifl-os:not(.os-workspace) .today-in .view { padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)); }
+html.ifl-os {
+  --ifl-dock-offset: 12px;
+  --tabs-h: calc(var(--ifl-dock-height, 84px) + var(--ifl-dock-offset));
+  --ifl-dock-clearance: calc(var(--tabs-h) + 16px + env(safe-area-inset-bottom, 0px));
+  scroll-padding-block-end: var(--ifl-dock-clearance);
+}
+html.ifl-os:not(.os-workspace) .today-in .view { padding-bottom: var(--ifl-dock-clearance); }
 html.ifl-os[data-os-dock-away] { --tabs-h: 0px; }
-html.ifl-os[data-os-dock-away]:not(.os-workspace) .today-in .view { padding-bottom: env(safe-area-inset-bottom, 0px); }
 html.ifl-os body.kb-up .ifl-workspace .ws-dock { display: none; }
 html.ifl-os.os-workspace #hd { display: none; }
 html.ifl-os.os-workspace #workspace.ifl-screen { width: 100%; max-width: none; margin: 0; padding: 16px; }
@@ -25,6 +29,28 @@ html.ifl-os.os-workspace #workspace.ifl-screen { width: 100%; max-width: none; m
 .ifl-workspace, .ifl-workspace *, .ifl-workspace *::before, .ifl-workspace *::after { box-sizing: border-box; }
 .ifl-workspace [hidden] { display: none !important; }
 .ifl-workspace.ws-dock-host, .ifl-workspace .ws-dock-anchor, .ifl-workspace .ws-sidebar-anchor { display: contents; min-height: 0; padding: 0; background: none; }
+.ws-dock-host:has(> .ws-dock:not([hidden], [data-launcher-open]))::before {
+  content: "";
+  position: fixed;
+  z-index: 7;
+  inset: auto 0 0;
+  height: var(--ifl-dock-clearance, 112px);
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--orb-ground, var(--ifl-page)) 36%, transparent));
+  pointer-events: none;
+}
+body.kb-up .ws-dock-host::before,
+html[data-app=mail]:has(.m-mail:not(.ifl-in-pane) .mr-foot[data-keyboard]) .ws-dock-host::before { display: none; }
+@media (min-width: 960px) {
+  .ws-dock-host:has(> .ws-dock:not([hidden], [data-launcher-open]))::before {
+    inset-inline: calc(232px + (100vw - 232px) / 2) auto;
+    width: min(520px, calc(100vw - 264px));
+    transform: translateX(-50%);
+    mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  }
+}
+@media (forced-colors: active) {
+  .ws-dock-host:has(> .ws-dock:not([hidden], [data-launcher-open]))::before { display: none; }
+}
 .ifl-workspace button { font: inherit; color: inherit; letter-spacing: inherit; }
 .ifl-workspace :is(button, a):focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
 .ifl-workspace .ws-shell {
@@ -62,7 +88,7 @@ html.ifl-os.os-workspace #workspace.ifl-screen { width: 100%; max-width: none; m
 .ifl-workspace .ws-account > .ifl-avatar { width: 44px; height: 44px; line-height: 1; font-size: 17px; }
 .ifl-workspace .ws-account .ifl-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .ifl-workspace .ws-notification-count { position: absolute; top: -2px; right: -2px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; font-size: 10px; font-weight: 750; line-height: 1; background: var(--ifl-accent-fill, #b8eb2b); color: var(--ifl-on-accent, #10150d); }
-.ifl-workspace .ws-canvas { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; gap: 16px; padding: 20px 24px 104px; background: var(--ws-page); }
+.ifl-workspace .ws-canvas { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; gap: 16px; padding: 20px 24px max(24px, calc(var(--ifl-dock-clearance, 112px) - 16px)); background: var(--ws-page); }
 .ifl-workspace .ws-home { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 .ifl-workspace .ws-home-overview { display: none; }
 .ifl-workspace .ws-today-slot { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
@@ -111,7 +137,7 @@ html.ifl-os.os-workspace #workspace.ifl-screen { width: 100%; max-width: none; m
 .ifl-workspace .ws-secondary { background: var(--ws-well); }
 .ifl-workspace .ws-resource-share svg { width: 18px; height: 18px; }
 .ifl-workspace .ws-resource-secondary-icon { display: grid; place-items: center; flex: none; width: 18px; height: 18px; }
-.ifl-workspace .ws-dock { position: fixed; z-index: 8; left: 50vw; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--ifl-glass-line,var(--ws-line)); border-radius: 30px; background: var(--ifl-surface); box-shadow: var(--ifl-glass-shadow,var(--ws-shadow)); scrollbar-width: none; }
+.ifl-workspace .ws-dock { position: fixed; z-index: 8; left: 50vw; bottom: calc(var(--ifl-dock-offset, 12px) + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--ifl-glass-line,var(--ws-line)); border-radius: 30px; background: var(--ifl-surface); box-shadow: var(--ifl-glass-shadow,var(--ws-shadow)); scrollbar-width: none; }
 .ifl-workspace .ws-pane-sections::-webkit-scrollbar { display: none; }
 .ifl-workspace.ws-dock-host .ws-dock { view-transition-name: inflite-dock; }
 html.ifl-os::view-transition-group(inflite-dock), html.ifl-os::view-transition-new(inflite-dock) { animation: none; }
@@ -150,18 +176,19 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace .ws-phone-only { display: grid; }
   .ifl-workspace .ws-icon-button.ws-phone-only { display: grid; }
   .ifl-workspace .ws-main { min-height: 100dvh; overflow: visible; }
-  .ifl-workspace:is([data-mode="workspace"], [data-mode="app"], [data-mode="files"]) .ws-main { height: max(100dvh, 680px); min-height: 0; overflow: hidden; }
-  .ifl-workspace .ws-toolbar { flex-wrap: wrap; gap: 12px; padding: max(16px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) 14px max(20px, env(safe-area-inset-left, 0px)); border: 0; background: var(--ws-page); }
+  .ifl-workspace:is([data-mode="workspace"], [data-mode="app"], [data-mode="files"]) .ws-main { height: 100dvh; min-height: 0; overflow: hidden; }
+  .ifl-workspace .ws-toolbar { flex-wrap: wrap; gap: 10px; padding: max(16px, env(safe-area-inset-top, 0px)) var(--ifl-page-right) 12px var(--ifl-page-left); border: 0; background: var(--ws-page); }
+  .ifl-workspace[data-mode="today"] .ws-toolbar { flex-wrap: nowrap; }
   .ifl-workspace .ws-heading { min-width: 0; }
   .ifl-workspace .ws-phone-mark { display: block; flex: none; width: 36px; height: 36px; border-radius: 11px; }
-  .ifl-workspace .ws-title { font-size: 26px; letter-spacing: -.5px; }
+  .ifl-workspace .ws-title { font-size: var(--ifl-mobile-title); letter-spacing: -.5px; }
   .ifl-workspace .ws-title-desktop { display: none; }
   .ifl-workspace .ws-title-mobile { display: block; }
   .ifl-workspace .ws-heading-line { display: none; }
   .ifl-workspace .ws-header-actions { gap: 8px; }
   .ifl-workspace .ws-toolbar > .ws-icon-button { margin-right: -4px; }
   .ifl-workspace:is([data-mode="workspace"], [data-mode="app"], [data-mode="files"]) .ws-phone-mark { display: none; }
-  .ifl-workspace .ws-canvas { gap: 14px; padding: 0 max(20px, env(safe-area-inset-right, 0px)) calc(100px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px)); overflow: visible; }
+  .ifl-workspace .ws-canvas { gap: 14px; padding: 0 var(--ifl-page-right) var(--ifl-dock-clearance, 112px) var(--ifl-page-left); overflow: visible; }
   .ifl-workspace .ws-home { display: block; }
   .ifl-workspace .ws-home-overview { display: grid; gap: 14px; margin-bottom: 18px; }
   .ifl-workspace .ws-home-title { margin: 0; font-size: 25px; line-height: 1.2; font-weight: 750; letter-spacing: -.7px; }
@@ -201,9 +228,6 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
 
 
 
-}
-@media (max-width: 359px) {
-  .ifl-workspace .ws-canvas { padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .ifl-workspace .ifl-workspace-pane { transition: none !important; }
@@ -318,7 +342,7 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace[data-unified=true][data-mode=today] .ws-home-body { display: block; }
   .ifl-workspace .ws-today-slot .ws-resume-panel { margin: 16px 0 20px; padding: 16px; gap: 10px; }
   .ifl-workspace .ws-home-side { margin-top: 20px; }
-  .ifl-workspace[data-unified=true][data-mode=today] .ws-heading-line { display: block; font-size: 12px; }
+  .ifl-workspace[data-unified=true][data-mode=today] .ws-heading-line { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 }
 .ifl-workspace .ws-dock-button[data-drop-ready=true] { background: var(--ws-wash); outline: 2px solid var(--ws-accent); outline-offset: 2px; }
 
@@ -338,7 +362,7 @@ html.ifl-os::view-transition-old(inflite-dock) { display: none; }
   .ifl-workspace[data-mode=workspace] .ws-pane-tabs { display: none; }
   .ifl-workspace[data-mode=workspace] .ws-pane-header { min-height: 52px; padding-block: 4px; }
   .ifl-workspace[data-mode=workspace] .ws-pane-sections { padding-block: 4px; }
-  .ifl-workspace[data-mode=workspace] .ws-canvas { flex-direction: row; padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+  .ifl-workspace[data-mode=workspace] .ws-canvas { flex-direction: row; }
   .ifl-workspace[data-mode=workspace] .ws-resource { flex: 0 0 160px; flex-flow: column nowrap; align-items: stretch; justify-content: space-between; }
   .ifl-workspace[data-mode=workspace] .ws-resource-share { margin: 0; }
 }

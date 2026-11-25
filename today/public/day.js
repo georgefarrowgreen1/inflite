@@ -265,6 +265,11 @@ function planLines(lines, stats) {
   const lead = folded.filter(line => !routine(line));
   return { main: lead.length ? lead : folded.slice(0, 1), more: lead.length ? folded.filter(routine) : folded.slice(1) };
 }
+function statHtml({ label, value, tone }) {
+  const time = /^(?:(?:from|until|by)\s+)?\d{1,2}:\d{2}(?:\s*[ap]m)?$/i.test(str(value).trim());
+  const classes = [TONES.includes(tone) ? `dt-${tone}` : "", time ? "dt-time" : ""].filter(Boolean).join(" ");
+  return `<div${classes ? ` class="${classes}"` : ""}><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
+}
 function topHtml(t, phase, st, now) {
   const kind = KINDS.includes(t.kind) ? t.kind : "plan", lines = texts(t.lines);
   const said = digitsOf(t.title);
@@ -285,7 +290,7 @@ function topHtml(t, phase, st, now) {
   return `<article class="tcard glass day-top" data-kind="${kind}" data-phase="${esc(phase)}" aria-labelledby="dt-h">
     ${str(t.chip) ? `<span class="dt-chip">${kind === "done" ? G.check : kind === "ride" ? G.ride : ""}${esc(t.chip)}</span>` : ""}
     <h2 class="tc-h dt-h" id="dt-h" tabindex="-1">${esc(t.title)}</h2>
-    ${stats.length ? `<dl class="dt-stats">${stats.map((s) => `<div${TONES.includes(s.tone) ? ` class="dt-${s.tone}"` : ""}><dt>${esc(s.label)}</dt><dd>${esc(s.value)}</dd></div>`).join("")}</dl>` : ""}
+    ${stats.length ? `<dl class="dt-stats">${stats.map(statHtml).join("")}</dl>` : ""}
     ${mainLines.length ? `<ul class="dt-rows">${mainLines.map(lineRow).join("")}</ul>` : ""}
     ${moreLines.length || undo.length || extraButtons.length ? `<details class="dt-history" data-phase="${esc(phase)}"${st.historyOpen ? " open" : ""}>
       <summary tabindex="0">${history ? "What changed" : "More from your day"}<span class="dt-history-chevron" aria-hidden="true">${G.chev}</span></summary>
@@ -441,25 +446,26 @@ function comingHtml(rows, st, now) {
     const app = APP[r.app === "markets" || r.app === "chat" || r.app === "weather" || r.app === "fitness" ? r.app : ""];
     const h = linkTo(r.href, st.ctx), other = dayKey(r.at, tz) !== dayKey(now, tz);
     const inner = `<span class="dc-tm">${esc(hm(r.at, tz))}${other ? `<small>${esc(wkShort(r.at, tz))}</small>` : ""}</span>${app ? `<img class="dc-ic" src="${app.icon}" alt="">` : `<span class="dc-ic"></span>`}<span class="tx"><b>${esc(r.title)}</b>${str(r.sub) ? `<small>${esc(r.sub)}</small>` : ""}</span>`;
-    return `<div class="dc-row" data-due="${dueOf(r, st.answer, now)}">
+    return `<div class="dc-row" data-row-id="${esc(comingRowId(r))}" data-due="${dueOf(r, st.answer, now)}">
       ${h ? `<a class="row dc-main" href="${esc(h)}">${inner}</a>` : `<div class="row dc-main">${inner}</div>`}
     </div>`;
   }).join("")}</div>`;
 }
+const comingRowId = r => str(r.id) || str(r.parcel) || str(r.booking) || `${r.app}:${r.at}:${r.title}`;
 
 // (a booking or a parcel from Mail (Mail on Your Day, trip.js, mailday.js): Mail's teal icon with its envelope, what it
 // is, and the number that matters on the right (the time, or a parcel's window) with its day under it; a parcel with its
 // four-part bar. A tap opens its sheet; a link to its email where there's no sheet. One hidden here isn't drawn)
 function mailRowHtml(r, st, now, tz) {
   const p = parcelOfRow(r);
-  if (p) return `<div class="dc-row dc-mail dc-parcel" data-due="${dueOf(r, st.answer, now)}">${parcelRowHtml(p, (h) => linkTo(h, st.ctx))}</div>`;
+  if (p) return `<div class="dc-row dc-mail dc-parcel" data-row-id="${esc(comingRowId(r))}" data-due="${dueOf(r, st.answer, now)}">${parcelRowHtml(p, (h) => linkTo(h, st.ctx))}</div>`;
   const b = bookingOfRow(r);
   if (!b) return "";
   const h = linkTo(r.href, st.ctx), parts = bookingRowParts(b);
   const d = dayKey(r.at, tz), when = d === dayKey(now, tz) ? "today" : d === dayKey(now + 86400000, tz) ? "tomorrow" : wkShort(r.at, tz);
   const inner = `<span class="dc-tm" aria-hidden="true"></span>${parts.glyph}<span class="tx"><b>${esc(r.title)}</b>${str(r.sub) ? `<small>${esc(r.sub)}</small>` : ""}</span><span class="ml-amt"><b>${esc(hm(r.at, tz))}</b><small>${esc(when)}</small></span>`;
   const attrs = `data-do="booking" data-bid="${esc(b.id)}" aria-haspopup="dialog"`;
-  return `<div class="dc-row dc-mail" data-due="${dueOf(r, st.answer, now)}">
+  return `<div class="dc-row dc-mail" data-row-id="${esc(comingRowId(r))}" data-due="${dueOf(r, st.answer, now)}">
       ${h ? `<a class="row dc-main" href="${esc(h)}" ${attrs}>${inner}</a>` : `<button type="button" class="row dc-main" ${attrs}>${inner}</button>`}
     </div>`;
 }
@@ -512,9 +518,17 @@ function refocus(root, key) {
   const again = root.querySelector(`#${key.sec} ${key.sel}`) || root.querySelector("#dt-h");
   again?.focus?.({ preventScroll: true });
 }
+function keepDayRow(root, st) {
+  return st.ctx.rememberVisibleRow?.(root, ".dw-row[data-wid], .dc-row[data-row-id], #rest .tcard[data-app]", ({ dataset }) => {
+    if (dataset.wid) return "waiting:" + dataset.wid;
+    if (dataset.rowId) return "coming:" + dataset.rowId;
+    return "app:" + dataset.app;
+  });
+}
 function paint(root, st, phase, now) {
   const key = focusKey(root);
-  try { draw(root, st, phase, now); } finally { refocus(root, key); }
+  const restoreRow = keepDayRow(root, st);
+  try { draw(root, st, phase, now); } finally { refocus(root, key); restoreRow?.(); }
 }
 function draw(root, st, phase, now) {
   const a = st.answer, s = sections(root);
@@ -647,8 +661,11 @@ export function tickDay(root, answer, now) {
     paint(root, st, phase, t);
     return;
   }
-  for (const r of [...s.coming.querySelectorAll("[data-due]")]) if (Number(r.dataset.due) <= t) r.remove();
+  const passed = [...s.coming.querySelectorAll("[data-due]")].filter(r => Number(r.dataset.due) <= t);
+  const restoreRow = passed.length ? keepDayRow(root, st) : null;
+  for (const r of passed) r.remove();
   if (!s.coming.querySelector("[data-due]")) { s.coming.hidden = true; s.coming.replaceChildren(); }
+  restoreRow?.();
   for (const b of [...s.top.querySelectorAll('[data-do="undo"]')]) if (!actShows("undo", actOf(st, b.dataset.id), t)) b.remove();
   tick(s.rest, t);
   writeLine(st, phase, t);

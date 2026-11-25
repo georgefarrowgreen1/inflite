@@ -221,6 +221,37 @@ const actsOf = (acts = []) => acts.length ? el("div", { class: "ifl-acts" }, act
 export function empty({ title, body, acts } = {}) {
   return el("div", { class: "ifl-empty" }, title ? el("b", { text: title }) : null, body ? el("p", { text: body }) : null, actsOf(acts));
 }
+// Keep an existing row in place when a feed redraws above it. Call the returned
+// function after updating the DOM, while the same view is still visible.
+export function rememberVisibleRow(root, selector, key) {
+  if (!root?.isConnected) return;
+  let scroller = root;
+  while (scroller && !scroller.scrollTop) scroller = scroller.parentElement;
+  if (!scroller) return;
+  const doc = root.ownerDocument, pane = scroller !== doc.scrollingElement;
+  const bounds = (pane ? scroller : doc.querySelector("#hd .ifl-hd"))?.getBoundingClientRect();
+  const top = Math.max(0, (pane ? bounds.top : bounds?.bottom) || 0);
+  const bottom = pane ? Math.min(innerHeight, bounds.bottom) : innerHeight;
+  const rows = () => [...root.querySelectorAll(selector)];
+  const positions = [];
+  for (const row of rows()) {
+    const id = key(row);
+    if (!id) continue;
+    const rect = row.getBoundingClientRect();
+    if (rect.height > 0 && rect.bottom > top && rect.top < bottom) positions.push([id, rect.top]);
+    if (positions.length === 3) break;
+  }
+  if (!positions.length) return;
+  return () => {
+    const current = rows();
+    for (const [id, y] of positions) {
+      const row = current.find(node => key(node) === id && node.getClientRects().length);
+      if (!row) continue;
+      scroller.scrollTop += row.getBoundingClientRect().top - y;
+      break;
+    }
+  };
+}
 export function error({ title, body, acts } = {}) {
   return el("div", { class: "ifl-error", role: "alert" }, title ? el("b", { text: title }) : null, body ? el("p", { text: body }) : null, actsOf(acts));
 }

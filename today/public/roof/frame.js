@@ -505,7 +505,7 @@ export function createFrame(opts = {}) {
     m.root.setAttribute("aria-labelledby", `ifl-sec-${r.section}`);
     F.header.set(appHead(r));
     if (o.zoomFrom) clone(m, o.zoomFrom);
-    ensureApp(m);
+    ensureApp(m, r);
     Promise.resolve(m.loading).then(() => {
       if (!liveModule(m) || F.route !== r) return dropClone(m);
       if (!m.instance) { measure("failure"); return dropClone(m); }
@@ -523,10 +523,26 @@ export function createFrame(opts = {}) {
     }).catch((e) => { measure(e?.name === "AbortError" ? "cancelled" : "failure"); console.error(e); dropClone(m); });
     return m.el;
   }
-  function ensureApp(m) {
+  function ensureApp(m, route) {
     if (!liveModule(m)) return Promise.resolve(null);
+    if (!m.instance) {
+      const section = route?.section;
+      const summary = m.app === "calendar" ||
+        (m.app === "weather" && (!section || section === "now")) ||
+        (m.app === "fitness" && (!section || section === "today"));
+      const layout = summary ? "summary" : "list";
+      const previous = m.root.firstElementChild;
+      if (!m.root.firstChild || (previous?.classList.contains("ifl-app-loading") && previous.dataset.layout !== layout)) {
+        const rows = ui.skeleton("rows", summary ? 3 : 5);
+        const detail = summary && m.app === "weather" ? ui.el("div", { class: "ifl-loading-details" }, rows, ui.skeleton("rows", 3)) : rows;
+        const loading = ui.el("div", { class: "ifl-app-loading", data: { layout }, role: "status", "aria-label": `Loading ${REGISTRY[m.app].name}` });
+        if (summary) loading.append(ui.skeleton("hero"));
+        loading.append(detail);
+        previous?.remove();
+        m.root.append(loading);
+      }
+    }
     if (!m.instance && !m.loading) {
-      if (!m.root.firstChild) m.root.append(ui.skeleton("hero"), ui.skeleton("card", 3));
       m.loading = import("./modules.js").then((M) => {
         if (!liveModule(m)) throw released();
         return M.loadModule(m.app, F);
@@ -671,7 +687,7 @@ export function createFrame(opts = {}) {
         if (!visible) { handle.hide(); return true; }
         host.visible = true; m.el.hidden = false; m.el.inert = false;
         if (!m.el.isConnected && host.container?.isConnected) place(host.container);
-        const instance = await ensureApp(m);
+        const instance = await ensureApp(m, r);
         if (!live() || mine !== epoch || m.host !== host || !host.visible || !instance) return false;
         T(() => host.header?.({ ...m.header }));
         await instance.show(r, null);

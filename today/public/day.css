@@ -259,15 +259,19 @@ button.dm-quiet:active { background: var(--press); }
 .day-top .dt-chip { background: var(--ifl-glass-control); color: var(--text-2); }
 .day-top .dt-stats {
   display: flex; flex-wrap: wrap; gap: 0;
-  padding: 5px; border-radius: var(--ifl-radius-row);
-  background: var(--ifl-glass-control);
+  padding: 4px; border-radius: var(--ifl-radius-row);
+  background: var(--ifl-surface-2);
 }
 .day-top .dt-stats > div {
-  flex: 1 1 76px; min-width: 0; padding: 8px 10px;
+  display: flex; flex-direction: column; justify-content: space-between; flex: 1 1 0;
+  min-width: 0; padding: 8px clamp(6px, 2vw, 12px);
   border-radius: 0; background: transparent;
 }
 .day-top .dt-stats > div + div { border-inline-start: 1px solid var(--ifl-line); }
+.day-top .dt-stats dt { color: var(--ifl-muted); line-height: 1.25; }
 .day-top .dt-stats dd { font-size: clamp(16px, 4.2vw, 20px); line-height: 1.25; }
+.day-top .dt-stats > .dt-time { min-width: min-content; }
+.dt-stats .dt-time dd { white-space: nowrap; }
 .day-top .dt-rows { background: transparent; padding-inline: 0; }
 .dt-said { background: var(--ifl-surface-2); }
 .dw-chip {
@@ -286,5 +290,5 @@ button.dm-quiet:active { background: var(--press); }
 }
 @media (forced-colors: active) {
   .day-top { background: Canvas; }
-  :is(.dt-chip, .dt-rows, .dt-stats > div, .dt-said, .dw-chip) { background: Canvas; color: CanvasText; box-shadow: inset 0 0 0 1px CanvasText; }
+  :is(.dt-chip, .dt-rows, .dt-stats, .dt-said, .dw-chip) { background: Canvas; color: CanvasText; box-shadow: inset 0 0 0 1px CanvasText; }
 }

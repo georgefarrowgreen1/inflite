@@ -18,9 +18,9 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.62.2";
+const BUILD = "4.62.4";
 // (what's new in it, said once it's in)
-const NEWS = "A cleaner notification inbox with compact controls and grouped alerts.";
+const NEWS = "Improve tab legibility, sheet motion and scrolling, and keep your place as Today refreshes.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
 const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.33.1/store.js","/os.webmanifest"];
@@ -2009,6 +2009,24 @@ function frame() {
       if (F !== ownerFrame || ownerFrame.signal.aborted) { host.destroy(); return null; }
       workspace = host;
       workspaceHost = host;
+      // Today and the native app screens share clearance for the same dock.
+      const dock = $("#in .ws-dock");
+      if (dock) {
+        const signal = ownerFrame.signal, style = document.documentElement.style;
+        const measureDock = () => {
+          if (signal.aborted) return;
+          const height = dock.offsetHeight;
+          if (height) style.setProperty("--ifl-dock-height", `${height}px`);
+        };
+        const resize = globalThis.ResizeObserver ? new ResizeObserver(measureDock) : null;
+        if (resize) resize.observe(dock, { box: "border-box" });
+        else addEventListener("resize", measureDock, { signal });
+        signal.addEventListener("abort", () => {
+          resize?.disconnect();
+          style.removeProperty("--ifl-dock-height");
+        }, { once: true });
+        measureDock();
+      }
       if (workspaceRoute && F.route === workspaceRoute) host.show(workspaceRoute).catch((e) => console.error(e));
       else host.hide();
       return host;
@@ -2383,6 +2401,7 @@ function letDayGo() {
 }
 function drawFour(anim) {
   const box = $("#rest");
+  const restoreRow = anim === "move" ? null : F?.ui.rememberVisibleRow?.(box, ".tcard[data-app]", card => card.dataset.app);
   letDayGo();
   for (const id of ["#top", "#trip", "#waiting", "#coming"]) $(id)?.replaceChildren();
   box.className = "cards";
@@ -2412,6 +2431,7 @@ function drawFour(anim) {
     (again || $(".tc-head", card || box))?.focus?.({ preventScroll: true });
   }
   drawKept();
+  restoreRow?.();
 }
 // Today First's day, drawn by /day.js once it's loaded: only if it's still the answer by then. ctx: now() (the answer's
 // clock), hub (the page's own IFL.hub: the hub's paths and Chat's engine, or the apps' own addresses where it's degraded),
@@ -2422,7 +2442,7 @@ function drawFour(anim) {
 // without v draws them), timers: false (nothing timed in day.js: the page's own minute, below, ticks it, and only while
 // it's signed in with this answer, so a day forgotten here stays forgotten)
 let day = null;
-const dayCtx = () => ({ now: nowish, hub: IFL.hub, prefs: S.prefs, links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), ...scopedAPI(), toast, refresh: () => refresh(),
+const dayCtx = () => ({ now: nowish, hub: IFL.hub, prefs: S.prefs, links: S.links || DEFAULT_LINKS, tz: S.answer?.tz || browserTz(), ...scopedAPI(), toast, refresh: () => refresh(), rememberVisibleRow: F?.ui.rememberVisibleRow,
   // (InFlite's sheet, for Mail's trip and its bookings: day.js, trip.js)
   sheet: (spec) => { if (!F) return null; IFL.close?.(true); closeSheet(); F.sheet.closeAll(); return F.sheet.open(spec); },
   line: (text) => { if (S.view) { S.dayLine = text == null ? null : String(text).slice(0, 120); drawLine(); } }, drawFour: () => drawFour(), timers: false });

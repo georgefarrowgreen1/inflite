@@ -10,7 +10,7 @@ html[data-life-hide-calendar] .org-today,html[data-life-hide-reminders] .s350-to
 .life-capture { gap: 12px; padding: 0; }
 .life-capture [role=radio] { flex: 1; min-height: 44px; text-align: center; }
 .life-capture textarea.life-capture-text { min-height: 0; padding: 8px 2px; border: 0; background: transparent; }
-.life-capture .life-calendar { gap: 8px; }
+.life-capture .life-calendar { gap: 8px; padding: 16px; border-radius: var(--r-group); background: var(--ifl-surface); }
 .life-capture .life-action-icon { color: inherit; }
 @media (forced-colors: none) and (prefers-contrast: no-preference) {
   .life-capture [role=radio][aria-checked=true] { background: var(--ifl-raised); color: var(--ifl-text); box-shadow: var(--ifl-shadow-control); }

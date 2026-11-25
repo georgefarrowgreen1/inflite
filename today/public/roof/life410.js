@@ -37,7 +37,7 @@ export async function createLifeTools(F,{system,files,organiseStore,planEvent,to
   let kind = savedDraft?.text && savedDraft.mode === 'reminder' ? 'reminder' : 'note';
   const recordId = savedDraft?.recordId || operationId();
   let busy = false, h;
-  const current = () => live() && h && !h.closed;
+  const current = () => live() && h?.closed === false;
   const text = el('textarea', {class:'life-capture-text', rows:3, maxlength:64000, 'aria-label':'Capture text', 'aria-describedby':'capture-hint'});
   text.value = savedDraft?.text || '';
   const status = el('small', {class:'life-status', role:'status'});
@@ -54,7 +54,6 @@ export async function createLifeTools(F,{system,files,organiseStore,planEvent,to
    if (kind !== 'file' && text.value.trim()) persist();
   }, {label:'Capture type'});
   const action = button('', () => kind === 'file' ? fileInput.click() : commit(), {primary:true});
-  const body = el('div', {class:'life life-capture'}, modes, editor, action, fileInput);
 
   function report(message) {
    if (status.textContent !== message) status.textContent = message;
@@ -158,7 +157,11 @@ export async function createLifeTools(F,{system,files,organiseStore,planEvent,to
    }
   });
   render();
-  h = captureSheet = F.sheet.open({sheet:'quick-capture', title:'Quick Capture', body, focus:text, onClose(){captureSheet = null;}});
+  h = captureSheet = F.sheet.open({
+   sheet:'quick-capture', title:'Quick Capture',
+   body:el('div', {class:'life life-capture'}, modes, editor, fileInput),
+   focus:text, acts:[action], onClose(){captureSheet = null;}
+  });
   return h;
  }
  async function share(ref){
