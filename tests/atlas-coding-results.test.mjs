@@ -87,7 +87,7 @@ async function publicationFixture() {
 test('publishes reviewed additions/deletions/binaries/modes with a complete pinned tree and a guarded draft PR', async () => {
   const { env, api, candidate } = await publicationFixture(); let guards = 0;
   const result = await publishCodingChanges(env, 'alice', candidate, { send: api.send, beforeWrite: async () => { guards++; } });
-  assert.deepEqual(result, { url: 'https://github.com/owner/project/pull/1', number: 1 }); assert.equal(api.pulls[0].draft, true);
+  assert.deepEqual(result, { url: 'https://github.com/owner/project/pull/1', number: 1, headSha: api.pulls[0].head.sha }); assert.equal(api.pulls[0].draft, true);
   const branch = 'atlas/coding-coding-task-r1', commit = api.commits.get(api.branches.get(branch)), files = api.trees.get(commit.tree.sha);
   assert.equal(api.branches.get('main'), api.baseSha); assert.equal(commit.parents[0].sha, api.baseSha);
   assert.equal(files['src/0.js'].mode, '100755'); assert.equal(files['src/6.js'], undefined); assert.deepEqual(files['assets/new.bin'].bytes, Buffer.from([0, 255, 254])); assert.equal(files['.env'].bytes.toString(), 'FIXTURE_ONLY=yes');
