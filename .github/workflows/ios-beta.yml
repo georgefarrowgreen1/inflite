@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   simulator:
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -43,15 +43,18 @@ jobs:
         id: device
         run: |
           xcrun simctl list devices available -j > "$RUNNER_TEMP/iphones.json"
-          python3 - "$RUNNER_TEMP/iphones.json" <<'PY'
+          python3 - "$RUNNER_TEMP/iphones.json" "$(xcrun --sdk iphonesimulator --show-sdk-version)" <<'PY'
           import json
           import os
           import sys
 
           with open(sys.argv[1], encoding="utf-8") as devices:
               runtimes = json.load(devices)["devices"]
-          for runtime in sorted(runtimes, reverse=True):
-              if ".iOS-" not in runtime:
+          sdk = tuple(map(int, sys.argv[2].split(".")))
+          versions = {runtime: tuple(map(int, runtime.split(".iOS-")[1].split("-")))
+                      for runtime in runtimes if ".iOS-" in runtime}
+          for runtime in sorted(versions, key=versions.get, reverse=True):
+              if versions[runtime] > sdk:
                   continue
               phone = next((device for device in runtimes[runtime]
                             if device["isAvailable"] and device["name"].startswith("iPhone")), None)
@@ -61,8 +64,17 @@ jobs:
                       print("id=" + phone["udid"], file=output)
                   break
           else:
-              sys.exit("No iPhone simulator is available.")
+              sys.exit(f"No iPhone simulator is available for SDK {sys.argv[2]}.")
           PY
+      - name: Start the simulator and launch the release build
+        timeout-minutes: 5
+        env:
+          SIMULATOR_ID: ${{ steps.device.outputs.id }}
+        run: |
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          app="$RUNNER_TEMP/inflite-ios/Build/Products/Release-iphonesimulator/InFlite.app"
+          xcrun simctl install "$SIMULATOR_ID" "$app"
+          xcrun simctl launch "$SIMULATOR_ID" ai.inflite.ios
       - name: Build and test on iPhone Simulator
         timeout-minutes: 12
         env:

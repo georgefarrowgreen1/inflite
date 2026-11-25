@@ -43,6 +43,11 @@
 	<string>Record a voice message when you choose to send one.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Choose photos to attach or share in InFlite.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

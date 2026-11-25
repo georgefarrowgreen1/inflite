@@ -63,7 +63,7 @@ private struct BrowserScreen: View {
                 Button("Try again", action: browser.retry)
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("retry-inflite")
-                Link("InFlite Status", destination: InFliteRoute.status.url)
+                Link("InFlite Status", destination: URL(string: "https://status.inflite.ai/")!)
                     .buttonStyle(.bordered)
             }
             .frame(maxWidth: 420)
