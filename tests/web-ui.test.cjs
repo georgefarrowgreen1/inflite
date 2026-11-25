@@ -1890,6 +1890,50 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
   } finally { await ctx.close(); }
 });
 
+test('Today account menu opens Notifications and updates its unread badge while open', async () => {
+  const { ctx, page, errors } = await open({ initialPath: '/?os=1', beforeNavigate: page => page.addInitScript(() => {
+    const worker = navigator.serviceWorker;
+    const getRegistration = worker.getRegistration.bind(worker);
+    const notes = [];
+    const add = (id, title) => notes.unshift({ id, title, app: 'today', url: '/', at: Date.now(), seen: false });
+    const snapshot = () => ({ ifl: 'notes', list: notes, unread: notes.filter(note => !note.seen).length });
+    add('first', 'Reminder due');
+    add('second', 'Morning briefing');
+    worker.getRegistration = scope => scope === '/' ? Promise.resolve({ active: { postMessage(message, ports = []) {
+      if (message.ifl === 'notes-seen') notes.forEach(note => { note.seen = true; });
+      ports[0]?.postMessage(snapshot());
+    } } }) : getRegistration(scope);
+    window.__newNotification = () => {
+      add('third', 'Transfer ready');
+      worker.dispatchEvent(new MessageEvent('message', { data: snapshot() }));
+    };
+  }) });
+  try {
+    const opener = page.locator('.ws-toolbar .ws-account');
+    await opener.click();
+    const menu = page.getByRole('dialog', { name: 'You and your apps', exact: true });
+    const entry = menu.getByRole('button', { name: 'Notifications, 2 unread', exact: true });
+    await entry.waitFor();
+    assert.equal(await entry.locator('.ifm-val').textContent(), '2');
+    await entry.focus();
+    await page.evaluate(() => __newNotification());
+    const updated = menu.getByRole('button', { name: 'Notifications, 3 unread', exact: true });
+    assert.equal(await updated.locator('.ifm-val').textContent(), '3');
+    assert.equal(await updated.evaluate(button => button === document.activeElement), true);
+    await save(page, 'account-menu-notifications');
+    await updated.click();
+    const sheet = page.getByRole('dialog', { name: 'Notifications', exact: true });
+    await sheet.getByText('Transfer ready', { exact: true }).waitFor();
+    await sheet.getByRole('button', { name: 'Close', exact: true }).click();
+    await sheet.waitFor({ state: 'detached' });
+    await opener.click();
+    const seen = menu.getByRole('button', { name: 'Notifications', exact: true });
+    assert.equal(await seen.locator('.ifm-val').textContent(), '');
+    assert.deepEqual(errors, []);
+    assert.deepEqual(await page.evaluate(() => [__csp, __rejections]), [[], []]);
+  } finally { await ctx.close(); }
+});
+
 test('profile menu stays reachable through Home Screen resume and rotation, then restores focus', async () => {
   const { ctx, page, errors } = await open({ iosHomeScreen: true });
   try {
