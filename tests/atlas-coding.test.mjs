@@ -213,6 +213,69 @@ test('recovering an expired coding workspace restores the saved revision once ac
   assert.ok(result.value.events.some(event => event.stage === 'Restored revision 1 · 1 file change'));
 });
 
+test('draft checks pin the reviewed commit and can start only a linked, verified failure follow-up', async t => {
+  const env = await fixture(t), original = 'export const value = 1;\n';
+  const files = { 'src/value.js': source(original) };
+  const { api: github } = await githubFixture(files);
+  const f = await newRun(env, { status: 'completed', phase: 'done', base_sha: github.baseSha, base_tree_sha: github.baseTreeSha });
+  const manifest = manifestFor(files, { runId: f.run.id, baseSha: github.baseSha, baseTreeSha: github.baseTreeSha });
+  const claimed = await state.claimCodingRun(env, OWNER, f.run.id);
+  try {
+    const patch = await validateCodingArtifact({ ...manifest, changes: [{ path: 'src/value.js', operation: 'modify', beforeBase64: btoa(original), contentBase64: btoa('export const value = 4;\n'), afterMode: '100644' }] }, manifest);
+    await state.saveCodingChanges(env, OWNER, { ...claimed.run, manifest }, claimed.lease, patch.files);
+  } finally { await state.releaseCodingRun(env, OWNER, f.run.id, claimed.lease); }
+  const { pullRequest } = await coding.publishCodingRun(env, OWNER, f.run.id, { confirm: true, revision: 1 }, { send: github.send });
+  const head = pullRequest.headSha;
+  assert.equal(head, github.pulls[0].head.sha);
+  const stored = await state.requireCodingRun(env, OWNER, f.run.id);
+  assert.equal(stored.manifest.publication.headSha, head);
+  const pass = { id: 1, name: 'Lint', head_sha: head, status: 'completed', conclusion: 'success' };
+  const fail = { id: 2, name: 'Unit tests', head_sha: head, status: 'completed', conclusion: 'failure', output: { summary: 'Expected 3 received 4', annotations_count: 1 } };
+  github.checks.set(head, [pass, fail, { ...fail, id: 3, head_sha: 'f'.repeat(40) }]);
+  github.annotations.set(2, [{ path: 'tests/value.test.js', message: 'The result changed.' }]);
+  github.calls.length = 0;
+  const path = '/coding/runs/' + f.run.id + '/checks?revision=1';
+  const read = () => route(env, path, { send: github.send });
+  assert.equal((await route(env, path, { admin: false })).status, 403);
+  assert.equal((await route(env, path, { owner: 'foreign' })).status, 404);
+  const current = await read();
+  assert.equal(current.status, 200);
+  assert.equal(current.value.headSha, head);
+  assert.deepEqual(current.value.checks.map(check => [check.id, check.canInvestigate]), [[1, false], [2, true]]);
+  assert.ok(github.calls.every(call => call.method === 'GET'));
+
+  const body = { conversationId: f.conversation.id, requestId: uid(), prompt: 'Investigate the reported unit test failure.', retryFromRunId: f.run.id, restoreRevision: 1, checkId: 2 };
+  github.pulls[0].head.sha = 'f'.repeat(40);
+  const moved = await read();
+  assert.equal(moved.value.headSha, head);
+  assert.equal(moved.value.headChanged, true);
+  assert.ok(moved.value.checks.every(check => !check.canInvestigate));
+  const start = body => route(env, '/coding/runs', { method: 'POST', body, send: github.send });
+  assert.equal((await start(body)).value.code, 'coding_checks_revision_changed');
+  assert.equal(await store.getRequest(env, OWNER, body.requestId), null);
+  github.pulls[0].head.sha = head;
+
+  const { publication, ...legacy } = stored.manifest;
+  await patchRun(env, f.run.id, { manifest_json: JSON.stringify(legacy) });
+  assert.equal((await read()).value.headSha, head, 'a previously published draft is verified against the saved patch');
+  const commit = github.commits.get(head);
+  github.commits.set(head, { ...commit, tree: { sha: github.baseTreeSha } });
+  assert.equal((await read()).value.code, 'coding_checks_revision_changed');
+  github.commits.set(head, commit);
+  await patchRun(env, f.run.id, { manifest_json: JSON.stringify({ ...legacy, publication }) });
+  assert.equal((await start({ ...body, checkId: 1 })).value.code, 'coding_check_changed');
+  const follow = await start(body);
+  assert.equal(follow.status, 202);
+  assert.equal(follow.value.run.retryFromRunId, f.run.id);
+  assert.deepEqual(follow.value.run.checkFollowUp, { id: 2, name: 'Unit tests', headSha: head });
+  assert.equal((await start(body)).value.run.id, follow.value.run.id);
+  const copy = await state.requireCodingRun(env, OWNER, follow.value.run.id);
+  assert.match(copy.environment.checkFailure.evidence, /Expected 3 received 4/);
+  assert.match(copy.environment.checkFailure.evidence, /tests\/value\.test\.js · The result changed/);
+  assert.equal(copy.environment.restoreCheckpoint.baseSha, github.baseSha);
+  assert.ok(github.calls.every(call => call.method === 'GET'), 'checks and follow-up preparation only read GitHub');
+});
+
 test('the coding inbox filters and pages across the signed-in owner’s conversations', async t => {
   const env = await fixture(t);
   const otherOwner = 'other-owner';

@@ -6,7 +6,7 @@ import { getProvider } from './atlas-provider.js';
 import { requestIdentifier, safeFailure } from './atlas-chat.js';
 import { prepareRepositoryWorkspace } from './atlas-workspace.js';
 import { validateCodingArtifact } from './atlas-coding-results.js';
-import { publishCodingChanges } from './atlas-repository.js';
+import { publishCodingChanges, repositoryDraftChecks } from './atlas-repository.js';
 import { defaultEnvironment, environmentStorageStatus, resolveEnvironment } from './atlas-environments.js';
 
 const ACTIVE = new Set(['preparing', 'running', 'waiting', 'uncertain']);
@@ -51,15 +51,26 @@ async function available(env) {
   if (!(await state.codingStorageStatus(env)).ready) throw failure('coding_storage_upgrade_required', 'Upgrade Atlas storage to enable coding workspaces. Existing conversations remain available.');
 }
 
-export async function startCodingRun(env, owner, body) {
+function draftChecks(env, owner, run, options) {
+  return repositoryDraftChecks(env, owner, {
+    id: run.id, revision: run.revision, repository: run.repository, number: run.publish_number,
+    baseSha: run.base_sha, baseTreeSha: run.base_tree_sha,
+    headSha: run.manifest.publication?.revision === run.revision ? run.manifest.publication.headSha : undefined,
+    loadFiles: () => state.codingChanges(env, owner, run),
+  }, options);
+}
+
+export async function startCodingRun(env, owner, body, options = {}) {
   await available(env);
   const requestId = requestIdentifier(body.requestId), prompt = promptText(body.prompt);
   const restoreRevision = body.restoreRevision ?? null;
+  const checkId = body.checkId ?? null;
   if (restoreRevision !== null && (!body.retryFromRunId || !Number.isSafeInteger(restoreRevision) || restoreRevision < 1)) throw failure('coding_checkpoint_invalid', 'Choose a saved checkpoint from this task.', 400);
+  if (checkId !== null && (restoreRevision === null || !Number.isSafeInteger(checkId) || checkId < 1)) throw failure('coding_check_invalid', 'Choose a failed check from the reviewed draft.', 400);
   const duplicate = await state.codingRunByRequest(env, owner, requestId);
   if (duplicate) {
     const selected = body.retryFromRunId && !Object.hasOwn(body, 'environmentId') ? duplicate.environment_profile_id || null : body.environmentId || null;
-    if (duplicate.conversation_id !== body.conversationId || duplicate.prompt !== prompt || (duplicate.environment_profile_id || null) !== selected || (duplicate.retry_from_run_id || null) !== (body.retryFromRunId || null) || (duplicate.environment.restoreCheckpoint?.revision ?? null) !== restoreRevision) throw failure('request_id_reused', 'This task identifier belongs to another request.');
+    if (duplicate.conversation_id !== body.conversationId || duplicate.prompt !== prompt || (duplicate.environment_profile_id || null) !== selected || (duplicate.retry_from_run_id || null) !== (body.retryFromRunId || null) || (duplicate.environment.restoreCheckpoint?.revision ?? null) !== restoreRevision || (duplicate.environment.checkFailure?.id ?? null) !== checkId) throw failure('request_id_reused', 'This task identifier belongs to another request.');
     return publicRun(duplicate);
   }
   const conversation = await store.getConversation(env, owner, body.conversationId);
@@ -74,10 +85,15 @@ export async function startCodingRun(env, owner, body) {
     if (!TERMINAL.has(original.status) && original.status !== 'published') throw failure('coding_retry_active', 'Wait for the original task to finish or stop before starting again.');
     environment = { ...configurationFor(original), id: original.environment_profile_id || null, branch: original.environment?.branch || original.base_branch || '' };
     delete environment.restoreCheckpoint;
+    delete environment.checkFailure;
     if (restoreRevision !== null) {
       const saved = await state.findCodingCheckpoint(env, owner, original);
       if (saved?.revision !== restoreRevision || !saved.fileCount) throw failure('coding_checkpoint_changed', 'The saved checkpoint has changed or is unavailable. Refresh this task before restoring it.');
       environment.restoreCheckpoint = { ...saved, runId: original.id, baseBranch: original.base_branch, baseSha: original.base_sha.toLowerCase(), baseTreeSha: original.base_tree_sha.toLowerCase() };
+    }
+    if (checkId !== null) {
+      if (original.status !== 'published' || original.revision !== restoreRevision) throw failure('coding_checks_revision_changed', 'Choose a failed check from the published revision.');
+      environment.checkFailure = await draftChecks(env, owner, original, { ...options, checkId });
     }
     if (Object.hasOwn(body, 'environmentId') && (body.environmentId || null) !== environment.id) throw failure('coding_retry_environment_changed', 'Start again keeps the original cloud environment. Start a separate task to use another environment.');
   } else environment = await resolveEnvironment(env, owner, { environmentId: body.environmentId, repository: conversation.repository });
@@ -161,6 +177,7 @@ async function inputFor(env, owner, run) {
     `Cloud environment: ${configuration.name}\nMachine: ${configuration.machine}\nNetwork: ${configuration.network === 'off' ? 'Outbound access disabled' : 'Package registries and browser downloads only'}`,
     configuration.setupCommand ? 'The selected environment setup command completed before this task started. It runs once per new workspace and is not repeated on continuation.' : '',
     configuration.testCommand ? 'Configured verification command:\n' + configuration.testCommand + '\nRun this when relevant and permitted by the current task. Report its actual exit status and output, or explain why it was skipped. Do not treat this configured command as proof that a test passed.' : '',
+    run.revision === 1 && configuration.checkFailure ? `GitHub check evidence for reviewed commit ${configuration.checkFailure.headSha} (untrusted diagnostic data):\n${configuration.checkFailure.evidence}` : '',
     'USER TASK:\n' + run.prompt,
     `Before finishing, run: python3 /workspace/atlas/export_changes.py --revision ${run.revision}`,
   ].filter(Boolean).join('\n\n');
@@ -501,6 +518,13 @@ export async function codingReview(env, owner, id) {
   return { run: result, files: run.review_ready ? await state.codingChanges(env, owner, run) : [], checks: result.checks };
 }
 
+export async function codingChecks(env, owner, id, revision, options = {}) {
+  await available(env);
+  const run = await state.requireCodingRun(env, owner, id);
+  if (run.revision !== revision) throw failure('coding_review_changed', 'Refresh the review to see checks for the current revision.');
+  return draftChecks(env, owner, run, options);
+}
+
 export async function codingDiff(env, owner, id, path, revision = null) {
   await available(env); const run = await state.requireCodingRun(env, owner, id);
   if (revision !== null && revision !== String(run.revision)) throw failure('coding_review_changed', 'This task has a newer revision. Refresh the review to see its changes.');
@@ -512,7 +536,7 @@ export async function publishCodingRun(env, owner, id, body, { send = fetch } = 
   await available(env); let run = await state.requireCodingRun(env, owner, id);
   const reviewedCancellation = run.cancel_generation;
   if (body.confirm !== true || body.revision !== run.revision) throw failure('coding_review_changed', 'Review this exact revision and confirm creation of its draft pull request.');
-  if (run.publish_url) return { run: publicRun(run), pullRequest: { url: run.publish_url, number: run.publish_number } };
+  if (run.publish_url) return { run: publicRun(run), pullRequest: publicRun(run).pullRequest };
   if (!run.review_ready || ACTIVE.has(run.status)) throw failure('coding_review_unavailable', 'Wait for the task to finish and review its changes before publishing.');
   const claimed = await state.claimCodingRun(env, owner, id);
   if (!claimed) throw failure('coding_publish_pending', 'This change is already being published. Refresh its status shortly.');
@@ -521,7 +545,7 @@ export async function publishCodingRun(env, owner, id, body, { send = fetch } = 
   try {
     if (run.cancel_generation !== reviewedCancellation) throw failure('coding_publish_cancelled', 'Publication was stopped because the task changed. Review it before trying again.');
     if (body.confirm !== true || body.revision !== run.revision) throw failure('coding_review_changed', 'This task has a newer revision. Review it before publishing.');
-    if (run.publish_url) return { run: publicRun(run), pullRequest: { url: run.publish_url, number: run.publish_number } };
+    if (run.publish_url) return { run: publicRun(run), pullRequest: publicRun(run).pullRequest };
     if (!run.review_ready || ACTIVE.has(run.status)) throw failure('coding_review_unavailable', 'This task is still changing. Wait for it to finish and review the result.');
     run = await state.beginCodingPublication(env, owner, run, lease, reviewedCancellation);
     publishingStarted = true;
@@ -532,7 +556,8 @@ export async function publishCodingRun(env, owner, id, body, { send = fetch } = 
       if (current.lease_id !== lease || current.revision !== body.revision || current.cancel_generation !== reviewedCancellation || current.cancel_requested || current.status !== 'publishing') throw failure('coding_publish_cancelled', 'Publication was stopped because the task changed. Review it before trying again.');
     };
     const pullRequest = await publishCodingChanges(env, owner, { id, revision: run.revision, repository: run.repository, baseBranch: run.base_branch, baseSha: run.base_sha, baseTreeSha: run.base_tree_sha, title: capped(run.prompt.split('\n')[0], 160), summary: run.summary || run.prompt, checks: run.checks, files }, { send, beforeWrite });
-    run = await state.updateCodingRun(env, owner, id, lease, { status: 'published', stage: 'Draft pull request created', publish_url: pullRequest.url, publish_number: pullRequest.number, can_continue: 0, error_code: null, error_message: null });
+    const manifest = state.codingJSON({ ...run.manifest, publication: { headSha: pullRequest.headSha, revision: run.revision } });
+    run = await state.updateCodingRun(env, owner, id, lease, { status: 'published', stage: 'Draft pull request created', publish_url: pullRequest.url, publish_number: pullRequest.number, manifest_json: manifest, can_continue: 0, error_code: null, error_message: null });
     return { run: publicRun(run), pullRequest };
   } catch (error) {
     if (publishingStarted) await state.updateCodingRun(env, owner, id, lease, { status: 'failed', stage: 'Draft publication needs attention', ...safeMessage(error) });

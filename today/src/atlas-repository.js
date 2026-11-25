@@ -726,6 +726,8 @@ export async function publishPatch(env, owner, id, options = {}) {
 // the publication lease and invokes this only after that revision is approved.
 // Every write checks the lease again so cancellation/cleanup can stop a publish
 // between GitHub mutations. A retry can recover the same branch and draft PR.
+const codingDraftBranch = ({ id, revision }) => 'atlas/coding-' + id + '-r' + revision;
+
 export async function publishCodingChanges(env, owner, candidate, options = {}) {
   if (!candidate || !idPattern.test(candidate.id || '') || !Number.isSafeInteger(candidate.revision) || candidate.revision < 1 || candidate.revision > 1000000 || !shaPattern.test(candidate.baseSha || '') || !shaPattern.test(candidate.baseTreeSha || '') || typeof candidate.baseBranch !== 'string' || !candidate.baseBranch || candidate.baseBranch.length > 200 || /[\x00-\x20~^:?*\[\\]/.test(candidate.baseBranch) || candidate.baseBranch.includes('..') || candidate.baseBranch.startsWith('/') || candidate.baseBranch.endsWith('/') || candidate.baseBranch.includes('//') || typeof candidate.title !== 'string' || !candidate.title.trim() || candidate.title.length > 160 || typeof candidate.summary !== 'string' || candidate.summary.length > 30000 || !Array.isArray(candidate.files) || !candidate.files.length || candidate.files.length > 512) throw failure('coding_publish_invalid', 'Review a complete coding revision before publishing.', 409);
   safeRepository(candidate.repository);
@@ -791,7 +793,7 @@ export async function publishCodingChanges(env, owner, candidate, options = {}) 
   }
   const expectedTree = await post('/git/trees', { base_tree: baseTreeSha, tree: updates });
   if (!shaPattern.test(expectedTree.sha || '')) throw failure('github_response_invalid', 'GitHub did not return the reviewed repository tree.', 502);
-  const branch = 'atlas/coding-' + candidate.id + '-r' + candidate.revision;
+  const branch = codingDraftBranch(candidate);
   const message = 'Atlas coding ' + candidate.id + ' revision ' + candidate.revision + '\n\n' + candidate.title.trim();
   let branchCommit;
   const existing = await githubFetch(route + '/git/ref/heads/' + pathURL(branch), { ...opts, raw: true });
@@ -820,5 +822,76 @@ export async function publishCodingChanges(env, owner, candidate, options = {}) 
     const evidence = checks.length ? checks.map(check => '- `' + check.command.replace(/[\r\n]+/g, ' ').replace(/`/g, "'").slice(0, 500) + '` — ' + (Number.isSafeInteger(check.exitCode) ? 'exit ' + check.exitCode : 'completion not verified')).join('\n') : 'No completed command evidence was captured for this revision.';
     pr = await post('/pulls', { title: candidate.title.trim(), head: branch, base: candidate.baseBranch, draft: true, body: candidate.summary + '\n\n## Command evidence\n\n' + evidence + '\n\nPrepared in Atlas against ' + baseSha + ', review revision ' + candidate.revision + '. Command results report process exits; review and repository CI are required before merging.' });
   }
-  return verifiedPull(pr, { repository: candidate.repository, branch, branchCommit, baseBranch: candidate.baseBranch, baseSha });
+  return { ...verifiedPull(pr, { repository: candidate.repository, branch, branchCommit, baseBranch: candidate.baseBranch, baseSha }), headSha: branchCommit };
+}
+
+async function verifyLegacyCodingCommit(route, opts, candidate, sha) {
+  const moved = () => { throw failure('coding_checks_revision_changed', 'This draft no longer matches its saved Atlas revision. Open GitHub to inspect its current checks.', 409); };
+  if (!shaPattern.test(sha || '') || !shaPattern.test(candidate.baseSha || '') || !shaPattern.test(candidate.baseTreeSha || '')) moved();
+  const commit = await githubFetch(route + '/git/commits/' + sha, opts);
+  if (commit.sha !== sha || commit.parents?.length !== 1 || commit.parents[0].sha !== candidate.baseSha || !commit.message?.startsWith('Atlas coding ' + candidate.id + ' revision ' + candidate.revision + '\n\n') || !shaPattern.test(commit.tree?.sha || '')) moved();
+  const tree = async hash => {
+    const data = await githubFetch(route + '/git/trees/' + hash + '?recursive=1', { ...opts, limit: 8 * 1024 * 1024 });
+    if (data.sha !== hash || data.truncated || !Array.isArray(data.tree) || data.tree.length > 12000) moved();
+    const files = new Map();
+    for (const entry of data.tree) {
+      if (entry.type === 'tree') continue;
+      if (typeof entry.path !== 'string' || files.has(entry.path) || !shaPattern.test(entry.sha || '')) moved();
+      files.set(entry.path, entry.type + ':' + entry.mode + ':' + entry.sha);
+    }
+    return files;
+  };
+  const [expected, actual, saved] = await Promise.all([tree(candidate.baseTreeSha), tree(commit.tree.sha), candidate.loadFiles()]);
+  if (!saved.length) moved();
+  for (const file of saved) {
+    const before = expected.get(file.path);
+    if (file.operation === 'add' ? before !== undefined : before !== 'blob:' + file.beforeMode + ':' + file.beforeSha) moved();
+    if (file.operation === 'delete') expected.delete(file.path);
+    else expected.set(file.path, 'blob:' + file.afterMode + ':' + file.afterSha);
+  }
+  if (expected.size !== actual.size || [...expected].some(([path, value]) => actual.get(path) !== value)) moved();
+}
+
+const failedChecks = new Set(['failure', 'timed_out', 'startup_failure']);
+const checkText = (value, size) => typeof value === 'string' ? value.trim().slice(0, size) : '';
+
+export async function repositoryDraftChecks(env, owner, candidate, { checkId, ...options } = {}) {
+  const { repository, number } = candidate;
+  if (!Number.isSafeInteger(number) || number < 1) throw failure('coding_checks_no_draft', 'Create a draft pull request from the reviewed changes to see its GitHub checks.', 409);
+  const { opts } = await repositoryAccess(env, owner, repository, options);
+  const route = baseURL(repository);
+  const pull = await githubFetch(route + '/pulls/' + number, opts);
+  const expectedURL = 'https://github.com/' + repository + '/pull/' + number;
+  if (pull.number !== number || pull.html_url?.toLowerCase() !== expectedURL.toLowerCase()) throw failure('coding_checks_wrong_draft', 'GitHub did not return this task’s draft pull request.', 409);
+  const branchMatches = pull.head?.ref === codingDraftBranch(candidate) && (!pull.head?.repo?.full_name || pull.head.repo.full_name.toLowerCase() === repository.toLowerCase());
+  let sha = candidate.headSha;
+  if (!sha) {
+    if (!branchMatches) throw failure('coding_checks_revision_changed', 'This draft no longer matches its saved Atlas revision. Open GitHub to inspect its current checks.', 409);
+    await verifyLegacyCodingCommit(route, opts, candidate, pull.head.sha);
+    sha = pull.head.sha;
+  }
+  if (!shaPattern.test(sha)) throw failure('coding_checks_wrong_draft', 'Atlas could not verify the published commit.', 409);
+  const headChanged = !branchMatches || pull.head.sha !== sha;
+  const canInvestigate = !headChanged && pull.state === 'open' && pull.draft === true;
+  if (checkId !== undefined && !canInvestigate) throw failure('coding_checks_revision_changed', 'The draft has changed or closed. Refresh its review before starting a follow-up.', 409);
+  const page = await githubFetch(route + '/commits/' + sha + '/check-runs?filter=latest&per_page=100', { ...opts, limit: 4 * 1024 * 1024 });
+  if (!Array.isArray(page.check_runs)) throw failure('github_response_invalid', 'GitHub did not return a readable list of checks.', 502);
+  const checks = page.check_runs.filter(check => check?.head_sha === sha && Number.isSafeInteger(check.id) && check.id > 0).slice(0, 100);
+  const failed = check => check.status === 'completed' && failedChecks.has(check.conclusion);
+  if (checkId !== undefined) {
+    const check = checks.find(item => item.id === checkId && failed(item));
+    if (!check) throw failure('coding_check_changed', 'That check no longer shows a failure on the reviewed commit. Refresh its checks.', 409);
+    const name = checkText(check.name, 160) || 'GitHub check';
+    let annotations = [];
+    if (check.output?.annotations_count > 0) {
+      const result = await githubFetch(route + '/check-runs/' + check.id + '/annotations?per_page=20', opts).catch(() => []);
+      if (Array.isArray(result)) annotations = result.slice(0, 20).map(note => [checkText(note?.path, 240), checkText(note?.message, 500)].filter(Boolean).join(' · '));
+    }
+    return { id: check.id, name, headSha: sha, evidence: [name, check.conclusion, checkText(check.output?.summary, 3000), ...annotations].filter(Boolean).join('\n').slice(0, 8000) };
+  }
+  return { headSha: sha, headChanged, url: expectedURL + '/checks', truncated: page.total_count > 100, checks: checks.map(check => ({
+    id: check.id, name: checkText(check.name, 160) || 'GitHub check',
+    status: checkText(check.status, 40), conclusion: checkText(check.conclusion, 40) || null,
+    canInvestigate: canInvestigate && failed(check),
+  })) };
 }

@@ -292,15 +292,16 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
     }));
     if (path === '/coding/runs') {
       if (method === 'GET') return json({ runs: await coding.getCodingRuns(env, owner, url.searchParams.get('conversationId')) });
-      if (method === 'POST') { const run = await coding.startCodingRun(env, owner, await input(request)); kickCoding(run.id); return json({ run }, 202); }
+      if (method === 'POST') { const run = await coding.startCodingRun(env, owner, await input(request), options); kickCoding(run.id); return json({ run }, 202); }
     }
-    match = /^\/coding\/runs\/([^/]+)(?:\/(cancel|continue|changes|diff|publish))?$/.exec(path);
+    match = /^\/coding\/runs\/([^/]+)(?:\/(cancel|continue|changes|checks|diff|publish))?$/.exec(path);
     if (match) {
       const id = match[1], action = match[2];
       if (!action && method === 'GET') return json({ run: await coding.advanceCodingRun(env, owner, id, { send }) });
       if (action === 'cancel' && method === 'POST') return json({ run: await coding.cancelCodingRun(env, owner, id, { send }) });
       if (action === 'continue' && method === 'POST') { const run = await coding.continueCodingRun(env, owner, id, await input(request), { send }); kickCoding(id); return json({ run }, 202); }
       if (action === 'changes' && method === 'GET') return json(await coding.codingReview(env, owner, id));
+      if (action === 'checks' && method === 'GET') return json(await coding.codingChecks(env, owner, id, Number(url.searchParams.get('revision')), options));
       if (action === 'diff' && method === 'GET') return json(await coding.codingDiff(env, owner, id, url.searchParams.get('path'), url.searchParams.get('revision')));
       if (action === 'publish' && method === 'POST') { const body = await input(request); await fresh(); return json(await coding.publishCodingRun(env, owner, id, body, { send })); }
     }
