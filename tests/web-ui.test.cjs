@@ -91,10 +91,22 @@ for (const width of [390, 1440]) {
         dispatchEvent(new PointerEvent('pointermove', { pointerId: 72, clientY: 300 }));
       });
       assert.equal(await sheet.evaluate(d => d.style.getPropertyValue('--drag')), '', 'another pointer cannot move the sheet');
-      await page.evaluate(() => {
+      const regrab = await page.evaluate(async () => {
+        const d = __motionSheet.el, head = d.querySelector('.ifs-head');
+        const offset = () => new DOMMatrixReadOnly(getComputedStyle(d).transform).m42;
         dispatchEvent(new PointerEvent('pointermove', { pointerId: 71, clientY: 280 }));
+        const dragged = offset();
         dispatchEvent(new PointerEvent('pointercancel', { pointerId: 71 }));
+        await new Promise(requestAnimationFrame);
+        const springing = offset();
+        head.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 73, clientY: 100, isPrimary: true }));
+        dispatchEvent(new PointerEvent('pointermove', { pointerId: 73, clientY: 108 }));
+        const grabbedAgain = offset();
+        dispatchEvent(new PointerEvent('pointerup', { pointerId: 73, clientY: 108 }));
+        return { dragged, springing, grabbedAgain };
       });
+      assert.ok(regrab.dragged > 100 && regrab.springing > 20, JSON.stringify(regrab));
+      assert.ok(Math.abs(regrab.grabbedAgain - regrab.springing - 8) <= 1, 'a new drag continues from the current position');
       await page.waitForTimeout(450);
       assert.equal(await sheet.count(), 1, 'pointer cancellation returns the sheet without dismissing it');
       await page.evaluate(() => __motionSheet.push({ page: 'details', title: 'Details', body: document.createTextNode('Nested content') }));
@@ -1665,12 +1677,13 @@ test('Quick Capture stays against the mobile keyboard as the viewport changes', 
       return placement();
     };
     assert.equal((await moveKeyboard(790)).keyboard, false, 'a browser toolbar does not activate the keyboard layout');
-    for (const [height, offset, event] of [[500, 0, 'resize'], [450, 36, 'scroll']]) {
+    for (const [height, offset, event] of [[500, 0, 'resize'], [456, 0, 'resize'], [500, 0, 'resize'], [450, 36, 'scroll']]) {
       const geometry = await moveKeyboard(height, offset, event);
       const { top, bottom, visibleTop, saveBottom, keyboard } = geometry;
       assert.equal(keyboard, true);
       assert.ok(top >= visibleTop, JSON.stringify(geometry));
       assert.ok(saveBottom <= bottom, 'Save is above the keyboard');
+      assert.equal(await field.evaluate(node => node === document.activeElement), true, 'changing the suggestions bar keeps typing focus');
     }
     await capture.getByRole('button', { name: 'Close', exact: true }).focus();
     assert.equal((await placement()).keyboard, true, 'a focus change does not drop the sheet into the open keyboard');
@@ -1692,8 +1705,18 @@ test('Quick Capture stays against the mobile keyboard as the viewport changes', 
 });
 
 test('Today leaves the last card above the dock when its height changes on a narrow phone', async () => {
-  const { ctx, page, errors } = await open({ initialPath: '/?os=1', width: 320 });
+  const answer = structuredClone(day);
+  answer.tops.morning.stats[0] = { label: 'Chance of rain', value: 'From 5:00 PM' };
+  const { ctx, page, errors } = await open({ initialPath: '/?os=1', width: 320, answer });
   try {
+    const stats = await page.locator('#top .dt-time').evaluateAll(values => values.map(value => {
+      const range = document.createRange();
+      range.selectNodeContents(value);
+      const { y, right } = value.getBoundingClientRect();
+      return { text: value.textContent, y, fits: range.getClientRects().length === 1 && range.getBoundingClientRect().right <= right + 1 };
+    }));
+    assert.deepEqual(stats.map(({ text }) => text), ['5:00 PM', '16:45', '18:30']);
+    assert.ok(stats.every(({ y, fits }) => y === stats[0].y && fits), JSON.stringify(stats));
     const dock = page.locator('.ws-dock');
     await dock.waitFor();
     for (const padding of [null, '22px']) {
@@ -1713,6 +1736,32 @@ test('Today leaves the last card above the dock when its height changes on a nar
       assert.ok(geometry.lastBottom <= geometry.dockTop - 12, JSON.stringify(geometry));
       assert.ok(geometry.overflow <= 1, JSON.stringify(geometry));
     }
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('Today keeps the visible row in place as earlier content grows on refresh', async () => {
+  const { ctx, page, errors } = await open({ initialPath: '/?os=1' });
+  try {
+    await page.locator('#coming .dc-row').first().waitFor();
+    const geometry = await page.evaluate(async answer => {
+      const { drawDay } = await import('/day.js');
+      const { rememberVisibleRow } = await import('/roof/ui.js');
+      const root = document.querySelector('#today');
+      const upcoming = root.querySelector('#coming .dc-row');
+      document.scrollingElement.style.overflowAnchor = 'none';
+      const stickyHeader = document.querySelector('#hd .ifl-hd');
+      scrollTo(0, upcoming.getBoundingClientRect().top + scrollY - stickyHeader.getBoundingClientRect().bottom - 24);
+      const first = [...root.querySelectorAll('[data-wid], .dc-row')].find(row => row.getBoundingClientRect().bottom > stickyHeader.getBoundingClientRect().bottom);
+      const key = first.dataset.wid ? 'wid' : 'rowId';
+      const id = first.dataset[key], before = first.getBoundingClientRect().top, oldScroll = scrollY;
+      answer.tops[root.dataset.phase].title = 'A considerably longer summary with the forecast, the next ride and the plans for later today';
+      drawDay(root, answer, { now: () => answer.at, timers: false, rememberVisibleRow });
+      const again = [...root.querySelectorAll('[data-wid], .dc-row')].find(row => row.dataset[key] === id);
+      return { before, after: again.getBoundingClientRect().top, oldScroll, newScroll: scrollY };
+    }, day);
+    assert.ok(geometry.newScroll > geometry.oldScroll + 24, JSON.stringify(geometry));
+    assert.ok(Math.abs(geometry.before - geometry.after) <= 1, JSON.stringify(geometry));
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
@@ -1909,6 +1958,9 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
     assert.ok(parentScroll.before > 0);
     assert.deepEqual(parentScroll, { before: parentScroll.before, during: parentScroll.before, after: parentScroll.before, headerStayed: true, focusReturned: true });
     await page.getByRole('dialog', { name: 'Child', exact: true }).waitFor({ state: 'detached' });
+    await page.locator('dialog[open][data-body-scrolled]').waitFor();
+    await page.evaluate(() => { __parent.body.scrollTop = 0; });
+    await page.locator('dialog[open][data-body-scrolled]').waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => document.body.classList.contains('sheet-up')), true, 'closing one sheet leaves the other modal');
     await page.evaluate(() => __parent.close());
     await page.locator('dialog[open]').waitFor({ state: 'detached' });

@@ -63,7 +63,8 @@ export function createHeader(host, F, { me, onMe } = {}) {
     e.preventDefault();
     j = (j + tabs.length) % tabs.length;
     for (const t of tabs) t.tabIndex = -1;
-    tabs[j].tabIndex = 0; tabs[j].focus();
+    tabs[j].tabIndex = 0; tabs[j].focus({ preventScroll: true });
+    revealSection(tabs[j]);
   });
   function choose(id) {
     if (id === cur.section) return;
@@ -109,6 +110,7 @@ export function createHeader(host, F, { me, onMe } = {}) {
   function count(k, n) { counts[k] = Math.max(0, Math.floor(Number(n)) || 0); paintCounts(); }
   function setSecs(list, section, badges = {}) {
     const k = JSON.stringify(list || null);
+    const reveal = k !== secKey || segs.querySelector("[aria-selected=true]")?.dataset.sec !== section;
     if (k !== secKey) {
       secKey = k;
       segs.replaceChildren(lensEl, ...(list || []).map(([id, l]) => el("button", { class: "ifl-sec", type: "button", role: "tab", id: `ifl-sec-${id}`, data: { sec: id } }, el("span", { class: "ifl-sec-l", text: l }))));
@@ -127,18 +129,29 @@ export function createHeader(host, F, { me, onMe } = {}) {
         b.setAttribute("aria-label", `${l}, ${(typeof v === "object" && v.say) || `${n} in force`}`);
       } else { bd?.remove(); b.removeAttribute("aria-label"); }
     }
-    lens();
+    lens(reveal);
   }
-  // the lens under the chosen section, from its place in the row; the row scrolled to keep it in sight
-  function lens() {
+  function updateSectionEdges() {
+    const left = segs.scrollLeft, moreLeft = left > 1;
+    const moreRight = left + segs.clientWidth < segs.scrollWidth - 1;
+    segs.classList.toggle("over", moreLeft || moreRight);
+    segs.classList.toggle("more-left", moreLeft);
+    segs.classList.toggle("more-right", moreRight);
+  }
+  function revealSection(tab) {
+    const left = segs.scrollLeft, width = segs.clientWidth, end = segs.scrollWidth - width;
+    const start = tab.offsetLeft, finish = start + tab.offsetWidth;
+    if (start < left + (left > 1 ? 12 : 0)) segs.scrollLeft = Math.max(0, start - 12);
+    else if (finish > left + width - (left < end - 1 ? 12 : 0)) segs.scrollLeft = Math.min(end, finish - width + 12);
+  }
+  segs.addEventListener("scroll", updateSectionEdges, { passive: true });
+  function lens(reveal = true) {
     const b = segs.querySelector("[aria-selected=true]");
     if (!b || segs.hidden) return;
     lensEl.style.setProperty("--lx", `${b.offsetLeft}px`);
     lensEl.style.setProperty("--lw", `${b.offsetWidth}px`);
-    segs.classList.toggle("over", segs.scrollWidth > segs.clientWidth + 1);
-    const l = b.offsetLeft, r = l + b.offsetWidth;
-    if (l < segs.scrollLeft) segs.scrollLeft = l - 12;
-    else if (r > segs.scrollLeft + segs.clientWidth) segs.scrollLeft = r - segs.clientWidth + 12;
+    if (reveal && segs.scrollWidth > segs.clientWidth + 1) revealSection(b);
+    updateSectionEdges();
   }
 
   const words = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -186,6 +199,6 @@ export function createHeader(host, F, { me, onMe } = {}) {
   }
   return {
     el: hd, set, lens, compact, count,
-    destroy() { removeEventListener("scroll", compact); removeEventListener("resize", lens); ro?.disconnect(); },
+    destroy() { removeEventListener("scroll", compact); removeEventListener("resize", lens); segs.removeEventListener("scroll", updateSectionEdges); ro?.disconnect(); },
   };
 }

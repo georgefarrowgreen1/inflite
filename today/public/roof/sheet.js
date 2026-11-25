@@ -138,7 +138,8 @@ export function createSheets(F, { beforeOpen } = {}) {
       clearTimeout(closeTimer); clearTimeout(pageTimer); drag?.abort(); sizeMotion?.cancel();
       d.classList.remove("closing", "dragging", "ifs-touched", "ifs-kb", "ifs-kb-body");
       body.classList.remove("ifl-enter-pop");
-      d.style.removeProperty("--drag");
+      for (const property of ["--drag", "--sheet-exit-opacity", "--sheet-exit-transform"]) d.style.removeProperty(property);
+      d.removeAttribute("data-body-scrolled");
       restoreTouchInsets(d);
       try { if (d.open) d.close(); } catch (_) {}
       open.splice(open.indexOf(h), 1);
@@ -167,6 +168,9 @@ export function createSheets(F, { beforeOpen } = {}) {
       shut = true;
       sizeMotion?.cancel();
       if (!animate || reduced() || !d.open) return done();
+      const { transform, opacity } = getComputedStyle(d);
+      d.style.setProperty("--sheet-exit-transform", transform === "none" ? "translateY(0)" : transform);
+      d.style.setProperty("--sheet-exit-opacity", opacity);
       drag?.abort(); d.classList.remove("dragging");
       d.classList.add("closing");
       closeTimer = setTimeout(done, 400);
@@ -184,17 +188,26 @@ export function createSheets(F, { beforeOpen } = {}) {
       if (shut || drag || e.button || e.isPrimary === false || e.target.closest("button, input, select, textarea, a")) return;
       sizeMotion?.cancel();
       const x0 = e.clientX, y0 = e.clientY, t0 = Date.now();
-      let dy = 0;
+      let travel = 0, from = null;
       const a = drag = new AbortController(), o = { signal: a.signal };
       const cancelDrag = () => { a.abort(); drag = null; d.classList.remove("dragging"); d.style.removeProperty("--drag"); };
       const up = (p) => {
         if (p.pointerId !== e.pointerId) return;
-        a.abort(); drag = null;
-        d.classList.remove("dragging");
-        if (p.type !== "pointercancel" && (dy > 120 || (dy > 40 && dy / Math.max(1, Date.now() - t0) > 0.6))) close(true);
-        else d.style.removeProperty("--drag");
+        if (p.type !== "pointercancel" && (travel > 120 || (travel > 40 && travel / Math.max(1, Date.now() - t0) > 0.6))) close(true);
+        else cancelDrag();
       };
-      addEventListener("pointermove", (m) => { if (m.pointerId !== e.pointerId) return; dy = Math.max(0, m.clientY - y0); if (Math.abs(m.clientX - x0) > Math.max(12, dy)) return cancelDrag(); d.classList.add("dragging", "ifs-touched"); d.style.setProperty("--drag", `${dy}px`); }, o);
+      addEventListener("pointermove", (m) => {
+        if (m.pointerId !== e.pointerId) return;
+        travel = m.clientY - y0;
+        if (Math.abs(m.clientX - x0) > Math.max(12, Math.abs(travel))) return cancelDrag();
+        if (from == null) {
+          if (travel < 3) return;
+          const transform = getComputedStyle(d).transform;
+          from = transform === "none" ? 0 : Math.max(0, new DOMMatrixReadOnly(transform).m42);
+          d.classList.add("dragging", "ifs-touched");
+        }
+        d.style.setProperty("--drag", `${Math.max(0, from + travel)}px`);
+      }, o);
       addEventListener("pointerup", up, o); addEventListener("pointercancel", up, o);
       addEventListener("blur", cancelDrag, o);
       for (const target of [v, globalThis]) target?.addEventListener("resize", cancelDrag, o);
@@ -211,6 +224,8 @@ export function createSheets(F, { beforeOpen } = {}) {
       else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
     }
     const stopSize = () => sizeMotion?.cancel();
+    const markScroll = () => d.toggleAttribute("data-body-scrolled", body.scrollTop > 1);
+    body.addEventListener("scroll", markScroll, { ...sig, passive: true });
     for (const target of [v, globalThis, document]) target?.addEventListener?.(target === document ? "visibilitychange" : "resize", stopSize, sig);
     const calm = matchMedia("(prefers-reduced-motion: reduce)");
     calm.addEventListener?.("change", stopSize, sig);
@@ -236,6 +251,7 @@ export function createSheets(F, { beforeOpen } = {}) {
       if (typeof page.body === "function") page.body(pg, h);
       else if (page.body) pg.append(page.body);
       d.scrollTop = body.scrollTop = 0;
+      markScroll();
       resizeFrom(height);
       h2?.focus({ preventScroll: true });
       return pg;
@@ -257,6 +273,7 @@ export function createSheets(F, { beforeOpen } = {}) {
         body.classList.add("ifl-enter-pop");
         clearTimeout(pageTimer); pageTimer = setTimeout(() => body.classList.remove("ifl-enter-pop"), 450);
         d.scrollTop = s.y; body.scrollTop = s.by;
+        markScroll();
         (s.focus?.isConnected && d.contains(s.focus) ? s.focus : h2)?.focus({ preventScroll: true });
       }
     }
@@ -275,6 +292,7 @@ export function createSheets(F, { beforeOpen } = {}) {
     if (!d.isConnected) document.body.append(d);
     try { d.showModal(); } catch (_) { d.setAttribute("open", ""); }
     d.scrollTop = body.scrollTop = 0;
+    markScroll();
     open.push(h);
     sync();
     (focus || h2)?.focus?.({ preventScroll: true });

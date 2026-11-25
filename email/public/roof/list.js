@@ -14,7 +14,7 @@ import { MAIL_PAGE } from "./api.js";
 export function view(el, ctx) {
   const { store, fw, logic, actions } = ctx, ui = fw.ui;
   const doc = el.ownerDocument;
-  let typed = "", shownSig = "", searchOpener = null;
+  let typed = "", shownSig = "", shownView = "", searchOpener = null;
   // (the rows last built for each list, by what they show: a switch back to a place whose rows haven't changed puts the
   // same rows back, none built again; the six most recent kept)
   const built = new Map();
@@ -202,17 +202,22 @@ export function view(el, ctx) {
     if (ctx.canRead?.() === false) return;
     const s = store.get();
     if (field.input.value !== typed && doc.activeElement !== field.input) field.input.value = typed = s.query;
+    const viewKey = JSON.stringify([s.box, s.lens, s.filter, s.address, s.query, typed, s.layout, s.threadId]);
+    const restoreRow = viewKey === shownView ? ui.rememberVisibleRow?.(rows, ".ml-row", ({ dataset }) => dataset.thread || dataset.draft) : null;
+    shownView = viewKey;
     const due = !s.query && s.lens === "people" && !s.box && !s.address ? s.list.followups || [] : [];
     reminders.replaceChildren(...(due.length ? [ui.label("Waiting for a reply"),ui.list(due.map(r=>ui.row({title:r.subject || "No subject",sub:"Follow-up due",trail:"chevron",run:()=>open(r.thread_id)})))] : []));
     drawChips(s);
     drawOutbox(s);
     drawRows(s);
+    restoreRow?.();
   }
   const offs = ["list", "query", "lens", "filter", "address", "box", "counts", "outbox", "offline", "layout", "threadId", "access"].map((k) => store.on(k, () => draw()));
 
   function clear() {
     offSwipe.reset();
     built.clear();
+    shownView = "";
     alts = { q: null, found: null };
     shownSig = "";
     typed = field.input.value = "";

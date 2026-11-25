@@ -84,6 +84,38 @@ test('Mail empty tabs match the position and style of the Updates message', asyn
   } finally { await t.ctx.close(); }
 });
 
+test('Mail keeps the visible conversation in place when new mail arrives above it', async () => {
+  const t = await open({ width: 390, paneWidth: 390 });
+  try {
+    const { page, mail } = t;
+    await page.locator('.ml-row[data-thread="t-1"]').waitFor();
+    const original = mail.msgs[0];
+    for (let i = 1; i <= 10; i++) {
+      mail.msgs.push({ ...original, id: `older-${i}`, threadId: `older-${i}`, subject: `Older conversation ${i}`, date: original.date - i * 60000 });
+    }
+    await page.evaluate(() => T.emit('visible'));
+    await page.locator('.ml-row[data-thread="older-10"]').waitFor();
+    const before = await page.locator('#slot').evaluate(slot => {
+      slot.style.height = '340px';
+      slot.style.overflowAnchor = 'none';
+      slot.scrollTop = 240;
+      const top = slot.getBoundingClientRect().top;
+      const row = [...slot.querySelectorAll('.ml-row')].find(el => el.getBoundingClientRect().bottom > top);
+      return { id: row.dataset.thread, y: row.getBoundingClientRect().top, scroll: slot.scrollTop };
+    });
+    mail.msgs.push({ ...original, id: 'just-arrived', threadId: 'just-arrived', subject: 'Just arrived', date: original.date + 60000 });
+    await page.evaluate(() => T.emit('visible'));
+    await page.locator('.ml-row[data-thread="just-arrived"]').waitFor();
+    const after = await page.locator('#slot').evaluate((slot, id) => ({
+      y: slot.querySelector(`.ml-row[data-thread="${CSS.escape(id)}"]`).getBoundingClientRect().top,
+      scroll: slot.scrollTop,
+    }), before.id);
+    assert.ok(after.scroll > before.scroll + 20, JSON.stringify({ before, after }));
+    assert.ok(Math.abs(after.y - before.y) <= 1, JSON.stringify({ before, after }));
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});
+
 test('Mail narrow panes follow their own width and preserve native reply draft nodes and focus through resize and full-app moves', async () => {
   const t = await open(); try {
     await t.page.locator('.ml-row[data-thread="t-1"]').waitFor();

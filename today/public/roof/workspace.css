@@ -29,6 +29,28 @@ html.ifl-os.os-workspace #workspace.ifl-screen { width: 100%; max-width: none; m
 .ifl-workspace, .ifl-workspace *, .ifl-workspace *::before, .ifl-workspace *::after { box-sizing: border-box; }
 .ifl-workspace [hidden] { display: none !important; }
 .ifl-workspace.ws-dock-host, .ifl-workspace .ws-dock-anchor, .ifl-workspace .ws-sidebar-anchor { display: contents; min-height: 0; padding: 0; background: none; }
+.ws-dock-host:has(> .ws-dock:not([hidden], [data-launcher-open]))::before {
+  content: "";
+  position: fixed;
+  z-index: 7;
+  inset: auto 0 0;
+  height: var(--ifl-dock-clearance, 112px);
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--orb-ground, var(--ifl-page)) 36%, transparent));
+  pointer-events: none;
+}
+body.kb-up .ws-dock-host::before,
+html[data-app=mail]:has(.m-mail:not(.ifl-in-pane) .mr-foot[data-keyboard]) .ws-dock-host::before { display: none; }
+@media (min-width: 960px) {
+  .ws-dock-host:has(> .ws-dock:not([hidden], [data-launcher-open]))::before {
+    inset-inline: calc(232px + (100vw - 232px) / 2) auto;
+    width: min(520px, calc(100vw - 264px));
+    transform: translateX(-50%);
+    mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  }
+}
+@media (forced-colors: active) {
+  .ws-dock-host:has(> .ws-dock:not([hidden], [data-launcher-open]))::before { display: none; }
+}
 .ifl-workspace button { font: inherit; color: inherit; letter-spacing: inherit; }
 .ifl-workspace :is(button, a):focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
 .ifl-workspace .ws-shell {

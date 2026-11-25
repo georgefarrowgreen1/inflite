@@ -84,10 +84,11 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 /* the section switcher: a track, the sections, a lens that slides to the chosen one (manual activation: header.js) */
 .ifl-segs { position: relative; display: flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: var(--glass-ctl); overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; }
 .ifl-segs::-webkit-scrollbar { display: none; }
-.ifl-segs.over { -webkit-mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent); }
-.ifl-sec { position: relative; z-index: 1; flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; padding: 0 clamp(8px, 2.45vw, 14px); border-radius: var(--r-pill);
+.ifl-segs.over { --section-edges: linear-gradient(to right, var(--section-left, #000), #000 12px, #000 calc(100% - 12px), var(--section-right, #000)); -webkit-mask-image: var(--section-edges); mask-image: var(--section-edges); }
+.ifl-segs.more-left { --section-left: transparent; }
+.ifl-segs.more-right { --section-right: transparent; }
+.ifl-sec { position: relative; z-index: 1; flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 44px; height: 44px; padding: 0 clamp(8px, 2.45vw, 14px); border-radius: var(--r-pill);
   font-size: 14.5px; font-weight: 600; color: var(--text-2); white-space: nowrap; transition: color var(--dur-fast); }
-.ifl-sec::after { content: ""; position: absolute; inset: -2px 0; }
 .ifl-sec[aria-selected="true"] { color: var(--text); }
 .ifl-sec { transition: transform var(--motion-release) var(--motion-spring), color var(--motion-fade); }
 .ifl-sec:active { transform: scale(var(--ifl-press-scale, 0.97)); transition-duration: var(--motion-press); }
@@ -95,9 +96,6 @@ html.ifl-fill, html.ifl-fill body { overflow: hidden; overscroll-behavior: none;
 .ifl-lens { position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 0; width: var(--lw, 0); transform: translateX(var(--lx, 0)); border-radius: var(--r-pill);
   background: var(--ifl-glass-strong, var(--ifl-surface)); box-shadow: var(--ifl-shadow-control); transition: transform var(--motion-release) var(--motion-spring), width var(--motion-release) var(--motion-spring); }
 .ifl-sec-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; background: var(--badge, var(--danger)); }
-@media (max-width: 479px) {
-  .ifl-segs:has(> .ifl-sec:nth-of-type(5)) .ifl-sec { min-width: 44px; padding-inline: 5px; font-size: 12px; }
-}
 
 /* Reveal the dock and sidebar only once their responsive stylesheet applies. */
 .ws-dock-host { display: none; }
@@ -122,11 +120,13 @@ body.kb-up .ifl-tabs { visibility: hidden; }
 
 /* ---- sheets (sheet.js) on <dialog>: the frozen markup, Weather's motion ---- */
 /* Sheets stay inside the visible viewport; a Home Screen layout correction must not move their actions below it. */
-dialog.ifl-sheet { --sheet-inset: var(--ifl-page-gutter, 20px); --sheet-bottom-pad: calc(12px + env(safe-area-inset-bottom, 0px)); position: fixed; inset: auto 0 var(--sheet-foot, 0px); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(var(--sheet-inset), env(safe-area-inset-right, 0px)) var(--sheet-bottom-pad) max(var(--sheet-inset), env(safe-area-inset-left, 0px));
-  max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 24px); overflow: hidden; display: none; flex-direction: column;
+dialog.ifl-sheet { --sheet-inset: var(--ifl-page-gutter, 20px); --sheet-bottom-pad: calc(12px + env(safe-area-inset-bottom, 0px)); --sheet-top-gap: clamp(24px, 5dvh, 44px); position: fixed; inset: auto 0 var(--sheet-foot, 0px); z-index: 60; box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 0 max(var(--sheet-inset), env(safe-area-inset-right, 0px)) var(--sheet-bottom-pad) max(var(--sheet-inset), env(safe-area-inset-left, 0px));
+  max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - var(--sheet-top-gap)); overflow: hidden; display: none; flex-direction: column;
   border: 0; border-radius: var(--r-sheet); color: var(--text); background: var(--ifl-surface, var(--glass-strong)); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: var(--ifl-shadow-card, var(--lift));
   transform: translateY(var(--drag, 0px)); animation: ifl-sheet-in var(--dur-sheet-in) var(--ease-glide); font: inherit; }
 dialog.ifl-sheet[open] { display: flex; }
+dialog.ifl-sheet[data-app="weather"][data-sheet="credits"] { --sheet-top-gap: 24px; }
+dialog.ifl-sheet[data-sheet="atlas-task-options"] > .ifs-body { padding-block: 8px 0; }
 @media (min-width: 600px) { dialog.ifl-sheet { --sheet-inset: 24px; } }
 /* (the keyboard up, the sheet on it (sheet.js --sheet-foot): no room kept for the home bar, which the keyboard covers) */
 dialog.ifl-sheet.ifs-kb { --sheet-bottom-pad: 8px; padding-bottom: var(--sheet-bottom-pad); }
@@ -140,7 +140,10 @@ dialog.ifl-sheet.closing::backdrop { animation: ifl-fade-out var(--dur-sheet-out
 dialog.ifl-sheet.ifs-touched:not(.closing) { animation: none; transition: transform var(--motion-release) var(--motion-spring); }
 dialog.ifl-sheet.dragging:not(.closing) { animation: none; transition: none; }
 @keyframes ifl-sheet-in { from { opacity: .65; transform: translateY(min(56px, 14dvh)); } }
-@keyframes ifl-sheet-out { to { opacity: 0; transform: translateY(calc(var(--drag, 0px) + 42px)); } }
+@keyframes ifl-sheet-out {
+  from { opacity: var(--sheet-exit-opacity, 1); transform: var(--sheet-exit-transform, translateY(0)); }
+  to { opacity: 0; transform: var(--sheet-exit-transform, translateY(0)) translateY(42px); }
+}
 @keyframes ifl-fade-in { from { opacity: 0; } }
 @keyframes ifl-fade-out { to { opacity: 0; } }
 @media (min-width: 700px) {
@@ -148,7 +151,10 @@ dialog.ifl-sheet.dragging:not(.closing) { animation: none; transition: none; }
   dialog.ifl-sheet.closing { animation-name: ifl-sheet-unpop; }
 }
 @keyframes ifl-sheet-pop { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
-@keyframes ifl-sheet-unpop { to { opacity: 0; transform: translateY(6px) scale(0.98); } }
+@keyframes ifl-sheet-unpop {
+  from { opacity: var(--sheet-exit-opacity, 1); transform: var(--sheet-exit-transform, translateY(0)); }
+  to { opacity: 0; transform: var(--sheet-exit-transform, translateY(0)) translateY(6px) scale(.98); }
+}
 .ifs-grab { flex: none; width: 36px; height: 4px; margin: 9px auto 2px; border-radius: 3px; background: var(--line); touch-action: none; }
 .ifl-sheet .ifs-head { position: relative; z-index: 2; display: flex; flex-shrink: 0; align-items: center; gap: 8px; min-height: 62px; padding: 6px 0; touch-action: none; }
 .ifl-sheet .ifs-head::before { content: ""; position: absolute; z-index: -1; inset: 0 calc(0px - max(var(--sheet-inset), env(safe-area-inset-right, 0px))) 0 calc(0px - max(var(--sheet-inset), env(safe-area-inset-left, 0px))); pointer-events: none; }
@@ -194,13 +200,13 @@ body:has(.ifl-tabs.away) .ifl-toast { bottom: calc(max(var(--tabs-h), 120px) + 1
 .ifl-card-t { margin: 0 0 6px; font: 600 17px/1.25 var(--font-d); }
 .ifl-label { margin: 18px 18px 8px; font: 600 13px/1.2 var(--font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-3); }
 .ifl-sheet .ifl-label, .ifl-group .ifl-label { color: var(--text-2); }
-.ifl-list { border-radius: var(--r-group); overflow: hidden; background: var(--ifl-surface, var(--glass)); box-shadow: var(--ifl-shadow-card, var(--lift)); }
-.ifl-sheet .ifl-list { background: var(--glass-ctl); box-shadow: none; }
+.ifl-list { border-radius: var(--r-group); overflow: hidden; background: var(--ifl-surface, var(--glass)); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--line)); }
+.ifl-list .ifl-list { background: transparent; box-shadow: none; }
 .ifl-row { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 54px; padding: 12px 18px; border-radius: var(--r-well); color: var(--text); text-decoration: none; text-align: left; }
 a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 :is(a, button, label).ifl-row:active { background: var(--press); }
 .ifl-row:focus-visible { outline: 2px solid var(--acc-ink); outline-offset: -2px; border-radius: var(--r-well); }
-.ifl-row + .ifl-row::before { content: ""; position: absolute; inset: 0 0 auto 18px; height: 1px; background: var(--ifl-glass-line, var(--line)); }
+.ifl-row + .ifl-row::before { content: ""; position: absolute; inset: 0 18px auto; height: 1px; background: color-mix(in srgb, var(--ifl-glass-line, var(--line)) 75%, transparent); }
 .ifl-row:has(> .ifl-lead) + .ifl-row::before, .ifl-row:has(> .ifl-lead) + .ifl-row:has(> .ifl-lead)::before { left: 64px; }
 .ifl-lead { flex: none; display: grid; place-items: center; }
 .ifl-lead.ic { width: 32px; height: 32px; border-radius: 9px; color: var(--on-acc); background: var(--ifl-accent-gradient, var(--acc-fill)); }
@@ -208,9 +214,9 @@ a.ifl-row, button.ifl-row, label.ifl-row { cursor: pointer; }
 /* (the words keep at least two fifths of the row and break between words, never letter by letter; a long value beside
    them gives way, onto a second line, and only past that cut short) */
 .ifl-tx { flex: 1 1 auto; min-width: min(40%, 9em); display: grid; gap: 2px; }
-.ifl-tx b { font-weight: 500; font-size: 17px; overflow-wrap: break-word; }
-.ifl-tx small { font-size: 14px; color: var(--text-2); overflow-wrap: break-word; }
-.ifl-val { flex: 0 1 auto; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: break-word; text-align: right; line-height: 1.3; font-size: 15px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ifl-tx b { font-weight: 650; font-size: 16px; line-height: 1.35; overflow-wrap: break-word; }
+.ifl-tx small { font-size: 14px; line-height: 1.4; color: var(--ifl-muted, var(--text-2)); overflow-wrap: break-word; }
+.ifl-val { flex: 0 1 auto; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: break-word; text-align: right; line-height: 1.3; font-size: 15px; font-weight: 550; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .ifl-trail { flex: none; display: grid; place-items: center; color: var(--text-3); }
 .ifl-trail .ifl-glyph svg { width: 17px; height: 17px; stroke-width: 2.6; }
 .ifl-row[aria-current="true"] .ifl-trail, .ifl-row[aria-selected="true"] .ifl-trail { color: var(--acc-ink); }
@@ -279,6 +285,12 @@ a.ifl-tile:active, .ifl-tile-main:active { transform: scale(0.97); }
 .ifl-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--on-acc); background: var(--acc-fill); }
 .ifl-empty, .ifl-error { display: grid; gap: 8px; justify-items: center; padding: 28px 20px; text-align: center; }
 .ifl-empty { padding-block: clamp(32px, 5.5dvh, 52px); }
+.ifl-screen .ifl-empty { position: relative; isolation: isolate; }
+.ifl-screen .ifl-empty::before {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  inset-block: 0; left: 50%; width: min(100%, 480px); transform: translateX(-50%);
+  background: radial-gradient(ellipse closest-side, color-mix(in srgb, var(--orb-ground, var(--ifl-page)) 86%, transparent) 42%, transparent 100%);
+}
 .ifl-empty b, .ifl-error b { font: 650 17px/1.35 var(--font-d); }
 .ifl-empty p, .ifl-error p { margin: 0; max-width: 36ch; color: var(--text-2); font-size: 15px; }
 .ifl-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 8px; }
@@ -310,9 +322,21 @@ a.ifl-tile:active, .ifl-tile-main:active { transform: scale(0.97); }
     linear-gradient(var(--ifl-surface-2), var(--ifl-surface-2)) 0 103px / min(82%, 430px) 12px;
   background-repeat: no-repeat;
 }
-.ifl-loading-details { display: grid; column-gap: 12px; }
-@media (min-width: 760px) {
+.m-weather { --weather-summary-height: 206px; }
+.m-weather.ifl-in-pane { container: wx-pane / inline-size; }
+.m-weather .wx-hero { min-block-size: var(--weather-summary-height); }
+.m-weather .ifl-app-loading .ifl-skeleton.hero { margin-bottom: var(--wx-gap, 14px); }
+.m-weather .ifl-app-loading .ifl-skeleton.hero i { height: var(--weather-summary-height); }
+.m-mail .ifl-skeleton.rows i { height: 72px; }
+.ifl-loading-details { display: grid; column-gap: var(--wx-gap, 14px); }
+@media (min-width: 980px) {
+  .m-weather { --weather-summary-height: 182px; }
+  .m-weather .ifl-app-loading[data-layout="summary"] { max-width: 1100px; margin-inline: auto; }
   .ifl-loading-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @container wx-pane (max-width: 979px) {
+    .m-weather.ifl-in-pane :is(.ifl-app-loading, .wx-hero) { --weather-summary-height: 206px; }
+    .m-weather.ifl-in-pane .ifl-loading-details { grid-template-columns: minmax(0, 1fr); }
+  }
 }
 .ifl-skeleton.tile i { height: 128px; border-radius: var(--r-card); }
 @keyframes ifl-pulse { to { opacity: 0.5; } }
@@ -433,6 +457,7 @@ html[data-motion-paused] :is(.aura, .pg-track .cb svg, .tcard.loading .sk i), ht
 /* ---- reduced motion, reduced transparency, more contrast, forced colours, a phone on its side ---- */
 @media (prefers-reduced-motion: reduce) {
   .ifl-lens, .ifl-tab-pill, .ifl-sec { transition: none; }
+  .ifl-segs { scroll-behavior: auto; }
   .ifl-sec:active { transform: none; }
   .ifl-skeleton i { animation: none; }
   dialog.ifl-sheet, dialog.ifl-sheet.closing { animation-name: ifl-fade-in; animation-duration: 0.15s; }
@@ -525,11 +550,10 @@ html[data-motion-paused] :is(.aura, .pg-track .cb svg, .tcard.loading .sk i), ht
 @media (max-width: 359px) { .ifh-conversation .ifh-t { padding-left: 40px; } .ifh-person, .ifh-person .ifl-avatar { width: 32px; height: 32px; } .ifh-conversation .ifh-name { font-size: 20px !important; } }
 
 /* Content surfaces use a uniform fill, a fine border and a soft shadow. */
-:is(.ifl-card, .ifl-card.hero, .ifl-list, .ifl-tile, .ifl-error) {
+:is(.ifl-card, .ifl-card.hero, .ifl-tile, .ifl-error) {
   background-color: var(--ifl-surface);
   box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), var(--ifl-shadow-card);
 }
-.ifl-sheet .ifl-list { background: var(--ifl-surface); box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)); }
 :is(.ifl-segs, .ifl-seg-sm, .ifl-stat, .ifl-field, .ifl-chip.action, .ifl-icon-btn, .ifs-btn) {
   background: var(--ifl-glass-control, var(--ifl-surface-2));
   box-shadow: inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line));
@@ -555,7 +579,8 @@ dialog.ifl-sheet {
   background: var(--ifl-surface);
   box-shadow: inset 0 1px 0 var(--ifl-glass-highlight, var(--ifl-line)), inset 0 0 0 1px var(--ifl-glass-line, var(--ifl-line)), 0 24px 80px -20px #00000040;
 }
-.ifl-sheet .ifs-head::before { background: var(--ifl-glass-strong, var(--ifl-surface)); box-shadow: 0 .5px 0 var(--ifl-glass-line, var(--ifl-line)); }
+.ifl-sheet .ifs-head::before { background: var(--ifl-glass-strong, var(--ifl-surface)); }
+.ifl-sheet[data-body-scrolled] .ifs-head::before { box-shadow: 0 1px 0 var(--ifl-glass-line, var(--ifl-line)); }
 .ifl-sheet .ifs-acts::before { background: var(--ifl-glass-strong, var(--ifl-surface)); box-shadow: 0 -.5px 0 var(--ifl-glass-line, var(--ifl-line)); }
 .ifl-sheet :is(.ifs-head h2, .ifs-title, .ifs-hd) { font-family: var(--font-d, var(--font, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif)); }
 .ifl-sheet :is(button, input, select, textarea) { font-family: inherit; }
@@ -582,6 +607,9 @@ dialog.ifl-sheet[data-sheet="quick-capture"].ifs-kb {
   :is(.ifl-segs, .ifl-seg-sm, .ifl-stat, .ifl-field, .ifl-chip.action, .ifl-icon-btn, .ifs-btn) { background: var(--ifl-surface-2); }
   .ifl-sheet .ifs-head::before, .ifl-sheet .ifs-acts::before { background: var(--ifl-surface); }
   .ifl-icon-btn.filled { background: var(--ifl-accent-fill); }
+}
+@media (prefers-contrast: more), (forced-colors: active) {
+  .ifl-row + .ifl-row::before { background: var(--ifl-glass-line, var(--line)); }
 }
 @media (forced-colors: active) {
   :is(.ifl-card, .ifl-card.hero, .ifl-list, .ifl-tile, .ifl-error, dialog.ifl-sheet) { background: Canvas; color: CanvasText; box-shadow: inset 0 0 0 1px CanvasText; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
