@@ -130,6 +130,18 @@ After a completed turn, Atlas retrieves the change artifact for that exact turn 
 
 This implements repository work, command execution, continuation and reviewed publication. It does not claim complete Codex parity: workspace networking, input/output resources, hosted project access, session lifetime and automatic review remain concrete execution limits. A blocked command or review step is reported; it is not counted as successful execution.
 
+### Status incident repairs
+
+Automatic investigations start from recent failures in confirmed service and job checks from the Status ticker. The account service sends service identifiers, check results and recent deployment versions. User reports, browser telemetry, incident notes and free-text error messages stay outside the repair prompt. Dependency incidents and incidents spanning multiple repositories show an explanation for the admin to review.
+
+Before starting an incident repair, Atlas reserves a request and up to $2 of the remaining daily Atlas budget. Atlas checks the OpenAI session's confirmed remaining spend and any reported token rate-limit capacity before it sends the repair prompt. Quota errors and an exhausted session allowance stop the repair. Atlas cancels dispatched work, keeps the reason in the Incident Desk and blocks publication of partial changes. Later incident polls keep the same stopped record.
+
+Each repair runs in an isolated workspace with outbound networking disabled. Its context comes from the verified repository and structured monitor results. A server-side allowlist restricts patches to small text changes in specific application files. Auth, secrets, monitoring, deployment configuration and tests remain outside the automatic repair scope. Atlas requires recorded success from the existing repository test for each affected set of files.
+
+The Incident Desk offers **Open Atlas run** and **Review Atlas changes**. An admin reviews the complete diff and command results, then confirms **Create draft pull request**. Atlas rechecks the active incident, affected services, patch scope and test evidence before publication. GitHub review and the existing Wrangler deployment workflow carry the change to production. Status uses its regular health checks to verify recovery.
+
+Schema version 12 adds the incident records. Production uses its existing Atlas verification key and service bindings. `ATLAS_INCIDENT_REPAIR` controls incident investigations independently of recurring Atlas schedules.
+
 ### Resource and spending allowances
 
 Each initial task and each continuation reserves **$2** in the shared request ledger and requests a best-effort hosted session spending allowance. Additional or delayed charges may apply; sandbox compute is billed separately. Provider-recorded spend can lag and is not presented as a complete bill or a guarantee covering every charge. The UI states the allowance before starting work. Daily request and estimate controls continue to apply, and uncertainty keeps the reservation instead of claiming a refund.

@@ -23,6 +23,7 @@ const AGENT_ERRORS = {
   agent_resource_missing: [404, "This coding session or its files are no longer available. Start a new coding task."],
   agent_resource_busy: [409, "The coding workspace is still changing. Check its latest status before trying this action again."],
   agent_budget_exceeded: [429, "This coding session has reached its spending limit."],
+  agent_tokens_exhausted: [429, "OpenAI reported no API tokens available for this repair."],
 };
 
 export class AtlasAgentAPIError extends AtlasProviderError {
@@ -133,12 +134,14 @@ async function checkResponse(response, signal, agents) {
   }
   const code = body?.error?.code ?? body?.code;
   let error;
+  const providerError = classifyOpenAIError(response.status, body, options);
   if (code === "session_budget_exceeded") error = new AtlasAgentAPIError("agent_budget_exceeded", options);
+  else if (providerError.code === "openai_quota") error = providerError;
   else if (response.status === 403 && agents) error = new AtlasAgentAPIError("agent_access_unavailable", options);
   else if (response.status === 403) error = new AtlasAgentAPIError("agent_files_access_unavailable", options);
   else if (response.status === 404 && !["model_not_found", "model_not_available", "invalid_model"].includes(code)) error = new AtlasAgentAPIError("agent_resource_missing", options);
   else if (response.status === 409) error = new AtlasAgentAPIError("agent_resource_busy", options);
-  else error = classifyOpenAIError(response.status, body, options);
+  else error = providerError;
   error.upstreamStatus = response.status;
   throw error;
 }
@@ -171,6 +174,11 @@ async function request(path, { method = "GET", body, binary = false, allowEmpty 
     }), deadline.signal);
     upstreamRequestId = requestId(response.headers.get("x-request-id"));
     await checkResponse(response, deadline.signal, agents);
+    if (opts.checkTokenCapacity && method === "GET" &&
+        ["x-ratelimit-remaining-tokens", "x-ratelimit-remaining-project-tokens"].some(name => response.headers.get(name)?.trim() === "0")) {
+      response.body?.cancel().catch(() => {});
+      throw new AtlasAgentAPIError("agent_tokens_exhausted", { upstreamRequestId });
+    }
     const maxBytes = bounded(opts.maxBytes, binary ? 8 * MiB : 2 * MiB, 1, binary ? MAX_ARTIFACT : MAX_JSON_RESPONSE);
     const bytes = await readBytes(response, deadline.signal, maxBytes);
     return binary ? bytes : parseJSON(bytes, allowEmpty);

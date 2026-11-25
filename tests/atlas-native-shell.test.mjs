@@ -65,9 +65,9 @@ test('the production tick installs the release schema on an existing database an
   assert.deepEqual(await parallel(), { build: '2.0.1', min: null, parallelReady: false });
   await worker.scheduled({}, env, {});
   assert.equal((await storageStatus(env)).schemaVersion, 9);
-  const release = { ...env, ATLAS_RELEASE_SCHEMA: '11' };
+  const release = { ...env, ATLAS_RELEASE_SCHEMA: '12' };
   await worker.scheduled({}, release, {});
-  assert.equal((await storageStatus(env)).schemaVersion, 11);
+  assert.equal((await storageStatus(env)).schemaVersion, 12);
   await worker.scheduled({}, release, {});
   assert.deepEqual(await health(), { build: '2.0.1', min: null, runsReady: true });
   assert.deepEqual(await parallel(), { build: '2.0.1', min: null, parallelReady: true });

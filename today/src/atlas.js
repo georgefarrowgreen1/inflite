@@ -9,6 +9,7 @@ import * as repository from './atlas-repository.js';
 import { runAtlasTask, stopScheduledOccurrence } from './atlas-scheduler.js';
 import { evolution } from './atlas-evolution.js';
 import * as coding from './atlas-coding.js';
+import { requireOpenAtlasIncident } from './atlas-incidents.js';
 import * as environments from './atlas-environments.js';
 import { workspaceContextStorageStatus, getWorkspaceContext, setWorkspaceContext, clearWorkspaceContext } from './atlas-workspace-context.js';
 import { atlasActivity, atlasRunAlerts, atlasRuns } from './atlas-activity.js';
@@ -312,7 +313,12 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
       if (action === 'changes' && method === 'GET') return json(await coding.codingReview(env, owner, id));
       if (action === 'checks' && method === 'GET') return json(await coding.codingChecks(env, owner, id, Number(url.searchParams.get('revision')), options));
       if (action === 'diff' && method === 'GET') return json(await coding.codingDiff(env, owner, id, url.searchParams.get('path'), url.searchParams.get('revision')));
-      if (action === 'publish' && method === 'POST') { const body = await input(request); await fresh(); return json(await coding.publishCodingRun(env, owner, id, body, { send })); }
+      if (action === 'publish' && method === 'POST') {
+        const body = await input(request);
+        await fresh();
+        const verifyIncident = (owner, incident, repository, services) => requireOpenAtlasIncident(env, owner, incident, repository, services);
+        return json(await coding.publishCodingRun(env, owner, id, body, { send, verifyIncident }));
+      }
     }
     match = /^\/requests\/([^/]+)\/cancel$/.exec(path);
     if (match && method === 'POST') { await cancelAtlasRequest(env, owner, match[1]); return json({ cancelled: true }); }
