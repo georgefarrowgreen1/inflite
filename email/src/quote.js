@@ -6,6 +6,11 @@
 
 const MODES = new Set(["reply", "all", "forward"]);
 const ID_RE = /^[\w-]{1,64}$/;
+const LEGACY_MESSAGE = '<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45;color:#1c1c1e">';
+const LEGACY_ATTRIBUTION = '<br><div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#6e6e73;font-size:14px">';
+const LEGACY_QUOTE = '<blockquote type="cite" style="margin:10px 0 0;padding:0 0 0 12px;border-left:2px solid #c7c7cc">';
+const PERSONAL_DARK = `--ifl-personal-bg:#171b24; --ifl-personal-text:#edf2fa; --ifl-personal-muted:#b3bfd1;
+      --ifl-personal-divider:#364151; --ifl-personal-quote-rule:#506079; --ifl-personal-link:#accbff;`;
 
 // A draft's or a send's quote as it may be kept: { of, mode } (InFlite's), or Mail on its own's whole quote (strings,
 // with of when 1.49 saved it); anything else none.
@@ -58,15 +63,15 @@ export async function quoteFrom(env, { of, mode }) {
 }
 
 // The words of a message with its quote: buildPayload's (app.js), made here. → { text, html }
-export function withQuote(words, quote, authoredHtml) {
+export function withQuote(words, quote, authoredHtml, renderQuote = legacyQuote) {
   let text = String(words || "");
   let html = authoredHtml ?? messageHtml(text);
   if (quote) {
     const qText = quote.text || htmlToText(quote.html);
     text += `\n\n${quote.header}\n\n${quote.forward ? qText : qText.split("\n").map((l) => `> ${l}`).join("\n")}`;
     // (pictures shown from Mail's own attachments are Mail's links, no use to anyone else: they're left out)
-    const qHtml = quote.html ? bodyInner(quote.html).replace(/<img\b[^>]*\bsrc\s*=\s*["']?(\/api\/attachments\/|cid:)[^>]*>/gi, "") : textToHtml(quote.text);
-    html += `<br><div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#6e6e73;font-size:14px">${textToHtml(quote.header)}</div><blockquote type="cite" style="margin:10px 0 0;padding:0 0 0 12px;border-left:2px solid #c7c7cc">${qHtml}</blockquote>`;
+    const qHtml = quote.html ? quoteBody(quote.html) : textToHtml(quote.text);
+    html += renderQuote(textToHtml(quote.header), qHtml);
   }
   return { text, html };
 }
@@ -81,24 +86,99 @@ export function linkify(escaped) {
 export const textToHtml = (text) => linkify(escapeHtml(text || "")).replace(/\r?\n/g, "<br>");
 
 function messageHtml(words) {
-  return `<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45;color:#1c1c1e">${textToHtml(words)}</div>`;
+  return LEGACY_MESSAGE + textToHtml(words) + "</div>";
 }
 
-// Keep the mark decorative so clients that block images still show the identity.
-// Use ordinary email table layout and a public, recipient-independent image URL.
-export function signedMessage(words, { name, from, signature }, richHtml) {
+function legacyQuote(heading, body) {
+  return LEGACY_ATTRIBUTION + heading + "</div>" + LEGACY_QUOTE + body + "</blockquote>";
+}
+
+function quoteBody(html) {
+  return bodyInner(html).replace(/<img\b[^>]*\bsrc\s*=\s*["']?(\/api\/attachments\/|cid:)[^>]*>/gi, "");
+}
+
+function personalQuote(heading, body) {
+  return `<blockquote type="cite" class="ifl-personal-quote" style="margin:24px 0 0;padding:2px 0 2px 13px;border-left:2px solid #c6d0e0;color:#526174;font-size:14px;line-height:21px"><p style="margin:0 0 6px;font-size:13px;line-height:19px;font-weight:600">${heading}</p>${body}</blockquote>`;
+}
+
+function signatureHtml(sender, extra = "") {
+  // The name and attribution remain readable when clients block the decorative image.
+  return `<table class="ifl-personal-rule" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;border-top:1px solid #dce2eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif"><tr><td style="padding-top:16px;overflow-wrap:anywhere">
+    <p style="margin:0 0 5px;font-size:15px;line-height:21px"><strong>${escapeHtml(sender)}</strong></p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td class="ifl-personal-secondary" valign="middle" style="font-size:13px;line-height:19px;color:#526174">Sent with InFlite</td>
+      <td valign="middle" style="padding-left:7px"><img src="https://inflite.ai/icon-192.png" alt="" width="17" height="17" style="width:17px;height:17px;display:block;border:0;border-radius:4px"></td>
+    </tr></table>
+    ${extra ? `<p class="ifl-personal-secondary" style="margin:5px 0 0;font-size:12px;line-height:18px;color:#526174">${textToHtml(extra)}</p>` : ""}
+  </td></tr></table>`;
+}
+
+function personalContent(words, { name, from, signature }) {
   const sender = name || from;
   const first = name?.split(/\s+/)[0] || from;
-  const closing = [signature, name, first].find(value => value && words.endsWith("\n\n" + value));
-  const signOff = !richHtml && closing ? closing : first;
-  const attribution = sender === signOff ? "InFlite" : sender + " · InFlite";
-  const footer = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;border-top:1px solid #d4d8dc;font:16px/1.45 Arial,Helvetica,sans-serif"><tr><td width="32" valign="middle" style="width:32px;padding:16px 12px 0 0"><img src="https://inflite.ai/icon-192.png" alt="" width="32" height="32" style="display:block;border:0;border-radius:8px"></td><td valign="middle" style="padding-top:16px;overflow-wrap:anywhere"><strong>${textToHtml(signOff)}</strong><br><span style="font-size:13px">${escapeHtml(attribution)}</span></td></tr></table>`;
-  if (!richHtml) return messageHtml(closing ? words.slice(0, -closing.length - 2) : words) + footer;
-  // Older standalone clients supply an assembled reply. Their attribution and
-  // quoted history belong below the new sender. Preserve other rich messages.
+  const normalized = words.replace(/\r\n/g, "\n").trimEnd();
+  const saved = signature?.replace(/\r\n/g, "\n").trimEnd();
+  const closing = [saved, sender, first].find(value => value && normalized.endsWith("\n\n" + value));
+  const prose = (closing ? normalized.slice(0, -closing.length - 2) : normalized).trim();
+  const extra = closing === saved && closing !== sender && closing !== first ? closing : "";
+  const paragraphs = prose ? prose.split(/\n(?:[ \t]*\n)+/).map((p, i) =>
+    `<p style="margin:${i ? "14px 0 0" : "0"};font-size:16px;line-height:1.55">${textToHtml(p)}</p>`
+  ).join("") : "";
+  return paragraphs + signatureHtml(sender, extra);
+}
+
+function personalDocument(body) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">
+  <style>
+    :root { color-scheme:light dark; supported-color-schemes:light dark; }
+    :root[data-ifl-mail-theme="dark"] { ${PERSONAL_DARK} }
+    @media (prefers-color-scheme:dark) {
+      :root:not([data-ifl-mail-theme]) { ${PERSONAL_DARK} }
+    }
+    .ifl-personal-surface { background:var(--ifl-personal-bg,#ffffff) !important; color:var(--ifl-personal-text,#182235) !important; }
+    .ifl-personal-secondary, .ifl-personal-quote { color:var(--ifl-personal-muted,#526174) !important; }
+    .ifl-personal-rule { border-color:var(--ifl-personal-divider,#dce2eb) !important; }
+    .ifl-personal-quote { border-color:var(--ifl-personal-quote-rule,#c6d0e0) !important; }
+    .ifl-personal-gutter a { color:var(--ifl-personal-link,#224fae); }
+    .ifl-personal-quote > .ifl-personal-column { background:transparent !important; color:inherit !important; margin:0; }
+    .ifl-personal-quote .ifl-personal-gutter { padding:0 !important; }
+    @media (max-width:460px) { .ifl-personal-gutter { padding:27px 24px 28px !important; } }
+  </style></head><body data-ifl-personal class="ifl-personal-surface" style="margin:0;padding:0;background:#ffffff;color:#182235;-webkit-text-size-adjust:100%">
+  <table class="ifl-personal-column ifl-personal-surface" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:580px;margin:0 auto;background:#ffffff;color:#182235"><tr><td class="ifl-personal-gutter" align="left" style="padding:35px 34px;font:16px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;overflow-wrap:anywhere">${body}</td></tr></table>
+  </body></html>`;
+}
+
+// Older standalone clients send their own HTML for replies. Recognise the
+// generated wrapper so those messages can use the same layout as new drafts.
+function legacyReply(html) {
+  if (!html.startsWith(LEGACY_MESSAGE) || !html.endsWith("</blockquote>")) return null;
+  const divider = "</div>" + LEGACY_ATTRIBUTION;
+  const authoredEnd = html.indexOf("</div>", LEGACY_MESSAGE.length);
+  if (authoredEnd < 0 || !html.startsWith(divider, authoredEnd)) return null;
+  const headingStart = authoredEnd + divider.length;
+  const bodyStart = "</div>" + LEGACY_QUOTE;
+  const headingEnd = html.indexOf("</div>", headingStart);
+  if (headingEnd < 0 || !html.startsWith(bodyStart, headingEnd)) return null;
+  return {
+    words: htmlToText(html.slice(LEGACY_MESSAGE.length, authoredEnd)),
+    quote: personalQuote(bodyInner(html.slice(headingStart, headingEnd)), quoteBody(html.slice(headingEnd + bodyStart.length, -"</blockquote>".length))),
+  };
+}
+
+export function personalMessage(text, identity, { richHtml, quote } = {}) {
+  if (!richHtml || richHtml === messageHtml(text)) {
+    const result = withQuote(text, quote, personalContent(text, identity), personalQuote);
+    return { text: result.text, html: personalDocument(result.html) };
+  }
+  const reply = legacyReply(richHtml);
+  if (reply) return { text, html: personalDocument(personalContent(reply.words, identity) + reply.quote) };
+
+  // A caller's rich text may be a complete document with its own styling.
   const boundary = richHtml.search(/<br><div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#6e6e73;font-size:14px">|<\/body\s*>|<\/html\s*>/i);
   const end = boundary < 0 ? richHtml.length : boundary;
-  return richHtml.slice(0, end) + footer + richHtml.slice(end);
+  const footer = signatureHtml(identity.name || identity.from);
+  return { text, html: richHtml.slice(0, end) + footer + richHtml.slice(end) };
 }
 
 const NAMED = {

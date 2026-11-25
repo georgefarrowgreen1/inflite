@@ -99,7 +99,9 @@ test('attachment search returns files from the named sender, and inbox follow-up
       await drain();
       assert.equal(deliveries.length,1);
       assert.equal(deliveries[0].text,'Please confirm by Friday.');
-      assert.match(deliveries[0].html, /src="https:\/\/inflite\.ai\/icon-192\.png"/);
+      assert.match(deliveries[0].html, /<body data-ifl-personal /);
+      assert.match(deliveries[0].html, /Sent with InFlite/);
+      assert.match(deliveries[0].html, /src="https:\/\/inflite\.ai\/icon-192\.png" alt="" width="17" height="17"/);
       assert.equal(JSON.parse(objects.get('body/'+sent.id+'.json')).html,deliveries[0].html);
       const scheduled = sql.prepare('SELECT * FROM mail_followups WHERE message_id=?').get(sent.id);
       assert.equal(scheduled.due,due);
@@ -178,30 +180,36 @@ test('attachment search returns files from the named sender, and inbox follow-up
   } finally { sql.close(); }
 });
 
-test('Signature styles the sender’s own sign-off once above quoted history', async () => {
-  const {signedMessage,withQuote} = await import('../email/src/quote.js');
+test('Personal mail puts the full sender name and saved signature above framed quoted history', async () => {
+  const {personalMessage,withQuote} = await import('../email/src/quote.js');
   const identity = {name:'George Farrow-Green',from:'hello@inflite.ai',signature:'Cheers & thanks,\nGeorge'};
-  const words = 'See you Saturday!\n\n'+identity.signature;
-  const authored = signedMessage(words,identity);
-  const quote = {header:'Reuben wrote:',text:'Morning?',html:'<p>Morning?</p>'};
-  const result = withQuote(words,quote,authored);
+  const words = 'See you Saturday!\n\nHere is the plan.\n\n'+identity.signature;
+  const quote = {header:'Reuben wrote:',text:'Morning?',html:'<p>Morning?<img src="cid:local"></p>'};
+  const result = personalMessage(words,identity,{quote});
   assert.equal(result.text,words+'\n\nReuben wrote:\n\n> Morning?');
   assert.equal(result.html.split('Cheers &amp; thanks,').length,2);
-  assert.match(result.html, /<strong>Cheers &amp; thanks,<br>George<\/strong>/);
-  assert.ok(result.html.indexOf('George Farrow-Green · InFlite') < result.html.indexOf('Reuben wrote:'));
+  assert.match(result.html, />See you Saturday!<\/p><p [^>]*>Here is the plan\.<\/p>/);
+  assert.match(result.html, /<strong>George Farrow-Green<\/strong>/);
+  assert.match(result.html, /<p class="ifl-personal-secondary"[^>]*>Cheers &amp; thanks,<br>George<\/p>/);
+  assert.match(result.html, /<blockquote type="cite" class="ifl-personal-quote"[^>]*><p [^>]*>Reuben wrote:<\/p><p>Morning\?<\/p><\/blockquote>/);
+  assert.ok(result.html.indexOf('Sent with InFlite') < result.html.indexOf('Reuben wrote:'));
   assert.equal(result.html.includes('<h1'),false);
-  const edited = signedMessage('See you!\n\nGeorge',identity);
-  assert.equal(edited.includes('See you!<br><br>George'),false);
-  assert.match(edited, /<strong>George<\/strong>/);
-  const legacy = withQuote('Reply',quote);
-  const formatted = signedMessage(legacy.text,identity,legacy.html);
-  assert.ok(formatted.indexOf('<table') < formatted.indexOf('Reuben wrote:'));
-  const rich = signedMessage('',identity,'<html><body><p><b>Hello</b></p></body></html>');
+  const device = personalMessage('See you!\r\n\r\nSent from iPhone',{...identity,signature:'Sent from iPhone'}).html;
+  assert.match(device, /<p class="ifl-personal-secondary"[^>]*>Sent from iPhone<\/p>/);
+  const edited = personalMessage('See you!\n\nGeorge',identity).html;
+  assert.match(edited, />See you!<\/p>/);
+  assert.match(edited, /<strong>George Farrow-Green<\/strong>/);
+  assert.doesNotMatch(edited, />George<\/p>/);
+  const legacy = withQuote(words,quote);
+  const formatted = personalMessage(legacy.text,identity,{richHtml:legacy.html});
+  assert.equal(formatted.text,result.text);
+  assert.equal(formatted.html,result.html);
+  const rich = personalMessage('',identity,{richHtml:'<html><body><p><b>Hello</b></p></body></html>'}).html;
   assert.match(rich, /<b>Hello<\/b>/);
+  assert.match(rich, /Sent with InFlite/);
   assert.ok(rich.indexOf('</table>') < rich.indexOf('</body>'));
-  const alias = signedMessage('Hello',{name:'A < B',from:'team@inflite.ai'});
-  assert.match(alias, /A &lt; B · InFlite/);
-  assert.match(signedMessage('Hello',{from:'team@inflite.ai'}), /team@inflite.ai/);
+  assert.match(personalMessage('Hello',{name:'A < B',from:'team@inflite.ai'}).html, /<strong>A &lt; B<\/strong>/);
+  assert.match(personalMessage('Hello',{from:'team@inflite.ai'}).html, /<strong>team@inflite.ai<\/strong>/);
 });
 
 test('draft recovery preserves server attachments, current edits and a newer local copy', async t => {

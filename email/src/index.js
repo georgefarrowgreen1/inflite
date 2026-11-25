@@ -22,7 +22,7 @@ import { settings, updateSettings, listAddresses, createAddress, updateAddress, 
 import { listThreads, getThread, threadAction, counts, wakeSnoozed, unsubInfo, readAll } from "./threads.js";
 import { vapid, pushAll, pushEndpointOk, peopleUnread, noticeInflite } from "./push.js";
 import { listedOrigins, hubOf, hubHeaders, preflight, hubRefusal, hubNavigation, RASTER } from "./hubgate.js";
-import { cleanQuote, quoteFrom, signedMessage, withQuote } from "./quote.js";
+import { cleanQuote, personalMessage, quoteFrom } from "./quote.js";
 import { keyOk, card, notice, searchParams } from "./connect.js";
 import { body } from "./body.js";
 import { appFetch } from "./apps.js";
@@ -928,13 +928,12 @@ async function send(env, ctx, body, view) {
   if (bad) throw new HttpError(400, `“${bad.email}” isn't a valid email address.`);
 
   const subject = flat(body.subject || "").slice(0, 998);
-  let text = String(body.text || "");
   const signature = address?.signature || (await env.DB.prepare("SELECT v FROM meta WHERE k = 'signature'").first())?.v || "";
-  let html = signedMessage(text, { name, from, signature }, body.html && String(body.html));
-  if (!body.html && body.quote) {
-    const q = cleanQuote(body.quote);
-    ({ text, html } = withQuote(text, q?.header ? q : q ? await quoteFrom(env, q) : null, html));
-  }
+  const richHtml = body.html ? String(body.html) : "";
+  const quote = richHtml ? null : cleanQuote(body.quote);
+  const { text, html } = personalMessage(String(body.text || ""), { name, from, signature }, {
+    richHtml, quote: quote && !quote.header ? await quoteFrom(env, quote) : quote,
+  });
   const inReplyTo = cleanMessageId(body.inReplyTo);
   const references = (Array.isArray(body.references) ? body.references.join(" ") : String(body.references || ""))
     .split(/\s+/)

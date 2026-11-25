@@ -141,8 +141,8 @@ const textLook = (v) => `.mail-body{white-space:pre-wrap;overflow-wrap:anywhere}
 .mail-body.quoted{margin-top:12px;color:${v("--mail-quote")}}
 .mail-empty{color:${v("--mail-quote")}}`;
 
-function innerDoc(csp, look, inner) {
-  return `<!doctype html><html><head><meta charset="utf-8">
+function innerDoc(csp, look, inner, theme) {
+  return `<!doctype html><html${theme ? ` data-ifl-mail-theme="${theme}"` : ""}><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="x-dns-prefetch-control" content="off">
@@ -263,10 +263,14 @@ function draw() {
   const isHtml = !!(msg.html && msg.html.trim());
   const allowRemote = at.img;
   let designed = false, hasRemote = false, quotes = false, doc;
+  let scheme = dark ? "dark" : "light";
   if (isHtml) {
     hasRemote = REMOTE.test(msg.html);
-    designed = DESIGNED.test(msg.html);
-    doc = innerDoc(allowRemote ? CSP_REMOTE : CSP_LOCAL, lookOf(designed, dark, v, true), cleanMail(msg.html));
+    const adaptive = /<body\b[^>]*\bdata-ifl-personal\b/i.test(msg.html);
+    designed = DESIGNED.test(msg.html) && !adaptive;
+    if (designed) scheme = "light";
+    const look = adaptive ? `:root{color-scheme:${scheme}}html,body{margin:0;padding:0}` : lookOf(designed, dark, v, true);
+    doc = innerDoc(allowRemote ? CSP_REMOTE : CSP_LOCAL, look, cleanMail(msg.html), adaptive ? scheme : null);
   } else {
     const { main, quoted } = textParts(msg.text);
     quotes = quoted != null;
@@ -279,7 +283,7 @@ function draw() {
   frame.title = "Message content";
   frame.setAttribute("sandbox", SANDBOX);
   frame.setAttribute("referrerpolicy", "no-referrer");
-  frame.style.colorScheme = designed ? "light" : dark ? "dark" : "light";
+  frame.style.colorScheme = scheme;
   frame.srcdoc = doc;
 
   // Sized to its content, without ever collapsing it first: wide newsletters are shrunk to fit, as in Mail; the height

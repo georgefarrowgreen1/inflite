@@ -288,17 +288,13 @@ export function openCompose(ctx, init = {}) {
   const text = el("textarea", { class: "mc-text", placeholder: "Write your message…", "aria-label": "Message", data: { key: "text" } });
   let signatureTail = "";
   const signature = el("button", { type: "button", class: "mc-signature", "aria-label": "Edit signature in this message" });
-  const defaultSignOff = el("strong"), byline = el("small");
-  const footer = el("div", { class:"mc-signoff" }, el("img", {src:"/icon-192.png",alt:"",width:32,height:32}),
-    el("div", {}, defaultSignOff, signature, byline));
+  const signatureName = el("strong");
+  const footer = el("div", { class:"mc-signoff" }, signatureName,
+    el("small", {}, "Sent with InFlite", el("img", { src:"/icon-192.png", alt:"", width:17, height:17 })),
+    signature);
   function drawSignOff() {
     const name = me.addresses?.find(a => a.email === c.from)?.name || me.displayName || "";
-    const first = name.split(/\s+/)[0] || c.from;
-    const sender = name || c.from;
-    defaultSignOff.textContent = first;
-    defaultSignOff.hidden = !!signatureTail;
-    const signOff = signatureTail ? signature.textContent : first;
-    byline.textContent = sender && sender !== signOff ? sender + " · InFlite" : "InFlite";
+    signatureName.textContent = name || c.from;
   }
   signature.addEventListener("click", () => {
     const start = text.value.length + 2;
