@@ -433,7 +433,7 @@ export default (M) => {
       },
     });
     let signatureTail = "";
-    const defaultSignOff = h("strong"), byline = h("small");
+    const sender = h("strong");
     const signatureButton = h("button", { type:"button", "aria-label":"Edit signature in this message", onclick:() => {
       const start = textArea.value.length + 2;
       signatureTail = "";
@@ -443,18 +443,14 @@ export default (M) => {
       textArea.focus();
       textArea.setSelectionRange(start, c.text.length);
     }});
-    const footer = h("div.compose-signoff", h("img", {src:"/inflite.svg",alt:"",width:32,height:32}),
-      h("div", defaultSignOff, signatureButton, byline));
+    const footer = h("div.compose-signoff", sender,
+      h("small", "Sent with InFlite", h("img", { src:"/inflite.svg", alt:"", width:17, height:17 })),
+      signatureButton);
     function drawSignOff() {
       const name = S.me?.addresses?.find(a => a.email === c.from)?.name || S.me?.displayName || "";
-      const first = name.split(/\s+/)[0] || c.from;
-      const sender = name || c.from;
-      const signOff = signatureTail ? signatureTail.slice(2) : first;
-      defaultSignOff.textContent = first;
-      defaultSignOff.hidden = !!signatureTail;
-      signatureButton.textContent = signOff;
+      sender.textContent = name || c.from;
+      signatureButton.textContent = signatureTail.slice(2);
       signatureButton.hidden = !signatureTail;
-      byline.textContent = sender && sender !== signOff ? sender + " · InFlite" : "InFlite";
     }
     function showSignOff() {
       const saved = sigFor(c.from);

@@ -284,9 +284,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.25.4";
+  const BUILD = "2.25.5";
   // (what's new in it, said once it's in)
-  const NEWS = "Mail keeps your place in the conversation list as it refreshes in InFlite.";
+  const NEWS = "Personal emails, quoted replies and signatures have a new light and dark design.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.
@@ -3989,13 +3989,15 @@ const IFL = (() => {
     const hasRemote = remotePattern.test(m.html);
     const allowRemote = S.remoteImages || m._loadRemote;
     const designed = DESIGNED.test(m.html);
+    const adaptive = /<body\b[^>]*\bdata-ifl-personal\b/i.test(m.html);
     const csp = allowRemote
       ? "default-src 'none'; img-src 'self' data: https: http:; style-src 'unsafe-inline' https:; font-src data: https:; media-src https:"
       : "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; font-src data:";
     const dark = isDark();
     const css = getComputedStyle(document.documentElement);
     const v = (n) => css.getPropertyValue(n).trim();
-    const look = designed
+    const scheme = designed && !adaptive ? "light" : dark ? "dark" : "light";
+    const look = adaptive ? `:root{color-scheme:${scheme}}html,body{margin:0;padding:0}` : designed
       ? `:root{color-scheme:light}
 html,body{margin:0;padding:0;background:#fff}
 body{padding:16px;font:15px/1.5 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#1c1c1e}
@@ -4025,7 +4027,7 @@ pre{white-space:pre-wrap}
 </style></head><body>${cleanMail(m.html)}</body></html>`;
 
     const frame = h("iframe.mail-frame", {
-      style: { colorScheme: designed ? "light" : dark ? "dark" : "light" },
+      style: { colorScheme: scheme },
       title: "Message content",
       sandbox: "allow-same-origin allow-popups allow-popups-to-escape-sandbox",
       referrerpolicy: "no-referrer",
@@ -4107,7 +4109,7 @@ pre{white-space:pre-wrap}
         )
       );
     }
-    parts.push(h(`div.mail-frame-wrap${designed ? "" : ".plain"}`, frame), toggleRow);
+    parts.push(h(`div.mail-frame-wrap${designed ? "" : ".plain"}${adaptive ? ".adaptive" : ""}`, frame), toggleRow);
     return parts;
   }
 
