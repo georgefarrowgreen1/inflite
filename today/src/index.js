@@ -93,9 +93,31 @@ const SAFE = {
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...SAFE } });
 const refuse = (status, error) => json({ error }, status);
 
+function iosAssociation(request, env, url) {
+  const appID = env.IOS_APPLICATION_IDENTIFIER;
+  if (url.origin !== "https://inflite.ai" || !/^[A-Z0-9]{10}\.ai\.inflite\.ios$/.test(appID ?? "")) {
+    return refuse(404, "Not found");
+  }
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response(null, { status: 405, headers: { Allow: "GET, HEAD", ...SAFE } });
+  }
+  const routes = [
+    "/", "/weather/", "/markets/", "/fitness/", "/mail/", "/chats/", "/calendar/", "/notes/",
+    "/people/", "/status/", "/settings/account/", "/about/", "/privacy/", "/contact/", "/storage/", "/terms/",
+  ];
+  const association = {
+    applinks: { details: [{ appIDs: [appID], components: routes.map(path => ({ "/": path })) }] },
+    webcredentials: { apps: [appID] },
+  };
+  return new Response(request.method === "HEAD" ? null : JSON.stringify(association), {
+    headers: { ...SAFE, "Content-Type": "application/json", "Cache-Control": "public, max-age=300" },
+  });
+}
+
 const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/.well-known/apple-app-site-association") return iosAssociation(request, env, url);
     if (url.pathname === "/atlas/api/internal/incidents") return atlasIncidentDesk(request, env);
     if (url.pathname === "/atlas" || url.pathname.startsWith("/atlas/")) {
       if (["GET", "HEAD"].includes(request.method)) {

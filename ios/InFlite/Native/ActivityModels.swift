@@ -271,6 +271,7 @@ struct ActivityFitnessRoute: Decodable, Sendable {
         let day: String
         let time: String
         let tz: String
+        let version: String?
 
         var departure: Date? {
             guard let zone = TimeZone(identifier: tz) else { return nil }
@@ -282,7 +283,8 @@ struct ActivityFitnessRoute: Decodable, Sendable {
         }
     }
 
-    struct Route: Decodable, Sendable {
+    struct Route: Codable, Identifiable, Sendable {
+        let id: String
         let name: String
         let surface: String
         let metres: Double
@@ -290,5 +292,28 @@ struct ActivityFitnessRoute: Decodable, Sendable {
         let coords: [[Double?]]
         let start: [Double]
         let provider: String?
+        let source: String?
+        let targetMetres: Int?
+        let roadPreference: String?
+        let avoidUnpaved: Bool?
+        let longestTerrainMetres: Int?
+        let terrain: Terrain?
+        let generatedAt: Double?
+
+        struct Terrain: Codable, Sendable {
+            let paved: Int
+            let gravel: Int
+            let unpaved: Int
+            let unknown: Int
+            let trail: Int
+        }
+
+        var surfaceName: String {
+            switch surface {
+            case "mtb": "Mountain bike"
+            case "mixed": "Mixed surface"
+            default: surface.capitalized
+            }
+        }
     }
 }

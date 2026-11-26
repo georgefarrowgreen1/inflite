@@ -27,6 +27,25 @@ private struct ActivityFitnessScreen: View {
     @State private var feed = ActivityResource<Feed>()
     @State private var route = ActivityResource<ActivityFitnessRoute>()
     @State private var destination: Destination = .overview
+    @State private var routeEditor: RouteEditor?
+    @State private var rideEditor: RideEditor?
+    @State private var routeToRemove: RouteRemoval?
+    @State private var routeNotice: String?
+
+    private struct RouteEditor: Identifiable {
+        let id = UUID()
+        let plan: ActivityFitnessRoute.Plan?
+    }
+
+    private struct RideEditor: Identifiable {
+        let id = UUID()
+        let ride: ActivityScheduledRide?
+    }
+
+    private struct RouteRemoval {
+        let id: String
+        let version: String
+    }
 
     var body: some View {
         List {
@@ -64,6 +83,22 @@ private struct ActivityFitnessScreen: View {
         .refreshable {
             if destination == .routes { await loadRoute() } else { await load() }
         }
+        .sheet(item: $routeEditor) { editor in
+            FitnessRouteEditor(owner: owner, unit: feed.value?.snapshot.distanceUnit ?? .kilometers, plan: editor.plan) { saved in
+                routeNotice = nil
+                await route.load { saved }
+            }
+        }
+        .sheet(item: $rideEditor) { editor in
+            FitnessRideEditor(owner: owner, ride: editor.ride, otherRides: feed.value?.snapshot.times ?? [], onChange: load)
+        }
+        .confirmationDialog("Remove planned ride?", isPresented: Binding(
+            get: { routeToRemove != nil }, set: { showing in if !showing { routeToRemove = nil } }
+        ), titleVisibility: .visible, presenting: routeToRemove) { target in
+            Button("Remove ride", role: .destructive) { Task { await removeRoute(target) } }
+        } message: { _ in
+            Text("This removes the route and departure from your Fitness plan.")
+        }
     }
 
     @ViewBuilder
@@ -84,16 +119,20 @@ private struct ActivityFitnessScreen: View {
                 LabeledContent("Distance", value: activityDistance(distance, unit: data.snapshot.distanceUnit))
             }
         }
-        if !upcoming.isEmpty {
-            Section("Upcoming rides") {
-                ForEach(upcoming) { ride in
+        Section("Upcoming rides") {
+            ForEach(upcoming) { ride in
+                Button { rideEditor = RideEditor(ride: ride) } label: {
                     Label {
                         Text(ride.date, format: .dateTime.weekday(.wide).month(.abbreviated).day().hour().minute())
+                            .foregroundStyle(.primary)
                     } icon: {
                         Image(systemName: "calendar")
                             .foregroundStyle(.orange)
                     }
                 }
+            }
+            Button { rideEditor = RideEditor(ride: nil) } label: {
+                Label("Schedule a ride", systemImage: "plus")
             }
         }
         if let plan = data.snapshot.data?.plan {
@@ -154,33 +193,29 @@ private struct ActivityFitnessScreen: View {
         if let saved = route.value {
             Section("Planned ride") {
                 if let plan = saved.plan {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(plan.route.name).font(.title2.weight(.semibold))
-                        if let date = plan.departure {
-                            Text(date, format: .dateTime.weekday(.wide).month(.abbreviated).day().hour().minute())
-                                .foregroundStyle(.secondary)
-                        }
-                        let coordinates = plan.route.coords.compactMap { coordinate -> CGPoint? in
-                            guard coordinate.count >= 2, let x = coordinate[0], let y = coordinate[1],
-                                  abs(x) <= 180, abs(y) < 85 else { return nil }
-                            let startLongitude = plan.route.start.first ?? x
-                            let relativeLongitude = (x - startLongitude + 540).truncatingRemainder(dividingBy: 360) - 180
-                            return CGPoint(x: relativeLongitude * cos(y * .pi / 180), y: -y)
-                        }
-                        ActivityRoutePreview(points: coordinates)
+                    if let date = plan.departure {
+                        Text(date, format: .dateTime.weekday(.wide).month(.abbreviated).day().hour().minute())
+                            .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 6)
-                    LabeledContent("Distance", value: activityDistance(plan.route.metres, unit: unit))
-                    if let ascent = plan.route.ascent {
-                        LabeledContent("Climbing", value: activityElevation(ascent, unit: unit))
+                    FitnessRouteSummary(route: plan.route, unit: unit)
+                    Button { routeEditor = RouteEditor(plan: plan) } label: {
+                        Label("Edit ride", systemImage: "pencil")
                     }
-                    LabeledContent("Surface", value: plan.route.surface == "mtb" ? "Mountain bike" : plan.route.surface.capitalized)
-                    if let provider = plan.route.provider {
-                        Text(provider).font(.footnote).foregroundStyle(.secondary)
+                    .disabled(route.loading)
+                    if let version = plan.version {
+                        Button("Remove planned ride", role: .destructive) {
+                            routeToRemove = RouteRemoval(id: plan.route.id, version: version)
+                        }
+                        .disabled(route.loading)
                     }
                 } else {
                     Text("No route planned").foregroundStyle(.secondary)
+                    Button { routeEditor = RouteEditor(plan: nil) } label: {
+                        Label("Plan a ride", systemImage: "plus")
+                    }
+                    .disabled(route.loading)
                 }
+                if let routeNotice { Text(routeNotice).foregroundStyle(.secondary) }
             }
             if let issue = route.issue { ActivityLoadRow(issue: issue, retry: loadRoute) }
         } else {
@@ -217,10 +252,25 @@ private struct ActivityFitnessScreen: View {
     }
 
     private func loadRoute() async {
+        guard !route.loading else { return }
         await route.load {
             try await BackendClient.shared.request(
                 ActivityFitnessRoute.self, path: "/api/fitness/routes/plan", owner: owner
             )
+        }
+    }
+
+    private func removeRoute(_ target: RouteRemoval) async {
+        guard !route.loading else { return }
+        routeNotice = nil
+        await route.load {
+            let body = try JSONEncoder().encode(["id": target.id, "version": target.version])
+            return try await BackendClient.shared.request(
+                ActivityFitnessRoute.self, path: "/api/fitness/routes/plan", method: "DELETE", body: body, owner: owner
+            )
+        }
+        if route.issue == nil, route.value?.plan != nil {
+            routeNotice = "A newer route is saved. Review it before removing."
         }
     }
 }
@@ -274,7 +324,7 @@ private struct ActivityWorkoutDetail: View {
     }
 }
 
-private struct ActivityRoutePreview: View {
+struct ActivityRoutePreview: View {
     let points: [CGPoint]
 
     var body: some View {
@@ -308,12 +358,12 @@ private struct ActivityRoutePreview: View {
     }
 }
 
-private func activityDistance(_ metres: Double, unit: UnitLength) -> String {
+func activityDistance(_ metres: Double, unit: UnitLength) -> String {
     let distance = Measurement(value: metres, unit: UnitLength.meters).converted(to: unit)
     return "\(distance.value.formatted(.number.precision(.fractionLength(0...1)))) \(unit == .miles ? "mi" : "km")"
 }
 
-private func activityElevation(_ metres: Double, unit: UnitLength) -> String {
+func activityElevation(_ metres: Double, unit: UnitLength) -> String {
     let elevationUnit: UnitLength = unit == .miles ? .feet : .meters
     let elevation = Measurement(value: metres, unit: UnitLength.meters).converted(to: elevationUnit)
     return "\(elevation.value.formatted(.number.precision(.fractionLength(0)))) \(elevationUnit == .feet ? "ft" : "m")"

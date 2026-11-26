@@ -1,7 +1,9 @@
 import Foundation
 
 enum MailLens: String, CaseIterable, Identifiable {
-    case people, updates, later, done
+    case people, updates, later, done, unread, flagged, attachments, trash
+
+    static let primary: [Self] = [.people, .updates, .later, .done]
 
     var id: Self { self }
     var title: String { rawValue.capitalized }
@@ -14,11 +16,15 @@ enum MailLens: String, CaseIterable, Identifiable {
         case .updates: "No updates waiting"
         case .later: "Nothing in Later"
         case .done: "Nothing marked Done"
+        case .unread: "Nothing unread"
+        case .flagged: "Nothing flagged"
+        case .attachments: "No conversations with attachments"
+        case .trash: "Trash is empty"
         }
     }
 }
 
-struct MailPerson: Decodable {
+struct MailPerson: Codable {
     let name: String
     let email: String
 
@@ -35,6 +41,7 @@ struct MailBrief: Decodable, Identifiable {
     let snippet: String
     let date: Int64
     let hasAttachments: Bool
+    let folder: String?
 }
 
 struct MailConversation: Decodable, Identifiable {
@@ -46,12 +53,17 @@ struct MailConversation: Decodable, Identifiable {
     let sort: Int64
     let unread: Int
     let hasAttachments: Bool
+    let starred: Bool?
+    let done: Bool?
+    let trashed: Bool?
+    let snoozeUntil: Int64?
 }
 
 struct MailPage: Decodable {
     let threads: [MailConversation]
     let drafts: [MailBrief]
     let hasMore: Bool
+    let nextLater: String?
 }
 
 struct MailThreadPage: Decodable {
@@ -59,17 +71,131 @@ struct MailThreadPage: Decodable {
     let nextAfter: String?
 }
 
-struct MailAttachment: Decodable, Identifiable {
+struct MailAttachment: Decodable, Identifiable, Equatable {
     let id: String
     let filename: String
     let size: Int64
+    let type: String?
 }
 
 struct MailMessage: Decodable {
+    let id: String
     let from: MailPerson
+    let to: [MailPerson]
+    let cc: [MailPerson]
+    let subject: String
+    let folder: String
+    let mailbox: String?
+    let replyTo: String?
+    let messageId: String?
+    let references: MailReferences?
     let date: Int64
     let text: String
+    let html: String?
     let attachments: [MailAttachment]
+    let inlineAttachments: [MailAttachment]?
+}
+
+struct MailIdentity: Decodable {
+    struct Account: Decodable { let id: String }
+    let defaultFrom: String
+    let identities: [String]
+    let account: Account
+}
+
+struct MailQuote: Codable {
+    let of: String
+    let mode: String
+}
+
+struct MailReferences: Codable {
+    private let value: String
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let string = try? container.decode(String.self) {
+            value = string
+        } else {
+            value = try container.decode([String].self).joined(separator: " ")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(value)
+    }
+}
+
+struct MailDraft: Decodable {
+    struct Fields: Decodable {
+        let from: String
+        let to: [MailPerson]
+        let cc: [MailPerson]
+        let bcc: [MailPerson]
+        let subject: String
+        let text: String
+        let inReplyTo: String?
+        let references: MailReferences?
+        let quote: MailQuote?
+        let files: [MailDraftFile]
+    }
+
+    let id: String
+    let compose: Fields
+    let quoteOld: Bool
+}
+
+struct MailDraftFile: Codable, Identifiable, Sendable {
+    static let maximumBytes = 25 * 1024 * 1024
+    static let maximumFiles = 20
+
+    let id = UUID()
+    let i: Int?
+    let ref: String?
+    let filename: String
+    let type: String
+    let size: Int64
+    var content: Data? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case i, ref, filename, type, size, content
+    }
+
+    init(reference file: MailAttachment) {
+        i = nil
+        ref = file.id
+        filename = file.filename
+        type = file.type ?? "application/octet-stream"
+        size = file.size
+    }
+
+    init(filename: String, type: String, content: Data) {
+        i = nil
+        ref = nil
+        self.filename = filename
+        self.type = type
+        size = Int64(content.count)
+        self.content = content
+    }
+}
+
+struct MailDraftInput: Encodable {
+    let id: String
+    let accountOwner: String
+    let from: String
+    let to: [MailPerson]
+    let cc: [MailPerson]
+    let bcc: [MailPerson]
+    let subject: String
+    let text: String
+    let inReplyTo: String?
+    let references: MailReferences?
+    let quote: MailQuote?
+    let attachments: [MailDraftFile]
+}
+
+enum MailThreadAction: String, Encodable {
+    case read, unread, flag, unflag, done, inbox, snooze, unsnooze, trash, restore
 }
 
 enum MailAccess: String, Decodable {
@@ -88,7 +214,7 @@ enum MailAccess: String, Decodable {
     var message: String {
         switch self {
         case .ok: ""
-        case .signin: "Open Mail to sign in to your InFlite account."
+        case .signin: "Verify your InFlite account to open Mail."
         case .notadmin: "Mail is available to the InFlite administrator."
         case .passkey: "Mail requires a passkey to protect your inbox."
         case .reauth: "Verify your identity to open your inbox again."
@@ -97,14 +223,17 @@ enum MailAccess: String, Decodable {
 }
 
 enum MailServiceError: LocalizedError {
-    case invalidMessage, accountChanged, saveFailed, invalidRecipient
+    case invalidMessage, accountChanged, saveFailed, invalidRecipient, tooManyFiles, attachmentTooLarge, invalidAttachment
 
     var errorDescription: String? {
         switch self {
         case .invalidMessage: "Couldn’t open this message."
         case .accountChanged: "Your Mail account changed. Open Mail again to continue."
         case .saveFailed: "Couldn’t save the draft."
-        case .invalidRecipient: "Enter a valid email address in To."
+        case .invalidRecipient: "Enter between 1 and 50 valid email addresses."
+        case .tooManyFiles: "You can add up to 20 attachments."
+        case .attachmentTooLarge: "Attachments can be 25 MB in total."
+        case .invalidAttachment: "Couldn’t open this attachment."
         }
     }
 }
@@ -112,14 +241,9 @@ enum MailServiceError: LocalizedError {
 struct MailService {
     let owner: String
 
-    private struct Account: Decodable { let id: String }
     private struct Session: Decodable {
         let access: MailAccess
-        let user: Account?
-    }
-    private struct Identity: Decodable {
-        let defaultFrom: String
-        let account: Account
+        let user: MailIdentity.Account?
     }
     private struct Search: Encodable {
         let q: String
@@ -127,20 +251,15 @@ struct MailService {
         let category: String?
         let before: Int64?
     }
-    private struct Draft: Encodable {
-        let id: String
-        let accountOwner: String
-        let from: String
-        let to: [String]
-        let subject: String
-        let text: String
-    }
     private struct Send: Encodable {
         let draftId: String
         let key: String
         let accountOwner: String
     }
-    private struct Action: Encodable { let action: String }
+    private struct Action: Encodable {
+        let action: MailThreadAction
+        let until: Int64?
+    }
     private struct Acknowledgement: Decodable { let ok: Bool }
     private struct SavedMessage: Decodable {
         let ok: Bool
@@ -154,7 +273,7 @@ struct MailService {
         return result.access
     }
 
-    func conversations(_ lens: MailLens, search: String, before: Int64? = nil) async throws -> MailPage {
+    func conversations(_ lens: MailLens, search: String, before: Int64? = nil, later: String? = nil) async throws -> MailPage {
         if !search.isEmpty {
             return try await request(
                 MailPage.self, path: "/api/threads/search", method: "POST",
@@ -165,6 +284,7 @@ struct MailService {
         if lens == .later { query.append(URLQueryItem(name: "limit", value: "100")) }
         if let category = lens.category { query.append(URLQueryItem(name: "category", value: category)) }
         if let before { query.append(URLQueryItem(name: "before", value: String(before))) }
+        if let later { query.append(URLQueryItem(name: "later", value: later)) }
         return try await request(MailPage.self, path: "/api/threads", query: query)
     }
 
@@ -174,26 +294,38 @@ struct MailService {
     }
 
     func message(_ id: String) async throws -> MailMessage {
-        // This model decodes plain text only. The HTML, inline images and links in the
-        // server payload are never rendered or loaded by the native reader.
         try await request(MailMessage.self, path: "/api/messages/\(Self.messageID(id))")
     }
 
-    func markRead(_ id: String) async throws {
-        let _: Acknowledgement = try await request(
-            Acknowledgement.self, path: "/api/threads/\(Self.messageID(id))", method: "POST",
-            body: JSONEncoder().encode(Action(action: "read"))
+    func attachment(_ file: MailAttachment) async throws -> Data {
+        guard file.size >= 0, file.size <= MailDraftFile.maximumBytes else { throw MailServiceError.attachmentTooLarge }
+        let data = try await BackendClient.shared.data(
+            path: "/api/attachments/\(Self.messageID(file.id))", query: [.init(name: "download", value: "1")],
+            owner: owner, origin: .mail
         )
+        guard data.count <= MailDraftFile.maximumBytes else { throw MailServiceError.attachmentTooLarge }
+        return data
     }
 
-    func fromAddress() async throws -> String {
-        let identity = try await request(Identity.self, path: "/api/me")
+    func act(_ action: MailThreadAction, on id: String, until: Date? = nil) async throws {
+        let result: Acknowledgement = try await request(
+            Acknowledgement.self, path: "/api/threads/\(Self.messageID(id))", method: "POST",
+            body: JSONEncoder().encode(Action(action: action, until: until.map { Int64($0.timeIntervalSince1970 * 1000) }))
+        )
+        guard result.ok else { throw BackendError.invalidResponse }
+    }
+
+    func identity() async throws -> MailIdentity {
+        let identity = try await request(MailIdentity.self, path: "/api/me")
         guard identity.account.id == owner else { throw MailServiceError.accountChanged }
-        return identity.defaultFrom
+        return identity
     }
 
-    func saveDraft(id: String, from: String, recipients: [String], subject: String, text: String) async throws -> String {
-        let draft = Draft(id: id, accountOwner: owner, from: from, to: recipients, subject: subject, text: text)
+    func draft(_ id: String) async throws -> MailDraft {
+        try await request(MailDraft.self, path: "/api/drafts/\(Self.messageID(id))")
+    }
+
+    func saveDraft(_ draft: MailDraftInput) async throws -> String {
         let result = try await request(
             SavedMessage.self, path: "/api/drafts", method: "POST", body: JSONEncoder().encode(draft)
         )

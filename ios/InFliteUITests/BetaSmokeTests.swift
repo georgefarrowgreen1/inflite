@@ -9,6 +9,10 @@ final class BetaSmokeTests: XCTestCase {
 
         XCTAssertTrue(app.buttons["native-sign-in"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.webViews.firstMatch.exists)
+        app.buttons["native-sign-in"].tap()
+        XCTAssertTrue(app.textFields["native-auth-email"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.secureTextFields["native-auth-password"].exists)
+        XCTAssertFalse(app.webViews.firstMatch.exists)
     }
 
     @MainActor
@@ -37,13 +41,15 @@ final class BetaSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testOpeningRecoversIntoWebViewAfterRetry() {
+    func testOpeningRecoversIntoNativeWelcomeAfterRetry() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-test-recovery"]
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["You’re offline"].waitForExistence(timeout: 10))
-        app.buttons["retry-inflite"].tap()
-        XCTAssertTrue(app.webViews.staticTexts["InFlite beta fixture"].waitForExistence(timeout: 15))
+        let retry = app.buttons["Try again"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 10))
+        retry.tap()
+        XCTAssertTrue(app.buttons["native-sign-in"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.webViews.firstMatch.exists)
     }
 }

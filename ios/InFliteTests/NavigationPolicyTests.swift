@@ -4,12 +4,14 @@ import XCTest
 @testable import InFlite
 
 final class NavigationPolicyTests: XCTestCase {
-    func testEveryRouteOpensTheCanonicalWebScreen() {
+    func testEveryRouteMatchesItsCanonicalAppLink() {
         let paths: [InFliteRoute: String] = [
             .today: "/", .weather: "/weather/", .markets: "/markets/",
             .fitness: "/fitness/", .mail: "/mail/", .chats: "/chats/",
             .calendar: "/calendar/", .notes: "/notes/", .people: "/people/",
-            .status: "/status/", .account: "/settings/account/", .files: "/#files"
+            .status: "/status/", .account: "/settings/account/", .files: "/#files",
+            .notifications: "/notifications/", .about: "/about/", .privacy: "/privacy/",
+            .support: "/contact/", .storage: "/storage/", .terms: "/terms/"
         ]
         XCTAssertEqual(Set(paths.keys), Set(InFliteRoute.allCases))
         for (route, path) in paths {
@@ -25,101 +27,40 @@ final class NavigationPolicyTests: XCTestCase {
             "inflite://weather?redirect=https://example.org", "inflite://name@weather",
             "inflite://weather#other", "https://example.org/weather/",
             "https://inflite.ai:8080/weather/", "https://inflite.ai/#signin",
-            "https://inflite.ai/wildlife/"
+            "https://inflite.ai/wildlife/", "https://inflite.ai/atlas/", "inflite://atlas"
         ] {
             XCTAssertNil(InFliteRoute(link: URL(string: url)!), url)
         }
     }
 
-    func testCompanionSitesStayInTheWebSession() {
-        for url in [
-            "https://inflite.ai/weather/", "https://os.inflite.ai/",
-            "https://auth.inflite.ai/go", "https://account.inflite.ai/",
-            "https://email.inflite.ai/", "https://status.inflite.ai/",
-            "https://chat.inflite.ai/", "https://weather.inflite.ai/",
-            "https://fitness.inflite.ai/", "https://finance.inflite.ai/"
-        ] {
-            XCTAssertEqual(decision(url), .inside, url)
-        }
-    }
-
-    func testUserLinksOpenExternallyAndRedirectsStayRestricted() {
-        for url in ["https://example.org/", "mailto:hello@example.org", "tel:+441234567890"] {
-            XCTAssertEqual(decision(url, tapped: true), .system, url)
-            XCTAssertEqual(decision(url), .block, url)
-            XCTAssertEqual(decision(url, tapped: true, trusted: false), .block, url)
-        }
-        for url in [
-            "http://inflite.ai/", "https://inflite.ai.example.org/",
-            "https://inflite.ai:8443/", "https://inflite.ai@example.org/",
-            "https://other@inflite.ai/", "file:///private/", "javascript:alert(1)"
-        ] {
-            XCTAssertFalse(NavigationPolicy.owns(URL(string: url)!), url)
-            XCTAssertEqual(decision(url), .block, url)
-        }
-        XCTAssertEqual(decision("https://inflite.ai:443/"), .inside)
-    }
-
-    func testFramesAndDownloadsRespectTheirNavigationBoundaries() {
-        XCTAssertEqual(decision("about:srcdoc", mainFrame: false), .inside)
-        XCTAssertEqual(decision("data:text/html,Message", mainFrame: false), .inside)
-        XCTAssertEqual(decision("data:text/html,Message"), .block)
-        XCTAssertEqual(decision("https://example.org/", mainFrame: false), .inside)
-        XCTAssertTrue(NavigationPolicy.canDownload(URL(string: "blob:https://inflite.ai/file")!))
-        XCTAssertTrue(NavigationPolicy.canDownload(URL(string: "https://email.inflite.ai/download")!))
-        XCTAssertFalse(NavigationPolicy.canDownload(URL(string: "blob:https://example.org/file")!))
-    }
-
-    private func decision(
-        _ url: String, mainFrame: Bool = true, tapped: Bool = false, trusted: Bool = true
-    ) -> NavigationPolicy.Decision {
-        NavigationPolicy.decide(
-            URL(string: url)!, topLevel: mainFrame, userFollowedLink: tapped, trustedSource: trusted
-        )
-    }
 }
 
 final class BackendAuthenticationTests: XCTestCase {
     func testSignInBindsTheOneTimeCodeToAPrivateVerifier() throws {
         let challenge = try BackendHandback.start()
-        let components = try XCTUnwrap(URLComponents(url: challenge.url, resolvingAgainstBaseURL: false))
-        let items = try XCTUnwrap(components.queryItems)
         let digest = Data(SHA256.hash(data: Data(challenge.verifier.utf8)))
         let expected = digest.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
 
-        XCTAssertEqual(components.scheme, "https")
-        XCTAssertEqual(components.host, "inflite.ai")
-        XCTAssertEqual(components.path, "/auth/go")
-        XCTAssertEqual(items.first { $0.name == "signin" }?.value, "today")
-        XCTAssertEqual(items.first { $0.name == "back" }?.value, "https://inflite.ai/")
-        XCTAssertEqual(items.first { $0.name == "ask" }?.value, expected)
-        XCTAssertFalse(challenge.url.absoluteString.contains(challenge.verifier))
+        XCTAssertEqual(challenge.challenge, expected)
+        XCTAssertNotEqual(challenge.challenge, challenge.verifier)
         XCTAssertEqual(challenge.verifier.count, 43)
         XCTAssertNotEqual(challenge.verifier, try BackendHandback.start().verifier)
     }
 
-    func testAcceptsHandbackOnlyFromTheCanonicalReturnPage() throws {
-        let code = "example_signin-code_12345678"
-        let url = try XCTUnwrap(URL(string: "https://inflite.ai/#signin=" + code))
-        XCTAssertEqual(BackendHandback.code(from: url), code)
+    func testPasswordDerivationMatchesTheWebClientsCurrentAndLegacyFormats() async throws {
+        let password = "İnFlite Test １２３"
+        let salt = "AAECAwQFBgcICQoLDA0ODw"
+        let current = try await BackendPassword.derive(password, salt: "a2:" + salt)
+        let legacy = try await BackendPassword.derive(password, salt: salt)
 
-        for invalid in [
-            "http://inflite.ai/#signin=" + code,
-            "https://inflite.ai.example.org/#signin=" + code,
-            "https://auth.inflite.ai/#signin=" + code,
-            "https://inflite.ai:8080/#signin=" + code,
-            "https://user@inflite.ai/#signin=" + code,
-            "https://inflite.ai/notes/#signin=" + code,
-            "https://inflite.ai/?signin=" + code,
-            "https://inflite.ai/#signin=too-short",
-            "https://inflite.ai/#signin=" + String(repeating: "a", count: 65),
-            "https://inflite.ai/#signin=" + code + "&signin=" + code
-        ] {
-            XCTAssertNil(BackendHandback.code(from: try XCTUnwrap(URL(string: invalid))), invalid)
-        }
+        // These vectors were derived by the production E2E.fromPassword implementation.
+        XCTAssertEqual(current.proof, "1nW50xfhfAiMoc1n0RK6McdHprh_67CUUcjmmiJ7NUk")
+        XCTAssertEqual(current.lockKey.base64EncodedString(), "7JSRoejlteZnkdZvVSmGtm39B94b1sp9eG8fscpAIjI=")
+        XCTAssertEqual(legacy.proof, "Z0RZsc1sRuwvC5N9fAF7iRM26zuyvXaHxn4MF5x_r-8")
+        XCTAssertEqual(legacy.lockKey.base64EncodedString(), "wYqvkYOTqr1Ufl1+O6R3nbLGwW88ECWs/tiUNjRkJoY=")
     }
 
     func testHandbackPersistsTheSessionAndSignOutErasesIt() async throws {

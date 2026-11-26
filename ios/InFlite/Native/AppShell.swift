@@ -10,6 +10,7 @@ struct NativeRootView: View {
     @State private var initialToday: BackendToday?
     @State private var destination: InFliteRoute = .today
     @State private var pendingRoute: InFliteRoute?
+    @State private var publicDestination: InFliteRoute?
     @State private var signIn = false
     @State private var signingOut = false
     @State private var signOutFailed = false
@@ -41,11 +42,11 @@ struct NativeRootView: View {
                 } actions: {
                     Button("Try again") { reload += 1 }
                         .buttonStyle(.borderedProminent)
-                    Link("InFlite Status", destination: InFliteRoute.status.url)
+                    Button("InFlite Status") { open(.status) }
                 }
             case .ready(let user):
                 NativeWorkspace(user: user, initialToday: initialToday, preview: preview,
-                                destination: $destination, appearance: $appearance) {
+                                destination: $destination, appearance: $appearance, onProfileChange: updateProfile) {
                     Task { await signOut() }
                 } onSessionExpired: {
                     initialToday = nil
@@ -73,13 +74,31 @@ struct NativeRootView: View {
                 accept(session)
             }
         }
+        .sheet(item: $publicDestination) { route in
+            if let page = route.publicPage {
+                NativePublicSheet(page: page)
+            } else {
+                PublicStatusSheet()
+            }
+        }
         .onOpenURL { url in
             guard let route = InFliteRoute(link: url) else { return }
-            if case .ready = phase {
-                destination = route
-            } else {
-                pendingRoute = route
-            }
+            open(route)
+        }
+        .environment(\.openURL, OpenURLAction { url in
+            guard let route = InFliteRoute(link: url) else { return .systemAction }
+            open(route)
+            return .handled
+        })
+    }
+
+    private func open(_ route: InFliteRoute) {
+        if case .ready = phase {
+            destination = route
+        } else if route.publicPage != nil || route == .status {
+            publicDestination = route
+        } else {
+            pendingRoute = route
         }
     }
 
@@ -104,7 +123,7 @@ struct NativeRootView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("native-sign-in")
-                Link("About InFlite", destination: InFliteRoute.origin.appendingPathComponent("about/"))
+                Button("About InFlite") { open(.about) }
                     .font(.subheadline.weight(.medium))
             }
             .frame(maxWidth: 420)
@@ -124,6 +143,10 @@ struct NativeRootView: View {
         }
         if ProcessInfo.processInfo.arguments.contains("--ui-test-signed-out") {
             phase = .signedOut
+            return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-recovery") {
+            phase = reload == 0 ? .unavailable : .signedOut
             return
         }
         #endif
@@ -156,6 +179,14 @@ struct NativeRootView: View {
         phase = .signedOut
     }
 
+    private func updateProfile(_ profile: NativeAccountProfile) {
+        guard case .ready(let user) = phase, profile.id == user.id, let name = profile.name else { return }
+        phase = .ready(BackendUser(
+            id: user.id, name: name, first: name.split(separator: " ").first.map(String.init),
+            handle: profile.handle, appearance: user.appearance, photoAt: profile.photoAt
+        ))
+    }
+
     private func signOut() async {
         guard !signingOut else { return }
         signingOut = true
@@ -169,21 +200,51 @@ struct NativeRootView: View {
     }
 }
 
+private struct PublicStatusSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ActivityStatusView()
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
+        }
+    }
+}
+
+private extension InFliteRoute {
+    var publicPage: NativePublicPage? {
+        switch self {
+        case .about: .about
+        case .privacy: .privacy
+        case .support: .contact
+        case .storage: .storage
+        case .terms: .terms
+        default: nil
+        }
+    }
+}
+
 private struct NativeWorkspace: View {
     let user: BackendUser
     let initialToday: BackendToday?
     let preview: Bool
     @Binding var destination: InFliteRoute
     @Binding var appearance: String
+    let onProfileChange: (NativeAccountProfile) -> Void
     let signOut: () -> Void
     let onSessionExpired: () -> Void
     @State private var appsOpen = false
     @State private var quickCapture = false
     @State private var appQuery = ""
     @State private var visited: Set<InFliteRoute> = [.today]
+    @State private var revisions: [InFliteRoute: Int] = [:]
 
     private let pins: [InFliteRoute] = [.today, .weather, .markets, .fitness, .mail]
-    private let apps: [InFliteRoute] = [.calendar, .notes, .people, .files, .fitness, .weather, .markets, .chats, .mail, .status, .account]
+    private let apps: [InFliteRoute] = [
+        .calendar, .notes, .reminders, .people, .files, .fitness, .weather, .markets, .chats, .mail, .status, .account
+    ]
     private var visibleApps: [InFliteRoute] {
         let query = appQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         return query.isEmpty ? apps : apps.filter { $0.title.localizedCaseInsensitiveContains(query) }
@@ -195,6 +256,7 @@ private struct NativeWorkspace: View {
                 NavigationStack {
                     screen(route)
                 }
+                .id(route == .today ? 0 : revisions[route, default: 0])
                 .opacity(destination == route ? 1 : 0)
                 .allowsHitTesting(destination == route)
                 .accessibilityHidden(destination != route)
@@ -204,9 +266,14 @@ private struct NativeWorkspace: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { dock }
         .onChange(of: destination, initial: true) { _, route in visited.insert(route) }
         .sheet(isPresented: $appsOpen, onDismiss: { appQuery = "" }) { appLibrary }
-        .confirmationDialog("Quick Capture", isPresented: $quickCapture, titleVisibility: .visible) {
-            Button("Notes") { destination = .notes }
-            Button("Calendar") { destination = .calendar }
+        .sheet(isPresented: $quickCapture) {
+            NativeQuickCapture(owner: user.id) { route in
+                revisions[.today, default: 0] += 1
+                if let route {
+                    revisions[route, default: 0] += 1
+                    destination = route
+                }
+            }
         }
     }
 
@@ -297,7 +364,9 @@ private struct NativeWorkspace: View {
     private func screen(_ route: InFliteRoute) -> some View {
         switch route {
         case .today:
-            NativeTodayView(user: user, initialToday: initialToday, preview: preview) {
+            NativeTodayView(
+                user: user, initialToday: initialToday, preview: preview, captureRevision: revisions[.today, default: 0]
+            ) {
                 destination = $0
             } capture: {
                 quickCapture = true
@@ -313,6 +382,8 @@ private struct NativeWorkspace: View {
             ActivityFitnessView(owner: user.id)
         case .mail:
             NativeMailView(owner: user.id, active: destination == .mail)
+        case .chats:
+            NativeChatsView(owner: user.id, active: destination == .chats)
         case .calendar:
             NativeCalendarView(owner: user.id)
         case .notes:
@@ -324,40 +395,22 @@ private struct NativeWorkspace: View {
         case .status:
             ActivityStatusView()
         case .account:
-            settings
-        default:
-            ContentUnavailableView {
-                Label(route.title, systemImage: route.symbol)
-            } actions: {
-                Link("Open \(route.title) in Safari", destination: route.url)
-                    .buttonStyle(.borderedProminent)
+            NativeAccountView(user: user, appearance: $appearance, signOut: signOut, onProfileChange: onProfileChange) {
+                destination = $0
             }
-            .navigationTitle(route.title)
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-
-    private var settings: some View {
-        List {
-            Section("Account") {
-                Text(user.name).font(.headline)
-                Link("Manage account", destination: InFliteRoute.account.url)
-                Button("Sign out", role: .destructive, action: signOut)
+        case .notifications:
+            NativeNotificationsView(owner: user.id) { destination = $0 }
+        case .reminders:
+            NativeRemindersView(owner: user.id, revision: revisions[.today, default: 0]) {
+                revisions[.today, default: 0] += 1
             }
-            Section("Appearance") {
-                Picker("Theme", selection: $appearance) {
-                    Text("System").tag("system")
-                    Text("Light").tag("light")
-                    Text("Dark").tag("dark")
-                }
-            }
-            Section("InFlite") {
-                Link("Privacy", destination: InFliteRoute.origin.appendingPathComponent("privacy/"))
-                Link("Support", destination: InFliteRoute.origin.appendingPathComponent("contact/"))
-                LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+        case .about, .privacy, .support, .storage, .terms:
+            if let page = route.publicPage {
+                NativePublicPageView(page: page, initialName: user.name)
+                    .navigationDestination(for: NativePublicPage.self) {
+                        NativePublicPageView(page: $0, initialName: user.name)
+                    }
             }
         }
-        .scrollContentBackground(.hidden)
-        .navigationTitle("Settings")
     }
 }

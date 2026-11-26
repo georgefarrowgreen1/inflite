@@ -1,7 +1,10 @@
 import Foundation
 
-enum InFliteRoute: String, CaseIterable {
+enum InFliteRoute: String, CaseIterable, Identifiable {
     case today, weather, markets, fitness, mail, chats, calendar, notes, people, status, account, files
+    case notifications, reminders, about, privacy, support, storage, terms
+
+    var id: String { rawValue }
 
     static let origin = URL(string: "https://inflite.ai")!
 
@@ -15,6 +18,8 @@ enum InFliteRoute: String, CaseIterable {
             destination.fragment = "files"
         case .account:
             destination.path = "/settings/account/"
+        case .support:
+            destination.path = "/contact/"
         default:
             destination.path = "/\(rawValue)/"
         }
@@ -42,58 +47,5 @@ enum InFliteRoute: String, CaseIterable {
                   $0.url.path == link.path && $0.url.fragment == components.fragment
               }) else { return nil }
         self = route
-    }
-}
-
-enum NavigationPolicy {
-    enum Decision: Equatable {
-        case inside, system, block
-    }
-
-    private static let hosts: Set<String> = [
-        "inflite.ai", "os.inflite.ai", "auth.inflite.ai", "account.inflite.ai",
-        "email.inflite.ai", "status.inflite.ai", "chat.inflite.ai",
-        "weather.inflite.ai", "fitness.inflite.ai", "finance.inflite.ai"
-    ]
-
-    static func owns(_ url: URL) -> Bool {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.user == nil, components.password == nil else { return false }
-        return owns(scheme: components.scheme ?? "", host: components.host ?? "", port: components.port)
-    }
-
-    static func owns(scheme: String, host: String, port: Int?) -> Bool {
-        scheme.lowercased() == "https" && hosts.contains(host.lowercased()) && (port == nil || port == 443)
-    }
-
-    static func canDownload(_ url: URL) -> Bool {
-        if owns(url) { return true }
-        guard url.scheme?.lowercased() == "blob",
-              let origin = URL(string: String(url.absoluteString.dropFirst("blob:".count))) else { return false }
-        return owns(origin)
-    }
-
-    static func decide(
-        _ destination: URL,
-        topLevel: Bool,
-        userFollowedLink: Bool,
-        trustedSource: Bool
-    ) -> Decision {
-        let scheme = destination.scheme?.lowercased() ?? ""
-        if owns(destination) { return .inside }
-
-        if !topLevel && ["https", "about", "blob", "data"].contains(scheme) {
-            // WebKit applies the page's CSP and the existing Mail frame sandbox.
-            return .inside
-        }
-
-        guard userFollowedLink && trustedSource else { return .block }
-        if ["mailto", "tel", "sms"].contains(scheme) { return .system }
-        if ["http", "https"].contains(scheme),
-           let parts = URLComponents(url: destination, resolvingAgainstBaseURL: false),
-           parts.host?.isEmpty == false, parts.user == nil, parts.password == nil {
-            return .system
-        }
-        return .block
     }
 }

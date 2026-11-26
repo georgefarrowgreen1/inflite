@@ -28,6 +28,37 @@ test('conversation history paginates same-date messages exactly once while keepi
   } finally { sql.close(); }
 });
 
+test('Later paginates by wake time and thread id, independent of message dates', async () => {
+  const sql = new DatabaseSync(':memory:');
+  const query = (text, args = []) => ({
+    bind: (...values) => query(text, values),
+    first: async () => sql.prepare(text).get(...args) || null,
+    all: async () => ({ results: sql.prepare(text).all(...args) }),
+    run: async () => ({ meta: { changes: sql.prepare(text).run(...args).changes } }),
+  });
+  const env = { DB: { prepare: query, batch: async statements => Promise.all(statements.map(statement => statement.all())) } };
+  try {
+    const { ensureSchema } = await import('../email/src/db.js?later-pagination');
+    const { listThreads } = await import('../email/src/threads.js');
+    await ensureSchema(env);
+    const wake = Date.now() + 3600000;
+    const insert = sql.prepare("INSERT INTO messages(id, folder, thread_id, date, snooze_until) VALUES(?, 'inbox', ?, ?, ?)");
+    insert.run('msg-1', 'thread-a', 12, wake);
+    insert.run('msg-2', 'thread-b', 140, wake);
+    insert.run('msg-3', 'thread-c', 250, wake + 1000);
+    insert.run('msg-4', 'thread-open', 350, null);
+    const later = cursor => listThreads(env, new URL('https://mail.test/?view=later&limit=1' +
+      (cursor ? '&later=' + encodeURIComponent(cursor) : '')));
+    const first = await later();
+    const second = await later(first.nextLater);
+    const third = await later(second.nextLater);
+    assert.deepEqual([first, second, third].map(page => page.threads[0].id), ['thread-a', 'thread-b', 'thread-c']);
+    assert.equal(third.hasMore, false);
+    assert.equal(third.nextLater, undefined);
+    await assert.rejects(later('invalid-cursor'), { status: 400 });
+  } finally { sql.close(); }
+});
+
 test('time suggestions need an explicit, unambiguous request and preserve wall time and duration', async () => {
   const { proposedTime } = await import('../email/src/time-change.js');
   const { moveTime } = await import('../today/public/organise/mail-calendar.js');

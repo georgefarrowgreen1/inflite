@@ -98,7 +98,12 @@ struct NativeAppIcon: View {
 
 extension InFliteRoute {
     var title: String {
-        self == .account ? "Settings" : rawValue.capitalized
+        switch self {
+        case .account: "Settings"
+        case .about: "About InFlite"
+        case .storage: "Cookies & Storage"
+        default: rawValue.capitalized
+        }
     }
 
     var symbol: String {
@@ -115,12 +120,19 @@ extension InFliteRoute {
         case .status: "waveform.path"
         case .account: "gearshape"
         case .files: "folder"
+        case .notifications: "bell"
+        case .reminders: "list.bullet.circle"
+        case .about: "info.circle"
+        case .privacy: "hand.raised"
+        case .support: "questionmark.circle"
+        case .storage: "externaldrive"
+        case .terms: "doc.text"
         }
     }
 
     var iconAsset: String? {
         switch self {
-        case .today, .status, .account: nil
+        case .today, .status, .account, .notifications, .reminders, .about, .privacy, .support, .storage, .terms: nil
         default: "Native-" + rawValue
         }
     }

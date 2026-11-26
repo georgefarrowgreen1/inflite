@@ -13,6 +13,7 @@ struct NativeWeatherView: View {
     @State private var failure: String?
     @State private var loadID: UUID?
     @State private var showingPlaces = false
+    @State private var showingCredits = false
 
     init(owner: String? = nil) {
         _selectedPlace = AppStorage(wrappedValue: Data(), "inflite.native.weather.place.\(owner ?? "device")")
@@ -91,6 +92,13 @@ struct NativeWeatherView: View {
         .navigationTitle("Weather")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    showingCredits = true
+                } label: {
+                    Label("Weather data", systemImage: "info.circle")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showingPlaces = true
@@ -101,6 +109,9 @@ struct NativeWeatherView: View {
         }
         .sheet(isPresented: $showingPlaces) {
             WeatherPlaceSearch(client: client, currentPlace: place, onSelect: select)
+        }
+        .sheet(isPresented: $showingCredits) {
+            WeatherCreditsSheet()
         }
         .task { await chooseInitialPlace() }
         .task(id: request) {
@@ -262,7 +273,7 @@ struct NativeWeatherView: View {
     }
 
     private var forecastCredit: some View {
-        Link("Forecast data by Open-Meteo", destination: URL(string: "https://open-meteo.com/")!)
+        Button("Weather data") { showingCredits = true }
             .font(.footnote)
     }
 
@@ -337,7 +348,7 @@ struct NativeWeatherView: View {
                     ), in: 0...Double(frames.count - 1), step: 1)
                     .accessibilityLabel("Radar frame")
                 }
-                Link("Radar data by RainViewer", destination: URL(string: "https://www.rainviewer.com/")!)
+                Button("Map data") { showingCredits = true }
                     .font(.footnote)
             }
             .weatherCard()
@@ -397,6 +408,83 @@ struct NativeWeatherView: View {
             case .radar: service = "rain radar"
             }
             failure = "Couldn’t load \(service)."
+        }
+    }
+}
+
+private struct WeatherCreditsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private struct Source: Identifiable {
+        let title: String
+        let detail: String
+        let url: URL
+
+        var id: String { title }
+
+        init(_ title: String, _ detail: String, _ address: String) {
+            self.title = title
+            self.detail = detail
+            url = URL(string: address)!
+        }
+    }
+
+    private let weatherSources: [Source] = [
+        Source("Open-Meteo", "Forecasts, ensembles & waves · CC BY 4.0", "https://open-meteo.com/"),
+        Source("Met Office", "UK forecasts & ensembles · CC BY-SA 4.0", "https://www.metoffice.gov.uk/"),
+        Source("ERA5 · Copernicus Climate", "Climate history · via Open-Meteo", "https://climate.copernicus.eu/"),
+        Source("CAMS · Copernicus Atmosphere", "Air quality & pollen · via Open-Meteo", "https://atmosphere.copernicus.eu/"),
+        Source("Copernicus Marine", "Sea temperature & tides · via Open-Meteo", "https://marine.copernicus.eu/"),
+        Source("MeteoAlarm · EUMETNET", "European weather warnings · CC BY 4.0", "https://meteoalarm.org/"),
+        Source("National Weather Service", "US weather warnings", "https://www.weather.gov/"),
+        Source("Environment Agency", "England flood warnings · Open Government Licence", "https://environment.data.gov.uk/flood-monitoring/doc/reference"),
+        Source("Aviation Weather Center", "Airport weather reports", "https://aviationweather.gov/")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                HStack(spacing: 9) {
+                    Image("InFliteMark").resizable().scaledToFit()
+                        .frame(width: 36, height: 36)
+                        .clipShape(.rect(cornerRadius: 9))
+                        .accessibilityHidden(true)
+                    Text("InFlite").fontWeight(.bold)
+                    Text("a GFG company").foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .listRowBackground(Color.clear)
+                .accessibilityElement(children: .combine)
+                Section("Weather data") {
+                    ForEach(weatherSources) { source in sourceRow(source) }
+                }
+                Section("Map data") {
+                    sourceRow(Source("RainViewer", "Radar imagery", "https://www.rainviewer.com/"))
+                    sourceRow(Source("Apple Maps", "Base map", "https://www.apple.com/maps/"))
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Weather data")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func sourceRow(_ source: Source) -> some View {
+        Link(destination: source.url) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(source.title).font(.body.weight(.medium))
+                    Text(source.detail).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            .foregroundStyle(.primary)
         }
     }
 }

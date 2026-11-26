@@ -1,9 +1,11 @@
 import SwiftUI
 
+@MainActor
 struct NativeTodayView: View {
     let user: BackendUser
     let initialToday: BackendToday?
     let preview: Bool
+    let captureRevision: Int
     let open: (InFliteRoute) -> Void
     let capture: () -> Void
     let onSessionExpired: () -> Void
@@ -11,6 +13,10 @@ struct NativeTodayView: View {
     @State private var today: BackendToday?
     @State private var loading = false
     @State private var failed = false
+    @ObservedObject private var notifications = NativeNotificationStore.shared
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var unread: Int { notifications.unread(for: user.id) }
 
     private var day: BackendToday? { today ?? initialToday }
     private var summary: BackendTodayTop? {
@@ -64,8 +70,11 @@ struct NativeTodayView: View {
             .frame(maxWidth: .infinity)
         }
         .refreshable { await refresh() }
-        .task {
-            if day == nil, !preview { await refresh() }
+        .task(id: captureRevision) {
+            if day == nil || captureRevision > 0 { await refresh() }
+        }
+        .task(id: scenePhase) {
+            if scenePhase == .active, !preview { await notifications.refresh(owner: user.id) }
         }
     }
 
@@ -89,16 +98,21 @@ struct NativeTodayView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Quick Capture")
-            Button {
-                open(.account)
+            Menu {
+                Button(unread > 0 ? "Notifications (\(unread))" : "Notifications", systemImage: "bell") { open(.notifications) }
+                Button("Settings", systemImage: "gearshape") { open(.account) }
             } label: {
                 Text(String(user.name.prefix(1)).uppercased())
                     .font(.headline)
                     .frame(width: 45, height: 45)
                     .background(NativeStyle.accent.opacity(0.20), in: .circle)
+                    .overlay(alignment: .topTrailing) {
+                        NativeNotificationBadge(count: unread).offset(x: 5, y: -5)
+                    }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Account settings")
+            .accessibilityLabel("Account")
+            .accessibilityValue(unread == 0 ? "No unread notifications" : "\(unread) unread notifications")
         }
         .padding(.bottom, 8)
     }

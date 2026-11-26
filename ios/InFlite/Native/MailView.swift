@@ -1,5 +1,4 @@
 import SwiftUI
-import WebKit
 
 @MainActor
 struct NativeMailView: View {
@@ -23,7 +22,9 @@ struct NativeMailView: View {
         case draft(MailBrief)
         case compose
         case verify
-        case web
+        case security
+        case settings
+        case snooze(MailConversation)
 
         var id: String {
             switch self {
@@ -31,7 +32,9 @@ struct NativeMailView: View {
             case .draft(let message): "draft:\(message.id)"
             case .compose: "compose"
             case .verify: "verify"
-            case .web: "web"
+            case .security: "security"
+            case .settings: "settings"
+            case .snooze(let thread): "snooze:\(thread.id)"
             }
         }
     }
@@ -45,6 +48,8 @@ struct NativeMailView: View {
     @State private var hasMore = false
     @State private var loading = true
     @State private var loadingMore = false
+    @State private var nextLater: String?
+    @State private var acting = false
     @State private var problem: String?
     @State private var sheet: Sheet?
     @State private var reload = 0
@@ -59,12 +64,21 @@ struct NativeMailView: View {
             header
             if access == .ok {
                 if showingSearch { searchField }
-                Picker("Mailbox", selection: $selection.lens) {
-                    ForEach(MailLens.allCases) { lens in
-                        Text(lens.title).tag(lens)
+                if MailLens.primary.contains(selection.lens) {
+                    Picker("Mailbox", selection: $selection.lens) {
+                        ForEach(MailLens.primary) { lens in
+                            Text(lens.title).tag(lens)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                } else {
+                    HStack {
+                        Text(selection.lens.title).font(.headline)
+                        Spacer()
+                        Button("Back to People") { selection.lens = .people }
+                            .font(.subheadline)
                     }
                 }
-                .pickerStyle(.segmented)
             }
             mailbox
         }
@@ -82,15 +96,28 @@ struct NativeMailView: View {
             case .conversation(let thread):
                 MailReader(service: service, subject: thread.subject, conversation: thread)
             case .draft(let draft):
-                MailReader(service: service, subject: draft.subject, draft: draft)
+                MailComposer(service: service, source: .draft(draft.id))
             case .compose:
                 MailComposer(service: service)
             case .verify:
                 BackendSignInView(client: .shared, purpose: .mail(owner: owner)) { _ in
                     self.sheet = nil
                 }
-            case .web:
-                MailWebView()
+            case .security:
+                NavigationStack {
+                    NativeAccountSecurityView(owner: owner)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Close") { sheet = nil }
+                            }
+                        }
+                }
+            case .settings:
+                MailSettingsView(owner: owner)
+            case .snooze(let thread):
+                MailSnooze { date in
+                    try await service.act(.snooze, on: thread.id, until: date)
+                }
             }
         }
     }
@@ -101,6 +128,21 @@ struct NativeMailView: View {
                 .font(.largeTitle.bold())
             Spacer()
             if access == .ok {
+                Menu {
+                    ForEach(MailLens.allCases.filter { !MailLens.primary.contains($0) }) { lens in
+                        Button(lens.title) {
+                            searchText = ""
+                            selection = Selection(lens: lens)
+                        }
+                    }
+                    Divider()
+                    Button("Mail Settings") { sheet = .settings }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("More mailboxes")
+
                 Button {
                     showingSearch.toggle()
                     if !showingSearch {
@@ -167,7 +209,7 @@ struct NativeMailView: View {
                 Text(access.message)
             } actions: {
                 if access == .passkey {
-                    Button("Open Mail") { sheet = .web }
+                    Button("Set up a passkey") { sheet = .security }
                         .buttonStyle(.borderedProminent)
                 } else if access == .reauth || access == .signin {
                     Button("Verify identity") { sheet = .verify }
@@ -215,15 +257,13 @@ struct NativeMailView: View {
                                 date: thread.date, unread: thread.unread > 0, hasAttachments: thread.hasAttachments) {
                             sheet = .conversation(thread)
                         }
+                        .contextMenu {
+                            conversationActions(thread)
+                        }
                     }
                     if let problem { Text(problem).font(.footnote).foregroundStyle(.secondary) }
                     if hasMore {
-                        if selection.lens == .later, selection.search.isEmpty {
-                            // Later is sorted by wake time, while the backend's list cursor is a message date.
-                            Button("See more in Mail") { sheet = .web }
-                                .buttonStyle(.bordered)
-                                .padding(8)
-                        } else if loadingMore {
+                        if loadingMore {
                             ProgressView()
                                 .padding(12)
                         } else {
@@ -236,6 +276,60 @@ struct NativeMailView: View {
                 .padding(.bottom, 12)
             }
             .refreshable { await load() }
+        }
+    }
+
+    @ViewBuilder
+    private func conversationActions(_ thread: MailConversation) -> some View {
+        if thread.trashed == true {
+            actionButton("Restore", icon: "arrow.uturn.backward", action: .restore, thread: thread)
+        } else {
+            actionButton(thread.done == true ? "Move to Inbox" : "Mark Done", icon: "checkmark.circle",
+                         action: thread.done == true ? .inbox : .done, thread: thread)
+            actionButton(thread.unread > 0 ? "Mark as Read" : "Mark as Unread", icon: "envelope",
+                         action: thread.unread > 0 ? .read : .unread, thread: thread)
+            actionButton(thread.starred == true ? "Remove Flag" : "Flag", icon: "flag",
+                         action: thread.starred == true ? .unflag : .flag, thread: thread)
+            Button {
+                sheet = .snooze(thread)
+            } label: {
+                Label(thread.snoozeUntil == nil ? "Remind Me Later" : "Change Reminder", systemImage: "clock")
+            }
+            .disabled(acting)
+            if thread.snoozeUntil != nil {
+                actionButton("Move to Inbox Now", icon: "tray", action: .unsnooze, thread: thread)
+            }
+            actionButton("Move to Trash", icon: "trash", action: .trash, thread: thread, role: .destructive)
+        }
+    }
+
+    private func actionButton(_ title: String, icon: String, action: MailThreadAction, thread: MailConversation,
+                              role: ButtonRole? = nil) -> some View {
+        Button(role: role) {
+            Task { await apply(action, to: thread) }
+        } label: {
+            Label(title, systemImage: icon)
+        }
+        .disabled(acting)
+    }
+
+    private func apply(_ action: MailThreadAction, to thread: MailConversation) async {
+        guard !acting else { return }
+        acting = true
+        defer { acting = false }
+        do {
+            try await service.act(action, on: thread.id)
+            await load()
+        } catch {
+            if let gate = try? await service.access(), gate != .ok {
+                access = gate
+                threads = []
+                drafts = []
+                hasMore = false
+                nextLater = nil
+            } else if !Task.isCancelled {
+                problem = "Couldn’t update the conversation. Try again."
+            }
         }
     }
 
@@ -292,6 +386,7 @@ struct NativeMailView: View {
         threads = []
         drafts = []
         hasMore = false
+        nextLater = nil
         do {
             let access = try await service.access()
             guard !Task.isCancelled, generation == requestID else { return }
@@ -304,7 +399,9 @@ struct NativeMailView: View {
             guard !Task.isCancelled, generation == requestID else { return }
             threads = page.threads
             drafts = page.drafts
-            hasMore = page.hasMore && !page.threads.isEmpty
+            nextLater = page.nextLater
+            hasMore = page.hasMore && !page.threads.isEmpty &&
+                (filter.lens != .later || !filter.search.isEmpty || page.nextLater != nil)
         } catch {
             guard !Task.isCancelled, generation == requestID else { return }
             if let gate = try? await service.access(), gate != .ok {
@@ -323,15 +420,23 @@ struct NativeMailView: View {
         guard !loading, !loadingMore, hasMore, let before = threads.last?.sort else { return }
         let requestID = generation
         let filter = selection
+        let usesWakeCursor = filter.lens == .later && filter.search.isEmpty
+        let wakeCursor = nextLater
+        guard !usesWakeCursor || wakeCursor != nil else { return }
         loadingMore = true
         problem = nil
         do {
-            let page = try await service.conversations(filter.lens, search: filter.search, before: before)
+            let page = try await service.conversations(
+                filter.lens, search: filter.search, before: usesWakeCursor ? nil : before,
+                later: usesWakeCursor ? wakeCursor : nil
+            )
             guard generation == requestID else { return }
             let existing = Set(threads.map(\.id))
             let next = page.threads.filter { !existing.contains($0.id) }
             threads += next
-            hasMore = page.hasMore && !next.isEmpty && threads.last?.sort != before
+            nextLater = page.nextLater
+            let advanced = usesWakeCursor ? page.nextLater != nil && page.nextLater != wakeCursor : threads.last?.sort != before
+            hasMore = page.hasMore && !next.isEmpty && advanced
         } catch {
             guard generation == requestID else { return }
             if let gate = try? await service.access(), gate != .ok {
@@ -339,6 +444,7 @@ struct NativeMailView: View {
                 threads = []
                 drafts = []
                 hasMore = false
+                nextLater = nil
                 access = gate
             } else {
                 guard generation == requestID else { return }
@@ -354,22 +460,70 @@ private func mailDate(_ milliseconds: Int64) -> Date {
 }
 
 @MainActor
+private struct MailSnooze: View {
+    let save: (Date) async throws -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var date = Date.now.addingTimeInterval(3600)
+    @State private var busy = false
+    @State private var issue: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker("Bring back", selection: $date, in: Date.now...)
+                    .disabled(busy)
+                if let issue { Text(issue).font(.footnote).foregroundStyle(.secondary) }
+            }
+            .navigationTitle("Remind Me Later")
+            .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(busy)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(busy)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { Task { await confirm() } }
+                        .disabled(busy || date <= .now)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func confirm() async {
+        guard !busy, date > .now else { return }
+        busy = true
+        issue = nil
+        defer { busy = false }
+        do {
+            try await save(date)
+            dismiss()
+        } catch {
+            if !Task.isCancelled { issue = error.localizedDescription }
+        }
+    }
+}
+
+@MainActor
 private struct MailReader: View {
     let service: MailService
     let subject: String
-    var conversation: MailConversation? = nil
-    var draft: MailBrief? = nil
+    let conversation: MailConversation
 
     @Environment(\.dismiss) private var dismiss
     @State private var messages: [MailBrief] = []
     @State private var selectedID: String?
     @State private var message: MailMessage?
+    @State private var rendered = AttributedString()
+    @State private var showCompleteBody = false
     @State private var cursor: String?
     @State private var loadingThread = true
     @State private var loadingMessage = false
     @State private var loadingOlder = false
     @State private var issue: String?
-    @State private var showingWeb = false
+    @State private var response: MailReplyKind?
     @State private var markedRead = false
 
     var body: some View {
@@ -416,22 +570,43 @@ private struct MailReader: View {
                         }
                         .buttonStyle(.bordered)
                     }
-                    Button("Open in Mail") { showingWeb = true }
-                        .buttonStyle(.bordered)
                 }
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .navigationTitle(draft == nil ? "Conversation" : "Draft")
+            .navigationTitle("Conversation")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Close") { dismiss() }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    if message != nil, conversation.trashed != true {
+                        Menu {
+                            replyButton(.reply)
+                            replyButton(.all)
+                            replyButton(.forward)
+                        } label: {
+                            Label("Respond", systemImage: "arrowshape.turn.up.left")
+                        }
+                    }
+                }
             }
             .task { await loadThread() }
             .task(id: selectedID) { if let selectedID { await loadMessage(selectedID) } }
-            .sheet(isPresented: $showingWeb) { MailWebView() }
+            .sheet(item: $response) { kind in
+                if let message {
+                    MailComposer(service: service, source: .responding(message, kind))
+                }
+            }
+        }
+    }
+
+    private func replyButton(_ kind: MailReplyKind) -> some View {
+        Button {
+            response = kind
+        } label: {
+            Label(kind.title, systemImage: kind.symbol)
         }
     }
 
@@ -448,30 +623,44 @@ private struct MailReader: View {
                 Text(mailDate(message.date).formatted(date: .abbreviated, time: .shortened))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-            Divider()
-            if message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("This message has no plain-text body.")
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(verbatim: String(message.text.prefix(60_000)))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if message.text.count > 60_000 {
-                    Text("Open Mail to read the rest of this message.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                if !message.to.isEmpty || !message.cc.isEmpty {
+                    DisclosureGroup("Recipients") {
+                        if !message.to.isEmpty {
+                            LabeledContent("To", value: message.to.map(\.label).joined(separator: ", "))
+                        }
+                        if !message.cc.isEmpty {
+                            LabeledContent("Cc", value: message.cc.map(\.label).joined(separator: ", "))
+                        }
+                    }
+                    .font(.subheadline)
                 }
             }
-            ForEach(message.attachments) { file in
-                Label {
-                    VStack(alignment: .leading) {
-                        Text(verbatim: file.filename)
-                        Text(ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } icon: { Image(systemName: "paperclip") }
+            Divider()
+            if rendered.characters.allSatisfy(\.isWhitespace) {
+                Text("This message has no readable text.")
+                    .foregroundStyle(.secondary)
+            } else {
+                let length = rendered.characters.count
+                let limit = showCompleteBody ? length : min(length, 60_000)
+                Text(AttributedString(rendered[rendered.startIndex..<rendered.characters.index(rendered.startIndex, offsetBy: limit)]))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if !showCompleteBody, length > limit {
+                    Button("Show full message") { showCompleteBody = true }
+                        .buttonStyle(.bordered)
+                }
+            }
+            if let images = message.inlineAttachments, !images.isEmpty {
+                Text("Inline images")
+                    .font(.subheadline.weight(.semibold))
+                MailAttachments(files: images, service: service)
+                    .id(message.id)
+            }
+            if !message.attachments.isEmpty {
+                Text("Attachments")
+                    .font(.subheadline.weight(.semibold))
+                MailAttachments(files: message.attachments, service: service)
+                    .id(message.id)
             }
         }
         .padding(16)
@@ -483,15 +672,11 @@ private struct MailReader: View {
         loadingThread = true
         issue = nil
         do {
-            if let conversation {
-                let page = try await service.thread(conversation.id)
-                try Task.checkCancellation()
-                messages = page.messages
-                cursor = page.nextAfter
-                selectedID = page.messages.first?.id
-            } else {
-                selectedID = draft?.id
-            }
+            let page = try await service.thread(conversation.id)
+            try Task.checkCancellation()
+            messages = page.messages
+            cursor = page.nextAfter
+            selectedID = page.messages.first?.id
         } catch is CancellationError { return }
         catch {
             guard !Task.isCancelled else { return }
@@ -501,7 +686,7 @@ private struct MailReader: View {
     }
 
     private func older() async {
-        guard let conversation, let cursor, !loadingOlder else { return }
+        guard let cursor, !loadingOlder else { return }
         loadingOlder = true
         defer { loadingOlder = false }
         do {
@@ -518,175 +703,22 @@ private struct MailReader: View {
         loadingMessage = true
         issue = nil
         message = nil
+        showCompleteBody = false
         do {
             let content = try await service.message(id)
             try Task.checkCancellation()
             guard selectedID == id else { return }
+            rendered = NativeMailBody.readable(content)
             message = content
             loadingMessage = false
-            if let conversation, conversation.unread > 0, !markedRead {
+            if conversation.unread > 0, !markedRead {
                 markedRead = true
-                try? await service.markRead(conversation.id)
+                try? await service.act(.read, on: conversation.id)
             }
         } catch {
             guard !Task.isCancelled, selectedID == id else { return }
             issue = "Couldn’t load this message. Mail may need you to verify your identity again."
         }
         if selectedID == id { loadingMessage = false }
-    }
-}
-
-@MainActor
-private struct MailComposer: View {
-    let service: MailService
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var from: String?
-    @State private var to = ""
-    @State private var subject = ""
-    @State private var text = ""
-    @State private var draftID = UUID().uuidString
-    @State private var sendKey = UUID().uuidString
-    @State private var busy = false
-    @State private var sendPending = false
-    @State private var issue: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if let from {
-                    Section {
-                        LabeledContent("From", value: from)
-                        TextField("To", text: $to, prompt: Text("Email addresses, separated by commas"))
-                            .textContentType(.emailAddress)
-                            .keyboardType(.emailAddress)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        TextField("Subject", text: $subject)
-                    }
-                    .disabled(busy || sendPending)
-                    Section("Message") {
-                        TextEditor(text: $text)
-                            .frame(minHeight: 155)
-                            .accessibilityLabel("Message")
-                            .disabled(busy || sendPending)
-                    }
-                    if !sendPending {
-                        Button("Save draft") { Task { await save(thenSend: false) } }
-                            .disabled(busy)
-                    }
-                } else if issue == nil {
-                    ProgressView("Loading your Mail address")
-                } else {
-                    Button("Try again") { Task { await loadAddress() } }
-                        .disabled(busy)
-                }
-                if let issue { Text(issue).font(.footnote).foregroundStyle(.secondary) }
-                if busy { ProgressView() }
-            }
-            .privacySensitive()
-            .interactiveDismissDisabled(busy)
-            .navigationTitle("New message")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                        .disabled(busy)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(sendPending ? "Retry send" : "Send") { Task { await save(thenSend: true) } }
-                        .disabled(busy || from == nil)
-                }
-            }
-            .task { await loadAddress() }
-        }
-    }
-
-    private func loadAddress() async {
-        guard !busy else { return }
-        busy = true
-        issue = nil
-        defer { busy = false }
-        do {
-            from = try await service.fromAddress()
-        } catch {
-            if !Task.isCancelled { issue = "Couldn’t load your Mail address. Open Mail and verify your identity." }
-        }
-    }
-
-    private func save(thenSend: Bool) async {
-        guard let from, !busy else { return }
-        busy = true
-        issue = nil
-        defer { busy = false }
-        do {
-            if !sendPending {
-                let recipients = to.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                if thenSend && (recipients.isEmpty || recipients.count > 50 || recipients.contains(where: {
-                    $0.range(of: #"^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$"#, options: .regularExpression) == nil
-                })) {
-                    throw MailServiceError.invalidRecipient
-                }
-                draftID = try await service.saveDraft(id: draftID, from: from, recipients: recipients, subject: subject, text: text)
-            }
-            if thenSend {
-                // Keep the saved draft and key fixed once a send might have reached Mail.
-                sendPending = true
-                try await service.send(draft: draftID, key: sendKey)
-            }
-            dismiss()
-        } catch let BackendError.http(status, message) where sendPending && [400, 413].contains(status) {
-            sendPending = false
-            sendKey = UUID().uuidString
-            issue = message ?? "Check the recipients and message before sending again."
-        } catch let error as MailServiceError {
-            issue = error.localizedDescription
-        } catch {
-            issue = sendPending
-                ? "Couldn’t confirm delivery. Retry send to check the same message."
-                : "Couldn’t save the draft. Check your connection and try again."
-        }
-    }
-}
-
-@MainActor
-private struct MailWebView: View {
-    @Environment(\.dismiss) private var dismiss
-    @StateObject private var browser = BrowserSession(persistent: false)
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                WebSurface(webView: browser.webView)
-                    .opacity(browser.phase == .ready ? 1 : 0)
-                    .accessibilityHidden(browser.phase != .ready)
-                switch browser.phase {
-                case .opening:
-                    ProgressView("Opening Mail")
-                case .ready:
-                    EmptyView()
-                case .unavailable(let problem):
-                    ContentUnavailableView {
-                        Label(problem.title, systemImage: "exclamationmark.circle")
-                    } description: {
-                        Text(problem.message)
-                    } actions: {
-                        Button("Try again") { browser.retry() }
-                            .buttonStyle(.bordered)
-                    }
-                }
-            }
-            .navigationTitle("Mail")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Close") { dismiss() }
-                }
-            }
-            .task { browser.open(.mail) }
-            .sheet(item: $browser.sharedDownload, onDismiss: browser.clearSharedDownload) { download in
-                DownloadShareSheet(file: download.file)
-            }
-        }
     }
 }

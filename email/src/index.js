@@ -665,13 +665,16 @@ async function getMessage(env, id) {
 
   let html = body.html || "";
   const attachments = [];
+  const inlineAttachments = [];
   for (const a of atts.results) {
     const href = `/api/attachments/${a.id}`;
+    const file = { id: a.id, filename: a.filename, type: a.type, size: a.size, url: href };
     if (a.content_id && html.includes(`cid:${a.content_id}`)) {
       html = html.split(`cid:${a.content_id}`).join(href);
+      inlineAttachments.push(file);
       continue;
     }
-    attachments.push({ id: a.id, filename: a.filename, type: a.type, size: a.size, url: href });
+    attachments.push(file);
   }
 
   // (a draft written in InFlite keeps only which message it quotes: opened here, in Mail on its own, it has the quote
@@ -692,6 +695,7 @@ async function getMessage(env, id) {
     html,
     compose,
     attachments,
+    ...(inlineAttachments.length && { inlineAttachments }),
   });
 }
 

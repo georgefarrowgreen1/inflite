@@ -136,6 +136,18 @@ export async function listThreads(env, url) {
   const params = [];
   const bind = binder(params);
   const { view, category, address, q, intent, trashSearch, where, scope, having } = listFilter(url.searchParams, bind, now);
+  const byWakeTime = view === "later" && !q && !trashSearch;
+  const wakeCursor = url.searchParams.get("later");
+  if (wakeCursor !== null) {
+    const match = /^(\d{1,16}):([\w-]{1,64})$/.exec(wakeCursor);
+    if (!byWakeTime || !match || !Number.isSafeInteger(Number(match[1]))) {
+      const err = new Error("Refresh Later to continue.");
+      err.status = 400;
+      throw err;
+    }
+    const wake = bind(Number(match[1]));
+    having.push(`(snooze > ${wake} OR (snooze = ${wake} AND thread_id > ${bind(match[2])}))`);
+  }
   if (before) having.push(`MAX(MAX(date), MAX(COALESCE(bumped_at, 0))) < ${bind(before)}`);
 
   if (counting) {
@@ -149,7 +161,7 @@ export async function listThreads(env, url) {
   }
   const { results: groups } = await env.DB.prepare(
     `SELECT ${AGG} FROM messages WHERE ${scope} AND thread_id IS NOT NULL GROUP BY thread_id
-     ${having.length ? `HAVING ${having.join(" AND ")}` : ""} ORDER BY ${view === "later" && !q ? "snooze ASC" : "last DESC"} LIMIT ${bind(limit + 1)}`
+     ${having.length ? `HAVING ${having.join(" AND ")}` : ""} ORDER BY ${byWakeTime ? "snooze ASC, thread_id ASC" : "last DESC"} LIMIT ${bind(limit + 1)}`
   )
     .bind(...params)
     .all();
@@ -167,7 +179,9 @@ export async function listThreads(env, url) {
     drafts = results.map(rowToSummary);
   }
   const followups = view === "all" && !before && !q && !address && category === "people" ? await dueFollowups(env) : [];
-  return { threads, drafts, hasMore, ...(followups.length && {followups}) };
+  const lastThread = page.at(-1);
+  const nextLater = byWakeTime && hasMore && lastThread ? `${lastThread.snooze}:${lastThread.thread_id}` : null;
+  return { threads, drafts, hasMore, ...(nextLater && { nextLater }), ...(followups.length && {followups}) };
 }
 
 // Mark All as Read: every conversation in a list (list: its view, category, address and search, as listThreads is asked),

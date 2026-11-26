@@ -27,6 +27,26 @@ test('canonical app routes reach the Worker while legacy OS storage remains acce
 });
 
 
+test('iOS association describes only supported routes on the canonical host', async () => {
+ const api = await worker;
+ const path = '/.well-known/apple-app-site-association';
+ const env = { IOS_APPLICATION_IDENTIFIER: 'EXAMPLE123.ai.inflite.ios' };
+ const request = (host = 'inflite.ai', method = 'GET') => new Request('https://' + host + path, { method });
+ const response = await api.fetch(request(), env, {});
+ assert.equal(response.status, 200);
+ assert.equal(response.headers.get('content-type'), 'application/json');
+ const association = await response.json();
+ assert.deepEqual(association.webcredentials.apps, [env.IOS_APPLICATION_IDENTIFIER]);
+ assert.deepEqual(association.applinks.details.at(0).appIDs, [env.IOS_APPLICATION_IDENTIFIER]);
+ const routes = association.applinks.details.at(0).components.map(component => component['/']);
+ assert.ok(routes.includes('/chats/'));
+ assert.ok(!routes.some(route => route.includes('atlas') || route.includes('*')));
+ assert.equal((await api.fetch(request(), {}, {})).status, 404);
+ assert.equal((await api.fetch(request('os.inflite.ai'), env, {})).status, 404);
+ assert.equal((await api.fetch(request('inflite.ai', 'POST'), env, {})).status, 405);
+ assert.equal(await (await api.fetch(request('inflite.ai', 'HEAD'), env, {})).text(), '');
+});
+
 test('Mail opens its isolated legacy view through a direct canonical public link',async()=>{
  const {hostPage}=await import('../today/src/mailhost.js');
  const html=hostPage('https://email.inflite.ai','https://auth.inflite.ai');

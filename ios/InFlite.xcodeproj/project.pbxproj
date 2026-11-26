@@ -10,10 +10,6 @@
 			isa = PBXBuildFile;
 			fileRef = 000000000000000000000009 /* InFliteApp.swift */;
 		};
-		00000000000000000000001B /* BrowserSession.swift in Sources */ = {
-			isa = PBXBuildFile;
-			fileRef = 00000000000000000000000A /* BrowserSession.swift */;
-		};
 		00000000000000000000001C /* NavigationPolicy.swift in Sources */ = {
 			isa = PBXBuildFile;
 			fileRef = 00000000000000000000000B /* NavigationPolicy.swift */;
@@ -106,6 +102,66 @@
 			isa = PBXBuildFile;
 			fileRef = 7BEEF85585D44C9B61D80C33 /* WeatherView.swift */;
 		};
+		85F2D51A7FD793D0EF4A9AC8 /* ChatService.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 3D6B9975B41E23BFCBA3BCB2 /* ChatService.swift */;
+		};
+		F2A5A1475F75957EB64ABFB9 /* ChatsView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 23C569600DE2FC11D2C154E3 /* ChatsView.swift */;
+		};
+		DDC20D83B9119B3C02FD1C9D /* FitnessPlanning.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 43797F1ACAF0027330B164F4 /* FitnessPlanning.swift */;
+		};
+		D1B6ACCA0051117BC451F04A /* MailComposer.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 23F3CD821D10F5C128B22D21 /* MailComposer.swift */;
+		};
+		5DB941A825526E35CE3125AB /* MailContent.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = D84FC6336543F8797B1D3009 /* MailContent.swift */;
+		};
+		AA2443D2B4B98151D69C437F /* NativeAccount.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 23B1F54AC0CEC22510F375C5 /* NativeAccount.swift */;
+		};
+		1008A11989D593E7B61A975F /* NativeAccountSecurity.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 031B9B00C7D4F772E92590F3 /* NativeAccountSecurity.swift */;
+		};
+		3C5B5BA46DF0865167A5E406 /* NativeNotifications.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 47099FF4A4FE1C35D2242A82 /* NativeNotifications.swift */;
+		};
+		40A90FD92BA7AE79E6CD8D4A /* NativePublicPages.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = F3A6FB3207A7B5F074782EFB /* NativePublicPages.swift */;
+		};
+		DFF070EEA4316ADF8ED9CE50 /* NativeQuickCapture.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 07FC41F96946FCDE8EDCBC71 /* NativeQuickCapture.swift */;
+		};
+		730C28979310DDE69EAD3306 /* InFliteArgon2 in Frameworks */ = {
+			isa = PBXBuildFile;
+			productRef = 20E5CBE4516EFAD79E983F67 /* InFliteArgon2 */;
+		};
+		FF9A361191A26F8BB1005CC8 /* MailSettings.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 736669CADAAAC2C374BDB7F4 /* MailSettings.swift */;
+		};
+		D9AE1606D5A6737F2B44A08B /* NativeComputerSignIn.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = DD8605DC9C5495B0E9115F3E /* NativeComputerSignIn.swift */;
+		};
+		2AEB0A7925701FA9068E479E /* NativeReminders.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = D8D13D91023279BDFF7A67A0 /* NativeReminders.swift */;
+		};
+		C7B9B2F0E2A5173F647B639F /* ChatTests.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 29F5BD81775AEF78A6F8DDA0 /* ChatTests.swift */;
+		};
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -136,12 +192,6 @@
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = InFliteApp.swift;
-			sourceTree = "<group>";
-		};
-		00000000000000000000000A /* BrowserSession.swift */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = BrowserSession.swift;
 			sourceTree = "<group>";
 		};
 		00000000000000000000000B /* NavigationPolicy.swift */ = {
@@ -315,13 +365,99 @@
 			path = WeatherView.swift;
 			sourceTree = "<group>";
 		};
+		3D6B9975B41E23BFCBA3BCB2 /* ChatService.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ChatService.swift;
+			sourceTree = "<group>";
+		};
+		23C569600DE2FC11D2C154E3 /* ChatsView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ChatsView.swift;
+			sourceTree = "<group>";
+		};
+		43797F1ACAF0027330B164F4 /* FitnessPlanning.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = FitnessPlanning.swift;
+			sourceTree = "<group>";
+		};
+		23F3CD821D10F5C128B22D21 /* MailComposer.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = MailComposer.swift;
+			sourceTree = "<group>";
+		};
+		D84FC6336543F8797B1D3009 /* MailContent.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = MailContent.swift;
+			sourceTree = "<group>";
+		};
+		23B1F54AC0CEC22510F375C5 /* NativeAccount.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NativeAccount.swift;
+			sourceTree = "<group>";
+		};
+		031B9B00C7D4F772E92590F3 /* NativeAccountSecurity.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NativeAccountSecurity.swift;
+			sourceTree = "<group>";
+		};
+		47099FF4A4FE1C35D2242A82 /* NativeNotifications.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NativeNotifications.swift;
+			sourceTree = "<group>";
+		};
+		F3A6FB3207A7B5F074782EFB /* NativePublicPages.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NativePublicPages.swift;
+			sourceTree = "<group>";
+		};
+		07FC41F96946FCDE8EDCBC71 /* NativeQuickCapture.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NativeQuickCapture.swift;
+			sourceTree = "<group>";
+		};
+		736669CADAAAC2C374BDB7F4 /* MailSettings.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = MailSettings.swift;
+			sourceTree = "<group>";
+		};
+		DD8605DC9C5495B0E9115F3E /* NativeComputerSignIn.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NativeComputerSignIn.swift;
+			sourceTree = "<group>";
+		};
+		D8D13D91023279BDFF7A67A0 /* NativeReminders.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NativeReminders.swift;
+			sourceTree = "<group>";
+		};
+		29F5BD81775AEF78A6F8DDA0 /* ChatTests.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ChatTests.swift;
+			sourceTree = "<group>";
+		};
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		00000000000000000000001E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
-			files = ();
+			files = (
+				730C28979310DDE69EAD3306 /* InFliteArgon2 in Frameworks */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		000000000000000000000026 /* Frameworks */ = {
@@ -343,7 +479,6 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000009 /* InFliteApp.swift */,
-				00000000000000000000000A /* BrowserSession.swift */,
 				00000000000000000000000B /* NavigationPolicy.swift */,
 				435B5E1AD585B1C5DE38E28D /* Native */,
 				000000000000000000000008 /* Assets.xcassets */,
@@ -357,6 +492,7 @@
 			isa = PBXGroup;
 			children = (
 				00000000000000000000000F /* NavigationPolicyTests.swift */,
+				29F5BD81775AEF78A6F8DDA0 /* ChatTests.swift */,
 			);
 			path = InFliteTests;
 			sourceTree = "<group>";
@@ -420,6 +556,19 @@
 				C191973C21317B2A6FF91F6B /* WeatherData.swift */,
 				B5C18668D8A18611E5CE69C5 /* WeatherRadar.swift */,
 				7BEEF85585D44C9B61D80C33 /* WeatherView.swift */,
+				3D6B9975B41E23BFCBA3BCB2 /* ChatService.swift */,
+				23C569600DE2FC11D2C154E3 /* ChatsView.swift */,
+				43797F1ACAF0027330B164F4 /* FitnessPlanning.swift */,
+				23F3CD821D10F5C128B22D21 /* MailComposer.swift */,
+				D84FC6336543F8797B1D3009 /* MailContent.swift */,
+				23B1F54AC0CEC22510F375C5 /* NativeAccount.swift */,
+				031B9B00C7D4F772E92590F3 /* NativeAccountSecurity.swift */,
+				47099FF4A4FE1C35D2242A82 /* NativeNotifications.swift */,
+				F3A6FB3207A7B5F074782EFB /* NativePublicPages.swift */,
+				07FC41F96946FCDE8EDCBC71 /* NativeQuickCapture.swift */,
+				736669CADAAAC2C374BDB7F4 /* MailSettings.swift */,
+				DD8605DC9C5495B0E9115F3E /* NativeComputerSignIn.swift */,
+				D8D13D91023279BDFF7A67A0 /* NativeReminders.swift */,
 			);
 			path = Native;
 			sourceTree = "<group>";
@@ -438,6 +587,9 @@
 			buildRules = ();
 			dependencies = ();
 			name = InFlite;
+			packageProductDependencies = (
+				20E5CBE4516EFAD79E983F67 /* InFliteArgon2 */,
+			);
 			productName = InFlite;
 			productReference = 000000000000000000000015 /* InFlite.app */;
 			productType = "com.apple.product-type.application";
@@ -509,6 +661,9 @@
 			);
 			mainGroup = 000000000000000000000002 /* Main group */;
 			productRefGroup = 000000000000000000000003 /* Products */;
+			packageReferences = (
+				C526EE2C994C0968D4020209 /* XCLocalSwiftPackageReference "Packages/InFliteCrypto" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -547,8 +702,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2AEB0A7925701FA9068E479E /* NativeReminders.swift in Sources */,
+				D9AE1606D5A6737F2B44A08B /* NativeComputerSignIn.swift in Sources */,
+				FF9A361191A26F8BB1005CC8 /* MailSettings.swift in Sources */,
 				00000000000000000000001A /* InFliteApp.swift in Sources */,
-				00000000000000000000001B /* BrowserSession.swift in Sources */,
 				00000000000000000000001C /* NavigationPolicy.swift in Sources */,
 				BEB69F9EE6A2412A1F950E3F /* ActivityFitnessView.swift in Sources */,
 				E037BA1723D15EBC2DB7AF84 /* ActivityMarketsView.swift in Sources */,
@@ -568,6 +725,16 @@
 				CB3269CEEAC54BA27C08F015 /* TodayScreen.swift in Sources */,
 				781E87EDD0E5C73EDD0FEDDD /* WeatherData.swift in Sources */,
 				8CAC308FED2D758504663B9C /* WeatherRadar.swift in Sources */,
+				85F2D51A7FD793D0EF4A9AC8 /* ChatService.swift in Sources */,
+				F2A5A1475F75957EB64ABFB9 /* ChatsView.swift in Sources */,
+				DDC20D83B9119B3C02FD1C9D /* FitnessPlanning.swift in Sources */,
+				D1B6ACCA0051117BC451F04A /* MailComposer.swift in Sources */,
+				5DB941A825526E35CE3125AB /* MailContent.swift in Sources */,
+				AA2443D2B4B98151D69C437F /* NativeAccount.swift in Sources */,
+				1008A11989D593E7B61A975F /* NativeAccountSecurity.swift in Sources */,
+				3C5B5BA46DF0865167A5E406 /* NativeNotifications.swift in Sources */,
+				40A90FD92BA7AE79E6CD8D4A /* NativePublicPages.swift in Sources */,
+				DFF070EEA4316ADF8ED9CE50 /* NativeQuickCapture.swift in Sources */,
 				9B7E9E81C0D4C99DA17A0F06 /* WeatherView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -576,6 +743,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C7B9B2F0E2A5173F647B639F /* ChatTests.swift in Sources */,
 				000000000000000000000024 /* NavigationPolicyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -767,6 +935,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+/* Begin XCLocalSwiftPackageReference section */
+		C526EE2C994C0968D4020209 /* XCLocalSwiftPackageReference "Packages/InFliteCrypto" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/InFliteCrypto;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		20E5CBE4516EFAD79E983F67 /* InFliteArgon2 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C526EE2C994C0968D4020209 /* XCLocalSwiftPackageReference "Packages/InFliteCrypto" */;
+			productName = InFliteArgon2;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 000000000000000000000001 /* Project object */;
 }

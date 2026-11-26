@@ -2,12 +2,14 @@ import Foundation
 import Security
 
 enum BackendOrigin: Sendable {
-    case inFlite, mail
+    case inFlite, mail, auth, account
 
     var host: String {
         switch self {
         case .inFlite: "inflite.ai"
         case .mail: "email.inflite.ai"
+        case .auth: "auth.inflite.ai"
+        case .account: "account.inflite.ai"
         }
     }
 }
@@ -92,7 +94,7 @@ actor BackendClient {
     private struct Credential: Codable {
         let token: String
         let expires: Date
-        let recentWriteUntil: Date
+        var recentWriteUntil: Date
 
         var cookieHeader: String {
             "__Secure-account=\(token)" + (recentWriteUntil > .now ? "; ifl_rw=1" : "")
@@ -127,16 +129,22 @@ actor BackendClient {
         if let transport {
             self.transport = transport
         } else {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.httpShouldSetCookies = false
-            configuration.httpCookieStorage = nil
-            configuration.urlCache = nil
-            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-            configuration.timeoutIntervalForRequest = 30
-            configuration.timeoutIntervalForResource = 45
-            let session = URLSession(configuration: configuration, delegate: BackendNoRedirect(), delegateQueue: nil)
+            func makeSession(requestTimeout: TimeInterval, resourceTimeout: TimeInterval) -> URLSession {
+                let configuration = URLSessionConfiguration.ephemeral
+                configuration.httpShouldSetCookies = false
+                configuration.httpCookieStorage = nil
+                configuration.urlCache = nil
+                configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+                configuration.timeoutIntervalForRequest = requestTimeout
+                configuration.timeoutIntervalForResource = resourceTimeout
+                return URLSession(configuration: configuration, delegate: BackendNoRedirect(), delegateQueue: nil)
+            }
+            let session = makeSession(requestTimeout: 30, resourceTimeout: 45)
+            let routeSession = makeSession(requestTimeout: 90, resourceTimeout: 95)
             self.transport = { request in
-                let (data, response) = try await session.data(for: request)
+                let generatesRoute = request.url?.host == BackendOrigin.inFlite.host &&
+                    request.url?.path == "/api/fitness/routes/generate"
+                let (data, response) = try await (generatesRoute ? routeSession : session).data(for: request)
                 guard let http = response as? HTTPURLResponse else { throw BackendError.invalidResponse }
                 return (data, http)
             }
@@ -228,9 +236,12 @@ actor BackendClient {
         query: [URLQueryItem] = [],
         body: Data? = nil,
         owner: String? = nil,
-        origin: BackendOrigin = .inFlite
+        origin: BackendOrigin = .inFlite,
+        contentType: String = "application/json"
     ) async throws -> Response {
-        let payload = try await data(path: path, method: method, query: query, body: body, owner: owner, origin: origin)
+        let payload = try await data(
+            path: path, method: method, query: query, body: body, owner: owner, origin: origin, contentType: contentType
+        )
         return try decode(response, from: payload)
     }
 
@@ -240,17 +251,25 @@ actor BackendClient {
         query: [URLQueryItem] = [],
         body: Data? = nil,
         owner: String? = nil,
-        origin: BackendOrigin = .inFlite
+        origin: BackendOrigin = .inFlite,
+        contentType: String = "application/json"
     ) async throws -> Data {
         try prepareSessionRead()
         guard let credential, let currentOwner else { throw BackendError.authenticationRequired }
         guard owner == nil || owner == currentOwner else { throw BackendError.accountChanged }
         let epoch = generation
         do {
-            let (data, _) = try await fetch(
+            let (data, response) = try await fetch(
                 path: path, method: method, query: query, body: body,
-                credential: credential, owner: currentOwner, origin: origin
+                credential: credential, owner: currentOwner, origin: origin, contentType: contentType
             )
+            if origin.host == BackendOrigin.account.host && path == "/api/account/reauth" && method == "POST",
+               let url = response.url, let header = response.value(forHTTPHeaderField: "Set-Cookie"),
+               HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": header], for: url).contains(where: {
+                   $0.name == "ifl_rw" && $0.value == "1" && $0.isSecure && $0.path == "/"
+               }) {
+                self.credential?.recentWriteUntil = Date().addingTimeInterval(60)
+            }
             return data
         } catch BackendError.http(401, _) where path == "/api/today" && origin.host == "inflite.ai" {
             guard generation == epoch else { throw BackendError.accountChanged }
@@ -258,6 +277,41 @@ actor BackendClient {
             try clearCredential()
             throw BackendError.authenticationRequired
         }
+    }
+
+    func chatData(
+        path: String, method: String = "GET", query: [URLQueryItem] = [],
+        body: Data? = nil, owner: String, bearer: String? = nil
+    ) async throws -> Data {
+        try prepareSessionRead()
+        guard let credential, let currentOwner else { throw BackendError.authenticationRequired }
+        guard owner == currentOwner else { throw BackendError.accountChanged }
+        if path == "handback" {
+            guard method == "POST", bearer == nil else { throw BackendError.invalidRequest }
+            // With the source cookie, Chat keeps its site hash on the new bearer
+            // row. Native sign-out then revokes both credentials in one operation.
+            transitioning = true
+            generation &+= 1
+            defer { transitioning = false }
+            let (payload, response) = try await fetch(
+                path: "/api/pigeon/handback", method: method, body: body, credential: credential, owner: owner
+            )
+            if response.value(forHTTPHeaderField: "Set-Cookie")?.contains("__Secure-account=") == true {
+                if let token = try? decode(BackendChatHandbackBody.self, from: payload).token,
+                   token.range(of: "^[A-Za-z0-9_-]{20,100}$", options: .regularExpression) != nil {
+                    _ = try? await fetch(path: "/api/pigeon/logout", method: "POST", bearer: token)
+                }
+                throw BackendError.accountChanged
+            }
+            return payload
+        }
+        guard bearer?.range(of: "^[A-Za-z0-9_-]{20,100}$", options: .regularExpression) != nil else {
+            throw BackendError.invalidRequest
+        }
+        let (payload, _) = try await fetch(
+            path: "/api/pigeon/\(path)", method: method, query: query, body: body, owner: owner, bearer: bearer
+        )
+        return payload
     }
 
     private func prepareSessionRead() throws {
@@ -309,7 +363,9 @@ actor BackendClient {
         body: Data? = nil,
         credential: Credential? = nil,
         owner: String? = nil,
-        origin: BackendOrigin = .inFlite
+        origin: BackendOrigin = .inFlite,
+        contentType: String = "application/json",
+        bearer: String? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         guard path.hasPrefix("/api/"), !path.contains("\\"),
               !path.split(separator: "/").contains(where: { $0 == ".." || $0 == "." }) else {
@@ -322,7 +378,8 @@ actor BackendClient {
         parts.path = path
         if !query.isEmpty { parts.queryItems = query }
         guard let url = parts.url else { throw BackendError.invalidRequest }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        let generatesRoute = origin.host == BackendOrigin.inFlite.host && path == "/api/fitness/routes/generate"
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: generatesRoute ? 90 : 30)
         request.httpMethod = method
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -339,8 +396,9 @@ actor BackendClient {
             }
         }
         if let credential { request.setValue(credential.cookieHeader, forHTTPHeaderField: "Cookie") }
+        if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         if method != "GET" && method != "HEAD" {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
             request.httpBody = body ?? Data("{}".utf8)
         }
 
@@ -372,6 +430,10 @@ private struct BackendLogoutBody: Decodable {
 private struct BackendMailHandbackBody: Decodable {
     let access: String
     let user: BackendUser?
+}
+
+private struct BackendChatHandbackBody: Decodable {
+    let token: String
 }
 
 private final class BackendNoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
