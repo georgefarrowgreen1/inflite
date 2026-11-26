@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   simulator:
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -75,8 +75,6 @@ jobs:
           app="$RUNNER_TEMP/inflite-ios/Build/Products/Release-iphonesimulator/InFlite.app"
           xcrun simctl install "$SIMULATOR_ID" "$app"
           xcrun simctl launch "$SIMULATOR_ID" ai.inflite.ios
-          xcrun simctl terminate "$SIMULATOR_ID" ai.inflite.ios
-          xcrun simctl uninstall "$SIMULATOR_ID" ai.inflite.ios
       - name: Build and test on iPhone Simulator
         timeout-minutes: 12
         env:
