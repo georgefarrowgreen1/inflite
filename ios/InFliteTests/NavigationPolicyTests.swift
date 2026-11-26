@@ -10,7 +10,7 @@ final class NavigationPolicyTests: XCTestCase {
             .fitness: "/fitness/", .mail: "/mail/", .chats: "/chats/",
             .calendar: "/calendar/", .notes: "/notes/", .people: "/people/",
             .status: "/status/", .account: "/settings/account/", .files: "/#files",
-            .notifications: "/notifications/", .about: "/about/", .privacy: "/privacy/",
+            .notifications: "/notifications/", .reminders: "/reminders/", .about: "/about/", .privacy: "/privacy/",
             .support: "/contact/", .storage: "/storage/", .terms: "/terms/"
         ]
         XCTAssertEqual(Set(paths.keys), Set(InFliteRoute.allCases))
@@ -32,7 +32,6 @@ final class NavigationPolicyTests: XCTestCase {
             XCTAssertNil(InFliteRoute(link: URL(string: url)!), url)
         }
     }
-
 }
 
 final class BackendAuthenticationTests: XCTestCase {
