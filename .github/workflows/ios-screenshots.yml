@@ -1,0 +1,62 @@
+name: InFlite iPhone screenshots
+
+on:
+  push:
+    branches: [codex/ios-beta-screenshots]
+    paths: [.github/workflows/ios-screenshots.yml]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - name: Download the tested InFlite 0.1.0 simulator build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 45724716273 --repo "$GITHUB_REPOSITORY" \
+            --name InFlite-0.1.0-Simulator --dir "$RUNNER_TEMP/inflite-build"
+          ditto -x -k "$RUNNER_TEMP/inflite-build/InFlite-Simulator.zip" "$RUNNER_TEMP/inflite-build"
+          /usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$RUNNER_TEMP/inflite-build/InFlite.app/Info.plist"
+      - name: Boot the iPhone 16 Pro simulator
+        id: phone
+        timeout-minutes: 7
+        run: |
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/iphones.json"
+          device="$(python3 - "$RUNNER_TEMP/iphones.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as devices:
+              runtimes = json.load(devices)["devices"]
+          phones = runtimes["com.apple.CoreSimulator.SimRuntime.iOS-18-5"]
+          print(next(phone["udid"] for phone in phones if phone["name"] == "iPhone 16 Pro"))
+          PY
+          )"
+          echo "id=$device" >> "$GITHUB_OUTPUT"
+          xcrun simctl bootstatus "$device" -b
+      - name: Capture the InFlite sign-in screen in light and dark mode
+        env:
+          DEVICE: ${{ steps.phone.outputs.id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/inflite-screenshots"
+          xcrun simctl status_bar "$DEVICE" override --time '9:41' \
+            --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 \
+            --batteryState unplugged --batteryLevel 100
+          xcrun simctl install "$DEVICE" "$RUNNER_TEMP/inflite-build/InFlite.app"
+          for appearance in light dark; do
+            xcrun simctl ui "$DEVICE" appearance "$appearance"
+            xcrun simctl launch --terminate-running-process "$DEVICE" ai.inflite.ios
+            sleep 15
+            xcrun simctl io "$DEVICE" screenshot "$RUNNER_TEMP/inflite-screenshots/sign-in-$appearance.png"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: InFlite-0.1.0-iPhone-screenshots
+          path: ${{ runner.temp }}/inflite-screenshots
+          if-no-files-found: error
+          retention-days: 14
