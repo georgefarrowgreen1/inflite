@@ -34,7 +34,6 @@ struct BackendToday: Codable, Sendable {
     let tops: [String: BackendTodayTop]?
     let upcoming: [BackendTodayEvent]?
     let waiting: [BackendTodayEvent]?
-    let apps: [String: String]?
 }
 
 struct BackendTodayCards: Codable, Sendable {

@@ -26,7 +26,7 @@ struct NativeRootView: View {
 
     var body: some View {
         ZStack {
-            NativeWallpaper()
+            NativeWallpaper(animate: !preview)
             switch phase {
             case .opening:
                 ProgressView("Opening InFlite")
@@ -179,10 +179,15 @@ private struct NativeWorkspace: View {
     let onSessionExpired: () -> Void
     @State private var appsOpen = false
     @State private var quickCapture = false
+    @State private var appQuery = ""
     @State private var visited: Set<InFliteRoute> = [.today]
 
     private let pins: [InFliteRoute] = [.today, .weather, .markets, .fitness, .mail]
     private let apps: [InFliteRoute] = [.calendar, .notes, .people, .files, .fitness, .weather, .markets, .chats, .mail, .status, .account]
+    private var visibleApps: [InFliteRoute] {
+        let query = appQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty ? apps : apps.filter { $0.title.localizedCaseInsensitiveContains(query) }
+    }
 
     var body: some View {
         ZStack {
@@ -198,7 +203,7 @@ private struct NativeWorkspace: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { dock }
         .onChange(of: destination, initial: true) { _, route in visited.insert(route) }
-        .sheet(isPresented: $appsOpen) { appLibrary }
+        .sheet(isPresented: $appsOpen, onDismiss: { appQuery = "" }) { appLibrary }
         .confirmationDialog("Quick Capture", isPresented: $quickCapture, titleVisibility: .visible) {
             Button("Notes") { destination = .notes }
             Button("Calendar") { destination = .calendar }
@@ -233,6 +238,7 @@ private struct NativeWorkspace: View {
         .frame(maxWidth: 540)
         .padding(.horizontal, 16)
         .padding(.bottom, 5)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("native-dock")
     }
 
@@ -254,7 +260,7 @@ private struct NativeWorkspace: View {
         NavigationStack {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 12)], spacing: 21) {
-                    ForEach(apps, id: \.rawValue) { app in
+                    ForEach(visibleApps, id: \.rawValue) { app in
                         Button {
                             destination = app
                             appsOpen = false
@@ -271,7 +277,11 @@ private struct NativeWorkspace: View {
                     }
                 }
                 .padding(22)
+                if visibleApps.isEmpty {
+                    ContentUnavailableView.search(text: appQuery)
+                }
             }
+            .searchable(text: $appQuery, prompt: "Search apps")
             .navigationTitle("Your apps")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -296,19 +306,23 @@ private struct NativeWorkspace: View {
             }
             .toolbar(.hidden, for: .navigationBar)
         case .weather:
-            NativeWeatherView()
+            NativeWeatherView(owner: user.id)
         case .markets:
             ActivityMarketsView(owner: user.id)
         case .fitness:
             ActivityFitnessView(owner: user.id)
         case .mail:
-            NativeMailView(owner: user.id)
+            NativeMailView(owner: user.id, active: destination == .mail)
         case .calendar:
             NativeCalendarView(owner: user.id)
         case .notes:
             NativeNotesView(owner: user.id)
         case .files:
             NativeFilesView(owner: user.id)
+        case .people:
+            NativePeopleView(owner: user.id)
+        case .status:
+            ActivityStatusView()
         case .account:
             settings
         default:

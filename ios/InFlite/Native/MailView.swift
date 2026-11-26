@@ -4,16 +4,25 @@ import WebKit
 @MainActor
 struct NativeMailView: View {
     let owner: String
+    var active = true
 
     private struct Selection: Equatable {
         var lens: MailLens = .people
         var search = ""
     }
 
+    private struct LoadRequest: Equatable {
+        let owner: String
+        let active: Bool
+        let selection: Selection
+        let revision: Int
+    }
+
     private enum Sheet: Identifiable {
         case conversation(MailConversation)
         case draft(MailBrief)
         case compose
+        case verify
         case web
 
         var id: String {
@@ -21,6 +30,7 @@ struct NativeMailView: View {
             case .conversation(let thread): "thread:\(thread.id)"
             case .draft(let message): "draft:\(message.id)"
             case .compose: "compose"
+            case .verify: "verify"
             case .web: "web"
             }
         }
@@ -39,8 +49,10 @@ struct NativeMailView: View {
     @State private var sheet: Sheet?
     @State private var reload = 0
     @State private var generation = UUID()
+    @Environment(\.scenePhase) private var scenePhase
 
     private var service: MailService { MailService(owner: owner) }
+    private var visible: Bool { active && scenePhase == .active }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -57,9 +69,14 @@ struct NativeMailView: View {
             mailbox
         }
         .padding(.horizontal, 16)
-        .task(id: owner) { await load() }
-        .task(id: selection) { await load() }
-        .task(id: reload) { if reload > 0 { await load() } }
+        .toolbar(.hidden, for: .navigationBar)
+        .task(id: LoadRequest(owner: owner, active: visible, selection: selection, revision: reload)) {
+            if visible {
+                await load()
+            } else {
+                generation = UUID()
+            }
+        }
         .sheet(item: $sheet, onDismiss: { reload += 1 }) { sheet in
             switch sheet {
             case .conversation(let thread):
@@ -68,6 +85,10 @@ struct NativeMailView: View {
                 MailReader(service: service, subject: draft.subject, draft: draft)
             case .compose:
                 MailComposer(service: service)
+            case .verify:
+                BackendSignInView(client: .shared, purpose: .mail(owner: owner)) { _ in
+                    self.sheet = nil
+                }
             case .web:
                 MailWebView()
             }
@@ -105,19 +126,33 @@ struct NativeMailView: View {
     }
 
     private var searchField: some View {
-        HStack {
-            TextField("Search Mail", text: $searchText)
-                .submitLabel(.search)
-                .onSubmit(runSearch)
-            Button("Search", action: runSearch)
-                .font(.subheadline.weight(.semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Search Mail", text: $searchText)
+                    .submitLabel(.search)
+                    .onSubmit(runSearch)
+                Button("Search", action: runSearch)
+                    .font(.subheadline.weight(.semibold))
+                    .disabled(searchQuery.utf16.count > 300)
+            }
+            if searchQuery.utf16.count > 300 {
+                Text("Use up to 300 characters.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(12)
         .background(.regularMaterial, in: .rect(cornerRadius: 18))
+        .privacySensitive()
+    }
+
+    private var searchQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func runSearch() {
-        selection.search = String(searchText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))
+        guard searchQuery.utf16.count <= 300 else { return }
+        selection.search = searchQuery
     }
 
     @ViewBuilder
@@ -131,8 +166,11 @@ struct NativeMailView: View {
             } description: {
                 Text(access.message)
             } actions: {
-                if access != .notadmin {
+                if access == .passkey {
                     Button("Open Mail") { sheet = .web }
+                        .buttonStyle(.borderedProminent)
+                } else if access == .reauth || access == .signin {
+                    Button("Verify identity") { sheet = .verify }
                         .buttonStyle(.borderedProminent)
                 }
             }
@@ -152,7 +190,6 @@ struct NativeMailView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 44)
             }
-            .defaultScrollAnchor(.top)
             .refreshable { await load() }
             .frame(maxHeight: .infinity)
         } else {
@@ -181,7 +218,12 @@ struct NativeMailView: View {
                     }
                     if let problem { Text(problem).font(.footnote).foregroundStyle(.secondary) }
                     if hasMore {
-                        if loadingMore {
+                        if selection.lens == .later, selection.search.isEmpty {
+                            // Later is sorted by wake time, while the backend's list cursor is a message date.
+                            Button("See more in Mail") { sheet = .web }
+                                .buttonStyle(.bordered)
+                                .padding(8)
+                        } else if loadingMore {
                             ProgressView()
                                 .padding(12)
                         } else {
@@ -374,7 +416,7 @@ private struct MailReader: View {
                         }
                         .buttonStyle(.bordered)
                     }
-                    Button(draft == nil ? "Open rich message in Mail" : "Edit draft in Mail") { showingWeb = true }
+                    Button("Open in Mail") { showingWeb = true }
                         .buttonStyle(.bordered)
                 }
                 .padding(18)
@@ -481,6 +523,7 @@ private struct MailReader: View {
             try Task.checkCancellation()
             guard selectedID == id else { return }
             message = content
+            loadingMessage = false
             if let conversation, conversation.unread > 0, !markedRead {
                 markedRead = true
                 try? await service.markRead(conversation.id)
@@ -592,6 +635,10 @@ private struct MailComposer: View {
                 try await service.send(draft: draftID, key: sendKey)
             }
             dismiss()
+        } catch let BackendError.http(status, message) where sendPending && [400, 413].contains(status) {
+            sendPending = false
+            sendKey = UUID().uuidString
+            issue = message ?? "Check the recipients and message before sending again."
         } catch let error as MailServiceError {
             issue = error.localizedDescription
         } catch {
@@ -605,7 +652,7 @@ private struct MailComposer: View {
 @MainActor
 private struct MailWebView: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var browser = BrowserSession()
+    @StateObject private var browser = BrowserSession(persistent: false)
 
     var body: some View {
         NavigationStack {

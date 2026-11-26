@@ -50,9 +50,9 @@ final class BrowserSession: NSObject, ObservableObject {
     private let recoveryFixture = ProcessInfo.processInfo.arguments.contains("--ui-test-recovery")
     #endif
 
-    override init() {
+    init(persistent: Bool = true) {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+        configuration.websiteDataStore = persistent ? .default() : .nonPersistent()
         // Keep the production web apps' service-worker cache available inside the app.
         configuration.limitsNavigationsToAppBoundDomains = true
         configuration.allowsInlineMediaPlayback = true

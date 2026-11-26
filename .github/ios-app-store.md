@@ -23,7 +23,7 @@ Keep the signing files and private key in GitHub Secrets. On macOS, use `base64 
 
 ## Upload a build
 
-Push `ios-app-store-0.1.0-1` on the revision for version `0.1.0`, build `1`. A release tag uses the version and build number in `ios/Config/Beta.xcconfig`. The tag run checks the provisioning profile, signs the iPhone archive and uploads it to App Store Connect. Give each new upload a distinct build number for its version. [Apple’s build upload requirements](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)
+Push `ios-app-store-0.2.0-1` on the revision for version `0.2.0`, build `1`. A release tag uses the version and build number in `ios/Config/Beta.xcconfig`. The tag run checks the provisioning profile, signs the iPhone archive and uploads it to App Store Connect. Give each new upload a distinct build number for its version. [Apple’s build upload requirements](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)
 
 ## Prepare for App Review
 

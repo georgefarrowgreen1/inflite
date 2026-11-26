@@ -34,7 +34,6 @@ struct MailBrief: Decodable, Identifiable {
     let subject: String
     let snippet: String
     let date: Int64
-    let unread: Bool
     let hasAttachments: Bool
 }
 
@@ -46,7 +45,6 @@ struct MailConversation: Decodable, Identifiable {
     let date: Int64
     let sort: Int64
     let unread: Int
-    let count: Int
     let hasAttachments: Bool
 }
 
@@ -69,7 +67,6 @@ struct MailAttachment: Decodable, Identifiable {
 
 struct MailMessage: Decodable {
     let from: MailPerson
-    let subject: String
     let date: Int64
     let text: String
     let attachments: [MailAttachment]
@@ -165,6 +162,7 @@ struct MailService {
             )
         }
         var query = [URLQueryItem(name: "view", value: lens.view)]
+        if lens == .later { query.append(URLQueryItem(name: "limit", value: "100")) }
         if let category = lens.category { query.append(URLQueryItem(name: "category", value: category)) }
         if let before { query.append(URLQueryItem(name: "before", value: String(before))) }
         return try await request(MailPage.self, path: "/api/threads", query: query)

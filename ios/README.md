@@ -1,8 +1,8 @@
 # InFlite for iPhone
 
-Beta **0.2.0**, build **1**, targets iOS 17 and later. SwiftUI renders Today, Weather, Markets, Fitness, Mail, Notes, Calendar and Files using the existing InFlite services. The app uses InFlite’s hosted sign-in and keeps its session credential in the device Keychain.
+Beta **0.2.0**, build **1**, targets iOS 17 and later. SwiftUI renders Today, Weather, Markets, Fitness, Mail, Notes, Calendar, People, Files and Status using the existing InFlite services. The app uses InFlite’s hosted sign-in and keeps its session credential in the device Keychain.
 
-The app includes the Today summary and agenda, weather forecasts and warnings, market quotes and holdings, fitness plans and activities, Mail folders and plain-text messages, Notes and Calendar editing, and Files browsing and export. Mail preserves the existing account and recent verification requirements. Chats, People, full account management and Status open through their existing web screens. Advanced Mail features and detailed fitness planning remain available on the web.
+The app includes the Today summary and agenda, forecasts, warnings and radar, market quotes and holdings, fitness plans and activities, Mail folders and plain-text messages, Notes, Calendar and People editing, Files browsing and export, and live service status. Mail preserves the existing account and recent verification requirements. Chats, full account management, advanced Mail features and detailed fitness planning remain available on the web.
 
 ## Run on a Mac
 

@@ -42,6 +42,10 @@
 			isa = PBXBuildFile;
 			fileRef = 605504B1DDDDAE00B2B96B68 /* ActivityModels.swift */;
 		};
+		DB23875ED7ED275BBC55BA56 /* ActivityStatusView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 542AD490411D002108A5EEEE /* ActivityStatusView.swift */;
+		};
 		45B168A5BCA968DB0F0AAD9C /* AppShell.swift in Sources */ = {
 			isa = PBXBuildFile;
 			fileRef = 595CE7A1D875A87037987E54 /* AppShell.swift */;
@@ -73,6 +77,10 @@
 		7A1A9E2413E9C3C0EDAF3440 /* NativeStyle.swift in Sources */ = {
 			isa = PBXBuildFile;
 			fileRef = 38C372AD55D53BA39B8FB835 /* NativeStyle.swift */;
+		};
+		B4879511AB1E7B5D24F2C0F2 /* OrganisePeople.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 3FB9330A29EA7A9DE70B60F1 /* OrganisePeople.swift */;
 		};
 		905428A0CB83AA8C28C72863 /* OrganiseService.swift in Sources */ = {
 			isa = PBXBuildFile;
@@ -211,6 +219,12 @@
 			path = ActivityModels.swift;
 			sourceTree = "<group>";
 		};
+		542AD490411D002108A5EEEE /* ActivityStatusView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ActivityStatusView.swift;
+			sourceTree = "<group>";
+		};
 		595CE7A1D875A87037987E54 /* AppShell.swift */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -257,6 +271,12 @@
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = NativeStyle.swift;
+			sourceTree = "<group>";
+		};
+		3FB9330A29EA7A9DE70B60F1 /* OrganisePeople.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = OrganisePeople.swift;
 			sourceTree = "<group>";
 		};
 		D2F75035F978E619DDD76B95 /* OrganiseService.swift */ = {
@@ -384,6 +404,7 @@
 				C6182846F850996C54718602 /* ActivityFitnessView.swift */,
 				C58C73A407CBEB6C8A61A1B9 /* ActivityMarketsView.swift */,
 				605504B1DDDDAE00B2B96B68 /* ActivityModels.swift */,
+				542AD490411D002108A5EEEE /* ActivityStatusView.swift */,
 				595CE7A1D875A87037987E54 /* AppShell.swift */,
 				AEAE37C7CA1832939622E304 /* BackendClient.swift */,
 				C3A1AB2214865B5D70B5FEC7 /* BackendModels.swift */,
@@ -392,6 +413,7 @@
 				F2B89F0D9D2985400AAC8590 /* MailService.swift */,
 				761B75BB6DC17590083CA270 /* MailView.swift */,
 				38C372AD55D53BA39B8FB835 /* NativeStyle.swift */,
+				3FB9330A29EA7A9DE70B60F1 /* OrganisePeople.swift */,
 				D2F75035F978E619DDD76B95 /* OrganiseService.swift */,
 				DF4BC641D2D822AAB27AF6FB /* OrganiseViews.swift */,
 				43831F7F2D63620A0BEFEAC1 /* TodayScreen.swift */,
@@ -531,6 +553,7 @@
 				BEB69F9EE6A2412A1F950E3F /* ActivityFitnessView.swift in Sources */,
 				E037BA1723D15EBC2DB7AF84 /* ActivityMarketsView.swift in Sources */,
 				55F93E9382891E5D0E80AD06 /* ActivityModels.swift in Sources */,
+				DB23875ED7ED275BBC55BA56 /* ActivityStatusView.swift in Sources */,
 				45B168A5BCA968DB0F0AAD9C /* AppShell.swift in Sources */,
 				544812323565323E8CB16C27 /* BackendClient.swift in Sources */,
 				F7EE38C971DE2B885B7967B2 /* BackendModels.swift in Sources */,
@@ -539,6 +562,7 @@
 				172070DFABBD216F3EE2E6FC /* MailService.swift in Sources */,
 				1D3E28F5B4E10B7144A3722E /* MailView.swift in Sources */,
 				7A1A9E2413E9C3C0EDAF3440 /* NativeStyle.swift in Sources */,
+				B4879511AB1E7B5D24F2C0F2 /* OrganisePeople.swift in Sources */,
 				905428A0CB83AA8C28C72863 /* OrganiseService.swift in Sources */,
 				D885D8EA9E944E480FA9B7B7 /* OrganiseViews.swift in Sources */,
 				CB3269CEEAC54BA27C08F015 /* TodayScreen.swift in Sources */,

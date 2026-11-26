@@ -10,6 +10,7 @@ enum NativeStyle {
 }
 
 struct NativeWallpaper: View {
+    let animate: Bool
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drift = false
@@ -35,7 +36,7 @@ struct NativeWallpaper: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .onChange(of: reduceMotion, initial: true) { _, reduced in
-            if reduced {
+            if reduced || !animate {
                 drift = false
             } else {
                 withAnimation(.easeInOut(duration: 11).repeatForever(autoreverses: true)) { drift = true }

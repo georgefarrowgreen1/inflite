@@ -165,14 +165,10 @@ actor BackendClient {
 
     func signIn(code: String, verifier: String) async throws -> BackendSession {
         guard !transitioning, currentOwner == nil else { throw BackendError.accountChanged }
-        guard code.range(of: "^[A-Za-z0-9_-]{20,64}$", options: .regularExpression) != nil,
-              verifier.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil else {
-            throw BackendError.invalidRequest
-        }
+        let body = try handbackBody(code: code, verifier: verifier)
         transitioning = true
         generation &+= 1
         defer { transitioning = false }
-        let body = try JSONEncoder().encode(["code": code, "verifier": verifier])
         let (data, response) = try await fetch(path: "/api/auth/handback", method: "POST", body: body)
         let view = try decode(BackendSession.self, from: data)
         guard view.signedIn, view.user != nil, Credential(response: response) != nil else {
@@ -180,6 +176,36 @@ actor BackendClient {
         }
         try apply(view, response: response)
         return view
+    }
+
+    func reauthenticateMail(owner: String, code: String, verifier: String) async throws -> BackendSession {
+        try prepareSessionRead()
+        guard let credential, let currentOwner else { throw BackendError.authenticationRequired }
+        guard currentOwner == owner else { throw BackendError.accountChanged }
+        let body = try handbackBody(code: code, verifier: verifier)
+        transitioning = true
+        generation &+= 1
+        defer { transitioning = false }
+        let (data, response) = try await fetch(
+            path: "/api/auth/handback", method: "POST", body: body,
+            credential: credential, owner: owner, origin: .mail
+        )
+        let handback = try decode(BackendMailHandbackBody.self, from: data)
+        guard let user = handback.user, user.id == owner else { throw BackendError.accountChanged }
+        guard handback.access == "ok", Credential(response: response) != nil else {
+            throw BackendError.http(status: 403, message: "Mail needs a fresh sign-in on an account with Mail access.")
+        }
+        let view = BackendSession(signedIn: true, user: user, prefs: nil, apps: nil)
+        try apply(view, response: response)
+        return view
+    }
+
+    private func handbackBody(code: String, verifier: String) throws -> Data {
+        guard code.range(of: "^[A-Za-z0-9_-]{20,64}$", options: .regularExpression) != nil,
+              verifier.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil else {
+            throw BackendError.invalidRequest
+        }
+        return try JSONEncoder().encode(["code": code, "verifier": verifier])
     }
 
     func signOut() async throws {
@@ -308,6 +334,9 @@ actor BackendClient {
             if origin.host == "inflite.ai" && path.hasPrefix("/api/files/") {
                 request.setValue(owner, forHTTPHeaderField: "X-Inflite-Files-Owner")
             }
+            if origin.host == "inflite.ai" && path.hasPrefix("/api/fitness/routes/") {
+                request.setValue(owner, forHTTPHeaderField: "X-Inflite-Route-Owner")
+            }
         }
         if let credential { request.setValue(credential.cookieHeader, forHTTPHeaderField: "Cookie") }
         if method != "GET" && method != "HEAD" {
@@ -338,6 +367,11 @@ private struct BackendErrorBody: Decodable {
 
 private struct BackendLogoutBody: Decodable {
     let ok: Bool
+}
+
+private struct BackendMailHandbackBody: Decodable {
+    let access: String
+    let user: BackendUser?
 }
 
 private final class BackendNoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {

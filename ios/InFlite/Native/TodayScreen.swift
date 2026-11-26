@@ -181,7 +181,7 @@ struct NativeTodayView: View {
                                 NativeAppIcon(route: route, size: 29)
                             }
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(event.title ?? event.name ?? title).font(.subheadline.weight(.semibold))
+                                Text(event.title ?? event.name ?? event.first ?? title).font(.subheadline.weight(.semibold))
                                 if let sub = event.sub { Text(sub).font(.caption).foregroundStyle(.secondary) }
                             }
                             Spacer(minLength: 0)
