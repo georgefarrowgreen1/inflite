@@ -44,9 +44,6 @@ jobs:
           DEVICE: ${{ steps.phone.outputs.id }}
         run: |
           mkdir -p "$RUNNER_TEMP/inflite-screenshots"
-          xcrun simctl status_bar "$DEVICE" override --time '9:41' \
-            --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 \
-            --batteryState unplugged --batteryLevel 100
           xcrun simctl install "$DEVICE" "$RUNNER_TEMP/inflite-build/InFlite.app"
           for appearance in light dark; do
             xcrun simctl ui "$DEVICE" appearance "$appearance"
@@ -55,6 +52,7 @@ jobs:
             xcrun simctl io "$DEVICE" screenshot "$RUNNER_TEMP/inflite-screenshots/sign-in-$appearance.png"
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: InFlite-0.1.0-iPhone-screenshots
           path: ${{ runner.temp }}/inflite-screenshots
