@@ -41,6 +41,9 @@ test('iOS association describes only supported routes on the canonical host', as
  const routes = association.applinks.details.at(0).components.map(component => component['/']);
  assert.ok(routes.includes('/chats/'));
  assert.ok(!routes.some(route => route.includes('atlas') || route.includes('*')));
+ assert.deepEqual(association.applinks.details.at(0).components.filter(component => component['/'] === '/auth/'), [
+   { '/': '/auth/', '#': 'reset=*' }, { '/': '/auth/', '#': 'qr=*' },
+ ]);
  assert.equal((await api.fetch(request(), {}, {})).status, 404);
  assert.equal((await api.fetch(request('os.inflite.ai'), env, {})).status, 404);
  assert.equal((await api.fetch(request('inflite.ai', 'POST'), env, {})).status, 405);

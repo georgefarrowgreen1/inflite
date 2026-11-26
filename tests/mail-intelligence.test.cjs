@@ -134,6 +134,15 @@ test('attachment search returns files from the named sender, and inbox follow-up
     const savedFetch = globalThis.fetch;
     try {
       globalThis.fetch = async () => Response.json({signedIn:true,admin:true,passkey:true,fresh:true,id:'fixture-owner',handle:'fixture'});
+      objects.set('body/5.json', JSON.stringify({ text: '', html: '<img src="cid:content-id">' }));
+      const inlineResponse = await worker.fetch(new Request('https://email.inflite.ai/api/messages/5', {
+        headers: { Origin: 'https://email.inflite.ai', Cookie: 'account=abcdefghijklmnopqrstuvwxyz' },
+      }), env, ctx);
+      assert.equal(inlineResponse.status, 200);
+      const inline = await inlineResponse.json();
+      assert.deepEqual(inline.attachments, []);
+      assert.deepEqual(inline.inlineAttachments.map(file => file.id), ['a5']);
+      assert.equal(inline.html, '<img src="/api/attachments/a5">');
       const post = async (path,body,expected = 200, origin = 'https://email.inflite.ai') => {
         const res = await worker.fetch(new Request('https://email.inflite.ai/api/'+path,{
           method:'POST',headers:{Origin:origin,Cookie:'account=abcdefghijklmnopqrstuvwxyz',

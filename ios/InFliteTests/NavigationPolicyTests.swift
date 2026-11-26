@@ -36,6 +36,28 @@ final class NavigationPolicyTests: XCTestCase {
 }
 
 final class BackendAuthenticationTests: XCTestCase {
+    func testIdentityLinksRequireTheCanonicalHostAndExactSecretFragment() throws {
+        let token = String(repeating: "a", count: 43)
+        for valid in ["https://inflite.ai/auth/#reset=", "https://auth.inflite.ai/#reset="] {
+            let url = try XCTUnwrap(URL(string: valid + token))
+            XCTAssertNotNil(NativePasswordResetLink(url: url))
+        }
+        for invalid in [
+            "http://inflite.ai/auth/#reset=",
+            "https://inflite.ai.example.net/auth/#reset=",
+            "https://auth.inflite.ai:8080/#reset=",
+            "https://anyone@auth.inflite.ai/#reset=",
+            "https://auth.inflite.ai/unrelated/#reset=",
+            "https://inflite.ai/auth/?reset=",
+            "https://inflite.ai/auth/#qr="
+        ] {
+            let url = try XCTUnwrap(URL(string: invalid + token))
+            XCTAssertNil(NativePasswordResetLink(url: url), invalid)
+        }
+        let duplicate = try XCTUnwrap(URL(string: "https://inflite.ai/auth/#reset=\(token)&reset=\(token)"))
+        XCTAssertNil(NativePasswordResetLink(url: duplicate))
+    }
+
     func testSignInBindsTheOneTimeCodeToAPrivateVerifier() throws {
         let challenge = try BackendHandback.start()
         let digest = Data(SHA256.hash(data: Data(challenge.verifier.utf8)))
@@ -61,6 +83,18 @@ final class BackendAuthenticationTests: XCTestCase {
         XCTAssertEqual(current.lockKey.base64EncodedString(), "7JSRoejlteZnkdZvVSmGtm39B94b1sp9eG8fscpAIjI=")
         XCTAssertEqual(legacy.proof, "Z0RZsc1sRuwvC5N9fAF7iRM26zuyvXaHxn4MF5x_r-8")
         XCTAssertEqual(legacy.lockKey.base64EncodedString(), "wYqvkYOTqr1Ufl1+O6R3nbLGwW88ECWs/tiUNjRkJoY=")
+    }
+
+    func testPasswordResetKeyProofMatchesTheWebClient() throws {
+        let user = try P256.KeyAgreement.PrivateKey(rawRepresentation: Data(repeating: 0, count: 31) + Data([1]))
+        let service = try P256.KeyAgreement.PrivateKey(rawRepresentation: Data(repeating: 0, count: 31) + Data([2]))
+        let proof = try NativeResetVault.proof(
+            key: user,
+            server: NativeResetPublicKey(service.publicKey),
+            token: String(repeating: "a", count: 43)
+        )
+        // Computed by the production E2E.keyProof implementation.
+        XCTAssertEqual(proof, "XrU60De8nKVYuuPWntN1EvdwWP-3DFuuwsUxBZX7PFU")
     }
 
     func testHandbackPersistsTheSessionAndSignOutErasesIt() async throws {

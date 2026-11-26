@@ -39,6 +39,13 @@ struct NativeComputerSignInView: View {
     @State private var completion: String?
     @State private var issue: String?
 
+    init(owner: String, initialCode: String? = nil) {
+        self.owner = owner
+        if let initialCode, BackendIdentityLink.isSecret(initialCode, length: 32) {
+            _code = State(initialValue: initialCode)
+        }
+    }
+
     private var service: NativeAccountService { NativeAccountService(owner: owner) }
 
     var body: some View {
@@ -139,7 +146,7 @@ struct NativeComputerSignInView: View {
         } header: {
             Text(request.far == nil ? "Tap the number on the computer" : "Type the number on the computer")
         } footer: {
-            Text("Approve only if the computer you’re using shows InFlite in its address bar and you opened the sign-in request yourself.")
+            Text("Approve only if you opened the request yourself and the computer’s address bar shows inflite.ai/auth or auth.inflite.ai.")
         }
     }
 

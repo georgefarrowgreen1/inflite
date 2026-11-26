@@ -1,8 +1,10 @@
 # InFlite for iPhone
 
-Beta **0.2.0**, build **1**, targets iOS 17 and later. SwiftUI renders Today, Weather, Markets, Fitness, Mail, Notes, Calendar, People, Files and Status using the existing InFlite services. The app uses InFlite’s hosted sign-in and keeps its session credential in the device Keychain.
+Beta **0.2.0**, build **2**, targets iOS 17 and later. SwiftUI renders the InFlite workspace and its apps using the existing InFlite services. Native authentication exchanges a one-time code for an account session stored in the device Keychain.
 
-The app includes the Today summary and agenda, forecasts, warnings and radar, market quotes and holdings, fitness plans and activities, Mail folders and plain-text messages, Notes, Calendar and People editing, Files browsing and export, and live service status. Mail preserves the existing account and recent verification requirements. Chats, full account management, advanced Mail features and detailed fitness planning remain available on the web.
+The app includes Today, Weather, Markets, Fitness, Mail, Chats, Notes, Calendar, People, Files and Status. The workspace also includes native Quick Capture, Reminders, Settings, device notification history, About, Contact and legal pages. Native Mail preserves its existing account and verification requirements and renders message text and links with iOS attachment previews. Chats uses the existing encrypted conversation protocol. Fitness route planning uses MapKit and the existing route service.
+
+Some advanced web workflows have no equivalent in this beta. These include full HTML Mail layout, specialized Mail tools and advanced Fitness training-plan editing. Atlas has no iPhone entry. The notification inbox reads delivered device notifications. Live native delivery needs an APNs provider and device registration.
 
 ## Run on a Mac
 
@@ -14,4 +16,6 @@ For route testing, use a supported link such as `inflite://weather` or `inflite:
 
 Set `DEVELOPMENT_TEAM` in `Config/Signing.local.xcconfig` to the Apple Developer team that owns the app’s bundle identifier. Select the iPhone as the Xcode run destination.
 
-Passkeys and HTTPS app links need the Associated Domains capability, a provisioning profile that includes it, and matching `apple-app-site-association` files on the relevant live domains. Once those are set up, set `CODE_SIGN_ENTITLEMENTS = InFlite/InFlite.entitlements` in the local config and verify the flows on a signed device. The entitlements include the current `inflite.ai` passkey domain and `georgefarrowgreen.com` for older passkeys. The simulator package is for simulator testing. TestFlight and native push delivery need device signing and Apple Developer configuration.
+Passkeys and HTTPS app links need the Associated Domains capability, a matching provisioning profile, and live `apple-app-site-association` documents. The InFlite Worker serves its association on `inflite.ai` when `IOS_APPLICATION_IDENTIFIER` is set to the profile’s full application identifier, such as `EXAMPLE123.ai.inflite.ios`. The older passkey domain `georgefarrowgreen.com` needs its own association. Set `CODE_SIGN_ENTITLEMENTS = InFlite/InFlite.entitlements` in the local signing configuration. Verify passkeys, password recovery with a passkey, and Universal Links on a signed iPhone.
+
+Password reset and computer sign-in links can also be pasted into their native screens. Mail’s additive Later pagination and inline attachment metadata require the updated Mail Worker. The GitHub Actions simulator package and unsigned iPhone archive are for verification. TestFlight needs Apple distribution signing and App Store Connect configuration.

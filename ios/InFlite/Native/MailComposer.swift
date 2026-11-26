@@ -245,9 +245,9 @@ struct MailComposer: View {
         defer { busy = false }
         do {
             if !sendPending {
-                let to = recipients(to)
-                let cc = recipients(cc)
-                let bcc = recipients(bcc)
+                let to = recipients(self.to)
+                let cc = recipients(self.cc)
+                let bcc = recipients(self.bcc)
                 if thenSend {
                     let all = to + cc + bcc
                     guard (1...50).contains(all.count), all.allSatisfy({ entry in

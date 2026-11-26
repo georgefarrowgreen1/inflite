@@ -33,13 +33,17 @@ struct BackendHandback: Sendable {
     }
 
     static func start() throws -> BackendHandback {
-        var bytes = Data(count: 32)
+        BackendHandback(verifier: try randomBytes().authenticationBase64URL)
+    }
+
+    static func randomBytes(count: Int = 32) throws -> Data {
+        var bytes = Data(count: count)
         let status = bytes.withUnsafeMutableBytes { buffer in
-            SecRandomCopyBytes(kSecRandomDefault, buffer.count, buffer.baseAddress!)
+            guard let address = buffer.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, buffer.count, address)
         }
         guard status == errSecSuccess else { throw BackendError.signInUnavailable }
-
-        return BackendHandback(verifier: bytes.authenticationBase64URL)
+        return bytes
     }
 }
 
@@ -56,9 +60,11 @@ enum BackendIdentityLink {
         default: return nil
         }
         let secret = String(fragment.dropFirst(key.count + 1))
-        guard secret.count == length,
-              secret.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil else { return nil }
-        return secret
+        return isSecret(secret, length: length) ? secret : nil
+    }
+
+    static func isSecret(_ secret: String, length: Int) -> Bool {
+        secret.count == length && secret.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil
     }
 }
 
@@ -68,6 +74,10 @@ struct BackendPasswordMaterial: Sendable {
 }
 
 enum BackendPassword {
+    static func newSalt() throws -> String {
+        "a2:" + (try BackendHandback.randomBytes(count: 16)).authenticationBase64URL
+    }
+
     // The account server stores the salt and only verifies the second half of the
     // derived material. Chat uses the first half on-device to open its key vault.
     static func derive(_ password: String, salt: String) async throws -> BackendPasswordMaterial {
@@ -189,19 +199,19 @@ final class NativePasskeyController: NSObject, ASAuthorizationControllerDelegate
     }
 }
 
-private struct IdentityAccount: Decodable {
+fileprivate struct IdentityAccount: Decodable {
     let signedIn: Bool
     let id: String?
     let deleting: Bool?
     let deleteAt: Double?
 }
 
-private struct IdentityAuthentication {
-    let account: IdentityAccount
-    let sessionCookie: String
+struct IdentityAuthentication {
+    fileprivate let account: IdentityAccount
+    fileprivate let sessionCookie: String
 }
 
-private struct BackendIdentityService {
+struct BackendIdentityService {
     private enum Endpoint: String {
         case salt = "signin/salt"
         case password = "signin/password"
@@ -209,6 +219,8 @@ private struct BackendIdentityService {
         case passkey = "signin/passkey"
         case handback
         case resetRequest = "reset/request"
+        case resetCheck = "reset/check"
+        case resetComplete = "reset/complete"
         case keepAccount = "delete/cancel"
     }
 
@@ -283,7 +295,7 @@ private struct BackendIdentityService {
     }
 
     func keepAccount(_ authentication: IdentityAuthentication) async throws -> IdentityAuthentication {
-        let (account, _) = try await request(IdentityAccount.self, at: .keepAccount, parameters: [:], cookie: authentication.sessionCookie)
+        let (account, _) = try await request(IdentityAccount.self, at: .keepAccount, parameters: [String: String](), cookie: authentication.sessionCookie)
         guard account.signedIn, account.id == authentication.account.id, account.deleting != true else {
             throw BackendError.invalidResponse
         }
@@ -295,7 +307,16 @@ private struct BackendIdentityService {
         guard !reply.message.isEmpty else { throw BackendError.invalidResponse }
     }
 
-    private func authenticate(at endpoint: Endpoint, parameters: [String: String]) async throws -> IdentityAuthentication {
+    func checkPasswordReset(token: String) async throws -> NativePasswordResetDetails {
+        let (details, _) = try await request(NativePasswordResetDetails.self, at: .resetCheck, parameters: ["token": token])
+        return details
+    }
+
+    func completePasswordReset(_ submission: NativePasswordResetSubmission) async throws -> IdentityAuthentication {
+        try await authenticate(at: .resetComplete, parameters: submission)
+    }
+
+    private func authenticate(at endpoint: Endpoint, parameters: some Encodable) async throws -> IdentityAuthentication {
         let (account, response) = try await request(IdentityAccount.self, at: endpoint, parameters: parameters)
         guard account.signedIn, let id = account.id, !id.isEmpty, let url = response.url,
               let value = response.value(forHTTPHeaderField: "Set-Cookie") else { throw BackendError.invalidResponse }
@@ -312,7 +333,7 @@ private struct BackendIdentityService {
     private func request<Response: Decodable>(
         _ type: Response.Type,
         at endpoint: Endpoint,
-        parameters: [String: String],
+        parameters: some Encodable,
         cookie: String? = nil
     ) async throws -> (Response, HTTPURLResponse) {
         let url = URL(string: "\(Self.origin)/api/account/\(endpoint.rawValue)")!
@@ -364,6 +385,8 @@ struct BackendSignInView: View {
     @State private var pendingDeletion: IdentityAuthentication?
     @State private var resetting = false
     @State private var resetRequested = false
+    @State private var pastedResetLink = ""
+    @State private var resetLink: NativePasswordResetLink?
     @FocusState private var field: Field?
 
     private enum Field { case email, password }
@@ -408,6 +431,20 @@ struct BackendSignInView: View {
                     .disabled(working != nil)
                 }
             }
+        }
+        .sheet(item: $resetLink) { link in
+            NativePasswordResetView(
+                link: link,
+                client: resetClient,
+                onSignIn: { session in
+                    onComplete(session)
+                    dismiss()
+                },
+                onComplete: {
+                    resetting = false
+                    resetRequested = false
+                }
+            )
         }
         .interactiveDismissDisabled(working != nil)
         .onDisappear {
@@ -467,25 +504,52 @@ struct BackendSignInView: View {
     }
 
     private var resetSection: some View {
-        Section {
-            if resetRequested {
-                Label("Check your email", systemImage: "envelope.badge")
-            } else {
-                emailField
-                Button("Email reset link") {
-                    let address = emailAddress
-                    perform {
-                        try await identity.requestPasswordReset(email: address)
-                        resetRequested = true
+        Group {
+            Section {
+                if resetRequested {
+                    Label("Check your email", systemImage: "envelope.badge")
+                } else {
+                    emailField
+                    Button("Email reset link") {
+                        let address = emailAddress
+                        perform {
+                            try await identity.requestPasswordReset(email: address)
+                            resetRequested = true
+                        }
                     }
+                    .disabled(working != nil || emailAddress.isEmpty)
                 }
-                .disabled(working != nil || emailAddress.isEmpty)
+            } footer: {
+                Text(resetRequested
+                    ? "If this address has an InFlite account, we’ll send a link to reset its password."
+                    : "Enter the email address for your InFlite account.")
             }
-        } footer: {
-            Text(resetRequested
-                ? "If this address has an InFlite account, we’ll send a link to reset its password."
-                : "Enter the email address for your InFlite account.")
+            Section("Already have a reset link?") {
+                TextField("Reset link", text: $pastedResetLink)
+                    .textContentType(.URL)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                Button("Open reset link", action: openResetLink)
+                    .disabled(working != nil || pastedResetLink.isEmpty)
+            }
         }
+    }
+
+    private var resetClient: BackendClient? {
+        if case .inFlite = purpose { return client }
+        return nil
+    }
+
+    private func openResetLink() {
+        let text = pastedResetLink.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: text), let link = NativePasswordResetLink(url: url) else {
+            status = "Enter the link from your InFlite password reset email."
+            return
+        }
+        pastedResetLink = ""
+        status = nil
+        resetLink = link
     }
 
     private func deletionSection(_ authentication: IdentityAuthentication) -> some View {

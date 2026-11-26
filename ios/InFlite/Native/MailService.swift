@@ -41,7 +41,6 @@ struct MailBrief: Decodable, Identifiable {
     let snippet: String
     let date: Int64
     let hasAttachments: Bool
-    let folder: String?
 }
 
 struct MailConversation: Decodable, Identifiable {

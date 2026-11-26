@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 import UserNotifications
 
-struct NativeDeviceNotification: Codable, Identifiable {
+struct NativeDeviceNotification: Codable, Equatable, Identifiable {
     let id: String
     let app: String
     let title: String
@@ -20,12 +20,13 @@ struct NativeDeviceNotification: Codable, Identifiable {
 final class NativeNotificationStore: ObservableObject {
     static let shared = NativeNotificationStore()
 
-    private struct History: Codable {
+    private struct History: Codable, Equatable {
         var items: [NativeDeviceNotification] = []
         var cleared: [String: Date] = [:]
     }
 
     @Published private var histories: [String: History] = [:]
+    private var generations: [String: Int] = [:]
 
     func items(for owner: String) -> [NativeDeviceNotification] {
         histories[owner]?.items ?? []
@@ -38,8 +39,9 @@ final class NativeNotificationStore: ObservableObject {
     func refresh(owner: String) async {
         // Only accept a delivered notification explicitly addressed to this account.
         // A notification can still be present in Notification Center after sign-out.
+        let generation = generations[owner, default: 0]
         let delivered = await UNUserNotificationCenter.current().deliveredNotifications()
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, generations[owner, default: 0] == generation else { return }
         var history = history(for: owner)
         var byID = Dictionary(uniqueKeysWithValues: history.items.map { ($0.id, $0) })
         for notification in delivered {
@@ -93,10 +95,21 @@ final class NativeNotificationStore: ObservableObject {
         save(history, owner: owner)
     }
 
+    func forget(owner: String) async {
+        generations[owner, default: 0] += 1
+        histories.removeValue(forKey: owner)
+        try? FileManager.default.removeItem(at: file(for: owner))
+
+        let center = UNUserNotificationCenter.current()
+        let delivered = await center.deliveredNotifications()
+        let ids = delivered.filter { $0.request.content.userInfo["owner"] as? String == owner }
+            .map { $0.request.identifier }
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+
     private func history(for owner: String) -> History {
         if let stored = histories[owner] { return stored }
-        guard let url = file(for: owner),
-              let data = try? Data(contentsOf: url),
+        guard let data = try? Data(contentsOf: file(for: owner)),
               let history = try? JSONDecoder().decode(History.self, from: data) else { return History() }
         return history
     }
@@ -106,17 +119,22 @@ final class NativeNotificationStore: ObservableObject {
         var trimmed = history
         trimmed.items = Array(history.items.filter { $0.date >= cutoff }.sorted { $0.date > $1.date }.prefix(100))
         trimmed.cleared = history.cleared.filter { $0.value >= cutoff }
+        guard histories[owner] != trimmed else { return }
         histories[owner] = trimmed
-        guard let url = file(for: owner), let data = try? JSONEncoder().encode(trimmed) else { return }
+        var url = file(for: owner)
+        guard let data = try? JSONEncoder().encode(trimmed) else { return }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: url, options: [.atomic, .completeFileProtection])
+            var properties = URLResourceValues()
+            properties.isExcludedFromBackup = true
+            try url.setResourceValues(properties)
         } catch {
             // The inbox remains usable in memory when protected storage is unavailable.
         }
     }
 
-    private func file(for owner: String) -> URL? {
+    private func file(for owner: String) -> URL {
         let key = SHA256.hash(data: Data(owner.utf8)).map { String(format: "%02x", $0) }.joined()
         return URL.applicationSupportDirectory.appending(path: "InFlite/Notifications", directoryHint: .isDirectory)
             .appending(path: key + ".json", directoryHint: .notDirectory)

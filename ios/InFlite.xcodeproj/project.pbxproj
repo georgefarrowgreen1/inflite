@@ -162,6 +162,10 @@
 			isa = PBXBuildFile;
 			fileRef = 29F5BD81775AEF78A6F8DDA0 /* ChatTests.swift */;
 		};
+		6AF4676DF1BE48D6D63E71BC /* NativePasswordReset.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 8826D095122649B3DA660E94 /* NativePasswordReset.swift */;
+		};
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -449,6 +453,12 @@
 			path = ChatTests.swift;
 			sourceTree = "<group>";
 		};
+		8826D095122649B3DA660E94 /* NativePasswordReset.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NativePasswordReset.swift;
+			sourceTree = "<group>";
+		};
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -569,6 +579,7 @@
 				736669CADAAAC2C374BDB7F4 /* MailSettings.swift */,
 				DD8605DC9C5495B0E9115F3E /* NativeComputerSignIn.swift */,
 				D8D13D91023279BDFF7A67A0 /* NativeReminders.swift */,
+				8826D095122649B3DA660E94 /* NativePasswordReset.swift */,
 			);
 			path = Native;
 			sourceTree = "<group>";
@@ -702,6 +713,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6AF4676DF1BE48D6D63E71BC /* NativePasswordReset.swift in Sources */,
 				2AEB0A7925701FA9068E479E /* NativeReminders.swift in Sources */,
 				D9AE1606D5A6737F2B44A08B /* NativeComputerSignIn.swift in Sources */,
 				FF9A361191A26F8BB1005CC8 /* MailSettings.swift in Sources */,

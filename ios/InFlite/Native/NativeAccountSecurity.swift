@@ -166,7 +166,7 @@ struct NativeAccountSecurityView: View {
         .alert("Account deletion scheduled", isPresented: $deleted) {
             Button("Done") { onDeleted?() }
         } message: {
-            Text("Your account is scheduled for deletion in seven days. Use the link in your confirmation email to keep it.")
+            Text("Sign in again within seven days if you want to keep your account.")
         }
         .fileExporter(isPresented: $exporting, document: download, contentType: .json, defaultFilename: "InFlite account data") { result in
             if case .failure(let error) = result { issue = error.localizedDescription }

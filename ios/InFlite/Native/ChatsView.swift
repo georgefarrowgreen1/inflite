@@ -1,5 +1,6 @@
 import AVFoundation
 import ImageIO
+import PhotosUI
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -430,6 +431,12 @@ private struct ChatConversationView: View {
     @State private var issue: String?
     @State private var safety = false
     @State private var media: ChatMessage?
+    @State private var attachment: ChatDraftAttachment?
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var pickingPhoto = false
+    @State private var pickingFile = false
+    @State private var openingAttachment = false
+    @State private var viewOnce = true
     @State private var keyChanged: Bool
     @State private var delivery: Delivery
     @FocusState private var focused: Bool
@@ -443,6 +450,8 @@ private struct ChatConversationView: View {
         let id = UUID().uuidString.lowercased()
         let text: String
         let delivery: Delivery
+        let attachmentID: UUID?
+        let viewOnce: Bool
     }
 
     init(
@@ -515,6 +524,30 @@ private struct ChatConversationView: View {
         .sheet(item: $media) { message in
             ChatMediaView(service: service, thread: thread, message: message)
         }
+        .photosPicker(isPresented: $pickingPhoto, selection: $selectedPhoto, matching: .images,
+                      preferredItemEncoding: .compatible)
+        .task(id: selectedPhoto) {
+            guard let item = selectedPhoto else { return }
+            openingAttachment = true
+            defer { openingAttachment = false }
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else { throw ChatError.invalidMessage }
+                try Task.checkCancellation()
+                attachment = try ChatDraftAttachment(data: data)
+                viewOnce = true
+                issue = nil
+            } catch is CancellationError {
+            } catch {
+                issue = error.localizedDescription
+            }
+            selectedPhoto = nil
+        }
+        .fileImporter(isPresented: $pickingFile, allowedContentTypes: [.data]) { result in
+            switch result {
+            case .success(let url): openFile(url)
+            case .failure(let error): issue = error.localizedDescription
+            }
+        }
         .privacySensitive()
     }
 
@@ -525,7 +558,7 @@ private struct ChatConversationView: View {
                 Text(verbatim: message.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
-                if message.media != nil && message.wire.photo == 1 {
+                if message.media != nil && message.wire.photo == 1 && (!mine || message.wire.once != true) {
                     Button(attachmentTitle(message), systemImage: attachmentIcon(message)) { media = message }
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
@@ -550,7 +583,7 @@ private struct ChatConversationView: View {
     }
 
     private func attachmentTitle(_ message: ChatMessage) -> String {
-        if let file = message.media?.f { return file.n }
+        if let file = message.media?.f { return ChatDraftAttachment.safeName(file.n) }
         if message.voice { return "Play voice message" }
         return message.wire.once == true ? "Open once" : "Open photo"
     }
@@ -567,6 +600,22 @@ private struct ChatConversationView: View {
                     .font(.footnote.weight(.semibold))
             }
             if let issue { Text(issue).font(.footnote).foregroundStyle(.secondary) }
+            if let attachment {
+                HStack(spacing: 8) {
+                    Label(attachment.title, systemImage: attachment.file == nil ? "photo" : "doc")
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if attachment.file == nil {
+                        Toggle("View once", isOn: $viewOnce)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .accessibilityHint("The recipient can open the photo once.")
+                    }
+                    Button("Remove attachment", systemImage: "xmark.circle.fill") { self.attachment = nil }
+                        .labelStyle(.iconOnly)
+                }
+                .font(.caption)
+                .disabled(sending)
+            }
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
                     Picker("Delivery", selection: $delivery) {
@@ -580,6 +629,15 @@ private struct ChatConversationView: View {
                 .accessibilityLabel("Delivery")
                 .accessibilityValue(delivery.rawValue)
                 .disabled(sending)
+                Menu {
+                    Button("Choose photo", systemImage: "photo") { pickingPhoto = true }
+                    Button("Choose file", systemImage: "doc") { pickingFile = true }
+                } label: {
+                    if openingAttachment { ProgressView().frame(width: 36, height: 44) }
+                    else { Image(systemName: "plus.circle").font(.title2).frame(width: 36, height: 44) }
+                }
+                .accessibilityLabel("Attach a photo or file")
+                .disabled(sending || openingAttachment || keyChanged)
                 TextField("Message", text: $draft, axis: .vertical)
                     .lineLimit(1...5)
                     .focused($focused)
@@ -595,7 +653,8 @@ private struct ChatConversationView: View {
                     }
                 }
                 .accessibilityLabel("Send message")
-                .disabled(keyChanged || sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.utf16.count > 2_000)
+                .disabled(keyChanged || sending || openingAttachment || draft.utf16.count > 2_000 ||
+                          (attachment == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             }
         }
         .padding(10)
@@ -627,17 +686,23 @@ private struct ChatConversationView: View {
 
     private func send() {
         guard !sending, !keyChanged else { return }
-        let wanted = SendAttempt(text: draft, delivery: delivery)
-        let request = attempt.flatMap { $0.text == wanted.text && $0.delivery == wanted.delivery ? $0 : nil } ?? wanted
+        let wanted = SendAttempt(text: draft, delivery: delivery, attachmentID: attachment?.id, viewOnce: viewOnce)
+        let request = attempt.flatMap {
+            $0.text == wanted.text && $0.delivery == wanted.delivery && $0.attachmentID == wanted.attachmentID &&
+            $0.viewOnce == wanted.viewOnce ? $0 : nil
+        } ?? wanted
+        let attachment = self.attachment
         attempt = request
         sending = true
         issue = nil
         Task {
             defer { sending = false }
             do {
-                let sent = try await service.send(request.text, in: thread, id: request.id, pigeon: request.delivery.pigeon)
+                let sent = try await service.send(request.text, in: thread, id: request.id, pigeon: request.delivery.pigeon,
+                                                  attachment: attachment, viewOnce: request.viewOnce)
                 if !messages.contains(where: { $0.id == sent.id }) { messages.append(sent) }
                 draft = ""
+                self.attachment = nil
                 attempt = nil
                 await onRefresh()
             } catch ChatError.locked {
@@ -645,6 +710,29 @@ private struct ChatConversationView: View {
             } catch ChatError.contactChanged {
                 keyChanged = true
                 issue = ChatError.contactChanged.localizedDescription
+            } catch {
+                issue = error.localizedDescription
+            }
+        }
+    }
+
+    private func openFile(_ url: URL) {
+        openingAttachment = true
+        Task {
+            defer { openingAttachment = false }
+            do {
+                let item = try await Task.detached(priority: .userInitiated) {
+                    let accessed = url.startAccessingSecurityScopedResource()
+                    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                    let values = try url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey, .isRegularFileKey])
+                    guard values.isRegularFile == true, let size = values.fileSize, size <= ChatDraftAttachment.maximumSize else {
+                        throw ChatError.attachmentSize
+                    }
+                    return try ChatDraftAttachment(data: Data(contentsOf: url), name: url.lastPathComponent,
+                                                   mediaType: values.contentType?.preferredMIMEType ?? "application/octet-stream")
+                }.value
+                attachment = item
+                issue = nil
             } catch {
                 issue = error.localizedDescription
             }
@@ -722,9 +810,7 @@ private struct ChatMediaView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var fileName: String {
-        guard let rawName = message.media?.f?.n else { return "Chat attachment" }
-        let name = URL(fileURLWithPath: rawName).lastPathComponent
-        return name.isEmpty || [".", "..", "/"].contains(name) ? "Chat attachment" : String(name.prefix(180))
+        message.media?.f.map { ChatDraftAttachment.safeName($0.n) } ?? "Chat attachment"
     }
 
     private var fileType: UTType { message.media?.f?.m.flatMap { UTType(mimeType: $0) } ?? .data }
@@ -798,11 +884,11 @@ private struct ChatMediaView: View {
 
     private func thumbnail(_ data: Data) -> UIImage? {
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        let options = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                       kCGImageSourceThumbnailMaxPixelSize: 2048,
-                       kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                       kCGImageSourceThumbnailMaxPixelSize: 2048,
+                                       kCGImageSourceCreateThumbnailWithTransform: true]
         guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions),
-              let pixels = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
+              let pixels = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         return UIImage(cgImage: pixels)
     }
 }

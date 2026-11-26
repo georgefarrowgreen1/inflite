@@ -10,7 +10,9 @@ enum NativeMailBody {
     )
     private static let tagName = try! NSRegularExpression(pattern: #"^</?([A-Za-z][\w:-]*)"#)
     private static let entities = try! NSRegularExpression(pattern: #"&(#x[\da-fA-F]{1,8}|#\d{1,10}|[A-Za-z]{2,16});"#)
-    private static let href = try! NSRegularExpression(pattern: #"\s+href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#, options: .caseInsensitive)
+    private static let attributes = try! NSRegularExpression(
+        pattern: #"\s+([A-Za-z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?"#
+    )
     private static let hidden = try! NSRegularExpression(pattern: #"\s+hidden(?:[\s=>/])|\bdisplay\s*:\s*none\b"#, options: .caseInsensitive)
     private static let names = [
         "amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "nbsp": " ",
@@ -121,8 +123,9 @@ enum NativeMailBody {
 
     private static func safeLink(_ tag: String) -> URL? {
         let source = tag as NSString
-        guard let match = href.firstMatch(in: tag, range: NSRange(location: 0, length: source.length)),
-              let capture = (1...3).map({ match.range(at: $0) }).first(where: { $0.location != NSNotFound }) else { return nil }
+        let pairs = attributes.matches(in: tag, range: NSRange(location: 0, length: source.length))
+        guard let match = pairs.first(where: { source.substring(with: $0.range(at: 1)).lowercased() == "href" }),
+              let capture = (2...4).map({ match.range(at: $0) }).first(where: { $0.location != NSNotFound }) else { return nil }
         let value = decode(source.substring(with: capture)).trimmingCharacters(in: .whitespacesAndNewlines)
         guard value.utf8.count <= 4096, !value.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }),
               let url = URLComponents(string: value), url.user == nil, url.password == nil else { return nil }
@@ -204,6 +207,9 @@ struct MailAttachments: View {
             document = nil
             if case .failure = result { issue = "Couldn’t save the attachment." }
         }
+        .onChange(of: showingExport) { _, showing in
+            if !showing { document = nil }
+        }
     }
 
     @MainActor
@@ -248,7 +254,12 @@ func safeAttachmentName(_ value: String) -> String {
     let components = value.components(separatedBy: CharacterSet(charactersIn: "/\\"))
     let filename = components.last?.components(separatedBy: .controlCharacters).joined() ?? ""
     let name = filename.trimmingCharacters(in: .whitespacesAndNewlines)
-    return name.isEmpty || name == "." || name == ".." ? "Attachment" : String(name.prefix(200))
+    if name.isEmpty || name == "." || name == ".." { return "Attachment" }
+    if name.utf8.count <= 240 { return name }
+    let path = name as NSString
+    let ext = String(path.pathExtension.prefix(10))
+    let stem = String(decoding: path.deletingPathExtension.utf8.prefix(192), as: UTF8.self)
+    return ext.isEmpty ? stem : "\(stem).\(ext)"
 }
 
 private struct MailAttachmentDocument: FileDocument {

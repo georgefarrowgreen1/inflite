@@ -281,7 +281,7 @@ actor BackendClient {
 
     func chatData(
         path: String, method: String = "GET", query: [URLQueryItem] = [],
-        body: Data? = nil, owner: String, bearer: String? = nil
+        body: Data? = nil, owner: String, bearer: String? = nil, contentType: String = "application/json"
     ) async throws -> Data {
         try prepareSessionRead()
         guard let credential, let currentOwner else { throw BackendError.authenticationRequired }
@@ -309,7 +309,8 @@ actor BackendClient {
             throw BackendError.invalidRequest
         }
         let (payload, _) = try await fetch(
-            path: "/api/pigeon/\(path)", method: method, query: query, body: body, owner: owner, bearer: bearer
+            path: "/api/pigeon/\(path)", method: method, query: query, body: body, owner: owner,
+            contentType: contentType, bearer: bearer
         )
         return payload
     }

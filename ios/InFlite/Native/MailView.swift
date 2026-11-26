@@ -108,7 +108,7 @@ struct NativeMailView: View {
                     NativeAccountSecurityView(owner: owner)
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
-                                Button("Close") { sheet = nil }
+                                Button("Close") { self.sheet = nil }
                             }
                         }
                 }

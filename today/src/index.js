@@ -105,8 +105,11 @@ function iosAssociation(request, env, url) {
     "/", "/weather/", "/markets/", "/fitness/", "/mail/", "/chats/", "/calendar/", "/notes/",
     "/people/", "/status/", "/settings/account/", "/about/", "/privacy/", "/contact/", "/storage/", "/terms/",
   ];
+  const identityLinks = ["/auth", "/auth/"].flatMap(path => [
+    { "/": path, "#": "reset=*" }, { "/": path, "#": "qr=*" },
+  ]);
   const association = {
-    applinks: { details: [{ appIDs: [appID], components: routes.map(path => ({ "/": path })) }] },
+    applinks: { details: [{ appIDs: [appID], components: [...routes.map(path => ({ "/": path })), ...identityLinks] }] },
     webcredentials: { apps: [appID] },
   };
   return new Response(request.method === "HEAD" ? null : JSON.stringify(association), {

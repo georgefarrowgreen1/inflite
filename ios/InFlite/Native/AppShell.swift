@@ -6,12 +6,28 @@ struct NativeRootView: View {
         case opening, signedOut, ready(BackendUser), unavailable
     }
 
+    private enum RootSheet: Identifiable {
+        case signIn
+        case publicPage(InFliteRoute)
+        case passwordReset(NativePasswordResetLink)
+        case computerSignIn(String)
+
+        var id: String {
+            switch self {
+            case .signIn: "sign-in"
+            case .publicPage(let route): "public-\(route.rawValue)"
+            case .passwordReset(let link): "password-reset-\(link.id)"
+            case .computerSignIn: "computer-sign-in"
+            }
+        }
+    }
+
     @State private var phase: Phase = .opening
     @State private var initialToday: BackendToday?
     @State private var destination: InFliteRoute = .today
     @State private var pendingRoute: InFliteRoute?
-    @State private var publicDestination: InFliteRoute?
-    @State private var signIn = false
+    @State private var sheet: RootSheet?
+    @State private var pendingComputerCode: String?
     @State private var signingOut = false
     @State private var signOutFailed = false
     @State private var reload = 0
@@ -68,35 +84,60 @@ struct NativeRootView: View {
         } message: {
             Text("Check your connection and try again.")
         }
-        .sheet(isPresented: $signIn) {
-            BackendSignInView { session in
-                signIn = false
-                accept(session)
-            }
-        }
-        .sheet(item: $publicDestination) { route in
-            if let page = route.publicPage {
-                NativePublicSheet(page: page)
+        .sheet(item: $sheet, onDismiss: showPendingComputerSignIn, content: rootSheet)
+        .onOpenURL { _ = openLink($0) }
+        .environment(\.openURL, OpenURLAction { openLink($0) ? .handled : .systemAction })
+    }
+
+    @ViewBuilder
+    private func rootSheet(_ item: RootSheet) -> some View {
+        switch item {
+        case .signIn:
+            BackendSignInView(onComplete: accept)
+        case .publicPage(let route):
+            if let page = route.publicPage { NativePublicSheet(page: page) }
+            else { PublicStatusSheet() }
+        case .passwordReset(let link):
+            if case .signedOut = phase {
+                NativePasswordResetView(link: link, client: .shared, onSignIn: accept)
             } else {
-                PublicStatusSheet()
+                NativePasswordResetView(link: link, onComplete: { reload += 1 })
+            }
+        case .computerSignIn(let code):
+            if case .ready(let user) = phase {
+                NavigationStack {
+                    NativeComputerSignInView(owner: user.id, initialCode: code)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) { Button("Done") { sheet = nil } }
+                        }
+                }
             }
         }
-        .onOpenURL { url in
-            guard let route = InFliteRoute(link: url) else { return }
+    }
+
+    private func openLink(_ url: URL) -> Bool {
+        if let link = NativePasswordResetLink(url: url) {
+            sheet = .passwordReset(link)
+        } else if let code = BackendIdentityLink.secret(from: url, key: "qr", length: 32) {
+            if case .ready = phase {
+                sheet = .computerSignIn(code)
+            } else {
+                pendingComputerCode = code
+                if case .signedOut = phase { sheet = .signIn }
+            }
+        } else if let route = InFliteRoute(link: url) {
             open(route)
+        } else {
+            return false
         }
-        .environment(\.openURL, OpenURLAction { url in
-            guard let route = InFliteRoute(link: url) else { return .systemAction }
-            open(route)
-            return .handled
-        })
+        return true
     }
 
     private func open(_ route: InFliteRoute) {
         if case .ready = phase {
             destination = route
         } else if route.publicPage != nil || route == .status {
-            publicDestination = route
+            sheet = .publicPage(route)
         } else {
             pendingRoute = route
         }
@@ -115,7 +156,7 @@ struct NativeRootView: View {
                     .font(.largeTitle.bold())
                     .accessibilityAddTraits(.isHeader)
                 Button {
-                    signIn = true
+                    sheet = .signIn
                 } label: {
                     Text("Sign in")
                         .font(.headline)
@@ -165,16 +206,26 @@ struct NativeRootView: View {
         guard session.signedIn, let user = session.user else {
             initialToday = nil
             phase = .signedOut
+            if pendingComputerCode != nil, sheet == nil { sheet = .signIn }
             return
         }
         destination = pendingRoute ?? .today
         pendingRoute = nil
         phase = .ready(user)
+        if sheet == nil { showPendingComputerSignIn() }
+    }
+
+    private func showPendingComputerSignIn() {
+        guard case .ready = phase, let code = pendingComputerCode else { return }
+        pendingComputerCode = nil
+        sheet = .computerSignIn(code)
     }
 
     private func resetSession() {
         initialToday = nil
         pendingRoute = nil
+        pendingComputerCode = nil
+        sheet = nil
         destination = .today
         phase = .signedOut
     }
@@ -191,8 +242,12 @@ struct NativeRootView: View {
         guard !signingOut else { return }
         signingOut = true
         defer { signingOut = false }
+        let formerOwner: String?
+        if case .ready(let user) = phase { formerOwner = user.id }
+        else { formerOwner = nil }
         do {
             try await BackendClient.shared.signOut()
+            if let formerOwner { await NativeNotificationStore.shared.forget(owner: formerOwner) }
             resetSession()
         } catch {
             signOutFailed = true

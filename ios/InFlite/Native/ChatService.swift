@@ -77,15 +77,39 @@ struct ChatWireMessage: Decodable {
     var date: Date { Date(timeIntervalSince1970: sentAt / 1_000) }
 }
 
-struct ChatMediaKey: Decodable {
-    struct FileMetadata: Decodable {
+struct ChatMediaKey: Codable {
+    struct FileMetadata: Codable {
         let n: String
         let m: String?
+        let s: Int?
     }
 
     let k: String
     let iv: String
     let f: FileMetadata?
+}
+
+struct ChatDraftAttachment: Identifiable {
+    static let maximumSize = 8 * 1024 * 1024 - 16
+
+    let id = UUID()
+    let data: Data
+    let file: ChatMediaKey.FileMetadata?
+
+    var title: String { file?.n ?? "Photo" }
+
+    init(data: Data, name: String? = nil, mediaType: String? = nil) throws {
+        guard !data.isEmpty, data.count <= Self.maximumSize else { throw ChatError.attachmentSize }
+        self.data = data
+        file = name.map { ChatMediaKey.FileMetadata(n: Self.safeName($0), m: mediaType, s: data.count) }
+    }
+
+    static func safeName(_ name: String) -> String {
+        let excluded = CharacterSet.controlCharacters.union(CharacterSet(charactersIn: "/\\\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2066}\u{2067}\u{2068}\u{2069}"))
+        let clean = name.components(separatedBy: excluded).joined(separator: "_")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty || clean == "." || clean == ".." ? "Chat attachment" : String(clean.prefix(180))
+    }
 }
 
 struct ChatMessage: Identifiable {
@@ -133,7 +157,7 @@ struct ChatSafetyNumber: Identifiable {
 }
 
 enum ChatError: LocalizedError {
-    case locked, keyUnavailable, identityChanged, contactChanged, invalidMessage, unavailable
+    case locked, keyUnavailable, identityChanged, contactChanged, invalidMessage, unavailable, attachmentSize
 
     var errorDescription: String? {
         switch self {
@@ -143,6 +167,7 @@ enum ChatError: LocalizedError {
         case .contactChanged: "A security key changed. Compare safety numbers before sending."
         case .invalidMessage: "This encrypted message couldn’t be opened."
         case .unavailable: "This conversation is no longer available."
+        case .attachmentSize: "Choose a photo or file smaller than 8 MB."
         }
     }
 }
@@ -236,6 +261,7 @@ struct ChatBody: Decodable {
 
 private struct ChatMessageBody: Encodable {
     let t: String
+    let p: ChatMediaKey?
     let z: String
 }
 
@@ -253,6 +279,7 @@ private struct ChatSendBody: Encodable {
     let keys: [String: String]?
     let instant: Bool
     let pigeon: String?
+    let once: Bool?
 }
 
 actor ChatService {
@@ -388,12 +415,17 @@ actor ChatService {
         guard reply.ok else { throw BackendError.invalidResponse }
     }
 
-    func send(_ text: String, in thread: ChatThread, id: String, pigeon: String?) async throws -> ChatMessage {
+    func send(
+        _ text: String, in thread: ChatThread, id: String, pigeon: String?,
+        attachment: ChatDraftAttachment?, viewOnce: Bool
+    ) async throws -> ChatMessage {
         guard let session else { throw ChatError.locked }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.utf16.count <= 2_000 else { throw ChatError.invalidMessage }
+        guard (!trimmed.isEmpty || attachment != nil), trimmed.utf16.count <= 2_000 else { throw ChatError.invalidMessage }
         let (person, group) = try participants(thread)
-        let payload = try ChatCrypto.padded(trimmed)
+        let sealed = try attachment.map { try ChatCrypto.sealMedia($0, id: id) }
+        let once: Bool? = attachment.map { $0.file == nil && viewOnce }
+        let payload = try ChatCrypto.padded(trimmed, media: sealed?.key)
         let request: ChatSendBody
         if let group {
             let bodyKey = ChatCrypto.randomKey()
@@ -406,17 +438,29 @@ actor ChatService {
                                                      type: "wrap", id: id, sender: owner, recipient: member.id)
             }
             request = ChatSendBody(id: id, to: nil, ct: nil, group: group.id, body: encrypted, keys: keys,
-                                   instant: pigeon == nil, pigeon: pigeon)
+                                   instant: pigeon == nil, pigeon: pigeon, once: once)
         } else {
             guard let person else { throw ChatError.unavailable }
             let ciphertext = try ChatCrypto.seal(payload, from: session.privateKey, to: checkedKey(person),
                                                  type: "msg", id: id, sender: owner, recipient: person.id)
             request = ChatSendBody(id: id, to: person.id, ct: ciphertext, group: nil, body: nil, keys: nil,
-                                   instant: pigeon == nil, pigeon: pigeon)
+                                   instant: pigeon == nil, pigeon: pigeon, once: once)
         }
         let path = thread.group ? "group-messages" : "messages"
         do {
-            let sent = try await post(ChatSendReply.self, path: path, body: request)
+            let sent: ChatSendReply
+            if let sealed {
+                let boundary = "InfliteChat-\(UUID().uuidString)"
+                var body = Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"meta\"\r\n\r\n".utf8)
+                body.append(try JSONEncoder().encode(request))
+                body.append(Data("\r\n--\(boundary)\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"sealed.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n".utf8))
+                body.append(sealed.data)
+                body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+                sent = try await self.request(ChatSendReply.self, path: path, method: "POST", body: body,
+                                              contentType: "multipart/form-data; boundary=\(boundary)")
+            } else {
+                sent = try await post(ChatSendReply.self, path: path, body: request)
+            }
             return message(sent.message, person: person, group: group, session: session)
         } catch let conflict as BackendError {
             guard case .http(409, _) = conflict else { throw conflict }
@@ -543,7 +587,7 @@ actor ChatService {
         else if wire.flying == true && payload == nil { label = "Pigeon in flight" }
         else if let text = payload?.t, !text.isEmpty { label = text }
         else if payload?.v != nil { label = "Voice message" }
-        else if payload?.p != nil { label = "Photo" }
+        else if let attachment = payload?.p { label = attachment.f.map { ChatDraftAttachment.safeName($0.n) } ?? "Photo" }
         else { label = "Encrypted message unavailable" }
         return ChatMessage(wire: wire, text: label, media: payload?.p ?? payload?.v,
                            voice: payload?.v != nil, couldDecrypt: payload != nil)
@@ -581,12 +625,13 @@ actor ChatService {
     }
 
     private func request<T: Decodable>(
-        _ type: T.Type, path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil
+        _ type: T.Type, path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil,
+        contentType: String = "application/json"
     ) async throws -> T {
         guard let session else { throw ChatError.locked }
         do {
             let data = try await backend.chatData(path: path, method: method, query: query, body: body, owner: owner,
-                                                  bearer: session.token)
+                                                  bearer: session.token, contentType: contentType)
             guard self.session?.token == session.token else { throw ChatError.locked }
             return try JSONDecoder().decode(type, from: data)
         } catch let error as BackendError where error.isAuthenticationRequired {
@@ -614,9 +659,13 @@ enum ChatCrypto {
     }
 
     private struct VaultKey: Decodable {
-        let kty: String
-        let crv: String
-        let d: String
+        struct JWK: Decodable {
+            let kty: String
+            let crv: String
+            let d: String
+        }
+
+        let ecdh: JWK
     }
 
     static func randomKey() -> Data {
@@ -665,18 +714,18 @@ enum ChatCrypto {
         guard key.count == 32, envelope.v == 1, let iv = Data(base64Encoded: envelope.iv),
               let data = Data(base64Encoded: envelope.d) else { throw ChatError.keyUnavailable }
         let clear = try openAES(data, iv: iv, key: SymmetricKey(data: key), aad: "inflight/vault/v1")
-        let payload = try JSONDecoder().decode(VaultKey.self, from: clear)
+        let payload = try JSONDecoder().decode(VaultKey.self, from: clear).ecdh
         guard payload.kty == "EC", payload.crv == "P-256",
               let raw = decodeURL(payload.d), raw.count == 32 else { throw ChatError.keyUnavailable }
         return try P256.KeyAgreement.PrivateKey(rawRepresentation: raw)
     }
 
-    static func padded(_ text: String) throws -> Data {
+    static func padded(_ text: String, media: ChatMediaKey? = nil) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
-        let base = try encoder.encode(ChatMessageBody(t: text, z: ""))
+        let base = try encoder.encode(ChatMessageBody(t: text, p: media, z: ""))
         let bucket = [1_024, 4_096, 8_192].first(where: { $0 >= base.count }) ?? ((base.count + 4_095) / 4_096) * 4_096
-        return try encoder.encode(ChatMessageBody(t: text, z: String(repeating: " ", count: bucket - base.count)))
+        return try encoder.encode(ChatMessageBody(t: text, p: media, z: String(repeating: " ", count: bucket - base.count)))
     }
 
     static func seal(
@@ -728,6 +777,14 @@ enum ChatCrypto {
         }
         let kind = voice ? "voice" : "photo"
         return try openAES(data, iv: iv, key: SymmetricKey(data: raw), aad: "inflight/\(kind)/v1|\(id)")
+    }
+
+    static func sealMedia(_ attachment: ChatDraftAttachment, id: String) throws -> (key: ChatMediaKey, data: Data) {
+        let raw = randomKey()
+        let box = try AES.GCM.seal(attachment.data, using: SymmetricKey(data: raw),
+                                   authenticating: Data("inflight/photo/v1|\(id)".utf8))
+        let key = ChatMediaKey(k: raw.base64EncodedString(), iv: Data(box.nonce).base64EncodedString(), f: attachment.file)
+        return (key, box.ciphertext + box.tag)
     }
 
     static func digest(_ value: String) -> String {
