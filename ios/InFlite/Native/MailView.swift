@@ -4,6 +4,7 @@ import SwiftUI
 struct NativeMailView: View {
     let owner: String
     var active = true
+    var agendaLaunch: TodayAgendaLaunch? = nil
 
     private struct Selection: Equatable {
         var lens: MailLens = .people
@@ -15,10 +16,11 @@ struct NativeMailView: View {
         let active: Bool
         let selection: Selection
         let revision: Int
+        let agendaID: UUID?
     }
 
     private enum Sheet: Identifiable {
-        case conversation(MailConversation)
+        case conversation(MailConversation, MailThreadPage? = nil)
         case draft(MailBrief)
         case compose
         case verify
@@ -28,7 +30,7 @@ struct NativeMailView: View {
 
         var id: String {
             switch self {
-            case .conversation(let thread): "thread:\(thread.id)"
+            case .conversation(let thread, _): "thread:\(thread.id)"
             case .draft(let message): "draft:\(message.id)"
             case .compose: "compose"
             case .verify: "verify"
@@ -54,10 +56,16 @@ struct NativeMailView: View {
     @State private var sheet: Sheet?
     @State private var reload = 0
     @State private var generation = UUID()
+    @State private var handledAgendaLaunch: UUID?
+    @State private var agendaIssue = false
     @Environment(\.scenePhase) private var scenePhase
 
     private var service: MailService { MailService(owner: owner) }
     private var visible: Bool { active && scenePhase == .active }
+    private var pendingAgenda: TodayAgendaLaunch? {
+        guard let agendaLaunch, case .mailThread = agendaLaunch.destination else { return nil }
+        return agendaLaunch
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -84,40 +92,55 @@ struct NativeMailView: View {
         }
         .padding(.horizontal, 16)
         .toolbar(.hidden, for: .navigationBar)
-        .task(id: LoadRequest(owner: owner, active: visible, selection: selection, revision: reload)) {
+        .task(id: LoadRequest(
+            owner: owner, active: visible, selection: selection, revision: reload, agendaID: pendingAgenda?.id
+        )) {
             if visible {
                 await load()
             } else {
                 generation = UUID()
             }
         }
+        .alert("Couldn’t open the conversation", isPresented: $agendaIssue) {
+            Button("Try again") { reload += 1 }
+            Button("Cancel", role: .cancel) { handledAgendaLaunch = pendingAgenda?.id }
+        } message: {
+            Text("Check your connection or whether the conversation is still available in Mail.")
+        }
         .sheet(item: $sheet, onDismiss: { reload += 1 }) { sheet in
             switch sheet {
-            case .conversation(let thread):
-                MailReader(service: service, subject: thread.subject, conversation: thread)
+            case .conversation(let thread, let initialPage):
+                MailReader(service: service, subject: thread.subject, conversation: thread, initialPage: initialPage)
+                    .nativeSheetChrome()
             case .draft(let draft):
                 MailComposer(service: service, source: .draft(draft.id))
+                    .nativeSheetChrome()
             case .compose:
                 MailComposer(service: service)
+                    .nativeSheetChrome()
             case .verify:
                 BackendSignInView(client: .shared, purpose: .mail(owner: owner)) { _ in
                     self.sheet = nil
                 }
+                .nativeSheetChrome()
             case .security:
                 NavigationStack {
                     NativeAccountSecurityView(owner: owner)
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
-                                Button("Close") { self.sheet = nil }
+                                NativeSheetCloseButton { self.sheet = nil }
                             }
                         }
                 }
+                .nativeSheetChrome()
             case .settings:
                 MailSettingsView(owner: owner)
+                    .nativeSheetChrome()
             case .snooze(let thread):
                 MailSnooze { date in
                     try await service.act(.snooze, on: thread.id, until: date)
                 }
+                .nativeSheetChrome()
             }
         }
     }
@@ -227,10 +250,12 @@ struct NativeMailView: View {
             }
         } else if threads.isEmpty && drafts.isEmpty {
             ScrollView {
-                Text(selection.search.isEmpty ? selection.lens.emptyText : "No matching conversations")
-                    .font(.headline)
+                NativeEmptyState(
+                    title: selection.search.isEmpty ? selection.lens.emptyText : "No matching conversations",
+                    symbol: selection.search.isEmpty ? "tray" : "magnifyingglass"
+                )
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 44)
+                    .padding(.top, 24)
             }
             .refreshable { await load() }
             .frame(maxHeight: .infinity)
@@ -395,6 +420,17 @@ struct NativeMailView: View {
                 loading = false
                 return
             }
+            if let launch = pendingAgenda, launch.id != handledAgendaLaunch, case .mailThread(let id) = launch.destination {
+                do {
+                    let result = try await service.openConversation(id)
+                    guard !Task.isCancelled, generation == requestID, visible else { return }
+                    handledAgendaLaunch = launch.id
+                    sheet = .conversation(result.conversation, result.page)
+                } catch {
+                    guard !Task.isCancelled, generation == requestID, visible else { return }
+                    agendaIssue = true
+                }
+            }
             let page = try await service.conversations(filter.lens, search: filter.search)
             guard !Task.isCancelled, generation == requestID else { return }
             threads = page.threads
@@ -511,6 +547,7 @@ private struct MailReader: View {
     let service: MailService
     let subject: String
     let conversation: MailConversation
+    let initialPage: MailThreadPage?
 
     @Environment(\.dismiss) private var dismiss
     @State private var messages: [MailBrief] = []
@@ -571,14 +608,14 @@ private struct MailReader: View {
                         .buttonStyle(.bordered)
                     }
                 }
-                .padding(18)
+                .padding(NativeStyle.sheetInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .navigationTitle("Conversation")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Close") { dismiss() }
+                    NativeSheetCloseButton { dismiss() }
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     if message != nil, conversation.trashed != true {
@@ -592,7 +629,7 @@ private struct MailReader: View {
                     }
                 }
             }
-            .task { await loadThread() }
+            .task { await loadThread(initialPage) }
             .task(id: selectedID) { if let selectedID { await loadMessage(selectedID) } }
             .sheet(item: $response) { kind in
                 if let message {
@@ -668,11 +705,16 @@ private struct MailReader: View {
         .privacySensitive()
     }
 
-    private func loadThread() async {
+    private func loadThread(_ initialPage: MailThreadPage? = nil) async {
         loadingThread = true
         issue = nil
         do {
-            let page = try await service.thread(conversation.id)
+            let page: MailThreadPage
+            if let initialPage {
+                page = initialPage
+            } else {
+                page = try await service.thread(conversation.id)
+            }
             try Task.checkCancellation()
             messages = page.messages
             cursor = page.nextAfter

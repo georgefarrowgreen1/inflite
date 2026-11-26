@@ -70,6 +70,16 @@ struct MailThreadPage: Decodable {
     let nextAfter: String?
 }
 
+struct MailOpenedConversation: Decodable {
+    let conversation: MailConversation
+    let page: MailThreadPage
+
+    init(from decoder: Decoder) throws {
+        conversation = try MailConversation(from: decoder)
+        page = try MailThreadPage(from: decoder)
+    }
+}
+
 struct MailAttachment: Decodable, Identifiable, Equatable {
     let id: String
     let filename: String
@@ -290,6 +300,15 @@ struct MailService {
     func thread(_ id: String, after: String? = nil) async throws -> MailThreadPage {
         let query = after.map { [URLQueryItem(name: "after", value: $0)] } ?? [URLQueryItem(name: "paged", value: "1")]
         return try await request(MailThreadPage.self, path: "/api/threads/\(Self.messageID(id))", query: query)
+    }
+
+    func openConversation(_ id: String) async throws -> MailOpenedConversation {
+        let result = try await request(
+            MailOpenedConversation.self, path: "/api/threads/\(Self.messageID(id))",
+            query: [URLQueryItem(name: "paged", value: "1")]
+        )
+        guard result.conversation.id == id else { throw MailServiceError.invalidMessage }
+        return result
     }
 
     func message(_ id: String) async throws -> MailMessage {

@@ -1,8 +1,10 @@
 # InFlite for iPhone
 
-Beta **0.2.0**, build **2**, targets iOS 17 and later. SwiftUI renders the InFlite workspace and its apps using the existing InFlite services. Native authentication exchanges a one-time code for an account session stored in the device Keychain.
+Beta **0.2.1**, build **1**, targets iOS 17 and later. SwiftUI renders the InFlite workspace and its apps using the existing InFlite services. Native authentication exchanges a one-time code for an account session stored in the device Keychain.
 
 The app includes Today, Weather, Markets, Fitness, Mail, Chats, Notes, Calendar, People, Files and Status. The workspace also includes native Quick Capture, Reminders, Settings, device notification history, About, Contact and legal pages. Native Mail preserves its existing account and verification requirements and renders message text and links with iOS attachment previews. Chats uses the existing encrypted conversation protocol. Fitness route planning uses MapKit and the existing route service.
+
+Today opens linked calendar entries and reminders directly. Quick Capture saves unfinished text on the device and restores it when reopened. The dock uses account-specific pins and includes a compact layout for larger text. On launch, a recent read-only Today summary can appear while the app verifies the session and refreshes its data.
 
 Some advanced web workflows have no equivalent in this beta. These include full HTML Mail layout, specialized Mail tools and advanced Fitness training-plan editing. Atlas has no iPhone entry. The notification inbox reads delivered device notifications. Live native delivery needs an APNs provider and device registration.
 

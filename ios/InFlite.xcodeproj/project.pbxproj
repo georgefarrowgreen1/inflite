@@ -166,6 +166,22 @@
 			isa = PBXBuildFile;
 			fileRef = 8826D095122649B3DA660E94 /* NativePasswordReset.swift */;
 		};
+		9F34C8A10A36268AA1B08890 /* TodayAgenda.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = D366504AE960BAEA5904CBF9 /* TodayAgenda.swift */;
+		};
+		2CAEFFC47E952B896C2FEE6C /* TodayPresentation.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 84172831FC1102158A9B3C36 /* TodayPresentation.swift */;
+		};
+		2593C828094454AE34AD4229 /* TodayPresentationTests.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 205DEECCE9CE57CD7B6D1B8E /* TodayPresentationTests.swift */;
+		};
+		2CEC1C4D83F2B404BB20F462 /* TodayAgendaTests.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 5E8AEC5DD79510F9205A2C3B /* TodayAgendaTests.swift */;
+		};
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -459,6 +475,30 @@
 			path = NativePasswordReset.swift;
 			sourceTree = "<group>";
 		};
+		D366504AE960BAEA5904CBF9 /* TodayAgenda.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = TodayAgenda.swift;
+			sourceTree = "<group>";
+		};
+		84172831FC1102158A9B3C36 /* TodayPresentation.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = TodayPresentation.swift;
+			sourceTree = "<group>";
+		};
+		205DEECCE9CE57CD7B6D1B8E /* TodayPresentationTests.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = TodayPresentationTests.swift;
+			sourceTree = "<group>";
+		};
+		5E8AEC5DD79510F9205A2C3B /* TodayAgendaTests.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = TodayAgendaTests.swift;
+			sourceTree = "<group>";
+		};
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -503,6 +543,8 @@
 			children = (
 				00000000000000000000000F /* NavigationPolicyTests.swift */,
 				29F5BD81775AEF78A6F8DDA0 /* ChatTests.swift */,
+				205DEECCE9CE57CD7B6D1B8E /* TodayPresentationTests.swift */,
+				5E8AEC5DD79510F9205A2C3B /* TodayAgendaTests.swift */,
 			);
 			path = InFliteTests;
 			sourceTree = "<group>";
@@ -580,6 +622,8 @@
 				DD8605DC9C5495B0E9115F3E /* NativeComputerSignIn.swift */,
 				D8D13D91023279BDFF7A67A0 /* NativeReminders.swift */,
 				8826D095122649B3DA660E94 /* NativePasswordReset.swift */,
+				D366504AE960BAEA5904CBF9 /* TodayAgenda.swift */,
+				84172831FC1102158A9B3C36 /* TodayPresentation.swift */,
 			);
 			path = Native;
 			sourceTree = "<group>";
@@ -713,6 +757,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2CAEFFC47E952B896C2FEE6C /* TodayPresentation.swift in Sources */,
+				9F34C8A10A36268AA1B08890 /* TodayAgenda.swift in Sources */,
 				6AF4676DF1BE48D6D63E71BC /* NativePasswordReset.swift in Sources */,
 				2AEB0A7925701FA9068E479E /* NativeReminders.swift in Sources */,
 				D9AE1606D5A6737F2B44A08B /* NativeComputerSignIn.swift in Sources */,
@@ -755,6 +801,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2CEC1C4D83F2B404BB20F462 /* TodayAgendaTests.swift in Sources */,
+				2593C828094454AE34AD4229 /* TodayPresentationTests.swift in Sources */,
 				C7B9B2F0E2A5173F647B639F /* ChatTests.swift in Sources */,
 				000000000000000000000024 /* NavigationPolicyTests.swift in Sources */,
 			);

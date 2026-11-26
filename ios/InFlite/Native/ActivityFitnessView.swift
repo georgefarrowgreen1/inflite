@@ -3,9 +3,10 @@ import SwiftUI
 @MainActor
 struct ActivityFitnessView: View {
     let owner: String
+    var agendaLaunch: TodayAgendaLaunch? = nil
 
     var body: some View {
-        ActivityFitnessScreen(owner: owner).id(owner)
+        ActivityFitnessScreen(owner: owner, agendaLaunch: agendaLaunch).id(owner)
     }
 }
 
@@ -24,6 +25,7 @@ private struct ActivityFitnessScreen: View {
     }
 
     let owner: String
+    let agendaLaunch: TodayAgendaLaunch?
     @State private var feed = ActivityResource<Feed>()
     @State private var route = ActivityResource<ActivityFitnessRoute>()
     @State private var destination: Destination = .overview
@@ -76,6 +78,9 @@ private struct ActivityFitnessScreen: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .navigationTitle("Fitness")
+        .onChange(of: agendaLaunch, initial: true) { _, launch in
+            if launch?.destination == .fitnessActivities { destination = .activities }
+        }
         .task { await load() }
         .task(id: destination) {
             if destination == .routes, route.value == nil { await loadRoute() }

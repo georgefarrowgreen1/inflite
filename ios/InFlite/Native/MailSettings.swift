@@ -153,7 +153,7 @@ struct MailSettingsView: View {
             .navigationTitle("Mail Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(busy) }
+                ToolbarItem(placement: .confirmationAction) { NativeSheetCloseButton { dismiss() }.disabled(busy) }
                 ToolbarItem(placement: .confirmationAction) {
                     if let preferences {
                         Button("Save") { Task { await save() } }

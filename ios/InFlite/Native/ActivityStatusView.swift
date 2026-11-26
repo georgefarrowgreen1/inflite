@@ -3,6 +3,10 @@ import SwiftUI
 @MainActor
 struct ActivityStatusView: View {
     @State private var dashboard = ActivityResource<ActivityStatusSnapshot>()
+    @Environment(\.isInFliteScreenVisible) private var screenVisible
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var shouldPoll: Bool { screenVisible && scenePhase == .active }
 
     var body: some View {
         List {
@@ -18,7 +22,8 @@ struct ActivityStatusView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .navigationTitle("Status")
-        .task {
+        .task(id: shouldPoll) {
+            guard shouldPoll else { return }
             while !Task.isCancelled {
                 await reload()
                 do { try await Task.sleep(for: .seconds(60)) }

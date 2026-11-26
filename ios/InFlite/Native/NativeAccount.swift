@@ -354,6 +354,7 @@ private struct NativeAccountProfileView: View {
         .sheet(item: $editing) { field in
             let original = field == .name ? profile?.name : profile?.handle
             NativeAccountFieldEdit(service: service, field: field, original: original ?? "") { apply($0) }
+                .nativeSheetChrome()
         }
         .confirmationDialog("Remove your profile photo?", isPresented: $removingPhoto, titleVisibility: .visible) {
             Button("Remove photo", role: .destructive) { Task { await removePhoto() } }

@@ -55,6 +55,11 @@ struct BackendTodayStat: Codable, Sendable {
 }
 
 struct BackendTodayEvent: Codable, Sendable {
+    struct Group: Codable, Sendable {
+        let id: String
+        let name: String
+    }
+
     let id: String?
     let title: String?
     let sub: String?
@@ -62,6 +67,7 @@ struct BackendTodayEvent: Codable, Sendable {
     let href: String?
     let first: String?
     let name: String?
+    let group: Group?
     let at: Double?
 }
 

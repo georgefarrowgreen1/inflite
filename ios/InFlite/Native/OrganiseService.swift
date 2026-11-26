@@ -180,11 +180,13 @@ struct OrganiseService {
     private struct FeedRequest: Encodable { let from: Int64; let to: Int64 }
 }
 
-struct OrganiseSave {
+struct OrganiseSave: Codable, Equatable {
+    let version: Int
     let value: OrganiseValue
     let body: Data
 
     init(kind: OrganiseKind, id: String, version: Int, value: OrganiseValue) throws {
+        self.version = version
         self.value = value
         // The worker hashes the complete request for idempotency. Keep these exact
         // bytes in the editor until the operation is acknowledged.

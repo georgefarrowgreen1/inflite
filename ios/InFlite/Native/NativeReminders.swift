@@ -140,7 +140,7 @@ struct NativeRemindersView: View {
     }
 }
 
-private struct NativeReminder: Decodable, Identifiable {
+struct NativeReminder: Decodable, Identifiable {
     struct Recurrence: Decodable {
         let frequency: String
         let timezone: String
@@ -161,7 +161,7 @@ private struct NativeReminderPage: Decodable {
     let cursor: String?
 }
 
-private struct NativeReminderChange {
+struct NativeReminderChange {
     let fields: Data
     let body: Data
 
@@ -173,13 +173,19 @@ private struct NativeReminderChange {
         value["operationId"] = OrganiseService.identifier()
         body = try JSONSerialization.data(withJSONObject: value, options: .sortedKeys)
     }
+
+    init(record: NativeReminder, status: String) throws {
+        let values: [String: Any] = ["id": record.id, "version": record.version, "status": status]
+        let fields = try JSONSerialization.data(withJSONObject: values, options: .sortedKeys)
+        try self.init(fields: fields)
+    }
 }
 
-private struct NativeReminderService {
+struct NativeReminderService {
     let owner: String
     private struct Response: Decodable { let action: NativeReminder }
 
-    func list(status: String, search: String, cursor: String?) async throws -> NativeReminderPage {
+    fileprivate func list(status: String, search: String, cursor: String?) async throws -> NativeReminderPage {
         let client = BackendClient.shared
         if !search.isEmpty {
             let body = try JSONEncoder().encode(["q": String(search.prefix(160))])
@@ -198,7 +204,16 @@ private struct NativeReminderService {
         return result.action
     }
 
-    func write(_ change: NativeReminderChange, record: NativeReminder?) async throws {
+    func today() async throws -> [NativeReminder] {
+        let result = try await BackendClient.shared.request(
+            NativeReminderPage.self, path: "/api/system/actions",
+            query: [.init(name: "status", value: "open"), .init(name: "view", value: "today")], owner: owner
+        )
+        return result.actions
+    }
+
+    @discardableResult
+    func write(_ change: NativeReminderChange, record: NativeReminder?) async throws -> NativeReminder {
         let result = try await BackendClient.shared.request(
             Response.self, path: record == nil ? "/api/system/actions" : "/api/system/action",
             method: record == nil ? "POST" : "PATCH", body: change.body, owner: owner
@@ -206,10 +221,11 @@ private struct NativeReminderService {
         guard !result.action.id.isEmpty, record == nil || result.action.id == record?.id else {
             throw BackendError.invalidResponse
         }
+        return result.action
     }
 }
 
-private struct NativeReminderEditor: View {
+struct NativeReminderEditor: View {
     let owner: String
     let id: String?
     let onChanged: () -> Void

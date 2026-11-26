@@ -86,10 +86,11 @@ struct BackendKeychainStore: BackendSessionStore {
     }
 }
 
-// Only the first-party session credential persists. App responses remain in memory.
+// The session credential stays in Keychain. Only the read-only Today launch
+// summary is saved separately, bound to the current credential.
 actor BackendClient {
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
-    static let shared = BackendClient()
+    static let shared = BackendClient(presentationCache: TodayPresentationCache())
 
     private struct Credential: Codable {
         let token: String
@@ -117,6 +118,7 @@ actor BackendClient {
     }
 
     private let store: any BackendSessionStore
+    private let presentationCache: TodayPresentationCache?
     private let transport: Transport
     private var loaded = false
     private var credential: Credential?
@@ -124,8 +126,13 @@ actor BackendClient {
     private var generation: UInt64 = 0
     private var transitioning = false
 
-    init(store: any BackendSessionStore = BackendKeychainStore(), transport: Transport? = nil) {
+    init(
+        store: any BackendSessionStore = BackendKeychainStore(),
+        presentationCache: TodayPresentationCache? = nil,
+        transport: Transport? = nil
+    ) {
         self.store = store
+        self.presentationCache = presentationCache
         if let transport {
             self.transport = transport
         } else {
@@ -153,7 +160,10 @@ actor BackendClient {
 
     func session() async throws -> BackendSession {
         try prepareSessionRead()
-        let (data, response) = try await fetch(path: "/api/session", credential: credential)
+        let epoch = generation
+        let (data, response) = try await fetchSession(path: "/api/session")
+        try Task.checkCancellation()
+        guard generation == epoch else { throw BackendError.accountChanged }
         let view = try decode(BackendSession.self, from: data)
         try apply(view, response: response)
         return view
@@ -161,14 +171,55 @@ actor BackendClient {
 
     func bootstrap() async throws -> BackendBootstrap {
         try prepareSessionRead()
-        let (data, response) = try await fetch(path: "/api/boot", credential: credential)
+        let epoch = generation
+        let (data, response) = try await fetchSession(path: "/api/boot")
+        try Task.checkCancellation()
+        guard generation == epoch else { throw BackendError.accountChanged }
         let result = try decode(BackendBootstrap.self, from: data)
         try apply(result.view, response: response)
+        if let cards = result.cards { rememberToday(cards) }
         return result
     }
 
+    func cachedTodayPresentation() throws -> TodayPresentationSnapshot? {
+        try prepareSessionRead()
+        guard let credential else { return nil }
+        return presentationCache?.read(token: credential.token, owner: currentOwner)
+    }
+
     func today(owner: String? = nil) async throws -> BackendToday {
-        try await request(BackendToday.self, path: "/api/today", query: [URLQueryItem(name: "v", value: "2")], owner: owner)
+        let epoch = generation
+        let cards = try await request(
+            BackendToday.self, path: "/api/today", query: [URLQueryItem(name: "v", value: "2")], owner: owner
+        )
+        try Task.checkCancellation()
+        guard generation == epoch else { throw BackendError.accountChanged }
+        rememberToday(cards)
+        return cards
+    }
+
+    private func rememberToday(_ cards: BackendToday) {
+        guard let presentationCache, let currentOwner, let credential,
+              let snapshot = TodayPresentationSnapshot(cards: cards, owner: currentOwner, expiresAt: credential.expires) else {
+            return
+        }
+        presentationCache.write(snapshot, token: credential.token)
+    }
+
+    private func fetchSession(path: String) async throws -> (Data, HTTPURLResponse) {
+        let epoch = generation
+        do {
+            return try await fetch(path: path, credential: credential)
+        } catch BackendError.http(401, _) {
+            guard generation == epoch else { throw BackendError.accountChanged }
+            try clearCredential()
+            throw BackendError.authenticationRequired
+        } catch BackendError.http(403, let message) {
+            guard generation == epoch else { throw BackendError.accountChanged }
+            // A refusal can come from the edge rather than the account service.
+            presentationCache?.clear()
+            throw BackendError.http(status: 403, message: message)
+        }
     }
 
     func signIn(code: String, verifier: String) async throws -> BackendSession {
@@ -325,7 +376,10 @@ actor BackendClient {
             let data = try store.read()
             credential = data.flatMap { try? JSONDecoder().decode(Credential.self, from: $0) }
             loaded = true
-            if data != nil && credential == nil { try store.write(nil) }
+            if credential == nil {
+                presentationCache?.clear()
+                if data != nil { try store.write(nil) }
+            }
         }
         if let credential,
            credential.expires <= .now || credential.token.range(of: "^[A-Za-z0-9_-]{20,100}$", options: .regularExpression) == nil {
@@ -337,6 +391,7 @@ actor BackendClient {
         if credential != nil || currentOwner != nil { generation &+= 1 }
         credential = nil
         currentOwner = nil
+        presentationCache?.clear()
         loaded = true
         try store.write(nil)
     }
@@ -347,10 +402,19 @@ actor BackendClient {
             return
         }
         guard let user = view.user, !user.id.isEmpty,
-              let renewed = Credential(response: response) ?? credential else { throw BackendError.invalidResponse }
-        if let currentOwner, currentOwner != user.id { throw BackendError.accountChanged }
+              let renewed = Credential(response: response) ?? credential else {
+            presentationCache?.clear()
+            throw BackendError.invalidResponse
+        }
+        if let currentOwner, currentOwner != user.id {
+            try clearCredential()
+            throw BackendError.accountChanged
+        }
         if credential?.token != renewed.token || credential?.expires != renewed.expires {
+            presentationCache?.clear()
             try store.write(JSONEncoder().encode(renewed))
+        } else if currentOwner == nil {
+            _ = presentationCache?.read(token: renewed.token, owner: user.id)
         }
         loaded = true
         credential = renewed

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct NativeWeatherView: View {
+    private let agendaLaunch: TodayAgendaLaunch?
     @AppStorage private var selectedPlace: Data
     private let client = WeatherClient.shared
     @State private var place: WeatherPlace?
@@ -15,7 +16,8 @@ struct NativeWeatherView: View {
     @State private var showingPlaces = false
     @State private var showingCredits = false
 
-    init(owner: String? = nil) {
+    init(owner: String? = nil, agendaLaunch: TodayAgendaLaunch? = nil) {
+        self.agendaLaunch = agendaLaunch
         _selectedPlace = AppStorage(wrappedValue: Data(), "inflite.native.weather.place.\(owner ?? "device")")
     }
 
@@ -109,9 +111,11 @@ struct NativeWeatherView: View {
         }
         .sheet(isPresented: $showingPlaces) {
             WeatherPlaceSearch(client: client, currentPlace: place, onSelect: select)
+                .nativeSheetChrome()
         }
         .sheet(isPresented: $showingCredits) {
             WeatherCreditsSheet()
+                .nativeSheetChrome()
         }
         .task { await chooseInitialPlace() }
         .task(id: request) {
@@ -121,6 +125,14 @@ struct NativeWeatherView: View {
             if let request { await load(request, force: true) }
         }
         .onChange(of: section.requestType) { _, _ in failure = nil }
+        .onChange(of: agendaLaunch, initial: true) { _, launch in
+            switch launch?.destination {
+            case .weatherRadar: section = .radar
+            case .weatherForecast: section = .forecast
+            case .weatherWarnings: section = .warnings
+            default: break
+            }
+        }
     }
 
     private var header: some View {
@@ -468,7 +480,7 @@ private struct WeatherCreditsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    NativeSheetCloseButton { dismiss() }
                 }
             }
         }
@@ -549,7 +561,7 @@ private struct WeatherPlaceSearch: View {
             .searchable(text: $query, prompt: "Search for a city")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+                    NativeSheetCloseButton { dismiss() }
                 }
             }
             .task(id: query) { await search(query) }

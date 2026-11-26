@@ -29,7 +29,7 @@ struct NativePublicSheet: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
+                        NativeSheetCloseButton { dismiss() }
                     }
                 }
         }
@@ -51,7 +51,7 @@ struct NativePublicPageView: View {
                 }
             }
             .frame(maxWidth: 620)
-            .padding(20)
+            .padding(NativeStyle.sheetInset)
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)

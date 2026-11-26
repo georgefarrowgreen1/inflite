@@ -2,11 +2,52 @@ import SwiftUI
 import UIKit
 
 enum NativeStyle {
+    static let sheetInset: CGFloat = 16
     static let accent = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(red: 0.71, green: 0.92, blue: 0.22, alpha: 1)
             : UIColor(red: 0.28, green: 0.43, blue: 0.10, alpha: 1)
     })
+}
+
+extension View {
+    func nativeSheetChrome() -> some View {
+        presentationDragIndicator(.visible)
+            .presentationCornerRadius(30)
+            .tint(NativeStyle.accent)
+    }
+}
+
+struct NativeSheetCloseButton: View {
+    var title = "Close"
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: "xmark")
+                .labelStyle(.iconOnly)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 44, height: 44)
+                .background(.thinMaterial, in: .circle)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct NativeEmptyState: View {
+    let title: String
+    let symbol: String
+    var message: String? = nil
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(title, systemImage: symbol)
+        } description: {
+            if let message { Text(message) }
+        }
+    }
 }
 
 struct NativeWallpaper: View {

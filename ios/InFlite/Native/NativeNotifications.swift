@@ -178,10 +178,10 @@ struct NativeNotificationsView: View {
             }
 
             if visible.isEmpty {
-                ContentUnavailableView(
-                    unreadOnly ? "No unread notifications" : "No notifications",
-                    systemImage: "bell",
-                    description: Text(unreadOnly ? "You’re all caught up." : "Notifications delivered to this iPhone appear here.")
+                NativeEmptyState(
+                    title: unreadOnly ? "No unread notifications" : "No notifications",
+                    symbol: "bell",
+                    message: unreadOnly ? "You’re all caught up." : "Notifications delivered to this iPhone appear here."
                 )
                 .listRowBackground(Color.clear)
             } else {

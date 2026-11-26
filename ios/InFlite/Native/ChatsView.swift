@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 struct NativeChatsView: View {
     let owner: String
     let active: Bool
+    let agendaLaunch: TodayAgendaLaunch?
 
     @State private var service: ChatService
     @State private var overview: ChatOverview?
@@ -17,6 +18,7 @@ struct NativeChatsView: View {
     @State private var search = ""
     @State private var working = false
     @State private var issue: String?
+    @State private var handledAgendaLaunch: UUID?
     @Environment(\.scenePhase) private var scenePhase
 
     private enum Sheet: String, Identifiable {
@@ -24,14 +26,26 @@ struct NativeChatsView: View {
         var id: String { rawValue }
     }
 
-    init(owner: String, active: Bool) {
+    init(owner: String, active: Bool, agendaLaunch: TodayAgendaLaunch? = nil) {
         self.owner = owner
         self.active = active
+        self.agendaLaunch = agendaLaunch
         _service = State(initialValue: ChatService(owner: owner))
     }
 
     private var onScreen: Bool { active && scenePhase == .active }
     private var polling: Bool { onScreen && overview != nil && selected == nil && sheet == nil }
+
+    private struct AgendaRequest: Equatable {
+        let launch: TodayAgendaLaunch
+        let unlocked: Bool
+        let visible: Bool
+    }
+
+    private var agendaRequest: AgendaRequest? {
+        guard let agendaLaunch, case .chat = agendaLaunch.destination else { return nil }
+        return AgendaRequest(launch: agendaLaunch, unlocked: overview != nil, visible: onScreen)
+    }
 
     var body: some View {
         Group {
@@ -73,8 +87,10 @@ struct NativeChatsView: View {
                             selected = self.overview?.threads.first(where: { $0.id == id })
                         }
                     }
+                    .nativeSheetChrome()
                 case .requests:
                     ChatRequestsView(overview: overview, service: service, onChange: refresh)
+                        .nativeSheetChrome()
                 }
             }
         }
@@ -86,7 +102,27 @@ struct NativeChatsView: View {
                 await refresh()
             }
         }
+        .task(id: agendaRequest) {
+            guard let request = agendaRequest, request.unlocked, request.visible else { return }
+            await openAgendaConversation(request.launch)
+        }
         .privacySensitive()
+    }
+
+    private func openAgendaConversation(_ launch: TodayAgendaLaunch) async {
+        guard launch.id != handledAgendaLaunch, case .chat(let id, let group) = launch.destination else { return }
+        func candidates() -> [ChatThread] {
+            (overview?.threads ?? []).filter { $0.id == id && (group == nil || $0.group == group) }
+        }
+        if candidates().isEmpty { await refresh() }
+        guard !Task.isCancelled, onScreen, agendaLaunch?.id == launch.id else { return }
+        handledAgendaLaunch = launch.id
+        let matches = candidates()
+        if matches.count == 1 {
+            selected = matches[0]
+        } else if overview != nil {
+            issue = "That conversation isn’t available right now."
+        }
     }
 
     private var unlockView: some View {
@@ -387,7 +423,7 @@ private struct ChatRequestsView: View {
             .navigationTitle("Friend requests")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { NativeSheetCloseButton { dismiss() } }
             }
         }
     }
@@ -475,7 +511,7 @@ private struct ChatConversationView: View {
                     if loading && messages.isEmpty {
                         ProgressView("Opening conversation").padding(28)
                     } else if messages.isEmpty {
-                        ContentUnavailableView("No messages yet", systemImage: "bubble.left")
+                        NativeEmptyState(title: "No messages yet", symbol: "bubble.left")
                     }
                     ForEach(messages) { message in
                         let mine = message.wire.from == owner
@@ -520,9 +556,11 @@ private struct ChatConversationView: View {
                 await load()
                 await onRefresh()
             }
+            .nativeSheetChrome()
         }
         .sheet(item: $media) { message in
             ChatMediaView(service: service, thread: thread, message: message)
+                .nativeSheetChrome()
         }
         .photosPicker(isPresented: $pickingPhoto, selection: $selectedPhoto, matching: .images,
                       preferredItemEncoding: .compatible)
@@ -770,7 +808,7 @@ private struct ChatSafetyView: View {
             .navigationTitle("Safety numbers")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { NativeSheetCloseButton { dismiss() } }
             }
             .task { await load() }
             .confirmationDialog("Do the safety numbers match?", isPresented: Binding(
@@ -851,7 +889,7 @@ private struct ChatMediaView: View {
             .navigationTitle(message.media?.f != nil ? "Attachment" : (message.voice ? "Voice message" : "Photo"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { NativeSheetCloseButton { dismiss() } }
             }
             .task {
                 do {

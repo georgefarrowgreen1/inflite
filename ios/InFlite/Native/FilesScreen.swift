@@ -19,9 +19,10 @@ private struct NativeFilesPage: Decodable {
 
 struct NativeFilesView: View {
     let owner: String
+    var revision = 0
 
     var body: some View {
-        NativeFilesFolder(owner: owner, folder: nil)
+        NativeFilesFolder(owner: owner, folder: nil, revision: revision)
             .navigationDestination(for: NativeFileEntry.self) { folder in
                 NativeFilesFolder(owner: owner, folder: folder)
             }
@@ -31,10 +32,13 @@ struct NativeFilesView: View {
 private struct NativeFilesFolder: View {
     let owner: String
     let folder: NativeFileEntry?
+    var revision = 0
     @State private var items: [NativeFileEntry] = []
     @State private var cursor: String?
     @State private var busy = false
     @State private var loaded = false
+    @State private var loadedRevision: Int?
+    @State private var activeRequest: UUID?
     @State private var error: String?
     @State private var download: NativeFileEntry?
     @State private var document: NativeFileDocument?
@@ -50,7 +54,8 @@ private struct NativeFilesFolder: View {
             }
             if items.isEmpty && error == nil {
                 if loaded {
-                    ContentUnavailableView("Empty folder", systemImage: "folder")
+                    NativeEmptyState(title: "Empty folder", symbol: "folder")
+                        .listRowBackground(Color.clear)
                 } else {
                     ProgressView("Loading files")
                 }
@@ -74,7 +79,9 @@ private struct NativeFilesFolder: View {
         .scrollContentBackground(.hidden)
         .navigationTitle(folder?.name ?? "Files")
         .navigationBarTitleDisplayMode(.inline)
-        .task { if !loaded { await load() } }
+        .task(id: revision) {
+            if !loaded || loadedRevision != revision { await load() }
+        }
         .refreshable { await load() }
         .task(id: download) {
             if let file = download { await fetch(file) }
@@ -109,23 +116,30 @@ private struct NativeFilesFolder: View {
 
     @MainActor
     private func load(after next: String? = nil) async {
-        guard !busy else { return }
+        guard next == nil || !busy else { return }
+        let request = UUID()
+        activeRequest = request
         busy = true
-        defer { busy = false }
+        defer {
+            if activeRequest == request { busy = false }
+        }
         var query = [URLQueryItem(name: "view", value: "folder")]
         if let folder { query.append(.init(name: "parentId", value: folder.id)) }
         if let next { query.append(.init(name: "cursor", value: next)) }
         do {
             let page = try await BackendClient.shared.request(NativeFilesPage.self, path: "/api/files/list", query: query, owner: owner)
-            guard !Task.isCancelled else { return }
-            if next == nil { items = [] }
+            guard !Task.isCancelled, activeRequest == request else { return }
+            if next == nil {
+                items = []
+                loadedRevision = revision
+            }
             var known = Set(items.map(\.id))
             items += page.items.filter { known.insert($0.id).inserted }
             cursor = page.cursor
             loaded = true
             error = nil
         } catch {
-            if !Task.isCancelled { self.error = error.localizedDescription }
+            if !Task.isCancelled, activeRequest == request { self.error = error.localizedDescription }
         }
     }
 

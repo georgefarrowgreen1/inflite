@@ -3,9 +3,10 @@ import SwiftUI
 @MainActor
 struct NativeNotesView: View {
     let owner: String
+    var revision = 0
 
     var body: some View {
-        OrganiseListView(kind: .notes, service: OrganiseService(owner: owner))
+        OrganiseListView(kind: .notes, service: OrganiseService(owner: owner), revision: revision)
             .id(owner)
     }
 }
@@ -24,6 +25,7 @@ struct NativeCalendarView: View {
 private struct OrganiseListView: View {
     let kind: OrganiseKind
     let service: OrganiseService
+    let revision: Int
 
     @State private var query = ""
     @State private var day = Date()
@@ -37,9 +39,10 @@ private struct OrganiseListView: View {
     @State private var loading = false
     @State private var selection: Selection?
 
-    init(kind: OrganiseKind, service: OrganiseService) {
+    init(kind: OrganiseKind, service: OrganiseService, revision: Int = 0) {
         self.kind = kind
         self.service = service
+        self.revision = revision
     }
 
     var body: some View {
@@ -106,7 +109,7 @@ private struct OrganiseListView: View {
                 }
             }
         }
-        .task(id: listQuery) {
+        .task(id: ListRequest(query: listQuery, revision: revision)) {
             let key = listQuery
             if !key.text.isEmpty {
                 try? await Task.sleep(for: .milliseconds(250))
@@ -125,6 +128,7 @@ private struct OrganiseListView: View {
                     OrganiseConnectedEvent(record: record)
                 }
             }
+            .nativeSheetChrome()
         }
     }
 
@@ -284,6 +288,11 @@ private struct OrganiseListView: View {
         let range: OrganiseRange?
     }
 
+    private struct ListRequest: Equatable {
+        let query: ListQuery
+        let revision: Int
+    }
+
     private enum Selection: Identifiable {
         case create(Date), edit(String), connected(OrganiseRecord)
 
@@ -298,7 +307,7 @@ private struct OrganiseListView: View {
 }
 
 @MainActor
-private struct OrganiseEditor: View {
+struct OrganiseEditor: View {
     let kind: OrganiseKind
     let service: OrganiseService
     let recordID: String?
@@ -547,7 +556,7 @@ private struct OrganiseDraftIssue: LocalizedError {
     init(_ message: String) { errorDescription = message }
 }
 
-private struct OrganiseConnectedEvent: View {
+struct OrganiseConnectedEvent: View {
     let record: OrganiseRecord
     @Environment(\.dismiss) private var dismiss
 
@@ -571,7 +580,7 @@ private struct OrganiseConnectedEvent: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { dismiss() }
+                NativeSheetCloseButton { dismiss() }
             }
         }
     }
