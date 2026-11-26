@@ -30,6 +30,74 @@
 			isa = PBXBuildFile;
 			fileRef = 000000000000000000000010 /* BetaSmokeTests.swift */;
 		};
+		BEB69F9EE6A2412A1F950E3F /* ActivityFitnessView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = C6182846F850996C54718602 /* ActivityFitnessView.swift */;
+		};
+		E037BA1723D15EBC2DB7AF84 /* ActivityMarketsView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = C58C73A407CBEB6C8A61A1B9 /* ActivityMarketsView.swift */;
+		};
+		55F93E9382891E5D0E80AD06 /* ActivityModels.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 605504B1DDDDAE00B2B96B68 /* ActivityModels.swift */;
+		};
+		45B168A5BCA968DB0F0AAD9C /* AppShell.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 595CE7A1D875A87037987E54 /* AppShell.swift */;
+		};
+		544812323565323E8CB16C27 /* BackendClient.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = AEAE37C7CA1832939622E304 /* BackendClient.swift */;
+		};
+		F7EE38C971DE2B885B7967B2 /* BackendModels.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = C3A1AB2214865B5D70B5FEC7 /* BackendModels.swift */;
+		};
+		95156AF4EC09A3F43035E031 /* BackendSignIn.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 7FDA33A580E3649ABBCE0DA6 /* BackendSignIn.swift */;
+		};
+		63F8BA331D9A5989078EB6C5 /* FilesScreen.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = B75FA6649D1441A03E2B35EF /* FilesScreen.swift */;
+		};
+		172070DFABBD216F3EE2E6FC /* MailService.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = F2B89F0D9D2985400AAC8590 /* MailService.swift */;
+		};
+		1D3E28F5B4E10B7144A3722E /* MailView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 761B75BB6DC17590083CA270 /* MailView.swift */;
+		};
+		7A1A9E2413E9C3C0EDAF3440 /* NativeStyle.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 38C372AD55D53BA39B8FB835 /* NativeStyle.swift */;
+		};
+		905428A0CB83AA8C28C72863 /* OrganiseService.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = D2F75035F978E619DDD76B95 /* OrganiseService.swift */;
+		};
+		D885D8EA9E944E480FA9B7B7 /* OrganiseViews.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = DF4BC641D2D822AAB27AF6FB /* OrganiseViews.swift */;
+		};
+		CB3269CEEAC54BA27C08F015 /* TodayScreen.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 43831F7F2D63620A0BEFEAC1 /* TodayScreen.swift */;
+		};
+		781E87EDD0E5C73EDD0FEDDD /* WeatherData.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = C191973C21317B2A6FF91F6B /* WeatherData.swift */;
+		};
+		8CAC308FED2D758504663B9C /* WeatherRadar.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = B5C18668D8A18611E5CE69C5 /* WeatherRadar.swift */;
+		};
+		9B7E9E81C0D4C99DA17A0F06 /* WeatherView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 7BEEF85585D44C9B61D80C33 /* WeatherView.swift */;
+		};
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -125,6 +193,108 @@
 			sourceTree = BUILT_PRODUCTS_DIR;
 			includeInIndex = 0;
 		};
+		C6182846F850996C54718602 /* ActivityFitnessView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ActivityFitnessView.swift;
+			sourceTree = "<group>";
+		};
+		C58C73A407CBEB6C8A61A1B9 /* ActivityMarketsView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ActivityMarketsView.swift;
+			sourceTree = "<group>";
+		};
+		605504B1DDDDAE00B2B96B68 /* ActivityModels.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ActivityModels.swift;
+			sourceTree = "<group>";
+		};
+		595CE7A1D875A87037987E54 /* AppShell.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = AppShell.swift;
+			sourceTree = "<group>";
+		};
+		AEAE37C7CA1832939622E304 /* BackendClient.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = BackendClient.swift;
+			sourceTree = "<group>";
+		};
+		C3A1AB2214865B5D70B5FEC7 /* BackendModels.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = BackendModels.swift;
+			sourceTree = "<group>";
+		};
+		7FDA33A580E3649ABBCE0DA6 /* BackendSignIn.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = BackendSignIn.swift;
+			sourceTree = "<group>";
+		};
+		B75FA6649D1441A03E2B35EF /* FilesScreen.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = FilesScreen.swift;
+			sourceTree = "<group>";
+		};
+		F2B89F0D9D2985400AAC8590 /* MailService.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = MailService.swift;
+			sourceTree = "<group>";
+		};
+		761B75BB6DC17590083CA270 /* MailView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = MailView.swift;
+			sourceTree = "<group>";
+		};
+		38C372AD55D53BA39B8FB835 /* NativeStyle.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NativeStyle.swift;
+			sourceTree = "<group>";
+		};
+		D2F75035F978E619DDD76B95 /* OrganiseService.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = OrganiseService.swift;
+			sourceTree = "<group>";
+		};
+		DF4BC641D2D822AAB27AF6FB /* OrganiseViews.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = OrganiseViews.swift;
+			sourceTree = "<group>";
+		};
+		43831F7F2D63620A0BEFEAC1 /* TodayScreen.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = TodayScreen.swift;
+			sourceTree = "<group>";
+		};
+		C191973C21317B2A6FF91F6B /* WeatherData.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = WeatherData.swift;
+			sourceTree = "<group>";
+		};
+		B5C18668D8A18611E5CE69C5 /* WeatherRadar.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = WeatherRadar.swift;
+			sourceTree = "<group>";
+		};
+		7BEEF85585D44C9B61D80C33 /* WeatherView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = WeatherView.swift;
+			sourceTree = "<group>";
+		};
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -155,6 +325,7 @@
 				000000000000000000000009 /* InFliteApp.swift */,
 				00000000000000000000000A /* BrowserSession.swift */,
 				00000000000000000000000B /* NavigationPolicy.swift */,
+				435B5E1AD585B1C5DE38E28D /* Native */,
 				000000000000000000000008 /* Assets.xcassets */,
 				00000000000000000000000C /* Info.plist */,
 				00000000000000000000000D /* InFlite.entitlements */,
@@ -205,6 +376,30 @@
 				000000000000000000000014 /* Config */,
 				000000000000000000000003 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		435B5E1AD585B1C5DE38E28D /* Native */ = {
+			isa = PBXGroup;
+			children = (
+				C6182846F850996C54718602 /* ActivityFitnessView.swift */,
+				C58C73A407CBEB6C8A61A1B9 /* ActivityMarketsView.swift */,
+				605504B1DDDDAE00B2B96B68 /* ActivityModels.swift */,
+				595CE7A1D875A87037987E54 /* AppShell.swift */,
+				AEAE37C7CA1832939622E304 /* BackendClient.swift */,
+				C3A1AB2214865B5D70B5FEC7 /* BackendModels.swift */,
+				7FDA33A580E3649ABBCE0DA6 /* BackendSignIn.swift */,
+				B75FA6649D1441A03E2B35EF /* FilesScreen.swift */,
+				F2B89F0D9D2985400AAC8590 /* MailService.swift */,
+				761B75BB6DC17590083CA270 /* MailView.swift */,
+				38C372AD55D53BA39B8FB835 /* NativeStyle.swift */,
+				D2F75035F978E619DDD76B95 /* OrganiseService.swift */,
+				DF4BC641D2D822AAB27AF6FB /* OrganiseViews.swift */,
+				43831F7F2D63620A0BEFEAC1 /* TodayScreen.swift */,
+				C191973C21317B2A6FF91F6B /* WeatherData.swift */,
+				B5C18668D8A18611E5CE69C5 /* WeatherRadar.swift */,
+				7BEEF85585D44C9B61D80C33 /* WeatherView.swift */,
+			);
+			path = Native;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -333,6 +528,23 @@
 				00000000000000000000001A /* InFliteApp.swift in Sources */,
 				00000000000000000000001B /* BrowserSession.swift in Sources */,
 				00000000000000000000001C /* NavigationPolicy.swift in Sources */,
+				BEB69F9EE6A2412A1F950E3F /* ActivityFitnessView.swift in Sources */,
+				E037BA1723D15EBC2DB7AF84 /* ActivityMarketsView.swift in Sources */,
+				55F93E9382891E5D0E80AD06 /* ActivityModels.swift in Sources */,
+				45B168A5BCA968DB0F0AAD9C /* AppShell.swift in Sources */,
+				544812323565323E8CB16C27 /* BackendClient.swift in Sources */,
+				F7EE38C971DE2B885B7967B2 /* BackendModels.swift in Sources */,
+				95156AF4EC09A3F43035E031 /* BackendSignIn.swift in Sources */,
+				63F8BA331D9A5989078EB6C5 /* FilesScreen.swift in Sources */,
+				172070DFABBD216F3EE2E6FC /* MailService.swift in Sources */,
+				1D3E28F5B4E10B7144A3722E /* MailView.swift in Sources */,
+				7A1A9E2413E9C3C0EDAF3440 /* NativeStyle.swift in Sources */,
+				905428A0CB83AA8C28C72863 /* OrganiseService.swift in Sources */,
+				D885D8EA9E944E480FA9B7B7 /* OrganiseViews.swift in Sources */,
+				CB3269CEEAC54BA27C08F015 /* TodayScreen.swift in Sources */,
+				781E87EDD0E5C73EDD0FEDDD /* WeatherData.swift in Sources */,
+				8CAC308FED2D758504663B9C /* WeatherRadar.swift in Sources */,
+				9B7E9E81C0D4C99DA17A0F06 /* WeatherView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

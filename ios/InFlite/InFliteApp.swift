@@ -5,11 +5,20 @@ import SwiftUI
 struct InFliteApp: App {
     var body: some Scene {
         WindowGroup {
-            BrowserScreen()
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-recovery") {
+                BrowserScreen()
+            } else {
+                NativeRootView()
+            }
+            #else
+            NativeRootView()
+            #endif
         }
     }
 }
 
+#if DEBUG
 @MainActor
 private struct BrowserScreen: View {
     @StateObject private var browser = BrowserSession()
@@ -86,3 +95,4 @@ private struct BrandMark: View {
             .accessibilityHidden(true)
     }
 }
+#endif

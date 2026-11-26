@@ -1,12 +1,14 @@
 # InFlite for iPhone
 
-Beta **0.1.0**, build **1**, targets iOS 17 and later. It opens the production InFlite apps in WebKit inside a SwiftUI app. The existing web screens, dock, settings, data and sign-in carry over. The iPhone app keeps its web session between launches and provides recovery when the connection or WebKit is interrupted. Downloads from InFlite open in the iOS share sheet.
+Beta **0.2.0**, build **1**, targets iOS 17 and later. SwiftUI renders Today, Weather, Markets, Fitness, Mail, Notes, Calendar and Files using the existing InFlite services. The app uses InFlite’s hosted sign-in and keeps its session credential in the device Keychain.
+
+The app includes the Today summary and agenda, weather forecasts and warnings, market quotes and holdings, fitness plans and activities, Mail folders and plain-text messages, Notes and Calendar editing, and Files browsing and export. Mail preserves the existing account and recent verification requirements. Chats, People, full account management and Status open through their existing web screens. Advanced Mail features and detailed fitness planning remain available on the web.
 
 ## Run on a Mac
 
-Open [InFlite.xcodeproj](InFlite.xcodeproj) in Xcode 26, choose the **InFlite** scheme and an iPhone simulator, then choose **Run**. The shared scheme includes navigation and recovery tests and a smoke test of the production sign-in screen. The iOS beta workflow builds and tests on macOS and packages the simulator app. Unzip the package and drag `InFlite.app` into a booted iPhone simulator to install it.
+Open [InFlite.xcodeproj](InFlite.xcodeproj) in Xcode 26, choose the **InFlite** scheme and an iPhone simulator, then choose **Run**. The shared scheme includes native workspace and backend tests. The iOS beta workflow builds and tests on macOS and packages the simulator app. Unzip the package and drag `InFlite.app` into a booted iPhone simulator to install it.
 
-For route testing, use a supported link such as `inflite://weather` or `inflite://mail`. The first launch opens Today at `https://inflite.ai/`.
+For route testing, use a supported link such as `inflite://weather` or `inflite://mail`. Signing in opens the native Today screen.
 
 ## Run on an iPhone
 

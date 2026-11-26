@@ -2,12 +2,38 @@ import XCTest
 
 final class BetaSmokeTests: XCTestCase {
     @MainActor
-    func testProductionSignInScreenLoads() {
+    func testSignedOutAppOffersNativeSignIn() {
         let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-signed-out"]
         app.launch()
 
-        let entry = app.webViews.links["Sign in"]
-        XCTAssertTrue(entry.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["native-sign-in"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+    }
+
+    @MainActor
+    func testNativeTodayDockAndAppLibrary() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-native"]
+        app.launch()
+
+        let today = app.descendants(matching: .any).matching(identifier: "native-today").firstMatch
+        XCTAssertTrue(today.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["dock-today"].exists)
+        XCTAssertTrue(app.buttons["dock-weather"].exists)
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+
+        app.buttons["dock-weather"].tap()
+        let weather = app.descendants(matching: .any).matching(identifier: "native-weather").firstMatch
+        XCTAssertTrue(weather.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+        app.buttons["dock-today"].tap()
+        XCTAssertTrue(today.waitForExistence(timeout: 5))
+
+        app.buttons["dock-apps"].tap()
+        XCTAssertTrue(app.buttons["app-notes"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["app-calendar"].exists)
+        XCTAssertFalse(app.webViews.firstMatch.exists)
     }
 
     @MainActor

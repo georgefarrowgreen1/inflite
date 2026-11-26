@@ -2,7 +2,7 @@ name: iOS App Store
 
 on:
   push:
-    branches: [codex/ios-beta, claude/inflite]
+    branches: [codex/ios-beta, codex/ios-native-beta, claude/inflite]
     tags: ['ios-app-store-*']
     paths:
       - 'ios/**'
