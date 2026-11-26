@@ -1,0 +1,77 @@
+diff --git a/ios/InFlite/Native/AppShell.swift b/ios/InFlite/Native/AppShell.swift
+index bf54e39..2f91648 100644
+--- a/ios/InFlite/Native/AppShell.swift
++++ b/ios/InFlite/Native/AppShell.swift
+@@ -18,12 +18,43 @@ struct NativeRootView: View {
+ 
+     private var preview: Bool {
+         #if DEBUG
+-        ProcessInfo.processInfo.arguments.contains("--ui-test-native")
++        let arguments = ProcessInfo.processInfo.arguments
++        return arguments.contains("--ui-test-native") || Self.screenshotArguments.contains(where: arguments.contains)
+         #else
+-        false
++        return false
+         #endif
+     }
+ 
++    #if DEBUG
++    private static let screenshotArguments = ["--ios-preview-today", "--ios-preview-apps", "--ios-preview-weather"]
++
++    private static let screenshotToday = BackendToday(
++        at: nil, tz: "Europe/London", phase: "morning",
++        cards: BackendTodayCards(weather: BackendWeatherCard(
++            state: "ok",
++            place: BackendWeatherPlace(name: "London", lat: 51.5072, lon: -0.1276),
++            now: BackendWeatherNow(temp: "9°", feels: "7°", label: "Partly cloudy", icon: "partly-sun", isDay: true),
++            day: BackendWeatherDay(hi: "14°", lo: "8°"), hours: nil,
++            lead: "Dry until about 15:00, then rain arriving from the west.", more: nil, href: nil
++        )),
++        tops: ["morning": BackendTodayTop(
++            kind: "plan", chip: "London · now", title: "Your day, joined up",
++            lines: ["Dry for your morning plans, with rain arriving later this afternoon."],
++            stats: [
++                BackendTodayStat(label: "Weather", value: "14° high", tone: nil),
++                BackendTodayStat(label: "Next up", value: "Design review", tone: nil)
++            ]
++        )],
++        upcoming: [
++            BackendTodayEvent(id: "design-review", title: "Design review", sub: "Calendar", app: "calendar",
++                              href: nil, first: nil, name: nil, at: nil),
++            BackendTodayEvent(id: "rain", title: "Rain reaches London", sub: "Around 15:00", app: "weather",
++                              href: nil, first: nil, name: nil, at: nil)
++        ],
++        waiting: nil
++    )
++    #endif
++
+     var body: some View {
+         ZStack {
+             NativeWallpaper(animate: !preview)
+@@ -118,6 +149,11 @@ struct NativeRootView: View {
+         phase = .opening
+         #if DEBUG
+         if preview {
++            let arguments = ProcessInfo.processInfo.arguments
++            if Self.screenshotArguments.contains(where: arguments.contains) {
++                initialToday = Self.screenshotToday
++                destination = arguments.contains("--ios-preview-weather") ? .weather : .today
++            }
+             let user = BackendUser(id: "preview", name: "Alex Morgan", first: "Alex", handle: nil, appearance: nil, photoAt: nil)
+             phase = .ready(user)
+             return
+@@ -177,7 +213,13 @@ private struct NativeWorkspace: View {
+     @Binding var appearance: String
+     let signOut: () -> Void
+     let onSessionExpired: () -> Void
+-    @State private var appsOpen = false
++    @State private var appsOpen = {
++        #if DEBUG
++        return ProcessInfo.processInfo.arguments.contains("--ios-preview-apps")
++        #else
++        return false
++        #endif
++    }()
+     @State private var quickCapture = false
+     @State private var appQuery = ""
+     @State private var visited: Set<InFliteRoute> = [.today]

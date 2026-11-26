@@ -1,0 +1,87 @@
+name: InFlite native iPhone screenshots
+
+on:
+  push:
+    branches: [codex/ios-native-screenshots]
+    paths:
+      - .github/fixtures/ios-native-preview.patch
+      - .github/workflows/ios-native-screenshots.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Apply the simulator preview fixture
+        run: git apply .github/fixtures/ios-native-preview.patch
+      - name: Build the native simulator app
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+        run: |
+          xcodebuild -version
+          xcodebuild -project ios/InFlite.xcodeproj -scheme InFlite -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/inflite-ios" CODE_SIGNING_ALLOWED=NO build
+          app="$RUNNER_TEMP/inflite-ios/Build/Products/Debug-iphonesimulator/InFlite.app"
+          /usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Info.plist"
+      - name: Boot the iPhone 16 Pro simulator
+        id: phone
+        timeout-minutes: 7
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+        run: |
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/iphones.json"
+          device="$(python3 - "$RUNNER_TEMP/iphones.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as devices:
+              runtimes = json.load(devices)["devices"]
+          phones = runtimes.get("com.apple.CoreSimulator.SimRuntime.iOS-18-5", [])
+          phone = next((phone for phone in phones if phone["name"] == "iPhone 16 Pro"), None)
+          if phone is None:
+              sys.exit("No iPhone 16 Pro simulator with iOS 18.5 is available.")
+          print(phone["udid"])
+          PY
+          )"
+          echo "id=$device" >> "$GITHUB_OUTPUT"
+          date -u '+%FT%TZ Booting iPhone 16 Pro'
+          xcrun simctl bootstatus "$device" -b
+      - name: Capture the native screens
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+          DEVICE: ${{ steps.phone.outputs.id }}
+        run: |
+          output="$RUNNER_TEMP/inflite-screenshots"
+          mkdir -p "$output"
+          xcrun simctl install "$DEVICE" "$RUNNER_TEMP/inflite-ios/Build/Products/Debug-iphonesimulator/InFlite.app"
+
+          capture() {
+            local name="$1" appearance="$2" argument="$3" wait_seconds="$4"
+            date -u "+%FT%TZ Opening $name"
+            xcrun simctl ui "$DEVICE" appearance "$appearance" || return 1
+            xcrun simctl launch --terminate-running-process "$DEVICE" ai.inflite.ios "$argument" || return 1
+            sleep "$wait_seconds"
+            xcrun simctl io "$DEVICE" screenshot "$output/$name.png"
+          }
+
+          status=0
+          capture sign-in light --ui-test-signed-out 4 || status=1
+          capture today dark --ios-preview-today 4 || status=1
+          capture apps dark --ios-preview-apps 4 || status=1
+          capture weather light --ios-preview-weather 16 || status=1
+          exit "$status"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: InFlite-native-iPhone-screenshots
+          path: ${{ runner.temp }}/inflite-screenshots
+          if-no-files-found: error
+          retention-days: 14
