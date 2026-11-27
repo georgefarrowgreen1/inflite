@@ -37,6 +37,7 @@ import { roofPage, usesLocalMailFixture } from "./roof.js";
 // Set-Cookie comes back with it (signing in, its renewal, signing out: never anywhere else)
 const ROUTES = {
   "GET /api/session": { path: "today/me", timeout: 8000, cookies: true, view: true },
+  "GET /api/notification-session": { path: "today/notification-session", timeout: 3500 },
   // (who and the day in one trip, as the page opens where someone was signed in last time: { view, cards })
   "GET /api/boot": { path: "today/boot", timeout: 12000, cookies: true, boot: true },
   "POST /api/auth/handback": { path: "today/handback", timeout: 8000, cookies: true, view: true },

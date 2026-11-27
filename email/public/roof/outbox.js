@@ -1,6 +1,6 @@
 // Mail's module: sending (One roof stage 4, spec S4-D16, S4-D18, C9, C10; app.js 5796–5888, 6543–6697).
 // Send = save, then send: a server draft first (POST /api/drafts, files uploaded with progress, or { ref } to Mail's own
-// copy), then "Sending… · Undo" for UNDO_MS (the framework toast's own time), then POST /api/send { draftId, key }: Mail
+// copy), then "Sending… · Undo" for UNDO_MS (the framework toast's own time), then POST /api/send { draftId, draftRevision, key }: Mail
 // sends the stored draft and deletes it. The toast is closed by its handle (C9) the moment the send starts; an Undo after
 // that says "Already sent". Undo before then keeps the draft and opens it again in compose. "Did it go?" asks
 // /api/sends with the key, as app.js does. Offline: a message with files isn't taken ("Files need a connection. Try
@@ -37,7 +37,7 @@ export const NEEDS = "Files need a connection. Try Again";
 export { CAP };
 const LOCKED = "Confirm it’s you to use Mail.";
 
-const FIELDS = ["from", "to", "cc", "bcc", "subject", "text", "quote", "quoteOld", "inReplyTo", "references", "threadId", "draftId"];
+const FIELDS = ["from", "to", "cc", "bcc", "subject", "text", "quote", "quoteOld", "inReplyTo", "references", "threadId", "draftId", "draftRevision"];
 const fieldsOf = (c = {}) => ({ ...Object.fromEntries(FIELDS.map((k) => [k, c[k] ?? null])), ...(c.followUpAt && {followUpAt:c.followUpAt}) });
 const keyOf = () => `ifl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 const online = () => globalThis.navigator?.onLine !== false;
@@ -100,11 +100,12 @@ export function createOutbox(ctx) {
   const payload = async (d, files = []) => {
     const attachments = [];
     for (const f of files || []) {
-      if (f?.ref) attachments.push({ ref: f.ref });
-      else if (Number.isInteger(f?.i)) attachments.push({ i: f.i });   // (a stored draft's own file, by its index: kept)
+      if (f?.draftFile) attachments.push({ draftFile: f.draftFile });
+      else if (f?.ref) attachments.push({ ref: f.ref });
       else if (f && typeof f.arrayBuffer === "function") attachments.push({ filename: f.name || "file", type: f.type || "application/octet-stream", size: f.size, content: await b64(f) });
+      else throw new Error("Reopen the draft to review its attachments.");
     }
-    return { ...(d.draftId && { id: d.draftId }), followUpAt:d.followUpAt || null, from: d.from, to: d.to || [], cc: d.cc || [], bcc: d.bcc || [], subject: d.subject || "", text: d.text || "", inReplyTo: d.inReplyTo || null, references: d.references || null, ...(d.quoteOld ? {} : { quote: d.quote || null }), attachments };   // (an old draft's quote left as Mail has it)
+    return { ...(d.draftId && { id: d.draftId, draftRevision: d.draftRevision || undefined }), followUpAt:d.followUpAt || null, from: d.from, to: d.to || [], cc: d.cc || [], bcc: d.bcc || [], subject: d.subject || "", text: d.text || "", inReplyTo: d.inReplyTo || null, references: d.references || null, ...(d.quoteOld ? {} : { quote: d.quote || null }), attachments };   // (an old draft's quote left as Mail has it)
   };
   const after = () => { ctx.actions?.counts?.(); ctx.actions?.load?.({ quiet: true }); };
 
@@ -119,17 +120,17 @@ export function createOutbox(ctx) {
     mirror();
     if (it.state === "queued") return;
     try {
-      await api.sendDraft(it.draft.draftId, it.key, { keepalive });
+      await api.sendDraft(it.draft.draftId, it.key, { draftRevision: it.draft.draftRevision, keepalive });
       items.delete(it.key);
       mirror();
       if (canDrain()) { toast("Message Sent"); after(); }
     } catch (e) {
       // (Mail refused it, 4xx: it's still in Drafts, to change there; no answer: Try Again asks whether it went first)
       const refused = e.status >= 400 && e.status < 500 && ![401, 408, 429].includes(e.status);
-      if (refused) items.delete(it.key);
+      if (refused && e.status !== 409) items.delete(it.key);
       else it.state = online() ? "failed" : "queued";
       mirror();
-      if (canDrain() && it.state !== "queued") toast(refused ? "Couldn’t send. It’s in Drafts" : "Send unconfirmed", refused ? undefined : { action: { label: "Try Again", run: () => retry(it.key) } });
+      if (canDrain() && it.state !== "queued") toast(refused ? (e.status === 409 ? e.message : "Couldn’t send. It’s in Drafts") : "Send unconfirmed", refused ? undefined : { action: { label: "Try Again", run: () => retry(it.key) } });
     } finally {
       keepQueue();
     }
@@ -157,7 +158,7 @@ export function createOutbox(ctx) {
     } catch (e) {
       return { ok: false, error: e.message || "Couldn’t send", offline: !e.status && !online() };
     }
-    const it = { key: keyOf(), at: Date.now(), draft: { ...d, draftId: saved?.id || d.draftId }, files: (files || []).length, state: "waiting", timer: 0, handle: null };
+    const it = { key: keyOf(), at: Date.now(), draft: { ...d, draftId: saved.id, draftRevision: saved.revision }, files: (files || []).length, state: "waiting", timer: 0, handle: null };
     items.set(it.key, it);
     it.handle = toast("Sending…", {
       action: { label: "Undo", run: () => undo(it.key) },
@@ -211,7 +212,7 @@ export function createOutbox(ctx) {
       if (!canDrain()) throw new Error(LOCKED);
       const saved = await api.saveDraft(body, null, { keepalive });
       if (!saved?.id || retired()) throw new Error("Mail did not confirm the draft");
-      it.draft = { ...it.draft, draftId: saved.id };
+      it.draft = { ...it.draft, draftId: saved.id, draftRevision: saved.revision };
       it.saved = true;
       keepQueue();
     })().finally(() => { it.saving = null; });
@@ -238,7 +239,11 @@ export function createOutbox(ctx) {
           await saveQueued(it);
           if (!canDrain()) break;
           await go(it);
-        } catch { it.state = "queued"; break; }
+        } catch (error) {
+          it.state = "queued";
+          if (error?.status === 409) toast(error.message);
+          break;
+        }
       }
       keepQueue();
       mirror();
@@ -256,7 +261,7 @@ export function createOutbox(ctx) {
   const dropUnsent = () => journal.drop(STORAGE.unsent);
   let draftTimer=0, recovering=null;
   function track(fn, onSaved) {
-    const state = { onSaved, id:null, sig:null, saving:null };
+    const state = { onSaved, id: null, revision: null, sig: null, saving: null };
     tracked.set(fn, state);
     if(!draftTimer)draftTimer=setInterval(()=>{if(!dead&&online())flush({draftsOnly:true}).catch(()=>{})},5000);
     const stop = () => {
@@ -279,9 +284,10 @@ export function createOutbox(ctx) {
     if (!snapshot) return true;
     const draft = fieldsOf(snapshot), files = snapshot.files || [];
     draft.draftId ||= state.id;
+    if (draft.draftId === state.id) draft.draftRevision ||= state.revision;
     if (draftsOnly && files.some(file => file instanceof Blob)) return true;
-    const signature = id => JSON.stringify([{ ...draft, draftId: id }, files.map(f => f?.ref ?? f?.i ?? [f?.name, f?.size])]);
-    if (state.sig === signature(draft.draftId)) return true;
+    const signature = (id, revision) => JSON.stringify([{ ...draft, draftId: id, draftRevision: revision || null }, files.map(f => f?.draftFile ?? f?.ref ?? [f?.name, f?.size])]);
+    if (state.sig === signature(draft.draftId, draft.draftRevision)) return true;
     const kept = unsent();
     state.saving = (async () => {
       const body = await payload(draft, files);
@@ -289,12 +295,13 @@ export function createOutbox(ctx) {
       const result = await api.saveDraft(body, null, { keepalive });
       if (!result?.id) return false;
       state.id = result.id;
-      state.sig = signature(result.id);
+      state.revision = result.revision;
+      state.sig = signature(result.id, result.revision);
       const latest = fn();
       if (!retired() && latest && kept && JSON.stringify(unsent()) === JSON.stringify(kept) &&
           JSON.stringify(fieldsOf(kept)) === JSON.stringify(fieldsOf(snapshot)) &&
           JSON.stringify(fieldsOf(latest)) === JSON.stringify(fieldsOf(snapshot))) dropUnsent();
-      state.onSaved?.(result.id, snapshot);
+      state.onSaved?.(result.id, snapshot, result.revision);
       return true;
     })().catch(() => false).finally(() => { state.saving = null; });
     return state.saving;
@@ -302,18 +309,10 @@ export function createOutbox(ctx) {
 
   async function recoverDraft(kept, keepalive) {
     const draft = fieldsOf(kept);
-    let files = [];
-    if (draft.draftId) {
-      try {
-        files = (await api.draft(draft.draftId)).compose.files;
-        if (!Array.isArray(files)) throw new Error("Mail did not return the draft attachments");
-      } catch (error) {
-        if (error?.status !== 404) throw error;
-        draft.draftId = null;
-      }
-    }
     if (!canDrain()) throw new Error(LOCKED);
-    const result = await api.saveDraft(await payload(draft, files), null, { keepalive });
+    const body = await payload(draft);
+    if (draft.draftId) body.keepAttachments = true;
+    const result = await api.saveDraft(body, null, { keepalive });
     if (!result?.id) throw new Error("Mail did not confirm the draft");
     if (!retired() && JSON.stringify(unsent()) === JSON.stringify(kept)) dropUnsent();
   }

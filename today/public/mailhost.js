@@ -98,8 +98,8 @@
     } catch (_) { return; }
     const { owner, value } = record, latest = unsent();
     if (view?.user?.id !== owner || view.apps?.mail !== true || target !== frame || latest?.owner !== owner || latest.value.at !== value.at) return;
-    const { from, to, cc, bcc, subject, text, inReplyTo, references, draftId, quote, quoteOld } = latest.value;
-    const draft = { from, to, cc, bcc, subject, text, inReplyTo, references, draftId, ...(quote?.of && !quoteOld && { quote: { of: quote.of, mode: quote.mode } }) };
+    const { from, to, cc, bcc, subject, text, inReplyTo, references, draftId, draftRevision, quote, quoteOld } = latest.value;
+    const draft = { from, to, cc, bcc, subject, text, inReplyTo, references, draftId, draftRevision, ...(quote?.of && !quoteOld && { quote: { of: quote.of, mode: quote.mode } }) };
     try { target.contentWindow.postMessage({ ifl: "unsent", v: 2, owner, at: value.at, draft }, MAIL); } catch (_) {}
   }
 

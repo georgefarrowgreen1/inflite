@@ -4,14 +4,22 @@ import {openOfflineStore} from '/roof/offline-store.js';
 // operation until acknowledged; newer typing follows it at the returned version.
 export async function createStore(F,kind){
  const client=createSystemClient(F,{prefix:'/api/organise/'}),items=new Map(),pending=new Map(),forms=new Map(),acknowledged=new WeakMap(),listeners=new Set();let local=null,running=false,serial=Promise.resolve(),sequence=0;
+ const pendingBases=new Map(),recordBases=new WeakMap();
  const live=client.live,emit=()=>{if(live())for(const fn of listeners)fn()},clone=v=>structuredClone(v);
  const newerDraft='A newer draft was kept in another tab. Keep this edit open or copy it before reopening the item.';
  try{local=await openOfflineStore(client.owner,{signal:F.signal});for(const v of await local.list('organise-'+kind))pending.set(v.id,{...v,state:v.state==='conflict'?'conflict':'queued'});for(const v of await local.list('organise-form-'+kind))forms.set(v.recordId,v)}catch(_){}
  if(!live()){local?.close();throw new DOMException('Released','AbortError')}
  const merge=r=>{if(r&&/^[a-f0-9]{32}$/.test(r.id)&&r.kind===kind&&Number.isSafeInteger(r.version)&&(items.get(r.id)?.version||0)<=r.version){items.set(r.id,{...items.get(r.id),...r});sequence++}};
- const view=id=>{const p=pending.get(id);return p?{...items.get(id),id,kind,...clone(p.value),version:p.version,deleted:p.deleted,pending:true,state:p.state,error:p.error,unpersisted:!!p.unpersisted,updatedAt:p.updatedAt}:items.get(id)};
+ function draftBase(id,version){
+  if(!pendingBases.has(id))pendingBases.set(id,{version,editors:new Set()});
+  return pendingBases.get(id);
+ }
+ // Only an acknowledgement of this local draft advances the editor's base.
+ const withDraftBase=(record,p)=>{if(p&&record.version===p.version)recordBases.set(record,draftBase(record.id,p.version));return record};
+ const editBase=record=>recordBases.get(record)||{version:record.version||0};
+ const view=id=>{const p=pending.get(id);return p?withDraftBase({...items.get(id),id,kind,...clone(p.value),version:p.version,deleted:p.deleted,pending:true,state:p.state,error:p.error,unpersisted:!!p.unpersisted,updatedAt:p.updatedAt},p):items.get(id)};
  async function list({q='',cursor=null,range=null,signal}={}){const start=sequence,r=await client.request('list',{method:'POST',signal,body:{kind,q,cursor,...(range?{fromDate:range[0],toDate:range[1],from:new Date(range[0]+'T00:00:00').getTime(),to:new Date(range[1]+'T00:00:00').getTime()}: {})}});if(!live()||signal?.aborted)return null;for(const v of r.records)merge(v);emit();return{...r,records:r.records.map(v=>view(v.id)),start}}
- async function get(id){if(forms.has(id)){const f=forms.get(id);return {id,kind,...clone(f.value),version:f.version,formDraft:true}}if(pending.has(id))return view(id);const r=await client.request('record',{query:{kind,id}});if(live())merge(r.record);return view(id)}
+ async function get(id){if(forms.has(id)){const f=forms.get(id);return withDraftBase({id,kind,...clone(f.value),version:f.version,formDraft:true},pending.get(id))}if(pending.has(id))return view(id);const r=await client.request('record',{query:{kind,id}});if(live())merge(r.record);return pending.has(id)?view(id):r.record}
  async function persist(v,expected){
   if(!local)throw Error('Private device storage is unavailable. Keep this page open and try again.');
   const journalStamp=operationId();
@@ -28,7 +36,7 @@ export async function createStore(F,kind){
   return false;
  }
  function commit(fn){const p=serial.catch(()=>{}).then(()=>{if(!live())throw new DOMException('Released','AbortError');return fn()});serial=p;return p}
- async function save(id,value,{version=0,deleted=false}={}){
+ async function save(id,value,{version=0,deleted=false,editorBase}={}){
   if(!live())throw new DOMException('Released','AbortError');
   // An acknowledgement may be removing the previous journal entry while typing
   // queues this save. Only inherit the version from that same local operation.
@@ -38,7 +46,11 @@ export async function createStore(F,kind){
    if(!await persist(p,old??null)){
     pending.set(id,{...p,state:'conflict',error:newerDraft,unpersisted:true});emit();throw Error(newerDraft);
    }
-   if(live()){pending.set(id,p);sequence++;emit();queueMicrotask(pump)}return view(id);
+   if(live()){
+    const draft=draftBase(id,p.version);
+    if(editorBase&&draft!==editorBase)draft.editors.add(editorBase);
+    pending.set(id,p);sequence++;emit();queueMicrotask(pump);
+   }return view(id);
   });
  }
  async function pump(){if(running||!live()||navigator.onLine===false)return;running=true;
@@ -60,6 +72,9 @@ export async function createStore(F,kind){
     await commit(async()=>{
      if(!live())return;
      merge(r.record);acknowledged.set(op,r.record.version);
+     const draft=draftBase(id,op.version);
+     draft.version=r.record.version;
+     for(const editorBase of draft.editors)editorBase.version=draft.version;
      const form=forms.get(id);
      if(form&&form.version===op.version){
       const next={...form,version:r.record.version};
@@ -69,7 +84,7 @@ export async function createStore(F,kind){
      const current=pending.get(id);
      if(!current)return;
      if(current.revision===op.revision){
-      await local.remove(id,current);pending.delete(id);
+      await local.remove(id,current);pending.delete(id);pendingBases.delete(id);
      }else{
       await replacePending(current,{...current,version:r.record.version,operation:null,state:'queued',error:''});
      }
@@ -87,10 +102,23 @@ export async function createStore(F,kind){
   }}}finally{running=false;emit()}
  }
  async function retry(id){await commit(async()=>{const p=pending.get(id);if(!p||p.state==='conflict')return;await replacePending(p,{...p,state:'queued',error:''});emit()});pump()}
- async function discard(id){await commit(async()=>{const row=pending.get(id);if(row?.state==='saving')throw Error('Wait for the current save.');if(row)await local?.remove(id,row);pending.delete(id);emit()})}
- async function copy(id){const p=pending.get(id);if(!p)throw Error('That draft is no longer available.');const fresh=operationId();await save(fresh,{...p.value,title:p.value.title+' (copy)'},{version:0});await discard(id);return fresh}
+ async function discard(id,held){await commit(async()=>{
+  const row=pending.get(id);
+  if(held&&(!held.current()||row!==held.row||forms.get(id)!==held.form))return;
+  if(row?.state==='saving')throw Error('Wait for the current save.');
+  if(row)await local?.remove(id,row);
+  if(held?.form){await local?.remove(held.form.id,held.form);forms.delete(id)}
+  pending.delete(id);pendingBases.delete(id);emit();
+ })}
+ async function copy(id,value,current){
+  const held={row:pending.get(id),form:forms.get(id),current},fresh=operationId(),suffix=' (copy)';
+  const title=value.title.length+suffix.length<=160?value.title+suffix:value.title;
+  await save(fresh,{...value,title},{version:0});
+  await discard(id,held);
+  return fresh;
+ }
  const online=()=>{for(const p of pending.values())if(p.state==='failed'&&(!p.status||p.status>=500||[408,429].includes(p.status)))retry(p.id).catch(()=>{});pump()};window.addEventListener('online',online,{signal:F.signal});
- F.signal.addEventListener('abort',()=>{local?.close();items.clear();pending.clear();forms.clear();listeners.clear()},{once:true});queueMicrotask(pump);
+ F.signal.addEventListener('abort',()=>{local?.close();items.clear();pending.clear();pendingBases.clear();forms.clear();listeners.clear()},{once:true});queueMicrotask(pump);
  async function keepForm(id,value,version){
   return commit(async()=>{
    const v={id:'form:'+id,recordId:id,kind:'organise-form-'+kind,value:clone(value),version,updatedAt:Date.now()};
@@ -104,5 +132,5 @@ export async function createStore(F,kind){
   try{await serial}catch(error){if(!unpersisted())throw error}
   return{lost:unpersisted()};
  }
- return{list,get,save,retry,discard,copy,view,keepForm,dropForm,localForms:()=>[...forms.values()].map(v=>({id:v.recordId,kind,...clone(v.value),version:v.version,formDraft:true,updatedAt:v.updatedAt})),ready:()=>!!local,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},pending:()=>[...pending.keys()].map(view),snapshot:()=>[...new Set([...items.keys(),...pending.keys()])].map(view).filter(v=>!v.deleted),busy:()=>running||unpersisted()>0,flush,remote:async id=>(await client.request('record',{query:{kind,id}})).record};
+ return{list,get,save,retry,discard,copy,view,editBase,keepForm,dropForm,localForms:()=>[...forms.values()].map(v=>({id:v.recordId,kind,...clone(v.value),version:v.version,formDraft:true,updatedAt:v.updatedAt})),ready:()=>!!local,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},pending:()=>[...pending.keys()].map(view),snapshot:()=>[...new Set([...items.keys(),...pending.keys()])].map(view).filter(v=>!v.deleted),busy:()=>running||unpersisted()>0,flush,remote:async id=>(await client.request('record',{query:{kind,id}})).record};
 }

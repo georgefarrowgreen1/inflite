@@ -962,7 +962,7 @@ img, svg, a { -webkit-user-drag: none; }
 @media (prefers-reduced-motion: reduce) { .ifh { transition-duration: 0.01s; } }
 .ifh { --p: 0; --ifh-pt0: var(--ifh-pt, calc(env(safe-area-inset-top, 0px) + 10px)); position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center; column-gap: 12px; box-sizing: border-box; height: calc(var(--ifh-pt0) + 72px - 24px * var(--p)); margin: 0 0 calc(var(--ifh-mb, 0px) + 24px * var(--p));
-  padding: calc(var(--ifh-pt0) - 4px * var(--p)) var(--ifl-page-right) calc(14px - 6px * var(--p)) var(--ifl-page-left);
+  padding: calc(var(--ifh-pt0) - 4px * var(--p)) max(16px, env(safe-area-inset-right, 0px)) calc(14px - 6px * var(--p)) max(16px, env(safe-area-inset-left, 0px));
   color: var(--ifh-ink, inherit); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
 /* (the band behind the header once the page has scrolled: solid the whole way down the header, so nothing reads through
    behind its title, then fading out over the 16px below it) */
@@ -985,7 +985,7 @@ img, svg, a { -webkit-user-drag: none; }
 .ifh-me.out svg { width: 22px !important; height: 22px !important; stroke-width: 2; }
 .ifh-me:active, .ifh-act:active { transform: scale(var(--ifl-press-icon, 0.94)); }
 .ifh-t { min-width: 0; display: grid; }
-.ifh-name { display: flex; align-items: center; min-width: 0; margin: 0; font-size: calc(var(--ifl-mobile-title) * (1 - 0.34 * var(--p))); font-weight: 700; line-height: 1.12; letter-spacing: calc(0.3px - 0.6px * var(--p));
+.ifh-name { display: flex; align-items: center; min-width: 0; margin: 0; font-size: calc(clamp(26px, 8.6vw, 32px) * (1 - 0.375 * var(--p))); font-weight: 700; line-height: 1.12; letter-spacing: calc(0.3px - 0.6px * var(--p));
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 .ifh-name > span { overflow: hidden; text-overflow: ellipsis; }
 .ifh-pick { display: inline-flex !important; align-items: center; gap: 4px; min-width: 0; max-width: 100%; padding: 0 !important; font-weight: inherit !important; letter-spacing: inherit; text-align: left; }
@@ -1142,10 +1142,6 @@ html.ifl-colour-change::view-transition-new(inflite-dock) { animation: none; mix
   --ifl-shadow-control: 0 1px 3px rgba(0, 0, 0, 0.05), 0 5px 14px -10px rgba(0, 0, 0, 0.16);
   --ifl-space-1: 4px; --ifl-space-2: 8px; --ifl-space-3: 12px;
   --ifl-space-4: 16px; --ifl-space-5: 24px; --ifl-space-6: 32px;
-  --ifl-page-gutter: clamp(16px, 4.8vw, 24px);
-  --ifl-page-left: max(var(--ifl-page-gutter), env(safe-area-inset-left, 0px));
-  --ifl-page-right: max(var(--ifl-page-gutter), env(safe-area-inset-right, 0px));
-  --ifl-mobile-title: clamp(25px, 7.2vw, 30px);
   --ifl-radius-card: 26px; --ifl-radius-group: 22px; --ifl-radius-sheet: 30px; --ifl-radius-row: 16px; --ifl-radius-pill: 999px;
   --ifl-motion-press: 0.09s; --ifl-motion-release: 0.42s; --ifl-motion-fast: 0.16s;
   --ifl-motion-enter: 0.36s; --ifl-motion-exit: 0.22s; --ifl-motion-layout: 0.28s;
@@ -1355,6 +1351,16 @@ html[data-motion-paused] *, html[data-motion-paused] *::before, html[data-motion
 }
 .ifm-in-today { --ifm-tint: var(--ifl-accent-ink); }
 /* ==== end of InFlite's menu ==== */
+
+/* Align the Today header with its content gutter and title scale. */
+:root {
+  --ifl-page-gutter: clamp(16px, 4.8vw, 24px);
+  --ifl-page-left: max(var(--ifl-page-gutter), env(safe-area-inset-left, 0px));
+  --ifl-page-right: max(var(--ifl-page-gutter), env(safe-area-inset-right, 0px));
+  --ifl-mobile-title: clamp(25px, 7.2vw, 30px);
+}
+.ifh { padding-right: var(--ifl-page-right); padding-left: var(--ifl-page-left); }
+.ifh-name { font-size: calc(var(--ifl-mobile-title) * (1 - 0.34 * var(--p))); }
 
 .ifm-in-today .ifm-row[data-k="notifications"]:has(.ifm-val:not(:empty)) {
   grid-template-columns: 30px minmax(0, 1fr) auto 15px;

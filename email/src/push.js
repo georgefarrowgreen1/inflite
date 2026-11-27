@@ -125,7 +125,7 @@ async function pushToSub(env, sub, note) {
 }
 
 // A notice to every device notifications are on for. → how many it reached
-export async function pushAll(env, note) {
+async function pushAll(env, note) {
   const { results } = await env.DB.prepare(`SELECT endpoint, p256dh, auth FROM push_subs`).all();
   const sent = await Promise.all(
     results.map(async (sub) => {
@@ -135,6 +135,21 @@ export async function pushAll(env, note) {
     })
   );
   return sent.reduce((a, b) => a + b, 0);
+}
+
+// A push service and a device without Mail access get only an expiring delivery token.
+const NOTICE_TTL = 24 * 60 * 60;
+export const PUSH_NOTICE_ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
+
+export async function pushMailNotice(env, { kind, threadId }) {
+  const id = crypto.randomUUID();
+  const stored = await env.DB.prepare(`INSERT INTO push_notices (id, thread_id, kind, expires_at) VALUES (?1, ?2, ?3, ?4)`)
+    .bind(id, threadId, kind, Date.now() + NOTICE_TTL * 1000).run().catch(() => null);
+  return pushAll(env, stored ? { notice: id, ttl: NOTICE_TTL } : {});
+}
+
+export function getPushNotice(env, id) {
+  return env.DB.prepare(`SELECT thread_id, kind FROM push_notices WHERE id = ?1 AND expires_at > ?2`).bind(id, Date.now()).first();
 }
 
 // (the Home Screen badge: unread conversations in People; only those with something unread in the inbox read, not every

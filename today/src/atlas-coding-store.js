@@ -1,3 +1,4 @@
+import { REPAIR_VALIDATION_UNAVAILABLE } from './atlas-repair-policy.js';
 import { AtlasStoreError, getConversation } from './atlas-store.js';
 import { environmentStorageStatus } from './atlas-environments.js';
 
@@ -83,7 +84,10 @@ export function publicCodingRun(run) {
     changes: run.changes,
     createdAt: run.created_at, updatedAt: run.updated_at, finishedAt: run.finished_at,
     canContinue: workspace.canContinue,
-    ...(configuration.incident ? { incident: configuration.incident } : {}),
+    ...(configuration.incident ? { incident: configuration.incident, publicationBlocked: REPAIR_VALIDATION_UNAVAILABLE } : {}),
+    ...(!configuration.incident && ['coding_publish_cancelled', 'coding_publish_outcome_unconfirmed'].includes(run.error_code) ? { publicationBlocked: run.error_message } : {}),
+    ...(!configuration.incident && run.status === 'publishing' && !run.cancel_requested && !run.publish_url
+      ? { publishRetryAt: run.lease_until == null ? 0 : run.lease_until + 1 } : {}),
     environment: { profileId: run.environment_profile_id || null, name: configuration.name || 'Default cloud environment', repository: run.repository, branch: configuration.branch || run.base_branch || '', machine: configuration.machine || 'medium', network: configuration.network || 'dependencies', setupCommand: configuration.setupCommand || '', testCommand: configuration.testCommand || '', revision: configuration.revision || 1 },
     cloud: workspace.cloud, recovery: workspace.recovery,
     ...(checkpoint?.fileCount > 0 ? { savedCheckpoint: checkpoint } : {}),

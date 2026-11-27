@@ -120,7 +120,7 @@ export function createApi({ base = MAIL, onLost = null, onRefused = null, draftO
     updateAddress: (email, patch) => req("PATCH", `/api/addresses/${enc(email)}`, patch),
     findContacts: (q) => req("POST", "/api/contacts/find", { q }),
     saveDraft: (draft, onProgress, opts = {}) => draftWrite("/api/drafts", draft, { upload: true, onProgress, ...opts }),
-    sendDraft: (draftId, key, opts = {}) => draftWrite("/api/send", { draftId, key }, opts),
+    sendDraft: (draftId, key, opts = {}) => draftWrite("/api/send", { draftId, draftRevision: opts.draftRevision, key }, opts),
     sent: (keys) => req("GET", `/api/sends?${qs({ keys: keys.join(",") })}`),
     picture: (id, options = {}) => options.export
       ? req("POST", `/api/attachments/${enc(id)}/export`, {}, { blob: true })

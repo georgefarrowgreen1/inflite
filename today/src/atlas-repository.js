@@ -640,7 +640,8 @@ function validateStoredPatch(patch) {
 }
 
 function verifiedPull(pr, { repository, branch, branchCommit, baseBranch, baseSha }) {
-  if (pr?.draft !== true || pr?.state !== 'open' || pr.head?.sha !== branchCommit || pr.head?.ref !== branch || pr.base?.ref !== baseBranch || pr.base?.sha !== baseSha || !Number.isSafeInteger(pr.number) || pr.number < 1) throw failure('patch_pr_conflict', 'The pull request no longer matches this draft. Review it on GitHub before trying again.', 409);
+  const baseMatches = baseSha === undefined ? shaPattern.test(pr?.base?.sha || '') : pr?.base?.sha === baseSha;
+  if (pr?.draft !== true || pr?.state !== 'open' || pr.head?.sha !== branchCommit || pr.head?.ref !== branch || pr.base?.ref !== baseBranch || !baseMatches || !Number.isSafeInteger(pr.number) || pr.number < 1) throw failure('patch_pr_conflict', 'The pull request no longer matches this draft. Review it on GitHub before trying again.', 409);
   const expected = 'https://github.com/' + repository + '/pull/' + pr.number;
   let url;
   try { url = new URL(pr.html_url); } catch { throw failure('github_response_invalid', 'GitHub did not return the draft pull request address.', 502); }
@@ -728,6 +729,25 @@ export async function publishPatch(env, owner, id, options = {}) {
 // between GitHub mutations. A retry can recover the same branch and draft PR.
 const codingDraftBranch = ({ id, revision }) => 'atlas/coding-' + id + '-r' + revision;
 
+async function findCodingDraft(route, opts, repository, branch, baseBranch) {
+  const owner = repository.split('/')[0];
+  const matching = await githubFetch(route + '/pulls?state=open&head=' + encodeURIComponent(owner + ':' + branch) + '&base=' + encodeURIComponent(baseBranch), opts);
+  if (!Array.isArray(matching)) throw failure('github_response_invalid', 'GitHub could not verify existing coding pull requests.', 502);
+  return matching.find(pull => pull.head?.ref === branch);
+}
+
+export async function recoverCodingPublication(env, owner, candidate, options = {}) {
+  const { repository, baseBranch } = candidate;
+  const { opts } = await repositoryAccess(env, owner, repository, { ...options, signal: AbortSignal.timeout(15000) });
+  const route = baseURL(repository), branch = codingDraftBranch(candidate);
+  const pull = await findCodingDraft(route, opts, repository, branch, baseBranch);
+  if (!pull) return null;
+  const headSha = pull.head?.sha;
+  const result = verifiedPull(pull, { repository, branch, branchCommit: headSha, baseBranch });
+  await verifyLegacyCodingCommit(route, opts, candidate, headSha);
+  return { ...result, headSha };
+}
+
 export async function publishCodingChanges(env, owner, candidate, options = {}) {
   if (!candidate || !idPattern.test(candidate.id || '') || !Number.isSafeInteger(candidate.revision) || candidate.revision < 1 || candidate.revision > 1000000 || !shaPattern.test(candidate.baseSha || '') || !shaPattern.test(candidate.baseTreeSha || '') || typeof candidate.baseBranch !== 'string' || !candidate.baseBranch || candidate.baseBranch.length > 200 || /[\x00-\x20~^:?*\[\\]/.test(candidate.baseBranch) || candidate.baseBranch.includes('..') || candidate.baseBranch.startsWith('/') || candidate.baseBranch.endsWith('/') || candidate.baseBranch.includes('//') || typeof candidate.title !== 'string' || !candidate.title.trim() || candidate.title.length > 160 || typeof candidate.summary !== 'string' || candidate.summary.length > 30000 || !Array.isArray(candidate.files) || !candidate.files.length || candidate.files.length > 512) throw failure('coding_publish_invalid', 'Review a complete coding revision before publishing.', 409);
   safeRepository(candidate.repository);
@@ -813,10 +833,7 @@ export async function publishCodingChanges(env, owner, candidate, options = {}) 
   await currentBase();
   const verifiedBranch = await githubFetch(route + '/git/ref/heads/' + pathURL(branch), opts);
   if (verifiedBranch.object?.sha !== branchCommit) throw failure('coding_branch_conflict', 'The coding draft branch changed during publication.', 409);
-  const ownerName = candidate.repository.split('/')[0];
-  const matching = await githubFetch(route + '/pulls?state=open&head=' + encodeURIComponent(ownerName + ':' + branch) + '&base=' + encodeURIComponent(candidate.baseBranch), opts);
-  if (!Array.isArray(matching)) throw failure('github_response_invalid', 'GitHub could not verify existing coding pull requests.', 502);
-  let pr = matching.find(pull => pull.head?.ref === branch);
+  let pr = await findCodingDraft(route, opts, candidate.repository, branch, candidate.baseBranch);
   if (!pr) {
     const checks = (Array.isArray(candidate.checks) ? candidate.checks : []).filter(check => check?.source === 'provider_command_execution' && typeof check.command === 'string').slice(-40);
     const evidence = checks.length ? checks.map(check => '- `' + check.command.replace(/[\r\n]+/g, ' ').replace(/`/g, "'").slice(0, 500) + '` — ' + (Number.isSafeInteger(check.exitCode) ? 'exit ' + check.exitCode : 'completion not verified')).join('\n') : 'No completed command evidence was captured for this revision.';

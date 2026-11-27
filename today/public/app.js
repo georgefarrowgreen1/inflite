@@ -18,12 +18,12 @@ import { createResumeState, RESUME_PREFIX } from "/roof/restore.js";
 const shellPerformance = createShellPerformance();
 
 // Today's build, shown in InFlite's menu (raised with each release)
-const BUILD = "4.62.5";
+const BUILD = "4.62.6";
 // (what's new in it, said once it's in)
-const NEWS = "Open InFlite faster and keep your place as apps refresh.";
+const NEWS = "Improves draft recovery, calendar previews and notification privacy.";
 // Today, Files and apps share one InFlite shell. Query opt-in is only for local previews.
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(location.hostname) && new URL(location.href).searchParams.get("os") === "1";
-const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.33.2/store.js","/os.webmanifest"];
+const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.33.3/store.js","/os.webmanifest"];
 if (OS_MODE) {
   document.title = "InFlite";
   document.querySelector('link[rel="manifest"]')?.setAttribute("href", "/manifest.webmanifest");
@@ -1580,6 +1580,26 @@ const APP_KEPT = [
 ];
 // (and what a module keeps for this tab only: Mail's sign-in word while its trip's under way)
 const APP_SESSION_KEPT = ["mail:signin-verifier"];
+async function forgetNotifications(owner, epoch = null) {
+  const reg = await navigator.serviceWorker?.getRegistration?.("/").catch(() => null);
+  if (reg?.active) await new Promise(resolve => {
+    const ch = new MessageChannel();
+    const finish = () => { clearTimeout(timer); ch.port1.close(); resolve(); };
+    const timer = setTimeout(finish, 3000);
+    ch.port1.onmessage = finish;
+    try { reg.active.postMessage({ ifl: "notes-forget", owner, epoch }, [ch.port2]); } catch { finish(); }
+  });
+  // Older workers do not understand notes-forget. Discard unowned legacy data there too.
+  await Promise.all([
+    inStore("inflite-notes", "kv", s => {
+      const q = s.get("log");
+      q.onsuccess = () => { if (!q.result?.owner || !q.result?.epoch) s.delete("log"); };
+    }),
+    reg?.getNotifications?.().then(list => {
+      for (const n of list) if (!n.data?.owner || !n.data?.epoch) n.close();
+    }).catch(() => {}),
+  ]);
+}
 // (an app's IndexedDB store at this address, changed by fn, if the app keeps one here; never made here where it doesn't,
 // as there's nothing to let go of then. However it ends, within a few seconds: iOS can leave an open hanging)
 function inStore(name, store, fn) {
@@ -1599,11 +1619,47 @@ function inStore(name, store, fn) {
     };
   });
 }
+// Sign-out deletes the device journal. Check its metadata without loading keys,
+// opening an organiser app, or starting sync simply to determine what will be lost.
+async function hasPurgeableWork(owner){
+ const name="ifl:offline:v1:"+owner;
+ if(!localStorage.getItem(name))return false;
+ const kinds=new Set(['organise-notes','organise-calendar','organise-people','organise-form-notes','organise-form-calendar','organise-form-people','capture','upload','action','preferences']);
+ return new Promise((resolve,reject)=>{
+  const opening=indexedDB.open(name);
+  const timer=setTimeout(()=>reject(Error('Offline work could not be checked.')),2000);
+  let missing=false;
+  opening.onupgradeneeded=()=>{missing=true;opening.transaction.abort()};
+  opening.onerror=()=>{clearTimeout(timer);if(missing)resolve(false);else reject(opening.error)};
+  opening.onsuccess=async()=>{
+   const db=opening.result;
+   try{
+    const store=db.transaction('work').objectStore('work');
+    if(store.indexNames.contains('kind')){
+     const index=store.index('kind');
+     const counts=await Promise.all([...kinds].map(kind=>new Promise((yes,no)=>{
+      const request=index.count(kind);
+      request.onsuccess=()=>yes(request.result);request.onerror=()=>no(request.error);
+     })));
+     resolve(counts.some(Boolean));
+    }else{
+     const cursor=store.openCursor();
+     resolve(await new Promise((yes,no)=>{
+      cursor.onerror=()=>no(cursor.error);
+      cursor.onsuccess=()=>{const row=cursor.result;if(!row)yes(false);else if(kinds.has(row.value.kind))yes(true);else row.continue()};
+     }));
+    }
+   }catch(error){reject(error)}finally{clearTimeout(timer);db.close()}
+  };
+ });
+}
 // chat: Chat's sign-in on this phone too, when its own engine didn't sign out here (no engine, or no answer from it)
-async function forgetApps({ chat = true } = {}) {
+async function forgetApps({ chat = true, notesCleared } = {}) {
+  const owner = S.view?.user?.id || readJSON(KEPT)?.id || null;
   try { for (const k of APP_KEPT) localStorage.removeItem(k); } catch {}
   try { for (const k of APP_SESSION_KEPT) sessionStorage.removeItem(k); } catch {}
   await Promise.all([
+    notesCleared || forgetNotifications(owner).catch(() => {}),
     // Fitness's copies of your activities' files, and of you (me:last), as its own Sign Out clears them
     inStore("fitness", "files", (s) => s.clear()),
     // Chat's sign-in and key, and its kept copy of your chats, as its forget() lets them go (and your pinned chats, once
@@ -1770,8 +1826,11 @@ async function signOut() {
 
 async function signOutAccount(owner) {
   const sameAccount = () => S.view?.user?.id === owner;
+  const notificationEpoch = bell?.epoch();
   const fl = await Promise.resolve().then(() => F?.flush?.()).catch(() => ({lost:1}));
-  if (!sameAccount() || (fl?.lost > 0 && !(await anyway()))) return;
+  if (!sameAccount()) return;
+  const kept = await hasPurgeableWork(owner).catch(() => true);
+  if (!sameAccount() || ((fl?.lost > 0 || kept) && !(await anyway()))) return;
   const endpoint = await currentSub().then((sub) => sub?.endpoint || null, () => null);
   if (!sameAccount()) return;
   // Keep the open apps and their drafts until Account acknowledges the logout.
@@ -1789,6 +1848,7 @@ async function signOutAccount(owner) {
   }
   const auth = safe(S.links?.auth) || DEFAULT_LINKS.auth;
   resetRequests();
+  const notesCleared = forgetNotifications(owner, notificationEpoch).catch(() => {});
   const chatOut = S.hub && await Promise.race([
     IFL.hub.chat().then(async (c) => { if (!sameAccount() || typeof c?.signOut !== "function") return false; await c.signOut(); return true; }).catch(() => false),
     new Promise((ok) => setTimeout(() => ok(false), 4000)),
@@ -1797,10 +1857,10 @@ async function signOutAccount(owner) {
   if (chatsHere) await Promise.race([F?.releaseService("chats", { terminate: true }), new Promise((ok) => setTimeout(ok, 2000))]);
   if (!sameAccount()) return;
   resetRequests();
-  forgetKept();
   // Let editors finish closing before removing their local copies.
   unframe();
-  await forgetApps({ chat: chatsHere || !chatOut });
+  forgetKept();
+  await forgetApps({ chat: chatsHere || !chatOut, notesCleared });
   if (!sameAccount()) return;
   try { localStorage.removeItem("today:push"); } catch {}
   S.view = null;
@@ -1809,11 +1869,12 @@ async function signOutAccount(owner) {
 
 // (Sign Out Anyway? → true to go on; Cancel, Escape or the cross → false)
 function anyway() {
-  if (!F) return Promise.resolve(true);
+  const text = "Signing out removes drafts, uploads and changes that are only on this device.";
+  if (!F) return Promise.resolve(confirm(text));
   return new Promise((ok) => {
     let yes = false, h = null;
     h = F.sheet.open({ sheet: "confirm", title: "Sign Out Anyway?", app: "inflite",
-      body: F.ui.el("p", { class: "ifl-sub", text: "Something you wrote couldn’t be saved to its app. Sign Out Anyway?" }),
+      body: F.ui.el("p", { class: "ifl-sub", text }),
       acts: [{ label: "Cancel", act: "cancel", run: () => h.close() }, { label: "Sign Out", act: "signout", destructive: true, primary: true, run: () => { yes = true; h.close(); } }],
       onClose: () => ok(yes) });
   });

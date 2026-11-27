@@ -164,19 +164,21 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
   const owner = F.session?.view?.user?.id;
   let list = [], unread = 0, h = null, box = null, all = null, mark = null, filters = null, said = null, gone = false, busy = 0, tick = 0;
   let filter = "all", shown = new Set(), back = new Set();
+  let epoch = null, sent = 0, applied = 0;
   // (the last clearing, for the toast's Undo: what's cleared within its few seconds joins it)
   let undo = null, toasted = null;
   const pending = new Set();
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const sw = navigator.serviceWorker;
   const newest = (a, b) => b.at - a.at;
-  const owned = () => !gone && !F.signal?.aborted && (!owner || F.session?.view?.user?.id === owner);
+  const owned = () => !!owner && !gone && !F.signal?.aborted && F.session?.view?.user?.id === owner;
   // (the worker asked, answered on a port; null for no worker or no answer in 3 s)
   function ask(msg) {
+    const order = ++sent;
     return new Promise((ok) => {
       let done = false, ch = null;
-      const fin = (v) => { if (done) return; done = true; clearTimeout(t); pending.delete(fin); ch?.port1.close?.(); ch?.port2.close?.(); ok(v); };
-      const t = setTimeout(() => fin(null), 3000);
+      const fin = (data) => { if (done) return; done = true; clearTimeout(t); pending.delete(fin); ch?.port1.close?.(); ch?.port2.close?.(); ok({ data, order }); };
+      const t = setTimeout(() => fin(null), 6000);
       pending.add(fin);
       if (!owned()) return fin(null);
       Promise.resolve(sw?.getRegistration?.("/")).then((r) => {
@@ -185,14 +187,25 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
         if (!w) return fin(null);
         ch = new MessageChannel();
         ch.port1.onmessage = (e) => fin(e.data?.ifl === "notes" ? e.data : null);
-        try { w.postMessage(msg, [ch.port2]); } catch (_) { fin(null); }
+        try { w.postMessage({ ...msg, owner, epoch }, [ch.port2]); } catch (_) { fin(null); }
       }, () => fin(null));
     });
   }
-  function take(d) {
-    if (!owned() || d?.kept === false || !Array.isArray(d?.list)) return;
-    list = d.list.filter((n) => n && typeof n.id === "string" && Number.isFinite(n.at)).sort(newest);
-    unread = Math.max(0, Number(d.unread) || 0);
+  function reset() {
+    epoch = null;
+    list = []; unread = 0; undo = null;
+    toasted?.remove(); toasted = null;
+    count(0);
+    if (h) paint();
+  }
+  function take({ data, order }) {
+    if (!owned() || order <= applied) return;
+    applied = order;
+    if (data?.kept !== true || data.owner !== owner || !/^[a-f\d]{64}$/.test(data.epoch || "") || !Array.isArray(data.list)) return reset();
+    if (epoch && data.epoch !== epoch) reset();
+    epoch = data.epoch;
+    list = data.list.filter(n => n && typeof n.id === "string" && Number.isFinite(n.at)).sort(newest);
+    unread = list.filter(n => !n.seen).length;
     count(unread);
     // (not while a row's going: it's drawn again once it's gone)
     if (h && !busy) paint();
@@ -369,23 +382,36 @@ export function createBell(F, { count = () => {}, go = (u) => F.nav.go(u, { from
     all.addEventListener("click", () => { if (active() && filter === "all") clearAll(); });
     h.el.querySelector(".ifs-head [data-close]")?.before(set);
     h.body.before(controls);
+    // Do not render cached text while a newly opened inbox is checking its session.
+    list = [];
     paint();
     tick = setInterval(retime, 30e3);
     refresh();
     return h;
   }
-  const heard = (e) => { if (e.data?.ifl === "notes") take(e.data); };
+  const heard = (e) => {
+    if (!owned()) return;
+    if (e.data?.ifl === "notes-reset") { applied = sent; reset(); }
+    if (["notes-updated", "notes-reset"].includes(e.data?.ifl)) refresh();
+  };
   const seen = () => { if (document.visibilityState === "visible") refresh(); };
+  const changed = e => {
+    if (e.key !== "today:session") return;
+    let id;
+    try { id = JSON.parse(e.newValue)?.id; } catch {}
+    if (id !== owner) destroy();
+  };
   sw?.addEventListener?.("message", heard);
   document.addEventListener("visibilitychange", seen);
+  addEventListener("storage", changed);
   F.signal?.addEventListener?.("abort", destroy, { once: true });
   if (F.signal?.aborted) destroy(); else refresh();
   function destroy() {
     if (gone) return;
-    gone = true; clearInterval(tick); for (const fin of [...pending]) fin(null); sw?.removeEventListener?.("message", heard); document.removeEventListener("visibilitychange", seen); F.signal?.removeEventListener?.("abort", destroy); h?.now(); count(0);
+    gone = true; clearInterval(tick); for (const fin of [...pending]) fin(null); sw?.removeEventListener?.("message", heard); document.removeEventListener("visibilitychange", seen); removeEventListener("storage", changed); F.signal?.removeEventListener?.("abort", destroy); reset(); h?.now();
   }
   return {
-    open, refresh,
+    open, refresh, epoch: () => owned() ? epoch : null,
     destroy,
   };
 }

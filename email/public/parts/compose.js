@@ -6,6 +6,8 @@
 export default (M) => {
   const { icon, h, setKids, avatar, fmtSize, extOf, debounce, textToHtml, htmlToText, parseAddress, EMAIL_RE, dataBlob, ApiError, api, S, showMenu, closeMenu, confirmMenu, undoFor, toast, sigFor, addrColor, renderListChrome, loadList, refreshCounts, openThread, retryFailed, keepUnsent, forgetUnsent, outbox, pendingSends, focusedBefore } = M;
   const { canUseDrafts = () => true } = M;
+  const reopenDraft = "Reopen this draft from Drafts to review its latest version. Your edits are kept on this device.";
+  const needsRevision = (c, jobId) => !M.DEMO && c.draftId && !c.draftRevision && c.draftId !== c.composeId && c.draftId !== jobId;
 
   function fileToBase64(blob) {
     return new Promise((resolve, reject) => {
@@ -28,7 +30,7 @@ export default (M) => {
   // can't be had is said, never left out (a message or a draft would otherwise go, or be saved over, without it)
   async function attachmentBlob(a) {
     if (a.file) return a.file;
-    if (!a.url) return null;
+    if (!a.url) throw new ApiError(400, `Couldn’t attach “${a.filename}”.`);
     // (a data: address, made here: the page's own rules, connect-src, don't let fetch read one)
     if (a.url.startsWith("data:")) return dataBlob(a.url);
     const r = await fetch(a.url, { credentials: "same-origin" }).catch(() => null);
@@ -41,7 +43,7 @@ export default (M) => {
     const out = [];
     for (const a of list || []) {
       const blob = await attachmentBlob(a);
-      if (blob) out.push({ filename: a.filename, type: a.type || blob.type, size: blob.size, content: await fileToBase64(blob) });
+      out.push({ filename: a.filename, type: a.type || blob.type, size: blob.size, content: await fileToBase64(blob) });
     }
     return out;
   }
@@ -53,11 +55,11 @@ export default (M) => {
       const c = msg.compose || { to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.text };
       // (the files kept with it, as files again: sent or saved as if just picked)
       c.attachments = (c.attachments || []).map((a) => {
-        if (!a.content) return a;
+        if (typeof a.content !== "string") return a;
         const file = dataBlob(`data:${a.type || "application/octet-stream"};base64,${a.content}`);
         return { filename: a.filename, type: a.type, size: a.size || file.size, file, preview: /^image\//.test(a.type) ? URL.createObjectURL(file) : null };
       });
-      openCompose({ ...c, draftId: id });
+      openCompose({ ...c, draftId: id, draftRevision: msg.draftRevision });
     } catch (err) {
       toast(err.message, { error: true });
     }
@@ -82,9 +84,10 @@ export default (M) => {
     for (const r of kept) {
       if (went.has(r.id)) { outbox.drop(r.id); letGo(r); continue; }
       const attachments = (r.c.attachments || []).map((a) => ({ ...a, preview: a.file && /^image\//.test(a.type) ? URL.createObjectURL(a.file) : null }));
-      jobs.push({ id: r.id, at: r.at, edit: r.edit, kept: true, cancelled: false, timer: null, letGo: r.letGo, c: { ...r.c, attachments } });
+      jobs.push({ id: r.id, at: r.at, edit: r.edit || needsRevision(r.c, r.id), kept: true, cancelled: false, timer: null, letGo: r.letGo, c: { ...r.c, attachments } });
     }
-    const toSend = jobs.filter((j) => !j.edit), toEdit = jobs.find((j) => j.edit);
+    const conflict = jobs.find((j) => needsRevision(j.c, j.id));
+    const toSend = jobs.filter((j) => !j.edit), toEdit = conflict || jobs.find((j) => j.edit);
     // (those to open, let go: offered, not kept here, so another window, or next time, offers them too)
     for (const j of jobs) if (j.edit) letGo(j);
     if (toSend.length) {
@@ -93,7 +96,7 @@ export default (M) => {
     }
     if (toEdit) {
       const s = toEdit.c.subject;
-      toast(s ? `“${s.slice(0, 40)}” wasn’t sent` : "A message wasn’t sent", { icon: "drafts", actionLabel: "Open", duration: 9000, action: () => bringBack(toEdit) });
+      toast(conflict ? reopenDraft : s ? `“${s.slice(0, 40)}” wasn’t sent` : "A message wasn’t sent", { icon: "drafts", actionLabel: "Open", duration: 9000, action: () => bringBack(toEdit) });
     } else if (toSend.length) {
       toast(`${toSend.length === 1 ? "A message" : `${toSend.length} messages`} didn’t send`, { icon: "sent", actionLabel: "Try Again", duration: 9000, action: retryFailed });
     }
@@ -117,6 +120,8 @@ export default (M) => {
       threadId: init.threadId || null,
       attachments: init.attachments || [],
       draftId: init.draftId || null,
+      composeId: init.composeId || jobId(),
+      draftRevision: init.draftRevision || null,
       showCc: !!((init.cc && init.cc.length) || (init.bcc && init.bcc.length)),
     };
     // (the signature for the address it's from, under a new message or reply, as Settings has it; kept as c.sig, so a
@@ -499,7 +504,13 @@ export default (M) => {
     }
 
     const MAX_ATTACH = 20 * 1024 * 1024;
+    const MAX_ATTACHMENTS = 20; // Matches the draft and send API limit.
+    const TOO_MANY_FILES = `You can attach ${MAX_ATTACHMENTS} files at most.`;
     function addFiles(files) {
+      if (c.attachments.length + files.length > MAX_ATTACHMENTS) {
+        fileInput.value = "";
+        return toast(TOO_MANY_FILES, { error: true });
+      }
       for (const f of files) {
         const total = c.attachments.reduce((n, a) => n + (a.size || 0), 0);
         if (total + f.size > MAX_ATTACH) {
@@ -621,10 +632,12 @@ export default (M) => {
         toast(bad ? `“${bad.email}” isn't a valid address` : "Add a recipient", { error: true });
         return;
       }
+      if (c.attachments.length > MAX_ATTACHMENTS) return toast(TOO_MANY_FILES, { error: true });
       if (!c.subject.trim()) {
         const ok = await confirmMenu(sendBtn, "This message has no subject.", "Send Anyway");
         if (!ok) return subjectInput.focus();
       }
+      if (!M.DEMO && !c.draftId) c.draftId = c.composeId;
       const stamp = keepDraft();
       queueSend(c, { stamp, recoveredJob });
       closeSheet("sending");
@@ -702,15 +715,19 @@ export default (M) => {
       close: closeSheet,
       keepT: setInterval(() => { if (dirty()) keepDraft(); }, 2000),
       saveDraft: async () => {
+        if (c.attachments.length > MAX_ATTACHMENTS) return toast(TOO_MANY_FILES, { error: true });
+        if (needsRevision(c, recoveredJob?.id)) { keepDraft(); return toast(reopenDraft, { error: true }); }
+        if (!M.DEMO && !c.draftId) c.draftId = c.composeId;
         const stamp = keepDraft();
         if (recoveredJob) {
           recoveredJob.c = c;
-          recoveredJob.editWrite = outbox.keep(recoveredJob);
+          recoveredJob.editWrite = keepJob(recoveredJob);
         }
         closeSheet("saving");
         try {
           await api.saveDraft({
             id: c.draftId,
+            draftRevision: c.draftRevision || undefined,
             from: c.from,
             to: c.to,
             cc: c.cc,
@@ -835,6 +852,20 @@ export default (M) => {
     if (M.sheetState?.recoveredJob) releaseEdit(M.sheetState.recoveredJob);
   }
 
+  function keepJob({ id, at, edit, c }) {
+    return outbox.keep(id, async () => ({
+      id, at, edit: !!edit,
+      c: {
+        ...Object.fromEntries(["mode", "from", "to", "cc", "bcc", "subject", "text", "quote", "inReplyTo", "references", "threadId", "draftId", "draftRevision", "composeId"]
+          .map(k => [k, c[k] ?? null])),
+        // IndexedDB on WebKit can reject file-backed Blob objects from its picker.
+        attachments: await Promise.all((c.attachments || []).map(async ({ filename, type, size, file, url }) => ({
+          filename, type, size, bytes: file ? await file.arrayBuffer() : null, url: url || null,
+        }))),
+      },
+    }));
+  }
+
   // The composer keeps its text before closing. Only a durable outbox write can take over that copy.
   function queueSend(c, { stamp, recoveredJob } = {}) {
     if (!canUseDrafts()) return;
@@ -842,7 +873,7 @@ export default (M) => {
     Object.assign(job, { at: Date.now(), c, stamp, edit: false, cancelled: false, started: false, timer: null });
     pendingSends.add(job);
     if (!recoveredJob) take(job);
-    outbox.keep(job).then((ok) => {
+    keepJob(job).then((ok) => {
       job.kept = !!ok;
       if (ok) forgetUnsent(stamp);
     });
@@ -876,7 +907,7 @@ export default (M) => {
     S.failedSends = S.failedSends.filter((j) => j !== job);
     renderListChrome();
     job.edit = true;
-    job.editWrite = outbox.keep(job);
+    job.editWrite = keepJob(job);
     if (M.sheetState) {
       if (!heldSends.includes(job)) heldSends.push(job);
       return toast("It opens again once you’ve closed this one", { icon: "drafts" });
@@ -898,7 +929,6 @@ export default (M) => {
     const attachments = [];
     for (const a of c.attachments) {
       const blob = await attachmentBlob(a);
-      if (!blob) continue;
       attachments.push({ filename: a.filename, type: a.type, content: await fileToBase64(blob) });
     }
     return {
@@ -913,6 +943,7 @@ export default (M) => {
       references: c.references,
       attachments,
       draftId: c.draftId,
+      draftRevision: c.draftRevision,
     };
   }
 
@@ -922,6 +953,8 @@ export default (M) => {
     // (on its way till Mail answers: the updater waits for it)
     pendingSends.add(job);
     try {
+      if (needsRevision(job.c, job.id)) throw new ApiError(409, reopenDraft);
+      if (!M.DEMO && !job.c.draftId) job.c.draftId = job.c.composeId || job.id;
       const payload = await buildPayload(job.c, !M.DEMO);
       if (!canUseDrafts()) return;
       await api.send({ ...payload, key: job.id }, { keepalive });
@@ -944,7 +977,7 @@ export default (M) => {
       const refused = err.status >= 400 && err.status < 500 && err.status !== 401;
       if (refused) {
         job.edit = true;
-        if (job.kept) outbox.keep(job);
+        if (job.kept) keepJob(job);
         letGo(job);
       } else {
         S.failedSends.push(job);

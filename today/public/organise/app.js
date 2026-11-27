@@ -13,6 +13,12 @@ export async function mountApp(root,F,kind){
  const button=(label,run,primary=false)=>ui.btn(label,{primary,run:safe(run)});
  const rememberLibrary=()=>{if(!root.dataset.detail){libraryY=scrollY;libraryFocus=document.activeElement?.closest('[data-record]')?.dataset.record||null}};
  const go=(id,seed,replace=false)=>{rememberLibrary();editorSeed=seed?{id,...seed}:null;F.nav.go('/'+kind+'/#item='+id,{replace})},home=()=>F.nav.go('/'+kind+'/#'+section,{replace:true,kind:'pop'}),fresh=()=>{rememberLibrary();F.nav.go('/'+kind+'/#new')};
+ const currentEditorRoute=(r,mine)=>live()&&shown&&route===r&&mine===editorLoad;
+ function keepEditor(r,mine,error){
+  if(!currentEditorRoute(r,mine))return;
+  F.toast(error.message);
+  if(editor)go(editorId,null,true);
+ }
  const createLabel=kind==='calendar'?'New event':kind==='notes'?'New note':'Add person';
  const search=el('input',{type:'search',class:'org-search',maxlength:160,placeholder:kind==='people'?'Search contacts':kind==='notes'?'Search notes':'Search events','aria-label':'Search '+NAMES[kind]}),status=el('p',{class:'org-status',role:'status'}),list=el('div',{class:'org-list'}),detail=el('section',{class:'org-detail',hidden:true,'aria-label':NAMES[kind]+' editor'}),more=button('Show more',()=>load(true)),retry=button('Try again',()=>load());
  const count=el('span',{class:'org-library-count'}),createButton=ui.btn(createLabel,{icon:'plus',primary:true,run:fresh}),caption=el('div',{class:'org-library-caption'},kind==='calendar'?el('h2',{text:'Schedule'}):null,count);
@@ -77,7 +83,7 @@ export async function mountApp(root,F,kind){
   const isEmpty=loaded&&!loading&&!query&&!friends.size&&!store.snapshot().some(v=>!v.deleted)&&!store.localForms().length;const quiet=kind!=='calendar'&&!rows.length&&(isEmpty||!loaded&&loading);actions.hidden=quiet;searchBox.hidden=quiet;if(noteTools)noteTools.hidden=quiet;
   if(kind!=='calendar'){
    const stamp=JSON.stringify([query,editorId,noteView,noteFilter,loading,loaded,rows.map(v=>[v.id,v.version,v.title,v.updatedAt,v.pending,v.state,v.formDraft,v.matchPreview,v.preview,v.checkCount,v.doneCount,v.text,v.checklist,v.organisation,v.email,v.phone,v.chatFriend,v.chatOnly])]);
-   if(stamp===listStamp)return;
+   if(stamp===listStamp){editor?.status();return}
    listStamp=stamp;
   }
   const nextList=list.cloneNode(false);let group='',groupBox=nextList;
@@ -141,8 +147,8 @@ export async function mountApp(root,F,kind){
  const editorModule=()=>Promise.all([import('./editor.js'),import('/roof/modules.js').then(m=>m.loadStyles(new URL('./editor.css',import.meta.url).pathname))]).then(([module])=>module);
  async function showFriend(r){
   const mine=++editorLoad;
-  await editor?.flush();
-  if(!live()||!shown||route!==r||mine!==editorLoad)return;
+  try{await editor?.flush()}catch(error){keepEditor(r,mine,error);return}
+  if(!currentEditorRoute(r,mine))return;
   editor?.destroy();editor=null;editorId='chat:'+r.arg;
   detail.hidden=false;root.dataset.detail='true';
   detail.replaceChildren(el('p',{role:'status',text:'Opening contact…'}));
@@ -189,17 +195,17 @@ export async function mountApp(root,F,kind){
   finally{if(current()){loading=false;paint()}}
  }
  async function openEditor(id,{initial,chat}={}){
-  const mine=++editorLoad;if(editorId===id&&editor&&!chat)return;
-  try{await editor?.flush()}catch(error){if(live()&&shown&&mine===editorLoad){F.toast(error.message);if(editor)go(editorId,null,true)}return}
-  if(!live()||mine!==editorLoad)return;editor?.destroy();editor=null;editorId=id;detail.hidden=false;root.dataset.detail='true';detail.replaceChildren(el('p',{role:'status',text:'Opening…'}));
-  try{const [module,value]=await Promise.all([editorModule(),initial?Promise.resolve(initial):store.get(id)]);if(!live()||mine!==editorLoad)return;
+  const r=route,mine=++editorLoad;if(editorId===id&&editor&&!chat)return;
+  try{await editor?.flush()}catch(error){keepEditor(r,mine,error);return}
+  if(!currentEditorRoute(r,mine))return;editor?.destroy();editor=null;editorId=id;detail.hidden=false;root.dataset.detail='true';detail.replaceChildren(el('p',{role:'status',text:'Opening…'}));
+  try{const [module,value]=await Promise.all([editorModule(),initial?Promise.resolve(initial):store.get(id)]);if(!currentEditorRoute(r,mine))return;
    if(chat&&!friends.has(chat.id)){home();return;}
    editor=module.createEditor({F,kind,id,value,store,detail,go,home,date,chat,friendFor:id=>friends.get(id),onSaved:()=>{ids.add(id);paint()},exportValue,linkPicker:()=>import('./links.js').then(m=>m.chooseLink(F,kind)),prepareInvitation});paint();
-  }catch(e){if(live()&&mine===editorLoad)detail.replaceChildren(ui.error({title:'This item could not open',body:e.message,acts:[{label:'Try again',run:()=>{editorId=null;openEditor(id,{initial,chat})}}]}))}
+  }catch(e){if(currentEditorRoute(r,mine))detail.replaceChildren(ui.error({title:'This item could not open',body:e.message,acts:[{label:'Try again',run:()=>{editorId=null;openEditor(id,{initial,chat})}}]}))}
  }
  async function create(initial,{persist=kind==='notes',current=()=>live()&&shown}={}){if(!current())return false;if(!store.ready())throw Error('Enable private device storage before creating an item.');const id=operationId(),value=initial||{title:kind==='notes'?'Untitled note':'',links:[],...(kind==='notes'?{text:'',checklist:[]}:kind==='people'?{email:'',phone:'',organisation:'',details:''}:{description:'',allDay:false,start:new Date(date+'T09:00:00').getTime(),end:new Date(date+'T10:00:00').getTime(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})};
-  if(persist)await store.save(id,value,{version:0});
-  if(current())go(id,{initial:{id,kind,...value,version:0}},true);
+  const record=persist?await store.save(id,value,{version:0}):{id,kind,...value,version:0};
+  if(current())go(id,{initial:record},true);
   return true;
  }
  async function openExternal(v){const {openCalendarSource}=await import('./connected.js');if(live()&&shown)openCalendarSource(F,v,{create})}
@@ -242,15 +248,19 @@ export async function mountApp(root,F,kind){
    if(!['item','new'].includes(r.key))section=r.section||section;
    viewSwitch?.set(section);header();
    if(!loaded&&!loading||kind==='calendar')load();
-   if(r.key==='new'){create().catch(e=>F.toast(e.message));return}
+   if(r.key==='new'){
+    const mine=++editorLoad,current=()=>currentEditorRoute(r,mine);
+    Promise.resolve(editor?.flush()).then(()=>create(undefined,{current})).catch(error=>keepEditor(r,mine,error));
+    return;
+   }
    if(r.key==='item'&&/^[a-f0-9]{32}$/.test(r.arg||'')){openEditor(r.arg,seed);return}
    if(kind==='people'&&r.key==='friend'&&/^[\w-]{1,40}$/.test(r.arg||'')){safe(()=>showFriend(r))();return}
    const mine=++editorLoad,previous=editor;
    Promise.resolve(previous?.flush()).then(()=>{
-    if(!live()||mine!==editorLoad||!shown||route!==r)return;
+    if(!currentEditorRoute(r,mine))return;
     previous?.destroy();editor=null;editorId=null;detail.hidden=true;delete root.dataset.detail;paint();
     if(wasDetail&&libraryY!==null){scrollTo(0,libraryY);if(libraryFocus)list.querySelector('[data-record="'+CSS.escape(libraryFocus)+'"]')?.focus({preventScroll:true})}
-   }).catch(e=>{if(live())F.toast(e.message)});
+   }).catch(error=>keepEditor(r,mine,error));
   },
   hide(){shown=false;listRead?.abort();loading=false;stopFriends();if(kind==='people')paint();editor?.flush().catch(error=>{if(live())F.toast(error.message)})},
   back(){if(editor){editor.close();return true}if(route?.key==='friend'){home();return true}return false},

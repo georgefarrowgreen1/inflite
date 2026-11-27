@@ -13,7 +13,7 @@ before(async()=>{
 const all=node=>[node,...(node.children||[]).flatMap(all)];
 function fixture(kind='notes',value={kind:'note-draft',title:'Agenda',text:'Review the plan',source:{app:'mail',threadId:'thread-a'}}){
  const life=new AbortController(),state={active:true,created:[],sheets:[],busy:[]};
- function el(tag,attrs={},...children){return{tag,attrs,children:children.flat().filter(Boolean),value:attrs.value||'',textContent:attrs.text||'',classList:{contains:()=>false},append(...nodes){this.children.push(...nodes.flat().filter(Boolean))},addEventListener(name,run){this[name]=run},checkValidity(){return all(this).every(n=>!n.attrs?.required||!!n.value)},reportValidity(){state.invalid=true}}}
+ function el(tag,attrs={},...children){return{tag,attrs,children:children.flat().filter(Boolean),value:attrs.value||'',textContent:attrs.text||'',classList:{contains:()=>false},append(...nodes){this.children.push(...nodes.flat().filter(Boolean))},replaceChildren(...nodes){this.children=nodes},addEventListener(name,run){this[name]=run},checkValidity(){return all(this).every(n=>!n.attrs?.required||!!n.value)},reportValidity(){state.invalid=true}}}
  const F={signal:life.signal,session:{user:{id:'ann'}},ui:{el,btn:(text,props)=>({...el('button',{text}),run:props.run})},sheet:{open(spec){state.sheets.push(spec);const handle={closed:false,el:el('dialog'),now(){handle.closed=true;spec.onClose()},setBusy(value){state.busy.push(value)}};state.handle=handle;return handle}}};
  const create=async(initial,current)=>{if(state.gate)await state.gate;if(!current())return false;state.created.push(initial);return true};
  const handle=openAtlasDraft(F,kind,value,{current:()=>state.active,create});
@@ -49,4 +49,25 @@ test('native review rejects a wrong target and never turns generated HTML into m
  const wrong=fixture('notes',{kind:'event-draft',title:'Wrong',description:'Wrong'});assert.equal(wrong.handle,null);assert.deepEqual(wrong.state.sheets,[]);
  const t=fixture('notes',{kind:'note-draft',title:'<script>text</script>',text:'<img src=x onerror=alert(1)>',source:{app:'files',url:'https://example.test'}});
  assert.equal(t.field('Title').value,'<script>text</script>');assert.equal(t.field('Note').value,'<img src=x onerror=alert(1)>');assert.equal(t.nodes().some(n=>'innerHTML' in n),false);assert.deepEqual(t.state.created,[]);
+});
+
+test('closing the Organise picker cancels its request and a released workspace cannot open it', async () => {
+ const source=(await readFile(resolve(__dirname,'../today/public/organise/links.js'),'utf8'))
+  .replace("import {createSystemClient} from '/roof/system-client.js';",'const createSystemClient=F=>F.testClient;');
+ const {chooseLink}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+ const {F,state}=fixture();
+ let finish,lease;
+ F.testClient={live:()=>true,request:(_action,options)=>{lease=options;return new Promise(resolve=>{finish=resolve})}};
+ const picked=chooseLink(F,'notes',{current:()=>state.active});
+ const body=state.sheets.at(-1).body;
+ assert.equal(lease.current(),true);
+ state.handle.now();
+ assert.equal(await picked,null);
+ assert.equal(lease.signal.aborted,true);
+ finish({records:[{id:'old',title:'Wrong episode'}]});
+ await Promise.resolve();
+ assert.ok(all(body).every(n=>n.textContent!=='Wrong episode'));
+ state.active=false;
+ assert.equal(await chooseLink(F,'notes',{current:()=>state.active}),null);
+ assert.equal(state.sheets.length,2);
 });

@@ -10,6 +10,31 @@ const request = (path, init = {}) => new Request(SITE + path, { ...init, headers
   Origin: SITE, 'Sec-Fetch-Site': 'same-origin', ...init.headers,
 } });
 
+test('notification session proof uses only same-origin account cookies without renewing or caching them', async () => {
+  const worker = (await import('../today/src/index.js')).default;
+  const account = 'account=' + 'a'.repeat(24), proof = { signedIn: true, owner: 'nobody', epoch: 'a'.repeat(64) };
+  let called = 0;
+  const env = { ...baseEnv(), ACCOUNT_ORIGIN: 'https://account.inflite.ai', APPS: { async fetch(req) {
+    called++;
+    assert.equal(req.url, 'https://account.inflite.ai/api/account/today/notification-session');
+    assert.equal(req.headers.get('Origin'), SITE);
+    assert.equal(req.headers.get('Cookie'), account);
+    assert.equal(req.headers.get('Authorization'), null);
+    return Response.json(proof, { headers: { 'Set-Cookie': 'account=ignored' } });
+  } } };
+  const path = '/api/notification-session';
+  const rejected = await worker.fetch(request(path, { headers: { 'Sec-Fetch-Site': 'same-site' } }), env, {});
+  assert.equal(rejected.status, 403);
+  assert.equal(called, 0);
+  const response = await worker.fetch(request(path, { headers: { Cookie: account + '; extra=hidden', Authorization: 'Bearer hidden' } }), env, {});
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  assert.equal(response.headers.get('Cross-Origin-Resource-Policy'), 'same-origin');
+  assert.equal(response.headers.get('Set-Cookie'), null);
+  assert.deepEqual(await response.json(), proof);
+  assert.equal(called, 1);
+});
+
 test('upstream deadline aborts a stalled binding once and cancels any late response body', async t => {
   const { fetchUpstream } = await import('../today/src/upstream.js');
   t.mock.timers.enable({ apis: ['setTimeout'] });

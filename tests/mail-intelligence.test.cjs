@@ -121,7 +121,7 @@ test('attachment search returns files from the named sender, and inbox follow-up
       assert.equal(sql.prepare("SELECT count(*) AS n FROM messages WHERE folder = 'drafts'").get().n, 0);
       const draft = await post('drafts',{ ...fields, accountOwner:'fixture-owner' }, 200, hub);
       assert.equal((await post('send', { draftId:draft.id, key:'other-owner-test', accountOwner:'previous-fixture-owner' }, 401)).access, 'signin');
-      const sent = await post('send',{draftId:draft.id,key:'reminder-test-001'});
+      const sent = await post('send',{draftId:draft.id,draftRevision:draft.revision,key:'reminder-test-001'});
       await drain();
       assert.equal(deliveries.length,1);
       assert.equal(deliveries[0].text,'Please confirm by Friday.');
@@ -139,10 +139,12 @@ test('attachment search returns files from the named sender, and inbox follow-up
       assert.equal(sql.prepare('SELECT count(*) AS n FROM messages WHERE thread_id=?').get(scheduled.thread_id).n,2);
       assert.equal(sql.prepare('SELECT * FROM mail_followups WHERE message_id=?').get(sent.id),undefined);
 
-      // Two clients reconnecting at once must share the same expired send claim.
+      // An expired claim can still have reached the provider. Concurrent new requests share one claim.
       const started = Promise.withResolvers(), release = Promise.withResolvers();
-      const retry = {to:[{email:'recipient@example.com'}], subject:'Retry fixture', text:'Local fixture', key:'retry-fixture-002'};
-      sql.prepare('INSERT INTO sends(key,at) VALUES(?,?)').run(retry.key,0);
+      const retry = {to:[{email:'recipient@example.com'}], subject:'Retry fixture', text:'Local fixture', draftId:'retry-draft-002', key:'retry-fixture-002'};
+      const expired = { ...retry, key: 'expired-send-claim' };
+      sql.prepare('INSERT INTO sends(key,at) VALUES(?,?)').run(expired.key, 0);
+      await post('send', expired, 503);
       env.EMAIL.send = async message => { deliveries.push(message); started.resolve(); await release.promise; return {messageId:'retry@example.com'}; };
       const first = post('send',retry);
       await started.promise;
@@ -158,10 +160,10 @@ test('attachment search returns files from the named sender, and inbox follow-up
       console.error = (...args) => logged.push(args);
       try {
         env.EMAIL.send = async () => { throw providerFailure; };
-        const failed = await post('send', { ...retry, key:'private-failure-003' }, 502);
-        assert.equal(failed.error, "Couldn't send the message.");
-        assert.deepEqual(logged, [['mail send failed', 'provider'], ['mail request failed']]);
-        assert.equal(sql.prepare('SELECT 1 FROM sends WHERE key = ?').get('private-failure-003'), undefined);
+        const failed = await post('send', { ...retry, draftId:'private-draft-003', key:'private-failure-003' }, 503);
+        assert.match(failed.error, /couldn’t confirm delivery/);
+        assert.deepEqual(logged, [['mail request failed']]);
+        assert.equal(sql.prepare('SELECT id FROM sends WHERE key = ?').get('private-failure-003').id, null);
       } finally { console.error = savedConsoleError; }
 
       const unsubscribeUrl = 'https://list.example.test/leave';
@@ -251,18 +253,17 @@ test('draft recovery preserves server attachments, current edits and a newer loc
   t.after(() => previous ? Object.defineProperty(globalThis,'localStorage',previous) : delete globalThis.localStorage);
   const saves = [], firstSave = Promise.withResolvers(), release = Promise.withResolvers();
   const api = {
-    draft:async id => ({compose:{files:[{i:0,filename:'fixture.txt'}]}}),
-    saveDraft:async draft => {
+        saveDraft:async draft => {
       saves.push(draft);
       if (saves.length===1) { firstSave.resolve(); await release.promise; }
-      return {id:'one'};
+      return {id:'one',revision:`fixture-revision-${saves.length}`};
     },
   };
   const box = createOutbox({api,fw:{session:{user:{id:'fixture-owner'}}},store:{set(){}}});
   t.after(()=>box.destroy());
-  let text = 'first', draftId = null;
+  let text = 'first', draftId = null, draftRevision = null;
   const snapshots = [];
-  const untrack = box.track(()=>({text,draftId,files:[]}), (id,snapshot)=>{ draftId=id; snapshots.push(snapshot.text); });
+  const untrack = box.track(()=>({text,draftId,draftRevision,files:[]}), (id,snapshot,revision)=>{ draftId=id; draftRevision=revision; snapshots.push(snapshot.text); });
   const first = box.flush({draftsOnly:true});
   await firstSave.promise;
   text = 'edited during save';
@@ -271,8 +272,9 @@ test('draft recovery preserves server attachments, current edits and a newer loc
   assert.deepEqual(await Promise.all([first,final]),[{lost:0},{lost:0}]);
   assert.deepEqual(snapshots,['first','edited during save']);
   assert.equal(saves[1].id,'one');
+  assert.equal(saves[1].draftRevision,'fixture-revision-1');
   untrack();
-  box.keepUnsent({cc:[{email:'cc@example.com'}],draftId:'one'});
+  box.keepUnsent({cc:[{email:'cc@example.com'}],draftId:'one',draftRevision});
   const started = Promise.withResolvers(), confirmed = Promise.withResolvers();
   api.saveDraft = async draft => { saves.push(draft); started.resolve(); await confirmed.promise; return {id:'one'}; };
   const recovering = box.flush();
@@ -280,8 +282,19 @@ test('draft recovery preserves server attachments, current edits and a newer loc
   box.keepUnsent({text:'newer local draft'});
   confirmed.resolve();
   assert.deepEqual(await recovering,{lost:0});
-  assert.deepEqual(saves[2].attachments,[{i:0}]);
+  assert.deepEqual(saves[2].attachments,[]);
+  assert.equal(saves[2].keepAttachments,true);
+  assert.equal(saves[2].draftRevision,'fixture-revision-2');
   assert.equal(box.unsent().text,'newer local draft');
+
+  box.keepUnsent({ text: 'Unmerged local edits', draftId: 'one', draftRevision: 'older-revision' });
+  api.saveDraft = async draft => {
+    assert.equal(draft.draftRevision, 'older-revision');
+    throw Object.assign(new Error('Draft changed'), { status: 409 });
+  };
+  assert.deepEqual(await box.flush(), { lost: 1 });
+  assert.equal(box.unsent().text, 'Unmerged local edits');
+  assert.equal(box.unsent().draftRevision, 'older-revision');
 
   // A mounted tab finishing its flush must leave another tab's queued message intact.
   const remote = {v:1,owner:'fixture-owner',value:[{key:'other-tab',at:9,draft:{text:'Queued in a different tab'}}]};
@@ -305,8 +318,8 @@ test('an interrupted offline Mail send keeps its retry key and saved draft throu
   }
   const saves = [], sends = [], checks = [];
   const api = {
-    async saveDraft(draft) { saves.push(draft); return { id: draft.id || 'existing-fixture-draft' }; },
-    async sendDraft(id, key) { sends.push({ id, key }); if (sends.length === 1) throw new Error('Response interrupted'); },
+    async saveDraft(draft) { saves.push(draft); return { id: draft.id || 'existing-fixture-draft', revision: 'fixture-revision' }; },
+    async sendDraft(id, key, { draftRevision }) { sends.push({ id, key, draftRevision }); if (sends.length === 1) throw new Error('Response interrupted'); },
     async sent(keys) { checks.push(...keys); return { sent: [] }; },
   };
   const ctx = { api, fw: { session: { user: { id: 'fixture-owner' } } }, store: { set() {} } };
@@ -325,7 +338,7 @@ test('an interrupted offline Mail send keeps its retry key and saved draft throu
   assert.equal(pending?.state, 'failed');
   assert.equal(pending.draft.text, 'Keep this through reload');
   await Promise.all([reloaded.retry(sent.key), reloaded.retry(sent.key)]);
-  assert.deepEqual(sends, [{ id: sent.key, key: sent.key }, { id: sent.key, key: sent.key }]);
+  assert.deepEqual(sends, [{ id: sent.key, key: sent.key, draftRevision: 'fixture-revision' }, { id: sent.key, key: sent.key, draftRevision: 'fixture-revision' }]);
   assert.deepEqual(checks, [sent.key, sent.key]);
   assert.equal(saves.length, 1);
   assert.deepEqual(reloaded.pending(), []);

@@ -475,9 +475,9 @@ for (const width of [390, 1440]) test(`Today account control uses the saved prof
   } finally { await fallback.ctx.close(); }
 });
 
-async function open({ width = 390, deviceScaleFactor = 1, scheme = 'light', answer = day, signedIn = true, preferences, intercept, beforeNavigate, initialPath = '/', waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedCards, seedHub, blockBootstrap = false, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false } = {}) {
+async function open({ width = 390, deviceScaleFactor = 1, scheme = 'light', answer = day, signedIn = true, preferences, intercept, beforeNavigate, initialPath = '/', waitForDay = true, waitForReady = true, legacyShell = false, seedSession, seedCards, seedHub, blockBootstrap = false, user, viewApps, hubApps = {}, serviceWorkers = 'block', iosHomeScreen = false, iphoneViewport = false, motion = 'reduce', noViewTransitions = false, timezoneId = 'Europe/London' } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, deviceScaleFactor, colorScheme: scheme, reducedMotion: motion,
-    locale: 'en-GB', timezoneId: 'Europe/London', serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
+    locale: 'en-GB', timezoneId, serviceWorkers, hasTouch: width < 600, isMobile: width < 600 });
   if (noViewTransitions) await ctx.addInitScript(() => { delete Document.prototype.startViewTransition; });
   if (iphoneViewport) await ctx.addInitScript(() => {
     const v = Object.assign(new EventTarget(), { height: 844, width: 390, offsetTop: 0, scale: 1 });
@@ -1771,13 +1771,18 @@ test('Today keeps the visible row in place as earlier content grows on refresh',
 test('Today resumes the saved capture, due reminder, exact event and unfinished upload', async () => {
   const name = 'Pick up where you left off', eventId = 'a'.repeat(32), reminderId = 'b'.repeat(32);
   const event = { id: eventId, version: 1, title: 'Route planning call', allDay: false, start: day.at + 7200000, end: day.at + 9000000, timezone: 'Europe/London', links: [] };
+  const finished = [3, 2, 1].map(hours => ({ ...event, id: String(hours).repeat(32), title: `Morning event ${hours}`, start: day.at - hours * 3600000, end: day.at - hours * 3600000 + 1800000 }));
   const reminder = { id: reminderId, version: 1, title: 'Charge bike lights', status: 'open', dueAt: day.at - 1000, createdAt: day.at - 3600000, files: [] };
   const { ctx, page, errors } = await open({ initialPath: '/?os=1', user: { photoAt: null }, viewApps: { mail: true },
-    hubApps: { calendar: true, weather: true, fitness: true, markets: true, mail: true }, intercept: async (route, { url }) => {
+    hubApps: { calendar: true, weather: true, fitness: true, markets: true, mail: true }, intercept: async (route, { url, request }) => {
+    if (url.pathname === '/api/organise/list') {
+      const { from, to, limit } = request.postDataJSON();
+      await route.fulfill({ json: { records: [...finished, event].filter(v => v.end > from && v.start < to).slice(0, limit) } });
+      return true;
+    }
     const result = {
       '/api/organise/preferences': { prefs: { hidden: [], version: 0 } },
       '/api/organise/calendar-events': { events: [] },
-      '/api/organise/list': { records: [event] },
       '/api/organise/get': { record: event },
       '/api/system/actions': { actions: [reminder] },
       '/api/system/action': { action: reminder },
@@ -1803,6 +1808,9 @@ test('Today resumes the saved capture, due reminder, exact event and unfinished 
     const upload = panel.getByRole('button', { name: /Norfolk coast\.gpx/ });
     await upload.waitFor();
     await panel.getByRole('button', { name: /Route planning call/ }).waitFor();
+    const calendar = page.getByRole('region', { name: 'Your calendar' });
+    await calendar.getByRole('link', { name: /Route planning call/ }).waitFor();
+    assert.equal(await calendar.getByText(/^Morning event/).count(), 0);
     assert.equal(await panel.getByRole('button').count(), 4);
     await resume.click();
     assert.equal(await capture.getByRole('textbox').inputValue(), 'Weekend route notes\nCheck the return leg.');
@@ -1825,6 +1833,49 @@ test('Today resumes the saved capture, due reminder, exact event and unfinished 
     await task.waitFor({ state: 'detached' });
     await panel.getByRole('button', { name: /Route planning call/ }).click();
     await page.waitForURL(url => url.pathname === '/calendar/' && url.hash === '#item=' + eventId);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('Today keeps local all-day events and ongoing connected events after UTC midnight', async () => {
+  const at = Date.parse('2026-11-02T03:30:00Z'), timezoneId = 'America/Los_Angeles';
+  const allDay = (id, title, startDate, endDate) => ({ id: id.repeat(32), title, allDay: true, startDate, endDate });
+  const timed = (id, title, start, end) => ({ id: id.repeat(32), title, allDay: false, start: Date.parse(start), end: Date.parse(end) });
+  const native = allDay('a', 'Family day', '2026-11-01', '2026-11-02');
+  const connected = [
+    allDay('b', 'Club weekend', '2026-10-31', '2026-11-02'),
+    timed('c', 'Finished training', '2026-11-01T20:00:00Z', '2026-11-01T21:00:00Z'),
+    timed('d', 'Club meeting', '2026-11-02T03:00:00Z', '2026-11-02T04:00:00Z'),
+  ].map(event => ({ ...event, readOnly: true }));
+  const { ctx, page, requests, errors } = await open({ initialPath: '/?os=1', answer: { ...day, at }, timezoneId, hubApps: { calendar: true },
+    intercept: async (route, { url, request }) => {
+      const path = url.pathname;
+      if (path === '/api/organise/list') {
+        const { fromDate, toDate } = request.postDataJSON();
+        await route.fulfill({ json: { records: native.startDate < toDate && native.endDate > fromDate ? [native] : [] } });
+        return true;
+      }
+      if (path === '/api/organise/calendar-events') {
+        const { from, to } = request.postDataJSON();
+        await route.fulfill({ json: { events: connected.filter(v => v.allDay ? Date.parse(v.startDate) < to && Date.parse(v.endDate) > from : v.start < to && v.end > from) } });
+        return true;
+      }
+    },
+  });
+  try {
+    const calendar = page.getByRole('region', { name: 'Your calendar' });
+    const meeting = calendar.getByRole('link', { name: /Club meeting/ });
+    await meeting.waitFor();
+    assert.equal(await meeting.getAttribute('href'), '/calendar/#date=2026-11-01');
+    assert.equal(await calendar.getByRole('link', { name: /Club weekend/ }).getAttribute('href'), '/calendar/#date=2026-10-31');
+    assert.equal(await calendar.getByRole('link', { name: /Family day/ }).getAttribute('href'), '/calendar/#item=' + native.id);
+    assert.equal(await calendar.getByText('Finished training').count(), 0);
+    const resume = page.getByRole('region', { name: 'Pick up where you left off' });
+    await resume.getByRole('button', { name: /Family day/ }).waitFor();
+    assert.equal(await resume.getByRole('button', { name: /Club/ }).count(), 0);
+    assert.deepEqual(requests.find(r => r.path === '/api/organise/list').body, {
+      kind: 'calendar', fromDate: '2026-11-01', toDate: '2026-11-08', from: at, to: Date.parse('2026-11-08T08:00:00Z'), limit: 3,
+    });
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); }
 });
@@ -1975,12 +2026,12 @@ test('iPhone sheets fit Home Screen corrections, keyboards and resume while pres
 });
 
 test('Today opens the notification inbox with a live unread badge and keeps read history', async () => {
-  const { ctx, page, errors } = await open({ initialPath: '/?os=1', beforeNavigate: page => page.addInitScript(() => {
+  const { ctx, page, errors } = await open({ initialPath: '/?os=1', beforeNavigate: page => page.addInitScript(owner => {
     const worker = navigator.serviceWorker;
     const getRegistration = worker.getRegistration.bind(worker);
     const notes = [];
     const add = (id, title, url = '/') => notes.unshift({ id, title, app: 'today', url, at: Date.now(), seen: false });
-    const snapshot = () => ({ ifl: 'notes', list: notes, unread: notes.filter(note => !note.seen).length });
+    const snapshot = () => ({ ifl: 'notes', owner, epoch: 'a'.repeat(64), kept: true, list: notes });
     add('first', 'Reminder due');
     add('second', 'Morning briefing');
     worker.getRegistration = scope => scope === '/' ? Promise.resolve({ active: { postMessage(message, ports = []) {
@@ -2001,9 +2052,9 @@ test('Today opens the notification inbox with a live unread badge and keeps read
     } } }) : getRegistration(scope);
     window.__newNotification = () => {
       add('third', 'Transfer ready', '/index.html');
-      worker.dispatchEvent(new MessageEvent('message', { data: snapshot() }));
+      worker.dispatchEvent(new MessageEvent('message', { data: { ifl: 'notes-updated' } }));
     };
-  }) });
+  }, fixture('session').user.id) });
   try {
     const opener = page.locator('.ws-toolbar .ws-account');
     await opener.click();
@@ -2651,6 +2702,164 @@ for(const width of [390,1440])test(`People uses one profile for Chat friends and
     assert.deepEqual(errors,[]);
     assert.deepEqual(await page.evaluate(()=>window.__csp),[]);
   }finally{await ctx.close()}
+});
+
+async function openNotesLibrary() {
+  const first = 'a'.repeat(32), second = 'b'.repeat(32), owner = fixture('session').user.id;
+  const records = new Map([[first, 'First note'], [second, 'Other note']].map(([id, title]) => [id, {
+    id, kind: 'notes', title, text: title + ' body', checklist: [], links: [], version: 1, updatedAt: day.at,
+  }]));
+  const writes = [], apps = { notes: true };
+  const result = await open({ width: 1440, initialPath: '/?os=1', hubApps: apps, viewApps: apps, intercept: async (route, { url, request }) => {
+    if (url.pathname === '/api/organise/list') {
+      const { kind } = request.postDataJSON();
+      const summaries = [...records.values()].map(({ text, checklist, ...value }) => ({ ...value, preview: text, checkCount: checklist.length }));
+      await route.fulfill({ json: { records: kind === 'notes' ? summaries : [], cursor: null } });
+      return true;
+    }
+    if (url.pathname !== '/api/organise/record') return false;
+    if (request.method() === 'PUT') {
+      const write = request.postDataJSON();
+      writes.push(write);
+      if (write.version !== (records.get(write.id)?.version ?? 0)) {
+        await route.fulfill({ status: 409, json: { error: 'This item changed on another device. Review it before saving.' } });
+      } else {
+        const record = { id: write.id, kind: write.kind, ...records.get(write.id), ...write.value, version: write.version + 1 };
+        records.set(write.id, record);
+        await route.fulfill({ json: { record } });
+      }
+    } else {
+      await route.fulfill({ json: { record: records.get(url.searchParams.get('id')) } });
+    }
+    return true;
+  } });
+  const { page } = result;
+  await page.locator('.ws-dock-launcher').click();
+  await page.getByRole('dialog', { name: 'Your apps' }).getByRole('button', { name: 'Notes', exact: true }).click();
+  const notes = page.locator('.m-notes:visible'), editor = notes.getByRole('region', { name: 'Notes editor' });
+  const row = id => notes.locator(`[data-record="${id}"]`);
+  await row(first).click();
+  const title = editor.getByRole('textbox', { name: 'Title', exact: true }), body = editor.getByRole('textbox', { name: 'Note', exact: true });
+  await body.waitFor();
+  return { ...result, first, second, owner, records, writes, editor, row, title, body };
+}
+
+test('Notes retains failed validation and quota edits when navigating back or switching items', async () => {
+  const { ctx, page, errors, first, second, owner, records, writes, editor, row, title, body } = await openNotesLibrary();
+  const notePath = id => url => url.hash === '#item=' + id;
+  const limitStorage = enabled => page.evaluate(({ owner, enabled }) => new Promise((resolve, reject) => {
+    const open = indexedDB.open('ifl:offline:v1:' + owner);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result, tx = db.transaction('quota', 'readwrite'), quota = tx.objectStore('quota');
+      if (enabled) quota.put({ id: 'test-quota', bytes: 100 * 1024 * 1024 });
+      else quota.delete('test-quota');
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    };
+  }), { owner, enabled });
+  try {
+    await title.fill('');
+    await body.fill('An edit that must survive Back and a switch.');
+    await page.goBack();
+    await editor.getByText('Check the required fields before saving.', { exact: true }).waitFor();
+    await page.waitForURL(notePath(first));
+    assert.equal(await body.inputValue(), 'An edit that must survive Back and a switch.');
+    assert.equal(await title.inputValue(), '');
+    await limitStorage(true);
+    await title.fill('First note repaired');
+    await row(second).click();
+    await editor.getByText(/Offline storage is full/).waitFor();
+    await page.waitForURL(notePath(first));
+    assert.equal(await body.inputValue(), 'An edit that must survive Back and a switch.');
+    assert.equal(await title.inputValue(), 'First note repaired');
+    assert.deepEqual(writes, []);
+    await limitStorage(false);
+    const saved = page.waitForResponse(response => response.url().endsWith('/api/organise/record') && response.request().method() === 'PUT' && response.ok());
+    await row(second).click();
+    await page.waitForURL(notePath(second));
+    await page.waitForFunction(() => document.querySelector('.org-note-body')?.value === 'Other note body');
+    await saved;
+    assert.equal(await body.inputValue(), 'Other note body');
+    assert.equal(writes.length, 1);
+    assert.equal(records.get(first).text, 'An edit that must survive Back and a switch.');
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('Notes uses its own acknowledgement for subsequent edits and detects newer account content', async () => {
+  const { ctx, page, errors, first, records, writes, editor, row, title, body } = await openNotesLibrary();
+  try {
+    for (const text of ['An edit on this device', 'Another edit on this device']) {
+      await body.fill(text);
+      await editor.getByText('Saved to your account', { exact: true }).waitFor();
+      assert.equal(records.get(first).text, text);
+    }
+    assert.deepEqual(writes.map(write => write.version), [1, 2]);
+    records.set(first, { ...records.get(first), title: 'Title from another device', text: 'Body from another device', version: 4 });
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await row(first).getByText('Title from another device', { exact: true }).waitFor();
+    assert.equal(await title.inputValue(), 'First note');
+    await body.fill('Keep this edit for review');
+    await editor.getByText('Needs review', { exact: true }).waitFor();
+    assert.deepEqual(writes.map(write => write.version), [1, 2, 3]);
+    assert.equal(records.get(first).text, 'Body from another device');
+    assert.equal(await body.inputValue(), 'Keep this edit for review');
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
+test('Notes saves a fresh copy after another tab wins the original journal entry', async () => {
+  const { ctx, page, errors, first, owner, records, writes, editor, title, body } = await openNotesLibrary();
+  const fixtureURL = origin + '/organise-copy-fixture';
+  const winningText = 'Other tab’s offline draft', latestText = 'Latest text from this tab';
+  const dialog = page.getByRole('dialog', { name: 'Review conflicting changes' });
+  const review = editor.getByRole('button', { name: 'Review account version' });
+  const copy = dialog.getByRole('button', { name: 'Save my work as a new copy' });
+  try {
+    await ctx.route(fixtureURL, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Second Notes tab</title>' }));
+    const other = await ctx.newPage();
+    await other.addInitScript(() => Object.defineProperty(navigator, 'onLine', { get: () => false }));
+    await other.goto(fixtureURL);
+    await other.evaluate(async ({ owner, first, winningText }) => {
+      const { createStore } = await import('/organise/store.js');
+      const store = await createStore({ signal: new AbortController().signal, session: { user: { id: owner } } }, 'notes');
+      await store.save(first, { title: 'First note', text: winningText, links: [], checklist: [] }, { version: 1 });
+    }, { owner, first, winningText });
+    await body.fill('Earlier text from this tab');
+    await editor.getByText(/A newer draft was kept in another tab/).waitFor();
+    await title.fill('');
+    await review.click();
+    await copy.click();
+    await dialog.getByText('Check the required fields before saving.', { exact: true }).waitFor();
+    assert.deepEqual(writes, []);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await title.fill('Recovered note');
+    await body.fill(latestText);
+    await review.click();
+    await Promise.all([
+      page.waitForResponse(response => response.url().endsWith('/api/organise/record') && response.request().method() === 'PUT' && response.ok()),
+      copy.click(),
+    ]);
+    await page.waitForURL(url => /^#item=[a-f0-9]{32}$/.test(url.hash) && url.hash !== '#item=' + first);
+    const copiedId = new URL(page.url()).hash.slice('#item='.length);
+    await page.waitForFunction(() => document.querySelector('.org-note-body')?.value === 'Latest text from this tab');
+    assert.equal(await title.inputValue(), 'Recovered note (copy)');
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].id, copiedId);
+    assert.equal(writes[0].version, 0);
+    assert.equal(records.get(copiedId).text, latestText);
+    assert.equal(records.get(first).text, 'First note body');
+    await other.reload();
+    const originalDraft = await other.evaluate(async ({ owner, first }) => {
+      const { createStore } = await import('/organise/store.js');
+      const store = await createStore({ signal: new AbortController().signal, session: { user: { id: owner } } }, 'notes');
+      return store.pending().find(entry => entry.id === first)?.text;
+    }, { owner, first });
+    assert.equal(originalDraft, winningText);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
 });
 
 for (const status of [200, 409]) test(`an older Notes save response (${status}) preserves a newer offline draft in another tab`, async () => {
@@ -3628,6 +3837,51 @@ test('an unconfirmed sign-out keeps this account usable and the same control can
     await button.click();
     await page.waitForURL(url=>url.hash.startsWith('#signout=') || url.hostname === 'auth.inflite.ai');
     assert.equal(attempts,2);
+  } finally { await ctx.close(); }
+});
+
+test('sign-out warns for unsynced or retained drafts from unopened apps after a reload', async () => {
+  const owner = fixture('session').user.id;
+  let attempts = 0;
+  const { ctx, page, requests } = await open({ initialPath: '/#settings', waitForDay: false, intercept: async (route, { url }) => {
+    if (url.pathname !== '/api/logout') return false;
+    attempts++;
+    await route.fulfill({ json: { ok: true } });
+    return true;
+  } });
+  try {
+    for (const kind of ['organise-notes', 'organise-form-people', 'action', 'preferences', 'upload', 'capture']) {
+      await page.evaluate(async ({ owner, kind }) => {
+        const store = await (await import('/roof/offline-store.js')).openOfflineStore(owner);
+        await store.put({ id: 'only-on-device', kind, value: { title: 'Unsynced work' }, text: 'Unsynced work',
+          ...(kind === 'upload' ? { name: 'retry.bin', mime: 'application/octet-stream', file: new File(['retry'], 'retry.bin') } : {}) });
+        store.close();
+      }, { owner, kind });
+      await page.reload();
+      await page.getByRole('searchbox', { name: 'Search settings' }).fill('Sign out');
+      assert.equal(await page.getByRole('dialog', { name: 'Sign Out Anyway?' }).count(), 0, 'reloading keeps drafts silently');
+      await page.locator('#youOut').click();
+      const warning = page.getByRole('dialog', { name: 'Sign Out Anyway?' });
+      await warning.getByText('Signing out removes drafts, uploads and changes that are only on this device.').waitFor();
+      assert.equal(attempts, 0);
+      if (kind === 'capture') {
+        await warning.getByRole('button', { name: 'Sign Out', exact: true }).click();
+        await page.waitForURL(url => url.hash.startsWith('#signout=') || url.hostname === 'auth.inflite.ai');
+      } else {
+        await warning.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await warning.waitFor({ state: 'detached' });
+        assert.equal(await page.evaluate(async owner => {
+          const store = await (await import('/roof/offline-store.js')).openOfflineStore(owner);
+          const found = (await store.list()).some(row => row.id === 'only-on-device');
+          await store.remove('only-on-device');
+          store.close();
+          return found;
+        }, owner), true, 'cancel keeps the journal and does not call logout');
+      }
+    }
+    assert.equal(attempts, 1);
+    assert.equal(requests.some(r => r.path.startsWith('/api/organise/')), false, 'inspecting the journal does not open an app or start sync');
+    assert.equal(await page.evaluate(owner => localStorage.getItem('ifl:offline:v1:' + owner), owner), null);
   } finally { await ctx.close(); }
 });
 

@@ -627,3 +627,41 @@ test('scrolling a coloured message under the mobile reply bar and dock changes t
     assert.equal(t.mail.sends.length,0);
   } finally { await t.ctx.close(); }
 });
+
+test('Mail composer rejects excess attachments from the file picker, InFlite Files and a drop without editing the draft', async () => {
+  const t = await open();
+  try {
+    const { page } = t;
+    await page.evaluate(() => {
+      const pair = () => [new File(['1'], 'extra-1.txt'), new File(['2'], 'extra-2.txt')];
+      T.fw.workspace.files = { open: async () => pair(), fromDrop: async () => pair() };
+      return T.provider.run('compose', null, { current: () => true });
+    });
+    const sheet = page.locator('dialog[data-sheet="mail-compose"]');
+    const body = sheet.locator('textarea');
+    const pick = sheet.locator('input[type="file"]');
+    const chips = sheet.locator('.mc-file');
+    const file = i => ({ name: `file-${i}.txt`, mimeType: 'text/plain', buffer: Buffer.from('sample') });
+    await body.fill('Keep this draft and its files.');
+    await pick.setInputFiles(Array.from({ length: 19 }, (_, i) => file(i)));
+    assert.equal(await chips.count(), 19);
+
+    await pick.setInputFiles([file(19), file(20)]);
+    assert.equal(await chips.count(), 19);
+    await sheet.getByRole('button', { name: 'Attach from InFlite Files' }).click();
+    await page.waitForFunction(() => T.toasts.filter(message => /20 files/.test(message)).length === 2);
+    assert.equal(await chips.count(), 19);
+    await sheet.locator('.mc').evaluate(node => {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData('application/x-inflite-files-token', 'fixture');
+      node.dispatchEvent(new DragEvent('drop', { dataTransfer, bubbles: true, cancelable: true }));
+    });
+    await page.waitForFunction(() => T.toasts.filter(message => /20 files/.test(message)).length === 3);
+    assert.equal(await chips.count(), 19);
+
+    await pick.setInputFiles([file(19)]);
+    assert.equal(await chips.count(), 20);
+    assert.equal(await body.inputValue(), 'Keep this draft and its files.');
+    await t.clean();
+  } finally { await t.ctx.close(); }
+});

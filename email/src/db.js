@@ -3,6 +3,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS mail_followups (thread_id TEXT PRIMARY KEY, message_id TEXT NOT NULL, due INTEGER NOT NULL, notified INTEGER NOT NULL DEFAULT 0)`,
   `CREATE INDEX IF NOT EXISTS idx_mail_followups_due ON mail_followups(due)`,
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)`,
+  `CREATE TABLE IF NOT EXISTS push_notices (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, kind TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_push_notices_expiry ON push_notices(expires_at)`,
   `CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     folder TEXT NOT NULL,
@@ -205,10 +207,15 @@ const MIGRATIONS = [
   `ALTER TABLE messages ADD COLUMN dismissed_time INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE spots ADD COLUMN rule TEXT`,
   `ALTER TABLE spots ADD COLUMN last_at INTEGER`,
+  `ALTER TABLE messages ADD COLUMN draft_revision TEXT`,
+  `ALTER TABLE sends ADD COLUMN owner TEXT`,
+  `ALTER TABLE sends ADD COLUMN draft_id TEXT`,
+  `ALTER TABLE sends ADD COLUMN draft_revision TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_sends_owner_draft ON sends(owner, draft_id) WHERE draft_id IS NOT NULL`,
 ];
 
 // Bumped whenever SCHEMA or MIGRATIONS change, so a new isolate checks one row rather than running them all again.
-const SCHEMA_VERSION = "14";
+const SCHEMA_VERSION = "16";
 
 let ready;
 

@@ -401,12 +401,15 @@ test('Standalone Mail restores text and queued attachments only for their verifi
       };
     });
     await compose(page).getByRole('button', { name: 'Send', exact: true }).click();
-    assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('mail:unsent:v1:' + id))?.subject, ownerA), 'A’s private draft');
+    const localDraft = await page.evaluate(id => JSON.parse(localStorage.getItem('mail:unsent:v1:' + id)), ownerA);
+    assert.equal(localDraft.subject, 'A’s private draft');
+    assert.match(localDraft.draftId, /^[\w-]{8,64}$/);
     owner = ownerB;
     await page.locator('.login[data-access="signin"]').waitFor();
     assert.equal(writes.length, 1);
     assert.equal(writes[0].accepted, false);
     assert.equal(writes[0].draft.accountOwner, ownerA);
+    assert.equal(writes[0].draft.draftId, localDraft.draftId);
     await page.evaluate(() => window.finishAttachmentSave());
 
     await other.goto(conversation);

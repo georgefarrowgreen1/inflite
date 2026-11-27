@@ -26,11 +26,13 @@ import { STORAGE, CAP } from "./store.js";
 import { MAIL, MAIL_PAGE } from "./api.js";
 
 const MAX = 20 * 1024 * 1024;
+const MAX_ATTACHMENTS = 20; // Matches the draft and send API limit.
+const TOO_MANY_FILES = `You can attach ${MAX_ATTACHMENTS} files at most.`;
 const LISTS = ["to", "cc", "bcc"];
 const titleOf = (c) => c.quote?.mode === "forward" ? "Forward" : c.quote ? "Reply" : "New message";
 const people = (l) => (Array.isArray(l) ? l : []).filter((p) => p && p.email).map((p) => ({ name: String(p.name || ""), email: String(p.email) }));
 // (the words kept on the phone and sent to Mail: never a file's bytes)
-export const fieldsOf = (c) => ({ ...(c.followUpAt && {followUpAt:c.followUpAt}), from: c.from, to: c.to?.slice(), cc: c.cc?.slice(), bcc: c.bcc?.slice(), subject: c.subject, text: c.text, quote: c.quote, inReplyTo: c.inReplyTo, references: c.references, draftId: c.draftId, quoteOld: !!c.quoteOld });
+export const fieldsOf = (c) => ({ ...(c.followUpAt && {followUpAt:c.followUpAt}), from: c.from, to: c.to?.slice(), cc: c.cc?.slice(), bcc: c.bcc?.slice(), subject: c.subject, text: c.text, quote: c.quote, inReplyTo: c.inReplyTo, references: c.references, draftId: c.draftId, draftRevision: c.draftRevision, quoteOld: !!c.quoteOld });
 // (words worth keeping: someone to send to, a subject or a message)
 export const hasWords = (u) => !!u && !!(u.subject || String(u.text || "").trim() || [u.to, u.cc, u.bcc].some((l) => Array.isArray(l) && l.length));
 const online = () => typeof navigator === "undefined" || navigator.onLine !== false;
@@ -39,7 +41,7 @@ const stamp = (u) => (u ? u.at ?? JSON.stringify(u) : null);
 const isFile = (f) => typeof File !== "undefined" && f instanceof File;
 // (a draft for Mail from kept words: a quote only when it's { of, mode }; none, or quoteOld, leaves the key out, so Mail
 // keeps the quote the draft has; a missing key and none are the same for a new draft)
-export const draftOf = (f, attachments) => ({ id: f.draftId || undefined, followUpAt:f.followUpAt || null, from: f.from, to: f.to || [], cc: f.cc || [], bcc: f.bcc || [], subject: f.subject || "", text: f.text || "", inReplyTo: f.inReplyTo || null, references: f.references || null, ...(f.quote?.of && !f.quoteOld && { quote: { of: f.quote.of, mode: f.quote.mode } }), attachments });
+export const draftOf = (f, attachments) => ({ id: f.draftId || undefined, draftRevision: f.draftRevision || undefined, followUpAt:f.followUpAt || null, from: f.from, to: f.to || [], cc: f.cc || [], bcc: f.bcc || [], subject: f.subject || "", text: f.text || "", inReplyTo: f.inReplyTo || null, references: f.references || null, ...(f.quote?.of && !f.quoteOld && { quote: { of: f.quote.of, mode: f.quote.mode } }), attachments });
 const sizeOf = (s) => (typeof s === "string" ? s.length * 2 : 0);
 // (whether these words fit beside what Mail already keeps on this phone: all mail:* at most CAP)
 export function fits(fields) {
@@ -53,8 +55,9 @@ async function draftFiles(files) {
   const out = [];
   for (const f of files) {
     if (isFile(f)) out.push({ filename: f.name, type: f.type || "application/octet-stream", size: f.size, content: await b64(f) });
+    else if (f?.draftFile) out.push({ draftFile: f.draftFile });
     else if (f?.ref) out.push({ ref: f.ref });
-    else if (Number.isInteger(f?.i)) out.push({ i: f.i });
+    else throw new Error("Reopen the draft to review its attachments.");
   }
   return out;
 }
@@ -76,13 +79,8 @@ function saveLeft(ctx) {
     if (!hasWords(u)) return true;
     if (!online()) return false;
     try {
-      // (a draft it was: its own files listed again as Mail numbers them, so this save keeps them)
-      let files = [], id = u.draftId || null;
-      if (id) {
-        try { files = (await ctx.api.draft(id))?.compose?.files; if (!Array.isArray(files)) throw new Error("Missing draft attachments"); }
-        catch (e) { if (e?.status === 404) id = null; else throw e; }
-      }
-      const draft = draftOf({ ...u, draftId: id }, await draftFiles(files));
+      // The local copy has words only. Keep the attachments from its original saved version.
+      const draft = { ...draftOf(u, []), ...(u.draftId && { keepAttachments: true }) };
       if (ctx.fw.signal?.aborted) return false;
       const saved = await ctx.api.saveDraft(draft, null);
       if (!saved?.id || ctx.fw.signal?.aborted) return false;
@@ -117,13 +115,13 @@ export function openCompose(ctx, init = {}) {
   const c = {
     followUpAt:init.followUpAt || null, from: init.from || me.defaultFrom || "", to: people(init.to), cc: people(init.cc), bcc: people(init.bcc),
     subject: String(init.subject || ""), text: String(init.text || ""), quote: init.quote?.of ? { of: String(init.quote.of), mode: init.quote.mode } : null,
-    inReplyTo: init.inReplyTo || null, references: init.references || null, draftId: init.draftId || null,
+    inReplyTo: init.inReplyTo || null, references: init.references || null, draftId: init.draftId || null, draftRevision: init.draftRevision || null,
     files: (init.files || []).slice(), quoteOld: !!init.quoteOld,
   };
   const loading = !restoring && !!c.draftId && !init.to && !init.cc && !init.bcc && !init.subject && !init.text;
   const blank = !c.draftId && !c.quote && !c.quoteOld && !c.subject && !c.text && !c.files.length && !LISTS.some((k) => c[k].length);
   if (!c.draftId && (!c.text || init.quickSelection)) { const s = sigFor(c.from); if (s) c.text += `\n\n${s}`; }
-  const sigOf = (draft = c) => JSON.stringify([fieldsOf(draft), draft.files.map((f) => (isFile(f) ? `${f.name}:${f.size}` : f?.ref || f?.i))]);
+  const sigOf = (draft = c) => JSON.stringify([fieldsOf(draft), draft.files.map((f) => (isFile(f) ? `${f.name}:${f.size}` : f?.draftFile || f?.ref))]);
   let snap = init.quickSelection && init.text ? null : sigOf(), saved = null, ended = null, keepT = 0, h = null, sending = false, wrote = false, off = null;
   const dirty = () => sigOf() !== snap;
   // (an earlier compose's words still only on this phone: this one never writes over them while they're there)
@@ -133,9 +131,12 @@ export function openCompose(ctx, init = {}) {
   let unknown = false;
   async function filesReady() {
     if (!unknown || !c.draftId) return;
-    let got = [];
-    try { got = (await api.draft(c.draftId))?.compose?.files; if (!Array.isArray(got)) throw new Error("Missing draft attachments"); }
-    catch (e) { if (e?.status !== 404) throw e; c.draftId = null; }
+    const draft = await api.draft(c.draftId);
+    if (!c.draftRevision || draft?.revision !== c.draftRevision) {
+      throw Object.assign(new Error("This draft changed in another window. Reopen it to review its latest version."), { status: 409 });
+    }
+    const got = draft.compose?.files;
+    if (!Array.isArray(got)) throw new Error("Missing draft attachments");
     if (!unknown) return;
     unknown = false;
     c.files = [...got, ...c.files];
@@ -330,13 +331,23 @@ export function openCompose(ctx, init = {}) {
     }
     return x;
   }));
+  function addFiles(files, replaced = null) {
+    const i = replaced ? c.files.indexOf(replaced) : -1;
+    if (replaced && i < 0) return;
+    if (i < 0 && c.files.length + files.length > MAX_ATTACHMENTS) throw new Error(TOO_MANY_FILES);
+    if (files.some((file) => !isFile(file))) throw new Error("Those files couldn’t attach.");
+    const next = c.files.slice();
+    if (i >= 0) next.splice(i, 1, ...files);
+    else next.push(...files);
+    if (next.reduce((n, file) => n + (file.size || 0), 0) > MAX) throw new Error("Files are limited to 20 MB");
+    c.files = next;
+    drawFiles(); changed();
+  }
   const pick = el("input", { type: "file", multiple: true, hidden: true, "aria-label": "Add Files", tabindex: "-1" });
   pick.addEventListener("change", () => {
-    for (const f of pick.files) {
-      if (c.files.reduce((n, x) => n + (x.size || 0), 0) + f.size > MAX) { fw.toast("Files are limited to 20 MB"); break; }
-      c.files.push(f);
-    }
-    pick.value = ""; drawFiles(); changed();
+    try { if (pick.files.length) addFiles([...pick.files]); }
+    catch (error) { fw.toast(error.message); }
+    finally { pick.value = ""; }
   });
   const snippetOf = () => (c.quote && (store.get().thread?.metas?.[c.quote.of]?.snippet || init.snippet)) || "";
   const quoteEl = el("div", { class: "mc-quote" });
@@ -449,10 +460,7 @@ export function openCompose(ctx, init = {}) {
       if (!current()) return;
       await ctx.open.contactCard({anchor,base:MAIL,owner,current,me,from:c.from,initial,pickFile:()=>pick.click(),attach(file){
         if (!current()) return;
-        const total=c.files.reduce((sum,f)=>sum+(f===initial?0:f.size||0),0);
-        if(total+file.size>MAX) throw Error("Files are limited to 20 MB");
-        if(initial){const i=c.files.indexOf(initial);if(i<0)return;c.files[i]=file;}else c.files.push(file);
-        drawFiles();changed();
+        addFiles([file], initial);
       }});
     } catch { if(current())fw.toast("Couldn’t open attachments. Try again."); }
   }
@@ -466,15 +474,12 @@ export function openCompose(ctx, init = {}) {
       if (!current() || h.el.getAttribute("aria-busy") === "true") return;
       drive.focus({ preventScroll: true });
       try {
+        if (c.files.length >= MAX_ATTACHMENTS) return fw.toast(TOO_MANY_FILES);
         const left = MAX - c.files.reduce((n, item) => n + (item.size || 0), 0);
         if (left <= 0) return fw.toast("Files are limited to 20 MB");
         const picked = await fw.workspace.files.open({ title: "Attach from InFlite Files", multiple: true, maxBytes: left, current, signal: fileDialog.signal });
         if (!current() || !picked) return;
-        for (const file of picked) {
-          if (!(file instanceof File) || c.files.reduce((n, item) => n + (item.size || 0), 0) + file.size > MAX) { fw.toast("Files are limited to 20 MB"); break; }
-          c.files.push(file);
-        }
-        drawFiles(); changed();
+        if (picked.length) addFiles(picked);
       } catch (error) { if (current() && error?.name !== "AbortError") fw.toast(error?.message || "Those files couldn’t attach."); }
     } });
     drive.replaceChildren(ctx.icon("folder"));
@@ -512,11 +517,7 @@ export function openCompose(ctx, init = {}) {
         const left = MAX - c.files.reduce((n, item) => n + (item.size || 0), 0);
         const files = await fw.workspace.files.fromDrop(event.dataTransfer, { maxBytes: Math.max(0, left), current, signal: fileDialog.signal });
         if (!current() || !files) return;
-        for (const file of files) {
-          if (!(file instanceof File) || c.files.reduce((n, item) => n + (item.size || 0), 0) + file.size > MAX) throw new Error("Files are limited to 20 MB");
-          c.files.push(file);
-        }
-        drawFiles(); changed();
+        if (files.length) addFiles(files);
       } catch (error) { if (current() && error?.name !== "AbortError") fw.toast(error?.message || "Those files couldn’t attach."); }
       finally { receiving = false; }
     });
@@ -583,13 +584,18 @@ export function openCompose(ctx, init = {}) {
       const r = await api.saveDraft(draftOf(fieldsOf(c), await draftFiles(c.files)), null, { keepalive: !bytes });
       if (!r?.id) throw new Error("Mail did not confirm the draft");
       c.draftId = r.id;
+      c.draftRevision = r.revision;
       claimQuick();
       if (kept && stamp(ctx.outbox.unsent()) === at) ctx.outbox.dropUnsent();
       fw.toast("Draft saved");
     })();
     const state = recoveryFor(ctx);
     state.closing = job;
-    job.catch(() => {
+    job.catch((error) => {
+      if (error?.status === 409) {
+        return fw.toast(kept ? `${error.message} Your draft text is kept on this device.` : error.message,
+          { action: { label: "Open edits", run: () => ctx.open.compose({ ...c, resumeConflict: true }) } });
+      }
       if (kept) retryOnline(ctx);
       fw.toast(!kept ? "Couldn’t keep this on your phone. Try Again when you’re online"
         : bytes ? "Kept on this phone, without its files. It’s saved to Mail when you’re back online."
@@ -608,8 +614,9 @@ export function openCompose(ctx, init = {}) {
     if (h.closed) return;
     const offline = !online();
     if (offline && (c.files.length || unknown)) return fw.toast(c.files.length ? "Files need a connection. Try Again" : "This draft needs a connection. Try Again");
-    try { await filesReady(); } catch (_) { return fw.toast("Couldn’t reach Mail. Try Again"); }
+    try { await filesReady(); } catch (error) { return fw.toast(error?.status === 409 ? error.message : "Couldn’t reach Mail. Try Again"); }
     if (h.closed || sending) return;
+    if (c.files.length > MAX_ATTACHMENTS) return fw.toast(TOO_MANY_FILES);
     // (a quoteOld draft goes without its quote, as "Send Without the Quoted Text?" said: quote null, not left out)
     if (offline && !fits(fieldsOf(c))) return fw.toast("Couldn’t keep this on your phone. Try Again when you’re online");
     // (saved first, the sheet up meanwhile with the upload's progress; closed once the outbox has it, S4-D18)
@@ -668,14 +675,21 @@ export function openCompose(ctx, init = {}) {
   fileDialog.signal.addEventListener("abort", () => { globalThis.removeEventListener("pagehide", preserve); document.removeEventListener("visibilitychange", hidden); }, { once: true });
   // (flush, C10: saves these words as a draft and hands its id back; unchanged since, it isn't saved again)
   off = ctx.outbox.track?.(() => (!ended && !sending && !unknown && dirty() && sigOf() !== saved ? { ...fieldsOf(c), files: c.files.slice() } : null),
-    (id, snapshot = c) => { c.draftId = id; saved = sigOf({...snapshot,draftId:id}); }) || null;
+    (id, snapshot = c, revision) => {
+      c.draftId = id;
+      c.draftRevision = revision;
+      saved = sigOf({ ...snapshot, draftId: id, draftRevision: revision });
+      if (!ended && !held() && dirty() && sigOf() !== saved) keep();
+    }) || null;
 
   // words an earlier compose left on this phone: saved to Mail first, else (offline) reopened here when this one's blank
-  const left = ctx.outbox.unsent?.();
+  const left = init.resumeConflict ? null : ctx.outbox.unsent?.();
   const ready = !restoring && hasWords(left) ? saveLeft(ctx) : Promise.resolve(true);
   if (restoring && c.draftId) {
     unknown = true;
-    filesReady().catch(() => { if (!ended && !fw.signal?.aborted) fw.toast("Existing attachments need a connection before sending."); });
+    filesReady().catch((error) => {
+      if (!ended && !fw.signal?.aborted) fw.toast(error?.status === 409 ? error.message : "Existing attachments need a connection before sending.");
+    });
   }
   if (!restoring && hasWords(left)) {
     leftAt = stamp(left);
@@ -684,7 +698,7 @@ export function openCompose(ctx, init = {}) {
       if (blank && !dirty()) {
         leftAt = null;
         Object.assign(c, { followUpAt:left.followUpAt || null, from: left.from || c.from, to: people(left.to), cc: people(left.cc), bcc: people(left.bcc), subject: String(left.subject || ""), text: String(left.text || ""),
-          quote: left.quote?.of ? { of: String(left.quote.of), mode: left.quote.mode } : null, quoteOld: !!left.quoteOld, inReplyTo: left.inReplyTo || null, references: left.references || null, draftId: left.draftId || null });
+          quote: left.quote?.of ? { of: String(left.quote.of), mode: left.quote.mode } : null, quoteOld: !!left.quoteOld, inReplyTo: left.inReplyTo || null, references: left.references || null, draftId: left.draftId || null, draftRevision: left.draftRevision || null });
         redraw();
         wrote = true;
         // (a draft it was: its own files asked of Mail once there's a connection, before it's saved or sent)
@@ -701,9 +715,9 @@ export function openCompose(ctx, init = {}) {
   if (loading) {
     h.setBusy(true);
     // (after any words left on this phone are saved: they may be this very draft's)
-    ready.then(() => api.draft(c.draftId)).then(({ compose: d = {}, quoteOld }) => {
+    ready.then(() => api.draft(c.draftId)).then(({ compose: d = {}, quoteOld, revision }) => {
       if (ended) return;
-      Object.assign(c, { followUpAt:d.followUpAt || null, from: d.from || c.from, to: people(d.to), cc: people(d.cc), bcc: people(d.bcc), subject: String(d.subject || ""), text: String(d.text || ""), inReplyTo: d.inReplyTo || null, references: d.references || null,
+      Object.assign(c, { draftRevision: revision, followUpAt:d.followUpAt || null, from: d.from || c.from, to: people(d.to), cc: people(d.cc), bcc: people(d.bcc), subject: String(d.subject || ""), text: String(d.text || ""), inReplyTo: d.inReplyTo || null, references: d.references || null,
         quote: d.quote?.of ? { of: String(d.quote.of), mode: d.quote.mode } : null, quoteOld: !!quoteOld, files: Array.isArray(d.files) ? d.files.slice() : [] });
       redraw();
       snap = sigOf();

@@ -4,6 +4,7 @@ const PREFIX='ifl:offline:v1:', LIMIT=100*1024*1024;
 const req=r=>new Promise((yes,no)=>{r.onsuccess=()=>yes(r.result);r.onerror=()=>no(r.error)});
 const done=t=>new Promise((yes,no)=>{t.oncomplete=yes;t.onabort=t.onerror=()=>no(t.error||Error('Local storage did not finish.'))});
 const matches=(row,expected)=>expected===null?row===undefined:!!row&&row.journalStamp===expected.journalStamp;
+
 export async function openOfflineStore(owner,{signal}={}){
  if(!/^[\w-]{1,100}$/.test(owner)||!globalThis.indexedDB||!crypto.subtle)throw Error('This browser could not keep offline work. Leave this page open and try again.');
  const name=PREFIX+owner,opening=indexedDB.open(name,2);

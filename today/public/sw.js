@@ -20,13 +20,13 @@ const engineAt = (u) => u.pathname.startsWith("/chats/") && u.searchParams.has("
 // none. Each worker reads the immutable cache it installed. The browser keeps
 // the previous worker active if any asset fails validation or storage is full.
 const SHELL = "today-app-4";
-const RELEASE = "4.62.5";
-const INTEGRITY = {"/":"sha256-XwryI2qQgwrpmo0SquHgjm4T7oOU8EFKXy4VuK3eon0=","/roof/wallpaper.js":"sha256-U9BBvmk6mkoOBOi5V4TkEaiKBMwT8h2iu+dNLvhP/48=","/roof/bubbles.js":"sha256-1CD/wZCY0HXXU6qflWAgRCIZ0VI4HEtHb6jsLm7Chj0=","/roof/bubble-colours.js":"sha256-HYlA1tMIpLgsFYMQ/+vDLOVLklkYAH0NF8TyXzFhPhs=","/roof/bubble-surface.js":"sha256-9kRiOoFBlzNvemi8mog1S4CwsoLjN7sC18QgznZKUxc=","/roof/bubble-motion.js":"sha256-6WDMftOYp0/xDxJxr2dgAHWO1TJY4ot/5BG6nLWMIr4=","/roof/refractor.js":"sha256-0X4uhb+8cuykcL4PumB1X3z36EtuUvdsLL+FFZN2Na8=","/roof/orb-refraction.js":"sha256-hPdaFYycjfrMIHQA55/hBMxP9boWVFn4fFyHjUZKyVA=","/roof/refractor-map.svg":"sha256-mPzEhH76V3AKblq0OVwcZvkQ3CAs7WdIbEH5a/uUYNw=","/app.js":"sha256-fAhdCbVoLhpIWy9VXocOn3T5ULuNBGJ38Km9Fn8uEV0=","/cards.js":"sha256-G9vSEzIIDVGVMjYdM2OLlEeXVOvG6PWCcOf6DB98C3s=","/day.js":"sha256-+sJoDmmVBgBEWDe/XKncQvcmsie8m+Hdlm1UfdKhVkM=","/trip.js":"sha256-cm5+K/+pQb6yFyN5W3RNyo9MN8boUqyBy9T45ZuBHzc=","/mailday.js":"sha256-DQh/dsF5l9J+x4yXPNbBuUCr5QSyLcKUc3OWLJz/rMU=","/apps.js":"sha256-2ibojVdeWiOJYzobPXZZwncmlMq42kPzdZrv6dDMwzg=","/you.js":"sha256-kh6Ls4pJhxnXQ7XWzrLiJyIGUANy5MN4tikiWqC0460=","/settings-account.js":"sha256-rFoTJWuOHDly/LecqnYJhbnKNxdKBjzb+eiArMNHb3A=","/swipe.js":"sha256-kcDrJ7jOZ6pBTOt9ennA2rmBr2oYkmOTSO+Xsk1i0qE=","/wxicons.js":"sha256-6TTiEF2XDkNrqy19gWz2m0UaelpP9yJGqx3GhEgHo8g=","/app.css":"sha256-4sosyYbaIHZeSP5GcLcpKQbUjbjqMDfUCuhjoXrtZYM=","/day.css":"sha256-0oQN8uNIqv5PxpepMkIxXFT7KHBB8Wgoe8SOM3+t0So=","/theme.js":"sha256-MRwEo0VHI+iey5/HDQ56R1zOeTWROkdW38U3B5InSdg=","/fade.js":"sha256-1pgroYvSt0QEYQEjE8UXW6kHnmKUwB/o0nQRmcls1kM=","/mailhost.js":"sha256-RzHdGQxilBKXgZRy+rQVJ3wIscnjxfrPrpgWqis07hs=","/manifest.webmanifest":"sha256-rv2hkt+0inVoy1TPf9f2QQBxB1sedRCIkRCOpKnnN+g=","/icon.svg":"sha256-etQK3NWM0hIRti6h3V95sTWB9WYEEXNN/L+bbTLYBkw=","/inflite.svg":"sha256-etQK3NWM0hIRti6h3V95sTWB9WYEEXNN/L+bbTLYBkw=","/icon-180.png":"sha256-r6cJpJ36ODaGXHUfsLF6TxWwB2+UMJh+gFXORc5haTE=","/icon-192.png":"sha256-aoHHVnW8gXa8qsYgdOuDlP9GV5XlYkdXyty8N2vZ63I=","/apps/chat.svg":"sha256-BKjK7Vb/dIq3uaDS0zzIhc+DUQiKN8dhARxcaJI/Jeo=","/apps/weather.svg":"sha256-Mfwc5OH4F6BLd/7oUJGzE93BUHpdA9pP8ngJdHx/4GE=","/apps/fitness.svg":"sha256-VlNGMAn3otDsh1+9awQcPVPo6zJd1RsrjxIg77b5Kxs=","/apps/markets.svg":"sha256-4dyxemkVGBiXsY+ZsgoVjcpcte0/7F2HyXpiUBYASMU=","/opening-opal.webp":"sha256-ZEgWNAud4ab/e+ZWOBnyzu7UBBdgC+Sk8PDFeMTGCbg=","/about/gfg.svg":"sha256-mzGgjbwyUwSefIT8ZkxdD9AV8YJc7fkcqXu1R2vLM0U=","/settings-about.js":"sha256-Ye3/jDsVWHRuS7APoX1EdBBImy4DT5PO9qg2yUnIib8=","/settings-documents.js":"sha256-DLNeQPz8PoZyqgX2VqrgYiU2OV/avQ5aQCU54nEZyDM=","/contact/form.js":"sha256-pF/2ajaWwZsUTYuYV56XfSJiKNeRDuPHyCmJZnAFpZ0=","/mailcard.js":"sha256-+VPaq4bIWssS+Yv+f6HCrtRPB4Pg4LkHf7WNrcWZvrY=","/mailnotify.js":"sha256-iOgamd/qrWTV5MeHURCYFyBhqC55VpokKszmM4oKBkU=","/layout.js":"sha256-o9clw8op61btcLge1rJH+rPTVjekzfNyhpbIAU29ZGs=","/roof/requests.js":"sha256-yTggrsgNggVQAH6h4t6rCz+gHJ0rdTLGUovPHPTPmrg=","/roof/tasks.js":"sha256-J7mIiKPUdHqh9tS/jFijWT2vZSCYiIkb6zivw3IsMgk=","/roof/screens.js":"sha256-gysXZdG/UEokQ5wq+Bpy73cKbFFg7P7H+XNHXxnWGbk=","/roof/preload.js":"sha256-bMUerj87QrfGShbGBC1ni5sFi2GkB02bmPxg2+7f2ZE=","/roof/performance.js":"sha256-N3TrkGuzhC6tARJhOv1ZMIrogfjP8D25qwjo2nfMsJE=","/roof/restore.js":"sha256-ArFolJRqfFYdxLko4DozLkvv1VSOME/FV9LwjQyx8oc=","/apps/mail.svg":"sha256-w4vn8W2oXr5QruwVKsPwf9Uk5IirJ9T0uI42N82mHwo=","/apps/calendar.svg":"sha256-eh01duf6sxHmV6EN5+v6ZP9peqNhkJwO/gtO/pEs4jo=","/apps/notes.svg":"sha256-seYdLyqudAasluduDPSjlzGfMEbYgDXRkJSe8qf46Pc=","/apps/people.svg":"sha256-3uobxt8KAFctxXqE8ISl58YMRLl7e7DrSAj+gCZgD+s=","/atlas.svg":"sha256-SX6JTEqBDIHAkUtBDRccNGU+72LxHIhBhGet47lQH1k=","/apps/files.svg":"sha256-PfzqUjLUMxUqrant59CzjASYlTgFnCT62cY7I3sAm44=","/roof/frame.js":"sha256-ectePjaFNK42ygtTSeMcZvW1PfrNRWZsiSQx4218rXc=","/roof/router.js":"sha256-fhXd+ccNqXu+0t+Ze92h27gohNJfZfM8xVrDJQlrg3g=","/roof/header.js":"sha256-7JEP1hLcGZnrHK4dzjYX8bK4HSa8XWI1zSjopSAlNVE=","/roof/tabs.js":"sha256-arp9xI8teiaqyJh7NC4yptcwmTb50gRzm75EpzCfo0E=","/roof/sheet.js":"sha256-NWpouZp6hpclu5lVgQhVTlGZj2WHAqnrtZSLECDLHys=","/roof/toast.js":"sha256-bo24oK2oTa8GPtDrFxeCkVZuurwl8F4WnsutDS0tMII=","/roof/ui.js":"sha256-PmPho+ukbhetR/WrLEcMfnDMEWxv7YYq2/fvVKkGa0I=","/roof/search.js":"sha256-nIaRSAr7CTEHzMZShr1GGaytGokxZLPcFxfhFRSowbg=","/roof/search-render.js":"sha256-iTkHYR0iTZSv2Ovp65LUnF9nbzMeMKq4CtGmYTEoiEo=","/roof/send.js":"sha256-GwtSpYaW/z9z7M+Bpd0WMzQ+EuR2iVzaKH7lPksOxyU=","/roof/modules.js":"sha256-uwthMYokGEv5vDd5L+01hr5yZF09uGf1kKfra8RuJe0=","/roof/connectors.js":"sha256-dfGj69kS6D0lGJPzzSaCsq+LAL1GJK+ONEvFVsZiUgQ=","/roof/roof.css":"sha256-o1uYRK9CqUcWGE6Q48cSGbBa/gaw4u8fqMC4M8lZnuA=","/roof/controls.css":"sha256-jdBUGsobN88yXrzljyUEC1o2RQITIDlu8DhYbH6C1Jo=","/bell.js":"sha256-0S+BaO4+3OGE8yxveblYC7nxovXT+ZSGMCQ8/u7xqek=","/roof/launcher-model.js":"sha256-DjAgsUAyP0z3rvK5wcnHmaGpi12Lqwjc14jsn7Q0E8k=","/roof/launcher-motion.js":"sha256-Y0eHSz80Oxlz04R0GO8qIXQ6yPrReMjEK1bJMlAvILc=","/roof/launcher-input.js":"sha256-JHH/7GpKijxgf5Y85hOzEyYbfHG988FOU8d+3BbSQjM=","/roof/security-module.js":"sha256-j40eqCSJqwKFLXKmA6OGsxZMy4bvHQzHTDLpJqpZZPs=","/roof/security-client.js":"sha256-05zNsYYB+boYDvmlwwaB+4AmbWA34soft/uwGCDk3Dg=","/roof/life410.js":"sha256-GKogKLU1so54NyuhXP+YApWbq+yxxQdoKqbOEXboA44=","/roof/system350.js":"sha256-1Z/692k6hazKeaVpdaKihe78IaUIsYjiJhKCpPnMZqk=","/roof/system-client.js":"sha256-PTWywza6D8j+lgN7XufPnLFjUWHFP15MiRh8k55hGeY=","/roof/actions-store.js":"sha256-rD2wXSAphlJ0qIhqhGCteoDQEbxiq+mrlvMnxO0U4PQ=","/roof/actions-ui.js":"sha256-9dcV+jtKoSnW2X7eO97NmtvDCg3ZGIocoYbfsF/Tu8Q=","/roof/device-id.js":"sha256-IR5VvRMsr+X3N1Zb4e8RiZ7NvsnyhoPjyv+yLwtOpFQ=","/roof/devices-ui.js":"sha256-eROgeCinAC2nA5PlUOABFlQGAwoteTl7zyMIQbSyOqs=","/roof/discovery350.js":"sha256-LRHgZQWibykzxsYw4RXnfMF0zwaW7PyKoCyFlLFaQW0=","/roof/search-file.js":"sha256-eHWcbPhMQnLutHbFY/bbgEwJ0xpAfKORhgQBf6I8GK4=","/roof/files-viewer350.js":"sha256-3UQJEjpr9qVkvof9DHsH6UULkjzIyP6ZlYV+M7a3eHo=","/roof/files-recovery350.js":"sha256-sDCo5eQwdo90ZiWh/eCbTzdiDXmqYSilhDPB/nwFm5A=","/roof/continuity.js":"sha256-Swe12i0T4rCxZbBLbd0dyLzjJvwtWMbmegOot0DrvRY=","/roof/offline-store.js":"sha256-2Qp0vLeHWqsLSvr+rMD/bDA4QWyxjRRW4eNjwq3Go8k=","/roof/offline-prefs.js":"sha256-9CAijx+jiXKeqi9sobrTK9z/g5vOJWKOy9V/0m2ihFw=","/roof/ride-overview.js":"sha256-93FXorsjmbylU7j8orGcrmpE6q7ne9uhMWCnmeZACQY=","/roof/files-history.js":"sha256-TnkznWNpfxIYxHSdjLowMYs3JtCz+/arumjjkWyXues=","/roof/upload-parts.js":"sha256-iMwEnYHhMIB5s+ZbBG+MB0x23+gdyFGCyPkng44BCLo=","/roof/workspace.js":"sha256-vpWLyv2MrbveDMvvFvFAisSeqjA5Z1K9gBgrS7wQTM8=","/roof/workspace-view.js":"sha256-fMhRF60Lf4qum6HyK0EVRyPVaoOH0khHJLnr/wEof8s=","/roof/workspace-catalog.js":"sha256-LiQy91DFc5DhTBhIHdbs05oqlWGRAvTF+ye79FBhTFo=","/roof/workspace-windows.js":"sha256-7HIO13WCULPXVybOjAyqoJly2+PVOoTQSStHtpNH3qU=","/roof/workspace-commands.js":"sha256-RtxemdOgowUAJQxMg8cfjPvGIVVY9YPauEpaXV6+UCs=","/roof/workspace-files.js":"sha256-ylFuy+c0Xl5ONHAlePGCnMSRjnAKC7Mr/TkkYMezKwk=","/roof/files-service.js":"sha256-G/nRGWaQP4p/Bm/tflrmTowkOyfNCmTinjiFS9o7N2g=","/roof/files-apps.js":"sha256-Ou2NgauFPki1/NvW68gX0A2K1FAkIqiie0zTTO4KCe0=","/roof/files-metadata.js":"sha256-VeNEwr4ToeeSWEcwiw7KTAL7jUC5yx9NCuda2L5X8LQ=","/roof/files-location.js":"sha256-zOz5OWfJc9UlhVzJlxInH4q9W87kUGZtKGo4cnmXUD4=","/roof/files-drive.js":"sha256-/NKwAGJ1dLTaUBzmE6146aGPCxo95kKdKfFbb/WVEWM=","/roof/files-explorer.js":"sha256-zif5GLXcrq7Hxmf99bbPNhXkKqmB/de9XPE3TJqrwUM=","/roof/files-view.js":"sha256-aFhm8jw6oMG4ZP7LCvyuoNLz2dvAxZmrhby/Wu03UX4=","/roof/files-dialogs.js":"sha256-dalgoUyHItxwkmOY4oFoTWR5vWtb54cAsHlCH4iZ4pg=","/roof/workspace-activity.js":"sha256-NxdVhKGi2zhhIAJbRL/KyquIUHzTX4t96JzJZ3OmRQY=","/roof/workspace-activity-state.js":"sha256-VDRhWqUjsEEnixPJa0nXDmP/zfze016Fz085zpEAxWg=","/roof/workspace-recovery.js":"sha256-IoImBFcLJqSWCNUl1fD8LiuDmN/KnweUtrM4b83TG94=","/roof/workspace-recovery-view.js":"sha256-0rks0LKRB6uDxqqe7LPOp+U9X8KDSbLRpD7Lv+EV57g=","/roof/connection.js":"sha256-RX5XBm3VboVALS5xSfU2L/bN4wpN2ZTz1BbVY7mHBO8=","/roof/handoffs.js":"sha256-WzyrOtc55kbGvn8HyLZ6iGqyIYUkq/DgLWkHw50yXnY=","/roof/launcher.css":"sha256-VA4w3WizEOYs/bzyPayeiN8txnixFboP/Rm3B1AwDKg=","/roof/security-module.css":"sha256-0zy+/+33FtBaSv7Gd+EG8L+YC5OlWbvRAB9M0YIT0rg=","/roof/life410.css":"sha256-nlF3IyrPUbsq/qaWuY6pxvg60iRZbRcfGOJ6uEzv09g=","/roof/system350.css":"sha256-Oc6sXKhixZdUCQNTOvzqNB8QA4d2vkhT1+w4SoGe9Yg=","/roof/files-viewer350.css":"sha256-vKCx5d5CesnShSfdGFfPkE3IaFpD0fOPQAyGxAKf9K4=","/roof/workspace.css":"sha256-bY9W64qRGt7KYeetOAwVwsF8onpWyABeigCYFWbpFXQ=","/roof/workspace-commands.css":"sha256-MKk7M+jjN+ofqs1SUBC6R21pdq77DOoQNvsdsRliYuY=","/roof/workspace-files.css":"sha256-x2m4F5sFR9bJH6uLEgxR4nL0FWY2ByzYXJjh93PW5SM=","/roof/files-view.css":"sha256-37GNxzPbyuxCZR+ZTVNWi/l9UAX5oNPu+Ewa51ICIvI=","/roof/files-dialogs.css":"sha256-ThAIBRxjK8OQDSXrwz9cHYaoagz8VXXkY+YhD+I0njg=","/roof/workspace-activity.css":"sha256-11zlVVYJjVmjVte0owsfT68MdYwcX8vtcnlFvaiurN8=","/roof/workspace-recovery.css":"sha256-UiYgD/6qE7OziFEgEx6Kf17t8HKizsmtQc2n3x/FcOo=","/organise/releases/4.33.2/store.js":"sha256-DUIRMD2MmAcHOOCCmVv+4oY13FIWJR/XF5I5rV1+040=","/os.webmanifest":"sha256-nFZ6HpMSYkPunUC7DXJWGK80k0oc3WoP5kFhCrJHMkU="};
+const RELEASE = "4.62.6";
+const INTEGRITY = {"/":"sha256-XwryI2qQgwrpmo0SquHgjm4T7oOU8EFKXy4VuK3eon0=","/roof/wallpaper.js":"sha256-U9BBvmk6mkoOBOi5V4TkEaiKBMwT8h2iu+dNLvhP/48=","/roof/bubbles.js":"sha256-1CD/wZCY0HXXU6qflWAgRCIZ0VI4HEtHb6jsLm7Chj0=","/roof/bubble-colours.js":"sha256-HYlA1tMIpLgsFYMQ/+vDLOVLklkYAH0NF8TyXzFhPhs=","/roof/bubble-surface.js":"sha256-9kRiOoFBlzNvemi8mog1S4CwsoLjN7sC18QgznZKUxc=","/roof/bubble-motion.js":"sha256-6WDMftOYp0/xDxJxr2dgAHWO1TJY4ot/5BG6nLWMIr4=","/roof/refractor.js":"sha256-0X4uhb+8cuykcL4PumB1X3z36EtuUvdsLL+FFZN2Na8=","/roof/orb-refraction.js":"sha256-hPdaFYycjfrMIHQA55/hBMxP9boWVFn4fFyHjUZKyVA=","/roof/refractor-map.svg":"sha256-mPzEhH76V3AKblq0OVwcZvkQ3CAs7WdIbEH5a/uUYNw=","/app.js":"sha256-fMrQyDkkTgm57OzyAHKCRRO26CJIWpHT7N0y/0r5YUI=","/cards.js":"sha256-G9vSEzIIDVGVMjYdM2OLlEeXVOvG6PWCcOf6DB98C3s=","/day.js":"sha256-+sJoDmmVBgBEWDe/XKncQvcmsie8m+Hdlm1UfdKhVkM=","/trip.js":"sha256-cm5+K/+pQb6yFyN5W3RNyo9MN8boUqyBy9T45ZuBHzc=","/mailday.js":"sha256-DQh/dsF5l9J+x4yXPNbBuUCr5QSyLcKUc3OWLJz/rMU=","/apps.js":"sha256-2ibojVdeWiOJYzobPXZZwncmlMq42kPzdZrv6dDMwzg=","/you.js":"sha256-kh6Ls4pJhxnXQ7XWzrLiJyIGUANy5MN4tikiWqC0460=","/settings-account.js":"sha256-rFoTJWuOHDly/LecqnYJhbnKNxdKBjzb+eiArMNHb3A=","/swipe.js":"sha256-kcDrJ7jOZ6pBTOt9ennA2rmBr2oYkmOTSO+Xsk1i0qE=","/wxicons.js":"sha256-6TTiEF2XDkNrqy19gWz2m0UaelpP9yJGqx3GhEgHo8g=","/app.css":"sha256-KtoxAmLfJ+4Mb5uIlq0Xgy+6NcbmdMss0aCNI1+3YbU=","/day.css":"sha256-0oQN8uNIqv5PxpepMkIxXFT7KHBB8Wgoe8SOM3+t0So=","/theme.js":"sha256-MRwEo0VHI+iey5/HDQ56R1zOeTWROkdW38U3B5InSdg=","/fade.js":"sha256-1pgroYvSt0QEYQEjE8UXW6kHnmKUwB/o0nQRmcls1kM=","/mailhost.js":"sha256-vEqxpYw0AznzaXChyjWAt4TgTrT2yD0eqEdJbUm25Ko=","/manifest.webmanifest":"sha256-rv2hkt+0inVoy1TPf9f2QQBxB1sedRCIkRCOpKnnN+g=","/icon.svg":"sha256-etQK3NWM0hIRti6h3V95sTWB9WYEEXNN/L+bbTLYBkw=","/inflite.svg":"sha256-etQK3NWM0hIRti6h3V95sTWB9WYEEXNN/L+bbTLYBkw=","/icon-180.png":"sha256-r6cJpJ36ODaGXHUfsLF6TxWwB2+UMJh+gFXORc5haTE=","/icon-192.png":"sha256-aoHHVnW8gXa8qsYgdOuDlP9GV5XlYkdXyty8N2vZ63I=","/apps/chat.svg":"sha256-BKjK7Vb/dIq3uaDS0zzIhc+DUQiKN8dhARxcaJI/Jeo=","/apps/weather.svg":"sha256-Mfwc5OH4F6BLd/7oUJGzE93BUHpdA9pP8ngJdHx/4GE=","/apps/fitness.svg":"sha256-VlNGMAn3otDsh1+9awQcPVPo6zJd1RsrjxIg77b5Kxs=","/apps/markets.svg":"sha256-4dyxemkVGBiXsY+ZsgoVjcpcte0/7F2HyXpiUBYASMU=","/opening-opal.webp":"sha256-ZEgWNAud4ab/e+ZWOBnyzu7UBBdgC+Sk8PDFeMTGCbg=","/about/gfg.svg":"sha256-mzGgjbwyUwSefIT8ZkxdD9AV8YJc7fkcqXu1R2vLM0U=","/settings-about.js":"sha256-Ye3/jDsVWHRuS7APoX1EdBBImy4DT5PO9qg2yUnIib8=","/settings-documents.js":"sha256-DLNeQPz8PoZyqgX2VqrgYiU2OV/avQ5aQCU54nEZyDM=","/contact/form.js":"sha256-pF/2ajaWwZsUTYuYV56XfSJiKNeRDuPHyCmJZnAFpZ0=","/mailcard.js":"sha256-+VPaq4bIWssS+Yv+f6HCrtRPB4Pg4LkHf7WNrcWZvrY=","/mailnotify.js":"sha256-iOgamd/qrWTV5MeHURCYFyBhqC55VpokKszmM4oKBkU=","/layout.js":"sha256-o9clw8op61btcLge1rJH+rPTVjekzfNyhpbIAU29ZGs=","/roof/requests.js":"sha256-yTggrsgNggVQAH6h4t6rCz+gHJ0rdTLGUovPHPTPmrg=","/roof/tasks.js":"sha256-J7mIiKPUdHqh9tS/jFijWT2vZSCYiIkb6zivw3IsMgk=","/roof/screens.js":"sha256-gysXZdG/UEokQ5wq+Bpy73cKbFFg7P7H+XNHXxnWGbk=","/roof/preload.js":"sha256-bMUerj87QrfGShbGBC1ni5sFi2GkB02bmPxg2+7f2ZE=","/roof/performance.js":"sha256-N3TrkGuzhC6tARJhOv1ZMIrogfjP8D25qwjo2nfMsJE=","/roof/restore.js":"sha256-ArFolJRqfFYdxLko4DozLkvv1VSOME/FV9LwjQyx8oc=","/apps/mail.svg":"sha256-w4vn8W2oXr5QruwVKsPwf9Uk5IirJ9T0uI42N82mHwo=","/apps/calendar.svg":"sha256-eh01duf6sxHmV6EN5+v6ZP9peqNhkJwO/gtO/pEs4jo=","/apps/notes.svg":"sha256-seYdLyqudAasluduDPSjlzGfMEbYgDXRkJSe8qf46Pc=","/apps/people.svg":"sha256-3uobxt8KAFctxXqE8ISl58YMRLl7e7DrSAj+gCZgD+s=","/atlas.svg":"sha256-SX6JTEqBDIHAkUtBDRccNGU+72LxHIhBhGet47lQH1k=","/apps/files.svg":"sha256-PfzqUjLUMxUqrant59CzjASYlTgFnCT62cY7I3sAm44=","/roof/frame.js":"sha256-wKtkjN7KN8v+f3NKfaCd6G+gUh3eP1peTp7Aw52GI3I=","/roof/router.js":"sha256-tOX5OzSdEjb41NXnWhqJShUhvr18mdUw3/VdD8An+DE=","/roof/header.js":"sha256-7JEP1hLcGZnrHK4dzjYX8bK4HSa8XWI1zSjopSAlNVE=","/roof/tabs.js":"sha256-arp9xI8teiaqyJh7NC4yptcwmTb50gRzm75EpzCfo0E=","/roof/sheet.js":"sha256-NWpouZp6hpclu5lVgQhVTlGZj2WHAqnrtZSLECDLHys=","/roof/toast.js":"sha256-bo24oK2oTa8GPtDrFxeCkVZuurwl8F4WnsutDS0tMII=","/roof/ui.js":"sha256-PmPho+ukbhetR/WrLEcMfnDMEWxv7YYq2/fvVKkGa0I=","/roof/search.js":"sha256-nIaRSAr7CTEHzMZShr1GGaytGokxZLPcFxfhFRSowbg=","/roof/search-render.js":"sha256-iTkHYR0iTZSv2Ovp65LUnF9nbzMeMKq4CtGmYTEoiEo=","/roof/send.js":"sha256-GwtSpYaW/z9z7M+Bpd0WMzQ+EuR2iVzaKH7lPksOxyU=","/roof/modules.js":"sha256-uwthMYokGEv5vDd5L+01hr5yZF09uGf1kKfra8RuJe0=","/roof/connectors.js":"sha256-dfGj69kS6D0lGJPzzSaCsq+LAL1GJK+ONEvFVsZiUgQ=","/roof/roof.css":"sha256-o1uYRK9CqUcWGE6Q48cSGbBa/gaw4u8fqMC4M8lZnuA=","/roof/controls.css":"sha256-jdBUGsobN88yXrzljyUEC1o2RQITIDlu8DhYbH6C1Jo=","/bell.js":"sha256-4PGJoZCNY8POOhApYXW0IweihCRHQxZIzKw3BzAHrHs=","/roof/launcher-model.js":"sha256-DjAgsUAyP0z3rvK5wcnHmaGpi12Lqwjc14jsn7Q0E8k=","/roof/launcher-motion.js":"sha256-Y0eHSz80Oxlz04R0GO8qIXQ6yPrReMjEK1bJMlAvILc=","/roof/launcher-input.js":"sha256-JHH/7GpKijxgf5Y85hOzEyYbfHG988FOU8d+3BbSQjM=","/roof/security-module.js":"sha256-j40eqCSJqwKFLXKmA6OGsxZMy4bvHQzHTDLpJqpZZPs=","/roof/security-client.js":"sha256-05zNsYYB+boYDvmlwwaB+4AmbWA34soft/uwGCDk3Dg=","/roof/life410.js":"sha256-tf1g9ZA4bJ8z/LS3ZPQLtonfZl4n/mLQ6Fpz9yZc9H8=","/roof/system350.js":"sha256-1Z/692k6hazKeaVpdaKihe78IaUIsYjiJhKCpPnMZqk=","/roof/system-client.js":"sha256-PTWywza6D8j+lgN7XufPnLFjUWHFP15MiRh8k55hGeY=","/roof/actions-store.js":"sha256-rD2wXSAphlJ0qIhqhGCteoDQEbxiq+mrlvMnxO0U4PQ=","/roof/actions-ui.js":"sha256-9dcV+jtKoSnW2X7eO97NmtvDCg3ZGIocoYbfsF/Tu8Q=","/roof/device-id.js":"sha256-IR5VvRMsr+X3N1Zb4e8RiZ7NvsnyhoPjyv+yLwtOpFQ=","/roof/devices-ui.js":"sha256-eROgeCinAC2nA5PlUOABFlQGAwoteTl7zyMIQbSyOqs=","/roof/discovery350.js":"sha256-LRHgZQWibykzxsYw4RXnfMF0zwaW7PyKoCyFlLFaQW0=","/roof/search-file.js":"sha256-eHWcbPhMQnLutHbFY/bbgEwJ0xpAfKORhgQBf6I8GK4=","/roof/files-viewer350.js":"sha256-3UQJEjpr9qVkvof9DHsH6UULkjzIyP6ZlYV+M7a3eHo=","/roof/files-recovery350.js":"sha256-sDCo5eQwdo90ZiWh/eCbTzdiDXmqYSilhDPB/nwFm5A=","/roof/continuity.js":"sha256-Swe12i0T4rCxZbBLbd0dyLzjJvwtWMbmegOot0DrvRY=","/roof/offline-store.js":"sha256-L3Ezpy/A+GTAFlStjxaE3l2CzJsq5DeJeY3Iq8Bcxzk=","/roof/offline-prefs.js":"sha256-6Fk5Veo4PPArZPUxH/qa6zcweA82AwK7YxnPO3eNtFg=","/roof/ride-overview.js":"sha256-93FXorsjmbylU7j8orGcrmpE6q7ne9uhMWCnmeZACQY=","/roof/files-history.js":"sha256-TnkznWNpfxIYxHSdjLowMYs3JtCz+/arumjjkWyXues=","/roof/upload-parts.js":"sha256-iMwEnYHhMIB5s+ZbBG+MB0x23+gdyFGCyPkng44BCLo=","/roof/workspace.js":"sha256-VXHr5w4dfdQOZzT/RsRjgzbLay3kG7DM8qQbz185LQg=","/roof/workspace-view.js":"sha256-fMhRF60Lf4qum6HyK0EVRyPVaoOH0khHJLnr/wEof8s=","/roof/workspace-catalog.js":"sha256-LiQy91DFc5DhTBhIHdbs05oqlWGRAvTF+ye79FBhTFo=","/roof/workspace-windows.js":"sha256-7HIO13WCULPXVybOjAyqoJly2+PVOoTQSStHtpNH3qU=","/roof/workspace-commands.js":"sha256-RtxemdOgowUAJQxMg8cfjPvGIVVY9YPauEpaXV6+UCs=","/roof/workspace-files.js":"sha256-ylFuy+c0Xl5ONHAlePGCnMSRjnAKC7Mr/TkkYMezKwk=","/roof/files-service.js":"sha256-G/nRGWaQP4p/Bm/tflrmTowkOyfNCmTinjiFS9o7N2g=","/roof/files-apps.js":"sha256-Ou2NgauFPki1/NvW68gX0A2K1FAkIqiie0zTTO4KCe0=","/roof/files-metadata.js":"sha256-VeNEwr4ToeeSWEcwiw7KTAL7jUC5yx9NCuda2L5X8LQ=","/roof/files-location.js":"sha256-zOz5OWfJc9UlhVzJlxInH4q9W87kUGZtKGo4cnmXUD4=","/roof/files-drive.js":"sha256-/NKwAGJ1dLTaUBzmE6146aGPCxo95kKdKfFbb/WVEWM=","/roof/files-explorer.js":"sha256-zif5GLXcrq7Hxmf99bbPNhXkKqmB/de9XPE3TJqrwUM=","/roof/files-view.js":"sha256-aFhm8jw6oMG4ZP7LCvyuoNLz2dvAxZmrhby/Wu03UX4=","/roof/files-dialogs.js":"sha256-dalgoUyHItxwkmOY4oFoTWR5vWtb54cAsHlCH4iZ4pg=","/roof/workspace-activity.js":"sha256-NxdVhKGi2zhhIAJbRL/KyquIUHzTX4t96JzJZ3OmRQY=","/roof/workspace-activity-state.js":"sha256-VDRhWqUjsEEnixPJa0nXDmP/zfze016Fz085zpEAxWg=","/roof/workspace-recovery.js":"sha256-IoImBFcLJqSWCNUl1fD8LiuDmN/KnweUtrM4b83TG94=","/roof/workspace-recovery-view.js":"sha256-0rks0LKRB6uDxqqe7LPOp+U9X8KDSbLRpD7Lv+EV57g=","/roof/connection.js":"sha256-RX5XBm3VboVALS5xSfU2L/bN4wpN2ZTz1BbVY7mHBO8=","/roof/handoffs.js":"sha256-WzyrOtc55kbGvn8HyLZ6iGqyIYUkq/DgLWkHw50yXnY=","/roof/launcher.css":"sha256-VA4w3WizEOYs/bzyPayeiN8txnixFboP/Rm3B1AwDKg=","/roof/security-module.css":"sha256-0zy+/+33FtBaSv7Gd+EG8L+YC5OlWbvRAB9M0YIT0rg=","/roof/life410.css":"sha256-nlF3IyrPUbsq/qaWuY6pxvg60iRZbRcfGOJ6uEzv09g=","/roof/system350.css":"sha256-Oc6sXKhixZdUCQNTOvzqNB8QA4d2vkhT1+w4SoGe9Yg=","/roof/files-viewer350.css":"sha256-vKCx5d5CesnShSfdGFfPkE3IaFpD0fOPQAyGxAKf9K4=","/roof/workspace.css":"sha256-bY9W64qRGt7KYeetOAwVwsF8onpWyABeigCYFWbpFXQ=","/roof/workspace-commands.css":"sha256-MKk7M+jjN+ofqs1SUBC6R21pdq77DOoQNvsdsRliYuY=","/roof/workspace-files.css":"sha256-x2m4F5sFR9bJH6uLEgxR4nL0FWY2ByzYXJjh93PW5SM=","/roof/files-view.css":"sha256-37GNxzPbyuxCZR+ZTVNWi/l9UAX5oNPu+Ewa51ICIvI=","/roof/files-dialogs.css":"sha256-ThAIBRxjK8OQDSXrwz9cHYaoagz8VXXkY+YhD+I0njg=","/roof/workspace-activity.css":"sha256-11zlVVYJjVmjVte0owsfT68MdYwcX8vtcnlFvaiurN8=","/roof/workspace-recovery.css":"sha256-UiYgD/6qE7OziFEgEx6Kf17t8HKizsmtQc2n3x/FcOo=","/organise/releases/4.33.3/store.js":"sha256-yNQQGtOiN7hOQMwtNTnqXY+2z84Qk3e2a9ubiLmWjJ8=","/os.webmanifest":"sha256-nFZ6HpMSYkPunUC7DXJWGK80k0oc3WoP5kFhCrJHMkU="};
 const releaseCache = "inflite-shell-set-" + RELEASE;
 const FILES = ["/", "/roof/wallpaper.js", "/roof/bubbles.js", "/roof/bubble-colours.js", "/roof/bubble-surface.js", "/roof/bubble-motion.js", "/roof/refractor.js", "/roof/orb-refraction.js", "/roof/refractor-map.svg", "/app.js", "/cards.js", "/day.js", "/trip.js", "/mailday.js", "/apps.js", "/you.js", "/settings-account.js", "/swipe.js", "/wxicons.js", "/app.css", "/day.css", "/theme.js", "/fade.js", "/mailhost.js", "/manifest.webmanifest", "/icon.svg", "/inflite.svg", "/icon-180.png", "/icon-192.png", "/apps/chat.svg", "/apps/weather.svg", "/apps/fitness.svg", "/apps/markets.svg",
   "/opening-opal.webp", "/about/gfg.svg", "/settings-about.js", "/settings-documents.js", "/contact/form.js", "/mailcard.js", "/mailnotify.js", "/layout.js", "/roof/requests.js", "/roof/tasks.js", "/roof/screens.js", "/roof/preload.js", "/roof/performance.js", "/roof/restore.js", "/apps/mail.svg", "/apps/calendar.svg", "/apps/notes.svg", "/apps/people.svg","/atlas.svg", "/apps/files.svg",
   "/roof/frame.js", "/roof/router.js", "/roof/header.js", "/roof/tabs.js", "/roof/sheet.js", "/roof/toast.js", "/roof/ui.js", "/roof/search.js", "/roof/search-render.js", "/roof/send.js", "/roof/modules.js", "/roof/connectors.js", "/roof/roof.css", "/roof/controls.css", "/bell.js"];
-const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.33.2/store.js","/os.webmanifest"];
+const OS_FILES = ["/roof/launcher-model.js","/roof/launcher-motion.js","/roof/launcher-input.js","/roof/security-module.js","/roof/security-client.js","/roof/life410.js","/roof/system350.js","/roof/system-client.js","/roof/actions-store.js","/roof/actions-ui.js","/roof/device-id.js","/roof/devices-ui.js","/roof/discovery350.js","/roof/search-file.js","/roof/files-viewer350.js","/roof/files-recovery350.js","/roof/continuity.js","/roof/offline-store.js","/roof/offline-prefs.js","/roof/ride-overview.js","/roof/files-history.js","/roof/upload-parts.js","/roof/workspace.js","/roof/workspace-view.js","/roof/workspace-catalog.js","/roof/workspace-windows.js","/roof/workspace-commands.js","/roof/workspace-files.js","/roof/files-service.js","/roof/files-apps.js","/roof/files-metadata.js","/roof/files-location.js","/roof/files-drive.js","/roof/files-explorer.js","/roof/files-view.js","/roof/files-dialogs.js","/roof/workspace-activity.js","/roof/workspace-activity-state.js","/roof/workspace-recovery.js","/roof/workspace-recovery-view.js","/roof/connection.js","/roof/handoffs.js","/roof/launcher.css","/roof/security-module.css","/roof/life410.css","/roof/system350.css","/roof/files-viewer350.css","/roof/workspace.css","/roof/workspace-commands.css","/roof/workspace-files.css","/roof/files-view.css","/roof/files-dialogs.css","/roof/workspace-activity.css","/roof/workspace-recovery.css","/organise/releases/4.33.3/store.js","/os.webmanifest"];
 const OS_MODE = ["inflite.ai", "os.inflite.ai"].includes(self.location.hostname) || /^(?:localhost|127\.0\.0\.1|\[::1\])$|\.(?:localhost|test)$/.test(self.location.hostname) && new URL(self.location.href).searchParams.get("os") === "1";
 if (OS_MODE) FILES.push(...OS_FILES);
 const shellPrefix = "inflite-shell-set-";
@@ -91,8 +91,10 @@ self.addEventListener("message", (e) => {
   } else if (e.data?.ifl === "renew") {
     e.ports[0]?.postMessage({ ifl: "renewed", ...(e.data.build ? { build: RELEASE } : {}) });
   }
-  else if (e.data?.ifl === "badge") e.waitUntil?.(badge());
-  else if (typeof e.data?.ifl === "string" && e.data.ifl.startsWith("notes") && e.source && sameOrigin(e.source.url)) e.waitUntil?.(notesAsked(e.data, e.ports?.[0]));
+  else if (e.data?.ifl === "badge" && !noteClients.has(e.source?.id)) e.waitUntil?.(refreshBadge());
+  else if (typeof e.data?.ifl === "string" && e.data.ifl.startsWith("notes") && e.source && sameOrigin(e.source.url)) {
+    e.waitUntil?.(runNotes(() => notesAsked(e.data, e.ports?.[0], e.source.id)));
+  }
   else if (e.data?.ifl === "keep" && e.source && sameOrigin(e.source.url)) e.waitUntil?.(keep(e.data));
 });
 self.addEventListener("activate", (e) =>
@@ -100,6 +102,11 @@ self.addEventListener("activate", (e) =>
     (async () => {
       for (const k of await caches.keys()) if (k.startsWith("today-app-") && k !== SHELL) await caches.delete(k);
       for (const k of await caches.keys()) if (k.startsWith("inflite-shell-set-") && k !== releaseCache) await caches.delete(k);
+      await runNotes(async () => {
+        const log = await noteTx(s => s);
+        await closeNotes(n => !sameNoteScope(log, n.data));
+        await badge(null);
+      });
       await self.clients.claim();
     })()
   )
@@ -288,12 +295,8 @@ async function fromModule(e, u) {
 }
 
 // ---- notifications: every app's, here ----
-// A push says which app it's from: { app, title, body, tag, url }. It's always shown (holding happens on the account,
-// never by hiding one here, and a phone stops a site's pushes if they show nothing), tagged by its app (Chat's and
-// Weather's tags never take each other's place), and never ends this phone's subscription: only signing out of InFlite
-// does. One of Chat's: every window here told (Chat's engine on Today, Chats itself), and one pulse to Chat with this
-// phone's sign-in (the one Chat keeps in IndexedDB), so the sender's tick says delivered. Then the icon's badge: how
-// many are showing.
+// The encrypted push carries its recipient. Old or unverified deliveries get a generic notice so
+// push services still see a visible notification. Only a verified session can keep or show details.
 const APPS = ["chat", ...MOD_APPS, "today"];
 const NAME = { chat: "Chat", today: "Today", ...Object.fromEntries(MOD_APPS.map((a) => [a, MODS[a].name])) };
 // (an older payload, with no app: Chat's by its address, else Today's)
@@ -309,76 +312,84 @@ self.addEventListener("push", (e) => {
   e.waitUntil(notify(d));
 });
 async function notify(d) {
-  const app = appOf(d), url = openAt(app, d.url), tag = d.tag ? `${app}:${String(d.tag).slice(0, 120)}` : undefined;
-  const title = typeof d.title === "string" && d.title ? d.title : NAME[app], body = typeof d.body === "string" ? d.body : "";
-  const id = noteId();
-  const jobs = [self.registration.showNotification(title, {
-    body,
-    tag,
-    renotify: !!tag,
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
-    data: { app, url, id },
-  })];
-  // (and kept in the log, for Today's bell: in the place of one with its tag)
-  jobs.push(jobs[0].catch(() => {}).then(() => notesDo((s, now) => noteAdd(s, { id, app, title: title.slice(0, 200), body: body.slice(0, 600), url, tag: tag || "", at: now }, now))));
-  if (app === "chat") jobs.push(chatCame(d));
-  if (app === "mail") jobs.push(jobs[0].then(() => mailWords(d, { app, url, id })));
-  await Promise.all(jobs.map((j) => j.catch(() => {})));
-  await notesChanged();
+  const data = await runNotes(async () => {
+    const log = await noteAccess({ establish: noteOwner(d.owner) && noteEpoch(d.epoch) });
+    if (!sameNoteScope(log, d)) {
+      await showNote("InFlite", "Open InFlite to check your notifications.", { tag: "ifl:notice" });
+      return;
+    }
+    const app = appOf(d), url = openAt(app, d.url), tag = d.tag ? `${app}:${String(d.tag).slice(0, 120)}` : "";
+    const title = typeof d.title === "string" && d.title ? d.title.slice(0, 200) : NAME[app];
+    const body = typeof d.body === "string" ? d.body.slice(0, 600) : "";
+    const { owner, epoch } = log;
+    const data = { owner, epoch, app, url, id: noteId() };
+    await showNote(title, body, { tag: tag || undefined, renotify: !!tag, data });
+    const next = await noteTx((s, now) => noteAdd(s, { id: data.id, app, title, body, url, tag, at: now }, now));
+    await notesChanged(next);
+    return data;
+  });
+  if (data?.app === "chat") await chatCame(data);
+  if (data?.app === "mail") await mailWords(d, data);
 }
-// Mail's notice (s4 §6.4): the push carries no words of the mail (a fixed body, the thread's opaque id as its tag), so
-// once that's shown, Mail itself is asked for the sender and subject, with your Mail sign-in (3 s at most), and the
-// notice shown again with them, silently, in the same place. Only for a tag that's an id; nothing fetched is kept.
+function showNote(title, body, options) {
+  return self.registration.showNotification(title, { body, icon: "/icon-192.png", badge: "/icon-192.png", ...options }).catch(() => {});
+}
+// Mail authorizes the sender and subject separately. Discard the response if the original
+// session or notification has changed while that request was pending.
 const MAIL = () => { const o = new URL(self.location.origin), host = o.hostname === "os.inflite.ai" ? "inflite.ai" : o.host.replace(/^next\./, ""); return `${o.protocol}//email.${host}`; };
 async function mailWords(d, data) {
   if (typeof d.tag !== "string" || !/^[\w-]{1,64}$/.test(d.tag)) return;
-  const words = await Promise.race([
-    fetch(`${MAIL()}/api/notice/${d.tag}`, { credentials: "include", cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-    new Promise((ok) => setTimeout(() => ok(null), 3000)),
-  ]);
+  const words = await fetch(`${MAIL()}/api/notice/${d.tag}`, { credentials: "include", cache: "no-store", redirect: "error", signal: AbortSignal.timeout(3000) })
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const ok = (x) => typeof x === "string" && x.length > 0 && x.length <= 120;
   if (!ok(words?.title) || !ok(words?.body)) return;
-  await self.registration.showNotification(words.title, { body: words.body, tag: `mail:${d.tag}`, renotify: false, silent: true, icon: "/icon-192.png", badge: "/icon-192.png", data });
-  await notesDo((s) => ({ ...s, list: s.list.map((x) => (x.id === data.id ? { ...x, title: words.title, body: words.body } : x)) }));
+  await runNotes(async () => {
+    const log = await noteAccess();
+    if (!sameNoteScope(log, data) || !log.list.some(n => n.id === data.id)) return;
+    const visible = await shownNotes();
+    if (!visible.some(n => sameNoteScope(log, n.data) && n.data.id === data.id)) return;
+    await showNote(words.title, words.body, { tag: `mail:${d.tag}`, renotify: false, silent: true, data });
+    await notesChanged(await noteTx(s => ({ ...s, list: s.list.map(n => n.id === data.id ? { ...n, title: words.title, body: words.body } : n) })));
+  });
 }
-// the Home Screen icon's badge: the log's unseen ones (below), the same number as Today's bell; where the log can't be
-// kept, as many notifications as are showing. Counted as one comes, as one's tapped or cleared, as the bell's opened,
-// and as a page of the hub opens or comes back in sight (one cleared while this worker wasn't running)
+// The icon counts only verified, unread entries from this session's log.
 async function badge(s) {
   try {
-    if (s === undefined) s = await notesNow();
-    const n = s ? noteUnread(s) : (await self.registration.getNotifications()).length;
+    const n = s ? noteUnread(s) : 0;
     if (self.navigator?.setAppBadge) await (n ? self.navigator.setAppBadge(n) : self.navigator.clearAppBadge?.());
   } catch {}
 }
 
 // ---- the log: every notification shown here, for Today's bell ----
-// Kept in IndexedDB (inflite-notes → kv → "log": { list, gone }), never sent anywhere: each one shown (id, app, title,
+// Kept in IndexedDB (inflite-notes → kv → "log": { owner, epoch, list, gone }): each one shown (id, app, title,
 // body, url, tag, at, seen), newest first, at most 50 and 14 days. Opening a notice marks it read.
 // Clearing it in the inbox or Notification Centre removes it. A new alert with the same tag replaces the old one.
 // The inbox can restore a cleared alert for one minute. Every change runs in a single queued transaction.
 const NOTE_MAX = 50, NOTE_AGE = 14 * 864e5, GONE_MAX = 100;
 function noteId() { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10); }
+const noteOwner = id => typeof id === "string" && /^[\w-]{1,100}$/.test(id);
+const noteEpoch = epoch => typeof epoch === "string" && /^[a-f\d]{64}$/.test(epoch);
+const sameNoteScope = (a, b) => !!a && !!b && a.owner === b.owner && a.epoch === b.epoch;
 function noteState(raw) {
+  if (!noteOwner(raw?.owner) || !noteEpoch(raw?.epoch)) return null;
   const ok = (x) => x && typeof x === "object" && typeof x.id === "string" && Number.isFinite(x.at);
-  return { list: Array.isArray(raw?.list) ? raw.list.filter(ok) : [], gone: Array.isArray(raw?.gone) ? raw.gone.filter(ok) : [] };
+  return { owner: raw.owner, epoch: raw.epoch, list: Array.isArray(raw.list) ? raw.list.filter(ok) : [], gone: Array.isArray(raw.gone) ? raw.gone.filter(ok) : [] };
 }
 function notePrune(s, now) {
   const fresh = (x) => x.at > now - NOTE_AGE;
-  return { list: s.list.filter(fresh).sort((a, b) => b.at - a.at).slice(0, NOTE_MAX), gone: s.gone.filter(fresh).slice(-GONE_MAX) };
+  return { ...s, list: s.list.filter(fresh).sort((a, b) => b.at - a.at).slice(0, NOTE_MAX), gone: s.gone.filter(fresh).slice(-GONE_MAX) };
 }
 // (one shown: first, in the place of any with its id or tag, and no longer gone)
 function noteAdd(s, n, now) {
   const same = (x) => x.id === n.id || (n.tag && x.tag === n.tag);
-  return notePrune({ list: [{ ...n, seen: !!n.seen }, ...s.list.filter((x) => !same(x))], gone: s.gone.filter((g) => !same(g)) }, now);
+  return notePrune({ ...s, list: [{ ...n, seen: !!n.seen }, ...s.list.filter((x) => !same(x))], gone: s.gone.filter((g) => !same(g)) }, now);
 }
 // (those with these ids, or these tags, out of it, and kept as gone)
 function noteDrop(s, ids = [], tags = [], now = Date.now()) {
   const hit = (x) => ids.includes(x.id) || (!!x.tag && tags.includes(x.tag));
   const out = s.list.filter(hit).map((x) => ({ id: x.id, tag: x.tag || "", at: now }));
   for (const id of ids) if (!out.some((g) => g.id === id)) out.push({ id, tag: "", at: now });
-  return notePrune({ list: s.list.filter((x) => !hit(x)), gone: [...s.gone.filter((g) => !out.some((o) => o.id === g.id)), ...out] }, now);
+  return notePrune({ ...s, list: s.list.filter((x) => !hit(x)), gone: [...s.gone.filter((g) => !out.some((o) => o.id === g.id)), ...out] }, now);
 }
 // (cleared ones put back, the bell's Undo: only those the log let go of in the last minute;
 // never over one that's since come with its tag)
@@ -386,30 +397,36 @@ function noteBack(s, back, now) {
   const ok = back.filter((n) => s.gone.some((g) => g.id === n.id && g.at > now - 60e3) && !s.list.some((x) => x.id === n.id || (n.tag && x.tag === n.tag)));
   if (!ok.length) return s;
   const ids = ok.map((n) => n.id);
-  return notePrune({ list: [...s.list, ...ok], gone: s.gone.filter((g) => !ids.includes(g.id)) }, now);
+  return notePrune({ ...s, list: [...s.list, ...ok], gone: s.gone.filter((g) => !ids.includes(g.id)) }, now);
 }
 function noteUnread(s) { return s.list.filter((x) => !x.seen).length; }
 function noteSeen(s, ids) { return { ...s, list: s.list.map(x => x.seen || (ids && !ids.has(x.id)) ? x : { ...x, seen: true }) }; }
-// (a notification showing, as the log names it: its own id, else one made from its tag, else its time and title)
-function noteIdOf(n) { return typeof n.data?.id === "string" && n.data.id ? n.data.id : n.tag ? `tag:${n.tag}` : `at:${n.timestamp || 0}:${n.title || ""}`; }
 // (those showing in Notification Centre that the log hasn't, nor has had: added, unseen)
 function noteMerge(s, shown, now) {
-  for (const n of shown || []) {
-    const id = noteIdOf(n), own = !!n.data?.id;
-    if (s.list.some((x) => x.id === id || (!own && n.tag && x.tag === n.tag))) continue;
-    if (s.gone.some((g) => g.id === id || (!own && n.tag && g.tag === n.tag))) continue;
-    const d = n.data || {}, app = APPS.includes(d.app) ? d.app : appOf(d);
+  for (const n of shown) {
+    if (!sameNoteScope(s, n.data) || typeof n.data.id !== "string" || !n.data.id) continue;
+    const { id, url } = n.data;
+    if (s.list.some(x => x.id === id) || s.gone.some(g => g.id === id)) continue;
+    const app = appOf(n.data);
     const at = Number.isFinite(n.timestamp) && n.timestamp > 0 && n.timestamp <= now ? n.timestamp : now;
-    s = noteAdd(s, { id, app, title: String(n.title || NAME[app]).slice(0, 200), body: String(n.body || "").slice(0, 600), url: typeof d.url === "string" ? d.url : openAt(app, ""), tag: n.tag || "", at }, now);
+    s = noteAdd(s, { id, app, title: String(n.title || NAME[app]).slice(0, 200), body: String(n.body || "").slice(0, 600), url: openAt(app, url), tag: n.tag || "", at }, now);
   }
   return notePrune(s, now);
 }
-// (the log, in turn: fn(state, now) → the new state, written; resolves to it, or null where it can't be kept)
-let noteQ = Promise.resolve(), noteDbP = null;
-function notesDo(fn) {
-  const job = noteQ.then(() => noteTx(fn)).catch(() => null);
+// Serialize authentication, notification changes and replies. Mail's lookup runs outside this
+// queue so it cannot delay a sign-out or account replacement.
+let noteQ = Promise.resolve(), noteDbP = null, noteUnavailable = false, badgeJob = null, bellChecks = 0;
+const noteClients = new Map();
+function runNotes(work) {
+  const job = noteQ.then(work).catch(() => null);
   noteQ = job.then(() => {}, () => {});
   return job;
+}
+function refreshBadge() {
+  const checks = bellChecks;
+  return badgeJob ||= new Promise(resolve => setTimeout(resolve, 150)).then(() => {
+    if (checks === bellChecks) return runNotes(async () => badge(await noteAccess()));
+  }).finally(() => { badgeJob = null; });
 }
 function noteDb() {
   return (noteDbP ||= new Promise((ok) => {
@@ -427,39 +444,102 @@ async function noteTx(fn) {
   const db = await noteDb();
   if (!db) return null;
   return new Promise((ok) => {
-    let out = null, end = false;
-    const t = setTimeout(() => fin(null), 2000);
+    let out = null, end = false, tx;
+    const t = setTimeout(() => { try { tx?.abort(); } catch {} fin(null); }, 2000);
     function fin(v) { if (end) return; end = true; clearTimeout(t); ok(v); }
     try {
-      const tx = db.transaction("kv", "readwrite"), st = tx.objectStore("kv"), q = st.get("log");
+      tx = db.transaction("kv", "readwrite");
+      const st = tx.objectStore("kv"), q = st.get("log");
       q.onsuccess = () => {
-        try { out = fn(noteState(q.result), Date.now()); st.put(out, "log"); } catch { try { tx.abort(); } catch {} fin(null); }
+        try {
+          out = fn(noteState(q.result), Date.now());
+          if (out) st.put(out, "log"); else st.delete("log");
+        } catch { try { tx.abort(); } catch {} fin(null); }
       };
       tx.oncomplete = () => fin(out);
       tx.onerror = tx.onabort = () => fin(null);
     } catch { fin(null); }
   });
 }
-// (the log with those showing merged in, and fn's change)
-async function notesNow(fn = (s) => s) {
-  const shown = await self.registration.getNotifications().catch(() => []);
-  return notesDo((s, now) => fn(noteMerge(s, shown, now), now));
+const shownNotes = () => self.registration.getNotifications().catch(() => []);
+async function closeNotes(test) {
+  for (const n of await shownNotes()) if (test(n)) try { n.close(); } catch {}
 }
-// (what a page is told: the list, newest first, and how many are unseen)
-const notesSaid = (s) => ({ ifl: "notes", list: s ? s.list.map(({ id, app, title, body, url, tag, at, seen }) => ({ id, app, title, body, url, tag: tag || "", at, seen: !!seen })) : [], unread: s ? noteUnread(s) : 0, kept: !!s });
-// (the log changed: the badge counted again, and every window of this site's told, so an open bell shows it)
-async function notesChanged(s) {
-  if (s === undefined) s = await notesNow();
+async function noteSession() {
+  try {
+    const r = await fetch("/api/notification-session", { credentials: "same-origin", cache: "no-store", redirect: "error", signal: AbortSignal.timeout(4000) });
+    if (r.status === 401) return null;
+    if (!r.ok) return;
+    const s = await r.json();
+    if (s?.signedIn === false) return null;
+    if (s?.signedIn === true && noteOwner(s.owner) && noteEpoch(s.epoch)) return { owner: s.owner, epoch: s.epoch };
+  } catch {}
+}
+async function noteAccess({ establish = false } = {}) {
+  const log = await noteTx(s => s);
+  if (!log && !establish) {
+    await closeNotes(n => n.tag !== "ifl:notice");
+    await badge(null);
+    return null;
+  }
+  const scope = await noteSession();
+  if (scope === undefined) {
+    noteClients.clear();
+    await closeNotes(n => n.tag !== "ifl:notice");
+    if (!noteUnavailable) {
+      noteUnavailable = true;
+      await notesChanged(null, true);
+    }
+    return null;
+  }
+  noteUnavailable = false;
+  if (sameNoteScope(log, scope)) return log;
+  const next = await noteTx(() => establish && scope ? { ...scope, list: [], gone: [] } : null);
+  noteClients.clear();
+  await closeNotes(n => !sameNoteScope(next, n.data));
+  if (log) await notesChanged(next, true);
+  return next;
+}
+const notesSaid = (s) => ({ ifl: "notes", owner: s?.owner, epoch: s?.epoch,
+  list: s?.list || [], unread: s ? noteUnread(s) : 0, kept: !!s });
+// Broadcast only an invalidation. Each bell must prove its own scope before the worker replies.
+async function notesChanged(s, reset = false, except = null) {
   await badge(s);
-  if (!s) return;
   const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []);
-  for (const w of wins) if (sameOrigin(w.url)) try { w.postMessage(notesSaid(s)); } catch {}
+  const live = new Set(wins.map(w => w.id));
+  for (const id of noteClients.keys()) if (!live.has(id)) noteClients.delete(id);
+  for (const w of wins) if (w.id !== except && sameOrigin(w.url)) try { w.postMessage({ ifl: reset ? "notes-reset" : "notes-updated" }); } catch {}
 }
 // A page's ask ({ ifl: "notes" } the list; "notes-seen" marks selected ids, or all for older pages; "notes-clear" { ids }
 // or { all } cleared, their notifications closed in Notification Centre too; "notes-back" { list } those just cleared put
 // back, their notifications left closed), answered on its port with the list
-async function notesAsked(d, port) {
+async function notesAsked(d, port, client) {
+  if (d.ifl === "notes-forget") {
+    const log = await noteTx(s => s);
+    let stale = sameNoteScope(log, d);
+    if (!stale && (!log || log.owner === d.owner || !d.owner)) {
+      const session = await noteSession();
+      stale = session === null || (!!session && !!log && !sameNoteScope(log, session));
+    }
+    if (stale) {
+      await noteTx(() => null);
+      noteClients.clear();
+      await closeNotes(() => true);
+      await notesChanged(null, true);
+    }
+    port?.postMessage({ ifl: "notes-forgotten" });
+    return;
+  }
+  if (port && d.ifl === "notes" && noteOwner(d.owner)) bellChecks++;
+  const log = port && noteOwner(d.owner) && await noteAccess();
+  if (!log || log.owner !== d.owner || (d.ifl !== "notes" && log.epoch !== d.epoch)) {
+    noteClients.delete(client);
+    port?.postMessage(notesSaid(null));
+    return;
+  }
   let s, fresh;
+  const shown = await shownNotes();
+  const notesNow = (fn = s => s) => noteTx((s, now) => fn(noteMerge(s, shown, now), now));
   if (d.ifl === "notes-seen") {
     const ids = d.ids === undefined ? null : new Set(Array.isArray(d.ids) ? d.ids.filter(id => typeof id === "string").slice(0, NOTE_MAX) : []);
     s = await notesNow(st => {
@@ -480,24 +560,22 @@ async function notesAsked(d, port) {
       dropped = d.all === true ? st.list : st.list.filter((x) => ids.includes(x.id));
       return d.all === true ? noteDrop(st, st.list.map((x) => x.id), [], now) : noteDrop(st, ids, [], now);
     });
-    const ours = new Set(dropped.map((x) => x.id)), tags = new Set(dropped.map((x) => x.tag).filter(Boolean));
-    for (const n of await self.registration.getNotifications().catch(() => [])) {
-      const id = noteIdOf(n);
-      if (ours.has(id) || ids.includes(id) || (!n.data?.id && n.tag && tags.has(n.tag))) try { n.close(); } catch {}
-    }
+    const ours = new Set(dropped.map(n => n.id));
+    await closeNotes(n => sameNoteScope(log, n.data) && ours.has(n.data.id));
   } else if (d.ifl === "notes") s = await notesNow();
   else return;
+  if (client && s) noteClients.set(client, { owner: s.owner, epoch: s.epoch });
   try { port?.postMessage(fresh ? { ...notesSaid(s), fresh } : notesSaid(s)); } catch {}
   if (d.ifl === "notes") await badge(s);
-  else await notesChanged(s);
+  else await notesChanged(s, false, client);
 }
 // (Chat's: every window of this site's told, those no worker of this one's controls included (Chats has its own), then
 // one pulse; anything going wrong is let be: an open Chat's own pulse does the same)
-async function chatCame(d) {
+async function chatCame(scope) {
   const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []);
-  for (const w of wins) if (sameOrigin(w.url)) w.postMessage({ inflight: "sync", tag: typeof d.tag === "string" ? d.tag : "" });
+  for (const w of wins) if (sameOrigin(w.url)) w.postMessage({ inflight: "sync" });
   const token = await tokenHere();
-  if (token) await fetch("/api/pigeon/pulse", { method: "POST", credentials: "same-origin", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ since: Date.now() }) }).catch(() => {});
+  if (token?.me?.id === scope.owner && sameNoteScope(await runNotes(() => noteAccess()), scope)) await fetch("/api/pigeon/pulse", { method: "POST", credentials: "same-origin", headers: { Authorization: "Bearer " + token.token, "Content-Type": "application/json" }, body: JSON.stringify({ since: Date.now() }) }).catch(() => {});
 }
 // the sign-in Chat keeps on this phone (pigeon/sw.js's own), or null when signed out
 const tokenHere = () => new Promise((res) => {
@@ -505,7 +583,7 @@ const tokenHere = () => new Promise((res) => {
     const r = indexedDB.open("inflight", 1);
     r.onupgradeneeded = () => { r.transaction.abort(); res(null); };   // (nothing kept here yet: not signed in)
     r.onerror = () => res(null);
-    r.onsuccess = () => { try { const q = r.result.transaction("kv").objectStore("kv").get("session"); q.onsuccess = () => res(q.result?.token || null); q.onerror = () => res(null); } catch (_) { res(null); } };
+    r.onsuccess = () => { try { const db = r.result, q = db.transaction("kv").objectStore("kv").get("session"); db.close(); q.onsuccess = () => res(q.result?.token ? q.result : null); q.onerror = () => res(null); } catch (_) { res(null); } };
   } catch (_) { res(null); }
 });
 const sameOrigin = (u) => { try { return new URL(u).origin === self.location.origin; } catch { return false; } };
@@ -537,28 +615,28 @@ function wanted(app, u) {
   return u.pathname + u.search + u.hash;
 }
 
-// A notification tapped: its place, in the window that's open (a page of this site's, top level: told where, and it goes
-// there itself, IFL.hub's listener, which says it's heard), else, where that page has no ear for it (Today's 404 page,
-// an older page) or there's none, that window sent there (one of this worker's) or a new one; only ever this site's
-// pages. The badge counted again, one fewer. Cleared without a tap: counted again too
-self.addEventListener("notificationclick", (e) => {
-  e.notification.close();
-  const d = e.notification.data || {};
-  const app = APPS.includes(d.app) ? d.app : appOf(d);
-  const ids = new Set([noteIdOf(e.notification)]);
-  const read = notesDo((s, now) => noteSeen(noteMerge(s, [e.notification], now), ids)).then(notesChanged);
-  e.waitUntil(Promise.all([openIn(openAt(app, d.url)), read]));
+self.addEventListener("notificationclick", e => {
+  const n = e.notification;
+  n.close();
+  e.waitUntil(runNotes(async () => {
+    if (n.tag === "ifl:notice") return openIn("/");
+    const log = await noteAccess();
+    if (!sameNoteScope(log, n.data)) return;
+    const s = await noteTx((s, now) => noteSeen(noteMerge(s, [n], now), new Set([n.data.id])));
+    await notesChanged(s);
+    await openIn(openAt(appOf(n.data), n.data.url), log);
+  }));
 });
-self.addEventListener("notificationclose", (e) => e.waitUntil(noteGone(e.notification)));
-// (one cleared in Notification Centre: out of the log too)
-async function noteGone(n) {
-  const own = typeof n?.data?.id === "string" && n.data.id;
-  await notesDo((s, now) => noteDrop(s, [noteIdOf(n || {})], !own && n?.tag ? [n.tag] : [], now));
-  await notesChanged();
-}
+self.addEventListener("notificationclose", e => e.waitUntil(runNotes(async () => {
+  const log = await noteAccess();
+  const d = e.notification.data;
+  if (!sameNoteScope(log, d) || typeof d.id !== "string") return;
+  await notesChanged(await noteTx((s, now) => noteDrop(s, [d.id], [], now)));
+})));
 const HEARD = 1000;
-async function openIn(path) {
-  const wins = (await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => [])).filter((w) => sameOrigin(w.url) && w.frameType !== "nested");
+async function openIn(path, scope) {
+  const wins = (await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []))
+    .filter(w => sameOrigin(w.url) && w.frameType !== "nested" && (!scope || sameNoteScope(scope, noteClients.get(w.id))));
   const win = wins.find((w) => w.focused) || wins.find((w) => w.visibilityState === "visible") || wins[0];
   if (win) {
     try { await win.focus(); } catch {}
@@ -569,8 +647,8 @@ async function openIn(path) {
     // So a module's page is told to route first only where the hub says that module is on (routes); dark, it's told to
     // open at once, with no second's wait, and to route only if it doesn't say it's heard)
     const at = frameAt(win.url), route = await routes(at);
-    if (await told(win, path, route ? "route" : "open")) return;
-    if (ROOF_DOCS.includes(at) && (await told(win, path, route ? "open" : "route"))) return;
+    if (await told(win, path, route ? "route" : "open", scope)) return;
+    if (ROOF_DOCS.includes(at) && (await told(win, path, route ? "open" : "route", scope))) return;
   }
   // (an app's page, where the hub can't serve it just now (before its key, or rolled back): Today, which sends it to the
   // app's own address, as it did before the hub)
@@ -582,16 +660,17 @@ const FRAMEWORK = ["/", "/index.html", ...ROOF_DOCS];
 // (a window's path, as the framework's: never an engine's)
 const frameAt = (u) => { try { const x = new URL(u); return engineAt(x) ? "" : x.pathname; } catch { return ""; } };
 // (the window told where: true once it says it's heard ({ifl:"opened"}, or {ifl:"routed"} for a route), within a second)
-function told(win, url, kind = "open") {
+function told(win, url, kind = "open", scope) {
   const heard = kind === "route" ? "routed" : "opened";
+  const data = { ifl: kind, url, ...(scope ? { owner: scope.owner, epoch: scope.epoch } : {}) };
   return new Promise((ok) => {
     let ch = null;
     try { ch = new MessageChannel(); } catch {}
-    if (!ch) { win.postMessage({ ifl: kind, url }); return ok(true); }
+    if (!ch) { win.postMessage(data); return ok(true); }
     const done = (v) => { clearTimeout(t); try { ch.port1.close(); } catch {} ok(v); };
     const t = setTimeout(() => done(false), HEARD);
     ch.port1.onmessage = (e) => { if (e.data?.ifl === heard) done(true); };
-    try { win.postMessage({ ifl: kind, url }, [ch.port2]); } catch { done(false); }
+    try { win.postMessage(data, [ch.port2]); } catch { done(false); }
   });
 }
 // (whether the hub's Worker can serve the apps' pages: its own word, GET /api/hub, as Today's page asks it (404 or 503:

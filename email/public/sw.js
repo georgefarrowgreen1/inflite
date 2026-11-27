@@ -132,71 +132,82 @@ self.addEventListener("pushsubscriptionchange", (e) => {
         fetch(path, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Inflite": "1" }, body: JSON.stringify(body) });
       let sub = e.newSubscription;
       if (!sub) {
-        const { key } = await (await fetch("/api/push/key", { credentials: "same-origin" })).json();
+        const keyResponse = await fetch("/api/push/key", { credentials: "same-origin", cache: "no-store" });
+        if (!keyResponse.ok) return;
+        const { key } = await keyResponse.json();
         const raw = atob(key.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((key.length + 3) % 4));
         sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) });
       }
-      await post("/api/push/subscribe", sub.toJSON());
+      const registered = await post("/api/push/subscribe", sub.toJSON());
+      if (!registered.ok) return;
+      const confirmation = await registered.json();
+      if (confirmation?.ok !== true) return;
       if (e.oldSubscription?.endpoint && e.oldSubscription.endpoint !== sub.endpoint) await post("/api/push/unsubscribe", { endpoint: e.oldSubscription.endpoint });
     })().catch(() => {})
   );
 });
 
-// Whether this device is still signed in to Mail's account (Mail's own sign-in check: /api/session), as a notice comes:
-// false once it's been signed out, here or from elsewhere (a lost phone signed out from another), or someone else is
-// signed in; null when it can't be told (no answer, or none within a few seconds: a notice that's slow to show counts
-// as one never shown, and the phone stops notices for a site that keeps doing that), as a notice is never held back for that
-async function stillSignedIn() {
-  const ask = (async () => {
-    const r = await fetch("/api/session", { credentials: "same-origin", cache: "no-store" });
-    if (!r.ok) return null;
-    const { access } = await r.json();
-    return ["ok", "reauth", "passkey"].includes(access) ? true : access ? false : null;
-  })().catch(() => null);
-  return Promise.race([ask, new Promise((ok) => setTimeout(() => ok(null), 5000))]);
+const NOTICE_ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
+const THREAD_ID = /^[\w-]{1,64}$/;
+
+async function loadNotice(payload, signal) {
+  const options = { credentials: "same-origin", cache: "no-store", redirect: "error", signal };
+  const session = await fetch("/api/session", options);
+  if (!session.ok) return null;
+  const { access } = await session.json();
+  if (access === "signin" || access === "notadmin") return { signedOut: true };
+  if (access !== "ok") return null;
+  if (NOTICE_ID.test(payload?.notice || "")) {
+    const response = await fetch(`/api/push/notice/${payload.notice}`, options);
+    return response.ok ? response.json() : null;
+  }
+  // Accept notices already queued by the previous deployment after the same access check.
+  const thread = /^\/#thread=([\w-]{1,64})$/.exec(payload?.url || "")?.[1];
+  return thread ? { thread, title: payload.title, body: payload.body, badge: payload.badge } : null;
 }
 
 self.addEventListener("push", (e) => {
-  let d;
-  try {
-    d = e.data ? e.data.json() : {};
-  } catch {
-    d = { body: e.data?.text() };
-  }
-  e.waitUntil(notify(d));
+  let payload;
+  try { payload = e.data?.json(); } catch {}
+  e.waitUntil(notify(payload));
 });
 
-async function notify(d) {
-  // (signed out: nothing of the mail said, notices stopped here (the push service then tells Mail this device has gone,
-  // and Mail forgets it), and this last one says why)
-  if ((await stillSignedIn()) === false) {
-    await self.navigator.clearAppBadge?.().catch(() => {});
-    await self.registration.pushManager.getSubscription().then((s) => s?.unsubscribe()).catch(() => {});
-    return self.registration.showNotification("Mail", { body: "Signed out on this device, so notifications have stopped here.", tag: "signed-out", icon: "/icon-192.png", data: { url: "/" } });
+async function notify(payload) {
+  const controller = new AbortController();
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => { controller.abort(); resolve(null); }, 5000);
+  });
+  const notice = await Promise.race([loadNotice(payload, controller.signal).catch(() => null), deadline]);
+  clearTimeout(timer);
+  const { thread, title, body, badge } = notice || {};
+  if (typeof thread !== "string" || !THREAD_ID.test(thread) || typeof title !== "string" || typeof body !== "string") {
+    const shown = self.registration.showNotification("Mail", {
+      body: notice?.signedOut ? "Sign in to receive Mail notifications on this device." : "Open Mail to see your notifications.",
+      tag: "mail", icon: "/icon-192.png", data: { url: "/" },
+    });
+    const clear = self.navigator.clearAppBadge?.().catch(() => {});
+    const unsubscribe = notice?.signedOut && self.registration.pushManager.getSubscription().then((s) => s?.unsubscribe()).catch(() => {});
+    return Promise.all([shown, clear, unsubscribe]);
   }
-  const badge =
-    typeof d.badge === "number" && self.navigator.setAppBadge
-      ? (d.badge ? self.navigator.setAppBadge(d.badge) : self.navigator.clearAppBadge()).catch(() => {})
-      : null;
-  const thread = new URLSearchParams((d.url || "").split("#")[1] || "").get("thread");
+  const updateBadge = Number.isSafeInteger(badge) && badge >= 0
+    ? (badge ? self.navigator.setAppBadge?.(badge) : self.navigator.clearAppBadge?.())?.catch(() => {})
+    : null;
   return Promise.all([
-    self.registration.showNotification(d.title || "Mail", {
-      body: d.body || "",
-      tag: d.tag || undefined,
-      renotify: !!d.tag,
+    self.registration.showNotification(title || "Mail", {
+      body,
+      tag: thread,
+      renotify: true,
       icon: "/icon-192.png",
       badge: "/icon-192.png",
-      data: { url: d.url || "/", thread },
-      // (where the system offers buttons on a notice: deal with it from there)
-      actions: thread
-        ? [
-            { action: "reply", title: "Reply" },
-            { action: "done", title: "Done" },
-            { action: "later", title: "Later Today" },
-          ]
-        : [],
+      data: { url: `/#thread=${thread}`, thread },
+      actions: [
+        { action: "reply", title: "Reply" },
+        { action: "done", title: "Done" },
+        { action: "later", title: "Later Today" },
+      ],
     }),
-    badge,
+    updateBadge,
   ]);
 }
 

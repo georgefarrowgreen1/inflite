@@ -20,6 +20,7 @@ export async function createOfflinePrefs(F,{owner,root,cloud,apply,ack}={}){
  }
  const records=await store.list('preferences');if(!live())return null;pending=records.find(r=>r.id==='today-prefs'&&r.kind==='preferences')||null;
  if(pending){sequence=persisted=1;apply(pending.value);paint();queueMicrotask(pump)}
+ F.systemTasks?.register?.({async flush(){await serial;return {lost:pending&&persisted!==sequence?1:0}}},{signal:F.signal});
  window.addEventListener('online',pump,{signal:F.signal});F.signal.addEventListener('abort',()=>panel.remove(),{once:true});
  return {busy:()=>live()&&!!pending,change(value){if(!live())return;pending={id:'today-prefs',kind:'preferences',value:structuredClone(value),expected:pending?.expected||base};sequence++;save()},review};
 }

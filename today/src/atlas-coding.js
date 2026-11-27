@@ -7,9 +7,9 @@ import { classifyOpenAIError } from './atlas-openai.js';
 import { requestIdentifier, safeFailure } from './atlas-chat.js';
 import { prepareRepositoryWorkspace } from './atlas-workspace.js';
 import { validateCodingArtifact } from './atlas-coding-results.js';
-import { publishCodingChanges, repositoryDraftChecks } from './atlas-repository.js';
+import { publishCodingChanges, recoverCodingPublication, repositoryDraftChecks } from './atlas-repository.js';
 import { defaultEnvironment, environmentStorageStatus, resolveEnvironment } from './atlas-environments.js';
-import { assertRepairCandidate, repairProject } from './atlas-repair-policy.js';
+import { assertRepairCandidate, assertRepairScope, repairProject } from './atlas-repair-policy.js';
 
 const ACTIVE = new Set(['preparing', 'running', 'waiting', 'uncertain']);
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
@@ -83,6 +83,10 @@ export async function startCodingRun(env, owner, body, options = {}) {
   const conversation = await store.getConversation(env, owner, body.conversationId);
   if (!conversation) missing();
   if (conversation.mode !== 'developer' || !conversation.repository) throw failure('coding_repository_required', 'Choose a repository in a Developer conversation before starting a task.');
+  const stopping = await env.ATLAS_DB.prepare(`SELECT id FROM atlas_coding_runs
+    WHERE owner=? AND conversation_id=? AND status='publishing' AND cancel_requested=1 AND (lease_until IS NULL OR lease_until<?)`)
+    .bind(owner, conversation.id, Date.now()).first();
+  if (stopping) await advanceCodingRun(env, owner, stopping.id, options);
   let environment;
   const retryFromRunId = body.retryFromRunId || null;
   if (retryFromRunId) {
@@ -254,11 +258,54 @@ async function getArtifact(run, options) {
   return null;
 }
 
+async function reconcileStoppedPublication(env, owner, run, send, allowRead = true) {
+  const claimed = await state.claimCodingRun(env, owner, run.id);
+  if (!claimed) return await state.requireCodingRun(env, owner, run.id);
+  const { lease } = claimed;
+  run = claimed.run;
+  try {
+    if (!stoppedPublication(run) && !unconfirmedPublication(run)) return run;
+    if (run.publish_url) return await state.updateCodingRun(env, owner, run.id, lease, {
+      status: 'published', stage: 'Draft pull request created', can_continue: 0, error_code: null, error_message: null,
+    });
+
+    let draft, unconfirmed = true;
+    if (allowRead && run.review_ready && run.base_branch && run.base_sha && run.base_tree_sha) {
+      try {
+        draft = await recoverCodingPublication(env, owner, {
+          id: run.id, revision: run.revision, repository: run.repository, baseBranch: run.base_branch,
+          baseSha: run.base_sha, baseTreeSha: run.base_tree_sha,
+          loadFiles: () => state.codingChanges(env, owner, run),
+        }, { send });
+        unconfirmed = false;
+      } catch { /* A failed lookup must still release the conversation. */ }
+    }
+    if (draft) return await state.updateCodingRun(env, owner, run.id, lease, publishedDraft(run, draft));
+    if (unconfirmed && unconfirmedPublication(run)) return run;
+    return await state.updateCodingRun(env, owner, run.id, lease, {
+      status: 'cancelled', phase: 'done', stage: 'Draft publication stopped', can_continue: 0,
+      error_code: unconfirmed ? 'coding_publish_outcome_unconfirmed' : 'coding_publish_cancelled',
+      error_message: unconfirmed ? 'Draft publication stopped. Atlas could not confirm whether GitHub created a draft pull request.' : 'Draft pull request creation was stopped.',
+    });
+  } finally { await state.releaseCodingRun(env, owner, run.id, lease); }
+}
+
+function publishedDraft(run, draft) {
+  const manifest = state.codingJSON({ ...run.manifest, publication: { headSha: draft.headSha, revision: run.revision } });
+  return { status: 'published', stage: 'Draft pull request created', publish_url: draft.url, publish_number: draft.number, manifest_json: manifest, can_continue: 0, error_code: null, error_message: null };
+}
+
+const stoppedPublication = run => run.status === 'publishing' && run.cancel_requested;
+const unconfirmedPublication = run => run.status === 'cancelled' && run.error_code === 'coding_publish_outcome_unconfirmed';
+const canPublishReview = run => run.review_ready && !ACTIVE.has(run.status) && !stoppedPublication(run)
+  && !unconfirmedPublication(run) && run.error_code !== 'coding_publish_cancelled';
+
 // One bounded phase per observation. The hosted session owns long-running work;
 // neither the browser request nor Worker waitUntil is the execution lifetime.
 export async function advanceCodingRun(env, owner, id, { send = fetch } = {}) {
   await available(env);
   let run = await state.requireCodingRun(env, owner, id);
+  if (stoppedPublication(run)) return publicRun(await reconcileStoppedPublication(env, owner, run, send));
   if (!ACTIVE.has(run.status) && run.phase !== 'collect') return publicRun(run);
   const claimed = await state.claimCodingRun(env, owner, id);
   if (!claimed) return publicRun(run);
@@ -413,7 +460,7 @@ export async function advanceCodingRun(env, owner, id, { send = fetch } = {}) {
       if (artifact) {
         const candidate = await validateCodingArtifact(artifact, { ...run.manifest, revision: run.revision });
         if (repair && turn.status !== 'completed' && candidate.files.length) throw failure('repair_checks_required', 'Atlas could not finish this repair and verify its changes.');
-        assertRepairCandidate(run, candidate.files);
+        assertRepairScope(run, candidate.files);
         run = await state.saveCodingChanges(env, owner, run, lease, candidate.files);
       }
       const status = turn.status;
@@ -497,11 +544,17 @@ export async function progressCodingSetup(env, owner, id, options = {}) {
 export async function reconcileCodingBackground(env, { verifyAdmin, send = fetch, limit = 3 } = {}) {
   if (typeof verifyAdmin !== 'function' || !(await state.codingStorageStatus(env)).ready) return { observed: 0 };
   const count = Math.max(1, Math.min(5, Number.isInteger(limit) ? limit : 3));
-  const rows = await env.ATLAS_DB.prepare("SELECT owner,id FROM atlas_coding_runs WHERE status IN ('preparing','running','waiting','uncertain') AND (lease_until IS NULL OR lease_until<?) ORDER BY updated_at,id LIMIT ?").bind(Date.now(), count).all();
+  const rows = await env.ATLAS_DB.prepare("SELECT owner,id,status FROM atlas_coding_runs WHERE (status IN ('preparing','running','waiting','uncertain') OR (status='publishing' AND cancel_requested=1)) AND (lease_until IS NULL OR lease_until<?) ORDER BY updated_at,id LIMIT ?").bind(Date.now(), count).all();
   let observed = 0;
   for (const run of rows.results || []) {
     let allowed;
     try { allowed = await verifyAdmin(run.owner); } catch { allowed = null; }
+    if (run.status === 'publishing') {
+      const latest = await state.requireCodingRun(env, run.owner, run.id);
+      if (stoppedPublication(latest)) await reconcileStoppedPublication(env, run.owner, latest, send, allowed === true);
+      observed++;
+      continue;
+    }
     // A transport failure is not revoked access. Leave the durable run intact
     // for the next successful observation, without dispatching any new work.
     if (allowed !== true && allowed !== false) continue;
@@ -518,7 +571,10 @@ export async function reconcileCodingBackground(env, { verifyAdmin, send = fetch
 export async function cancelCodingRun(env, owner, id, options = {}) {
   await available(env); const run = await state.requireCodingRun(env, owner, id);
   if (options.revision != null && options.revision !== run.revision) throw failure('run_changed', 'The run has changed. Refresh its timeline.');
-  if (run.status === 'publishing') { await state.requestCodingCancellation(env, owner, id); return publicRun(await state.requireCodingRun(env, owner, id)); }
+  if (run.status === 'publishing') {
+    if (!run.cancel_requested) await state.requestCodingCancellation(env, owner, id, options.revision);
+    return advanceCodingRun(env, owner, id, options);
+  }
   if (!ACTIVE.has(run.status)) return publicRun(run);
   await state.requestCodingCancellation(env, owner, id, options.revision);
   return advanceCodingRun(env, owner, id, options);
@@ -587,8 +643,10 @@ export async function continueCodingRun(env, owner, id, body, { send = fetch } =
   } finally { await state.releaseCodingRun(env, owner, id, lease); }
 }
 
-export async function codingReview(env, owner, id) {
-  await available(env); const run = await state.requireCodingRun(env, owner, id);
+export async function codingReview(env, owner, id, { send = fetch } = {}) {
+  await available(env);
+  let run = await state.requireCodingRun(env, owner, id);
+  if (stoppedPublication(run) || unconfirmedPublication(run)) run = await reconcileStoppedPublication(env, owner, run, send);
   const result = publicRun(run);
   return { run: result, files: run.review_ready ? await state.codingChanges(env, owner, run) : [], checks: result.checks };
 }
@@ -612,7 +670,7 @@ export async function publishCodingRun(env, owner, id, body, { send = fetch, ver
   const reviewedCancellation = run.cancel_generation;
   if (body.confirm !== true || body.revision !== run.revision) throw failure('coding_review_changed', 'Review this exact revision and confirm creation of its draft pull request.');
   if (run.publish_url) return { run: publicRun(run), pullRequest: publicRun(run).pullRequest };
-  if (!run.review_ready || ACTIVE.has(run.status)) throw failure('coding_review_unavailable', 'Wait for the task to finish and review its changes before publishing.');
+  if (!canPublishReview(run)) throw failure('coding_review_unavailable', 'Wait for the task to finish and review its changes before publishing.');
   if (run.environment.incident) {
     if (!verifyIncident) throw failure('incident_status_unavailable', 'Atlas could not verify the incident before approval.', 503);
     await verifyIncident(owner, run.environment.incident, run.repository, run.environment.incidentServices);
@@ -625,7 +683,7 @@ export async function publishCodingRun(env, owner, id, body, { send = fetch, ver
     if (run.cancel_generation !== reviewedCancellation) throw failure('coding_publish_cancelled', 'Publication was stopped because the task changed. Review it before trying again.');
     if (body.confirm !== true || body.revision !== run.revision) throw failure('coding_review_changed', 'This task has a newer revision. Review it before publishing.');
     if (run.publish_url) return { run: publicRun(run), pullRequest: publicRun(run).pullRequest };
-    if (!run.review_ready || ACTIVE.has(run.status)) throw failure('coding_review_unavailable', 'This task is still changing. Wait for it to finish and review the result.');
+    if (!canPublishReview(run)) throw failure('coding_review_unavailable', 'This task is still changing. Wait for it to finish and review the result.');
     const readFiles = () => state.codingChanges(env, owner, run, { full: true });
     let files;
     if (run.environment.incident) {
@@ -641,11 +699,13 @@ export async function publishCodingRun(env, owner, id, body, { send = fetch, ver
       if (current.lease_id !== lease || current.revision !== body.revision || current.cancel_generation !== reviewedCancellation || current.cancel_requested || current.status !== 'publishing') throw failure('coding_publish_cancelled', 'Publication was stopped because the task changed. Review it before trying again.');
     };
     const pullRequest = await publishCodingChanges(env, owner, { id, revision: run.revision, repository: run.repository, baseBranch: run.base_branch, baseSha: run.base_sha, baseTreeSha: run.base_tree_sha, title: capped(run.prompt.split('\n')[0], 160), summary: run.summary || run.prompt, checks: run.checks, files }, { send, beforeWrite });
-    const manifest = state.codingJSON({ ...run.manifest, publication: { headSha: pullRequest.headSha, revision: run.revision } });
-    run = await state.updateCodingRun(env, owner, id, lease, { status: 'published', stage: 'Draft pull request created', publish_url: pullRequest.url, publish_number: pullRequest.number, manifest_json: manifest, can_continue: 0, error_code: null, error_message: null });
+    run = await state.updateCodingRun(env, owner, id, lease, publishedDraft(run, pullRequest));
     return { run: publicRun(run), pullRequest };
   } catch (error) {
-    if (publishingStarted) await state.updateCodingRun(env, owner, id, lease, { status: 'failed', stage: 'Draft publication needs attention', ...safeMessage(error) });
+    if (publishingStarted) {
+      try { await state.updateCodingRun(env, owner, id, lease, { status: 'failed', stage: 'Draft publication needs attention', ...safeMessage(error) }, { cancelGeneration: reviewedCancellation }); }
+      catch (updateError) { if (updateError.code !== 'coding_lease_changed') throw updateError; }
+    }
     throw error;
   } finally { await state.releaseCodingRun(env, owner, id, lease); }
 }

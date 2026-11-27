@@ -37,13 +37,15 @@ function recordedSuccess(checks, command) {
   // representation. Compound commands and model-written summaries are not proof.
   const allowed = [command, `/bin/bash -lc '${command}'`, `/bin/bash -lc "${command}"`];
   const last = checks.findLast(check => check.source === 'provider_command_execution' &&
-    check.cwd === '/workspace/repo' && !check.truncated && allowed.includes(check.command?.trim()));
+    check.cwd === '/workspace/repo' && allowed.includes(check.command?.trim()));
   const output = last?.output?.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '') || '';
-  return last?.status === 'completed' && last.exitCode === 0 && /^(?:#|ℹ) pass [1-9]\d*\s*$/m.test(output);
+  return last?.status === 'completed' && last.exitCode === 0 && !last.truncated && !last.outputTruncated && /^(?:#|ℹ) pass [1-9]\d*\s*$/m.test(output);
 }
 
-export function assertRepairCandidate(run, files) {
-  if (!run.environment.incident || !files.length) return;
+export const REPAIR_VALIDATION_UNAVAILABLE = 'Atlas needs verified test results for these exact changes before it can create a draft pull request.';
+
+export function assertRepairScope(run, files) {
+  if (!run.environment.incident || !files.length) return [];
   const services = run.environment.incidentServices;
   if (run.environment.network !== 'off' || run.base_branch !== repairProject(services)?.branch) {
     throw new AtlasStoreError('repair_scope_blocked', 'This repair needs the approved branch and isolated workspace before it can be reviewed.', 409);
@@ -65,7 +67,16 @@ export function assertRepairCandidate(run, files) {
   if (changedLines > 300) {
     throw new AtlasStoreError('repair_scope_blocked', 'This change exceeds the automatic repair scope.', 409);
   }
+  return changedRules;
+}
+
+export function assertRepairCandidate(run, files) {
+  const changedRules = assertRepairScope(run, files);
+  if (!changedRules.length) return;
   if (changedRules.some(rule => !recordedSuccess(run.checks, rule.test))) {
     throw new AtlasStoreError('repair_checks_required', 'The approved repository tests must pass before this repair can be published.', 409);
   }
+  // The hosted API exposes command records and an export independently. Their
+  // shared turn ID does not attest which file contents the command tested.
+  throw new AtlasStoreError('repair_candidate_unverified', REPAIR_VALIDATION_UNAVAILABLE, 409);
 }

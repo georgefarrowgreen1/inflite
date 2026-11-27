@@ -2,7 +2,7 @@ import { atlasMarkup } from "./template.js";
 import { createAtlasClient } from "../assets/app.js";
 
 export const CONTRACT = 1;
-export const BUILD = "2.6.3";
+export const BUILD = "2.6.4";
 export const NEWS = "Atlas shows run progress as it happens and catches up when you reconnect.";
 export const SECTIONS = [["conversations", "Conversations"], ["tasks", "Tasks"], ["environments", "Environments"], ["briefs", "Briefs"], ["settings", "Settings"]];
 

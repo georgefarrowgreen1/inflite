@@ -106,7 +106,7 @@ test('confirmed Status incidents reserve their available allowance, pin the prod
   assert.equal(published, 0);
 });
 
-test('incident repairs require a complete permitted diff and a real successful existing test', () => {
+test('incident publication requires approved scope, the last successful invocation and evidence bound to the candidate', () => {
   const check = {
     command: 'node --test tests/mail-intelligence.test.cjs', cwd: '/workspace/repo',
     source: 'provider_command_execution', status: 'completed', exitCode: 0, output: '# pass 3',
@@ -116,7 +116,7 @@ test('incident repairs require a complete permitted diff and a real successful e
     environment: { incident: 'itodayfixture', incidentServices: ['mail'], network: 'off' }, checks: [check],
   };
   const file = { path: 'email/src/threads.js', operation: 'modify', beforeMode: '100644', afterMode: '100644', addedLines: 2, removedLines: 1 };
-  assert.doesNotThrow(() => assertRepairCandidate(run, [file]));
+  assert.throws(() => assertRepairCandidate(run, [file]), { code: 'repair_candidate_unverified' });
   assert.throws(() => assertRepairCandidate({ ...run, environment: { ...run.environment, network: 'dependencies' } }, [file]), { code: 'repair_scope_blocked' });
   for (const path of ['email/src/auth.js', 'tests/mail-intelligence.test.cjs', '.github/workflows/check.yml', 'wrangler.toml', 'today/src/atlas-coding.js']) {
     assert.throws(() => assertRepairCandidate(run, [{ ...file, path }]), { code: 'repair_scope_blocked' });
@@ -129,6 +129,8 @@ test('incident repairs require a complete permitted diff and a real successful e
     [{ ...check, command: check.command + ' || true' }],
     [{ ...check, output: '# pass 0' }],
     [check, { ...check, exitCode: 1 }],
+    [check, { ...check, exitCode: 1, truncated: true }],
+    [check, { ...check, outputTruncated: true }],
   ]) assert.throws(() => assertRepairCandidate({ ...run, checks }, [file]), { code: 'repair_checks_required' });
 });
 
@@ -151,6 +153,31 @@ test('incident approval rejects a protected file before any GitHub request', asy
   }), { code: 'repair_scope_blocked' });
   assert.equal(gitCalls, 0);
   assert.equal((await state.getCodingRun(env, OWNER, id)).status, 'completed');
+});
+
+test('incident changes with passing but unbound command evidence remain reviewable and cannot touch GitHub', async t => {
+  const env = await fixture(t);
+  statusFixture(env, ['mail']);
+  await runAtlasIncidentRepairs(env);
+  const id = (await incidentDesk(env)).repairs[0].runId;
+  const check = { command: 'node --test tests/mail-intelligence.test.cjs', cwd: '/workspace/repo', source: 'provider_command_execution', status: 'completed', exitCode: 0, output: '# pass 3' };
+  await patchRun(env, id, { status: 'completed', phase: 'done', base_branch: 'claude/inflite', checks_json: JSON.stringify([check]) });
+  const { run, lease } = await state.claimCodingRun(env, OWNER, id);
+  try {
+    await state.saveCodingChanges(env, OWNER, run, lease, [{
+      path: 'email/src/threads.js', operation: 'modify', beforeMode: '100644', afterMode: '100644', addedLines: 1, removedLines: 1,
+      diff: '-old\n+new',
+    }]);
+  } finally { await state.releaseCodingRun(env, OWNER, id, lease); }
+  const review = await coding.codingReview(env, OWNER, id);
+  assert.equal(review.run.reviewReady, true);
+  assert.match(review.run.publicationBlocked, /exact changes/);
+  assert.equal(review.files[0].path, 'email/src/threads.js');
+  assert.equal((await coding.codingDiff(env, OWNER, id, 'email/src/threads.js', '1')).diff, '-old\n+new');
+  await assert.rejects(coding.publishCodingRun(env, OWNER, id, { revision: 1, confirm: true }, {
+    verifyIncident: (...args) => requireOpenAtlasIncident(env, ...args),
+    send: async () => assert.fail('unverified candidate cannot touch GitHub'),
+  }), { code: 'repair_candidate_unverified' });
 });
 
 test('only the structured repair evidence and fixed task reach the provider turn', async t => {
@@ -455,9 +482,39 @@ test('draft checks pin the reviewed commit and can start only a linked, verified
     const patch = await validateCodingArtifact({ ...manifest, changes: [{ path: 'src/value.js', operation: 'modify', beforeBase64: btoa(original), contentBase64: btoa('export const value = 4;\n'), afterMode: '100644' }] }, manifest);
     await state.saveCodingChanges(env, OWNER, { ...claimed.run, manifest }, claimed.lease, patch.files);
   } finally { await state.releaseCodingRun(env, OWNER, f.run.id, claimed.lease); }
-  const { pullRequest } = await coding.publishCodingRun(env, OWNER, f.run.id, { confirm: true, revision: 1 }, { send: github.send });
+  const pending = await state.claimCodingRun(env, OWNER, f.run.id);
+  await state.beginCodingPublication(env, OWNER, pending.run, pending.lease, pending.run.cancel_generation);
+  const runPath = '/coding/runs/' + f.run.id, approval = { confirm: true, revision: 1 };
+  const publishing = (await route(env, runPath + '/changes')).value.run;
+  assert.ok(publishing.publishRetryAt > Date.now());
+  await assert.rejects(coding.publishCodingRun(env, OWNER, f.run.id, approval), { code: 'coding_publish_pending' });
+  await env.ATLAS_DB.prepare('UPDATE atlas_coding_runs SET lease_until = 1 WHERE owner = ? AND id = ?').bind(OWNER, f.run.id).run();
+  assert.equal((await route(env, runPath + '/changes')).value.run.publishRetryAt, 2);
+  assert.equal((await route(env, runPath + '/publish', { method: 'POST', body: approval, admin: false })).status, 403);
+  assert.equal((await route(env, runPath + '/publish', { method: 'POST', body: approval, fresh: false })).value.code, 'identity_confirmation_required');
+  const published = await route(env, runPath + '/publish', { method: 'POST', body: approval, send: github.send });
+  assert.equal(published.status, 200);
+  const { pullRequest } = published.value;
+  assert.equal(github.pulls.length, 1);
+  assert.deepEqual((await route(env, runPath + '/publish', { method: 'POST', body: approval })).value.pullRequest, pullRequest);
   const head = pullRequest.headSha;
   assert.equal(head, github.pulls[0].head.sha);
+
+  // The GitHub write succeeded but the worker died before saving its result.
+  await env.ATLAS_DB.prepare(`UPDATE atlas_coding_runs SET status = 'publishing', publish_url = NULL, publish_number = NULL,
+    manifest_json = ?, lease_id = 'crashed-publisher', lease_until = ? WHERE owner = ? AND id = ?`)
+    .bind(JSON.stringify(manifest), Date.now() + 120000, OWNER, f.run.id).run();
+  assert.equal((await route(env, runPath + '/cancel', { method: 'POST', body: {} })).value.run.status, 'publishing');
+  await env.ATLAS_DB.prepare('UPDATE atlas_coding_runs SET lease_until = 1 WHERE owner = ? AND id = ?').bind(OWNER, f.run.id).run();
+  const unknown = await route(env, runPath + '/changes', { send: async () => { throw Error('GitHub unavailable'); } });
+  assert.equal(unknown.value.run.status, 'cancelled');
+  assert.equal(unknown.value.run.error.code, 'coding_publish_outcome_unconfirmed');
+  github.calls.length = 0;
+  const recovered = await route(env, runPath + '/changes', { send: github.send });
+  assert.equal(recovered.value.run.status, 'published');
+  assert.deepEqual(recovered.value.run.pullRequest, pullRequest);
+  assert.ok(github.calls.length > 0 && github.calls.every(call => call.method === 'GET'));
+  assert.equal(github.pulls.length, 1);
   const stored = await state.requireCodingRun(env, OWNER, f.run.id);
   assert.equal(stored.manifest.publication.headSha, head);
   const pass = { id: 1, name: 'Lint', head_sha: head, status: 'completed', conclusion: 'success' };
@@ -505,6 +562,28 @@ test('draft checks pin the reviewed commit and can start only a linked, verified
   assert.match(copy.environment.checkFailure.evidence, /tests\/value\.test\.js · The result changed/);
   assert.equal(copy.environment.restoreCheckpoint.baseSha, github.baseSha);
   assert.ok(github.calls.every(call => call.method === 'GET'), 'checks and follow-up preparation only read GitHub');
+});
+
+test('a stopped publisher with an expired lease releases its conversation without GitHub writes', async t => {
+  const env = await fixture(t);
+  const { api: github } = await githubFixture();
+  const f = await newRun(env, { phase: 'done', status: 'publishing', review_ready: 1, changes_json: '{"added":0,"modified":1,"deleted":0}' });
+  const runPath = '/coding/runs/' + f.run.id;
+  const lease = await state.claimCodingRun(env, OWNER, f.run.id);
+  const stop = await route(env, runPath + '/cancel', { method: 'POST', body: {} });
+  assert.equal(stop.value.run.status, 'publishing');
+  assert.equal((await state.requireCodingRun(env, OWNER, f.run.id)).lease_id, lease.lease);
+  await env.ATLAS_DB.prepare('UPDATE atlas_coding_runs SET lease_until = 1 WHERE owner = ? AND id = ?').bind(OWNER, f.run.id).run();
+  assert.deepEqual(await coding.reconcileCodingBackground(env, { verifyAdmin: async () => true, send: github.send }), { observed: 1 });
+  assert.ok(github.calls.length > 0 && github.calls.every(call => call.method === 'GET'));
+  assert.equal(github.pulls.length, 0);
+  const stopped = (await route(env, runPath)).value.run;
+  assert.equal(stopped.status, 'cancelled');
+  assert.match(stopped.publicationBlocked, /stopped/);
+  assert.equal((await route(env, runPath + '/publish', { method: 'POST', body: { confirm: true, revision: 1 } })).status, 409);
+  const next = await route(env, '/coding/runs', { method: 'POST', body: { conversationId: f.conversation.id, requestId: uid(), prompt: 'Continue with a separate review.' } });
+  assert.equal(next.status, 202);
+  assert.equal(next.value.run.status, 'preparing');
 });
 
 test('the coding inbox filters and pages across the signed-in owner’s conversations', async t => {

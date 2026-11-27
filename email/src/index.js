@@ -20,7 +20,7 @@ import {
 import { receiveEmail, retryPending, snippet } from "./receive.js";
 import { settings, updateSettings, listAddresses, createAddress, updateAddress, deleteAddress, addressOf, defaultAddress, localProblem } from "./addresses.js";
 import { listThreads, getThread, getThreadPage, threadAction, counts, wakeSnoozed, unsubInfo, readAll } from "./threads.js";
-import { vapid, pushAll, pushEndpointOk, peopleUnread, noticeInflite } from "./push.js";
+import { vapid, pushMailNotice, getPushNotice, PUSH_NOTICE_ID, pushEndpointOk, peopleUnread, noticeInflite } from "./push.js";
 import { listedOrigins, hubOf, hubHeaders, preflight, hubRefusal, hubNavigation, RASTER } from "./hubgate.js";
 import { cleanQuote, personalMessage, quoteFrom } from "./quote.js";
 import { keyOk, card, notice, searchParams } from "./connect.js";
@@ -93,12 +93,11 @@ const worker = {
       await ensureSchema(env);
       const woken = await wakeSnoozed(env);
       const told = woken.length && !(await quietNow(env)) ? woken : [];
-      const badge = told.length ? await peopleUnread(env) : 0;
       // (through InFlite, when George has chosen that: Mail's own only where the account says it isn't telling anyone)
       await Promise.allSettled(
         told.map(async (w) =>
           (await noticeInflite(env, { kind: "later", threadId: w.threadId })) &&
-          pushAll(env, { title: w.from || "Mail", body: `Back from Later: ${w.subject}`, tag: w.threadId, url: `/#thread=${w.threadId}`, badge })
+          pushMailNotice(env, { kind: "later", threadId: w.threadId })
         )
       );
     } catch {
@@ -253,15 +252,6 @@ async function api(request, env, ctx, url, fromAccount = false, hub = null) {
 
   const view = await accountView(env, request);
   const access = accessOf(view);
-  // A notice's words, for the phone just told only that one's due (InFlite's notices, S4-D8): even when the 12-hour
-  // check is due again, as Mail's own notices show their words then too
-  let m;
-  if ((m = pathname.match(/^\/api\/notice\/([\w-]{1,64})$/)) && method === "GET" && (access === "ok" || access === "reauth")) {
-    await ensureSchema(env);
-    const words = await notice(env, m[1]);
-    if (!words) throw new HttpError(404, "No notice.");
-    return json(words);
-  }
   if (access !== "ok") {
     const err = new HttpError(401, access === "notadmin" ? "Mail is only for the site’s admin." : "Sign in to open Mail.");
     err.access = access;
@@ -372,6 +362,17 @@ async function route(request, env, ctx, url, view, hub = null) {
     return json({ ok: true, spots: await threadSpots(env, await threadOfSpot(env, m[1])) });
   }
   if (pathname === "/api/trash/empty" && method === "POST") return emptyTrash(env);
+  if (method === "GET" && (m = pathname.match(/^\/api\/notice\/([\w-]{1,64})$/))) {
+    const words = await notice(env, m[1]);
+    if (!words) throw new HttpError(404, "No notice.");
+    return json(words);
+  }
+  if (method === "GET" && !hub && (m = pathname.match(/^\/api\/push\/notice\/([^/]+)$/)) && PUSH_NOTICE_ID.test(m[1])) {
+    const entry = await getPushNotice(env, m[1]);
+    const words = entry && await notice(env, entry.thread_id, entry.kind);
+    if (!words) throw new HttpError(404, "No notice.");
+    return json({ ...words, thread: entry.thread_id, badge: await peopleUnread(env) });
+  }
   if (pathname === "/api/push/key" && method === "GET") return json({ key: (await vapid(env)).pub });
   if (pathname === "/api/push/subscribe" && method === "POST") return pushSubscribe(env, await jsonBody(request));
   if (pathname === "/api/push/unsubscribe" && method === "POST") {
@@ -384,7 +385,7 @@ async function route(request, env, ctx, url, view, hub = null) {
   // (a message without its body: who, when, about what, its files; for InFlite's reader, whose bodies are Mail's frame)
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)\/meta$/)) && method === "GET") return messageMeta(env, m[1]);
   // (a draft's fields, without the old quoted text: drafts only)
-  if ((m = pathname.match(/^\/api\/drafts\/([\w-]+)$/)) && method === "GET") return getDraft(env, m[1]);
+  if ((m = pathname.match(/^\/api\/drafts\/([\w-]+)$/)) && method === "GET") return getDraft(env, m[1], view);
   if ((m = pathname.match(/^\/api\/messages\/([\w-]+)$/))) {
     if (method === "GET") return getMessage(env, m[1]);
     if (method === "PATCH") return updateMessage(env, m[1], await jsonBody(request));
@@ -403,8 +404,8 @@ async function route(request, env, ctx, url, view, hub = null) {
   if (pathname === "/api/sends" && method === "GET") {
     const keys = (url.searchParams.get("keys") || "").split(",").filter((k) => /^[\w-]{8,64}$/.test(k)).slice(0, 50);
     if (!keys.length) return json({ sent: [] });
-    const { results } = await env.DB.prepare(`SELECT key FROM sends WHERE id IS NOT NULL AND key IN (${keys.map((_, i) => `?${i + 1}`).join(",")})`)
-      .bind(...keys)
+    const { results } = await env.DB.prepare(`SELECT key FROM sends WHERE id IS NOT NULL AND (owner IS NULL OR owner = ?1) AND key IN (${keys.map((_, i) => `?${i + 2}`).join(",")})`)
+      .bind(view.id || null, ...keys)
       .all();
     return json({ sent: results.map((r) => r.key) });
   }
@@ -416,7 +417,7 @@ async function route(request, env, ctx, url, view, hub = null) {
       error.access = "signin";
       throw error;
     }
-    return pathname === "/api/drafts" ? saveDraft(env, message, view) : send(env, ctx, message, view);
+    return pathname === "/api/drafts" ? saveDraft(env, ctx, message, view) : send(env, ctx, message, view);
   }
 
   throw new HttpError(404, "Not found");
@@ -584,8 +585,7 @@ async function tidy(env, t = Date.now()) {
   const day = new Date(t).toISOString().slice(0, 10);
   if ((await env.DB.prepare(`SELECT v FROM meta WHERE k = 'tidy_day'`).first())?.v === day) return;
   await env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('tidy_day', ?1) ON CONFLICT(k) DO UPDATE SET v = excluded.v`).bind(day).run();
-  // (what's been sent, by its app's name for it, kept a week: long enough for any asking again)
-  await env.DB.prepare(`DELETE FROM sends WHERE at < ?1`).bind(t - 7 * 864e5).run();
+  await env.DB.prepare(`DELETE FROM push_notices WHERE expires_at <= ?1`).bind(t).run();
   // (a few hundred a day at most: any more go the next day)
   const { results } = await env.DB.prepare(`SELECT id FROM messages WHERE folder = 'trash' AND trashed_at < ?1 LIMIT 500`).bind(t - TRASH_DAYS * 864e5).all();
   for (let i = 0; i < results.length; i += 100) await deleteMessages(env, results.slice(i, i + 100).map((r) => r.id));
@@ -658,7 +658,7 @@ async function getMessage(env, id) {
   const row = await env.DB.prepare(`SELECT * FROM messages WHERE id = ?1`).bind(id).first();
   if (!row) throw new HttpError(404, "Message not found");
   const [bodyObj, atts] = await Promise.all([
-    env.MAIL.get(`body/${id}.json`),
+    env.MAIL.get(draftBodyKey(id, row.draft_revision)),
     env.DB.prepare(`SELECT * FROM attachments WHERE message_id = ?1`).bind(id).all(),
   ]);
   const body = bodyObj ? await bodyObj.json() : { text: "", html: "" };
@@ -676,7 +676,9 @@ async function getMessage(env, id) {
 
   // (a draft written in InFlite keeps only which message it quotes: opened here, in Mail on its own, it has the quote
   // whole, as Mail's compose shows and sends it)
-  let compose = body.compose || null;
+  const draft = row.folder === "drafts" && (await draftSnapshot(bodyObj, body));
+  if (row.folder === "drafts" && !draft) throw draftChanged();
+  let compose = draft?.compose || body.compose || null;
   const q = compose && cleanQuote(compose.quote);
   if (q && !q.header) {
     const whole = await quoteFrom(env, q).catch(() => null);
@@ -691,6 +693,7 @@ async function getMessage(env, id) {
     text: body.text || "",
     html,
     compose,
+    ...(draft && { draftRevision: draft.revision }),
     attachments,
   });
 }
@@ -713,15 +716,17 @@ async function messageMeta(env, id) {
   return json({ ...rowToMessage(row), attachments });
 }
 
-// A draft's fields for InFlite's compose (drafts only): its quote as which message it quotes ({ of, mode }), found by its
-// of or by the message it answers; one Mail can't tie to a message it has is quoteOld (its quoted text goes only if it's
-// sent from Mail on its own). Its files by name, type and size, never their bytes (i: which of the draft's own it is, for
-// keeping it as it is with the next save; ref: a forwarded file's attachment).
-async function getDraft(env, id) {
-  const row = await env.DB.prepare(`SELECT id FROM messages WHERE id = ?1 AND folder = 'drafts'`).bind(id).first();
-  if (!row) throw new HttpError(404, "Draft not found");
-  const obj = await env.MAIL.get(`body/${id}.json`);
-  const c = (obj && (await obj.json())?.compose) || {};
+// A draft's editable fields and saved attachment handles, without attachment bytes.
+async function getDraft(env, id, view) {
+  const row = await draftRow(env, id);
+  if (!row) {
+    const attempted = await draftAttempt(env, view.id, id);
+    if (attempted) throw draftSendConflict(attempted);
+    throw new HttpError(404, "Draft not found");
+  }
+  const draft = await readDraft(env, row);
+  if (!draft) throw draftChanged();
+  const c = draft.compose;
   const q = cleanQuote(c.quote);
   let quote = null, quoteOld = false;
   if (q?.of) quote = { of: q.of, mode: q.mode || (q.forward ? "forward" : "reply") };
@@ -732,8 +737,8 @@ async function getDraft(env, id) {
     else quoteOld = true;
   }
   const people = (l) => (Array.isArray(l) ? l.map((p) => ({ name: String(p?.name || ""), email: String(p?.email || "") })) : []);
-  const files = (Array.isArray(c.attachments) ? c.attachments : []).map((a, i) => ({
-    i,
+  const files = c.attachments.map((a) => ({
+    draftFile: a.draftFile,
     filename: String(a?.filename || "attachment"),
     type: String(a?.type || "application/octet-stream"),
     size: Number(a?.size) || 0,
@@ -741,6 +746,7 @@ async function getDraft(env, id) {
   }));
   return json({
     id,
+    revision: draft.revision,
     compose: {
       ...(validDue(c.followUpAt) && { followUpAt:c.followUpAt }),
       from: String(c.from || ""),
@@ -810,15 +816,17 @@ async function deleteMessages(env, ids) {
 
 async function deleteSome(env, ids) {
   const placeholders = ids.map((_, i) => `?${i + 1}`).join(",");
-  const { results: atts } = await env.DB.prepare(
-    `SELECT id FROM attachments WHERE message_id IN (${placeholders})`
-  )
-    .bind(...ids)
-    .all();
-  await env.MAIL.delete([
+  const [{ results: atts }, { results: drafts }] = await Promise.all([
+    env.DB.prepare(`SELECT id FROM attachments WHERE message_id IN (${placeholders})`).bind(...ids).all(),
+    env.DB.prepare(`SELECT id, draft_revision FROM messages WHERE id IN (${placeholders}) AND draft_revision IS NOT NULL`).bind(...ids).all(),
+  ]);
+  const keys = [
     ...ids.flatMap((id) => [`body/${id}.json`, `raw/${id}.eml`]),
     ...atts.map((a) => `att/${a.id}`),
-  ]);
+    ...drafts.map((row) => draftBodyKey(row.id, row.draft_revision)),
+  ];
+  // Retain the index entries until every R2 batch succeeds, so a failed batch can be retried.
+  for (const part of chunks(keys, 1000)) await env.MAIL.delete(part);
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM mail_followups WHERE message_id IN (${placeholders})`).bind(...ids),
     env.DB.prepare(`DELETE FROM attachments WHERE message_id IN (${placeholders})`).bind(...ids),
@@ -909,18 +917,67 @@ function base64ToBytes(b64) {
   return bytes;
 }
 
+const MAX_ATTACHMENTS = 20;
+function attachmentList(value) {
+  const list = Array.isArray(value) ? value : [];
+  if (list.length > MAX_ATTACHMENTS) throw new HttpError(413, `You can attach ${MAX_ATTACHMENTS} files at most.`);
+  return list;
+}
+
+const unconfirmedSend = () => new HttpError(503, "Mail couldn’t confirm delivery. Check Sent before composing a new copy.");
+const draftChanged = () => new HttpError(409, "This draft changed in another window. Reopen it to review its latest version.");
+const draftSendConflict = (attempt) => new HttpError(409, attempt.id
+  ? "This draft was already sent. Open Sent to review it."
+  : "Delivery of this draft is unconfirmed. Check Sent before composing a new copy.");
+
+const draftAttempt = (env, owner, id) => owner && id && env.DB.prepare(`SELECT id FROM sends WHERE owner = ?1 AND draft_id = ?2`).bind(owner, id).first();
+
+const definiteRejections = new Set([
+  "E_VALIDATION_ERROR", "E_FIELD_MISSING", "E_TOO_MANY_RECIPIENTS", "E_TOO_MANY_ATTACHMENTS",
+  "E_SENDER_NOT_VERIFIED", "E_SENDER_DOMAIN_NOT_AVAILABLE", "E_SENDER_DOMAIN_NOT_CONFIGURED", "E_EMAIL_SENDING_NOT_READY",
+  "E_RECIPIENT_NOT_ALLOWED", "E_RECIPIENT_PLAN_RESTRICTED", "E_RECIPIENT_SUPPRESSED", "E_ACCOUNT_SUSPENDED",
+  "E_CONTENT_TOO_LARGE", "E_RATE_LIMIT_EXCEEDED", "E_DAILY_LIMIT_EXCEEDED", "E_HEADER_NOT_ALLOWED",
+  "E_HEADER_USE_API_FIELD", "E_HEADER_VALUE_INVALID", "E_HEADER_VALUE_TOO_LONG", "E_HEADER_NAME_INVALID",
+  "E_HEADERS_TOO_LARGE", "E_HEADERS_TOO_MANY",
+]);
+
 async function send(env, ctx, body, view) {
-  body = body && typeof body === "object" ? body : {};
-  // InFlite sends a saved draft by ID with its idempotency key and verified owner. Use its saved fields, files and quote, as
-  // kept here (S4-D4). One already sent under that key says so, though its draft has gone.
-  const fromDraft = typeof body.draftId === "string" && Object.keys(body).every((k) => k === "draftId" || k === "key" || k === "accountOwner");
-  if (fromDraft) {
-    const k = typeof body.key === "string" && /^[\w-]{8,64}$/.test(body.key) ? body.key : null;
-    const was = k && (await env.DB.prepare(`SELECT id FROM sends WHERE key = ?1 AND id IS NOT NULL`).bind(k).first());
-    if (was) return json({ ok: true, id: was.id });
-    body = { ...(await storedDraft(env, body.draftId)), draftId: body.draftId, key: body.key };
+  const key = body.key;
+  if (typeof key !== "string" || !/^[\w-]{8,64}$/.test(key)) throw new HttpError(400, "This send needs a valid retry key.");
+  const owner = view.id;
+  if (!owner) throw new HttpError(401, "Sign in to send mail.");
+  const draftId = body.draftId ?? null;
+  if (draftId !== null && (typeof draftId !== "string" || !REF_RE.test(draftId))) throw new HttpError(400, "That draft ID is invalid.");
+  const revision = body.draftRevision ?? null;
+  if (revision !== null && (typeof revision !== "string" || !REF_RE.test(revision))) throw draftChanged();
+  const previous = () => env.DB.prepare(`SELECT key, id, owner, draft_id, draft_revision FROM sends
+    WHERE (key = ?1 AND (owner = ?2 OR owner IS NULL)) OR (owner = ?2 AND draft_id = ?3)
+    ORDER BY key = ?1 DESC LIMIT 1`).bind(key, owner, draftId).first();
+  function previousResponse(was) {
+    if (was.key !== key) throw draftSendConflict(was);
+    if (was.owner && (was.draft_id !== draftId || was.draft_revision !== revision)) throw draftSendConflict(was);
+    if (was.id) return json({ ok: true, id: was.id });
+    throw unconfirmedSend();
   }
-  const size = (Array.isArray(body.attachments) ? body.attachments : []).reduce((n, a) => n + String(a?.content || "").length * 0.75, 0);
+  const was = await previous();
+  if (was) return previousResponse(was);
+  if (!draftId) throw new HttpError(409, "Refresh Mail to send this message.");
+
+  // A saved-draft send names the snapshot returned by its save. Standalone Mail can also send its explicit fields.
+  const fromDraft = draftId && Object.keys(body).every((k) => ["draftId", "draftRevision", "key", "accountOwner"].includes(k));
+  const row = await draftRow(env, draftId);
+  if (fromDraft || row || revision) {
+    const draft = row && await readDraft(env, row);
+    if (!draft || revision !== draft.revision) {
+      const concurrent = await previous();
+      if (concurrent) return previousResponse(concurrent);
+      if (!row) throw new HttpError(404, "That draft isn’t in Drafts any more.");
+      throw draftChanged();
+    }
+    if (fromDraft) body = draft.compose;
+  }
+  const list = attachmentList(body.attachments);
+  const size = list.reduce((n, a) => n + String(a?.content || "").length * 0.75, 0);
   if (size > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
   const from = checkFrom(env, body.from || (await defaultAddress(env)));
   const address = await addressOf(env, from).catch(() => null);
@@ -950,7 +1007,7 @@ async function send(env, ctx, body, view) {
   // (a long thread's chain is trimmed, as mail clients do: the first message and the most recent)
   if (references.length > 20) references.splice(1, references.length - 20);
 
-  const attachments = await filesOut(env, Array.isArray(body.attachments) ? body.attachments : []);
+  const attachments = await filesOut(env, list);
   if (attachments.reduce((n, a) => n + a.bytes.byteLength, 0) > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
 
   const toAddr = (r) => (r.name ? { email: r.email, name: r.name } : r.email);
@@ -978,33 +1035,30 @@ async function send(env, ctx, body, view) {
     }),
   };
 
-  // Each message once, however often it's asked for (key: the app's own name for it, the same each time it asks): one
-  // whose answer never got back to the phone (a slow upload given up on, the app put away) and asked for again is said
-  // to have gone, not sent twice. One still going from the first time says so, to be asked again in a moment; one left
-  // half done minutes ago is taken as not sent.
-  const key = typeof body.key === "string" && /^[\w-]{8,64}$/.test(body.key) ? body.key : null;
+  // Commit the key before contacting the provider. An unresolved claim may already have reached
+  // the provider, so only a definite pre-delivery rejection releases it for another attempt.
   const claimedAt = Date.now();
-  if (key) {
-    const claim = await env.DB.prepare(
-      `INSERT INTO sends (key, at) VALUES (?1, ?2)
-       ON CONFLICT(key) DO UPDATE SET at = excluded.at WHERE sends.id IS NULL AND sends.at <= ?3`
-    ).bind(key, claimedAt, claimedAt - 2 * 60e3).run();
-    if (!claim.meta?.changes) {
-      const was = await env.DB.prepare(`SELECT id FROM sends WHERE key = ?1`).bind(key).first();
-      if (was?.id) return json({ ok: true, id: was.id });
-      throw new HttpError(503, "That message is still sending. Try again in a moment.");
-    }
+  const claim = await env.DB.prepare(`INSERT INTO sends (key, at, owner, draft_id, draft_revision)
+    SELECT ?1, ?2, ?3, ?4, ?5
+    WHERE (?6 = 0 AND NOT EXISTS (SELECT 1 FROM messages WHERE id = ?4 AND folder = 'drafts'))
+       OR (?6 = 1 AND EXISTS (SELECT 1 FROM messages WHERE id = ?4 AND folder = 'drafts' AND draft_revision IS ?7))
+    ON CONFLICT DO NOTHING`).bind(key, claimedAt, owner, draftId, revision, row ? 1 : 0, row?.draft_revision ?? null).run();
+  if (!claim.meta?.changes) {
+    const concurrent = await previous();
+    if (concurrent) return previousResponse(concurrent);
+    throw draftChanged();
   }
 
-  // (sending, and what's kept of it here, carried through even if the phone stops waiting for the answer)
+  // Finish the receipt and Sent copy if the client stops waiting for its response.
   const going = (async () => {
     let result;
     try {
       result = await env.EMAIL.send(message);
     } catch (err) {
       const code = err?.code;
-      console.error("mail send failed", ["E_SENDER_NOT_VERIFIED", "E_RATE_LIMIT_EXCEEDED", "E_RECIPIENT_SUPPRESSED"].includes(code) ? code : "provider");
-      if (key) await env.DB.prepare(`DELETE FROM sends WHERE key = ?1 AND at = ?2 AND id IS NULL`).bind(key, claimedAt).run().catch(() => {});
+      if (!definiteRejections.has(code)) throw unconfirmedSend();
+      console.error("mail send rejected", code);
+      await env.DB.prepare(`DELETE FROM sends WHERE key = ?1 AND at = ?2 AND id IS NULL`).bind(key, claimedAt).run().catch(() => {});
       const hint =
         code === "E_SENDER_NOT_VERIFIED"
           ? `${env.DOMAIN} isn't verified for Email Sending yet.`
@@ -1012,18 +1066,19 @@ async function send(env, ctx, body, view) {
             ? "Sending limit reached. Try again later."
             : code === "E_RECIPIENT_SUPPRESSED"
               ? "A sender or recipient address is on the delivery suppression list. Check the addresses before trying again."
-              : "Couldn't send the message.";
+              : "The mail provider refused this message.";
       throw new HttpError(502, hint);
     }
 
-    // Sent: whatever happens to the copy kept here, the answer is that it went (so it's never sent twice).
     const id = crypto.randomUUID();
-    if (key) await env.DB.prepare(`UPDATE sends SET id = ?2 WHERE key = ?1 AND id IS NULL`).bind(key, id).run().catch(() => console.error("sent, but not noted as sent"));
+    const saveReceipt = async () => env.DB.prepare(`UPDATE sends SET id = ?2 WHERE key = ?1 AND id IS NULL`).bind(key, id).run();
+    const receipt = await saveReceipt().catch(() => null);
     try {
-      await keepSent(env, ctx, { followUpAt:body.followUpAt, id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId: body.draftId });
+      await keepSent(env, ctx, { followUpAt: body.followUpAt, id, result, from, name, to, cc, bcc, all, subject, text, html, inReplyTo, references, attachments, draftId: row ? draftId : null });
     } catch {
       console.error("sent, but the copy wasn't kept");
     }
+    if (!receipt) await saveReceipt().catch(() => console.error("sent, but the receipt wasn't kept"));
     return id;
   })();
   ctx.waitUntil(going.catch(() => {}));
@@ -1085,16 +1140,15 @@ async function keepSent(env, ctx, { followUpAt, id, result, from, name, to, cc, 
 
 // A message's files to send: those sent with it, and those forwarded ({ ref: an attachment's id }), copied from Mail's own
 // (never fetched into the page, S4-D4). One that can't be had is said, never left out.
-// (their sizes from Mail's own rows, 20 forwarded at most, both checked before any is read: never a run out of memory)
+// Read the sizes of forwarded attachments before reading their contents.
 async function filesOut(env, list) {
   const gone = (a, row) => new HttpError(400, `Couldn’t attach “${String(a.filename || row?.filename || "a file").slice(0, 200)}”.`);
-  const refs = list.filter((a) => a?.ref !== undefined);
-  if (refs.length > 20) throw new HttpError(413, "You can forward 20 files at most.");
   const rows = new Map();
   let total = 0;
   for (const a of list) {
     if (a?.ref === undefined) {
-      total += String(a?.content || "").length * 0.75;
+      if (typeof a?.content !== "string") throw new HttpError(400, "An attachment was invalid. Add the file again.");
+      total += a.content.length * 0.75;
       continue;
     }
     const ref = typeof a.ref === "string" && REF_RE.test(a.ref) ? a.ref : null;
@@ -1113,20 +1167,33 @@ async function filesOut(env, list) {
       out.push({ id: crypto.randomUUID(), filename: flat(a.filename || row.filename || "attachment"), type: flat(row.type || "application/octet-stream"), bytes: new Uint8Array(await obj.arrayBuffer()) });
       continue;
     }
-    out.push({ id: crypto.randomUUID(), filename: flat(a?.filename || "attachment"), type: flat(a?.type || "application/octet-stream"), bytes: base64ToBytes(String(a?.content || "")) });
+    let bytes;
+    try { bytes = base64ToBytes(a.content); }
+    catch { throw gone(a); }
+    out.push({ id: crypto.randomUUID(), filename: flat(a.filename || "attachment"), type: flat(a.type || "application/octet-stream"), bytes });
   }
   return out;
 }
 
-// A saved draft, as send() takes a message
-async function storedDraft(env, id) {
-  const row = /^[\w-]{1,64}$/.test(id) && (await env.DB.prepare(`SELECT id FROM messages WHERE id = ?1 AND folder = 'drafts'`).bind(id).first());
-  const obj = row && (await env.MAIL.get(`body/${id}.json`));
-  const c = obj && (await obj.json())?.compose;
-  if (!c) throw new HttpError(404, "That draft isn’t in Drafts any more.");
-  const { attachments, ...rest } = c;
-  return { ...rest, attachments: Array.isArray(attachments) ? attachments : [] };
+// D1 points to one immutable R2 snapshot. Drafts written by older Mail remain at the original key.
+const draftBodyKey = (id, revision) => revision ? `draft/${id}/${revision}.json` : `body/${id}.json`;
+const draftRow = (env, id) => env.DB.prepare(`SELECT id, draft_revision FROM messages WHERE id = ?1 AND folder = 'drafts'`).bind(id).first();
+
+async function draftSnapshot(obj, body) {
+  if (!obj) return null;
+  body ??= await obj.json();
+  if (!body?.compose) return null;
+  let revision = body.revision || obj.etag;
+  if (!revision) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(body)));
+    revision = Array.from(new Uint8Array(digest).slice(0, 16), byte => byte.toString(16).padStart(2, "0")).join("");
+  }
+  const files = Array.isArray(body.compose.attachments) ? body.compose.attachments : [];
+  const attachments = files.map((file, i) => ({ ...file, draftFile: file?.draftFile || `${revision}-${i}` }));
+  return { revision, compose: { ...body.compose, attachments } };
 }
+
+const readDraft = async (env, row) => draftSnapshot(await env.MAIL.get(draftBodyKey(row.id, row.draft_revision)));
 
 // (only ever a draft: never a message that came in or went out)
 async function deleteDraft(env, id) {
@@ -1134,10 +1201,7 @@ async function deleteDraft(env, id) {
   if (row) await deleteMessages(env, [row.id]);
 }
 
-// (a draft's attachments, kept in its stored copy: 25 MB at most, like sending. A forwarded file is kept as which
-// attachment it is ({ ref }), copied when it's sent; one the draft already has ({ i }, as /api/drafts/<id> numbers them)
-// stays as it is, as InFlite's page never has its bytes. A forwarded file the draft already keeps stays though Mail has
-// since lost it: its words are still saved, and sending it says the file's gone)
+// Resolve the attachment handles against the captured draft. Missing handles require reloading the draft.
 async function draftFiles(env, list, kept = []) {
   const out = [];
   let total = 0;
@@ -1145,7 +1209,14 @@ async function draftFiles(env, list, kept = []) {
     total += n;
     if (total > 25 * 1024 * 1024) throw new HttpError(413, "Attachments can be 25 MB at most.");
   };
-  for (const a of Array.isArray(list) ? list.slice(0, 20) : []) {
+  for (const a of list) {
+    if (a?.draftFile !== undefined || a?.i !== undefined) {
+      const file = kept.find((item) => item.draftFile === a.draftFile);
+      if (!file) throw draftChanged();
+      add(file.ref ? Number(file.size) || 0 : String(file.content || "").length * 0.75);
+      out.push(file);
+      continue;
+    }
     if (a?.ref !== undefined) {
       const ref = typeof a.ref === "string" && REF_RE.test(a.ref) ? a.ref : null;
       const row = ref && (await env.DB.prepare(`SELECT filename, type, size FROM attachments WHERE id = ?1`).bind(ref).first());
@@ -1157,34 +1228,34 @@ async function draftFiles(env, list, kept = []) {
       }
       if (!row) throw new HttpError(400, `Couldn’t attach “${String(a.filename || "a file").slice(0, 200)}”.`);
       add(Number(row.size) || 0);
-      out.push({ ref, filename: String(a.filename || row.filename || "attachment").slice(0, 200), type: String(row.type || "application/octet-stream").slice(0, 100), size: Number(row.size) || 0 });
+      out.push({ draftFile: crypto.randomUUID(), ref, filename: String(a.filename || row.filename || "attachment").slice(0, 200), type: String(row.type || "application/octet-stream").slice(0, 100), size: Number(row.size) || 0 });
       continue;
     }
-    if (a && a.content === undefined && Number.isInteger(a.i)) {
-      const k = kept[a.i];
-      if (!k) continue;
-      add(k.ref ? Number(k.size) || 0 : String(k.content || "").length * 0.75);
-      out.push(k);
-      continue;
-    }
-    const content = String(a?.content || "");
-    if (!/^[A-Za-z0-9+/=]*$/.test(content)) continue;
+    const content = a?.content;
+    if (typeof content !== "string" || !/^[A-Za-z0-9+/=]*$/.test(content)) throw new HttpError(400, "An attachment was invalid. Add the file again.");
     add(content.length * 0.75);
-    out.push({ filename: String(a.filename || "attachment").slice(0, 200), type: String(a.type || "application/octet-stream").slice(0, 100), size: Number(a.size) || 0, content });
+    out.push({ draftFile: crypto.randomUUID(), filename: String(a.filename || "attachment").slice(0, 200), type: String(a.type || "application/octet-stream").slice(0, 100), size: Number(a.size) || 0, content });
   }
   return out;
 }
 
-async function saveDraft(env, body, view) {
-  let id = body.id && /^[\w-]+$/.test(body.id) ? body.id : crypto.randomUUID();
-  // (a draft's id can't be used to write over anything else)
-  const existing = await env.DB.prepare(`SELECT folder FROM messages WHERE id = ?1`).bind(id).first();
-  if (existing && existing.folder !== "drafts") id = crypto.randomUUID();
-  // (what it has now, saved over: its files, for those kept as they are ({ i }) and forwarded ones Mail has since lost
-  // ({ ref }); its quote, kept when the save names none (no quote key): a quote Mail on its own made, which InFlite's page
-  // can't show or tie to a message (quoteOld), still goes when it's sent from there (S4-D18). quote: null takes it off)
-  const stored = existing?.folder === "drafts" ? (await (await env.MAIL.get(`body/${id}.json`))?.json().catch(() => null))?.compose || {} : {};
-  const kept = Array.isArray(stored.attachments) ? stored.attachments : [];
+async function saveDraft(env, ctx, body, view) {
+  const list = attachmentList(body.attachments);
+  let id = typeof body.id === "string" && REF_RE.test(body.id) ? body.id : crypto.randomUUID();
+  const owner = view.id;
+  if (!owner) throw new HttpError(401, "Sign in to save drafts.");
+  const attempt = await draftAttempt(env, owner, id);
+  if (attempt) throw draftSendConflict(attempt);
+  let existing = await env.DB.prepare(`SELECT id, folder, draft_revision FROM messages WHERE id = ?1`).bind(id).first();
+  if (existing && existing.folder !== "drafts") {
+    id = crypto.randomUUID();
+    existing = null;
+  }
+  const snapshot = existing && await readDraft(env, existing);
+  if (snapshot ? body.draftRevision !== snapshot.revision : existing || body.draftRevision != null) throw draftChanged();
+  const stored = snapshot?.compose || {};
+  const kept = stored.attachments || [];
+  if (body.keepAttachments === true && list.length) throw new HttpError(400, "Choose how to keep the draft attachments.");
   const quote = cleanQuote("quote" in body ? body.quote : stored.quote);
   const compose = {
     followUpAt: validDue(body.followUpAt) ? body.followUpAt : (body.followUpAt === undefined ? stored.followUpAt || null : null),
@@ -1197,31 +1268,33 @@ async function saveDraft(env, body, view) {
     inReplyTo: body.inReplyTo || null,
     references: body.references || null,
     quote,
-    attachments: await draftFiles(env, body.attachments, kept),
+    attachments: body.keepAttachments === true ? attachmentList(kept) : await draftFiles(env, list, kept),
   };
-  await env.MAIL.put(`body/${id}.json`, JSON.stringify({ text: compose.text, html: "", compose }), {
+  const revision = crypto.randomUUID();
+  const key = draftBodyKey(id, revision);
+  await env.MAIL.put(key, JSON.stringify({ text: compose.text, html: "", compose, revision }), {
     httpMetadata: { contentType: "application/json" },
   });
-  await env.DB.prepare(
+  const result = await env.DB.prepare(
     `INSERT INTO messages (id, folder, thread_id, mailbox, from_name, from_email, to_json, cc_json, bcc_json,
-       subject, snippet, date)
-     VALUES (?1, 'drafts', ?1, ?2, ?3, ?2, ?4, ?5, ?6, ?7, ?8, ?9)
+       subject, snippet, date, draft_revision)
+     SELECT ?1, 'drafts', ?1, ?2, ?3, ?2, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+     WHERE NOT EXISTS (SELECT 1 FROM sends WHERE owner = ?11 AND draft_id = ?1)
+       AND (?12 = 0 OR EXISTS (SELECT 1 FROM messages WHERE id = ?1 AND folder = 'drafts' AND draft_revision IS ?13))
      ON CONFLICT(id) DO UPDATE SET to_json = ?4, cc_json = ?5, bcc_json = ?6, subject = ?7, snippet = ?8,
-       date = ?9, mailbox = ?2, from_email = ?2`
-  )
-    .bind(
-      id,
-      compose.from.toLowerCase(),
-      senderName(env, view),
-      JSON.stringify(compose.to),
-      JSON.stringify(compose.cc),
-      JSON.stringify(compose.bcc),
-      compose.subject,
-      snippet(compose.text),
-      Date.now()
-    )
-    .run();
-  return json({ ok: true, id });
+       date = ?9, mailbox = ?2, from_email = ?2, draft_revision = ?10
+     WHERE ?12 = 1 AND messages.folder = 'drafts' AND messages.draft_revision IS ?13`
+  ).bind(id, compose.from.toLowerCase(), senderName(env, view), JSON.stringify(compose.to), JSON.stringify(compose.cc),
+    JSON.stringify(compose.bcc), compose.subject, snippet(compose.text), Date.now(), revision, owner,
+    existing ? 1 : 0, existing?.draft_revision ?? null).run();
+  if (!result.meta?.changes) {
+    ctx.waitUntil(env.MAIL.delete(key).catch(() => {}));
+    const concurrent = await draftAttempt(env, owner, id);
+    if (concurrent) throw draftSendConflict(concurrent);
+    throw draftChanged();
+  }
+  if (existing) ctx.waitUntil(env.MAIL.delete(draftBodyKey(id, existing.draft_revision)).catch(() => {}));
+  return json({ ok: true, id, revision });
 }
 
 // How fast Mail's page was on this device, numbers only, from the shared menu as it's left: passed on to the account

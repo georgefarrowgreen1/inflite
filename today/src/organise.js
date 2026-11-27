@@ -1,7 +1,7 @@
 // First-party app documents use the same account shell and CSP as Today.
 import {roofPage,roofOn} from './roof.js';
 import {systemAPI} from './system.js';
-const BUILD='4.33.2';
+const BUILD='4.33.3';
 export function organisePage(request,env){
  const u=new URL(request.url),m=/^\/(calendar|notes|people)(.*)$/.exec(u.pathname);
  if(!m||!['GET','HEAD'].includes(request.method))return new Response('Not found',{status:404});

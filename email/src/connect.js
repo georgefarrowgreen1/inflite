@@ -43,9 +43,9 @@ const cut = (s, n) => {
 // conversation's id: its newest incoming message's sender (name, else address) and subject, 120 characters each at most.
 // Only where a notice was due (receive.js's rule: People, or an address set to notify for Updates; or a conversation just
 // back from Later, which always notifies); else null.
-export async function notice(env, threadId) {
+export async function notice(env, threadId, kind = null) {
   const m = await env.DB.prepare(
-    `SELECT from_name, from_email, subject, category, mailbox, folder FROM messages WHERE thread_id = ?1 AND folder IN ('inbox', 'archive')
+    `SELECT from_name, from_email, subject, snippet, category, mailbox, folder FROM messages WHERE thread_id = ?1 AND folder IN ('inbox', 'archive')
      ORDER BY date DESC LIMIT 1`
   )
     .bind(threadId)
@@ -62,7 +62,10 @@ export async function notice(env, threadId) {
     if (!due) return null;
   }
   const title = cut(m.from_name || m.from_email || "Mail", 120);
-  const body = back ? cut(`Back from Later: ${cleanSubject(m.subject) || "(No Subject)"}`, 120) : cut(m.subject || "(No Subject)", 120);
+  const subject = m.subject || "(No Subject)";
+  const body = kind === "later" || (!kind && back)
+    ? cut(`Back from Later: ${cleanSubject(m.subject) || "(No Subject)"}`, 120)
+    : kind === "new" ? [subject, m.snippet].filter(Boolean).join("\n").slice(0, 240) : cut(subject, 120);
   return { title, body };
 }
 

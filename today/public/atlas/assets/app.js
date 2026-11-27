@@ -176,6 +176,7 @@ function clearPrivateState(message = "Your session changed. Checking access…")
   threadsRequest?.abort(); threadsRequest = null; threadsArchived = null; threadsError = "";
   cancelThreadSelection();
   answerSubmission = null;
+  clearTimeout(state.codingReview?.publishTimer);
   detachCodingObserver(); state.codingRuns = []; state.codingContinuation = null; state.codingRestart = null; state.codingReview = null; state.codingLoading = false; state.codingLoadError = ""; state.codingDispatching = false;
   state.environments = []; state.environmentsReady = null; state.environmentsLoading = false; state.environmentId = ""; state.environmentEditingRevision = null; state.environmentEditorSession++; state.environmentEditorVersion++; state.environmentsRequest++; state.intent = "code"; state.taskTabs.clear(); state.taskExpanded.clear(); state.taskChanges.clear();
   state.epoch++; state.stream?.controller.abort(); state.stream = null; state.dispatching = false; state.owner = null; state.health = null; state.conversation = null; state.conversations = []; state.messages = []; state.activeId = null; state.context = []; state.contexts = []; state.repositories = []; state.models = []; state.tasks = []; state.scheduleContext = []; state.patches = []; state.selectedPatch = null; state.settings = null; state.privateReady = false; state.drafts.clear(); state.workspaceContext = []; state.contextPending = false; state.briefs = []; dirtyForms.clear(); state.navigation++; state.contextLoad++;
@@ -436,7 +437,7 @@ function updateComposer() {
   $("coding-continue-note").hidden = !code || !recovery;
   $("coding-continue-label").textContent = continuation ? "Continuing this cloud workspace" : state.codingRestart?.checkId ? "Following up on a failed GitHub check" : state.codingRestart?.restoreRevision ? `Restoring saved revision ${state.codingRestart.restoreRevision} at its original commit` : restart ? "Fresh workspace · original environment settings" : "";
   const publish = $("publish-coding"), review = state.codingReview;
-  if (publish && review?.run) publish.disabled = publish.classList.contains("busy-label") || review.stale || !review.hasFiles || !review.run.reviewReady || codingActive(review.run) || !state.health?.github?.connected;
+  if (publish && review?.run) publish.disabled = publish.classList.contains("busy-label") || review.stale || !review.hasFiles || !codingCanPublish(review.run) || !state.health?.github?.connected;
   $("attach-context").disabled = !$("repository").value || !state.health?.storage?.ready;
   if (state.contextPending) { $("send").disabled = true; $("start-coding").disabled = true; }
   if (fw) updateNativeHeader();
@@ -1438,6 +1439,11 @@ async function showPatch(id, known) {
   } catch (error) { feedback("patch-feedback", errorText(error), true); }
 }
 function codingActive(run) { return ["preparing", "running", "waiting", "uncertain", "publishing"].includes(run.status); }
+function codingCanPublish(run) {
+  if (!run.reviewReady || run.pullRequest || run.publicationBlocked) return false;
+  if (run.status === "publishing") return Number.isFinite(run.publishRetryAt) && Date.now() >= run.publishRetryAt;
+  return ["completed", "failed", "cancelled"].includes(run.status);
+}
 function codingStatus(run) { if (run.reviewReady && run.status !== "published" && !codingActive(run)) return "Ready to review"; return ({ preparing: "Preparing workspace", running: "Working", waiting: "Waiting", completed: "Completed", failed: "Failed", cancelled: "Stopped", uncertain: "Checking task state", publishing: "Creating pull request", published: "Published" })[run.status] || "Checking task state"; }
 function closeCodingInbox(inbox) {
   if (!inbox || codingInbox !== inbox) return;
@@ -1540,7 +1546,8 @@ function detachCodingObserver() {
 function codingViewCurrent(observer) { return state.codingObserver === observer && observer.epoch === state.epoch && observer.navigation === state.navigation && observer.conversationId === state.activeId && visible(); }
 function invalidateCodingReview(run) {
   const review = state.codingReview;
-  if (!review?.run || review.id !== run.id || review.run.revision === run.revision && run.reviewReady) return;
+  if (!review?.run || review.id !== run.id) return;
+  if (review.run.revision === run.revision && run.reviewReady && review.run.status === run.status && review.run.publishRetryAt === run.publishRetryAt) return;
   review.stale = true;
   const publish = $("publish-coding"); if (publish) publish.disabled = true;
   feedback("patch-feedback", "This task has changed. Refresh the review before publishing.");
@@ -1818,6 +1825,7 @@ function addDraftChecks(detail, review, run, current, focusChecks = false) {
 async function reviewCodingRun(id, { inboxTrigger, focusChecks = false } = {}) {
   const inbox = inboxTrigger ? codingInbox : null;
   const review = { id, inboxTrigger };
+  clearTimeout(state.codingReview?.publishTimer);
   state.codingReview = review;
   state.selectedPatch = null;
   $("patches-title").textContent = "Review changes";
@@ -1826,6 +1834,7 @@ async function reviewCodingRun(id, { inboxTrigger, focusChecks = false } = {}) {
   $("back-to-tasks").hidden = !inbox;
   review.sheet = openDialog("patches", inboxTrigger, { onClose: () => {
     review.checkRequest?.abort();
+    clearTimeout(review.publishTimer);
     state.codingReview = null;
     $("patch-detail").replaceChildren();
     if (codingInbox === inbox && inbox && state.privateReady) {
@@ -1852,7 +1861,7 @@ async function reviewCodingRun(id, { inboxTrigger, focusChecks = false } = {}) {
     const metadata = [run.repository, run.baseBranch, run.baseSha && "Base " + run.baseSha.slice(0, 12), "Revision " + run.revision].filter(Boolean);
     detail.append(node("h3", "", run.prompt?.split("\n")[0].slice(0, 140) || "Coding task"), node("p", "muted", metadata.join(" · ")));
     if (run.summary) detail.append(node("p", "review-summary", run.summary));
-    if (run.error?.message) detail.append(node("p", "message-error", run.error.message));
+    if (run.error?.message && run.error.message !== run.publicationBlocked) detail.append(node("p", "message-error", run.error.message));
     detail.append(node("h4", "", files.length + " changed file" + (files.length === 1 ? "" : "s")));
     for (const file of files) {
       const section = node("details", "patch-file"), output = node("pre", "", "Open to load the diff."); let loaded = false, loading = false;
@@ -1878,12 +1887,17 @@ async function reviewCodingRun(id, { inboxTrigger, focusChecks = false } = {}) {
     detail.append(codingChecks(data.checks || run.checks));
     const link = pullRequestLink(run.pullRequest);
     if (link) { detail.append(link); addDraftChecks(detail, review, run, current, focusChecks); }
-    else if (run.status === "publishing") detail.append(node("p", "field-help", "Draft pull request creation is in progress. Refresh the review to check its status."));
-    else if (run.reviewReady && files.length && !codingActive(run)) {
-      detail.append(node("p", "field-help", "This creates a draft pull request from the reviewed revision. Deployment happens through the reviewed release process."));
-      const publish = button("Create draft pull request", e => busy(e.currentTarget, async () => {
-        if (!current() || review.stale) return;
-        if (!await confirmAction(fw, "Create a new branch and draft pull request for these reviewed changes in " + run.repository + "?")) return;
+    else if (run.publicationBlocked && files.length) detail.append(node("p", "field-help", run.publicationBlocked));
+    else if (run.reviewReady && files.length && (!codingActive(run) || Number.isFinite(run.publishRetryAt))) {
+      const resuming = run.status === "publishing";
+      detail.append(node("p", "field-help", resuming
+        ? "You can retry this reviewed revision after the current attempt times out. Refresh the review to check its status."
+        : "This creates a draft pull request from the reviewed revision. Deployment happens through the reviewed release process."));
+      const publish = button(resuming ? "Retry draft pull request" : "Create draft pull request", e => busy(e.currentTarget, async () => {
+        if (!current() || review.stale || !codingCanPublish(run)) return;
+        const message = resuming ? "Retry creating the draft pull request for these reviewed changes in " : "Create a new branch and draft pull request for these reviewed changes in ";
+        if (!await confirmAction(fw, message + run.repository + "?")) return;
+        if (!current() || review.stale || !codingCanPublish(run)) return;
         let result;
         try { result = await api("coding/runs/" + encodeURIComponent(id) + "/publish", "POST", { confirm: true, revision: run.revision }); }
         catch (error) {
@@ -1903,7 +1917,12 @@ async function reviewCodingRun(id, { inboxTrigger, focusChecks = false } = {}) {
           review.stale = true;
           feedback("patch-feedback", "Publication is being checked. Refresh the review for its result.");
         }
-      }, "patch-feedback"), "primary-button"); publish.id = "publish-coding"; publish.disabled = !run.reviewReady || !files.length || !state.health?.github?.connected; detail.append(publish);
+      }, "patch-feedback"), "primary-button");
+      publish.id = "publish-coding";
+      detail.append(publish);
+      if (resuming && run.publishRetryAt > Date.now()) {
+        review.publishTimer = setTimeout(() => { if (current()) updateComposer(); }, run.publishRetryAt - Date.now());
+      }
       if (!state.health?.github?.connected) detail.append(node("p", "field-help", "Connect GitHub in Settings to publish."));
     }
     feedback("patch-feedback", "");

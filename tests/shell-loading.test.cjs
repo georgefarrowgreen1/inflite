@@ -55,7 +55,8 @@ test('notification reads, system taps, and Undo keep the worker history and unre
   const navigations = [];
   const now = Date.now();
   const notifications = ['mail', 'weather', 'fitness'].map((app, index) => ({ id: app, app, title: app, at: now - index, seen: false }));
-  let state = { list: notifications, gone: [] };
+  const scope = { owner: 'fixture', epoch: 'a'.repeat(64) };
+  let state = { ...scope, list: notifications, gone: [] };
   const self = {
     location: new URL('https://inflite.ai/'),
     addEventListener: (event, run) => listeners.set(event, run),
@@ -63,12 +64,13 @@ test('notification reads, system taps, and Undo keep the worker history and unre
     clients: { matchAll: async () => [] },
   };
   const { notesAsked } = vm.runInNewContext(source + `
-    notesDo = async change => transact(change);
+    noteTx = async change => transact(change);
+    noteSession = async () => scope;
     openIn = async path => navigations.push(path);
-    ({ notesAsked });`, { URL, self, navigations, transact: change => state = change(state, now) });
+    ({ notesAsked });`, { URL, self, scope, navigations, transact: change => state = change(state, now) });
   const send = async (ifl, values) => {
     let reply;
-    await notesAsked({ ifl, ...values }, { postMessage: data => { reply = structuredClone(data); } });
+    await notesAsked({ ifl, ...scope, ...values }, { postMessage: data => { reply = structuredClone(data); } }, 'tab');
     return reply;
   };
   const first = await send('notes-seen', { ids: ['mail'] });
@@ -77,7 +79,7 @@ test('notification reads, system taps, and Undo keep the worker history and unre
 
   let opening, closed = false;
   listeners.get('notificationclick')({
-    notification: { data: { id: 'weather', app: 'weather', url: '/weather/#warnings' }, close: () => { closed = true; } },
+    notification: { data: { ...scope, id: 'weather', app: 'weather', url: '/weather/#warnings' }, close: () => { closed = true; } },
     waitUntil: work => { opening = work; },
   });
   await opening;

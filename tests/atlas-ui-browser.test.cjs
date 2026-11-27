@@ -1171,6 +1171,33 @@ test('coding review handles six files, additions, deletions and failed executed 
   } finally { await t.close(); }
 });
 
+test('an interrupted publication offers a confirmed retry after its lease expires', async () => {
+  const run = codingRun({ status: 'publishing', reviewReady: true, revision: 3, publishRetryAt: Date.now() + 120000, changes: { modified: 1 } });
+  const files = [{ path: 'src/example.js', operation: 'modify' }];
+  const t = await open({ fixture: developerFixture({ codingRuns: [run], codingFiles: { [run.id]: files } }) });
+  try {
+    await openThread(t, 'Repository task');
+    await t.page.getByRole('button', { name: 'Review changes', exact: true }).click();
+    const review = t.page.getByRole('dialog', { name: 'Review changes' });
+    const retry = review.getByRole('button', { name: 'Retry draft pull request' });
+    await retry.waitFor();
+    assert.equal(await retry.isDisabled(), true);
+    assert.equal(t.fixture.requests.some(r => /\/publish$/.test(r.path)), false);
+    run.publishRetryAt = Date.now() - 1000;
+    await review.getByRole('button', { name: 'Refresh review' }).click();
+    await retry.waitFor();
+    assert.equal(await retry.isEnabled(), true);
+    t.page.once('dialog', dialog => dialog.dismiss());
+    await retry.click();
+    assert.equal(t.fixture.requests.some(r => /\/publish$/.test(r.path)), false);
+    t.page.once('dialog', dialog => dialog.accept());
+    await retry.click();
+    await review.getByRole('link', { name: 'Open draft pull request' }).waitFor();
+    assert.deepEqual(t.fixture.requests.find(r => /\/publish$/.test(r.path)).body, { confirm: true, revision: 3 });
+    assert.deepEqual(t.errors, []);
+  } finally { await t.close(); }
+});
+
 test('Stop task is explicit and Continue task submits a new instruction without manual sources', async () => {
   const t = await open({ fixture: developerFixture({ codingRuns: [codingRun()] }) }); try {
     await openThread(t, 'Repository task'); await t.page.getByRole('button', { name: 'Stop task', exact: true }).click();

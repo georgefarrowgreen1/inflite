@@ -310,7 +310,7 @@ async function handleAtlas(request, env, { account, send, ctx, rememberCookies }
       if (!action && method === 'GET') return json({ run: await coding.advanceCodingRun(env, owner, id, { send }) });
       if (action === 'cancel' && method === 'POST') return json({ run: await coding.cancelCodingRun(env, owner, id, { send }) });
       if (action === 'continue' && method === 'POST') { const run = await coding.continueCodingRun(env, owner, id, await input(request), { send }); kickCoding(id); return json({ run }, 202); }
-      if (action === 'changes' && method === 'GET') return json(await coding.codingReview(env, owner, id));
+      if (action === 'changes' && method === 'GET') return json(await coding.codingReview(env, owner, id, { send }));
       if (action === 'checks' && method === 'GET') return json(await coding.codingChecks(env, owner, id, Number(url.searchParams.get('revision')), options));
       if (action === 'diff' && method === 'GET') return json(await coding.codingDiff(env, owner, id, url.searchParams.get('path'), url.searchParams.get('revision')));
       if (action === 'publish' && method === 'POST') {

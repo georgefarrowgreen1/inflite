@@ -891,6 +891,7 @@ export function createFrame(opts = {}) {
     const d = e.data;
     if (d?.inflight === "sync") return emit("push:chats", { app: "chats", tag: typeof d.tag === "string" ? d.tag : null });
     if (!d || d.ifl !== "route" || !ownPath(d.url)) return;
+    if (d.owner && d.owner !== F.session.view?.user?.id) return;
     T(() => e.ports?.[0]?.postMessage({ ifl: "routed" }));
     F.nav.go(d.url, { from: "notification" });
   });

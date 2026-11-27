@@ -1,7 +1,7 @@
 import PostalMime from "postal-mime";
 import { bodyUpTo } from "../../shared/bounded-body.js";
 import { ensureSchema, findThread, cleanMessageId, upsertContacts, bumpVersion } from "./db.js";
-import { pushAll, peopleUnread, noticeInflite } from "./push.js";
+import { pushMailNotice, noticeInflite } from "./push.js";
 import { arrivalFor } from "./addresses.js";
 import { quietNow } from "./auth.js";
 import { spotStored } from "./spot.js";
@@ -271,16 +271,7 @@ async function store(message, env, ctx, id, raw, address) {
   if (notify && !(await quietNow(env))) {
     // (through InFlite, when George has chosen that: Mail's own only where the account says it isn't telling anyone)
     ctx.waitUntil(
-      noticeInflite(env, { kind: "new", threadId }).then(async (own) =>
-        own &&
-        pushAll(env, {
-          title: from.name || from.email,
-          body: [email.subject || "(No Subject)", snippet(email.text, email.html)].filter(Boolean).join("\n").slice(0, 240),
-          tag: threadId,
-          url: `/#thread=${threadId}`,
-          badge: await peopleUnread(env),
-        })
-      )
+      noticeInflite(env, { kind: "new", threadId }).then((own) => own && pushMailNotice(env, { kind: "new", threadId }))
     );
   }
 

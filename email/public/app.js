@@ -284,9 +284,9 @@
   // ---------------------------------------------------------------------------
 
   // Mail's build, shown in the profile menu (raised with each release)
-  const BUILD = "2.25.6";
+  const BUILD = "2.25.7";
   // (what's new in it, said once it's in)
-  const NEWS = "Mail opens long conversations faster and keeps earlier messages as you scroll.";
+  const NEWS = "Mail keeps saved files with their draft and protects uncertain sends against duplicates.";
 
   // ==== InFlite's menu, shared: from .tools/inflite/menu.js by node .tools/iflmenu.mjs (change it there) ====
 // Shared profile menu, updates, navigation and private diagnostics; plain script for modules and Mail.
@@ -1540,7 +1540,7 @@ const IFL = (() => {
   // address from then on, so it couldn't be saved from there, and the hub's page that frames Mail hands it in from what
   // InFlite's Mail keeps on the phone (its words, never files). Heard only from the window holding the frame, at the hub's
   // address, once the hub has answered the hello; saved here as a draft (over the one it was, its files kept as Mail has
-  // them, each by its place). Acknowledgement carries the owner and copy time so the hub can clear that copy.
+  // them). Acknowledgement carries the owner and copy time so the hub can clear that copy.
   function unsentDraft(d) {
     if (!d || typeof d !== "object") return null;
     const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : "");
@@ -1549,7 +1549,8 @@ const IFL = (() => {
     const draft = { from: str(d.from, 320), to: list(d.to), cc: list(d.cc), bcc: list(d.bcc), subject: str(d.subject, 998), text: str(d.text, 200000),
       inReplyTo: str(d.inReplyTo, 998) || null, references: str(refs, 8000) || null, attachments: [] };
     if (!draft.subject && !draft.text.trim() && !draft.to.length && !draft.cc.length && !draft.bcc.length) return null;
-    if (typeof d.draftId === "string" && /^[\w-]{1,64}$/.test(d.draftId)) Object.assign(draft, { id: d.draftId, attachments: Array.from({ length: 20 }, (_, i) => ({ i })) });
+    if (typeof d.draftId === "string" && /^[\w-]{1,64}$/.test(d.draftId)) Object.assign(draft, { id: d.draftId, keepAttachments: true,
+      draftRevision: typeof d.draftRevision === "string" && /^[\w-]{1,64}$/.test(d.draftRevision) ? d.draftRevision : undefined });
     const q = d.quote;
     if (q && typeof q === "object" && typeof q.of === "string" && /^[\w-]{1,64}$/.test(q.of)) draft.quote = { of: q.of, mode: str(q.mode, 20) || "reply" };
     return draft;
@@ -1574,7 +1575,10 @@ const IFL = (() => {
           loadList({ quiet: true });
         }
       } catch {}
-    }, () => handedIn.delete(key));
+    }, (error) => {
+      handedIn.delete(key);
+      if (error?.status === 409) toast(`${error.message} Your edits are kept on this device.`, { error: true });
+    });
     return true;
   }
   if (EMBED) addEventListener("message", fromHubUnsent);
@@ -3689,9 +3693,18 @@ const IFL = (() => {
     if (!kept || typeof kept !== "object" || Array.isArray(kept)) kept = {};
     for (const [id, d] of Object.entries(kept)) if (typeof d?.text !== "string" || !d.text || !(Date.now() - d.at < 14 * 864e5)) delete kept[id];
     const save = () => { try { if (key && current()) localStorage.setItem(key, JSON.stringify(kept)); } catch {} };
+    const scope = (id) => {
+      const draft = current() && kept[id];
+      return draft ? draft.composeId || `reply-${draft.at}-${id}`.slice(0, 64) : null;
+    };
     return (S.qrDrafts = {
       get: (id) => current() ? kept[id]?.text : undefined,
-      set: (id, text) => ((kept[id] = { text, at: Date.now() }), save()),
+      scope,
+      set: (id, text) => {
+        const composeId = scope(id) || crypto.randomUUID?.() || `reply-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        kept[id] = { text, at: Date.now(), composeId };
+        save();
+      },
       delete: (id) => (delete kept[id], save()),
     });
   }
@@ -3714,6 +3727,7 @@ const IFL = (() => {
     const go = () => {
       const text = field.value.trim();
       if (!text) return;
+      const draftId = drafts.scope(t.id);
       field.value = "";
       grow();
       field.blur();
@@ -3722,6 +3736,7 @@ const IFL = (() => {
         const c = replyDraft(m, "reply");
         const sig = sigFor(c.from);
         c.text = sig ? `${text}\n\n${sig}` : text;
+        if (!DEMO && draftId) c.draftId = c.composeId = draftId;
         queueSend(c);
         queued = true;
         drafts.delete(t.id);
@@ -4344,9 +4359,9 @@ pre{white-space:pre-wrap}
   function keepUnsent(c, owner = currentMailOwner(), { ifEmpty = false } = {}) {
     if (!owner && !DEMO) return false;
     if (ifEmpty && readUnsent(owner)) return false;
-    const { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId } = c;
+    const { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId, draftRevision, composeId } = c;
     const stamp = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const draft = { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId, stamp, at: Date.now() };
+    const draft = { mode, from, to, cc, bcc, subject, text, quote, inReplyTo, references, threadId, draftId, draftRevision, composeId, stamp, at: Date.now() };
     if (DEMO) { demoUnsent = draft; return stamp; }
     try { localStorage.setItem(draftKey(UNSENT, owner), JSON.stringify(draft)); return stamp; } catch { return false; }
   }
@@ -4407,29 +4422,15 @@ pre{white-space:pre-wrap}
         }
       });
     };
-    // (a job as it's kept: what's needed to send it again, or open it, its files as files)
-    const record = async (owner, { id, at, edit, c }) => ({
-      owner,
-      id,
-      at,
-      edit: !!edit,
-      c: {
-        ...["mode", "from", "to", "cc", "bcc", "subject", "text", "quote", "inReplyTo", "references", "threadId", "draftId"].reduce((o, k) => ((o[k] = c[k] ?? null), o), {}),
-        // IndexedDB on WebKit can reject file-backed Blob objects from its picker.
-        attachments: await Promise.all((c.attachments || []).map(async ({ filename, type, size, file, url }) => ({
-          filename, type, size, bytes: file ? await file.arrayBuffer() : null, url: url || null,
-        }))),
-      },
-    });
     return {
-      async keep(job) {
+      async keep(id, record) {
         const owner = currentMailOwner();
         if (!owner) return null;
         // An accepted write can finish in its original owner's partition after a session change.
-        const snapshot = record(owner, job).catch(() => null);
-        return write(owner, job.id, async () => {
+        const snapshot = record().catch(() => null);
+        return write(owner, id, async () => {
           const kept = await snapshot;
-          return kept && one("readwrite", s => s.put(kept));
+          return kept && one("readwrite", s => s.put({ ...kept, owner }));
         });
       },
       drop(id) {
