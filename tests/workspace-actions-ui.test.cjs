@@ -34,6 +34,7 @@ async function open(width = 390) {
   await page.evaluate(async () => {
     const ui = await import('/roof/ui.js'), { createSheets } = await import('/roof/sheet.js'), { createSearch } = await import('/roof/search.js'), { createBell } = await import('/bell.js'), { createWorkspaceCommands, notificationActions } = await import('/roof/workspace-commands.js');
     const ac = new AbortController(), sw = new EventTarget();
+    const owner = 'owner-a', epoch = 'a'.repeat(64);
     const notes = [
       { id: 'chat-note', app: 'chat', title: 'Message from Reuben', body: 'A private sample', url: '/chats/#open=friend-8', at: Date.now() - 10000, seen: false },
       { id: 'ride-note', app: 'fitness', title: 'Your ride', body: 'Ready to plan', url: '/fitness/#today', at: Date.now() - 20000, seen: false },
@@ -42,14 +43,18 @@ async function open(width = 390) {
     sw.getRegistration = async () => ({ active: { postMessage(msg, ports) {
       s.requests.push(msg);
       const answer = () => {
+        if (msg.owner !== owner || (msg.ifl !== 'notes' && msg.epoch !== epoch)) {
+          ports[0].postMessage({ ifl: 'notes', kept: false, list: [], unread: 0 });
+          return;
+        }
         if (msg.ifl === 'notes-seen') for (const n of notes) { if (msg.ids?.includes(n.id)) n.seen = true; }
         if (msg.ifl === 'notes-clear') for (let i = notes.length - 1; i >= 0; i--) if (msg.all || msg.ids?.includes(notes[i].id)) notes.splice(i, 1);
-        ports[0].postMessage({ ifl: 'notes', list: notes.slice(), unread: notes.filter(n => !n.seen).length });
+        ports[0].postMessage({ ifl: 'notes', owner, epoch, kept: true, list: notes.slice(), unread: notes.filter(n => !n.seen).length });
       };
       if (s.defer) s.ports.push(answer); else queueMicrotask(answer);
     } } });
     Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: sw });
-    const F = s.F = { signal: ac.signal, session: { view: { user: { id: 'owner-a' }, apps: { mail: true } }, apps: { mail: true, chats: true, fitness: true, weather: true, markets: true } }, route: { kind: 'tab', tab: 'workspace' }, ui, toast(text, options) { s.toasts.push({ text, options }); }, nav: { go(path) { s.calls.push(['go', path]); } } };
+    const F = s.F = { signal: ac.signal, session: { view: { user: { id: owner }, apps: { mail: true } }, apps: { mail: true, chats: true, fitness: true, weather: true, markets: true } }, route: { kind: 'tab', tab: 'workspace' }, ui, toast(text, options) { s.toasts.push({ text, options }); }, nav: { go(path) { s.calls.push(['go', path]); } } };
     F.sheet = createSheets(F); F.search = createSearch(F);
     const runIntent = (app, intent, objectId) => {
       s.calls.push(['intent', app, intent, objectId, document.querySelector('dialog[data-sheet=notifications][open]') !== null]);
@@ -62,7 +67,7 @@ async function open(width = 390) {
       count(n) { s.counts.push(n); },
       actions: note => notificationActions(note, {
         origin: location.origin, enabled: app => F.session.apps[app] === true,
-        current: () => !ac.signal.aborted && F.session.view.user.id === 'owner-a',
+        current: () => !ac.signal.aborted && F.session.view.user.id === owner,
         runIntent,
         async openApp(app, path) { s.calls.push(['app', app, path]); return { app }; },
       }),
